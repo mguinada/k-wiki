@@ -345,7 +345,7 @@ Run lint
 Git commit
 ```
 
-On macOS, `launchd` plus a small Python/Ruby script is a good implementation.
+On macOS, `launchd` plus a small TypeScript/Node CLI is a good implementation.
 
 Track hashes in something such as:
 
