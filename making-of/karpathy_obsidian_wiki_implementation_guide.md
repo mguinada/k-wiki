@@ -1120,17 +1120,18 @@ Do not implement the whole system at once.
 Build this vertical slice first:
 
 ```text
-1. Select one source note.
-2. Mark it wiki:true.
-3. Sync it to raw/.
-4. Run the ingestion prompt.
-5. Create one or more wiki pages with valid Obsidian frontmatter.
-6. Add source attribution and canonical tags.
-7. Update index.md.
-8. Update log.md.
-9. Run lint, including frontmatter/tag validation.
-10. Inspect git diff.
-11. Ask a question and file a valuable answer under `queries/`.
+1. Install the obsidian-markdown and obsidian-bases skills at project level.
+2. Select one source note.
+3. Mark it wiki:true.
+4. Sync it to raw/.
+5. Run the ingestion prompt.
+6. Create one or more wiki pages with valid Obsidian frontmatter.
+7. Add source attribution and canonical tags.
+8. Update index.md.
+9. Update log.md.
+10. Run lint, including frontmatter/tag validation.
+11. Inspect git diff.
+12. Ask a question and file a valuable answer under `queries/`.
 ```
 
 Then test:
@@ -1391,10 +1392,14 @@ Ideas deliberately **not pursued now**. Each has a clear trigger for reconsidera
 | Option | What it adds | Reconsider when |
 |---|---|---|
 | `qmd` hybrid search (BM25 + vector + re-rank) | Search beyond index-first navigation (Section 19) | The wiki passes ~100 sources, index-based lookup degrades, or the wiki approaches the context-window degradation region |
-| Dataview plugin | Dynamic tables over frontmatter — e.g. all low-confidence or stale pages at a glance | Dashboards over `confidence`, `status`, and canonical tags are wanted |
+| Obsidian Bases (`.base` files) | First-party database views over frontmatter — e.g. all low-confidence or stale pages at a glance; supersedes the Dataview plugin idea (keep Dataview only as a fallback for older Obsidian versions) | Dashboards over `confidence`, `status`, and canonical tags are wanted |
 | Obsidian Web Clipper + local images | One-click web articles into the source vault; images downloaded locally so the LLM can view them | Web articles become a primary source type |
+| `defuddle` CLI | Clean markdown extraction from URLs (`defuddle parse <url> --md`) — the automatable, agent-driven counterpart to Web Clipper | Web articles become a primary source type |
+| JSON Canvas | Auto-generated wiki maps and canvas answers (`.canvas`) as an additional query output format | Canvas outputs or knowledge-map visualizations are wanted |
 | Marp | Slide decks generated from wiki pages | Presentations are needed from wiki material |
 | LLM Wiki v2 extensions | Supersession tracking, retention decay, typed relationships, consolidation tiers | The wiki exceeds ~200 pages |
+
+Several options pair with agent skills from [kepano/obsidian-skills](https://github.com/kepano/obsidian-skills). Install a skill when its trigger fires, not before — a skill's cost is context and attention. `obsidian-markdown` and `obsidian-bases` are installed at implementation time (Section 22); `defuddle` and `json-canvas` are installed when their rows above are triggered.
 
 None of these require architectural changes today; the schema and pipeline accommodate them later.
 
@@ -1406,3 +1411,4 @@ None of these require architectural changes today; the schema and pipeline accom
 - [How to Build Karpathy's LLM Wiki: The Complete Guide to AI-Maintained Knowledge Bases](https://blog.starmorph.com/blog/karpathy-llm-wiki-knowledge-base-guide)
 - [Andrej Karpathy’s LLM Wiki: Full Breakdown and How to Build Your Own](https://nandigamharikrishna.substack.com/p/andrej-karpathys-llm-wiki-full-breakdown)
 - [Sync your notes across devices — Obsidian Help](https://help.obsidian.md/sync-notes)
+- [Obsidian Skills — agent skills for Obsidian workflows](https://github.com/kepano/obsidian-skills)
