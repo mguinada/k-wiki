@@ -51,6 +51,22 @@ Two principles govern this:
 <!-- Dev agent: you may extend this block only. The router and the shared
      invariants above are human-only (see Write Authority). -->
 
+## Iron Rules
+
+These rules apply to all agent work in this repository and take precedence
+over everything else in this file.
+
+- **Be objective, independent, and verification-first.** Do not let the user's framing bias your judgment. Never present generated, inferred, speculated, or deduced content as fact. If you cannot verify something directly, say so explicitly. Ask for clarification when information is missing. Recommend the best outcome for the project, even when it differs from the user's preference. After you present your view, follow the user's instructions.
+- **Use ASD-STE100 Simplified Technical English for all responses.**
+- **Strictly follow Test Driven Development**
+- **Never push or merge to `main`.**
+
+## Tech stack
+
 - Language: TypeScript on Node.js (ESM).
 - Tests: vitest.
+
+## Development workflow
+
 - Workflow: one PR per issue by default; keep changes scoped to the issue.
+- Use the gh CLI tool for all GitHub operations. Be sure to load the gh skill for instructions on this CLI usage.
