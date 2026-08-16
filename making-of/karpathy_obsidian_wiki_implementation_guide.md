@@ -31,7 +31,7 @@ This does **not** violate the Karpathy-style wiki principles. It strengthens sou
 
 ---
 
-# 1. Create Two Separate Vaults
+## 1. Create Two Separate Vaults
 
 Example:
 
@@ -49,13 +49,13 @@ Recommended ownership:
 | `MyVault/` | Human | No |
 | `MyWiki/raw/` | Sync process | No |
 | `MyWiki/wiki/` | LLM | Yes |
-| `MyWiki/index.md` | LLM | Yes |
-| `MyWiki/log.md` | LLM | Append-only |
-| `MyWiki/CLAUDE.md` | Human | Preferably no |
+| `MyWiki/wiki/index.md` | LLM | Yes |
+| `MyWiki/wiki/log.md` | LLM | Append-only |
+| `MyWiki/AGENTS.md` | Human | Preferably no |
 
 ---
 
-# 2. Decide Which Source Notes Enter the Wiki
+## 2. Decide Which Source Notes Enter the Wiki
 
 Recommended: use frontmatter.
 
@@ -91,11 +91,11 @@ Do not synchronize sensitive/private material unless you explicitly intend to.
 
 ---
 
-# 4. Handle an Inconsistent Source Vault
+## 3. Handle an Inconsistent Source Vault
 
 Your source vault does **not** need perfectly consistent tags, filenames, links, or frontmatter before you build the wiki.
 
-Treat source metadata as **hints**, not authoritative semantic information. The actual note content is the stronger signal.
+Treat source metadata as **hints**, not authoritative semantic information. The actual note content is the stronger signal. The agent-facing rules for this are defined in `AGENTS.md` (Section 8).
 
 ### Impact of source-vault messiness
 
@@ -112,7 +112,7 @@ Treat source metadata as **hints**, not authoritative semantic information. The 
 
 The main risk is not messy tags. It is **ambiguous, duplicated, contradictory, or context-poor knowledge**.
 
-## Do not clean the source vault first
+### Do not clean the source vault first
 
 Do **not** make a global LLM rewrite of `MyVault/` the first step.
 
@@ -128,7 +128,7 @@ Keep the source vault human-owned.
 
 Instead, let the wiki understand the source vault as it is.
 
-### Metadata normalization as derived data
+#### Metadata normalization as derived data
 
 If the vault's metadata eventually proves problematic, add a derived normalization layer:
 
@@ -183,27 +183,7 @@ confidence: high
 
 This lets you review the proposed organization without risking your source of truth.
 
-## Add these rules to `AGENTS.md`
-
-```text
-## Source Metadata
-
-Source tags, filenames, folders, and frontmatter are hints, not authoritative
-semantic information.
-
-Infer meaning primarily from the actual source content.
-
-When source metadata conflicts with source content, prefer the content.
-
-Do not modify source metadata.
-
-The wiki may introduce canonical terminology, relationships, and categories
-that do not exist in the source vault.
-
-Do not force the source vault to conform to the wiki taxonomy.
-```
-
-## Recommended approach
+### Recommended approach
 
 Start with:
 
@@ -215,7 +195,9 @@ Do not add `normalized/` until you have evidence that source-vault organization 
 
 The wiki should **understand your source vault rather than require your source vault to conform to the wiki**.
 
-# 4. Create the Wiki Structure
+---
+
+## 4. Create the Wiki Structure
 
 ```text
 MyWiki/
@@ -232,7 +214,7 @@ MyWiki/
 │
 ├── outputs/
 │
-├── CLAUDE.md
+├── AGENTS.md
 └── .git/
 ```
 
@@ -240,7 +222,7 @@ The exact taxonomy can evolve. Start small.
 
 ---
 
-# 5. Make `raw/` Immutable
+## 5. Make `raw/` Immutable
 
 The synchronization pipeline is:
 
@@ -261,7 +243,7 @@ The original vault remains completely untouched by the wiki agent.
 
 ---
 
-# 6. Automate Synchronization
+## 6. Automate Synchronization
 
 Keep synchronization deterministic. Do **not** use an LLM to decide what changed.
 
@@ -323,7 +305,7 @@ This separation is important.
 
 ---
 
-# 7. Define the Wiki Schema and Obsidian Frontmatter
+## 7. Define the Wiki Schema and Obsidian Frontmatter
 
 The wiki is an Obsidian vault, so use **Obsidian-compatible YAML frontmatter** rather than inventing a separate metadata format.
 
@@ -335,7 +317,7 @@ Start with these page types:
 - `comparison`
 - `topic`
 
-## Required wiki frontmatter
+### Required wiki frontmatter
 
 Every wiki page should use:
 
@@ -368,7 +350,7 @@ description: "A technique that augments LLM generation with retrieved external i
 
 Use ISO dates (`YYYY-MM-DD`) and Obsidian wikilinks for references to other notes.
 
-### Source pages
+#### Source pages
 
 A page representing an external source can use:
 
@@ -397,7 +379,7 @@ status: active
 ---
 ```
 
-### Derived concept pages
+#### Derived concept pages
 
 Use `sources` (plural) because a wiki page may synthesize multiple sources:
 
@@ -430,7 +412,7 @@ status: active
 ---
 ```
 
-### Tags
+#### Tags
 
 The source vault's tags are **not authoritative**. The wiki should use a controlled, canonical vocabulary.
 
@@ -455,7 +437,7 @@ tags:
 
 The LLM may normalize terminology in the **derived wiki**, but must never modify the source vault merely to make it conform to the wiki taxonomy.
 
-### Do not put everything in frontmatter
+#### Do not put everything in frontmatter
 
 Frontmatter is the metadata/indexing layer, not the knowledge itself.
 
@@ -469,7 +451,7 @@ Put these in the Markdown body:
 - detailed relationships;
 - derived conclusions.
 
-### Recommended metadata rules
+#### Recommended metadata rules
 
 1. Every substantive claim should be traceable to source material.
 2. Never invent facts to fill gaps.
@@ -484,9 +466,9 @@ Put these in the Markdown body:
 
 ---
 
-# 8. `CLAUDE.md`
+## 8. `AGENTS.md`
 
-Use this as the starting system/instruction file for the wiki agent.
+Use this as the starting system/instruction file for the wiki agent. It consolidates all agent rules, including the source-metadata rules from Section 3.
 
 ```markdown
 # Karpathy Wiki Instructions
@@ -517,6 +499,18 @@ If a source is ambiguous, incomplete, or contradictory:
 - state the uncertainty;
 - preserve competing claims when appropriate;
 - record the issue in `log.md`.
+
+## Source Metadata
+
+Source tags, filenames, folders, and frontmatter are hints, not authoritative
+semantic information.
+
+Infer meaning primarily from the actual source content.
+
+When source metadata conflicts with source content, prefer the content.
+
+The wiki may introduce canonical terminology, relationships, and categories
+that do not exist in the source vault.
 
 ## Ingestion Workflow
 
@@ -643,7 +637,7 @@ Never reverse these responsibilities.
 
 ---
 
-# 9. Initial `index.md`
+## 9. Initial `index.md`
 
 ```markdown
 # Wiki Index
@@ -669,7 +663,7 @@ The agent should maintain this.
 
 ---
 
-# 10. Initial `log.md`
+## 10. Initial `log.md`
 
 ```markdown
 # Wiki Log
@@ -700,7 +694,7 @@ Detected:
 
 ---
 
-# 11. Ingestion Prompt
+## 11. Ingestion Prompt
 
 Use this as the core prompt when processing changed sources:
 
@@ -709,7 +703,7 @@ You are maintaining a structured knowledge wiki.
 
 Read the changed source files under raw/ and update wiki/ accordingly.
 
-Follow CLAUDE.md exactly.
+Follow AGENTS.md exactly.
 
 For each changed source:
 
@@ -739,7 +733,7 @@ At the end, report:
 
 ---
 
-# 12. Incremental Update Prompt
+## 12. Incremental Update Prompt
 
 For an existing wiki when one or more notes changed:
 
@@ -764,14 +758,14 @@ Update index.md and log.md.
 
 ---
 
-# 13. Full/Rebuild Prompt
+## 13. Full/Rebuild Prompt
 
 Use when rebuilding the wiki from scratch:
 
 ```text
 Rebuild the knowledge wiki from all material under raw/.
 
-Follow CLAUDE.md.
+Follow AGENTS.md.
 
 Process sources in logical batches.
 
@@ -797,7 +791,7 @@ The resulting wiki must be understandable without reading every raw source.
 
 ---
 
-# 14. Lint Prompt
+## 14. Lint Prompt
 
 Run after ingestion:
 
@@ -831,7 +825,7 @@ Append significant findings to log.md.
 
 ---
 
-# 15. Recommended Automation
+## 15. Recommended Automation
 
 Eventually make one command perform:
 
@@ -861,7 +855,7 @@ Start manually until the pipeline is reliable, then schedule it.
 
 ---
 
-# 16. Git
+## 16. Git
 
 Initialize Git inside `MyWiki`.
 
@@ -886,7 +880,7 @@ Never put secrets or private source material into a remote repository unless you
 
 ---
 
-# 17. Retrieval
+## 17. Retrieval
 
 Do **not** start with a vector database.
 
@@ -908,7 +902,7 @@ QMD or another hybrid BM25/vector/reranking solution can be added later.
 
 ---
 
-# 18. Source Quality
+## 18. Source Quality
 
 During ingestion, the LLM should distinguish **content quality** from **metadata quality**.
 
@@ -928,7 +922,9 @@ Use this to influence confidence, contradiction handling, and review priorities.
 
 Do not let poor metadata alone reduce the confidence of otherwise well-supported content.
 
-# 18. Important Design Principles
+---
+
+## 19. Important Design Principles
 
 ### Human source is authoritative
 
@@ -976,7 +972,7 @@ Only update pages affected by new/changed information.
 
 ---
 
-# 19. Recommended First Implementation
+## 20. Recommended First Implementation
 
 Do not implement the whole system at once.
 
@@ -1015,7 +1011,7 @@ Only after this works reliably should you automate the schedule.
 
 ---
 
-# 20. Final Architecture
+## 21. Final Architecture
 
 The complete system should eventually look like:
 
@@ -1055,9 +1051,9 @@ The complete system should eventually look like:
                           LLM
 ```
 
-## Bottom line
+### Bottom line
 
-Your two requirements are compatible with the Karpathy-style wiki:
+Your requirements are compatible with the Karpathy-style wiki:
 
 1. **Keep the original Obsidian vault separate and human-owned.**
 2. **Periodically synchronize selected notes into an immutable `raw/` layer.**
@@ -1077,11 +1073,10 @@ LLM → wiki
 
 Never let that direction reverse.
 
+---
 
+## References
 
-# References
-
-- [Original Post by Andrej Karpathy on the LLM Wiki Patterns](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) 
+- [Original Post by Andrej Karpathy on the LLM Wiki Patterns](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)
 - [How to Build Karpathy's LLM Wiki: The Complete Guide to AI-Maintained Knowledge Bases](https://blog.starmorph.com/blog/karpathy-llm-wiki-knowledge-base-guide)
-
 - [Andrej Karpathy’s LLM Wiki: Full Breakdown and How to Build Your Own](https://nandigamharikrishna.substack.com/p/andrej-karpathys-llm-wiki-full-breakdown)
