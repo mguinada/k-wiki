@@ -1448,6 +1448,7 @@ Ideas deliberately **not pursued now**. Each has a clear trigger for reconsidera
 | JSON Canvas | Auto-generated wiki maps and canvas answers (`.canvas`) as an additional query output format | Canvas outputs or knowledge-map visualizations are wanted |
 | Marp | Slide decks generated from wiki pages | Presentations are needed from wiki material |
 | LLM Wiki v2 extensions | Supersession tracking, retention decay, typed relationships, consolidation tiers | The wiki exceeds ~200 pages |
+| CLI interaction layer (`oclif` / `@inquirer/prompts` / `Ink`) | Framework plumbing, one-shot prompts, or a full TUI for interactive use | Interactive ingest mode is built, or the CLIs grow into a multi-command `k-wiki` tool; until then Node's built-in `util.parseArgs` covers all flags |
 
 Several options pair with agent skills from [kepano/obsidian-skills](https://github.com/kepano/obsidian-skills). Install a skill when its trigger fires, not before — a skill's cost is context and attention. `obsidian-markdown` and `obsidian-bases` are installed at implementation time (Section 23); `defuddle` and `json-canvas` are installed when their rows above are triggered.
 
