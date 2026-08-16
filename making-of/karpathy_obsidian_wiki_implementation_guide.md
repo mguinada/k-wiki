@@ -1,6 +1,6 @@
 # Karpathy-Style Wiki from an Obsidian Vault
 
-A concise implementation guide for building an LLM-maintained wiki as a **derived Obsidian vault**, while keeping the original vault human-owned and self-managed.
+A concise implementation guide for building an LLM-maintained wiki as a **derived Obsidian vault**, while keeping the original vault human-owned and self-managed. The default path is the simplest one — one vault, one wiki; Section 1 helps you decide whether you need more.
 
 [TOC]
 
@@ -31,7 +31,26 @@ This does **not** violate the Karpathy-style wiki principles. It strengthens sou
 
 ---
 
-## 1. Create Two Separate Vaults
+## 1. Choosing Your Topology
+
+The default path through this guide is the simplest topology: **one vault → one wiki**. Every other topology is an extension of it, decided at a single seam — the deterministic sync layer (Section 7). Everything downstream (`raw/` → ingest → `wiki/`) is topology-agnostic.
+
+| Situation | Topology | Reading path |
+|---|---|---|
+| One vault, one knowledge domain | 1 vault → 1 wiki | Sections 2–22 as written (default) |
+| Several vaults, overlapping domains, cross-vault synthesis is the point | N vaults → 1 wiki | Simple path + Scenario A deltas (Section 23) |
+| Several vaults, disjoint domains, different audiences or privacy levels | N vaults → N wikis | One independent instance of the simple path each (Scenario B, Section 23) |
+| One vault, mixed public/private material | 1 vault → N wikis | Same selection mechanism, inverted (Scenario C, Section 23) |
+
+Rules of thumb:
+
+- When in doubt, start with one vault → one wiki; it is the base case every other topology extends.
+- Two questions decide the rest: Must any audience be kept away from some material? → separate wiki instances. Do you need notes from different vaults on the same wiki page? → one wiki.
+- Topology is reversible: because `wiki/` is derived from `raw/`, you can merge or split later at the cost of re-ingestion only (Section 23).
+
+---
+
+## 2. Create Two Separate Vaults
 
 Example:
 
@@ -55,7 +74,7 @@ Recommended ownership:
 
 ---
 
-## 2. Decide Which Source Notes Enter the Wiki
+## 3. Decide Which Source Notes Enter the Wiki
 
 Recommended: use frontmatter.
 
@@ -91,11 +110,11 @@ Do not synchronize sensitive/private material unless you explicitly intend to.
 
 ---
 
-## 3. Handle an Inconsistent Source Vault
+## 4. Handle an Inconsistent Source Vault
 
 Your source vault does **not** need perfectly consistent tags, filenames, links, or frontmatter before you build the wiki.
 
-Treat source metadata as **hints**, not authoritative semantic information. The actual note content is the stronger signal. The agent-facing rules for this are defined in `AGENTS.md` (Section 8).
+Treat source metadata as **hints**, not authoritative semantic information. The actual note content is the stronger signal. The agent-facing rules for this are defined in `AGENTS.md` (Section 9).
 
 ### Impact of source-vault messiness
 
@@ -197,7 +216,7 @@ The wiki should **understand your source vault rather than require your source v
 
 ---
 
-## 4. Create the Wiki Structure
+## 5. Create the Wiki Structure
 
 ```text
 k-wiki/
@@ -223,7 +242,7 @@ The exact taxonomy can evolve. Start small.
 
 ---
 
-## 5. Make `raw/` Immutable
+## 6. Make `raw/` Immutable
 
 The synchronization pipeline is:
 
@@ -244,7 +263,7 @@ The original vault remains completely untouched by the wiki agent.
 
 ---
 
-## 6. Automate Synchronization
+## 7. Automate Synchronization
 
 Keep synchronization deterministic. Do **not** use an LLM to decide what changed.
 
@@ -289,6 +308,8 @@ Example:
 }
 ```
 
+Syncing multiple vaults into one wiki? The manifest generalizes to a per-vault structure — see Section 23.
+
 Keep **sync** and **ingest** as separate commands:
 
 ```text
@@ -306,7 +327,7 @@ This separation is important.
 
 ---
 
-## 7. Define the Wiki Schema and Obsidian Frontmatter
+## 8. Define the Wiki Schema and Obsidian Frontmatter
 
 The wiki is an Obsidian vault, so use **Obsidian-compatible YAML frontmatter** rather than inventing a separate metadata format.
 
@@ -379,6 +400,8 @@ confidence: high
 status: active
 ---
 ```
+
+Optional in multi-vault setups: `vault: <name>` records which source vault a source page originated from (Section 23).
 
 #### Derived concept pages
 
@@ -467,9 +490,11 @@ Put these in the Markdown body:
 
 ---
 
-## 8. `AGENTS.md`
+## 9. `AGENTS.md`
 
-Use this as the starting system/instruction file for the wiki agent. It consolidates all agent rules, including the source-metadata rules from Section 3.
+Use this as the starting system/instruction file for the wiki agent. It consolidates all agent rules, including the source-metadata rules from Section 4.
+
+For multi-vault wikis, also append the addendum in Section 23 (Scenario A).
 
 ```markdown
 # Karpathy Wiki Instructions
@@ -638,7 +663,7 @@ Never reverse these responsibilities.
 
 ---
 
-## 9. Initial `index.md`
+## 10. Initial `index.md`
 
 ```markdown
 # Wiki Index
@@ -664,7 +689,7 @@ The agent should maintain this.
 
 ---
 
-## 10. Initial `log.md`
+## 11. Initial `log.md`
 
 ```markdown
 # Wiki Log
@@ -695,7 +720,7 @@ Detected:
 
 ---
 
-## 11. Ingestion Prompt
+## 12. Ingestion Prompt
 
 Use this as the core prompt when processing changed sources:
 
@@ -734,7 +759,7 @@ At the end, report:
 
 ---
 
-## 12. Incremental Update Prompt
+## 13. Incremental Update Prompt
 
 For an existing wiki when one or more notes changed:
 
@@ -759,7 +784,7 @@ Update index.md and log.md.
 
 ---
 
-## 13. Full/Rebuild Prompt
+## 14. Full/Rebuild Prompt
 
 Use when rebuilding the wiki from scratch:
 
@@ -792,7 +817,7 @@ The resulting wiki must be understandable without reading every raw source.
 
 ---
 
-## 14. Lint Prompt
+## 15. Lint Prompt
 
 Run after ingestion:
 
@@ -826,7 +851,7 @@ Append significant findings to log.md.
 
 ---
 
-## 15. Recommended Automation
+## 16. Recommended Automation
 
 Eventually make one command perform:
 
@@ -856,7 +881,7 @@ Start manually until the pipeline is reliable, then schedule it.
 
 ---
 
-## 16. Git
+## 17. Git
 
 Initialize Git inside `k-wiki` (the repository root).
 
@@ -881,7 +906,7 @@ Never put secrets or private source material into a remote repository unless you
 
 ---
 
-## 17. Retrieval
+## 18. Retrieval
 
 Do **not** start with a vector database.
 
@@ -903,7 +928,7 @@ QMD or another hybrid BM25/vector/reranking solution can be added later.
 
 ---
 
-## 18. Source Quality
+## 19. Source Quality
 
 During ingestion, the LLM should distinguish **content quality** from **metadata quality**.
 
@@ -925,7 +950,7 @@ Do not let poor metadata alone reduce the confidence of otherwise well-supported
 
 ---
 
-## 19. Important Design Principles
+## 20. Important Design Principles
 
 ### Human source is authoritative
 
@@ -973,7 +998,7 @@ Only update pages affected by new/changed information.
 
 ---
 
-## 20. Recommended First Implementation
+## 21. Recommended First Implementation
 
 Do not implement the whole system at once.
 
@@ -1012,7 +1037,7 @@ Only after this works reliably should you automate the schedule.
 
 ---
 
-## 21. Final Architecture
+## 22. Final Architecture
 
 The complete system should eventually look like:
 
@@ -1073,6 +1098,89 @@ LLM → wiki
 ```
 
 Never let that direction reverse.
+
+---
+
+## 23. Scaling to Multiple Vaults and Multiple Wikis
+
+All topologies share one seam: the deterministic sync layer. `raw/` is a projection of selected notes, not a vault mirror, so everything downstream of sync is vault-agnostic. The default path (one vault → one wiki) needs none of what follows.
+
+### Scenario A: Multiple Vaults → One Wiki
+
+Sync several vaults into the same `k-wiki`, namespacing each vault under `raw/notes/`:
+
+```text
+WorkVault      →  raw/notes/work/…
+PersonalVault  →  raw/notes/personal/…
+MoreVaults …   →  raw/notes/<vault>/…
+
+raw/  →  ingest  →  wiki/
+```
+
+Deltas from the simple path:
+
+1. **Namespace `raw/`.** Each vault syncs into its own subtree: `raw/notes/work/AI/RAG.md`, `raw/notes/personal/AI/RAG.md`. Never mix namespaces.
+2. **Per-vault manifest.** Track roots and hashes separately:
+
+```json
+{
+  "vaults": {
+    "work": {
+      "root": "/path/to/WorkVault",
+      "notes": {
+        "AI/RAG.md": { "hash": "abc123", "last_synced": "2026-08-16T15:00:00Z" }
+      }
+    },
+    "personal": { "...": "..." }
+  }
+}
+```
+
+3. **Vault provenance.** Source pages record their origin with `vault: work`, so every claim stays traceable to the human context that produced it.
+4. **Inter-vault contradictions are expected.** Notes written in different contexts can disagree without either being wrong. Record the disagreement with vault context; do not treat it as an ingestion error.
+5. **AGENTS.md addendum.** Append:
+
+```markdown
+## Multiple Source Vaults
+
+Sources originate from multiple vaults, recorded in the `vault` field of
+source pages.
+
+Each vault owns a separate namespace under raw/notes/. Never mix them.
+
+When sources from different vaults disagree, preserve both claims with
+their vault context instead of resolving silently.
+
+The same provenance and confidence rules apply regardless of origin.
+```
+
+Caution: a merged wiki is only as publishable as its most private contributing vault. Keep sensitive material in a separate instance (Scenario B).
+
+### Scenario B: Multiple Vaults → Multiple Wikis
+
+No process changes. Each wiki is a full, independent `k-wiki` instance — its own sync manifest, `AGENTS.md`, git history, schedule, and publication decision:
+
+```text
+WorkVault      →  k-wiki-work/      (complete pipeline instance)
+PersonalVault  →  k-wiki-personal/  (complete pipeline instance)
+```
+
+Folder names are illustrative; each instance is simply its own `k-wiki` root, and the process is root-relative. Each instance's manifest declares exactly one vault. You get physical isolation of privacy, audience, taxonomy, and history; you give up cross-wiki linking and synthesis.
+
+### Scenario C: One Vault → Multiple Wikis
+
+Invert the selection rule. Notes marked `wiki: public` sync to a publishable instance; notes marked `wiki: true` sync to the private one. Two manifests, two instances, one vault — the sync layer routes each selected note to exactly one wiki.
+
+### Changing Your Mind Later
+
+Topology is reversible because `wiki/` is derived from `raw/` alone:
+
+```text
+merge:  concatenate namespaced raw/ trees  →  rebuild one wiki
+split:  partition raw/ by vault namespace   →  rebuild each wiki
+```
+
+The cost is re-ingestion compute, never information loss. The one exception is privacy: once sensitive notes are merged into a wiki and its git history, un-mixing requires history rewriting. Split first, merge later — not the reverse.
 
 ---
 
