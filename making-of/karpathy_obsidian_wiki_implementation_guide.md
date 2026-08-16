@@ -7,7 +7,7 @@ A concise implementation guide for building an LLM-maintained wiki as a **derive
 ## 0. Target Architecture
 
 ```text
-MyVault/                         MyWiki/
+MyVault/                         k-wiki/
 Human source                    Derived machine knowledge
     │
     │ deterministic sync
@@ -25,7 +25,7 @@ Human source                    Derived machine knowledge
                                   └── comparisons/
 ```
 
-**Core rule:** `MyVault` is the source of truth. `MyWiki` is disposable derived data.
+**Core rule:** `MyVault` is the source of truth. `k-wiki` is disposable derived data.
 
 This does **not** violate the Karpathy-style wiki principles. It strengthens source immutability, provenance, separation of human/LLM ownership, and reproducibility.
 
@@ -36,22 +36,22 @@ This does **not** violate the Karpathy-style wiki principles. It strengthens sou
 Example:
 
 ```text
-~/Obsidian/MyVault/
-~/Obsidian/MyWiki/
+~/Obsidian/MyVault/     ← source vault (human-owned)
+k-wiki/                 ← wiki root (this repository)
 ```
 
-Open both as separate Obsidian vaults.
+Open both as separate Obsidian vaults. `k-wiki` can live anywhere on disk; every instruction in this guide is relative to the `k-wiki` root.
 
 Recommended ownership:
 
 | Area | Owner | LLM writes? |
 |---|---|---:|
 | `MyVault/` | Human | No |
-| `MyWiki/raw/` | Sync process | No |
-| `MyWiki/wiki/` | LLM | Yes |
-| `MyWiki/wiki/index.md` | LLM | Yes |
-| `MyWiki/wiki/log.md` | LLM | Append-only |
-| `MyWiki/AGENTS.md` | Human | Preferably no |
+| `k-wiki/raw/` | Sync process | No |
+| `k-wiki/wiki/` | LLM | Yes |
+| `k-wiki/wiki/index.md` | LLM | Yes |
+| `k-wiki/wiki/log.md` | LLM | Append-only |
+| `k-wiki/AGENTS.md` | Human | Preferably no |
 
 ---
 
@@ -137,15 +137,15 @@ MyVault/
     │
     │ deterministic sync
     ▼
-MyWiki/raw/
+k-wiki/raw/
     │
     │ LLM analysis
     ▼
-MyWiki/normalized/
+k-wiki/normalized/
     │
     │ LLM ingest
     ▼
-MyWiki/wiki/
+k-wiki/wiki/
 ```
 
 `normalized/` must also be derived data. Never use it to overwrite `MyVault/` automatically.
@@ -200,7 +200,7 @@ The wiki should **understand your source vault rather than require your source v
 ## 4. Create the Wiki Structure
 
 ```text
-MyWiki/
+k-wiki/
 ├── raw/
 │   └── notes/
 │
@@ -214,6 +214,7 @@ MyWiki/
 │
 ├── outputs/
 │
+├── making-of/            ← this guide
 ├── AGENTS.md
 └── .git/
 ```
@@ -227,7 +228,7 @@ The exact taxonomy can evolve. Start small.
 The synchronization pipeline is:
 
 ```text
-MyVault → MyWiki/raw → MyWiki/wiki
+MyVault → k-wiki/raw → k-wiki/wiki
 ```
 
 Never:
@@ -258,7 +259,7 @@ Find wiki:true notes
     ↓
 Compare hashes
     ↓
-Copy new/changed notes → MyWiki/raw/
+Copy new/changed notes → k-wiki/raw/
     ↓
 Detect deleted notes
     ↓
@@ -274,7 +275,7 @@ On macOS, `launchd` plus a small Python/Ruby script is a good implementation.
 Track hashes in something such as:
 
 ```text
-MyWiki/raw/manifest.json
+k-wiki/raw/manifest.json
 ```
 
 Example:
@@ -857,7 +858,7 @@ Start manually until the pipeline is reliable, then schedule it.
 
 ## 16. Git
 
-Initialize Git inside `MyWiki`.
+Initialize Git inside `k-wiki` (the repository root).
 
 Recommended workflow:
 
@@ -930,7 +931,7 @@ Do not let poor metadata alone reduce the confidence of otherwise well-supported
 
 ```text
 MyVault = truth
-MyWiki = derived representation
+k-wiki = derived representation
 ```
 
 ### The wiki is disposable
@@ -1030,7 +1031,7 @@ The complete system should eventually look like:
                            │
                            ▼
                   ┌─────────────────┐
-                  │  MyWiki/raw/    │
+                  │  k-wiki/raw/    │
                   │                 │
                   │ immutable input │
                   └────────┬────────┘
@@ -1039,7 +1040,7 @@ The complete system should eventually look like:
                            │
                            ▼
                   ┌─────────────────┐
-                  │  MyWiki/wiki/   │
+                  │  k-wiki/wiki/   │
                   │                 │
                   │ LLM-maintained  │
                   │ knowledge base  │
