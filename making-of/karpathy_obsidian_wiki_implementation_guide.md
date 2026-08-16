@@ -19,9 +19,11 @@ Human source                    Derived machine knowledge
                                 wiki/       ← LLM-owned knowledge
                                   ├── index.md
                                   ├── log.md
+                                  ├── overview.md
                                   ├── concepts/
                                   ├── entities/
                                   ├── sources/
+                                  ├── queries/
                                   └── comparisons/
 ```
 
@@ -38,15 +40,15 @@ The default path through this guide is the simplest topology: **one vault → on
 | Situation | Topology | Reading path |
 |---|---|---|
 | One vault, one knowledge domain | 1 vault → 1 wiki | Sections 2–22 as written (default) |
-| Several vaults, overlapping domains, cross-vault synthesis is the point | N vaults → 1 wiki | Simple path + Scenario A deltas (Section 23) |
-| Several vaults, disjoint domains, different audiences or privacy levels | N vaults → N wikis | One independent instance of the simple path each (Scenario B, Section 23) |
-| One vault, mixed public/private material | 1 vault → N wikis | Same selection mechanism, inverted (Scenario C, Section 23) |
+| Several vaults, overlapping domains, cross-vault synthesis is the point | N vaults → 1 wiki | Simple path + Scenario A deltas (Section 24) |
+| Several vaults, disjoint domains, different audiences or privacy levels | N vaults → N wikis | One independent instance of the simple path each (Scenario B, Section 24) |
+| One vault, mixed public/private material | 1 vault → N wikis | Same selection mechanism, inverted (Scenario C, Section 24) |
 
 Rules of thumb:
 
 - When in doubt, start with one vault → one wiki; it is the base case every other topology extends.
 - Two questions decide the rest: Must any audience be kept away from some material? → separate wiki instances. Do you need notes from different vaults on the same wiki page? → one wiki.
-- Topology is reversible: because `wiki/` is derived from `raw/`, you can merge or split later at the cost of re-ingestion only (Section 23).
+- Topology is reversible: because `wiki/` is derived from `raw/`, you can merge or split later at the cost of re-ingestion only (Section 24).
 
 ---
 
@@ -61,7 +63,7 @@ k-wiki/                 ← wiki root (this repository)
 
 Open both as separate Obsidian vaults. `k-wiki` can live anywhere on disk; every instruction in this guide is relative to the `k-wiki` root.
 
-One exception: a source vault that syncs via iCloud must live inside Obsidian's iCloud container, `~/Library/Mobile Documents/iCloud~md~obsidian/<VaultName>/`. Vault placement and transports are covered in Section 24.
+One exception: a source vault that syncs via iCloud must live inside Obsidian's iCloud container, `~/Library/Mobile Documents/iCloud~md~obsidian/<VaultName>/`. Vault placement and transports are covered in Section 25.
 
 Recommended ownership:
 
@@ -229,14 +231,16 @@ k-wiki/
 ├── wiki/
 │   ├── index.md
 │   ├── log.md
+│   ├── overview.md
 │   ├── concepts/
 │   ├── entities/
 │   ├── sources/
+│   ├── queries/
 │   └── comparisons/
 │
 ├── outputs/
 │
-├── sync.json            ← vault roots + publish target (Section 24)
+├── sync.json            ← vault roots + publish target (Section 25)
 ├── making-of/            ← this guide
 ├── AGENTS.md
 └── .git/
@@ -312,7 +316,7 @@ Example:
 }
 ```
 
-Syncing multiple vaults into one wiki? The manifest generalizes to a per-vault structure — see Section 23.
+Syncing multiple vaults into one wiki? The manifest generalizes to a per-vault structure — see Section 24.
 
 Keep **sync** and **ingest** as separate commands:
 
@@ -329,7 +333,7 @@ wiki-sync
 
 This separation is important.
 
-For vault placement, the sync configuration file, multi-device workflows, and publishing the wiki to phones and tablets, see Section 24.
+For vault placement, the sync configuration file, multi-device workflows, and publishing the wiki to phones and tablets, see Section 25.
 
 ---
 
@@ -344,6 +348,7 @@ Start with these page types:
 - `source`
 - `comparison`
 - `topic`
+- `query`
 
 ### Required wiki frontmatter
 
@@ -407,7 +412,7 @@ status: active
 ---
 ```
 
-Optional in multi-vault setups: `vault: <name>` records which source vault a source page originated from (Section 23).
+Optional in multi-vault setups: `vault: <name>` records which source vault a source page originated from (Section 24).
 
 #### Derived concept pages
 
@@ -436,6 +441,31 @@ tags:
 related:
   - "[[quantization]]"
   - "[[kv-cache]]"
+
+confidence: high
+status: active
+---
+```
+
+#### Filed query pages
+
+Valuable answers are filed under `queries/` so they compound instead of disappearing into chat history:
+
+```yaml
+---
+title: "RAG vs Fine-Tuning"
+type: query
+question: "When should I prefer RAG over fine-tuning?"
+
+created: 2026-08-16
+updated: 2026-08-16
+
+sources:
+  - "[[GPU Memory Math for LLMs (2026 Edition)]]"
+
+related:
+  - "[[retrieval-augmented-generation]]"
+  - "[[fine-tuning]]"
 
 confidence: high
 status: active
@@ -485,11 +515,11 @@ Put these in the Markdown body:
 
 1. Every substantive claim should be traceable to source material.
 2. Never invent facts to fill gaps.
-3. Preserve contradictions instead of silently choosing one.
-4. Link related wiki pages.
-5. Prefer updating existing pages over creating duplicates.
+3. Preserve contradictions instead of silently choosing one; mark them with a `> **CONTRADICTION**` callout.
+4. Link related wiki pages; every page must link to at least two.
+5. Prefer updating existing pages over creating duplicates; give a concept or entity its own page only once it appears in more than one source.
 6. Keep pages concise and information-dense.
-7. Record uncertainty explicitly.
+7. Record uncertainty explicitly; mark open questions with a `> **OPEN QUESTION**` callout.
 8. Use canonical wiki tags rather than copying inconsistent source tags.
 9. Use `sources` for provenance; use `source` for a source page's external origin.
 10. Use `status: needs-review` when important information is uncertain or contradictory.
@@ -500,7 +530,7 @@ Put these in the Markdown body:
 
 Use this as the starting system/instruction file for the wiki agent. It consolidates all agent rules, including the source-metadata rules from Section 4.
 
-For multi-vault wikis, also append the addendum in Section 23 (Scenario A).
+For multi-vault wikis, also append the addendum in Section 24 (Scenario A).
 
 ```markdown
 # Karpathy Wiki Instructions
@@ -519,6 +549,7 @@ The human-owned source vault is outside this repository and is authoritative.
 - `raw/` is immutable input.
 - You may create and modify files under `wiki/`.
 - `index.md` must remain current.
+- `overview.md` must reflect the current synthesis.
 - `log.md` is append-only.
 
 ## Source of Truth
@@ -556,8 +587,12 @@ For every new or changed source:
 6. Add source attribution.
 7. Add/update cross-links.
 8. Update `index.md`.
-9. Append a concise entry to `log.md`.
-10. Check for contradictions, duplicates, orphan pages, and unsupported claims.
+9. Revise `overview.md` when the overall picture changes.
+10. Append a concise entry to `log.md`.
+11. Check for contradictions, duplicates, orphan pages, and unsupported claims.
+
+Create a new concept or entity page only when the term appears in more than
+one source or is clearly central; avoid stub pages.
 
 Do not rewrite unrelated pages.
 
@@ -578,9 +613,13 @@ Avoid:
 - generic filler;
 - summaries that add no value over the source.
 
+Every page must link to at least two related pages.
+Mark open questions with a `> **OPEN QUESTION**` callout and preserved
+contradictions with a `> **CONTRADICTION**` callout.
+
 ## Naming
 
-Use lowercase kebab-case filenames for concepts and comparisons.
+Use lowercase kebab-case filenames for concepts, comparisons, and queries.
 
 Examples:
 
@@ -632,11 +671,33 @@ Do not modify source-vault metadata to make it conform to wiki metadata.
 
 Update it whenever meaningful pages are created, renamed, or removed.
 
+## Overview
+
+`wiki/overview.md` is the short, evolving synthesis across all ingested material.
+
+Revise it when new sources change the overall picture. Keep it brief; details
+live on the individual pages.
+
 ## Log
 
 `wiki/log.md` records meaningful ingestion operations.
 
 Keep entries short and factual.
+
+Start every entry with `## [YYYY-MM-DD] <operation> | <title>` so the log stays
+parseable with standard tools.
+
+## Queries
+
+Answer questions against the wiki, not against `raw/` directly:
+
+1. Read `index.md` to find relevant pages.
+2. Read those pages; consult `overview.md` for broad questions.
+3. Synthesize the answer with wikilink citations.
+4. If the answer is novel and valuable, file it under `queries/` with
+   `type: query` frontmatter, then update `index.md` and `log.md`.
+
+If the wiki cannot answer a question, say so and suggest sources to ingest.
 
 ## Contradictions
 
@@ -648,6 +709,9 @@ If sources disagree:
 - explain the disagreement briefly;
 - lower confidence when appropriate.
 
+Mark each preserved contradiction in the page body with a
+`> **CONTRADICTION**` callout.
+
 ## Regeneration
 
 The wiki is derived data.
@@ -657,6 +721,10 @@ It must always be possible, in principle, to delete `wiki/` and regenerate it fr
 
 Do not make the wiki depend on information that exists only in generated pages
 unless that information is explicitly treated as a derived conclusion.
+
+Exception: filed queries and human corrections form an accreted layer that
+exists only in the wiki. Deleting `wiki/` loses that layer; git history is
+its record.
 
 ## Final Principle
 
@@ -686,6 +754,10 @@ Never reverse these responsibilities.
 
 <!-- Add source pages here -->
 
+## Queries
+
+<!-- Add filed query answers here -->
+
 ## Comparisons
 
 <!-- Add comparison pages here -->
@@ -704,12 +776,12 @@ The agent should maintain this.
 
 Keep it append-only.
 
+Every entry starts with `## [YYYY-MM-DD] <operation> | <title>`, which keeps the log parseable: `grep "^## \[" wiki/log.md | tail -5` lists the last five operations.
+
 Example entry:
 
 ```markdown
-## 2026-08-16
-
-### Ingest
+## [2026-08-16] ingest | RAG notes
 
 Source: `raw/notes/AI/RAG.md`
 
@@ -749,7 +821,8 @@ For each changed source:
 8. Preserve contradictions and uncertainty.
 9. Do not invent facts.
 10. Update index.md.
-11. Append a concise operation summary to log.md.
+11. Revise overview.md if the source changes the overall picture.
+12. Append a concise operation summary to log.md.
 
 Do not modify raw/.
 Do not modify the original source vault.
@@ -785,7 +858,7 @@ Make the smallest set of changes necessary.
 
 Do not regenerate unrelated pages.
 
-Update index.md and log.md.
+Update index.md, revise overview.md if the overall picture changed, and append to log.md.
 ```
 
 ---
@@ -823,7 +896,32 @@ The resulting wiki must be understandable without reading every raw source.
 
 ---
 
-## 15. Lint Prompt
+## 15. Query Prompt
+
+Use this when asking questions against the wiki:
+
+```text
+You are answering questions against a structured knowledge wiki.
+
+1. Read wiki/index.md and identify the relevant pages.
+2. Read those pages. Consult wiki/overview.md for broad questions.
+3. Synthesize an answer, citing pages with wikilinks.
+4. If the wiki cannot answer the question, say so and suggest which sources to ingest next.
+5. If the answer is novel and valuable, offer to file it:
+   - create wiki/queries/<kebab-name>.md with type: query frontmatter;
+   - record the question and the answer;
+   - link the pages and sources used;
+   - update index.md and append to log.md.
+
+Do not modify raw/.
+Do not invent facts beyond what wiki/ and raw/ support.
+```
+
+Filed answers are how questions compound into knowledge: the next time the question arises, the wiki already contains the answer.
+
+---
+
+## 16. Lint Prompt
 
 Run after ingestion:
 
@@ -852,12 +950,14 @@ Do not make speculative corrections.
 Fix clear mechanical problems automatically.
 Report ambiguous problems instead of guessing.
 
+Save the report to `outputs/lint-<YYYY-MM-DD>.md`.
+
 Append significant findings to log.md.
 ```
 
 ---
 
-## 16. Recommended Automation
+## 17. Recommended Automation
 
 Eventually make one command perform:
 
@@ -885,11 +985,20 @@ Suggested schedule:
 
 Start manually until the pipeline is reliable, then schedule it.
 
+### Ingest modes
+
+Two modes are planned for `wiki-ingest`:
+
+- **Autonomous** — scheduled, unsupervised; reviewed afterwards via the git diff.
+- **Interactive** — human-in-the-loop; the agent discusses takeaways and emphasis before writing pages.
+
+Start with autonomous mode. Its safety mechanism is reviewing the git diff after every run. Add the interactive mode later as a flag (`wiki-ingest --interactive`) for framing-sensitive sources that need supervision.
+
 ---
 
-## 17. Git
+## 18. Git
 
-Initialize Git inside `k-wiki` (the repository root). Keep the checkout in a plain local folder — never inside a cloud-synced folder — and share it between Macs through a private remote (Section 24).
+Initialize Git inside `k-wiki` (the repository root). Keep the checkout in a plain local folder — never inside a cloud-synced folder — and share it between Macs through a private remote (Section 25).
 
 Recommended workflow:
 
@@ -912,7 +1021,7 @@ Never put secrets or private source material into a remote repository unless you
 
 ---
 
-## 18. Retrieval
+## 19. Retrieval
 
 Do **not** start with a vector database.
 
@@ -934,7 +1043,7 @@ QMD or another hybrid BM25/vector/reranking solution can be added later.
 
 ---
 
-## 19. Source Quality
+## 20. Source Quality
 
 During ingestion, the LLM should distinguish **content quality** from **metadata quality**.
 
@@ -956,7 +1065,7 @@ Do not let poor metadata alone reduce the confidence of otherwise well-supported
 
 ---
 
-## 20. Important Design Principles
+## 21. Important Design Principles
 
 ### Human source is authoritative
 
@@ -1004,7 +1113,7 @@ Only update pages affected by new/changed information.
 
 ---
 
-## 21. Recommended First Implementation
+## 22. Recommended First Implementation
 
 Do not implement the whole system at once.
 
@@ -1021,6 +1130,7 @@ Build this vertical slice first:
 8. Update log.md.
 9. Run lint, including frontmatter/tag validation.
 10. Inspect git diff.
+11. Ask a question and file a valuable answer under `queries/`.
 ```
 
 Then test:
@@ -1043,7 +1153,7 @@ Only after this works reliably should you automate the schedule.
 
 ---
 
-## 22. Final Architecture
+## 23. Final Architecture
 
 The complete system should eventually look like:
 
@@ -1107,7 +1217,7 @@ Never let that direction reverse.
 
 ---
 
-## 23. Scaling to Multiple Vaults and Multiple Wikis
+## 24. Scaling to Multiple Vaults and Multiple Wikis
 
 All topologies share one seam: the deterministic sync layer. `raw/` is a projection of selected notes, not a vault mirror, so everything downstream of sync is vault-agnostic. The default path (one vault → one wiki) needs none of what follows.
 
@@ -1190,7 +1300,7 @@ The cost is re-ingestion compute, never information loss. The one exception is p
 
 ---
 
-## 24. Devices and Sync
+## 25. Devices and Sync
 
 Sources get edited on every device; the wiki gets built on one Mac; the reading copy is wanted everywhere. These are two independent sync problems:
 
@@ -1271,6 +1381,22 @@ Never run two transports on the same mirror vault. Publishing two independent mi
 5. Skip `.obsidian/`, `.trash/`, and `.DS_Store` when scanning.
 6. iOS/iPadOS devices consume only; the pipeline runs on the Mac.
 7. Near-real-time is bounded by pipeline cadence, not transport: schedule every 15–60 minutes, or trigger on file events (e.g. `fswatch` on the source vault).
+
+---
+
+## 26. Future Options
+
+Ideas deliberately **not pursued now**. Each has a clear trigger for reconsideration:
+
+| Option | What it adds | Reconsider when |
+|---|---|---|
+| `qmd` hybrid search (BM25 + vector + re-rank) | Search beyond index-first navigation (Section 19) | The wiki passes ~100 sources, index-based lookup degrades, or the wiki approaches the context-window degradation region |
+| Dataview plugin | Dynamic tables over frontmatter — e.g. all low-confidence or stale pages at a glance | Dashboards over `confidence`, `status`, and canonical tags are wanted |
+| Obsidian Web Clipper + local images | One-click web articles into the source vault; images downloaded locally so the LLM can view them | Web articles become a primary source type |
+| Marp | Slide decks generated from wiki pages | Presentations are needed from wiki material |
+| LLM Wiki v2 extensions | Supersession tracking, retention decay, typed relationships, consolidation tiers | The wiki exceeds ~200 pages |
+
+None of these require architectural changes today; the schema and pipeline accommodate them later.
 
 ---
 
