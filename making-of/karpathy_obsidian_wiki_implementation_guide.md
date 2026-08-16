@@ -61,6 +61,8 @@ k-wiki/                 ← wiki root (this repository)
 
 Open both as separate Obsidian vaults. `k-wiki` can live anywhere on disk; every instruction in this guide is relative to the `k-wiki` root.
 
+One exception: a source vault that syncs via iCloud must live inside Obsidian's iCloud container, `~/Library/Mobile Documents/iCloud~md~obsidian/<VaultName>/`. Vault placement and transports are covered in Section 24.
+
 Recommended ownership:
 
 | Area | Owner | LLM writes? |
@@ -71,6 +73,7 @@ Recommended ownership:
 | `k-wiki/wiki/index.md` | LLM | Yes |
 | `k-wiki/wiki/log.md` | LLM | Append-only |
 | `k-wiki/AGENTS.md` | Human | Preferably no |
+| `k-wiki/sync.json` | Human | No |
 
 ---
 
@@ -233,6 +236,7 @@ k-wiki/
 │
 ├── outputs/
 │
+├── sync.json            ← vault roots + publish target (Section 24)
 ├── making-of/            ← this guide
 ├── AGENTS.md
 └── .git/
@@ -324,6 +328,8 @@ wiki-sync
 ```
 
 This separation is important.
+
+For vault placement, the sync configuration file, multi-device workflows, and publishing the wiki to phones and tablets, see Section 24.
 
 ---
 
@@ -883,7 +889,7 @@ Start manually until the pipeline is reliable, then schedule it.
 
 ## 17. Git
 
-Initialize Git inside `k-wiki` (the repository root).
+Initialize Git inside `k-wiki` (the repository root). Keep the checkout in a plain local folder — never inside a cloud-synced folder — and share it between Macs through a private remote (Section 24).
 
 Recommended workflow:
 
@@ -1184,8 +1190,93 @@ The cost is re-ingestion compute, never information loss. The one exception is p
 
 ---
 
+## 24. Devices and Sync
+
+Sources get edited on every device; the wiki gets built on one Mac; the reading copy is wanted everywhere. These are two independent sync problems:
+
+```text
+R: repo sync   k-wiki itself between Macs           → git remote
+W: wiki sync   reading copy on phones/tablets/Macs → mirror vault
+```
+
+### Three artifacts, three homes
+
+| Artifact | Home | Rule |
+|---|---|---|
+| Source vaults | Wherever their sync method keeps them (iCloud: `~/Library/Mobile Documents/iCloud~md~obsidian/<VaultName>/`) | Transport constraint |
+| `k-wiki` repo | A plain local folder, e.g. `~/Lab/k-wiki/` | `.git` must never live in service-synced storage |
+| Mirror vault (optional) | Inside the chosen transport's folder, e.g. `…/iCloud~md~obsidian/KWiki/` | Disposable derived reading copy |
+
+Never place the `k-wiki` checkout inside iCloud, Dropbox, or any synced folder: sync services race with git writes and corrupt repositories, and Obsidian's own guidance says never sync one vault through two services. The repo moves between machines only via `git push`/`git pull`. Scenario B/C instances follow the same rule — one checkout each, plain local folders.
+
+### Sync configuration (`sync.json`)
+
+All placement knowledge lives in one human-owned file at the `k-wiki` root:
+
+```json
+{
+  "vaults": [
+    { "name": "Documents",
+      "root": "~/Library/Mobile Documents/iCloud~md~obsidian/Documents",
+      "select": "wiki:true" }
+  ],
+  "publish": {
+    "mirror": "~/Library/Mobile Documents/iCloud~md~obsidian/KWiki",
+    "include": ["wiki/**"]
+  }
+}
+```
+
+- `sync.json` is configuration (what to sync, where to publish); `raw/manifest.json` is state (what has already been synced).
+- The vault `name` is the `raw/notes/<name>/` namespace key and must match the vault folder name.
+- `~` paths are username-independent, so one config works on every Mac.
+- Transport is a config value: moving a vault from iCloud to Obsidian Sync, Syncthing, or a plain folder means updating one `root` line. Namespaces, manifests, and wiki history are untouched.
+
+### Publish the mirror
+
+Append one step to `wiki-sync`:
+
+```text
+sync → ingest → lint → publish (copy wiki/ → mirror vault) → git commit
+```
+
+The mirror is derived data, like the wiki itself: if the transport ever mangles it, re-copying heals it. Devices only read the mirror; edits belong upstream in the source vault.
+
+### Choose the mirror transport
+
+On iPhone/iPad, only iCloud and Obsidian Sync are officially supported vault transports (see References).
+
+| Transport | iPhone/iPad | macOS | Other OSes | Notes |
+|---|---|---|---|---|
+| iCloud | ✅ | ✅ | Web only | Default for all-Apple fleets; free |
+| Obsidian Sync | ✅ | ✅ | ✅ Win/Linux/Android | Switch here when non-Apple devices arrive; E2E-encrypted, version history |
+| Syncthing | ❌ | ✅ | ✅ | No iOS support |
+| Git + Working Copy | ⚠️ | ✅ | ✅ | Manual push/pull on iOS |
+| Static web publish | ✅ browser | ✅ | ✅ | Complement, not replacement |
+
+Never run two transports on the same mirror vault. Publishing two independent mirrors, each with exactly one service, is fine.
+
+### Multiple Macs
+
+1. Give each Mac its own checkout in the same plain location (e.g. `~/Lab/k-wiki/`) connected to one private git remote.
+2. Exactly one Mac runs the scheduled pipeline; the others pull read-only.
+3. The repo travels only via git — never by placing a checkout in a synced folder.
+
+### Operating rules
+
+1. One vault, one sync method — never point two services at the same vault.
+2. Sources must be locally present at sync time: keep the iCloud container **Keep Downloaded** (macOS 15+) or disable **Optimize Mac Storage** (macOS ≤14).
+3. Tolerate transport lag; do not solve it. Manifests make sync idempotent — a note still in flight lands on the next run.
+4. Vault renames are pipeline events: folder name = vault name = namespace key. Update `sync.json` and re-sync deliberately.
+5. Skip `.obsidian/`, `.trash/`, and `.DS_Store` when scanning.
+6. iOS/iPadOS devices consume only; the pipeline runs on the Mac.
+7. Near-real-time is bounded by pipeline cadence, not transport: schedule every 15–60 minutes, or trigger on file events (e.g. `fswatch` on the source vault).
+
+---
+
 ## References
 
 - [Original Post by Andrej Karpathy on the LLM Wiki Patterns](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)
 - [How to Build Karpathy's LLM Wiki: The Complete Guide to AI-Maintained Knowledge Bases](https://blog.starmorph.com/blog/karpathy-llm-wiki-knowledge-base-guide)
 - [Andrej Karpathy’s LLM Wiki: Full Breakdown and How to Build Your Own](https://nandigamharikrishna.substack.com/p/andrej-karpathys-llm-wiki-full-breakdown)
+- [Sync your notes across devices — Obsidian Help](https://help.obsidian.md/sync-notes)
