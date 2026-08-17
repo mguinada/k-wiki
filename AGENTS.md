@@ -74,6 +74,14 @@ and on pushes to branches other than `main`.
 - Generated data (`raw/`, `tests/fixtures/Documents/`) is never edited or
   formatted by hand; it is excluded from Biome.
 
+### Function-body line breaks
+
+- Put a blank line between statements when the procedure type changes:
+  assignment, decision, iteration, return.
+- Use the blank line to mark a slight change of context inside the
+  function. A blank line does not block extraction: when a step needs
+  a name, a test, or reuse, extract it into a helper function.
+
 ### Unit tests
 
 - Put exactly one expectation in each `it` block.

@@ -147,25 +147,31 @@ export function fixtureFilePaths(): string[] {
  */
 export async function generateFixtureVault(targetDir: string): Promise<string> {
 	const vaultRoot = join(targetDir, VAULT_NAME);
+
 	for (const file of FILES) {
 		const absolute = join(vaultRoot, ...file.path.split("/"));
 		await mkdir(dirname(absolute), { recursive: true });
 		await writeFile(absolute, file.content);
 	}
+
 	return vaultRoot;
 }
 
 async function main(): Promise<void> {
 	const targetDir = process.argv[2];
+
 	if (targetDir === undefined) {
 		console.error("Usage: npm run fixtures -- <target-dir>");
 		process.exitCode = 1;
 		return;
 	}
+
 	const vaultRoot = await generateFixtureVault(targetDir);
+
 	for (const path of fixtureFilePaths()) {
 		console.log(`${VAULT_NAME}/${path}`);
 	}
+
 	console.log(`Fixture vault written to ${vaultRoot}`);
 }
 

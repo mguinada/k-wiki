@@ -23,7 +23,9 @@ afterAll(async () => {
 
 async function makeTempDir(): Promise<string> {
 	const dir = await mkdtemp(join(tmpdir(), "k-wiki-fixtures-"));
+
 	tempDirs.push(dir);
+
 	return dir;
 }
 
@@ -40,23 +42,28 @@ async function readNote(vaultRoot: string, relPath: string): Promise<string> {
 async function collectFiles(root: string, prefix = ""): Promise<string[]> {
 	const entries = await readdir(root, { withFileTypes: true });
 	const files: string[] = [];
+
 	for (const entry of entries) {
 		const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
+
 		if (entry.isDirectory()) {
 			files.push(...(await collectFiles(join(root, entry.name), rel)));
 		} else if (entry.isFile()) {
 			files.push(rel);
 		}
 	}
+
 	return files.sort();
 }
 
 /** Map every file under root to its bytes, keyed by relative path. */
 async function readTree(root: string): Promise<Record<string, Uint8Array>> {
 	const tree: Record<string, Uint8Array> = {};
+
 	for (const rel of await collectFiles(root)) {
 		tree[rel] = await readFile(join(root, ...rel.split("/")));
 	}
+
 	return tree;
 }
 
@@ -71,6 +78,7 @@ async function expectFrontmatterLine(
 	line: string,
 ): Promise<void> {
 	const escaped = line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 	expect(await readNote(vaultRoot, relPath)).toMatch(
 		new RegExp(`^---\\n(?:[^\\n]*\\n)*?${escaped}\\n(?:[^\\n]*\\n)*?---\\n`),
 	);
@@ -157,6 +165,7 @@ describe("fixture vault generator", () => {
 		const appJson = JSON.parse(
 			await readNote(await newVault(), ".obsidian/app.json"),
 		);
+
 		expect(appJson).toBeTypeOf("object");
 	});
 
@@ -170,14 +179,17 @@ describe("fixture vault generator", () => {
 
 	it("plants a non-empty .DS_Store", async () => {
 		const dsStore = await readFile(join(await newVault(), ".DS_Store"));
+
 		expect(dsStore.length).toBeGreaterThan(0);
 	});
 
 	it("generates byte-identical trees on repeated runs", async () => {
 		const first = await makeTempDir();
 		const second = await makeTempDir();
+
 		await generateFixtureVault(first);
 		await generateFixtureVault(second);
+
 		expect(await readTree(join(first, VAULT_NAME))).toEqual(
 			await readTree(join(second, VAULT_NAME)),
 		);
@@ -185,7 +197,9 @@ describe("fixture vault generator", () => {
 
 	it("matches the committed snapshot under tests/fixtures", async () => {
 		const target = await makeTempDir();
+
 		await generateFixtureVault(target);
+
 		expect(await readTree(join(target, VAULT_NAME))).toEqual(
 			await readTree(snapshotVaultRoot),
 		);
