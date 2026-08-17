@@ -2,10 +2,11 @@ import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import {
 	fixtureFilePaths,
 	generateFixtureVault,
+	main,
 	VAULT_NAME,
 } from "../src/fixtures/generate.ts";
 
@@ -33,6 +34,43 @@ async function makeTempDir(): Promise<string> {
 async function newVault(): Promise<string> {
 	return generateFixtureVault(await makeTempDir());
 }
+
+/**
+ * Run the CLI main() with a stubbed argv and captured console output.
+ * Restores argv, console, and exit code around the call.
+ */
+async function runCli(argv2: string | undefined): Promise<string> {
+	const argv = process.argv;
+	const output: string[] = [];
+
+	process.exitCode = undefined;
+	process.argv = [
+		argv[0],
+		argv[1],
+		...(argv2 === undefined ? [] : [argv2]),
+	];
+
+	const logSpy = vi
+		.spyOn(console, "log")
+		.mockImplementation((...args) => output.push(args.join(" ")));
+	const errorSpy = vi
+		.spyOn(console, "error")
+		.mockImplementation((...args) => output.push(args.join(" ")));
+
+	try {
+		await main();
+	} finally {
+		process.argv = argv;
+		logSpy.mockRestore();
+		errorSpy.mockRestore();
+	}
+
+	return output.join("\n");
+}
+
+afterEach(() => {
+	process.exitCode = undefined;
+});
 
 async function readNote(vaultRoot: string, relPath: string): Promise<string> {
 	return readFile(join(vaultRoot, ...relPath.split("/")), "utf8");
@@ -202,6 +240,38 @@ describe("fixture vault generator", () => {
 
 		expect(await readTree(join(target, VAULT_NAME))).toEqual(
 			await readTree(snapshotVaultRoot),
+		);
+	});
+});
+
+describe("fixture vault CLI", () => {
+	it("exits with an error code when the target dir argument is missing", async () => {
+		await runCli(undefined);
+
+		expect(process.exitCode).toBe(1);
+	});
+
+	it("prints the usage message when the target dir argument is missing", async () => {
+		expect(await runCli(undefined)).toContain(
+			"Usage: npm run fixtures -- <target-dir>",
+		);
+	});
+
+	it("writes the fixture vault when run with a target dir", async () => {
+		const target = await makeTempDir();
+
+		await runCli(target);
+
+		expect(await collectFiles(join(target, VAULT_NAME))).toEqual(
+			fixtureFilePaths(),
+		);
+	});
+
+	it("prints the vault root when run with a target dir", async () => {
+		const target = await makeTempDir();
+
+		expect(await runCli(target)).toContain(
+			`Fixture vault written to ${join(target, VAULT_NAME)}`,
 		);
 	});
 });

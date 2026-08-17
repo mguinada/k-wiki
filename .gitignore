@@ -9,3 +9,4 @@
 .agents/skills/do-gh-issue-workspace/
 .codegraph/
 node_modules/
+coverage/

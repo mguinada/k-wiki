@@ -157,7 +157,7 @@ export async function generateFixtureVault(targetDir: string): Promise<string> {
 	return vaultRoot;
 }
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
 	const targetDir = process.argv[2];
 
 	if (targetDir === undefined) {
@@ -175,10 +175,13 @@ async function main(): Promise<void> {
 	console.log(`Fixture vault written to ${vaultRoot}`);
 }
 
+/* v8 ignore next: import guard — distinguishes direct execution from
+   import; not exercisable in-process by construction */
 const isMain =
 	process.argv[1] !== undefined &&
 	import.meta.url === pathToFileURL(process.argv[1]).href;
 
+/* v8 ignore next: covered only under `node src/fixtures/generate.ts` */
 if (isMain) {
 	await main();
 }

@@ -59,12 +59,15 @@ until all three pass. Run them before every handoff.
 - `npm run typecheck` — type check (`tsc --noEmit`).
 - `npm run lint` — lint and format verification (`biome check .`).
 - `npm test` — unit tests (`vitest run`).
+- `npm run test:coverage` — unit tests with coverage; the run fails
+  below the 90% thresholds in `vitest.config.ts`.
 
 `npm run format` (`biome format --write .`) is the fix command for
 formatting differences reported by `npm run lint`; it is not a gate.
 
-CI (`.github/workflows/ci.yml`) runs the three gates on every pull
-request; the run tests the PR's merge commit against `main`.
+CI (`.github/workflows/ci.yml`) runs the gates on every pull request;
+the run tests the PR's merge commit against `main`, and the test job
+enforces the 90% coverage floor.
 
 ### TypeScript and Node
 

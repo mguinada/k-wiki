@@ -46,12 +46,13 @@ sources directly, so there is no build step — install dependencies with
 | `npm run lint` | Biome | Lint and verify formatting across the repo |
 | `npm run format` | Biome | Rewrite files to the canonical format — the fix command for lint findings, not a gate |
 | `npm test` | vitest | Run the unit test suite |
+| `npm run test:coverage` | vitest | Run the unit tests and fail below the 90% coverage thresholds — what CI runs |
 | `npm run fixtures -- <dir>` | fixture generator | Write the synthetic Obsidian test vault to `<dir>/Documents` |
 
 Type check, lint, and unit tests are quality gates: every change passes
 them before it is done. CI (`.github/workflows/ci.yml`) enforces the same
-three gates on every pull request, testing each PR's merge commit against
-`main`.
+gates on every pull request, testing each PR's merge commit against
+`main`, with a 90% coverage floor on unit tests.
 
 The fixture generator produces a deterministic fake vault — fixed bytes,
 no timestamps — covering every case the sync layer must handle (selected,
