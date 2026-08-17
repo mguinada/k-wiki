@@ -27,6 +27,15 @@ async function makeTempDir(): Promise<string> {
 	return dir;
 }
 
+/** Generate a fresh fixture vault in a temp dir and return its root. */
+async function newVault(): Promise<string> {
+	return generateFixtureVault(await makeTempDir());
+}
+
+async function readNote(vaultRoot: string, relPath: string): Promise<string> {
+	return readFile(join(vaultRoot, ...relPath.split("/")), "utf8");
+}
+
 /** Recursively collect POSIX-style relative file paths under root. */
 async function collectFiles(root: string, prefix = ""): Promise<string[]> {
 	const entries = await readdir(root, { withFileTypes: true });
@@ -42,56 +51,46 @@ async function collectFiles(root: string, prefix = ""): Promise<string[]> {
 	return files.sort();
 }
 
-/** Assert two trees have the same relative paths and byte-identical files. */
-async function expectTreesEqual(
-	actualRoot: string,
-	expectedRoot: string,
-): Promise<void> {
-	const [actual, expected] = await Promise.all([
-		collectFiles(actualRoot),
-		collectFiles(expectedRoot),
-	]);
-	expect(actual).toEqual(expected);
-	for (const rel of actual) {
-		const [actualBytes, expectedBytes] = await Promise.all([
-			readFile(join(actualRoot, ...rel.split("/"))),
-			readFile(join(expectedRoot, ...rel.split("/"))),
-		]);
-		expect(actualBytes.equals(expectedBytes), `file differs: ${rel}`).toBe(
-			true,
-		);
+/** Map every file under root to its bytes, keyed by relative path. */
+async function readTree(root: string): Promise<Record<string, Uint8Array>> {
+	const tree: Record<string, Uint8Array> = {};
+	for (const rel of await collectFiles(root)) {
+		tree[rel] = await readFile(join(root, ...rel.split("/")));
 	}
+	return tree;
 }
 
-/** Assert a note's frontmatter block contains the given key: value line. */
-async function expectFrontmatter(
+/**
+ * Assert a note opens with a frontmatter block that contains the exact
+ * line, before the closing delimiter. One expectation: the whole note
+ * text must match the frontmatter-with-line pattern.
+ */
+async function expectFrontmatterLine(
 	vaultRoot: string,
 	relPath: string,
 	line: string,
 ): Promise<void> {
-	const text = await readFile(join(vaultRoot, ...relPath.split("/")), "utf8");
-	expect(text.startsWith("---\n"), `${relPath} has frontmatter`).toBe(true);
-	const end = text.indexOf("\n---\n", 4);
-	expect(end, `${relPath} closes its frontmatter`).toBeGreaterThan(0);
-	const frontmatter = text.slice(4, end);
-	expect(frontmatter, `${relPath} frontmatter contains "${line}"`).toContain(
-		line,
+	const escaped = line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	expect(await readNote(vaultRoot, relPath)).toMatch(
+		new RegExp(`^---\\n(?:[^\\n]*\\n)*?${escaped}\\n(?:[^\\n]*\\n)*?---\\n`),
 	);
 }
 
 describe("fixture vault generator", () => {
-	it("writes the vault under a target dir named like the real vault", async () => {
+	it("writes the vault at <target>/Documents", async () => {
 		const target = await makeTempDir();
-		const vaultRoot = await generateFixtureVault(target);
-		expect(vaultRoot).toBe(join(target, VAULT_NAME));
-		const vaultStat = await stat(vaultRoot);
-		expect(vaultStat.isDirectory()).toBe(true);
+		expect(await generateFixtureVault(target)).toBe(join(target, VAULT_NAME));
 	});
 
-	it("creates exactly the planned case matrix of files", async () => {
-		const target = await makeTempDir();
-		const vaultRoot = await generateFixtureVault(target);
-		expect(await collectFiles(vaultRoot)).toEqual(fixtureFilePaths());
+	it("creates the vault root as a directory", async () => {
+		expect((await stat(await newVault())).isDirectory()).toBe(true);
+	});
+
+	it("writes exactly the declared fixture file set to disk", async () => {
+		expect(await collectFiles(await newVault())).toEqual(fixtureFilePaths());
+	});
+
+	it("declares the full case matrix of files", () => {
 		expect(fixtureFilePaths()).toEqual([
 			".DS_Store",
 			".obsidian/app.json",
@@ -105,74 +104,90 @@ describe("fixture vault generator", () => {
 		]);
 	});
 
-	it("selects two wiki:true notes at different nesting depths", async () => {
-		const target = await makeTempDir();
-		const vaultRoot = await generateFixtureVault(target);
-		await expectFrontmatter(vaultRoot, "AI/RAG.md", "wiki: true");
-		await expectFrontmatter(
-			vaultRoot,
+	it("selects AI/RAG.md with wiki:true", async () => {
+		await expectFrontmatterLine(await newVault(), "AI/RAG.md", "wiki: true");
+	});
+
+	it("selects AI/llms/attention-is-all-you-need.md with wiki:true", async () => {
+		await expectFrontmatterLine(
+			await newVault(),
 			"AI/llms/attention-is-all-you-need.md",
 			"wiki: true",
 		);
+	});
+
+	it("selects the two wiki:true notes at different nesting depths", () => {
 		const depth = (rel: string) => rel.split("/").length - 1;
 		expect(depth("AI/RAG.md")).not.toBe(
 			depth("AI/llms/attention-is-all-you-need.md"),
 		);
 	});
 
-	it("seeds the hash-change and removal case notes with wiki:true", async () => {
-		const target = await makeTempDir();
-		const vaultRoot = await generateFixtureVault(target);
-		await expectFrontmatter(
-			vaultRoot,
+	it("seeds the hash-change case AI/rag-evaluation-notes.md with wiki:true", async () => {
+		await expectFrontmatterLine(
+			await newVault(),
 			"AI/rag-evaluation-notes.md",
 			"wiki: true",
 		);
-		await expectFrontmatter(
-			vaultRoot,
+	});
+
+	it("seeds the removal case Scratch/temp-research.md with wiki:true", async () => {
+		await expectFrontmatterLine(
+			await newVault(),
 			"Scratch/temp-research.md",
 			"wiki: true",
 		);
 	});
 
-	it("excludes one note with wiki:false and one without frontmatter", async () => {
-		const target = await makeTempDir();
-		const vaultRoot = await generateFixtureVault(target);
-		await expectFrontmatter(
-			vaultRoot,
+	it("excludes Projects/house-renovation.md with wiki:false", async () => {
+		await expectFrontmatterLine(
+			await newVault(),
 			"Projects/house-renovation.md",
 			"wiki: false",
 		);
-		const noFrontmatter = await readFile(
-			join(vaultRoot, "Inbox/parking-lot.md"),
-			"utf8",
-		);
-		expect(noFrontmatter.startsWith("---")).toBe(false);
 	});
 
-	it("plants noise that sync must skip", async () => {
-		const target = await makeTempDir();
-		const vaultRoot = await generateFixtureVault(target);
+	it("excludes Inbox/parking-lot.md which has no frontmatter", async () => {
+		expect(
+			await readNote(await newVault(), "Inbox/parking-lot.md"),
+		).not.toMatch(/^---/);
+	});
+
+	it("plants parseable JSON settings at .obsidian/app.json", async () => {
 		const appJson = JSON.parse(
-			await readFile(join(vaultRoot, ".obsidian/app.json"), "utf8"),
+			await readNote(await newVault(), ".obsidian/app.json"),
 		);
 		expect(appJson).toBeTypeOf("object");
-		await expectFrontmatter(vaultRoot, ".trash/deleted.md", "wiki: true");
-		const dsStore = await readFile(join(vaultRoot, ".DS_Store"));
+	});
+
+	it("plants a wiki:true note in .trash that sync must skip", async () => {
+		await expectFrontmatterLine(
+			await newVault(),
+			".trash/deleted.md",
+			"wiki: true",
+		);
+	});
+
+	it("plants a non-empty .DS_Store", async () => {
+		const dsStore = await readFile(join(await newVault(), ".DS_Store"));
 		expect(dsStore.length).toBeGreaterThan(0);
 	});
 
-	it("is idempotent: two runs produce byte-identical trees", async () => {
+	it("generates byte-identical trees on repeated runs", async () => {
 		const first = await makeTempDir();
 		const second = await makeTempDir();
 		await generateFixtureVault(first);
 		await generateFixtureVault(second);
-		await expectTreesEqual(join(first, VAULT_NAME), join(second, VAULT_NAME));
+		expect(await readTree(join(first, VAULT_NAME))).toEqual(
+			await readTree(join(second, VAULT_NAME)),
+		);
 	});
 
 	it("matches the committed snapshot under tests/fixtures", async () => {
 		const target = await makeTempDir();
 		await generateFixtureVault(target);
-		await expectTreesEqual(join(target, VAULT_NAME), snapshotVaultRoot);
+		expect(await readTree(join(target, VAULT_NAME))).toEqual(
+			await readTree(snapshotVaultRoot),
+		);
 	});
 });

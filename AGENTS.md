@@ -74,6 +74,11 @@ and on pushes to branches other than `main`.
 - Generated data (`raw/`, `tests/fixtures/Documents/`) is never edited or
   formatted by hand; it is excluded from Biome.
 
+### Unit tests
+
+- Put exactly one expectation in each `it` block.
+- Name each `it` block after the fact that its expectation verifies.
+
 ## Iron Rules
 
 These rules apply to all agent work in this repository and take precedence
