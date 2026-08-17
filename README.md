@@ -16,7 +16,7 @@ Never let that direction reverse.
 
 ## Status
 
-Specification and planning stage. The current artifacts are the implementation guide and the Stage 1 roadmap; code lands sequentially through the [Stage 1 epic (#2)](https://github.com/mguinada/k-wiki/issues/2).
+Stage 1 implementation is underway; code lands sequentially through the [Stage 1 epic (#2)](https://github.com/mguinada/k-wiki/issues/2).
 
 ## In this repository
 
@@ -33,3 +33,28 @@ This repository hosts two agent contexts with deliberately different permissions
 - **Pipeline development** (scripts, config, tests) follows the root `AGENTS.md`.
 
 See [Two Agent Contexts](making-of/karpathy_obsidian_wiki_implementation_guide.md#1-two-agent-contexts) in the guide before doing either.
+
+## Tooling
+
+The pipeline is TypeScript on Node.js (ESM). Node ≥ 22.18 runs the `.ts`
+sources directly, so there is no build step — install dependencies with
+`npm install` and run the commands below.
+
+| Command | Tool | Purpose |
+|---|---|---|
+| `npm run typecheck` | tsc | Type-check `src/` and `tests/` without emitting code |
+| `npm run lint` | Biome | Lint and verify formatting across the repo |
+| `npm run format` | Biome | Rewrite files to the canonical format — the fix command for lint findings, not a gate |
+| `npm test` | vitest | Run the unit test suite |
+| `npm run fixtures -- <dir>` | fixture generator | Write the synthetic Obsidian test vault to `<dir>/Documents` |
+
+Type check, lint, and unit tests are quality gates: every change passes
+them before it is done. CI (`.github/workflows/ci.yml`) enforces the same
+three gates on every pull request and on pushes to non-`main` branches.
+
+The fixture generator produces a deterministic fake vault — fixed bytes,
+no timestamps — covering every case the sync layer must handle (selected,
+excluded, edited, deleted, and noise files). A checked-in snapshot lives at
+`tests/fixtures/Documents/`; regenerate it with
+`npm run fixtures -- tests/fixtures` after changing the generator. Never
+edit the snapshot by hand.

@@ -51,6 +51,29 @@ Two principles govern this:
 <!-- Dev agent: you may extend this block only. The router and the shared
      invariants above are human-only (see Write Authority). -->
 
+### Quality gates
+
+Type check, lint, and unit tests are quality gates: a change is not done
+until all three pass. Run them before every handoff.
+
+- `npm run typecheck` — type check (`tsc --noEmit`).
+- `npm run lint` — lint and format verification (`biome check .`).
+- `npm test` — unit tests (`vitest run`).
+
+`npm run format` (`biome format --write .`) is the fix command for
+formatting differences reported by `npm run lint`; it is not a gate.
+
+CI (`.github/workflows/ci.yml`) runs the three gates on every pull request
+and on pushes to branches other than `main`.
+
+### TypeScript and Node
+
+- Node.js ≥ 22.18 runs the `.ts` sources directly; there is no build step.
+- TypeScript is ESM only; import local modules with explicit `.ts`
+  extensions.
+- Generated data (`raw/`, `tests/fixtures/Documents/`) is never edited or
+  formatted by hand; it is excluded from Biome.
+
 ## Iron Rules
 
 These rules apply to all agent work in this repository and take precedence

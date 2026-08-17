@@ -1,0 +1,59 @@
+# Quality gates for pipeline development.
+#
+# Runs the three gates (typecheck, lint, test) on every pull request and on
+# pushes to branches other than main. The repo is private and runs on
+# GitHub-hosted runners: no step may print raw/ or vault contents into
+# logs — the gates below emit tool diagnostics only, and the test suite
+# reads synthetic fixtures, never real vault data.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches-ignore:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    name: Type check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
