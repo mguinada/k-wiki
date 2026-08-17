@@ -8,10 +8,10 @@
       "expected_output": "Agent bootstraps codegraph, assigns @me to #6, discovers #6 is blocked by open issue #5, and stops with a clear explanation of what is unresolved. No implementation, no branch.",
       "files": [],
       "assertions": [
-        "Assigns the requesting user to issue #6 before stopping",
+        "Does not assign the user to issue #6 when stopping on a blocker — assignment follows the blocker gate",
         "Final report identifies issue #5 as an open blocker, with its state and link",
         "Stops without implementing: no new branch created and no source files modified in the run worktree",
-        "Codegraph bootstrapped before code reading (codegraph status/init run; .codegraph/ present in run worktree)"
+        "Codegraph init only when the run proceeds past the gate; on a blocked stop no index is built (a status check is allowed)"
       ]
     },
     {
