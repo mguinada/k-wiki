@@ -50,7 +50,8 @@ sources directly, so there is no build step — install dependencies with
 
 Type check, lint, and unit tests are quality gates: every change passes
 them before it is done. CI (`.github/workflows/ci.yml`) enforces the same
-three gates on every pull request and on pushes to non-`main` branches.
+three gates on every pull request, testing each PR's merge commit against
+`main`.
 
 The fixture generator produces a deterministic fake vault — fixed bytes,
 no timestamps — covering every case the sync layer must handle (selected,

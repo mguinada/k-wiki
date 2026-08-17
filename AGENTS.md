@@ -63,8 +63,8 @@ until all three pass. Run them before every handoff.
 `npm run format` (`biome format --write .`) is the fix command for
 formatting differences reported by `npm run lint`; it is not a gate.
 
-CI (`.github/workflows/ci.yml`) runs the three gates on every pull request
-and on pushes to branches other than `main`.
+CI (`.github/workflows/ci.yml`) runs the three gates on every pull
+request; the run tests the PR's merge commit against `main`.
 
 ### TypeScript and Node
 

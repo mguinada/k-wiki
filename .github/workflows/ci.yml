@@ -1,8 +1,10 @@
 # Quality gates for pipeline development.
 #
-# Runs the three gates (typecheck, lint, test) on every pull request and on
-# pushes to branches other than main. The repo is private and runs on
-# GitHub-hosted runners: no step may print raw/ or vault contents into
+# Runs the three gates (typecheck, lint, test) on every pull request. The
+# run tests the PR's merge commit, so it catches incompatibilities with
+# main before merge. Pushes are not run separately: the pull_request run
+# already covers each commit through its PR. The repo is private and runs
+# on GitHub-hosted runners: no step may print raw/ or vault contents into
 # logs — the gates below emit tool diagnostics only, and the test suite
 # reads synthetic fixtures, never real vault data.
 
@@ -10,9 +12,6 @@ name: CI
 
 on:
   pull_request:
-  push:
-    branches-ignore:
-      - main
 
 permissions:
   contents: read
