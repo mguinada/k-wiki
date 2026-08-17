@@ -1,4 +1,8 @@
 .DS_Store
+# The file below is versioned by design. It is generated fixture
+# data for the sync-layer noise case, not a real macOS artifact. The
+# snapshot test compares it byte-for-byte against generator output.
+# See tests/fixtures/README.md before you change this.
 !tests/fixtures/Documents/.DS_Store
 
 # skill-creator eval workspace (scratch)
