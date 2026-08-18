@@ -23,7 +23,7 @@ Stage 1 implementation is underway; code lands sequentially through the [Stage 1
 | Path | What it is |
 |---|---|
 | `making-of/karpathy_obsidian_wiki_implementation_guide.md` | The implementation guide — spec of record, including the target repository layout (§6) |
-| `AGENTS.md` / `wiki/AGENTS.md` | The two agent contexts (planned — [issue #3](https://github.com/mguinada/k-wiki/issues/3)) |
+| `AGENTS.md` / `wiki/AGENTS.md` | The two agent contexts ([issue #3](https://github.com/mguinada/k-wiki/issues/3)) |
 
 ## Working in this repo (humans and agents)
 
@@ -84,7 +84,8 @@ for example `no-mistakes --skip ci` or
 Inspecting a run is not triggering one: `no-mistakes attach`, `status`,
 `runs`, and `axi status` / `axi logs` only observe existing runs.
 
-The gate's per-repo configuration — commands, agent fallback, review and
-document rules — lives in [`.no-mistakes.yaml`](.no-mistakes.yaml). The
+The gate's per-repo configuration — commands, agent
+selection, review and document rules — lives in
+[`.no-mistakes.yaml`](.no-mistakes.yaml). The
 pipeline-development context is the gate's main user; see
 [AGENTS.md](AGENTS.md) for the split between it and wiki operations.
