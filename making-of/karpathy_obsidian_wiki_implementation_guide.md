@@ -357,14 +357,16 @@ Example:
 
 ```json
 {
-  "AI/RAG.md": {
-    "hash": "abc123",
-    "last_synced": "2026-08-16T15:00:00Z"
+  "vaults": {
+    "MyVault": {
+      "AI/RAG.md": { "hash": "abc123", "last_synced": "2026-08-16T15:00:00Z" }
+    }
   }
 }
 ```
 
-Syncing multiple vaults into one wiki? The manifest generalizes to a per-vault structure — see Section 25.
+Syncing multiple vaults into one wiki? Each vault adds its own key under
+`vaults` — see Section 25.
 
 Keep **sync** and **ingest** as separate commands:
 
@@ -1287,16 +1289,14 @@ raw/  →  ingest  →  wiki/
 Deltas from the simple path:
 
 1. **Namespace `raw/`.** Each vault syncs into its own subtree: `raw/notes/work/AI/RAG.md`, `raw/notes/personal/AI/RAG.md`. Never mix namespaces.
-2. **Per-vault manifest.** Track roots and hashes separately:
+2. **Per-vault manifest.** Each vault gets its own key under `vaults`; vault
+   roots stay in `sync.json` (Section 26), so the manifest holds hashes only:
 
 ```json
 {
   "vaults": {
     "work": {
-      "root": "/path/to/WorkVault",
-      "notes": {
-        "AI/RAG.md": { "hash": "abc123", "last_synced": "2026-08-16T15:00:00Z" }
-      }
+      "AI/RAG.md": { "hash": "abc123", "last_synced": "2026-08-16T15:00:00Z" }
     },
     "personal": { "...": "..." }
   }
