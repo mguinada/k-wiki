@@ -1,0 +1,25 @@
+{
+  "name": "k-wiki",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "An LLM-maintained knowledge wiki, derived from a human-owned Obsidian vault.",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "fixtures": "node src/fixtures/generate.ts"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.8",
+    "@types/node": "^22.20.1",
+    "@vitest/coverage-v8": "^4.1.10",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}

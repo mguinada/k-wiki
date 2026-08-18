@@ -1,0 +1,21 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.8/schema.json",
+  "formatter": {
+    "indentStyle": "space",
+    "indentWidth": 2
+  },
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "includes": [
+      "**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs,json,jsonc}",
+      "!tests/fixtures",
+      "!.agents",
+      "!skills-lock.json",
+      "!package-lock.json"
+    ]
+  }
+}

@@ -1,0 +1,50 @@
+agent: pi
+
+commands:
+  lint: "npm run lint"
+  format: "npm run format"
+  test: "npm run typecheck && npm run test:coverage"
+
+ignore_patterns:
+  - "raw/**"
+  - "tests/fixtures/**"
+  - "package-lock.json"
+
+document:
+  instructions: |
+    making-of/karpathy_obsidian_wiki_implementation_guide.md owns the design
+    of record. README.md owns the introduction. AGENTS.md owns the development
+    conventions block only; its router and shared invariants are human-only.
+    wiki/ pages are owned by the wiki agent contract in wiki/AGENTS.md: do not
+    create, merge, or reorganize wiki pages from a pipeline change. wiki/log.md
+    is append-only. raw/ and tests/fixtures/Documents/ are generated data:
+    never document them as hand-editable.
+
+review:
+  path_instructions:
+    - path: "wiki/**"
+      instructions: |
+        wiki/ is derived data maintained under wiki/AGENTS.md. Facts must be
+        traceable to raw/ sources. Do not request unit tests for prose pages.
+        Check: source attribution present, wikilinks resolve, index.md current,
+        log.md entries appended and never rewritten, uncertainty stated where
+        sources conflict. Schema or structure changes are human-approved
+        decisions: escalate them, do not suggest mechanical fixes.
+    - path: "wiki/AGENTS.md"
+      instructions: |
+        This file is the wiki operations contract. It is never edited during
+        wiki operations. Any change here must escalate for human approval.
+    - path: "AGENTS.md"
+      instructions: |
+        Root router. The router and the shared invariants are human-only. Only
+        the development conventions block may change, and only by the dev
+        agent. Escalate any other change.
+    - path: "making-of/**"
+      instructions: |
+        Design of record. Prose changes only. Do not request test coverage.
+    - path: "src/**"
+      instructions: |
+        TypeScript ESM: local imports use explicit .ts extensions. Strict TDD:
+        a behavior change must come with a test change. One expectation per it
+        block, named after the verified fact. Pipeline code never edits raw/,
+        wiki/, or tests/fixtures/.

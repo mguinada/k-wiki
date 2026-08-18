@@ -1,0 +1,19 @@
+{
+  // Format with Biome on save and trust the repository's configured
+  // indentation instead of per-file auto-detection.
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "biomejs.biome",
+  "editor.detectIndentation": false,
+  "editor.insertSpaces": true,
+  "editor.tabSize": 2,
+  // Biome does not format these languages; keep saving non-destructive.
+  "[markdown]": {
+    "editor.formatOnSave": false
+  },
+  "[yaml]": {
+    "editor.formatOnSave": false
+  },
+  "[git-commit]": {
+    "editor.formatOnSave": false
+  }
+}
