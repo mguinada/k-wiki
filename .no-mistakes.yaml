@@ -1,4 +1,4 @@
-agent: [pi, claude]
+agent: pi
 
 commands:
   lint: "npm run lint"
