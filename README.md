@@ -48,6 +48,7 @@ sources directly, so there is no build step — install dependencies with
 | `npm test` | vitest | Run the unit test suite |
 | `npm run test:coverage` | vitest | Run the unit tests and fail below the 90% coverage thresholds — what CI runs |
 | `npm run fixtures -- <dir>` | fixture generator | Write the synthetic Obsidian test vault to `<dir>/Documents` |
+| `npm run sync-vault -- [<sync.json>] [<raw-dir>]` | sync CLI | Project `wiki:true` notes from the configured vaults into `raw/notes/` (deterministic, no LLM; defaults to the repo's `sync.json` and `raw/`) |
 
 Type check, lint, and unit tests are quality gates: every change passes
 them before it is done. CI (`.github/workflows/ci.yml`) enforces the same
@@ -60,6 +61,13 @@ excluded, edited, deleted, and noise files). A checked-in snapshot lives at
 `tests/fixtures/Documents/`; regenerate it with
 `npm run fixtures -- tests/fixtures` after changing the generator. Never
 edit the snapshot by hand.
+
+`sync.json` at the repo root is the human-owned placement configuration:
+which vaults to sync and where to publish the mirror (guide §26). The
+`publish` section is parsed but unused until the mirror lands. Sync state —
+hashes and timestamps — lives in `raw/manifest.json`, keyed per vault
+namespace (guide §25). Sync is idempotent: a run with no source changes
+copies, removes, and writes nothing.
 
 ## Gating changes with no-mistakes
 

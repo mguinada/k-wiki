@@ -1,0 +1,13 @@
+{
+  "vaults": [
+    {
+      "name": "Documents",
+      "root": "~/Library/Mobile Documents/iCloud~md~obsidian/Documents",
+      "select": "wiki:true"
+    }
+  ],
+  "publish": {
+    "mirror": "~/Library/Mobile Documents/iCloud~md~obsidian/KWiki",
+    "include": ["wiki/**"]
+  }
+}

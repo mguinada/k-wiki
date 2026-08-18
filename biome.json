@@ -13,6 +13,7 @@
     "includes": [
       "**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs,json,jsonc}",
       "!tests/fixtures",
+      "!raw",
       "!.agents",
       "!skills-lock.json",
       "!package-lock.json"
