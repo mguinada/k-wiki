@@ -183,6 +183,26 @@ describe("runSync first run", () => {
     await expect(run(ws)).rejects.toThrow(/not accessible/);
   });
 
+  it("rejects when the vault root is a file rather than a directory", async () => {
+    const ws = await makeWorkspace();
+    const filePath = join(ws.dir, "not-a-vault.md");
+    const configPath = join(ws.dir, "file-root-sync.json");
+
+    await writeFile(filePath, "# not a vault\n");
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        vaults: [{ name: VAULT_NAME, root: filePath, select: "wiki:true" }],
+      }),
+    );
+
+    await expect(
+      runSync({ configPath, rawDir: join(ws.dir, "raw") }),
+    ).rejects.toThrow(
+      `vault root for "${VAULT_NAME}" is not a directory: ${filePath}`,
+    );
+  });
+
   it("names the vault and note when a candidate cannot be read", async () => {
     const ws = await makeWorkspace();
 

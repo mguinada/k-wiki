@@ -211,4 +211,52 @@ describe("loadSyncConfig", () => {
       loadSyncConfig(await writeConfig(bad), "/home/alice"),
     ).rejects.toThrow(/publish/);
   });
+
+  it("rejects a vault name that is not a string", async () => {
+    const bad = { vaults: [{ ...ONE_VAULT.vaults[0], name: 7 }] };
+
+    await expect(
+      loadSyncConfig(await writeConfig(bad), "/home/alice"),
+    ).rejects.toThrow(/vault "name" must be a non-empty string/);
+  });
+
+  it("rejects a vault list that is not an array", async () => {
+    await expect(
+      loadSyncConfig(await writeConfig({ vaults: 7 }), "/home/alice"),
+    ).rejects.toThrow(/"vaults" must be an array/);
+  });
+
+  it("rejects a vault entry that is not an object", async () => {
+    const bad = { vaults: ["Documents"] };
+
+    await expect(
+      loadSyncConfig(await writeConfig(bad), "/home/alice"),
+    ).rejects.toThrow(/vaults\[0\] must be an object/);
+  });
+
+  it("rejects a select expression that is not a string", async () => {
+    const bad = {
+      vaults: [{ ...ONE_VAULT.vaults[0], root: "/v", select: 3 }],
+    };
+
+    await expect(
+      loadSyncConfig(await writeConfig(bad), "/home/alice"),
+    ).rejects.toThrow(/"select" must be a string/);
+  });
+
+  it("rejects a publish mirror that is not a non-empty string", async () => {
+    const bad = { ...ONE_VAULT, publish: { mirror: "", include: [] } };
+
+    await expect(
+      loadSyncConfig(await writeConfig(bad), "/home/alice"),
+    ).rejects.toThrow(/publish "mirror" must be a non-empty string/);
+  });
+
+  it("rejects a publish include list that is not strings", async () => {
+    const bad = { ...ONE_VAULT, publish: { mirror: "/mirror", include: [3] } };
+
+    await expect(
+      loadSyncConfig(await writeConfig(bad), "/home/alice"),
+    ).rejects.toThrow(/publish "include" must be an array of strings/);
+  });
 });
