@@ -27,5 +27,5 @@ them byte-for-byte against generator output.
 | `.DS_Store` | Noise: macOS Finder metadata, skipped |
 
 The vault is named `Documents` to mirror the real vault's shape. Only the
-vault-internal structure is faked here; the iCloud container path is
-issue #6's concern.
+vault-internal structure is faked here; the real vault's iCloud container
+path lives in [`sync.json`](../sync.json) (guide §26).
