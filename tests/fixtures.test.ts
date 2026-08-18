@@ -102,6 +102,18 @@ async function readTree(root: string): Promise<Record<string, Uint8Array>> {
 }
 
 /**
+ * Build a regex matching a note whose frontmatter block contains the
+ * exact line.
+ */
+function frontmatterRegex(line: string): RegExp {
+	const escaped = line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+	return new RegExp(
+		`^---\\n(?:[^\\n]*\\n)*?${escaped}\\n(?:[^\\n]*\\n)*?---\\n`,
+	);
+}
+
+/**
  * Assert a note opens with a frontmatter block that contains the exact
  * line, before the closing delimiter. One expectation: the whole note
  * text must match the frontmatter-with-line pattern.
@@ -111,11 +123,23 @@ async function expectFrontmatterLine(
 	relPath: string,
 	line: string,
 ): Promise<void> {
-	const escaped = line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	expect(await readNote(vaultRoot, relPath)).toMatch(frontmatterRegex(line));
+}
 
-	expect(await readNote(vaultRoot, relPath)).toMatch(
-		new RegExp(`^---\\n(?:[^\\n]*\\n)*?${escaped}\\n(?:[^\\n]*\\n)*?---\\n`),
-	);
+/** Collect the nesting depths of every note whose frontmatter has wiki: true. */
+async function wikiTrueDepths(vaultRoot: string): Promise<Set<number>> {
+	const selector = frontmatterRegex("wiki: true");
+	const depths = new Set<number>();
+
+	for (const rel of await collectFiles(vaultRoot)) {
+		const note = await readNote(vaultRoot, rel);
+
+		if (rel.endsWith(".md") && selector.test(note)) {
+			depths.add(rel.split("/").length - 1);
+		}
+	}
+
+	return depths;
 }
 
 describe("fixture vault generator", () => {
@@ -158,11 +182,10 @@ describe("fixture vault generator", () => {
 		);
 	});
 
-	it("selects the two wiki:true notes at different nesting depths", () => {
-		const depth = (rel: string) => rel.split("/").length - 1;
-		expect(depth("AI/RAG.md")).not.toBe(
-			depth("AI/llms/attention-is-all-you-need.md"),
-		);
+	it("selects wiki:true notes at more than one nesting depth", async () => {
+		const depths = await wikiTrueDepths(await newVault());
+
+		expect(depths.size).toBeGreaterThan(1);
 	});
 
 	it("seeds the hash-change case AI/rag-evaluation-notes.md with wiki:true", async () => {
