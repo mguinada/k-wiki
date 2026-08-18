@@ -60,3 +60,31 @@ excluded, edited, deleted, and noise files). A checked-in snapshot lives at
 `tests/fixtures/Documents/`; regenerate it with
 `npm run fixtures -- tests/fixtures` after changing the generator. Never
 edit the snapshot by hand.
+
+## Gating changes with no-mistakes
+
+Every trigger below starts the same pipeline — rebase, review, test,
+document, lint, push, PR, CI watch — in a disposable worktree. Nothing
+reaches `origin` until every check passes, and no-mistakes never merges
+the PR: the run signals `Checks passed` and a human merges.
+
+| Trigger | Command | Use it when |
+|---|---|---|
+| Gate push | `git push no-mistakes [<branch>]` | The work is committed on a branch; the explicit Git path |
+| TUI wizard | `no-mistakes` | The work is not committed yet; the wizard creates a branch, commits, pushes through the gate, and attaches to the run |
+| TUI auto | `no-mistakes -y` | The same wizard with every default accepted, no interaction |
+| Agent skill | `/no-mistakes <task>` (or bare `/no-mistakes`) | A coding agent does a task and gates it, or gates already-committed work; drives `no-mistakes axi` under the hood |
+| Headless run | `no-mistakes axi run --intent "<goal>"` | A script or non-interactive agent starts a run; `--intent` is required, `-y` auto-resolves gates |
+| Rerun | `no-mistakes rerun [--intent "<goal>"]` | Re-trigger the pipeline for the current branch after a finished, failed, or cancelled run; it cancels any active run on the branch first — a between-runs action, not a way to bypass a gate |
+
+New runs accept `--skip <steps>` (comma-separated pipeline steps to skip),
+for example `no-mistakes --skip ci` or
+`no-mistakes axi run --intent "..." --skip document`.
+
+Inspecting a run is not triggering one: `no-mistakes attach`, `status`,
+`runs`, and `axi status` / `axi logs` only observe existing runs.
+
+The gate's per-repo configuration — commands, agent fallback, review and
+document rules — lives in [`.no-mistakes.yaml`](.no-mistakes.yaml). The
+pipeline-development context is the gate's main user; see
+[AGENTS.md](AGENTS.md) for the split between it and wiki operations.
