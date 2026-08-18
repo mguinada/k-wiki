@@ -1,0 +1,27 @@
+# Editor behavior for this repository. Editors with EditorConfig support
+# (native or via the EditorConfig extension) apply these automatically.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# TypeScript and JSON use soft tabs (two spaces) — matches the explicit
+# formatter settings in biome.json, which the quality gates enforce.
+[*.{ts,tsx,mts,cts,js,mjs,cjs,json,jsonc}]
+indent_style = space
+indent_width = 2
+
+# Markdown and YAML are not formatted by Biome; keep them at two spaces
+# so the whole repository uses one width.
+[*.{md,markdown,yaml,yml}]
+indent_style = space
+indent_width = 2
+
+# Markdown uses trailing double spaces for hard line breaks; do not
+# strip them.
+[*.md]
+trim_trailing_whitespace = false
