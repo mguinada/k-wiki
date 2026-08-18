@@ -1,0 +1,8 @@
+commands:
+  lint: "npm run lint"
+  format: "npm run format"
+  test: "npm test"
+
+document:
+  instructions: |
+    making-of/ owns detailed product guidance; README.md owns the introduction.
