@@ -91,6 +91,22 @@ function toAbsolute(root: string, relPath: string): string {
   return join(root, ...relPath.split("/"));
 }
 
+async function readSourceNote(
+  vault: SyncVaultConfig,
+  relPath: string,
+): Promise<Uint8Array> {
+  try {
+    return await readFile(toAbsolute(vault.root, relPath));
+  } catch (cause) {
+    const reason = cause instanceof Error ? cause.message : String(cause);
+
+    throw new Error(
+      `failed to read note "${relPath}" in vault "${vault.name}": ${reason}`,
+      { cause },
+    );
+  }
+}
+
 /** Remove now-empty parent directories of a deleted projection. */
 async function pruneEmptyDirs(dir: string, stopAt: string): Promise<void> {
   let current = dir;
@@ -120,7 +136,7 @@ async function syncVault(
   const decoder = new TextDecoder();
 
   for (const relPath of candidates) {
-    const bytes = await readFile(toAbsolute(vault.root, relPath));
+    const bytes = await readSourceNote(vault, relPath);
 
     if (isSelectedNote(decoder.decode(bytes), vault.select)) {
       selected.push({ relPath, bytes, hash: sha256(bytes) });

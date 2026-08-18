@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -127,6 +127,24 @@ describe("writeManifest", () => {
     await writeManifest(path, manifest);
 
     expect(await readFile(path, "utf8")).toBe(serializeManifest(manifest));
+  });
+
+  it("leaves no temporary file behind", async () => {
+    const dir = await makeTempDir();
+
+    await writeManifest(join(dir, "manifest.json"), emptyManifest());
+
+    expect(await readdir(dir)).toEqual(["manifest.json"]);
+  });
+
+  it("replaces a stale temporary file left by an interrupted write", async () => {
+    const dir = await makeTempDir();
+    const path = join(dir, "manifest.json");
+
+    await writeFile(`${path}.tmp`, "{ truncated");
+    await writeManifest(path, emptyManifest());
+
+    expect(await readdir(dir)).toEqual(["manifest.json"]);
   });
 });
 

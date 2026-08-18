@@ -8,7 +8,7 @@ import type { SelectExpression } from "./config.ts";
 
 /** The text between the opening and closing `---` lines, if complete. */
 function frontmatterBlock(content: string): string | undefined {
-  const lines = content.split("\n");
+  const lines = content.split(/\r?\n/);
 
   if (lines[0] !== "---") {
     return undefined;

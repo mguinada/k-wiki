@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { rename, writeFile } from "node:fs/promises";
 
 /**
  * Sync state (guide §8, §25 Scenario A): `raw/manifest.json` records, per
@@ -101,5 +101,8 @@ export async function writeManifest(
   path: string,
   manifest: Manifest,
 ): Promise<void> {
-  await writeFile(path, serializeManifest(manifest), "utf8");
+  const tempPath = `${path}.tmp`;
+
+  await writeFile(tempPath, serializeManifest(manifest), "utf8");
+  await rename(tempPath, path);
 }

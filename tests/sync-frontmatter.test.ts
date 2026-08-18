@@ -37,6 +37,12 @@ describe("isSelectedNote", () => {
     expect(isSelectedNote("---\nwiki: true \n---\n", select)).toBe(true);
   });
 
+  it("selects a note with CRLF line endings", () => {
+    expect(isSelectedNote("---\r\nwiki: true\r\n---\r\n", select)).toBe(
+      true,
+    );
+  });
+
   it("rejects a note flagged wiki: false", () => {
     expect(isSelectedNote("---\nwiki: false\n---\n", select)).toBe(false);
   });

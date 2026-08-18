@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  chmod,
   mkdir,
   mkdtemp,
   readdir,
@@ -180,6 +181,16 @@ describe("runSync first run", () => {
     const ws = await makeWorkspace({ root: "/nonexistent/vault" });
 
     await expect(run(ws)).rejects.toThrow(/not accessible/);
+  });
+
+  it("names the vault and note when a candidate cannot be read", async () => {
+    const ws = await makeWorkspace();
+
+    await chmod(sourcePath(ws, "AI/RAG.md"), 0o000);
+
+    await expect(run(ws)).rejects.toThrow(
+      `failed to read note "AI/RAG.md" in vault "${VAULT_NAME}"`,
+    );
   });
 });
 
