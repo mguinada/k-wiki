@@ -15,7 +15,7 @@ wiki/**
 # skill-creator eval workspace (scratch)
 .agents/skills/do-gh-issue-workspace/
 .codegraph/
-node_modules/
+node_modules
 coverage/
 
 # StrykerJS: mutation temp dir, HTML report, and incremental state
