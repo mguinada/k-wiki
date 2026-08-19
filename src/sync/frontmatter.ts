@@ -41,7 +41,7 @@ export function isSelectedNote(
   // 'false') match because the Obsidian web clipper writes Text
   // properties quoted.
   const pattern = new RegExp(
-    `^${exclude.key}:[ \\t]+["']?${exclude.value}["']?[ \\t]*$`,
+    `^${exclude.key}:[ \\t]*["']?${exclude.value}["']?[ \\t]*$`,
     "m",
   );
 

@@ -170,16 +170,15 @@ async function selectNotes(
   return selected;
 }
 
-async function syncVault(
+/** Verify the vault root, scan it, and select its notes. */
+async function scanAndSelect(
   vault: SyncVaultConfig,
-  rawDir: string,
-  now: () => Date,
-  previous: VaultNotes,
   onProgress: (message: string) => void,
-): Promise<{ notes: VaultNotes; report: VaultSyncReport }> {
+): Promise<{
+  candidates: readonly string[];
+  selected: readonly SelectedNote[];
+}> {
   await assertDirectory(vault);
-
-  const namespaceRoot = join(rawDir, "notes", vault.name);
 
   onProgress(`vault "${vault.name}": scanning ${vault.root}`);
 
@@ -188,6 +187,20 @@ async function syncVault(
   onProgress(`vault "${vault.name}": ${candidates.length} candidates`);
 
   const selected = await selectNotes(vault, candidates, onProgress);
+
+  return { candidates, selected };
+}
+
+async function syncVault(
+  vault: SyncVaultConfig,
+  rawDir: string,
+  now: () => Date,
+  previous: VaultNotes,
+  onProgress: (message: string) => void,
+): Promise<{ notes: VaultNotes; report: VaultSyncReport }> {
+  const { candidates, selected } = await scanAndSelect(vault, onProgress);
+
+  const namespaceRoot = join(rawDir, "notes", vault.name);
 
   const copied: string[] = [];
   const unchanged: string[] = [];
@@ -309,15 +322,7 @@ export async function runDryRun(
   const reports: VaultDryRunReport[] = [];
 
   for (const vault of config.vaults) {
-    await assertDirectory(vault);
-
-    onProgress(`vault "${vault.name}": scanning ${vault.root}`);
-
-    const candidates = await scanVault(vault.root);
-
-    onProgress(`vault "${vault.name}": ${candidates.length} candidates`);
-
-    const selected = await selectNotes(vault, candidates, onProgress);
+    const { candidates, selected } = await scanAndSelect(vault, onProgress);
 
     reports.push({
       vault: vault.name,
@@ -491,7 +496,7 @@ export async function main(): Promise<void> {
       console.log(
         formatDryRunReport(reports)
           .split("\n")
-          .map((line) => colorizeReportLine(colorizeProgress(line)))
+          .map(colorizeReportLine)
           .join("\n"),
       );
 

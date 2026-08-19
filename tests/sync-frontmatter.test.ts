@@ -116,8 +116,8 @@ describe("isSelectedNote", () => {
     expect(isSelectedNote("---\nwiki: false\n", exclude)).toBe(true);
   });
 
-  it("ingests a note whose block flag is written without a space after the colon", () => {
-    expect(isSelectedNote("---\nwiki:false\n---\n", exclude)).toBe(true);
+  it("blocks a note whose block flag is written without a space after the colon", () => {
+    expect(isSelectedNote("---\nwiki:false\n---\n", exclude)).toBe(false);
   });
 
   it("ingests a note with an empty frontmatter block", () => {
