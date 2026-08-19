@@ -106,7 +106,7 @@ async function walkFiles(
 
     if (entry.isDirectory()) {
       await walkFiles(join(dir, entry.name), rel, files);
-    } else if (entry.isFile()) {
+    } else {
       files.push(rel);
     }
   }

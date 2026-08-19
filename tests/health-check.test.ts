@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -228,6 +228,21 @@ describe("checkRaw problems", () => {
     expect((await checkRaw(rawDir)).problems).toEqual([
       "notes/Documents/.DS_Store: orphan (no manifest entry)",
       "notes/Documents/note.md.bak: orphan (no manifest entry)",
+    ]);
+  });
+
+  it("names a symlink under a namespace as an orphan", async () => {
+    const rawDir = await makeRawDir();
+
+    await projectNote(rawDir, "Documents", "AI/RAG.md", NOTE);
+    await mkdir(join(rawDir, "notes", "Documents"), { recursive: true });
+    await symlink("../../outside", join(rawDir, "notes", "Documents", "leak"));
+    await writeManifestFile(rawDir, {
+      Documents: { "AI/RAG.md": entryFor(NOTE) },
+    });
+
+    expect((await checkRaw(rawDir)).problems).toEqual([
+      "notes/Documents/leak: orphan (no manifest entry)",
     ]);
   });
 
