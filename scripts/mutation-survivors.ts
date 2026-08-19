@@ -22,7 +22,12 @@ const ACTIONABLE_STATUSES = new Set(["Survived", "NoCoverage"]);
 
 /** Actionable entries — Survived or NoCoverage — as sorted, readable lines. */
 export function actionableLines(report: Report): string[] {
-  const entries: { file: string; line: number; status: string; mutator: string }[] = [];
+  const entries: {
+    file: string;
+    line: number;
+    status: string;
+    mutator: string;
+  }[] = [];
 
   for (const [file, entry] of Object.entries(report.files)) {
     for (const mutant of entry.mutants) {
@@ -50,7 +55,9 @@ function main(): void {
   try {
     report = JSON.parse(readFileSync(REPORT_PATH, "utf8")) as Report;
   } catch {
-    console.error(`No report at ${REPORT_PATH} — run npm run mutation:changed first.`);
+    console.error(
+      `No report at ${REPORT_PATH} — run npm run mutation:changed first.`,
+    );
 
     process.exitCode = 1;
 
@@ -65,13 +72,18 @@ function main(): void {
     return;
   }
 
-  console.log(`Actionable mutants (${lines.length}) — kill or record as equivalent:`);
+  console.log(
+    `Actionable mutants (${lines.length}) — kill or record as equivalent:`,
+  );
 
   for (const line of lines) {
     console.log(`  ${line}`);
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
   main();
 }

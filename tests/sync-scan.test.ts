@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -53,5 +53,59 @@ describe("scanVault", () => {
     await mkdir(emptyRoot);
 
     expect(await scanVault(emptyRoot)).toEqual([]);
+  });
+
+  it("skips markdown files inside the noise directories", async () => {
+    const vaultRoot = await newVault();
+
+    await mkdir(join(vaultRoot, ".obsidian", "plugins"), { recursive: true });
+    await writeFile(join(vaultRoot, ".obsidian", "plugins", "bug.md"), "x\n");
+    await mkdir(join(vaultRoot, ".trash"), { recursive: true });
+    await writeFile(join(vaultRoot, ".trash", "gone.md"), "x\n");
+
+    expect(await scanVault(vaultRoot)).not.toContain(
+      ".obsidian/plugins/bug.md",
+    );
+  });
+
+  it("skips markdown files inside the .trash directory", async () => {
+    const vaultRoot = await newVault();
+
+    await mkdir(join(vaultRoot, ".trash"), { recursive: true });
+    await writeFile(join(vaultRoot, ".trash", "gone.md"), "x\n");
+
+    expect(await scanVault(vaultRoot)).not.toContain(".trash/gone.md");
+  });
+
+  it("returns files in sorted order whatever the directory order", async () => {
+    const vaultRoot = await newVault();
+
+    // Mixed case: a case-insensitive directory listing (macOS APFS)
+    // orders a.md before B.md, while the contract's default string
+    // order puts B.md first — so an unsorted walk cannot pass.
+    await writeFile(join(vaultRoot, "a.md"), "x\n");
+    await writeFile(join(vaultRoot, "B.md"), "x\n");
+
+    expect(await scanVault(vaultRoot)).toEqual([
+      "AI/RAG.md",
+      "AI/llms/attention-is-all-you-need.md",
+      "AI/rag-evaluation-notes.md",
+      "B.md",
+      "Inbox/parking-lot.md",
+      "Projects/house-renovation.md",
+      "Scratch/temp-research.md",
+      "a.md",
+    ]);
+  });
+
+  it("excludes a symlink whose name ends in .md", async () => {
+    const vaultRoot = await newVault();
+
+    await symlink(
+      join(vaultRoot, "AI", "RAG.md"),
+      join(vaultRoot, "AI", "alias.md"),
+    );
+
+    expect(await scanVault(vaultRoot)).not.toContain("AI/alias.md");
   });
 });

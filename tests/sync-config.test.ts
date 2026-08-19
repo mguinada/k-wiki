@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { expandHome, loadSyncConfig } from "../src/sync/config.ts";
+import { expandHome, loadSyncConfig, parseSelect } from "../src/sync/config.ts";
 
 const tempDirs: string[] = [];
 
@@ -63,6 +63,20 @@ describe("expandHome", () => {
   it("leaves a relative path unchanged", () => {
     expect(expandHome("vaults/Documents", "/home/alice")).toBe(
       "vaults/Documents",
+    );
+  });
+});
+
+describe("parseSelect", () => {
+  it("rejects an expression with anything before the key", () => {
+    expect(() => parseSelect(" wiki:true")).toThrow(
+      /unsupported select expression/,
+    );
+  });
+
+  it("rejects an expression with anything after the value", () => {
+    expect(() => parseSelect("wiki:true today")).toThrow(
+      /unsupported select expression/,
     );
   });
 });
@@ -178,6 +192,54 @@ describe("loadSyncConfig", () => {
     ).rejects.toThrow(/vault name/);
   });
 
+  it("rejects a vault named constructor", async () => {
+    const bad = { vaults: [{ ...ONE_VAULT.vaults[0], name: "constructor" }] };
+
+    await expect(
+      loadSyncConfig(await writeConfig(bad), "/home/alice"),
+    ).rejects.toThrow(/plain path segment/);
+  });
+
+  it("rejects a vault named prototype", async () => {
+    const bad = { vaults: [{ ...ONE_VAULT.vaults[0], name: "prototype" }] };
+
+    await expect(
+      loadSyncConfig(await writeConfig(bad), "/home/alice"),
+    ).rejects.toThrow(/plain path segment/);
+  });
+
+  it("rejects a vault named a single dot", async () => {
+    const bad = { vaults: [{ ...ONE_VAULT.vaults[0], name: "." }] };
+
+    await expect(
+      loadSyncConfig(await writeConfig(bad), "/home/alice"),
+    ).rejects.toThrow(/plain path segment/);
+  });
+
+  it("rejects a vault named two dots", async () => {
+    const bad = { vaults: [{ ...ONE_VAULT.vaults[0], name: ".." }] };
+
+    await expect(
+      loadSyncConfig(await writeConfig(bad), "/home/alice"),
+    ).rejects.toThrow(/plain path segment/);
+  });
+
+  it("rejects a vault with an empty name", async () => {
+    const bad = { vaults: [{ ...ONE_VAULT.vaults[0], name: "" }] };
+
+    await expect(
+      loadSyncConfig(await writeConfig(bad), "/home/alice"),
+    ).rejects.toThrow(/non-empty string/);
+  });
+
+  it("rejects a vault name that is an array", async () => {
+    const bad = { vaults: [{ ...ONE_VAULT.vaults[0], name: ["x"] }] };
+
+    await expect(
+      loadSyncConfig(await writeConfig(bad), "/home/alice"),
+    ).rejects.toThrow(/non-empty string/);
+  });
+
   it("rejects duplicate vault names", async () => {
     const bad = { vaults: [ONE_VAULT.vaults[0], ONE_VAULT.vaults[0]] };
 
@@ -204,12 +266,98 @@ describe("loadSyncConfig", () => {
     ).rejects.toThrow(/unsupported select expression/);
   });
 
+  it("rejects a config whose root is null", async () => {
+    await expect(
+      loadSyncConfig(await writeConfig(null), "/home/alice"),
+    ).rejects.toThrow(/expected a JSON object/);
+  });
+
   it("rejects a publish section that is not an object", async () => {
     const bad = { ...ONE_VAULT, publish: 7 };
 
     await expect(
       loadSyncConfig(await writeConfig(bad), "/home/alice"),
-    ).rejects.toThrow(/publish/);
+    ).rejects.toThrow(/publish" must be an object/);
+  });
+
+  it("rejects a publish include list with one non-string entry", async () => {
+    const bad = {
+      ...ONE_VAULT,
+      publish: { mirror: "/mirror", include: ["wiki/**", 3] },
+    };
+
+    await expect(
+      loadSyncConfig(await writeConfig(bad), "/home/alice"),
+    ).rejects.toThrow(/publish "include" must be an array of strings/);
+  });
+
+  it("keeps the read error as the cause when the config file is missing", async () => {
+    const dir = await makeTempDir();
+    const error: unknown = await loadSyncConfig(
+      join(dir, "nope.json"),
+      "/home/alice",
+    ).catch((reason: unknown) => reason);
+
+    expect((error as NodeJS.ErrnoException).cause).toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("keeps the JSON parse error as the cause when the config is not valid JSON", async () => {
+    const dir = await makeTempDir();
+    const path = join(dir, "sync.json");
+
+    await writeFile(path, "{ not json");
+
+    const error: unknown = await loadSyncConfig(path, "/home/alice").catch(
+      (reason: unknown) => reason,
+    );
+
+    expect((error as Error).cause).toBeInstanceOf(Error);
+  });
+
+  it("keeps the validation error as the cause when a vault entry is invalid", async () => {
+    const dir = await makeTempDir();
+    const path = join(dir, "sync.json");
+
+    await writeFile(path, JSON.stringify({ vaults: [{}] }));
+
+    const error: unknown = await loadSyncConfig(path, "/home/alice").catch(
+      (reason: unknown) => reason,
+    );
+
+    expect((error as Error).cause).toBeInstanceOf(Error);
+  });
+
+  it("keeps the validation error as the cause when a vault field is invalid", async () => {
+    const dir = await makeTempDir();
+    const path = join(dir, "sync.json");
+
+    await writeFile(
+      path,
+      JSON.stringify({ vaults: [{ name: "V", root: "/v", select: 3 }] }),
+    );
+
+    const error: unknown = await loadSyncConfig(path, "/home/alice").catch(
+      (reason: unknown) => reason,
+    );
+
+    expect(
+      (error as { cause?: { cause?: unknown } }).cause?.cause,
+    ).toBeInstanceOf(Error);
+  });
+
+  it("keeps the validation error as the cause when a vault entry is not an object", async () => {
+    const dir = await makeTempDir();
+    const path = join(dir, "sync.json");
+
+    await writeFile(path, JSON.stringify({ vaults: [7] }));
+
+    const error: unknown = await loadSyncConfig(path, "/home/alice").catch(
+      (reason: unknown) => reason,
+    );
+
+    expect((error as Error).cause).toBeInstanceOf(Error);
   });
 
   it("rejects a vault name that is not a string", async () => {

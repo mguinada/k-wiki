@@ -79,6 +79,50 @@ describe("parseManifest", () => {
       /entry "AI\/RAG\.md"/,
     );
   });
+
+  it("rejects a manifest whose root is null", () => {
+    expect(() => parseManifest("null", "manifest.json")).toThrow(
+      /expected an object with a "vaults" object/,
+    );
+  });
+
+  it("rejects a vaults value that is an array", () => {
+    expect(() => parseManifest('{"vaults":[]}', "manifest.json")).toThrow(
+      /expected an object with a "vaults" object/,
+    );
+  });
+
+  it("keeps the JSON parse error as the cause when text is not valid JSON", () => {
+    let thrown: unknown = "not thrown";
+
+    try {
+      parseManifest("{ nope", "manifest.json");
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect((thrown as Error).cause).toBeInstanceOf(Error);
+  });
+
+  it("rejects a note entry whose hash is not a string", () => {
+    const text = JSON.stringify({
+      vaults: { work: { "AI/RAG.md": { hash: 1, last_synced: "t" } } },
+    });
+
+    expect(() => parseManifest(text, "manifest.json")).toThrow(
+      /entry "AI\/RAG\.md" needs string/,
+    );
+  });
+
+  it("rejects a note entry whose last_synced is not a string", () => {
+    const text = JSON.stringify({
+      vaults: { work: { "AI/RAG.md": { hash: "x", last_synced: 1 } } },
+    });
+
+    expect(() => parseManifest(text, "manifest.json")).toThrow(
+      /entry "AI\/RAG\.md" needs string/,
+    );
+  });
 });
 
 describe("serializeManifest", () => {
@@ -105,6 +149,27 @@ describe("serializeManifest", () => {
     );
     expect(lines.indexOf('      "a.md": {')).toBeLessThan(
       lines.indexOf('      "b.md": {'),
+    );
+  });
+
+  it("serializes three or more keys of every kind in default string order", () => {
+    const manifest: Manifest = {
+      vaults: {
+        alpha: { "a.md": ONE_ENTRY, "m.md": ONE_ENTRY, "z.md": ONE_ENTRY },
+        mike: {},
+        zeta: {},
+      },
+    };
+    const expected = {
+      vaults: {
+        alpha: { "a.md": ONE_ENTRY, "m.md": ONE_ENTRY, "z.md": ONE_ENTRY },
+        mike: {},
+        zeta: {},
+      },
+    };
+
+    expect(serializeManifest(manifest)).toBe(
+      `${JSON.stringify(expected, null, 2)}\n`,
     );
   });
 });
