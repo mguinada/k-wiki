@@ -183,6 +183,15 @@ describe("runSync first run", () => {
     await expect(run(ws)).rejects.toThrow(/not accessible/);
   });
 
+  it("keeps the underlying error as the cause when the vault root does not exist", async () => {
+    const ws = await makeWorkspace({ root: "/nonexistent/vault" });
+    const error: unknown = await run(ws).catch((reason: unknown) => reason);
+
+    expect((error as NodeJS.ErrnoException).cause).toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
   it("rejects when the vault root is a file rather than a directory", async () => {
     const ws = await makeWorkspace();
     const filePath = join(ws.dir, "not-a-vault.md");
@@ -362,6 +371,32 @@ describe("runSync removal detection", () => {
     );
   });
 
+  it("stops pruning without an error at a directory that still has entries", async () => {
+    const ws = await makeWorkspace();
+
+    await run(ws, T1);
+    await rm(sourcePath(ws, "AI/rag-evaluation-notes.md"));
+
+    expect((await run(ws, T2))[0]?.removed).toEqual([
+      "AI/rag-evaluation-notes.md",
+    ]);
+  });
+
+  it("rejects when pruning an emptied directory fails for another reason than being not empty", async () => {
+    const ws = await makeWorkspace();
+    const namespaceRoot = join(ws.rawDir, "notes", VAULT_NAME);
+
+    await run(ws, T1);
+    await rm(sourcePath(ws, "Scratch/temp-research.md"));
+    await chmod(namespaceRoot, 0o555);
+
+    try {
+      await expect(run(ws, T2)).rejects.toThrow(/failed to prune/);
+    } finally {
+      await chmod(namespaceRoot, 0o755);
+    }
+  });
+
   it("removes the raw copy when the note loses its flag", async () => {
     const ws = await makeWorkspace();
 
@@ -478,7 +513,7 @@ describe("sync-vault CLI", () => {
     const err: string[] = [];
 
     process.exitCode = undefined;
-    process.argv = [argv[0], argv[1], ...args];
+    process.argv = [...argv.slice(0, 2), ...args];
 
     const logSpy = vi
       .spyOn(console, "log")
