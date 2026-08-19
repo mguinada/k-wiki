@@ -51,20 +51,34 @@ async function readTextIfExists(path: string): Promise<string | undefined> {
   }
 }
 
-/** Vault namespaces present as directories under the notes root. */
+/** Vault namespaces under the notes root, following directory symlinks. */
 async function listNamespaceDirs(notesRoot: string): Promise<string[]> {
   try {
-    const entries = await readdir(notesRoot, { withFileTypes: true });
+    const names = await readdir(notesRoot);
+    const namespaces: string[] = [];
 
-    return entries
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name);
+    for (const name of names) {
+      if (await resolvesToDirectory(join(notesRoot, name))) {
+        namespaces.push(name);
+      }
+    }
+
+    return namespaces;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       return [];
     }
 
     throw error;
+  }
+}
+
+/** Whether the path exists and resolves to a directory. */
+async function resolvesToDirectory(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isDirectory();
+  } catch {
+    return false;
   }
 }
 

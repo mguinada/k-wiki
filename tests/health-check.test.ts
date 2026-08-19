@@ -102,6 +102,15 @@ describe("checkRaw healthy-empty", () => {
 
     expect((await checkRaw(rawDir)).healthy).toBe(true);
   });
+
+  it("ignores a broken symlink that sits outside any vault namespace", async () => {
+    const rawDir = await makeRawDir();
+
+    await mkdir(join(rawDir, "notes"), { recursive: true });
+    await symlink("../no-such-vault", join(rawDir, "notes", "broken"));
+
+    expect((await checkRaw(rawDir)).healthy).toBe(true);
+  });
 });
 
 describe("checkRaw healthy projection", () => {
@@ -138,6 +147,22 @@ describe("checkRaw healthy projection", () => {
     });
 
     expect((await checkRaw(rawDir)).problems).toEqual([]);
+  });
+
+  it("hash-checks notes inside a symlinked namespace directory", async () => {
+    const rawDir = await makeRawDir();
+
+    await mkdir(join(rawDir, "other-vault"), { recursive: true });
+    await writeFile(join(rawDir, "other-vault", "note.md"), NOTE);
+    await mkdir(join(rawDir, "notes"), { recursive: true });
+    await symlink("../other-vault", join(rawDir, "notes", "Documents"));
+    await writeManifestFile(rawDir, {
+      Documents: { "note.md": entryFor(NOTE) },
+    });
+
+    expect((await checkRaw(rawDir)).summary).toBe(
+      "healthy: manifest and projection agree (1 note, 1 vault)",
+    );
   });
 
   it("does not count a namespace directory that holds no manifest entries and no files", async () => {
@@ -243,6 +268,22 @@ describe("checkRaw problems", () => {
 
     expect((await checkRaw(rawDir)).problems).toEqual([
       "notes/Documents/leak: orphan (no manifest entry)",
+    ]);
+  });
+
+  it("names orphan files inside a symlinked namespace directory", async () => {
+    const rawDir = await makeRawDir();
+
+    await projectNote(rawDir, "Documents", "AI/RAG.md", NOTE);
+    await mkdir(join(rawDir, "other-vault"), { recursive: true });
+    await writeFile(join(rawDir, "other-vault", "stray.md"), OTHER_NOTE);
+    await symlink("../other-vault", join(rawDir, "notes", "HiddenVault"));
+    await writeManifestFile(rawDir, {
+      Documents: { "AI/RAG.md": entryFor(NOTE) },
+    });
+
+    expect((await checkRaw(rawDir)).problems).toEqual([
+      "notes/HiddenVault/stray.md: orphan (no manifest entry)",
     ]);
   });
 
