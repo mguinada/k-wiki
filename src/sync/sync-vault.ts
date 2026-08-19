@@ -1,5 +1,13 @@
 import type { Stats } from "node:fs";
-import { mkdir, readdir, readFile, rm, rmdir, stat, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  readdir,
+  readFile,
+  rm,
+  rmdir,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -54,6 +62,13 @@ export interface VaultSyncReport {
   readonly copied: readonly string[];
   readonly unchanged: readonly string[];
   readonly removed: readonly string[];
+}
+
+export interface SyncReport {
+  /** Per-vault results for the configured vaults. */
+  readonly vaults: readonly VaultSyncReport[];
+  /** Namespaces removed because they are absent from the config. */
+  readonly prunedNamespaces: readonly string[];
 }
 
 interface SelectedNote {
@@ -249,10 +264,8 @@ async function syncVault(
   };
 }
 
-/** Run one full sync pass and return the per-vault reports. */
-export async function runSync(
-  options: SyncOptions,
-): Promise<readonly VaultSyncReport[]> {
+/** Run one full sync pass and return the run report. */
+export async function runSync(options: SyncOptions): Promise<SyncReport> {
   const home = options.home ?? homedir();
   const now = options.now ?? (() => new Date());
   const onProgress = options.onProgress ?? (() => {});
@@ -277,10 +290,13 @@ export async function runSync(
     ]),
   ].filter((name) => !configuredNames.has(name));
 
+  const prunedNamespaces: string[] = [];
+
   for (const name of staleNames) {
     delete nextManifest.vaults[name];
     await rm(join(notesRoot, name), { recursive: true, force: true });
     onProgress(`vault "${name}": removed stale namespace (not configured)`);
+    prunedNamespaces.push(name);
   }
 
   for (const vault of config.vaults) {
@@ -301,43 +317,52 @@ export async function runSync(
     await writeManifest(manifestPath, nextManifest);
   }
 
-  return reports;
+  return { vaults: reports, prunedNamespaces };
 }
 
 /** Render the run summary; `+` marks copies and `-` marks removals. */
-export function formatReport(reports: readonly VaultSyncReport[]): string {
+export function formatReport(report: SyncReport): string {
   const lines: string[] = [];
 
-  for (const report of reports) {
-    const counts = `vault "${report.vault}": ${report.selected} selected, ${report.copied.length} copied, ${report.unchanged.length} unchanged, ${report.removed.length} removed`;
+  for (const vault of report.vaults) {
+    const counts = `vault "${vault.vault}": ${vault.selected} selected, ${vault.copied.length} copied, ${vault.unchanged.length} unchanged, ${vault.removed.length} removed`;
     const hint =
-      report.selected === 0 && report.candidates > 0
-        ? ` (${report.candidates} candidates, none matched the selection rule)`
+      vault.selected === 0 && vault.candidates > 0
+        ? ` (${vault.candidates} candidates, none matched the selection rule)`
         : "";
 
     lines.push(counts + hint);
 
-    for (const relPath of report.copied) {
+    for (const relPath of vault.copied) {
       lines.push(`  + ${relPath}`);
     }
 
-    for (const relPath of report.removed) {
+    for (const relPath of vault.removed) {
       lines.push(`  - ${relPath}`);
     }
   }
 
-  const copied = reports.reduce(
-    (total, report) => total + report.copied.length,
+  for (const name of report.prunedNamespaces) {
+    lines.push(`  - ${name}/ (stale namespace, not configured)`);
+  }
+
+  const copied = report.vaults.reduce(
+    (total, vault) => total + vault.copied.length,
     0,
   );
-  const removed = reports.reduce(
-    (total, report) => total + report.removed.length,
+  const removed = report.vaults.reduce(
+    (total, vault) => total + vault.removed.length,
     0,
   );
+  const pruned = report.prunedNamespaces.length;
+  const prunedClause =
+    pruned === 0
+      ? ""
+      : `, ${pruned} namespace${pruned === 1 ? "" : "s"} pruned`;
   const summary =
-    copied === 0 && removed === 0
+    copied === 0 && removed === 0 && pruned === 0
       ? "sync complete: no changes"
-      : `sync complete: ${copied} copied, ${removed} removed`;
+      : `sync complete: ${copied} copied, ${removed} removed${prunedClause}`;
 
   lines.push(summary);
 
@@ -385,8 +410,11 @@ export function colorizeReportLine(line: string): string {
 
   if (line.startsWith("sync complete: ")) {
     const removed = Number(/[0-9]+(?= removed)/.exec(line)?.[0] ?? 0);
+    const pruned = Number(/[0-9]+(?= namespaces? pruned)/.exec(line)?.[0] ?? 0);
 
-    return removed > 0 ? colors().red(line) : colors().green(line);
+    return removed > 0 || pruned > 0
+      ? colors().red(line)
+      : colors().green(line);
   }
 
   return line;
@@ -407,14 +435,14 @@ export async function main(): Promise<void> {
   try {
     const config = await loadSyncConfig(configPath);
     const rawDir = rawArg ?? resolveRawDir(config.dataRoot, repoRoot);
-    const reports = await runSync({
+    const report = await runSync({
       configPath,
       rawDir,
       onProgress: (message) => console.error(colorizeProgress(message)),
     });
 
     console.log(
-      formatReport(reports).split("\n").map(colorizeReportLine).join("\n"),
+      formatReport(report).split("\n").map(colorizeReportLine).join("\n"),
     );
   } catch (error) {
     console.error(
