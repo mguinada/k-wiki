@@ -95,7 +95,7 @@ The default path through this guide is the simplest topology: **one vault → on
 | One vault, one knowledge domain | 1 vault → 1 wiki | Sections 3–24 as written (default) |
 | Several vaults, overlapping domains, cross-vault synthesis is the point | N vaults → 1 wiki | Simple path + Scenario A deltas (Section 25) |
 | Several vaults, disjoint domains, different audiences or privacy levels | N vaults → N wikis | One independent instance of the simple path each (Scenario B, Section 25) |
-| One vault, mixed public/private material | 1 vault → N wikis | Same selection mechanism, inverted (Scenario C, Section 25) |
+| One vault, mixed public/private material | 1 vault → N wikis | Same opt-out mechanism, different exclusion keys (Scenario C, Section 25) |
 
 Rules of thumb:
 
@@ -1357,7 +1357,12 @@ Folder names are illustrative; each instance is simply its own `k-wiki` root, an
 
 ### Scenario C: One Vault → Multiple Wikis
 
-Invert the selection rule. Notes marked `wiki: public` sync to a publishable instance; notes marked `wiki: true` sync to the private one. Two manifests, two instances, one vault — the sync layer routes each selected note to exactly one wiki.
+Keep the opt-out mechanism; give each instance its own exclusion key.
+The private instance syncs everything (`exclude: "wiki:false"`); the
+publishable instance also drops notes marked `public: false`
+(e.g. `exclude: "public:false"`). Two manifests, two instances, one
+vault — each note lands in every wiki whose exclusion rule admits it,
+so the public wiki is a subset of the private one.
 
 ### Changing Your Mind Later
 

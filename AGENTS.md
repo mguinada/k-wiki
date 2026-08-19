@@ -2,9 +2,9 @@
 
 This repository hosts a derived knowledge wiki and the pipeline that builds
 it. A human-owned Obsidian vault — outside this repository — is the source of
-truth; notes marked `wiki: true` are synced deterministically into an
-immutable `raw/` projection, and an LLM agent maintains the structured,
-interlinked wiki under `wiki/`. The wiki is disposable derived data, versioned
+truth; notes sync deterministically into an immutable `raw/` projection
+unless their frontmatter opts out with `wiki: false`, and an LLM agent
+maintains the structured, interlinked wiki under `wiki/`. The wiki is disposable derived data, versioned
 in git. The design of record is
 [`making-of/karpathy_obsidian_wiki_implementation_guide.md`](making-of/karpathy_obsidian_wiki_implementation_guide.md).
 
