@@ -74,7 +74,11 @@ function isNonEmptyString(value: unknown): value is string {
 }
 
 /** Names that would corrupt plain-object bookkeeping as keys. */
-const RESERVED_NAMES = new Set(["__proto__", "constructor", "prototype"]);
+export const RESERVED_NAMES = new Set([
+  "__proto__",
+  "constructor",
+  "prototype",
+]);
 
 function parseVaultName(value: unknown): string {
   if (!isNonEmptyString(value)) {
