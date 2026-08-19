@@ -1,9 +1,9 @@
 import { spawn } from "node:child_process";
-import { cp, mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
+import { cp, mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { randomUUID } from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { generateFixtureVault, VAULT_NAME } from "../src/fixtures/generate.ts";
