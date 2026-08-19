@@ -74,9 +74,10 @@ async function assertDirectory(vault: SyncVaultConfig): Promise<void> {
 
   try {
     info = await stat(vault.root);
-  } catch {
+  } catch (cause) {
     throw new Error(
       `vault root for "${vault.name}" is not accessible: ${vault.root}`,
+      { cause },
     );
   }
 
@@ -114,12 +115,23 @@ async function pruneEmptyDirs(dir: string, stopAt: string): Promise<void> {
   while (current.startsWith(stopAt) && current !== stopAt) {
     try {
       await rmdir(current);
-    } catch {
-      return;
+    } catch (cause) {
+      if (isPruneStop(cause)) {
+        return;
+      }
+
+      throw new Error(`failed to prune directory ${current}`, { cause });
     }
 
     current = dirname(current);
   }
+}
+
+/** Pruning stops when the directory has entries or no longer exists. */
+function isPruneStop(cause: unknown): boolean {
+  const code = (cause as NodeJS.ErrnoException).code;
+
+  return code === "ENOTEMPTY" || code === "ENOENT";
 }
 
 async function syncVault(

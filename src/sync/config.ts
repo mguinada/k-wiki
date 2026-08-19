@@ -52,15 +52,15 @@ const SELECT_PATTERN = /^([A-Za-z][A-Za-z0-9_-]*):true$/;
 
 /** Parse a `select` value such as `wiki:true`. */
 export function parseSelect(select: string): SelectExpression {
-  const match = SELECT_PATTERN.exec(select);
+  const key = SELECT_PATTERN.exec(select)?.[1];
 
-  if (match === null) {
+  if (key === undefined) {
     throw new Error(
       `unsupported select expression ${JSON.stringify(select)}: only "<key>:true" is supported`,
     );
   }
 
-  return { key: match[1], value: "true" };
+  return { key, value: "true" };
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

@@ -82,18 +82,24 @@ export function parseManifest(text: string, origin: string): Manifest {
 export function serializeManifest(manifest: Manifest): string {
   const sorted: Record<string, VaultNotes> = {};
 
-  for (const vaultName of Object.keys(manifest.vaults).sort()) {
+  for (const [vaultName, vault] of sortedEntries(manifest.vaults)) {
     const notes: VaultNotes = {};
-    const vault = manifest.vaults[vaultName];
 
-    for (const relPath of Object.keys(vault).sort()) {
-      notes[relPath] = vault[relPath];
+    for (const [relPath, entry] of sortedEntries(vault)) {
+      notes[relPath] = entry;
     }
 
     sorted[vaultName] = notes;
   }
 
   return `${JSON.stringify({ vaults: sorted }, null, 2)}\n`;
+}
+
+/** A record's entries sorted by key, in default string order. */
+function sortedEntries<T>(record: Record<string, T>): [string, T][] {
+  return Object.entries(record).sort(([a], [b]) =>
+    a < b ? -1 : a > b ? 1 : 0,
+  );
 }
 
 /** Write the manifest in canonical form. */

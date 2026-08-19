@@ -44,7 +44,7 @@ async function runCli(argv2: string | undefined): Promise<string> {
   const output: string[] = [];
 
   process.exitCode = undefined;
-  process.argv = [argv[0], argv[1], ...(argv2 === undefined ? [] : [argv2])];
+  process.argv = [...argv.slice(0, 2), ...(argv2 === undefined ? [] : [argv2])];
 
   const logSpy = vi
     .spyOn(console, "log")

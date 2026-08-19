@@ -34,6 +34,10 @@ export function isSelectedNote(
     return false;
   }
 
+  // Interpolation is safe only while parseSelect (config.ts) restricts
+  // the key to [A-Za-z][A-Za-z0-9_-]* — no regex metacharacters — and
+  // pins the value to the literal "true". Loosen either rule and this
+  // pattern must escape its inputs.
   const pattern = new RegExp(
     `^${select.key}:[ \\t]+${select.value}[ \\t]*$`,
     "m",
