@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { isMainModule } from "../cli/is-main.ts";
 
 /**
  * Synthetic Obsidian vault fixture generator.
@@ -175,11 +175,7 @@ export async function main(): Promise<void> {
   console.log(`Fixture vault written to ${vaultRoot}`);
 }
 
-/* v8 ignore next: import guard — distinguishes direct execution from
-   import; not exercisable in-process by construction */
-const isMain =
-  process.argv[1] !== undefined &&
-  import.meta.url === pathToFileURL(process.argv[1]).href;
+const isMain = isMainModule(import.meta.url);
 
 /* v8 ignore next: covered only under `node src/fixtures/generate.ts` */
 if (isMain) {
