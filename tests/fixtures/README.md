@@ -26,6 +26,6 @@ them byte-for-byte against generator output.
 | `.trash/deleted.md` | Noise: trashed note, skipped even though it says `wiki: true` |
 | `.DS_Store` | Noise: macOS Finder metadata, skipped |
 
-The vault is named `Documents` to mirror the real vault's shape. Only the
-vault-internal structure is faked here; the real vault's iCloud container
-path lives in [`sync.json`](../sync.json) (guide §26).
+The vault is named `Documents`. Only the vault-internal structure is faked
+here; the real vault's iCloud container path lives in
+[`sync.json`](../sync.json) (guide §26).
