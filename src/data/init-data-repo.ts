@@ -106,7 +106,7 @@ export async function seedDataRepo(
     if (entries.length > 0) {
       throw new Error(
         `${config.dataRoot} is not empty and is not a seeded data repo; ` +
-          "refusing to seed into it — move its contents or point \"dataRoot\" " +
+          'refusing to seed into it — move its contents or point "dataRoot" ' +
           "at an empty directory",
       );
     }
