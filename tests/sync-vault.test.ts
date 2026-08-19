@@ -317,6 +317,11 @@ describe("runSync edit detection", () => {
   });
 });
 
+// Root callers bypass the read-only directory check (CAP_DAC_OVERRIDE),
+// so a chmod-induced EACCES never occurs; skip the affected test there.
+const itRequiresPermissionChecks =
+  process.getuid !== undefined && process.getuid() === 0 ? it.skip : it;
+
 describe("runSync removal detection", () => {
   it("removes the raw copy when the source note disappears", async () => {
     const ws = await makeWorkspace();
@@ -382,20 +387,23 @@ describe("runSync removal detection", () => {
     ]);
   });
 
-  it("rejects when pruning an emptied directory fails for another reason than being not empty", async () => {
-    const ws = await makeWorkspace();
-    const namespaceRoot = join(ws.rawDir, "notes", VAULT_NAME);
+  itRequiresPermissionChecks(
+    "rejects when pruning an emptied directory fails for another reason than being not empty",
+    async () => {
+      const ws = await makeWorkspace();
+      const namespaceRoot = join(ws.rawDir, "notes", VAULT_NAME);
 
-    await run(ws, T1);
-    await rm(sourcePath(ws, "Scratch/temp-research.md"));
-    await chmod(namespaceRoot, 0o555);
+      await run(ws, T1);
+      await rm(sourcePath(ws, "Scratch/temp-research.md"));
+      await chmod(namespaceRoot, 0o555);
 
-    try {
-      await expect(run(ws, T2)).rejects.toThrow(/failed to prune/);
-    } finally {
-      await chmod(namespaceRoot, 0o755);
-    }
-  });
+      try {
+        await expect(run(ws, T2)).rejects.toThrow(/failed to prune/);
+      } finally {
+        await chmod(namespaceRoot, 0o755);
+      }
+    },
+  );
 
   it("removes the raw copy when the note loses its flag", async () => {
     const ws = await makeWorkspace();
