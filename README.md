@@ -63,7 +63,9 @@ Green tests do not prove that the tests assert real behavior. Mutation
 testing checks that: StrykerJS injects deliberate faults (mutants) into
 `src/` code and verifies that the unit test suite fails for each one. A
 surviving mutant means no test can tell the faulty code from the correct
-code — a weak spot in the suite.
+code — a weak spot in the suite. The triage procedure — kill or record
+each survivor — lives in the
+[mutation-triage](.agents/skills/mutation-triage/SKILL.md) skill.
 
 Mutation testing is an **advisory signal, not a gate**. Its runtime grows
 with the suite (`mutants × tests`), so it never blocks a merge:
