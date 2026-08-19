@@ -10,10 +10,20 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createColors } from "picocolors";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { generateFixtureVault, VAULT_NAME } from "../src/fixtures/generate.ts";
 import { parseManifest } from "../src/sync/manifest.ts";
-import { main, runSync } from "../src/sync/sync-vault.ts";
+import {
+  colorizeError,
+  colorizeProgress,
+  colorizeReportLine,
+  formatReport,
+  main,
+  PROGRESS_EVERY,
+  runSync,
+  type VaultSyncReport,
+} from "../src/sync/sync-vault.ts";
 import { collectFiles, SELECTED_PATHS } from "./e2e/helpers.ts";
 
 const T1 = "2026-08-16T15:00:00.000Z";
@@ -81,6 +91,19 @@ async function run(ws: Workspace, iso: string = T1) {
   });
 }
 
+/** Run with a progress collector; returns reports and messages. */
+async function runWithProgress(ws: Workspace, iso: string = T1) {
+  const messages: string[] = [];
+  const reports = await runSync({
+    configPath: ws.configPath,
+    rawDir: ws.rawDir,
+    now: fixedClock(iso),
+    onProgress: (message) => messages.push(message),
+  });
+
+  return { reports, messages };
+}
+
 async function readManifestOf(ws: Workspace) {
   const path = join(ws.rawDir, "manifest.json");
 
@@ -122,6 +145,7 @@ describe("runSync first run", () => {
     expect(await run(ws)).toEqual([
       {
         vault: VAULT_NAME,
+        candidates: 6,
         selected: 4,
         copied: SELECTED_PATHS,
         unchanged: [],
@@ -246,6 +270,7 @@ describe("runSync idempotence", () => {
     expect(second).toEqual([
       {
         vault: VAULT_NAME,
+        candidates: 6,
         selected: 4,
         copied: [],
         unchanged: SELECTED_PATHS,
@@ -517,6 +542,123 @@ describe("runSync removal detection", () => {
   });
 });
 
+describe("runSync progress", () => {
+  it("emits the raw dir as the first progress message", async () => {
+    const ws = await makeWorkspace();
+    const { messages } = await runWithProgress(ws);
+
+    expect(messages[0]).toBe(`sync-vault: raw dir ${ws.rawDir}`);
+  });
+
+  it("announces scanning and the candidate count right after the raw dir", async () => {
+    const ws = await makeWorkspace();
+    const { messages } = await runWithProgress(ws);
+
+    expect(messages.slice(0, 3)).toEqual([
+      `sync-vault: raw dir ${ws.rawDir}`,
+      `vault "${VAULT_NAME}": scanning ${ws.vaultRoot}`,
+      `vault "${VAULT_NAME}": 6 candidates`,
+    ]);
+  });
+
+  it("emits a heartbeat every PROGRESS_EVERY files read", async () => {
+    const ws = await makeWorkspace();
+
+    await mkdir(join(ws.vaultRoot, "AAbulk"), { recursive: true });
+
+    for (let index = 0; index < PROGRESS_EVERY; index += 1) {
+      await writeFile(
+        join(ws.vaultRoot, "AAbulk", `note-${index}.md`),
+        "# filler\n",
+      );
+    }
+
+    const { messages } = await runWithProgress(ws);
+
+    expect(messages).toEqual([
+      `sync-vault: raw dir ${ws.rawDir}`,
+      `vault "${VAULT_NAME}": scanning ${ws.vaultRoot}`,
+      `vault "${VAULT_NAME}": ${PROGRESS_EVERY + 6} candidates`,
+      `vault "${VAULT_NAME}": ${PROGRESS_EVERY}/${PROGRESS_EVERY + 6} read, 0 selected`,
+    ]);
+  });
+
+  it("delivers uncolored progress messages", async () => {
+    const ws = await makeWorkspace();
+    const { messages } = await runWithProgress(ws);
+
+    expect(messages.every((message) => !message.includes("\x1b["))).toBe(true);
+  });
+});
+
+describe("runSync candidate count", () => {
+  it("counts every markdown candidate, selected or not", async () => {
+    const ws = await makeWorkspace();
+    const { reports } = await runWithProgress(ws);
+
+    expect(reports[0]?.candidates).toBe(6);
+  });
+
+  it("counts zero candidates for a vault without markdown files", async () => {
+    const ws = await makeWorkspace();
+    const emptyRoot = join(ws.dir, "Empty");
+    const configPath = join(ws.dir, "empty-sync.json");
+
+    await mkdir(emptyRoot);
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        vaults: [{ name: "Empty", root: emptyRoot, select: "wiki:true" }],
+      }),
+    );
+
+    const reports = await runSync({
+      configPath,
+      rawDir: ws.rawDir,
+      now: fixedClock(T1),
+    });
+
+    expect(reports[0]?.candidates).toBe(0);
+  });
+});
+
+describe("formatReport zero-match hint", () => {
+  const noMatch: VaultSyncReport = {
+    vault: VAULT_NAME,
+    candidates: 6,
+    selected: 0,
+    copied: [],
+    unchanged: [],
+    removed: [],
+  };
+
+  it("appends the hint when candidates matched no selection rule", () => {
+    expect(formatReport([noMatch]).split("\n")[0]).toBe(
+      `vault "${VAULT_NAME}": 0 selected, 0 copied, 0 unchanged, 0 removed (6 candidates, none matched the selection rule)`,
+    );
+  });
+
+  it("omits the hint when the vault has no candidates", () => {
+    const report: VaultSyncReport = { ...noMatch, candidates: 0 };
+
+    expect(formatReport([report]).split("\n")[0]).toBe(
+      `vault "${VAULT_NAME}": 0 selected, 0 copied, 0 unchanged, 0 removed`,
+    );
+  });
+
+  it("omits the hint when candidates matched", () => {
+    const report: VaultSyncReport = {
+      ...noMatch,
+      selected: 1,
+      copied: ["a.md"],
+    };
+
+    expect(formatReport([report]).split("\n")[0]).toBe(
+      `vault "${VAULT_NAME}": 1 selected, 1 copied, 0 unchanged, 0 removed`,
+    );
+  });
+});
+
 describe("runSync home expansion", () => {
   it("syncs a vault whose root is a tilde path", async () => {
     const ws = await makeWorkspace({ root: `~/${VAULT_NAME}` });
@@ -611,14 +753,145 @@ describe("runSync multiple vaults", () => {
   });
 });
 
+describe("colorized output", () => {
+  const pc = createColors(true);
+
+  it("colors copied paths green", () => {
+    expect(colorizeReportLine("  + AI/RAG.md")).toBe(
+      `  + ${pc.green("AI/RAG.md")}`,
+    );
+  });
+
+  it("colors removed paths red", () => {
+    expect(colorizeReportLine("  - AI/RAG.md")).toBe(
+      `  - ${pc.red("AI/RAG.md")}`,
+    );
+  });
+
+  it("colors vault names bold in report lines", () => {
+    expect(
+      colorizeReportLine(
+        `vault "${VAULT_NAME}": 4 selected, 4 copied, 0 unchanged, 0 removed`,
+      ),
+    ).toBe(
+      `vault ${pc.bold(`"${VAULT_NAME}"`)}: 4 selected, 4 copied, 0 unchanged, 0 removed`,
+    );
+  });
+
+  it("dims the no-changes summary", () => {
+    expect(colorizeReportLine("sync complete: no changes")).toBe(
+      pc.dim("sync complete: no changes"),
+    );
+  });
+
+  it("colors a copy-only summary green", () => {
+    expect(colorizeReportLine("sync complete: 4 copied, 0 removed")).toBe(
+      pc.green("sync complete: 4 copied, 0 removed"),
+    );
+  });
+
+  it("colors a summary with removals red", () => {
+    expect(colorizeReportLine("sync complete: 0 copied, 1 removed")).toBe(
+      pc.red("sync complete: 0 copied, 1 removed"),
+    );
+  });
+
+  it("colors errors red", () => {
+    expect(colorizeError("sync-vault: boom")).toBe(pc.red("sync-vault: boom"));
+  });
+
+  it("colors vault names bold in progress messages", () => {
+    expect(colorizeProgress(`vault "${VAULT_NAME}": 6 candidates`)).toBe(
+      `vault ${pc.bold(`"${VAULT_NAME}"`)}: 6 candidates`,
+    );
+  });
+
+  it("leaves progress messages without a vault name plain", () => {
+    expect(colorizeProgress("sync-vault: raw dir /tmp/raw")).toBe(
+      "sync-vault: raw dir /tmp/raw",
+    );
+  });
+
+  it("does not bold a vault name embedded mid-message", () => {
+    expect(colorizeProgress('echo vault "X": done')).toBe(
+      'echo vault "X": done',
+    );
+  });
+
+  it("does not bold an undefined vault label embedded mid-message", () => {
+    expect(colorizeProgress('echo vault "undefined": done')).toBe(
+      'echo vault "undefined": done',
+    );
+  });
+
+  it("colors a summary without a removed count green", () => {
+    expect(colorizeReportLine("sync complete: 4 copied")).toBe(
+      pc.green("sync complete: 4 copied"),
+    );
+  });
+
+  it("colors a multi-digit-removal summary red", () => {
+    expect(colorizeReportLine("sync complete: 0 copied, 10 removed")).toBe(
+      pc.red("sync complete: 0 copied, 10 removed"),
+    );
+  });
+
+  it("leaves unrelated lines plain", () => {
+    expect(colorizeReportLine("banana")).toBe("banana");
+  });
+
+  describe("NO_COLOR", () => {
+    const original = process.env.NO_COLOR;
+
+    afterEach(() => {
+      if (original === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = original;
+      }
+    });
+
+    it("strips report color", () => {
+      process.env.NO_COLOR = "1";
+
+      expect(colorizeReportLine("  + AI/RAG.md")).toBe("  + AI/RAG.md");
+    });
+
+    it("strips progress color", () => {
+      process.env.NO_COLOR = "1";
+
+      expect(colorizeProgress(`vault "${VAULT_NAME}": 6 candidates`)).toBe(
+        `vault "${VAULT_NAME}": 6 candidates`,
+      );
+    });
+
+    it("strips error color", () => {
+      process.env.NO_COLOR = "1";
+
+      expect(colorizeError("sync-vault: boom")).toBe("sync-vault: boom");
+    });
+  });
+});
+
 describe("sync-vault CLI", () => {
-  async function runCli(args: string[]): Promise<{ out: string; err: string }> {
+  async function runCli(
+    args: string[],
+    options: { color?: boolean } = {},
+  ): Promise<{ out: string; err: string }> {
     const argv = process.argv;
     const out: string[] = [];
     const err: string[] = [];
+    const hadNoColor = "NO_COLOR" in process.env;
+    const prevNoColor = process.env.NO_COLOR;
 
     process.exitCode = undefined;
     process.argv = [...argv.slice(0, 2), ...args];
+
+    if (options.color) {
+      delete process.env.NO_COLOR;
+    } else {
+      process.env.NO_COLOR = "1";
+    }
 
     const logSpy = vi
       .spyOn(console, "log")
@@ -631,6 +904,13 @@ describe("sync-vault CLI", () => {
       await main();
     } finally {
       process.argv = argv;
+
+      if (hadNoColor) {
+        process.env.NO_COLOR = prevNoColor;
+      } else {
+        delete process.env.NO_COLOR;
+      }
+
       logSpy.mockRestore();
       errorSpy.mockRestore();
     }
@@ -703,6 +983,64 @@ describe("sync-vault CLI", () => {
     const { err } = await runCli([join(ws.dir, "nope.json"), ws.rawDir]);
 
     expect(err).toMatch(/cannot read sync config/);
+  });
+
+  it("writes progress to stderr", async () => {
+    const ws = await makeWorkspace();
+
+    const { err } = await runCli([ws.configPath, ws.rawDir]);
+
+    expect(err).toContain(`sync-vault: raw dir ${ws.rawDir}`);
+  });
+
+  it("keeps stdout free of progress", async () => {
+    const ws = await makeWorkspace();
+
+    const { out } = await runCli([ws.configPath, ws.rawDir]);
+
+    expect(out).not.toContain("raw dir");
+  });
+
+  it("colors the stdout report by default", async () => {
+    const ws = await makeWorkspace();
+
+    const { out } = await runCli([ws.configPath, ws.rawDir], { color: true });
+
+    expect(out).toContain("\x1b[");
+  });
+
+  it("colors the stderr progress by default", async () => {
+    const ws = await makeWorkspace();
+
+    const { err } = await runCli([ws.configPath, ws.rawDir], { color: true });
+
+    expect(err).toContain("\x1b[");
+  });
+
+  it("prints plain stdout when NO_COLOR is set", async () => {
+    const ws = await makeWorkspace();
+
+    const { out } = await runCli([ws.configPath, ws.rawDir]);
+
+    expect(out.includes("\x1b[")).toBe(false);
+  });
+
+  it("prints plain stderr when NO_COLOR is set", async () => {
+    const ws = await makeWorkspace();
+
+    const { err } = await runCli([ws.configPath, ws.rawDir]);
+
+    expect(err.includes("\x1b[")).toBe(false);
+  });
+
+  it("colors the error line red by default", async () => {
+    const ws = await makeWorkspace();
+
+    const { err } = await runCli([join(ws.dir, "nope.json"), ws.rawDir], {
+      color: true,
+    });
+
+    expect(err.startsWith("\x1b[31m")).toBe(true);
   });
 
   it("reports no changes for a config without vaults", async () => {

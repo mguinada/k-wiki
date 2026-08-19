@@ -3,6 +3,7 @@ import { mkdir, readFile, rm, rmdir, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { createColors } from "picocolors";
 import {
   loadSyncConfig,
   resolveRawDir,
@@ -40,10 +41,14 @@ export interface SyncOptions {
   readonly home?: string;
   /** Clock for `last_synced`; defaults to the wall clock. */
   readonly now?: () => Date;
+  /** Progress sink (uncolored messages); default: silent. */
+  readonly onProgress?: (message: string) => void;
 }
 
 export interface VaultSyncReport {
   readonly vault: string;
+  /** Markdown files considered, selected or not. */
+  readonly candidates: number;
   readonly selected: number;
   readonly copied: readonly string[];
   readonly unchanged: readonly string[];
@@ -134,24 +139,40 @@ function isPruneStop(cause: unknown): boolean {
   return code === "ENOTEMPTY" || code === "ENOENT";
 }
 
+/** Heartbeat interval for the read loop: one line per files read. */
+export const PROGRESS_EVERY = 500;
+
 async function syncVault(
   vault: SyncVaultConfig,
   rawDir: string,
   now: () => Date,
   previous: VaultNotes,
+  onProgress: (message: string) => void,
 ): Promise<{ notes: VaultNotes; report: VaultSyncReport }> {
   await assertDirectory(vault);
 
   const namespaceRoot = join(rawDir, "notes", vault.name);
+
+  onProgress(`vault "${vault.name}": scanning ${vault.root}`);
+
   const candidates = await scanVault(vault.root);
+
+  onProgress(`vault "${vault.name}": ${candidates.length} candidates`);
+
   const selected: SelectedNote[] = [];
   const decoder = new TextDecoder();
 
-  for (const relPath of candidates) {
+  for (const [index, relPath] of candidates.entries()) {
     const bytes = await readSourceNote(vault, relPath);
 
     if (isSelectedNote(decoder.decode(bytes), vault.select)) {
       selected.push({ relPath, bytes, hash: sha256(bytes) });
+    }
+
+    if ((index + 1) % PROGRESS_EVERY === 0) {
+      onProgress(
+        `vault "${vault.name}": ${index + 1}/${candidates.length} read, ${selected.length} selected`,
+      );
     }
   }
 
@@ -201,6 +222,7 @@ async function syncVault(
     notes,
     report: {
       vault: vault.name,
+      candidates: candidates.length,
       selected: selected.length,
       copied,
       unchanged,
@@ -215,6 +237,10 @@ export async function runSync(
 ): Promise<readonly VaultSyncReport[]> {
   const home = options.home ?? homedir();
   const now = options.now ?? (() => new Date());
+  const onProgress = options.onProgress ?? (() => {});
+
+  onProgress(`sync-vault: raw dir ${options.rawDir}`);
+
   const config = await loadSyncConfig(options.configPath, home);
   const manifestPath = join(options.rawDir, "manifest.json");
   const previousText = await readTextIfExists(manifestPath);
@@ -231,6 +257,7 @@ export async function runSync(
       options.rawDir,
       now,
       manifest.vaults[vault.name] ?? {},
+      onProgress,
     );
 
     nextManifest.vaults[vault.name] = notes;
@@ -250,9 +277,13 @@ export function formatReport(reports: readonly VaultSyncReport[]): string {
   const lines: string[] = [];
 
   for (const report of reports) {
-    lines.push(
-      `vault "${report.vault}": ${report.selected} selected, ${report.copied.length} copied, ${report.unchanged.length} unchanged, ${report.removed.length} removed`,
-    );
+    const counts = `vault "${report.vault}": ${report.selected} selected, ${report.copied.length} copied, ${report.unchanged.length} unchanged, ${report.removed.length} removed`;
+    const hint =
+      report.selected === 0 && report.candidates > 0
+        ? ` (${report.candidates} candidates, none matched the selection rule)`
+        : "";
+
+    lines.push(counts + hint);
 
     for (const relPath of report.copied) {
       lines.push(`  + ${relPath}`);
@@ -281,6 +312,59 @@ export function formatReport(reports: readonly VaultSyncReport[]): string {
   return lines.join("\n");
 }
 
+/** Colors on by default (piped included); NO_COLOR disables them. */
+function colors() {
+  return createColors(!process.env.NO_COLOR);
+}
+
+/** Bold the vault name of a progress message at the render boundary. */
+export function colorizeProgress(message: string): string {
+  const name = /^vault "([^"]*)":/.exec(message)?.[1];
+
+  if (name === undefined) {
+    return message;
+  }
+
+  return message.replace(
+    `vault "${name}":`,
+    () => `vault ${colors().bold(`"${name}"`)}:`,
+  );
+}
+
+/** Apply the color scheme to one report line at the render boundary. */
+export function colorizeReportLine(line: string): string {
+  if (line.startsWith("  + ")) {
+    return `  + ${colors().green(line.slice(4))}`;
+  }
+
+  if (line.startsWith("  - ")) {
+    return `  - ${colors().red(line.slice(4))}`;
+  }
+
+  const vaulted = colorizeProgress(line);
+
+  if (vaulted !== line) {
+    return vaulted;
+  }
+
+  if (line === "sync complete: no changes") {
+    return colors().dim(line);
+  }
+
+  if (line.startsWith("sync complete: ")) {
+    const removed = Number(/[0-9]+(?= removed)/.exec(line)?.[0] ?? 0);
+
+    return removed > 0 ? colors().red(line) : colors().green(line);
+  }
+
+  return line;
+}
+
+/** Color an error line red at the render boundary. */
+export function colorizeError(message: string): string {
+  return colors().red(message);
+}
+
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 /** sync-vault entry point: `sync-vault [config] [raw-dir]`. */
@@ -291,12 +375,20 @@ export async function main(): Promise<void> {
   try {
     const config = await loadSyncConfig(configPath);
     const rawDir = rawArg ?? resolveRawDir(config.dataRoot, repoRoot);
-    const reports = await runSync({ configPath, rawDir });
+    const reports = await runSync({
+      configPath,
+      rawDir,
+      onProgress: (message) => console.error(colorizeProgress(message)),
+    });
 
-    console.log(formatReport(reports));
+    console.log(
+      formatReport(reports).split("\n").map(colorizeReportLine).join("\n"),
+    );
   } catch (error) {
     console.error(
-      `sync-vault: ${error instanceof Error ? error.message : String(error)}`,
+      colorizeError(
+        `sync-vault: ${error instanceof Error ? error.message : String(error)}`,
+      ),
     );
     process.exitCode = 1;
   }

@@ -273,4 +273,62 @@ describe("sync-vault CLI scenarios: isolated workspaces", () => {
       /^1\|sync-vault: cannot read sync config/,
     );
   });
+
+  it("emits zero ANSI escape sequences when NO_COLOR is set", async () => {
+    const ws = await buildWorkspace();
+    const result = await runCli(SYNC_SCRIPT, [ws.configPath, ws.rawDir]);
+
+    expect(`${result.out}${result.err}`.includes("\x1b[")).toBe(false);
+  });
+
+  it("colors the stdout report when NO_COLOR is unset", async () => {
+    const ws = await buildWorkspace();
+    const result = await runCli(SYNC_SCRIPT, [ws.configPath, ws.rawDir], {
+      color: true,
+    });
+
+    expect(result.out.includes("\x1b[")).toBe(true);
+  });
+
+  it("colors the stderr progress when NO_COLOR is unset", async () => {
+    const ws = await buildWorkspace();
+    const result = await runCli(SYNC_SCRIPT, [ws.configPath, ws.rawDir], {
+      color: true,
+    });
+
+    expect(result.err.includes("\x1b[")).toBe(true);
+  });
+
+  it("writes the progress lines to stderr, not stdout", async () => {
+    const ws = await buildWorkspace();
+    const result = await runCli(SYNC_SCRIPT, [ws.configPath, ws.rawDir]);
+
+    expect(result.err).toContain(`sync-vault: raw dir ${ws.rawDir}`);
+  });
+
+  it("keeps stdout free of progress lines", async () => {
+    const ws = await buildWorkspace();
+    const result = await runCli(SYNC_SCRIPT, [ws.configPath, ws.rawDir]);
+
+    expect(result.out.includes("raw dir")).toBe(false);
+  });
+
+  it("hints at unmatched candidates when the selection rule matches nothing", async () => {
+    const ws = await buildWorkspace();
+
+    await writeFile(
+      ws.configPath,
+      JSON.stringify({
+        vaults: [
+          { name: VAULT_NAME, root: ws.vaultRoot, select: "nomatch:true" },
+        ],
+      }),
+    );
+
+    const result = await runCli(SYNC_SCRIPT, [ws.configPath, ws.rawDir]);
+
+    expect(result.out).toContain(
+      `vault "${VAULT_NAME}": 0 selected, 0 copied, 0 unchanged, 0 removed (6 candidates, none matched the selection rule)`,
+    );
+  });
 });

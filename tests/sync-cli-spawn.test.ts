@@ -1,7 +1,15 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
-import { cp, mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import {
+  cp,
+  mkdir,
+  mkdtemp,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -66,7 +74,10 @@ function runNode(args: readonly string[]): Promise<RunResult> {
     : [realpathSync(first), ...args.slice(1)];
 
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, realArgs, { stdio: "pipe" });
+    const child = spawn(process.execPath, realArgs, {
+      stdio: "pipe",
+      env: { ...process.env, NO_COLOR: "1" },
+    });
 
     let out = "";
     let err = "";
@@ -100,6 +111,13 @@ async function makeTmpRepo(): Promise<string> {
   await cp(srcDir, join(dir, "src"), {
     recursive: true,
   });
+
+  // The CLI imports runtime dependencies (picocolors); link the repo's
+  // node_modules so the staged copy can resolve them.
+  await symlink(
+    join(dirname(fileURLToPath(import.meta.url)), "../node_modules"),
+    join(dir, "node_modules"),
+  );
 
   const vaultRoot = await generateFixtureVault(dir);
 
@@ -259,21 +277,19 @@ describe("sync-vault CLI", () => {
   });
 
   it("projects the fixture vault into the data root when sync.json sets dataRoot", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "k-wiki-sync-cli-"));
-
-    tempDirs.push(dir);
-
-    const srcDir = join(dirname(fileURLToPath(import.meta.url)), "../src");
-
-    await cp(srcDir, join(dir, "src"), { recursive: true });
-
-    const vaultRoot = await generateFixtureVault(dir);
+    const dir = await makeTmpRepo();
 
     await writeFile(
       join(dir, "sync.json"),
       JSON.stringify({
         dataRoot: join(dir, "k-wiki-data"),
-        vaults: [{ name: VAULT_NAME, root: vaultRoot, select: "wiki:true" }],
+        vaults: [
+          {
+            name: VAULT_NAME,
+            root: join(dir, VAULT_NAME),
+            select: "wiki:true",
+          },
+        ],
       }),
     );
 
