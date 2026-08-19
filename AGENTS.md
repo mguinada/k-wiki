@@ -105,8 +105,9 @@ mandatory pre-handoff step. Before you declare work complete:
    mutant in the PR body. Re-run `npm run mutation:changed` until only
    recorded equivalents remain.
 4. `npm run mutation:changed -- --full` replaces step 1 when the change
-   is broad or touches test infrastructure; `npm run mutation:survivors`
-   re-lists the last report without re-running.
+   is broad, touches test infrastructure, or the user asks for a full
+   run; `npm run mutation:survivors` re-lists the last report without
+   re-running.
 
 The blocking gates (`npm run typecheck`, `npm run lint`, `npm test`)
 must still pass after any new tests. A `// Stryker disable` comment

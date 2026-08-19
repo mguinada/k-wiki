@@ -1,6 +1,6 @@
 ---
 name: mutation-triage
-description: "Triage StrykerJS mutation-testing survivors: extract surviving and uncovered mutants from reports/mutation/mutation.json, kill each with a new or stronger test, or record it as an equivalent mutant in the PR body, then re-run the scoped mutation to confirm. Use after `npm run mutation:changed` (or `npm run mutation`) reports survived or no-coverage mutants, or when the user says 'triage the survivors', 'handle the surviving mutants', or asks why tests did not catch a mutant. Do NOT use for running mutation testing itself (AGENTS.md already requires the scoped run before handoff) or for disabling mutators."
+description: "Triage StrykerJS mutation-testing survivors: extract surviving and uncovered mutants from reports/mutation/mutation.json, kill each with a new or stronger test, or record it as an equivalent mutant in the PR body, then re-run the scoped mutation to confirm. Use after `npm run mutation:changed` (or `npm run mutation`) reports survived or no-coverage mutants, or when the user says 'triage the survivors', 'triage the full mutation run', 'run mutation across all of src', 'handle the surviving mutants', or asks why tests did not catch a mutant. Do NOT use for running mutation testing itself (AGENTS.md already requires the scoped run before handoff) or for disabling mutators."
 ---
 
 # Mutation Triage
@@ -12,12 +12,14 @@ of the advisory workflow in AGENTS.md, never a gate.
 
 ## Procedure
 
-1. **Produce the JSON report.** If `reports/mutation/mutation.json` is
-   stale or missing, run `npm run mutation:changed` (changed files) or
-   `npm run mutation:changed -- --full` (everything). Incremental mode
-   makes both fast. Both commands print the actionable mutants
-   (Survived and NoCoverage) at the end of the run; re-list the last
-   report any time with `npm run mutation:survivors`.
+1. **Produce the JSON report.** Scope follows the user's request: the
+   diff-scoped run is the default; use `--full` when the user asks for
+   a full run across all source ("full mutation", "everything",
+   "all of src"). If `reports/mutation/mutation.json` is fresh enough
+   for that scope, reuse it. Incremental mode makes both fast. Both
+   commands print the actionable mutants (Survived and NoCoverage) at
+   the end of the run; re-list the last report any time with
+   `npm run mutation:survivors`.
 
 2. **Read the actionable list.** It is already printed — one line per
    mutant: status, `file:line`, mutator. For the diff of one mutant

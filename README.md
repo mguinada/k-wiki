@@ -91,7 +91,7 @@ loops over each mutant and either kills it with a new or stronger test
 or records it as an equivalent mutant in the PR body.
 
 You do **not** run a script first and then invoke the skill — the skill
-re-runs the scoped mutation itself if the report is stale. Two ways in:
+re-runs the mutation itself if the report is stale. Two ways in:
 
 - **Agent, mid-issue (the normal path):** `AGENTS.md` requires the agent
   to run `npm run mutation:changed` before declaring work complete; if
@@ -100,6 +100,16 @@ re-runs the scoped mutation itself if the report is stale. Two ways in:
 - **Human, any time:** run `npm run mutation:changed` (or re-list the
   last report with `npm run mutation:survivors`), then tell the agent
   `triage the survivors`.
+
+The scope rides on the prompt — one phrase runs and triages in one go:
+
+| You say | Agent runs |
+|---|---|
+| `triage the survivors` | `npm run mutation:changed` — diff scope (files changed vs `main`), the default |
+| `triage the full mutation run` / `run mutation across all of src and triage` | `npm run mutation:changed -- --full` — every file under `src/` |
+
+Any mention of "survivors" or "mutation triage" loads the skill; the
+word **full** (or its absence) picks the mode.
 
 Reports land in `reports/mutation/` (gitignored): `mutation.html` shows
 each mutant's original → replacement diff; `mutation.json` is the
