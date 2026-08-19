@@ -919,6 +919,40 @@ describe("runSync stale namespace pruning", () => {
 
     expect((await stat(manifestPath)).mtimeMs).toBe(before);
   });
+
+  it("keeps every manifest section when the config lists no vaults", async () => {
+    const ws = await makeWorkspace();
+
+    await seedRetiredNamespace(ws);
+    await writeFile(ws.configPath, JSON.stringify({ vaults: [] }));
+    await run(ws);
+
+    expect(Object.keys((await readManifestOf(ws)).vaults)).toEqual([
+      "Retired",
+    ]);
+  });
+
+  it("keeps every projected tree when the config lists no vaults", async () => {
+    const ws = await makeWorkspace();
+
+    await seedRetiredNamespace(ws);
+    await writeFile(ws.configPath, JSON.stringify({ vaults: [] }));
+    await run(ws);
+
+    expect(await collectFiles(join(ws.rawDir, "notes"))).toEqual([
+      "Retired/Old.md",
+    ]);
+  });
+
+  it("reports no pruned namespaces when the config lists no vaults", async () => {
+    const ws = await makeWorkspace();
+
+    await seedRetiredNamespace(ws);
+    await writeFile(ws.configPath, JSON.stringify({ vaults: [] }));
+    const { pruned } = await runWithProgress(ws);
+
+    expect(pruned).toEqual([]);
+  });
 });
 
 describe("colorized output", () => {

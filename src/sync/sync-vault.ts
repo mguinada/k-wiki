@@ -292,11 +292,15 @@ export async function runSync(options: SyncOptions): Promise<SyncReport> {
 
   const prunedNamespaces: string[] = [];
 
-  for (const name of staleNames) {
-    delete nextManifest.vaults[name];
-    await rm(join(notesRoot, name), { recursive: true, force: true });
-    onProgress(`vault "${name}": removed stale namespace (not configured)`);
-    prunedNamespaces.push(name);
+  // An empty vault list is a misconfigured run (truncated sync.json);
+  // it must never be read as "prune everything".
+  if (config.vaults.length > 0) {
+    for (const name of staleNames) {
+      delete nextManifest.vaults[name];
+      await rm(join(notesRoot, name), { recursive: true, force: true });
+      onProgress(`vault "${name}": removed stale namespace (not configured)`);
+      prunedNamespaces.push(name);
+    }
   }
 
   for (const vault of config.vaults) {

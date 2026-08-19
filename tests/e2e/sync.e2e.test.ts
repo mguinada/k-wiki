@@ -206,6 +206,22 @@ describe("sync-vault CLI lifecycle: one vault, one story", () => {
 });
 
 describe("sync-vault CLI scenarios: isolated workspaces", () => {
+  /** Sync once under the fixture name, then rename the vault to "Renamed". */
+  async function syncThenRename(ws: Workspace): Promise<CliResult> {
+    await runCli(SYNC_SCRIPT, [ws.configPath, ws.rawDir]);
+
+    await writeFile(
+      ws.configPath,
+      JSON.stringify({
+        vaults: [
+          { name: "Renamed", root: ws.vaultRoot, select: "wiki:true" },
+        ],
+      }),
+    );
+
+    return runCli(SYNC_SCRIPT, [ws.configPath, ws.rawDir]);
+  }
+
   async function buildTwoVaultWorkspace(): Promise<Workspace> {
     const ws = await buildWorkspace();
     const journalRoot = join(ws.dir, "Journal");
@@ -330,5 +346,43 @@ describe("sync-vault CLI scenarios: isolated workspaces", () => {
     expect(result.out).toContain(
       `vault "${VAULT_NAME}": 0 selected, 0 copied, 0 unchanged, 0 removed (6 candidates, none matched the selection rule)`,
     );
+  });
+
+  it("announces the pruned namespace in the report on a rename", async () => {
+    const ws = await buildWorkspace();
+    const result = await syncThenRename(ws);
+
+    expect(result.out).toContain(
+      `- ${VAULT_NAME}/ (stale namespace, not configured)`,
+    );
+  });
+
+  it("keys the manifest under the new name only after a rename", async () => {
+    const ws = await buildWorkspace();
+
+    await syncThenRename(ws);
+
+    expect(Object.keys((await readManifest(ws)).vaults)).toEqual([
+      "Renamed",
+    ]);
+  });
+
+  it("projects the notes under the new namespace only after a rename", async () => {
+    const ws = await buildWorkspace();
+
+    await syncThenRename(ws);
+
+    expect(await collectFiles(join(ws.rawDir, "notes"))).toEqual(
+      SELECTED_PATHS.map((rel) => `Renamed/${rel}`),
+    );
+  });
+
+  it("reports no changes on the re-run after a rename", async () => {
+    const ws = await buildWorkspace();
+
+    await syncThenRename(ws);
+    const result = await runCli(SYNC_SCRIPT, [ws.configPath, ws.rawDir]);
+
+    expect(result.out).toContain("sync complete: no changes");
   });
 });
