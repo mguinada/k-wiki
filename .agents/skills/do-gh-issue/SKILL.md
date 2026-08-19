@@ -23,7 +23,7 @@ patterns.
 8. Confirm the issue's assumed dependencies are satisfied in the current tree (prior issues merged, packages, fixtures); a missing dependency is a blocker.
 9. Fetch the repository's default branch and create the working branch and worktree from `origin/<default-branch>` — never from the branch currently checked out. Branch name: `<issue-number>-<slug>`, no prefixes or suffixes.
 10. Implement with TDD (Red-Green-Refactor), staying inside the issue's scope and acceptance criteria; when the issue affects public behavior, architecture, policy, deployment, service boundaries, trust boundaries, or operator workflow, update the documentation in the same change.
-11. Run the project's quality gates — typecheck, lint, full test suite, E2E tests where they exist — and fix failures; the work is not successful until the relevant checks pass.
+11. Run the project's quality gates — typecheck, lint, full test suite, E2E tests where they exist — and fix failures; the work is not successful until the relevant checks pass. Then run the advisory checks the repository defines (in this repo: `npm run mutation:changed` before handoff — triage printed survivors per the repo's mutation-triage skill; they are advisory, recorded in the PR body, never blocking).
 12. Re-check every acceptance criterion against the change honestly, write the handoff summary, then delegate the finish: `git-commit` for the commit, `create-pr` for push and PR.
 
 ## Handoff summary

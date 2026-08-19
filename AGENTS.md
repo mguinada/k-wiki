@@ -92,12 +92,25 @@ enforces the 90% coverage floor.
 
 ### Mutation testing (advisory)
 
-Mutation testing is an advisory signal, not a gate. Before you hand off
-an issue, run `npm run mutation:changed` on the changed `src/` files.
-Every surviving mutant is either killed by a new or stronger test, or
-recorded as an equivalent mutant in the PR body. A
-`// Stryker disable` comment without a written justification line in the
-PR body is forbidden.
+Mutation testing is an advisory signal, not a gate — but it is a
+mandatory pre-handoff step. Before you declare work complete:
+
+1. Run `npm run mutation:changed`. It mutates the `src/` files changed
+   vs `origin/main` (uncommitted work included) and ends by printing
+   the actionable mutants (Survived and NoCoverage).
+2. Empty list — nothing to do; the step is complete.
+3. Non-empty list — load the mutation-triage skill
+   (`.agents/skills/mutation-triage/SKILL.md`) and follow it: kill every
+   survivor with a new or stronger test, or record it as an equivalent
+   mutant in the PR body. Re-run `npm run mutation:changed` until only
+   recorded equivalents remain.
+4. `npm run mutation:changed -- --full` replaces step 1 when the change
+   is broad or touches test infrastructure; `npm run mutation:survivors`
+   re-lists the last report without re-running.
+
+The blocking gates (`npm run typecheck`, `npm run lint`, `npm test`)
+must still pass after any new tests. A `// Stryker disable` comment
+without a written justification line in the PR body is forbidden.
 
 ## Iron Rules
 
