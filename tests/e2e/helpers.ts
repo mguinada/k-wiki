@@ -25,11 +25,14 @@ export const repoRoot = resolve(
 export const SYNC_SCRIPT = join(repoRoot, "src", "sync", "sync-vault.ts");
 export const HEALTH_SCRIPT = join(repoRoot, "src", "health", "check-raw.ts");
 
-/** The fixture vault's `wiki: true` notes, sorted. */
+/** The fixture vault's notes ingested under `exclude: "wiki:false"`, sorted. */
 export const SELECTED_PATHS = [
   "AI/RAG.md",
   "AI/llms/attention-is-all-you-need.md",
   "AI/rag-evaluation-notes.md",
+  "Inbox/clipped-note.md",
+  "Inbox/parking-lot.md",
+  "Inbox/quick-idea.md",
   "Scratch/temp-research.md",
 ];
 
@@ -97,7 +100,7 @@ export async function buildWorkspace(): Promise<Workspace> {
   await writeFile(
     configPath,
     JSON.stringify({
-      vaults: [{ name: VAULT_NAME, root: vaultRoot, select: "wiki:true" }],
+      vaults: [{ name: VAULT_NAME, root: vaultRoot, exclude: "wiki:false" }],
     }),
   );
 

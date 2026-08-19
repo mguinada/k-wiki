@@ -164,8 +164,11 @@ describe("fixture vault generator", () => {
       "AI/RAG.md",
       "AI/llms/attention-is-all-you-need.md",
       "AI/rag-evaluation-notes.md",
+      "Inbox/clipped-note.md",
       "Inbox/parking-lot.md",
+      "Inbox/quick-idea.md",
       "Projects/house-renovation.md",
+      "Projects/private-clipped.md",
       "Scratch/temp-research.md",
     ]);
   });
@@ -204,7 +207,7 @@ describe("fixture vault generator", () => {
     );
   });
 
-  it("excludes Projects/house-renovation.md with wiki:false", async () => {
+  it("blocks Projects/house-renovation.md with wiki:false", async () => {
     await expectFrontmatterLine(
       await newVault(),
       "Projects/house-renovation.md",
@@ -212,10 +215,34 @@ describe("fixture vault generator", () => {
     );
   });
 
-  it("excludes Inbox/parking-lot.md which has no frontmatter", async () => {
+  it("plants Inbox/parking-lot.md without any frontmatter", async () => {
     expect(
       await readNote(await newVault(), "Inbox/parking-lot.md"),
     ).not.toMatch(/^---/);
+  });
+
+  it("plants Inbox/quick-idea.md with a blank wiki flag", async () => {
+    await expectFrontmatterLine(
+      await newVault(),
+      "Inbox/quick-idea.md",
+      "wiki:",
+    );
+  });
+
+  it('plants Inbox/clipped-note.md with a quoted wiki:"true" flag', async () => {
+    await expectFrontmatterLine(
+      await newVault(),
+      "Inbox/clipped-note.md",
+      'wiki: "true"',
+    );
+  });
+
+  it('blocks Projects/private-clipped.md with a quoted wiki:"false" flag', async () => {
+    await expectFrontmatterLine(
+      await newVault(),
+      "Projects/private-clipped.md",
+      'wiki: "false"',
+    );
   });
 
   it("plants parseable JSON settings at .obsidian/app.json", async () => {

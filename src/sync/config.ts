@@ -9,8 +9,8 @@ import { join } from "node:path";
  * only.
  */
 
-/** A selection expression; only `<key>:true` is supported for now. */
-export interface SelectExpression {
+/** An exclusion expression; only `<key>:false` is supported. */
+export interface ExcludeExpression {
   readonly key: string;
   readonly value: string;
 }
@@ -20,7 +20,7 @@ export interface SyncVaultConfig {
   readonly name: string;
   /** Vault root with `~` already expanded. */
   readonly root: string;
-  readonly select: SelectExpression;
+  readonly exclude: ExcludeExpression;
 }
 
 /** Parsed from `sync.json`; parsed but unused by sync-vault for now. */
@@ -50,19 +50,19 @@ export function expandHome(path: string, home: string = homedir()): string {
   return path;
 }
 
-const SELECT_PATTERN = /^([A-Za-z][A-Za-z0-9_-]*):true$/;
+const EXCLUDE_PATTERN = /^([A-Za-z][A-Za-z0-9_-]*):false$/;
 
-/** Parse a `select` value such as `wiki:true`. */
-export function parseSelect(select: string): SelectExpression {
-  const key = SELECT_PATTERN.exec(select)?.[1];
+/** Parse an `exclude` value such as `wiki:false`. */
+export function parseExclude(exclude: string): ExcludeExpression {
+  const key = EXCLUDE_PATTERN.exec(exclude)?.[1];
 
   if (key === undefined) {
     throw new Error(
-      `unsupported select expression ${JSON.stringify(select)}: only "<key>:true" is supported`,
+      `unsupported exclude expression ${JSON.stringify(exclude)}: only "<key>:false" is supported`,
     );
   }
 
-  return { key, value: "true" };
+  return { key, value: "false" };
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -123,15 +123,19 @@ function parseVaults(value: unknown, home: string): SyncVaultConfig[] {
         throw new Error('"root" must be a non-empty string');
       }
 
-      if (typeof entry.select !== "string") {
-        throw new Error('"select" must be a string');
+      if (Object.hasOwn(entry, "select")) {
+        throw new Error('"select" was replaced by "exclude"; remove "select"');
+      }
+
+      if (typeof entry.exclude !== "string") {
+        throw new Error('"exclude" must be a string');
       }
 
       seen.add(name);
       vaults.push({
         name,
         root: expandHome(entry.root, home),
-        select: parseSelect(entry.select),
+        exclude: parseExclude(entry.exclude),
       });
     } catch (cause) {
       throw new Error(`vaults[${index}]: ${(cause as Error).message}`, {

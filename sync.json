@@ -4,7 +4,7 @@
     {
       "name": "Documents",
       "root": "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/Engineering",
-      "select": "wiki:true"
+      "exclude": "wiki:false"
     }
   ],
   "publish": {

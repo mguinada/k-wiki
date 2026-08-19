@@ -5,7 +5,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import {
   expandHome,
   loadSyncConfig,
-  parseSelect,
+  parseExclude,
   resolveRawDir,
 } from "../src/sync/config.ts";
 
@@ -39,7 +39,7 @@ const ONE_VAULT = {
     {
       name: "Documents",
       root: "~/vaults/Documents",
-      select: "wiki:true",
+      exclude: "wiki:false",
     },
   ],
 };
@@ -72,16 +72,16 @@ describe("expandHome", () => {
   });
 });
 
-describe("parseSelect", () => {
+describe("parseExclude", () => {
   it("rejects an expression with anything before the key", () => {
-    expect(() => parseSelect(" wiki:true")).toThrow(
-      /unsupported select expression/,
+    expect(() => parseExclude(" wiki:false")).toThrow(
+      /unsupported exclude expression/,
     );
   });
 
   it("rejects an expression with anything after the value", () => {
-    expect(() => parseSelect("wiki:true today")).toThrow(
-      /unsupported select expression/,
+    expect(() => parseExclude("wiki:false today")).toThrow(
+      /unsupported exclude expression/,
     );
   });
 });
@@ -105,13 +105,13 @@ describe("loadSyncConfig", () => {
     expect(config.vaults[0]?.root).toBe("/home/alice/vaults/Documents");
   });
 
-  it("parses the select expression into key and value", async () => {
+  it("parses the exclude expression into key and value", async () => {
     const config = await loadSyncConfig(
       await writeConfig(ONE_VAULT),
       "/home/alice",
     );
 
-    expect(config.vaults[0]?.select).toEqual({ key: "wiki", value: "true" });
+    expect(config.vaults[0]?.exclude).toEqual({ key: "wiki", value: "false" });
   });
 
   it("expands the publish mirror against home", async () => {
@@ -261,14 +261,40 @@ describe("loadSyncConfig", () => {
     ).rejects.toThrow(/root/);
   });
 
-  it("rejects a select expression other than <key>:true", async () => {
+  it("rejects an exclude expression other than <key>:false", async () => {
     const bad = {
-      vaults: [{ ...ONE_VAULT.vaults[0], root: "/v", select: "wiki: false" }],
+      vaults: [{ ...ONE_VAULT.vaults[0], root: "/v", exclude: "wiki:true" }],
     };
 
     await expect(
       loadSyncConfig(await writeConfig(bad), "/home/alice"),
-    ).rejects.toThrow(/unsupported select expression/);
+    ).rejects.toThrow(/unsupported exclude expression/);
+  });
+
+  it("rejects a vault entry that still sets select", async () => {
+    const bad = {
+      vaults: [{ ...ONE_VAULT.vaults[0], select: "wiki:true" }],
+    };
+
+    await expect(
+      loadSyncConfig(await writeConfig(bad), "/home/alice"),
+    ).rejects.toThrow(/"select" was replaced by "exclude"/);
+  });
+
+  it("rejects a vault entry that sets both select and exclude", async () => {
+    const bad = {
+      vaults: [
+        {
+          ...ONE_VAULT.vaults[0],
+          select: "wiki:true",
+          exclude: "wiki:false",
+        },
+      ],
+    };
+
+    await expect(
+      loadSyncConfig(await writeConfig(bad), "/home/alice"),
+    ).rejects.toThrow(/"select" was replaced by "exclude"/);
   });
 
   it("rejects a config whose root is null", async () => {
@@ -340,7 +366,7 @@ describe("loadSyncConfig", () => {
 
     await writeFile(
       path,
-      JSON.stringify({ vaults: [{ name: "V", root: "/v", select: 3 }] }),
+      JSON.stringify({ vaults: [{ name: "V", root: "/v", exclude: 3 }] }),
     );
 
     const error: unknown = await loadSyncConfig(path, "/home/alice").catch(
@@ -387,14 +413,14 @@ describe("loadSyncConfig", () => {
     ).rejects.toThrow(/vaults\[0\] must be an object/);
   });
 
-  it("rejects a select expression that is not a string", async () => {
+  it("rejects an exclude expression that is not a string", async () => {
     const bad = {
-      vaults: [{ ...ONE_VAULT.vaults[0], root: "/v", select: 3 }],
+      vaults: [{ ...ONE_VAULT.vaults[0], root: "/v", exclude: 3 }],
     };
 
     await expect(
       loadSyncConfig(await writeConfig(bad), "/home/alice"),
-    ).rejects.toThrow(/"select" must be a string/);
+    ).rejects.toThrow(/"exclude" must be a string/);
   });
 
   it("rejects a publish mirror that is not a non-empty string", async () => {

@@ -32,8 +32,11 @@ describe("scanVault", () => {
       "AI/RAG.md",
       "AI/llms/attention-is-all-you-need.md",
       "AI/rag-evaluation-notes.md",
+      "Inbox/clipped-note.md",
       "Inbox/parking-lot.md",
+      "Inbox/quick-idea.md",
       "Projects/house-renovation.md",
+      "Projects/private-clipped.md",
       "Scratch/temp-research.md",
     ]);
   });
@@ -91,8 +94,11 @@ describe("scanVault", () => {
       "AI/llms/attention-is-all-you-need.md",
       "AI/rag-evaluation-notes.md",
       "B.md",
+      "Inbox/clipped-note.md",
       "Inbox/parking-lot.md",
+      "Inbox/quick-idea.md",
       "Projects/house-renovation.md",
+      "Projects/private-clipped.md",
       "Scratch/temp-research.md",
       "a.md",
     ]);

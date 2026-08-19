@@ -136,15 +136,17 @@ Recommended ownership:
 
 ## 4. Decide Which Source Notes Enter the Wiki
 
-Recommended: use frontmatter.
+Recommended: use frontmatter with an opt-out rule. Everything syncs
+unless a note explicitly blocks itself:
 
-```yaml
----
-wiki: true
----
-```
+| Frontmatter | Ingested? |
+|---|---|
+| `wiki: false` | no |
+| `wiki: true` | yes |
+| property absent or blank | yes |
 
-Only notes with `wiki: true` are synchronized.
+Quoted values (`wiki: "false"`) block like unquoted ones — the
+Obsidian web clipper writes Text properties quoted.
 
 Example:
 
@@ -158,7 +160,7 @@ wiki: true
 My notes about RAG...
 ```
 
-Private/scratch notes simply omit the field or use:
+Private/scratch notes opt out explicitly:
 
 ```yaml
 ---
@@ -166,7 +168,10 @@ wiki: false
 ---
 ```
 
-Do not synchronize sensitive/private material unless you explicitly intend to.
+The failure direction is a leak, not a loss: forgetting to block a
+private note publishes it into `raw/` and git history. Before the
+first sync after inverting the rule, review the would-ingest list with
+a dry run (`sync-vault --dry-run`) and block private notes.
 
 ---
 
@@ -340,7 +345,7 @@ Scheduled job
     ↓
 Scan MyVault
     ↓
-Find wiki:true notes
+Drop wiki:false notes
     ↓
 Compare hashes
     ↓
@@ -1190,17 +1195,16 @@ Build this vertical slice first:
 
 ```text
 1. Install the obsidian-markdown and obsidian-bases skills at project level.
-2. Select one source note.
-3. Mark it wiki:true.
-4. Sync it to raw/.
-5. Run the ingestion prompt.
-6. Create one or more wiki pages with valid Obsidian frontmatter.
-7. Add source attribution and canonical tags.
-8. Update index.md.
-9. Update log.md.
-10. Run lint, including frontmatter/tag validation.
-11. Inspect git diff.
-12. Ask a question and file a valuable answer under `queries/`.
+2. Select one source note (it syncs unless blocked with wiki: false).
+3. Sync it to raw/.
+4. Run the ingestion prompt.
+5. Create one or more wiki pages with valid Obsidian frontmatter.
+6. Add source attribution and canonical tags.
+7. Update index.md.
+8. Update log.md.
+9. Run lint, including frontmatter/tag validation.
+10. Inspect git diff.
+11. Ask a question and file a valuable answer under `queries/`.
 ```
 
 Then test:
@@ -1398,7 +1402,7 @@ All placement knowledge lives in one human-owned file at the `k-wiki` root:
   "vaults": [
     { "name": "Documents",
       "root": "~/Library/Mobile Documents/iCloud~md~obsidian/Documents",
-      "select": "wiki:true" }
+      "exclude": "wiki:false" }
   ],
   "publish": {
     "mirror": "~/Library/Mobile Documents/iCloud~md~obsidian/KWiki",
