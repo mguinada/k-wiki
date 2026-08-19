@@ -1,0 +1,203 @@
+import { spawn } from "node:child_process";
+import { realpathSync } from "node:fs";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { afterAll, describe, expect, it } from "vitest";
+import {
+  buildPageIndex,
+  checkWikiLinks,
+  extractWikilinks,
+} from "../scripts/check-links.ts";
+
+const script = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "../scripts/check-links.ts",
+);
+
+const tempDirs: string[] = [];
+
+afterAll(async () => {
+  await Promise.all(
+    tempDirs.map((dir) => rm(dir, { recursive: true, force: true })),
+  );
+});
+
+/** A minimal wiki tree at `<root>/wiki` holding the given files. */
+async function makeWiki(files: Record<string, string>): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), "k-wiki-links-"));
+
+  tempDirs.push(root);
+
+  for (const [file, content] of Object.entries(files)) {
+    await mkdir(join(root, "wiki", dirname(file)), { recursive: true });
+    await writeFile(join(root, "wiki", file), content);
+  }
+
+  return root;
+}
+
+interface RunResult {
+  readonly code: number | null;
+  readonly out: string;
+  readonly err: string;
+}
+
+function runNode(args: readonly string[]): Promise<RunResult> {
+  // argv[1] must be the real path: import.meta.url is realpath'd by
+  // Node, and a symlinked spawn path (macOS tmp) would make the CLI
+  // import guard compare unequal and skip main().
+  const realArgs = [realpathSync(script), ...args];
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, realArgs, { stdio: "pipe" });
+
+    let out = "";
+    let err = "";
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      out += chunk;
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      err += chunk;
+    });
+    child.on("error", reject);
+    child.on("close", (code) => resolve({ code, out, err }));
+  });
+}
+
+describe("extractWikilinks", () => {
+  it("extracts the page name of a bare wikilink", () => {
+    expect(
+      extractWikilinks("See [[retrieval-augmented-generation]] here."),
+    ).toEqual([
+      {
+        target: "retrieval-augmented-generation",
+        line: 1,
+        raw: "[[retrieval-augmented-generation]]",
+      },
+    ]);
+  });
+
+  it("keeps only the page name of an aliased wikilink", () => {
+    expect(extractWikilinks("[[vector-database|my db]]")).toEqual([
+      {
+        target: "vector-database",
+        line: 1,
+        raw: "[[vector-database|my db]]",
+      },
+    ]);
+  });
+
+  it("drops the heading anchor from the page name", () => {
+    expect(extractWikilinks("[[vector-database#Vendors]]")[0]?.target).toBe(
+      "vector-database",
+    );
+  });
+
+  it("records the 1-based line of each wikilink", () => {
+    const text = "First.\n\nThen [[fine-tuning]] and later [[kv-cache]].\n";
+
+    expect(extractWikilinks(text).map((link) => link.line)).toEqual([3, 3]);
+  });
+
+  it("ignores anchor-only links and single-bracket text", () => {
+    expect(
+      extractWikilinks("[[#Details]] and [[|alias]] and [not a link]"),
+    ).toEqual([]);
+  });
+});
+
+describe("buildPageIndex", () => {
+  it("maps a kebab-case file name to its wiki-relative path", () => {
+    expect(
+      buildPageIndex(["concepts/vector-database.md"]).get("vector-database"),
+    ).toBe("concepts/vector-database.md");
+  });
+
+  it("ignores files that are not markdown", () => {
+    expect(
+      buildPageIndex(["concepts/vector-database.txt"]).has("vector-database"),
+    ).toBe(false);
+  });
+});
+
+describe("checkWikiLinks", () => {
+  it("resolves a wikilink across wiki subdirectories", async () => {
+    const root = await makeWiki({
+      "index.md": "Start at [[vector-database]].\n",
+      "concepts/vector-database.md": "# Vector Database\n",
+    });
+
+    const report = await checkWikiLinks(join(root, "wiki"));
+
+    expect(report.broken).toEqual([]);
+  });
+
+  it("counts the found links and scanned pages of a clean tree", async () => {
+    const root = await makeWiki({
+      "index.md": "Start at [[vector-database]].\n",
+      "concepts/vector-database.md": "# Vector Database\n",
+    });
+
+    const report = await checkWikiLinks(join(root, "wiki"));
+
+    expect(`${report.links}/${report.pages}`).toBe("1/2");
+  });
+
+  it("reports a broken link as file:line -> [[link]]", async () => {
+    const root = await makeWiki({
+      "index.md": "Intro line.\nBroken [[missing-page]] here.\n",
+    });
+
+    const report = await checkWikiLinks(join(root, "wiki"));
+
+    expect(report.broken).toEqual(["wiki/index.md:2 -> [[missing-page]]"]);
+  });
+
+  it("prints the original aliased text for a broken link", async () => {
+    const root = await makeWiki({
+      "index.md": "Broken [[missing-page|alias]] here.\n",
+    });
+
+    const report = await checkWikiLinks(join(root, "wiki"));
+
+    expect(report.broken).toEqual([
+      "wiki/index.md:1 -> [[missing-page|alias]]",
+    ]);
+  });
+});
+
+describe("check-links CLI", () => {
+  it("exits 0 with a summary on a wiki tree where every link resolves", async () => {
+    const root = await makeWiki({
+      "index.md": "Start at [[vector-database]].\n",
+      "concepts/vector-database.md": "# Vector Database\n",
+    });
+
+    const result = await runNode([join(root, "wiki")]);
+
+    expect(`${result.code}: ${result.out}`).toBe(
+      "0: ok: 1 wikilink resolves across 2 pages\n",
+    );
+  });
+
+  it("exits 1 and prints the broken link on a wiki tree with a broken link", async () => {
+    const root = await makeWiki({
+      "index.md": "Intro line.\nBroken [[missing-page]] here.\n",
+    });
+
+    const result = await runNode([join(root, "wiki")]);
+
+    expect(`${result.code}: ${result.err}`).toBe(
+      "1: wiki/index.md:2 -> [[missing-page]]\n",
+    );
+  });
+
+  it("exits 0 on the repository wiki with no arguments", async () => {
+    const result = await runNode([]);
+
+    expect(`${result.code}: ${result.out.startsWith("ok:")}`).toBe("0: true");
+  });
+});
