@@ -49,11 +49,41 @@ sources directly, so there is no build step — install dependencies with
 | `npm run test:coverage` | vitest | Run the unit tests and fail below the 90% coverage thresholds — what CI runs |
 | `npm run fixtures -- <dir>` | fixture generator | Write the synthetic Obsidian test vault to `<dir>/Documents` |
 | `npm run sync-vault -- [<sync.json>] [<raw-dir>]` | sync CLI | Project `wiki:true` notes from the configured vaults into `raw/notes/` (deterministic, no LLM; defaults to the repo's `sync.json` and `raw/`) |
+| `npm run mutation` | StrykerJS | Full advisory mutation run over `src/` — injects deliberate faults and checks that tests fail; writes `reports/mutation/mutation.html` |
+| `npm run mutation:changed` | StrykerJS | Advisory mutation run scoped to `src/` files changed vs `main` — exits 0 without running when none changed |
 
 Type check, lint, and unit tests are quality gates: every change passes
 them before it is done. CI (`.github/workflows/ci.yml`) enforces the same
 gates on every pull request, testing each PR's merge commit against
 `main`, with a 90% coverage floor on unit tests.
+
+### Mutation testing
+
+Green tests do not prove that the tests assert real behavior. Mutation
+testing checks that: StrykerJS injects deliberate faults (mutants) into
+`src/` code and verifies that the unit test suite fails for each one. A
+surviving mutant means no test can tell the faulty code from the correct
+code — a weak spot in the suite.
+
+Mutation testing is an **advisory signal, not a gate**. Its runtime grows
+with the suite (`mutants × tests`), so it never blocks a merge:
+
+- Run `npm run mutation` for a full run over `src/` (incremental: it
+  reuses past results from `reports/stryker-incremental.json`).
+- Run `npm run mutation:changed` to mutate only the `src/` files changed
+  vs `main`; it exits 0 without running when nothing changed.
+
+In CI, the mutation job runs only when a pull request carries the
+[`mutation`](https://github.com/mguinada/k-wiki/labels) label, nightly on
+`main`, or via manual workflow dispatch — never as a blocking check. Its
+HTML report is uploaded as an artifact (7-day retention). The agent
+workflow around it is defined in [AGENTS.md](AGENTS.md).
+
+`stryker.config.json` keeps `tsconfig.json` out of the sandbox
+(`ignorePatterns`): the repo runs TypeScript 7 (native), whose package
+ships no JavaScript compiler API, which Stryker's sandbox tsconfig
+rewrite still requires (upstream: stryker-js#6111). Vitest compiles via
+esbuild and needs no tsconfig. Revisit when Stryker supports TypeScript 7.
 
 The fixture generator produces a deterministic fake vault — fixed bytes,
 no timestamps — covering every case the sync layer must handle (selected,

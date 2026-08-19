@@ -9,11 +9,23 @@
 # runs on GitHub-hosted runners: no step may print raw/ or vault contents
 # into logs — the gates emit tool diagnostics only, and the test suite
 # reads synthetic fixtures, never real vault data.
+#
+# The mutation job is advisory, never a gate (issue #21): it runs only
+# when a PR carries the `mutation` label, nightly on main, or via manual
+# dispatch, and continue-on-error keeps its outcome from blocking merge.
+# It follows the same log-hygiene rule: Stryker mutates and prints repo
+# code under src/ only; the suite reads synthetic fixtures, never vault
+# data.
 
 name: CI
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  schedule:
+    # Nightly at 03:30 UTC.
+    - cron: "30 3 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -25,6 +37,9 @@ concurrency:
 jobs:
   typecheck:
     name: Type check
+    # `labeled` events exist only to evaluate the mutation job's label
+    # condition; the gates skip them.
+    if: github.event_name == 'pull_request' && github.event.action != 'labeled'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -37,6 +52,7 @@ jobs:
 
   lint:
     name: Lint
+    if: github.event_name == 'pull_request' && github.event.action != 'labeled'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -49,6 +65,7 @@ jobs:
 
   test:
     name: Unit tests
+    if: github.event_name == 'pull_request' && github.event.action != 'labeled'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -58,3 +75,29 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:coverage
+
+  mutation:
+    name: Mutation testing (advisory)
+    # PRs: only when labeled `mutation`. Otherwise: nightly schedule on
+    # main and manual workflow_dispatch runs. Scheduled/dispatched runs
+    # carry no pull_request context, so contains() falls through to false
+    # without erroring.
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'mutation')
+    runs-on: ubuntu-latest
+    # Advisory signal, not a gate: a failing run must never block a merge.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run mutation
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report
+          path: reports/mutation/mutation.html
+          retention-days: 7

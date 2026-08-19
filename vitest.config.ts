@@ -2,6 +2,9 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
+    // Keep vitest out of Stryker's sandbox copies: a crashed mutation run
+    // leaves them behind, and they would double the suite.
+    exclude: ["**/node_modules/**", ".stryker-tmp/**"],
     coverage: {
       provider: "v8",
       include: ["src/**"],

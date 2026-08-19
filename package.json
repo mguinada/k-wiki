@@ -14,10 +14,13 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "fixtures": "node src/fixtures/generate.ts",
-    "sync-vault": "node src/sync/sync-vault.ts"
+    "sync-vault": "node src/sync/sync-vault.ts",
+    "mutation": "stryker run",
+    "mutation:changed": "sh scripts/mutation-changed.sh"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",
+    "@stryker-mutator/vitest-runner": "^10.0.0",
     "@types/node": "^22.20.1",
     "@vitest/coverage-v8": "^4.1.10",
     "typescript": "^7.0.2",

@@ -90,6 +90,15 @@ enforces the 90% coverage floor.
 - Put exactly one expectation in each `it` block.
 - Name each `it` block after the fact that its expectation verifies.
 
+### Mutation testing (advisory)
+
+Mutation testing is an advisory signal, not a gate. Before you hand off
+an issue, run `npm run mutation:changed` on the changed `src/` files.
+Every surviving mutant is either killed by a new or stronger test, or
+recorded as an equivalent mutant in the PR body. A
+`// Stryker disable` comment without a written justification line in the
+PR body is forbidden.
+
 ## Iron Rules
 
 These rules apply to all agent work in this repository and take precedence

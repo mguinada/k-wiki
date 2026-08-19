@@ -10,3 +10,7 @@
 .codegraph/
 node_modules/
 coverage/
+
+# StrykerJS: mutation temp dir, HTML report, and incremental state
+.stryker-tmp/
+reports/
