@@ -13,6 +13,9 @@ usage: scripts/mutation-changed.sh [--full]
        (same as: npm run mutation:changed [--full])
 
 Advisory StrykerJS mutation testing — a signal, never a gate.
+Both modes end by printing the actionable mutants (Survived and
+NoCoverage) from reports/mutation/mutation.json. Re-list the last
+report any time with: npm run mutation:survivors
 
 Default:  Mutate only the src/**/*.ts files changed vs origin/main,
           including uncommitted work. Exits 0 without running Stryker
@@ -27,7 +30,8 @@ EOF
 
 case "${1:-}" in
   --full)
-    exec npx stryker run
+    npx stryker run
+    node scripts/mutation-survivors.ts
     ;;
   --help|-h)
     usage
@@ -56,4 +60,5 @@ fi
 echo "Mutating changed src files:"
 echo "$changed" | sed 's/^/  /'
 
-exec npx stryker run --mutate $changed
+npx stryker run --mutate $changed
+node scripts/mutation-survivors.ts

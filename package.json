@@ -16,7 +16,8 @@
     "fixtures": "node src/fixtures/generate.ts",
     "sync-vault": "node src/sync/sync-vault.ts",
     "mutation": "stryker run",
-    "mutation:changed": "sh scripts/mutation-changed.sh"
+    "mutation:changed": "sh scripts/mutation-changed.sh",
+    "mutation:survivors": "node scripts/mutation-survivors.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",

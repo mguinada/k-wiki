@@ -15,21 +15,14 @@ of the advisory workflow in AGENTS.md, never a gate.
 1. **Produce the JSON report.** If `reports/mutation/mutation.json` is
    stale or missing, run `npm run mutation:changed` (changed files) or
    `npm run mutation:changed -- --full` (everything). Incremental mode
-   makes both fast.
+   makes both fast. Both commands print the actionable mutants
+   (Survived and NoCoverage) at the end of the run; re-list the last
+   report any time with `npm run mutation:survivors`.
 
-2. **List the actionable mutants** (Survived and NoCoverage — Timeout
-   counts as killed, CompileError and Ignored are noise):
-
-   ```sh
-   jq -r '.files | to_entries[] | .key as $f | .value.mutants[]
-     | select(.status == "Survived" or .status == "NoCoverage")
-     | "\(.status)\t\($f):\(.location.start.line)\t\(.mutatorName)"' \
-     reports/mutation/mutation.json
-   ```
-
-   For the diff of one mutant (original → replacement), open
-   `reports/mutation/mutation.html` or read the source line named
-   above.
+2. **Read the actionable list.** It is already printed — one line per
+   mutant: status, `file:line`, mutator. For the diff of one mutant
+   (original → replacement), open `reports/mutation/mutation.html` or
+   read the source line named there.
 
 3. **Triage each mutant.** Read the mutated code with enough context,
    then decide:
