@@ -14,3 +14,6 @@ coverage/
 # StrykerJS: mutation temp dir, HTML report, and incremental state
 .stryker-tmp/
 reports/
+
+# In-process CLI import staging (transient; see tests/sync-cli-spawn.test.ts)
+tests/.cli-import-staging/
