@@ -1,5 +1,5 @@
 import type { Stats } from "node:fs";
-import { mkdir, readFile, rm, rmdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, rmdir, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -27,7 +27,8 @@ import { scanVault } from "./scan.ts";
  * notes into `raw/notes/` (guide §8). For every vault in `sync.json`, it
  * scans markdown files, selects `wiki: true` notes, hashes them, copies
  * new or changed notes, removes projections whose source disappeared or
- * lost its flag, and records state in `raw/manifest.json`. The run is
+ * lost its flag, prunes namespaces that left the config, and records
+ * state in `raw/manifest.json`. The run is
  * idempotent: a second run with no source changes copies, removes, and
  * writes nothing.
  */
@@ -137,6 +138,23 @@ function isPruneStop(cause: unknown): boolean {
   const code = (cause as NodeJS.ErrnoException).code;
 
   return code === "ENOTEMPTY" || code === "ENOENT";
+}
+
+/** Namespace directories under the notes root; empty when it is absent. */
+async function listNamespaceDirs(notesRoot: string): Promise<string[]> {
+  try {
+    const entries = await readdir(notesRoot, { withFileTypes: true });
+
+    return entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return [];
+    }
+
+    throw error;
+  }
 }
 
 /** Heartbeat interval for the read loop: one line per files read. */
@@ -250,6 +268,20 @@ export async function runSync(
       : parseManifest(previousText, manifestPath);
   const reports: VaultSyncReport[] = [];
   const nextManifest: Manifest = { vaults: { ...manifest.vaults } };
+  const notesRoot = join(options.rawDir, "notes");
+  const configuredNames = new Set(config.vaults.map((vault) => vault.name));
+  const staleNames = [
+    ...new Set([
+      ...Object.keys(manifest.vaults),
+      ...(await listNamespaceDirs(notesRoot)),
+    ]),
+  ].filter((name) => !configuredNames.has(name));
+
+  for (const name of staleNames) {
+    delete nextManifest.vaults[name];
+    await rm(join(notesRoot, name), { recursive: true, force: true });
+    onProgress(`vault "${name}": removed stale namespace (not configured)`);
+  }
 
   for (const vault of config.vaults) {
     const { notes, report } = await syncVault(

@@ -735,21 +735,104 @@ describe("runSync multiple vaults", () => {
     ]);
   });
 
-  it("preserves manifest entries of vaults no longer configured", async () => {
+});
+
+describe("runSync stale namespace pruning", () => {
+  const retiredEntry = { hash: "0".repeat(64), last_synced: T1 };
+
+  async function seedRetiredNamespace(ws: Workspace): Promise<void> {
+    await mkdir(ws.rawDir, { recursive: true });
+    await writeFile(
+      join(ws.rawDir, "manifest.json"),
+      JSON.stringify({ vaults: { Retired: { "Old.md": retiredEntry } } }),
+    );
+    await mkdir(join(ws.rawDir, "notes", "Retired"), { recursive: true });
+    await writeFile(join(ws.rawDir, "notes", "Retired", "Old.md"), "# old\n");
+  }
+
+  it("drops the manifest section of a namespace absent from the config", async () => {
     const ws = await makeWorkspace();
-    const retired: Record<string, { hash: string; last_synced: string }> = {
-      "Old.md": { hash: "0".repeat(64), last_synced: T1 },
-    };
+
+    await seedRetiredNamespace(ws);
+    await run(ws, T1);
+
+    expect(Object.keys((await readManifestOf(ws)).vaults)).toEqual([
+      VAULT_NAME,
+    ]);
+  });
+
+  it("deletes the projected tree of a namespace absent from the config", async () => {
+    const ws = await makeWorkspace();
+
+    await seedRetiredNamespace(ws);
+    await run(ws, T1);
+
+    expect(await collectFiles(join(ws.rawDir, "notes"))).toEqual(
+      SELECTED_PATHS.map((rel) => `${VAULT_NAME}/${rel}`),
+    );
+  });
+
+  it("drops a stale manifest section whose projected tree is already gone", async () => {
+    const ws = await makeWorkspace();
 
     await mkdir(ws.rawDir, { recursive: true });
     await writeFile(
       join(ws.rawDir, "manifest.json"),
-      JSON.stringify({ vaults: { Retired: retired } }),
+      JSON.stringify({ vaults: { Retired: { "Old.md": retiredEntry } } }),
     );
-
     await run(ws, T1);
 
-    expect((await readManifestOf(ws)).vaults.Retired).toEqual(retired);
+    expect(Object.keys((await readManifestOf(ws)).vaults)).toEqual([
+      VAULT_NAME,
+    ]);
+  });
+
+  it("deletes an orphan namespace directory without a manifest entry", async () => {
+    const ws = await makeWorkspace();
+
+    await mkdir(join(ws.rawDir, "notes", "Retired"), { recursive: true });
+    await writeFile(join(ws.rawDir, "notes", "Retired", "Old.md"), "# old\n");
+    await run(ws, T1);
+
+    await expect(stat(join(ws.rawDir, "notes", "Retired"))).rejects.toMatchObject(
+      { code: "ENOENT" },
+    );
+  });
+
+  it("leaves files that are not namespace directories in the notes root", async () => {
+    const ws = await makeWorkspace();
+    const keepPath = join(ws.rawDir, "notes", ".gitkeep");
+
+    await mkdir(join(ws.rawDir, "notes"), { recursive: true });
+    await writeFile(keepPath, "");
+    await run(ws, T1);
+
+    expect((await stat(keepPath)).isFile()).toBe(true);
+  });
+
+  it("announces each removed namespace as progress", async () => {
+    const ws = await makeWorkspace();
+
+    await seedRetiredNamespace(ws);
+    const { messages } = await runWithProgress(ws);
+
+    expect(messages).toContain(
+      'vault "Retired": removed stale namespace (not configured)',
+    );
+  });
+
+  it("does not rewrite the manifest on the run after pruning", async () => {
+    const ws = await makeWorkspace();
+    const manifestPath = join(ws.rawDir, "manifest.json");
+
+    await seedRetiredNamespace(ws);
+    await run(ws, T1);
+
+    const before = (await stat(manifestPath)).mtimeMs;
+
+    await run(ws, T2);
+
+    expect((await stat(manifestPath)).mtimeMs).toBe(before);
   });
 });
 
