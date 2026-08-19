@@ -1,4 +1,5 @@
 import { rename, writeFile } from "node:fs/promises";
+import { RESERVED_NAMES } from "./config.ts";
 
 /**
  * Sync state (guide §8, §25 Scenario A): `raw/manifest.json` records, per
@@ -50,6 +51,12 @@ export function parseManifest(text: string, origin: string): Manifest {
   const vaults: Record<string, VaultNotes> = {};
 
   for (const [vaultName, notes] of Object.entries(parsed.vaults)) {
+    if (RESERVED_NAMES.has(vaultName)) {
+      throw new Error(
+        `invalid manifest at ${origin}: reserved vault name ${JSON.stringify(vaultName)}`,
+      );
+    }
+
     if (!isPlainObject(notes)) {
       throw new Error(
         `invalid manifest at ${origin}: vault ${JSON.stringify(vaultName)} must map note paths to entries`,
@@ -59,6 +66,12 @@ export function parseManifest(text: string, origin: string): Manifest {
     const vault: VaultNotes = {};
 
     for (const [relPath, entry] of Object.entries(notes)) {
+      if (RESERVED_NAMES.has(relPath)) {
+        throw new Error(
+          `invalid manifest at ${origin}: vault ${JSON.stringify(vaultName)} has reserved note path ${JSON.stringify(relPath)}`,
+        );
+      }
+
       if (
         !isPlainObject(entry) ||
         typeof entry.hash !== "string" ||
