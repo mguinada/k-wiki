@@ -1,4 +1,5 @@
 {
+  "dataRoot": "~/Lab/k-wiki-data",
   "vaults": [
     {
       "name": "Documents",

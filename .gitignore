@@ -5,6 +5,13 @@
 # See tests/fixtures/README.md before you change this.
 !tests/fixtures/Documents/.DS_Store
 
+# Data (raw/, wiki/) contents live in the data repo (sync.json dataRoot).
+# Only the tracked skeleton files below those paths are versioned here;
+# tracked files stay tracked, and any new file under these trees is
+# invisible to git add — by design (issue #29).
+raw/**
+wiki/**
+
 # skill-creator eval workspace (scratch)
 .agents/skills/do-gh-issue-workspace/
 .codegraph/

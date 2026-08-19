@@ -14,7 +14,8 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "fixtures": "node src/fixtures/generate.ts",
-    "sync-vault": "node src/sync/sync-vault.ts"
+    "sync-vault": "node src/sync/sync-vault.ts",
+    "data:init": "node src/data/init-data-repo.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",
