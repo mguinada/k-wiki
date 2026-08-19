@@ -651,6 +651,9 @@ For every new or changed source:
 9. Revise `overview.md` when the overall picture changes.
 10. Append a concise entry to `log.md`.
 11. Check for contradictions, duplicates, orphan pages, and unsupported claims.
+12. Run `npm run check-links -- <wiki-dir>` from the code-repo checkout
+    (the data repo does not ship the tool) and fix every broken
+    `[[wikilink]]` it reports.
 
 Create a new concept or entity page only when the term appears in more than
 one source or is clearly central; avoid stub pages.
