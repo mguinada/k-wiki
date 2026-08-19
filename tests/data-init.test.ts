@@ -41,7 +41,12 @@ describe("data:init CLI help", () => {
     const out: string[] = [];
     const err: string[] = [];
 
+    const savedEnv = new Map(
+      Object.keys(GIT_ENV).map((key) => [key, process.env[key]]),
+    );
+
     process.argv = [...argv.slice(0, 2), ...args];
+    Object.assign(process.env, GIT_ENV);
 
     const logSpy = vi
       .spyOn(console, "log")
@@ -54,6 +59,15 @@ describe("data:init CLI help", () => {
       await main();
     } finally {
       process.argv = argv;
+
+      for (const [key, value] of savedEnv) {
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      }
+
       logSpy.mockRestore();
       errorSpy.mockRestore();
     }
