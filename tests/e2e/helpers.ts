@@ -43,17 +43,25 @@ export interface CliResult {
  * Run a repo CLI as a real child process. `argv[1]` must be the real
  * path: `import.meta.url` is realpath'd by Node, and a symlinked spawn
  * path would make the CLI import guards compare unequal and skip
- * `main()`.
+ * `main()`. Children run with `NO_COLOR=1` so byte-exact output
+ * assertions stay plain; pass `{ color: true }` to drop it.
  */
 export function runCli(
   script: string,
   args: readonly string[],
+  options: { color?: boolean } = {},
 ): Promise<CliResult> {
   const realScript = realpathSync(script);
+  const env: NodeJS.ProcessEnv = { ...process.env, NO_COLOR: "1" };
+
+  if (options.color) {
+    delete env.NO_COLOR;
+  }
 
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [realScript, ...args], {
       stdio: "pipe",
+      env,
     });
 
     let out = "";
