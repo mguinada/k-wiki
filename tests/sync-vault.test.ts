@@ -927,9 +927,7 @@ describe("runSync stale namespace pruning", () => {
     await writeFile(ws.configPath, JSON.stringify({ vaults: [] }));
     await run(ws);
 
-    expect(Object.keys((await readManifestOf(ws)).vaults)).toEqual([
-      "Retired",
-    ]);
+    expect(Object.keys((await readManifestOf(ws)).vaults)).toEqual(["Retired"]);
   });
 
   it("keeps every projected tree when the config lists no vaults", async () => {

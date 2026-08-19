@@ -213,9 +213,7 @@ describe("sync-vault CLI scenarios: isolated workspaces", () => {
     await writeFile(
       ws.configPath,
       JSON.stringify({
-        vaults: [
-          { name: "Renamed", root: ws.vaultRoot, select: "wiki:true" },
-        ],
+        vaults: [{ name: "Renamed", root: ws.vaultRoot, select: "wiki:true" }],
       }),
     );
 
@@ -362,9 +360,7 @@ describe("sync-vault CLI scenarios: isolated workspaces", () => {
 
     await syncThenRename(ws);
 
-    expect(Object.keys((await readManifest(ws)).vaults)).toEqual([
-      "Renamed",
-    ]);
+    expect(Object.keys((await readManifest(ws)).vaults)).toEqual(["Renamed"]);
   });
 
   it("projects the notes under the new namespace only after a rename", async () => {
