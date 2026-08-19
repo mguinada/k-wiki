@@ -140,7 +140,7 @@ describe("checkRaw healthy projection", () => {
     expect((await checkRaw(rawDir)).problems).toEqual([]);
   });
 
-  it("does not count a namespace that holds no manifest entries and no markdown files", async () => {
+  it("does not count a namespace directory that holds no manifest entries and no files", async () => {
     const rawDir = await makeRawDir();
 
     await projectNote(rawDir, "Documents", "AI/RAG.md", NOTE);
@@ -148,7 +148,6 @@ describe("checkRaw healthy projection", () => {
       Documents: { "AI/RAG.md": entryFor(NOTE) },
     });
     await mkdir(join(rawDir, "notes", "Junk"), { recursive: true });
-    await writeFile(join(rawDir, "notes", "Junk", "notes.txt"), "not markdown");
 
     expect((await checkRaw(rawDir)).summary).toBe(
       "healthy: manifest and projection agree (1 note, 1 vault)",
@@ -199,6 +198,36 @@ describe("checkRaw problems", () => {
 
     expect((await checkRaw(rawDir)).problems).toEqual([
       "notes/Documents/AI/orphan.md: orphan (no manifest entry)",
+    ]);
+  });
+
+  it("names a non-markdown file under a namespace as an orphan", async () => {
+    const rawDir = await makeRawDir();
+
+    await projectNote(rawDir, "Documents", "AI/RAG.md", NOTE);
+    await projectNote(rawDir, "Documents", "stray.txt", "not a projection");
+    await writeManifestFile(rawDir, {
+      Documents: { "AI/RAG.md": entryFor(NOTE) },
+    });
+
+    expect((await checkRaw(rawDir)).problems).toEqual([
+      "notes/Documents/stray.txt: orphan (no manifest entry)",
+    ]);
+  });
+
+  it("names vault-noise file names under a namespace as orphans", async () => {
+    const rawDir = await makeRawDir();
+
+    await projectNote(rawDir, "Documents", "AI/RAG.md", NOTE);
+    await projectNote(rawDir, "Documents", ".DS_Store", "");
+    await projectNote(rawDir, "Documents", "note.md.bak", "old bytes");
+    await writeManifestFile(rawDir, {
+      Documents: { "AI/RAG.md": entryFor(NOTE) },
+    });
+
+    expect((await checkRaw(rawDir)).problems).toEqual([
+      "notes/Documents/.DS_Store: orphan (no manifest entry)",
+      "notes/Documents/note.md.bak: orphan (no manifest entry)",
     ]);
   });
 

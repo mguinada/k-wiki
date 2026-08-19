@@ -3,7 +3,6 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { sha256 } from "../sync/hash.ts";
 import { parseManifest, type VaultNotes } from "../sync/manifest.ts";
-import { scanVault } from "../sync/scan.ts";
 
 /**
  * raw/ health check: a read-only, vault-free coherence check of the
@@ -70,20 +69,46 @@ async function listNamespaceDirs(notesRoot: string): Promise<string[]> {
 }
 
 /**
- * Scan one namespace directory for markdown files; undefined when the
- * directory does not exist (every manifest entry is then missing).
+ * Scan one namespace directory for every file, markdown or not — the
+ * projection must hold exactly the manifest's notes, so any file
+ * without a manifest entry is an orphan. Undefined when the directory
+ * does not exist (every manifest entry is then missing).
  */
 async function scanNamespace(
   namespaceRoot: string,
 ): Promise<string[] | undefined> {
+  const files: string[] = [];
+
   try {
-    return await scanVault(namespaceRoot);
+    await walkFiles(namespaceRoot, "", files);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       return undefined;
     }
 
     throw error;
+  }
+
+  files.sort();
+
+  return files;
+}
+
+async function walkFiles(
+  dir: string,
+  prefix: string,
+  files: string[],
+): Promise<void> {
+  const entries = await readdir(dir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
+
+    if (entry.isDirectory()) {
+      await walkFiles(join(dir, entry.name), rel, files);
+    } else if (entry.isFile()) {
+      files.push(rel);
+    }
   }
 }
 
