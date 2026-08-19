@@ -111,6 +111,15 @@ describe("checkRaw healthy-empty", () => {
 
     expect((await checkRaw(rawDir)).healthy).toBe(true);
   });
+
+  it("ignores a self-referential symlink under notes", async () => {
+    const rawDir = await makeRawDir();
+
+    await mkdir(join(rawDir, "notes"), { recursive: true });
+    await symlink("loop", join(rawDir, "notes", "loop"));
+
+    expect((await checkRaw(rawDir)).healthy).toBe(true);
+  });
 });
 
 describe("checkRaw healthy projection", () => {
@@ -477,6 +486,7 @@ describe("health CLI", () => {
     const err: string[] = [];
 
     process.argv = [...argv.slice(0, 2), ...args];
+    process.exitCode = undefined;
 
     const logSpy = vi
       .spyOn(console, "log")
@@ -495,6 +505,38 @@ describe("health CLI", () => {
 
     return { out: out.join("\n"), err: err.join("\n") };
   }
+
+  it("prints the usage line for --help", async () => {
+    const { out } = await runHealth(["--help"]);
+
+    expect(out).toContain("check-raw [-h | --help] [<raw-dir>]");
+  });
+
+  it("prints the same help for -h as for --help", async () => {
+    expect((await runHealth(["-h"])).out).toBe(
+      (await runHealth(["--help"])).out,
+    );
+  });
+
+  it("documents the -h and --help switches themselves", async () => {
+    expect((await runHealth(["--help"])).out).toContain("-h, --help");
+  });
+
+  it("states the exit statuses in the help text", async () => {
+    expect((await runHealth(["--help"])).out).toContain("Exit status");
+  });
+
+  it("leaves the exit code unset for --help", async () => {
+    await runHealth(["--help"]);
+
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("prints help without touching the raw dir for --help", async () => {
+    const { err } = await runHealth(["--help", join(tmpdir(), "no-such-raw")]);
+
+    expect(err).not.toContain("no-such-raw");
+  });
 
   it("prints the healthy summary and exits 0 for a healthy projection", async () => {
     const rawDir = await makeRawDir();

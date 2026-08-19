@@ -37,7 +37,7 @@ wiki: true
 Edited during the e2e lifecycle run.
 `;
 
-const UNFLAGGED_NOTE = `---
+const BLOCKED_NOTE = `---
 source: https://arxiv.org/abs/1706.03762
 wiki: false
 ---
@@ -86,9 +86,9 @@ describe("sync-vault CLI lifecycle: one vault, one story", () => {
     expect(`${lastRun.code}\n${lastRun.out}`).toBe(
       [
         "0",
-        `vault "${VAULT_NAME}": 4 selected, 4 copied, 0 unchanged, 0 removed`,
+        `vault "${VAULT_NAME}": 7 selected, 7 copied, 0 unchanged, 0 removed`,
         ...SELECTED_PATHS.map((rel) => `  + ${rel}`),
-        "sync complete: 4 copied, 0 removed",
+        "sync complete: 7 copied, 0 removed",
         "",
       ].join("\n"),
     );
@@ -172,6 +172,9 @@ describe("sync-vault CLI lifecycle: one vault, one story", () => {
         "AI/RAG.md",
         "AI/llms/attention-is-all-you-need.md",
         "AI/rag-evaluation-notes.md",
+        "Inbox/clipped-note.md",
+        "Inbox/parking-lot.md",
+        "Inbox/quick-idea.md",
       ].map((rel) => `${VAULT_NAME}/${rel}`),
     );
   });
@@ -186,17 +189,17 @@ describe("sync-vault CLI lifecycle: one vault, one story", () => {
     ).toBe(false);
   });
 
-  it("removes the projection when a note loses its flag", async () => {
+  it("removes the projection when a note is blocked", async () => {
     await writeFile(
       sourcePath(ws, "AI/llms/attention-is-all-you-need.md"),
-      UNFLAGGED_NOTE,
+      BLOCKED_NOTE,
     );
 
     lastRun = await runCli(SYNC_SCRIPT, [ws.configPath, ws.rawDir]);
 
     expect(`${lastRun.code}|${lastRun.out}`).toBe(
       `0|${[
-        `vault "${VAULT_NAME}": 2 selected, 0 copied, 2 unchanged, 1 removed`,
+        `vault "${VAULT_NAME}": 5 selected, 0 copied, 5 unchanged, 1 removed`,
         "  - AI/llms/attention-is-all-you-need.md",
         "sync complete: 0 copied, 1 removed",
         "",
@@ -213,7 +216,9 @@ describe("sync-vault CLI scenarios: isolated workspaces", () => {
     await writeFile(
       ws.configPath,
       JSON.stringify({
-        vaults: [{ name: "Renamed", root: ws.vaultRoot, select: "wiki:true" }],
+        vaults: [
+          { name: "Renamed", root: ws.vaultRoot, exclude: "wiki:false" },
+        ],
       }),
     );
 
@@ -240,8 +245,8 @@ describe("sync-vault CLI scenarios: isolated workspaces", () => {
       ws.configPath,
       JSON.stringify({
         vaults: [
-          { name: VAULT_NAME, root: ws.vaultRoot, select: "wiki:true" },
-          { name: "Journal", root: journalRoot, select: "wiki:true" },
+          { name: VAULT_NAME, root: ws.vaultRoot, exclude: "wiki:false" },
+          { name: "Journal", root: journalRoot, exclude: "wiki:false" },
         ],
       }),
     );
@@ -260,6 +265,9 @@ describe("sync-vault CLI scenarios: isolated workspaces", () => {
       "Documents/AI/RAG.md",
       "Documents/AI/llms/attention-is-all-you-need.md",
       "Documents/AI/rag-evaluation-notes.md",
+      "Documents/Inbox/clipped-note.md",
+      "Documents/Inbox/parking-lot.md",
+      "Documents/Inbox/quick-idea.md",
       "Documents/Scratch/temp-research.md",
       "Journal/Daily/day-1.md",
       "Journal/day-2.md",
@@ -327,14 +335,26 @@ describe("sync-vault CLI scenarios: isolated workspaces", () => {
     expect(result.out.includes("raw dir")).toBe(false);
   });
 
-  it("hints at unmatched candidates when the selection rule matches nothing", async () => {
+  it("hints at all-blocked candidates when the exclusion rule blocks everything", async () => {
     const ws = await buildWorkspace();
+    const blockedRoot = join(ws.dir, "Blocked");
+
+    await mkdir(blockedRoot, { recursive: true });
+    await writeFile(
+      join(blockedRoot, "a.md"),
+      "---\nwiki: false\n---\n\n# A\n",
+    );
+    await writeFile(
+      join(blockedRoot, "b.md"),
+      "---\nwiki: false\n---\n\n# B\n",
+    );
 
     await writeFile(
       ws.configPath,
       JSON.stringify({
         vaults: [
-          { name: VAULT_NAME, root: ws.vaultRoot, select: "nomatch:true" },
+          { name: VAULT_NAME, root: ws.vaultRoot, exclude: "wiki:false" },
+          { name: "Blocked", root: blockedRoot, exclude: "wiki:false" },
         ],
       }),
     );
@@ -342,7 +362,7 @@ describe("sync-vault CLI scenarios: isolated workspaces", () => {
     const result = await runCli(SYNC_SCRIPT, [ws.configPath, ws.rawDir]);
 
     expect(result.out).toContain(
-      `vault "${VAULT_NAME}": 0 selected, 0 copied, 0 unchanged, 0 removed (6 candidates, none matched the selection rule)`,
+      `vault "Blocked": 0 selected, 0 copied, 0 unchanged, 0 removed (2 candidates, all blocked)`,
     );
   });
 
@@ -380,5 +400,44 @@ describe("sync-vault CLI scenarios: isolated workspaces", () => {
     const result = await runCli(SYNC_SCRIPT, [ws.configPath, ws.rawDir]);
 
     expect(result.out).toContain("sync complete: no changes");
+  });
+
+  it("dry-run exits 0 and lists the would-ingest set on stdout", async () => {
+    const ws = await buildWorkspace();
+    const result = await runCli(SYNC_SCRIPT, [
+      "--dry-run",
+      ws.configPath,
+      ws.rawDir,
+    ]);
+
+    expect(`${result.code}\n${result.out}`).toBe(
+      [
+        "0",
+        `vault "${VAULT_NAME}": 7 of 9 candidates would be ingested`,
+        ...SELECTED_PATHS.map((rel) => `  + ${rel}`),
+        "dry-run complete: nothing written",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("dry-run writes nothing to the raw dir", async () => {
+    const ws = await buildWorkspace();
+
+    await runCli(SYNC_SCRIPT, ["--dry-run", ws.configPath, ws.rawDir]);
+
+    await expect(stat(ws.rawDir)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("still syncs for real after a dry run", async () => {
+    const ws = await buildWorkspace();
+
+    await runCli(SYNC_SCRIPT, ["--dry-run", ws.configPath, ws.rawDir]);
+    const result = await runCli(SYNC_SCRIPT, [ws.configPath, ws.rawDir]);
+
+    expect(
+      await collectFiles(join(ws.rawDir, "notes")),
+      cliOutput(result),
+    ).toEqual(SELECTED_PATHS.map((rel) => `${VAULT_NAME}/${rel}`));
   });
 });

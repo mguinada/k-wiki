@@ -92,6 +92,63 @@ describe("parseManifest", () => {
     );
   });
 
+  it("rejects a __proto__ note path", () => {
+    const text = `{"vaults":{"work":{"__proto__":${JSON.stringify(ONE_ENTRY)}}}}`;
+
+    expect(() => parseManifest(text, "manifest.json")).toThrow(
+      /invalid manifest at manifest\.json: vault "work" has reserved note path "__proto__"/,
+    );
+  });
+
+  it("rejects a constructor note path", () => {
+    const text = `{"vaults":{"work":{"constructor":${JSON.stringify(ONE_ENTRY)}}}}`;
+
+    expect(() => parseManifest(text, "manifest.json")).toThrow(
+      /reserved note path "constructor"/,
+    );
+  });
+
+  it("rejects a prototype note path", () => {
+    const text = `{"vaults":{"work":{"prototype":${JSON.stringify(ONE_ENTRY)}}}}`;
+
+    expect(() => parseManifest(text, "manifest.json")).toThrow(
+      /reserved note path "prototype"/,
+    );
+  });
+
+  it("accepts a note path that contains a reserved name as a substring", () => {
+    const text = `{"vaults":{"work":{"__proto__.md":${JSON.stringify(ONE_ENTRY)}}}}`;
+
+    expect(parseManifest(text, "manifest.json").vaults.work).toHaveProperty(
+      "__proto__.md",
+      ONE_ENTRY,
+    );
+  });
+
+  it("rejects a __proto__ vault name", () => {
+    const text = `{"vaults":{"__proto__":{"AI/RAG.md":${JSON.stringify(ONE_ENTRY)}}}}`;
+
+    expect(() => parseManifest(text, "manifest.json")).toThrow(
+      /invalid manifest at manifest\.json: reserved vault name "__proto__"/,
+    );
+  });
+
+  it("rejects a constructor vault name", () => {
+    const text = `{"vaults":{"constructor":{"AI/RAG.md":${JSON.stringify(ONE_ENTRY)}}}}`;
+
+    expect(() => parseManifest(text, "manifest.json")).toThrow(
+      /reserved vault name "constructor"/,
+    );
+  });
+
+  it("rejects a prototype vault name", () => {
+    const text = `{"vaults":{"prototype":{"AI/RAG.md":${JSON.stringify(ONE_ENTRY)}}}}`;
+
+    expect(() => parseManifest(text, "manifest.json")).toThrow(
+      /reserved vault name "prototype"/,
+    );
+  });
+
   it("keeps the JSON parse error as the cause when text is not valid JSON", () => {
     let thrown: unknown = "not thrown";
 

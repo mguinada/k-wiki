@@ -84,7 +84,7 @@ describe("health CLI sabotage checks", () => {
     const result = await runCli(HEALTH_SCRIPT, [ws.rawDir]);
 
     expect(`${result.code}|${result.out}${result.err}`).toBe(
-      "0|healthy: manifest and projection agree (4 notes, 1 vault)\n",
+      "0|healthy: manifest and projection agree (7 notes, 1 vault)\n",
     );
   });
 });

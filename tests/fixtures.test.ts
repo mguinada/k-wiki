@@ -164,8 +164,11 @@ describe("fixture vault generator", () => {
       "AI/RAG.md",
       "AI/llms/attention-is-all-you-need.md",
       "AI/rag-evaluation-notes.md",
+      "Inbox/clipped-note.md",
       "Inbox/parking-lot.md",
+      "Inbox/quick-idea.md",
       "Projects/house-renovation.md",
+      "Projects/private-clipped.md",
       "Scratch/temp-research.md",
     ]);
   });
@@ -204,7 +207,7 @@ describe("fixture vault generator", () => {
     );
   });
 
-  it("excludes Projects/house-renovation.md with wiki:false", async () => {
+  it("blocks Projects/house-renovation.md with wiki:false", async () => {
     await expectFrontmatterLine(
       await newVault(),
       "Projects/house-renovation.md",
@@ -212,10 +215,34 @@ describe("fixture vault generator", () => {
     );
   });
 
-  it("excludes Inbox/parking-lot.md which has no frontmatter", async () => {
+  it("plants Inbox/parking-lot.md without any frontmatter", async () => {
     expect(
       await readNote(await newVault(), "Inbox/parking-lot.md"),
     ).not.toMatch(/^---/);
+  });
+
+  it("plants Inbox/quick-idea.md with a blank wiki flag", async () => {
+    await expectFrontmatterLine(
+      await newVault(),
+      "Inbox/quick-idea.md",
+      "wiki:",
+    );
+  });
+
+  it('plants Inbox/clipped-note.md with a quoted wiki:"true" flag', async () => {
+    await expectFrontmatterLine(
+      await newVault(),
+      "Inbox/clipped-note.md",
+      'wiki: "true"',
+    );
+  });
+
+  it('blocks Projects/private-clipped.md with a quoted wiki:"false" flag', async () => {
+    await expectFrontmatterLine(
+      await newVault(),
+      "Projects/private-clipped.md",
+      'wiki: "false"',
+    );
   });
 
   it("plants parseable JSON settings at .obsidian/app.json", async () => {
@@ -260,6 +287,40 @@ describe("fixture vault generator", () => {
     expect(await readTree(join(target, VAULT_NAME))).toEqual(
       await readTree(snapshotVaultRoot),
     );
+  });
+});
+
+describe("fixtures CLI help", () => {
+  it("prints the usage line for --help", async () => {
+    const out = await runCli("--help");
+
+    expect(out).toContain("fixtures [-h | --help] <target-dir>");
+  });
+
+  it("prints the same help for -h as for --help", async () => {
+    expect(await runCli("-h")).toBe(await runCli("--help"));
+  });
+
+  it("documents the -h and --help switches themselves", async () => {
+    expect(await runCli("--help")).toContain("-h, --help");
+  });
+
+  it("explains what the target dir is for", async () => {
+    expect(await runCli("--help")).toContain("<target-dir>");
+  });
+
+  it("leaves the exit code unset for --help", async () => {
+    await runCli("--help");
+
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("writes no fixture vault for --help", async () => {
+    const target = await makeTempDir();
+
+    await runCli("--help");
+
+    expect(await collectFiles(target)).toEqual([]);
   });
 });
 

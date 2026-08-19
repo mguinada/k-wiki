@@ -31,11 +31,12 @@ import {
 import { scanVault } from "./scan.ts";
 
 /**
- * sync-vault: the deterministic, LLM-free projection of selected source
- * notes into `raw/notes/` (guide §8). For every vault in `sync.json`, it
- * scans markdown files, selects `wiki: true` notes, hashes them, copies
+ * sync-vault: the deterministic, LLM-free projection of source notes
+ * into `raw/notes/` (guide §8). For every vault in `sync.json`, it
+ * scans markdown files, ingests every note not blocked by the vault's
+ * exclusion rule (`wiki: false` in its frontmatter), hashes them, copies
  * new or changed notes, removes projections whose source disappeared or
- * lost its flag, prunes namespaces that left the config, and records
+ * was blocked, prunes namespaces that left the config, and records
  * state in `raw/manifest.json`. The run is
  * idempotent: a second run with no source changes copies, removes, and
  * writes nothing.
@@ -44,7 +45,8 @@ import { scanVault } from "./scan.ts";
 export interface SyncOptions {
   /** Path to `sync.json`. */
   readonly configPath: string;
-  /** The `raw/` directory that receives `notes/` and `manifest.json`. */
+  /** The `raw/` directory that receives `notes/` and `manifest.json`;
+   *  a dry run neither reads nor writes it. */
   readonly rawDir: string;
   /** Home directory for `~` expansion; defaults to the real home. */
   readonly home?: string;
@@ -175,30 +177,19 @@ async function listNamespaceDirs(notesRoot: string): Promise<string[]> {
 /** Heartbeat interval for the read loop: one line per files read. */
 export const PROGRESS_EVERY = 500;
 
-async function syncVault(
+/** Read and select the candidates of one vault, hashing every match. */
+async function selectNotes(
   vault: SyncVaultConfig,
-  rawDir: string,
-  now: () => Date,
-  previous: VaultNotes,
+  candidates: readonly string[],
   onProgress: (message: string) => void,
-): Promise<{ notes: VaultNotes; report: VaultSyncReport }> {
-  await assertDirectory(vault);
-
-  const namespaceRoot = join(rawDir, "notes", vault.name);
-
-  onProgress(`vault "${vault.name}": scanning ${vault.root}`);
-
-  const candidates = await scanVault(vault.root);
-
-  onProgress(`vault "${vault.name}": ${candidates.length} candidates`);
-
+): Promise<SelectedNote[]> {
   const selected: SelectedNote[] = [];
   const decoder = new TextDecoder();
 
   for (const [index, relPath] of candidates.entries()) {
     const bytes = await readSourceNote(vault, relPath);
 
-    if (isSelectedNote(decoder.decode(bytes), vault.select)) {
+    if (isSelectedNote(decoder.decode(bytes), vault.exclude)) {
       selected.push({ relPath, bytes, hash: sha256(bytes) });
     }
 
@@ -208,6 +199,41 @@ async function syncVault(
       );
     }
   }
+
+  return selected;
+}
+
+/** Verify the vault root, scan it, and select its notes. */
+async function scanAndSelect(
+  vault: SyncVaultConfig,
+  onProgress: (message: string) => void,
+): Promise<{
+  candidates: readonly string[];
+  selected: readonly SelectedNote[];
+}> {
+  await assertDirectory(vault);
+
+  onProgress(`vault "${vault.name}": scanning ${vault.root}`);
+
+  const candidates = await scanVault(vault.root);
+
+  onProgress(`vault "${vault.name}": ${candidates.length} candidates`);
+
+  const selected = await selectNotes(vault, candidates, onProgress);
+
+  return { candidates, selected };
+}
+
+async function syncVault(
+  vault: SyncVaultConfig,
+  rawDir: string,
+  now: () => Date,
+  previous: VaultNotes,
+  onProgress: (message: string) => void,
+): Promise<{ notes: VaultNotes; report: VaultSyncReport }> {
+  const { candidates, selected } = await scanAndSelect(vault, onProgress);
+
+  const namespaceRoot = join(rawDir, "notes", vault.name);
 
   const copied: string[] = [];
   const unchanged: string[] = [];
@@ -262,6 +288,13 @@ async function syncVault(
       removed,
     },
   };
+}
+
+/** One vault's would-ingest listing; produced by a dry run. */
+export interface VaultDryRunReport {
+  readonly vault: string;
+  readonly candidates: number;
+  readonly wouldIngest: readonly string[];
 }
 
 /** Run one full sync pass and return the run report. */
@@ -324,6 +357,35 @@ export async function runSync(options: SyncOptions): Promise<SyncReport> {
   return { vaults: reports, prunedNamespaces };
 }
 
+/**
+ * List what each vault's exclusion rule would ingest; write nothing
+ * (issue #32). The owner reviews this list and blocks private notes
+ * before the first real inverted sync.
+ */
+export async function runDryRun(
+  options: SyncOptions,
+): Promise<readonly VaultDryRunReport[]> {
+  const home = options.home ?? homedir();
+  const onProgress = options.onProgress ?? (() => {});
+
+  onProgress("sync-vault: dry run, nothing will be written");
+
+  const config = await loadSyncConfig(options.configPath, home);
+  const reports: VaultDryRunReport[] = [];
+
+  for (const vault of config.vaults) {
+    const { candidates, selected } = await scanAndSelect(vault, onProgress);
+
+    reports.push({
+      vault: vault.name,
+      candidates: candidates.length,
+      wouldIngest: selected.map((note) => note.relPath),
+    });
+  }
+
+  return reports;
+}
+
 /** Render the run summary; `+` marks copies and `-` marks removals. */
 export function formatReport(report: SyncReport): string {
   const lines: string[] = [];
@@ -332,7 +394,7 @@ export function formatReport(report: SyncReport): string {
     const counts = `vault "${vault.vault}": ${vault.selected} selected, ${vault.copied.length} copied, ${vault.unchanged.length} unchanged, ${vault.removed.length} removed`;
     const hint =
       vault.selected === 0 && vault.candidates > 0
-        ? ` (${vault.candidates} candidates, none matched the selection rule)`
+        ? ` (${vault.candidates} candidates, all blocked)`
         : "";
 
     lines.push(counts + hint);
@@ -369,6 +431,27 @@ export function formatReport(report: SyncReport): string {
       : `sync complete: ${copied} copied, ${removed} removed${prunedClause}`;
 
   lines.push(summary);
+
+  return lines.join("\n");
+}
+
+/** Render the dry-run would-ingest listing; nothing is written. */
+export function formatDryRunReport(
+  reports: readonly VaultDryRunReport[],
+): string {
+  const lines: string[] = [];
+
+  for (const report of reports) {
+    lines.push(
+      `vault "${report.vault}": ${report.wouldIngest.length} of ${report.candidates} candidates would be ingested`,
+    );
+
+    for (const relPath of report.wouldIngest) {
+      lines.push(`  + ${relPath}`);
+    }
+  }
+
+  lines.push("dry-run complete: nothing written");
 
   return lines.join("\n");
 }
@@ -431,14 +514,58 @@ export function colorizeError(message: string): string {
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
-/** sync-vault entry point: `sync-vault [config] [raw-dir]`. */
+/** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
+const HELP = `Usage: sync-vault [--dry-run] [-h | --help] [<config>] [<raw-dir>]
+
+Ingest every vault note not blocked by its exclusion rule (wiki: false
+in frontmatter) into raw/notes/<vault>/, or only list what would be
+ingested.
+
+  --dry-run      List the notes each vault would ingest; write nothing
+                 (no raw/ files, no manifest read or write).
+  -h, --help     Print this help and exit; no side effects.
+  <config>       Path to sync.json. Default: the repo's own sync.json.
+  <raw-dir>      Destination for notes/ and manifest.json. Default:
+                 <dataRoot>/raw when the config sets dataRoot, otherwise
+                 the repo's own raw/.
+
+Live progress goes to stderr, the report to stdout; NO_COLOR disables
+color.`;
+
+/** sync-vault entry point: `sync-vault [--dry-run] [-h | --help] [config] [raw-dir]`. */
 export async function main(): Promise<void> {
-  const [configArg, rawArg] = process.argv.slice(2);
+  const args = process.argv.slice(2);
+
+  if (args.includes("-h") || args.includes("--help")) {
+    console.log(HELP);
+
+    return;
+  }
+
+  const dryRun = args.includes("--dry-run");
+  const [configArg, rawArg] = args.filter((arg) => arg !== "--dry-run");
   const configPath = configArg ?? join(repoRoot, "sync.json");
 
   try {
     const config = await loadSyncConfig(configPath);
     const rawDir = rawArg ?? resolveRawDir(config.dataRoot, repoRoot);
+    if (dryRun) {
+      const reports = await runDryRun({
+        configPath,
+        rawDir,
+        onProgress: (message) => console.error(colorizeProgress(message)),
+      });
+
+      console.log(
+        formatDryRunReport(reports)
+          .split("\n")
+          .map(colorizeReportLine)
+          .join("\n"),
+      );
+
+      return;
+    }
+
     const report = await runSync({
       configPath,
       rawDir,

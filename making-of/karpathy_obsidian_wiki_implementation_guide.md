@@ -95,7 +95,7 @@ The default path through this guide is the simplest topology: **one vault → on
 | One vault, one knowledge domain | 1 vault → 1 wiki | Sections 3–24 as written (default) |
 | Several vaults, overlapping domains, cross-vault synthesis is the point | N vaults → 1 wiki | Simple path + Scenario A deltas (Section 25) |
 | Several vaults, disjoint domains, different audiences or privacy levels | N vaults → N wikis | One independent instance of the simple path each (Scenario B, Section 25) |
-| One vault, mixed public/private material | 1 vault → N wikis | Same selection mechanism, inverted (Scenario C, Section 25) |
+| One vault, mixed public/private material | 1 vault → N wikis | Same opt-out mechanism, different exclusion keys (Scenario C, Section 25) |
 
 Rules of thumb:
 
@@ -136,15 +136,17 @@ Recommended ownership:
 
 ## 4. Decide Which Source Notes Enter the Wiki
 
-Recommended: use frontmatter.
+Recommended: use frontmatter with an opt-out rule. Everything syncs
+unless a note explicitly blocks itself:
 
-```yaml
----
-wiki: true
----
-```
+| Frontmatter | Ingested? |
+|---|---|
+| `wiki: false` | no |
+| `wiki: true` | yes |
+| property absent or blank | yes |
 
-Only notes with `wiki: true` are synchronized.
+Quoted values (`wiki: "false"`) block like unquoted ones — the
+Obsidian web clipper writes Text properties quoted.
 
 Example:
 
@@ -158,7 +160,7 @@ wiki: true
 My notes about RAG...
 ```
 
-Private/scratch notes simply omit the field or use:
+Private/scratch notes opt out explicitly:
 
 ```yaml
 ---
@@ -166,7 +168,10 @@ wiki: false
 ---
 ```
 
-Do not synchronize sensitive/private material unless you explicitly intend to.
+The failure direction is a leak, not a loss: forgetting to block a
+private note publishes it into `raw/` and git history. Before the
+first sync after inverting the rule, review the would-ingest list with
+a dry run (`sync-vault --dry-run`) and block private notes.
 
 ---
 
@@ -340,7 +345,7 @@ Scheduled job
     ↓
 Scan MyVault
     ↓
-Find wiki:true notes
+Drop wiki:false notes
     ↓
 Compare hashes
     ↓
@@ -651,6 +656,9 @@ For every new or changed source:
 9. Revise `overview.md` when the overall picture changes.
 10. Append a concise entry to `log.md`.
 11. Check for contradictions, duplicates, orphan pages, and unsupported claims.
+12. Run `npm run check-links -- <wiki-dir>` from the code-repo checkout
+    (the data repo does not ship the tool) and fix every broken
+    `[[wikilink]]` it reports.
 
 Create a new concept or entity page only when the term appears in more than
 one source or is clearly central; avoid stub pages.
@@ -1190,17 +1198,16 @@ Build this vertical slice first:
 
 ```text
 1. Install the obsidian-markdown and obsidian-bases skills at project level.
-2. Select one source note.
-3. Mark it wiki:true.
-4. Sync it to raw/.
-5. Run the ingestion prompt.
-6. Create one or more wiki pages with valid Obsidian frontmatter.
-7. Add source attribution and canonical tags.
-8. Update index.md.
-9. Update log.md.
-10. Run lint, including frontmatter/tag validation.
-11. Inspect git diff.
-12. Ask a question and file a valuable answer under `queries/`.
+2. Select one source note (it syncs unless blocked with wiki: false).
+3. Sync it to raw/.
+4. Run the ingestion prompt.
+5. Create one or more wiki pages with valid Obsidian frontmatter.
+6. Add source attribution and canonical tags.
+7. Update index.md.
+8. Update log.md.
+9. Run lint, including frontmatter/tag validation.
+10. Inspect git diff.
+11. Ask a question and file a valuable answer under `queries/`.
 ```
 
 Then test:
@@ -1353,7 +1360,16 @@ Folder names are illustrative; each instance is simply its own `k-wiki` root, an
 
 ### Scenario C: One Vault → Multiple Wikis
 
-Invert the selection rule. Notes marked `wiki: public` sync to a publishable instance; notes marked `wiki: true` sync to the private one. Two manifests, two instances, one vault — the sync layer routes each selected note to exactly one wiki.
+Keep the opt-out mechanism; give each instance its own exclusion key.
+The private instance syncs everything (`exclude: "wiki:false"`); the
+publishable instance drops notes marked `public: false`
+(`exclude: "public:false"`). Two manifests, two instances, one vault —
+but each vault takes a single `<key>:false` predicate, so the public
+wiki stays a subset of the private one only by frontmatter convention:
+a note that opts out of every wiki carries both `wiki: false` and
+`public: false`; `wiki: false` alone keeps it out of the private wiki
+only. A positive per-wiki partition (`wiki: public`) would need the
+select-style grammar back as a deliberate design change.
 
 ### Changing Your Mind Later
 
@@ -1398,7 +1414,7 @@ All placement knowledge lives in one human-owned file at the `k-wiki` root:
   "vaults": [
     { "name": "Documents",
       "root": "~/Library/Mobile Documents/iCloud~md~obsidian/Documents",
-      "select": "wiki:true" }
+      "exclude": "wiki:false" }
   ],
   "publish": {
     "mirror": "~/Library/Mobile Documents/iCloud~md~obsidian/KWiki",
