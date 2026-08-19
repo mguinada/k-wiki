@@ -2,7 +2,7 @@
 
 An LLM-maintained knowledge wiki, derived from a human-owned Obsidian vault.
 
-`k-wiki` implements the [Karpathy-style LLM wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) pattern: a personal Obsidian vault remains the human-owned source of truth. Notes marked `wiki: true` are deterministically synced into an immutable `raw/` projection inside this repo; an LLM agent then builds and maintains a structured, interlinked wiki under `wiki/`. The wiki is disposable derived data — versioned in git, auditable by diff, and publishable to all devices as a read-only mirror.
+`k-wiki` implements the [Karpathy-style LLM wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) pattern: a personal Obsidian vault remains the human-owned source of truth. Notes marked `wiki: true` are deterministically synced into an immutable `raw/` projection; an LLM agent then builds and maintains a structured, interlinked wiki under `wiki/`. Both trees are disposable derived data — versioned in a separate data repo placed by `sync.json`'s `dataRoot` (guide §19), auditable by diff, and publishable to all devices as a read-only mirror. This repository holds the pipeline and the directory skeleton only; the contents of `raw/` and `wiki/` are gitignored here.
 
 ## Core invariant
 
@@ -48,7 +48,8 @@ sources directly, so there is no build step — install dependencies with
 | `npm test` | vitest | Run the unit test suite |
 | `npm run test:coverage` | vitest | Run the unit tests and fail below the 90% coverage thresholds — what CI runs |
 | `npm run fixtures -- <dir>` | fixture generator | Write the synthetic Obsidian test vault to `<dir>/Documents` |
-| `npm run sync-vault -- [<sync.json>] [<raw-dir>]` | sync CLI | Project `wiki:true` notes from the configured vaults into `raw/notes/` (deterministic, no LLM; defaults to the repo's `sync.json` and `raw/`) |
+| `npm run sync-vault -- [<sync.json>] [<raw-dir>]` | sync CLI | Project `wiki:true` notes from the configured vaults into `raw/notes/` (deterministic, no LLM; defaults to the repo's `sync.json` and — when `dataRoot` is set — `<dataRoot>/raw`, otherwise the repo's `raw/`) |
+| `npm run data:init -- [<sync.json>]` | data repo seeder | Create and seed the data repo at `sync.json`'s `dataRoot`: git init, copy the `raw/`+`wiki/` skeleton from the code repo, first commit; idempotent |
 | `npm run mutation:changed` | StrykerJS | Advisory mutation run scoped to `src/` files changed vs `main` (uncommitted included); exits 0 without running when none changed, and ends by printing the actionable mutants — the default pre-handoff step |
 | `npm run mutation:changed -- --full` | StrykerJS | Advisory mutation run over all of `src/`, not just changed files; same printed summary |
 | `npm run mutation:survivors` | triage helper | Re-list the actionable mutants from the last report — no run, instant |
@@ -138,7 +139,8 @@ excluded, edited, deleted, and noise files). A checked-in snapshot lives at
 edit the snapshot by hand.
 
 `sync.json` at the repo root is the human-owned placement configuration:
-which vaults to sync and where to publish the mirror (guide §26). The
+which vaults to sync, where the data repo lives (`dataRoot`), and where to
+publish the mirror (guide §26). The
 `publish` section is parsed but unused until the mirror lands. Sync state —
 hashes and timestamps — lives in `raw/manifest.json`, keyed per vault
 namespace (guide §25). Sync is idempotent: a run with no source changes

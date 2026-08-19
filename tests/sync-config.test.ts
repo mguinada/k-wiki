@@ -2,7 +2,12 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { expandHome, loadSyncConfig, parseSelect } from "../src/sync/config.ts";
+import {
+  expandHome,
+  loadSyncConfig,
+  parseSelect,
+  resolveRawDir,
+} from "../src/sync/config.ts";
 
 const tempDirs: string[] = [];
 
@@ -406,5 +411,45 @@ describe("loadSyncConfig", () => {
     await expect(
       loadSyncConfig(await writeConfig(bad), "/home/alice"),
     ).rejects.toThrow(/publish "include" must be an array of strings/);
+  });
+});
+
+describe("dataRoot", () => {
+  it("is undefined when the config omits it", async () => {
+    const config = await loadSyncConfig(
+      await writeConfig(ONE_VAULT),
+      "/home/alice",
+    );
+
+    expect(config.dataRoot).toBeUndefined();
+  });
+
+  it("expands a tilde-prefixed data root against home", async () => {
+    const config = await loadSyncConfig(
+      await writeConfig({ ...ONE_VAULT, dataRoot: "~/Lab/k-wiki-data" }),
+      "/home/alice",
+    );
+
+    expect(config.dataRoot).toBe("/home/alice/Lab/k-wiki-data");
+  });
+
+  it("rejects a data root that is not a non-empty string", async () => {
+    const bad = { ...ONE_VAULT, dataRoot: "" };
+
+    await expect(
+      loadSyncConfig(await writeConfig(bad), "/home/alice"),
+    ).rejects.toThrow(/"dataRoot" must be a non-empty string/);
+  });
+});
+
+describe("resolveRawDir", () => {
+  it("resolves to the raw tree inside the data root when set", () => {
+    expect(resolveRawDir("/data/k-wiki-data", "/code/repo")).toBe(
+      "/data/k-wiki-data/raw",
+    );
+  });
+
+  it("resolves to the code repo raw tree when no data root is set", () => {
+    expect(resolveRawDir(undefined, "/code/repo")).toBe("/code/repo/raw");
   });
 });

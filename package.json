@@ -15,6 +15,7 @@
     "test:coverage": "vitest run --coverage",
     "fixtures": "node src/fixtures/generate.ts",
     "sync-vault": "node src/sync/sync-vault.ts",
+    "data:init": "node src/data/init-data-repo.ts",
     "mutation": "stryker run",
     "mutation:changed": "sh scripts/mutation-changed.sh",
     "mutation:survivors": "node scripts/mutation-survivors.ts"

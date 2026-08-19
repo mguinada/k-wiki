@@ -33,6 +33,8 @@ export interface PublishConfig {
 export interface SyncConfig {
   readonly vaults: readonly SyncVaultConfig[];
   readonly publish: PublishConfig | undefined;
+  /** Data repo root; `raw/` and `wiki/` contents are versioned there. */
+  readonly dataRoot: string | undefined;
 }
 
 /** Expand a leading `~` or `~/` against home; leave every other path. */
@@ -167,6 +169,19 @@ function parsePublish(value: unknown, home: string): PublishConfig | undefined {
   };
 }
 
+/** Parse an optional top-level `dataRoot`; undefined when absent. */
+function parseDataRoot(value: unknown, home: string): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!isNonEmptyString(value)) {
+    throw new Error('"dataRoot" must be a non-empty string');
+  }
+
+  return expandHome(value, home);
+}
+
 /**
  * Read and validate `sync.json`, expanding every `~` path against home.
  * Throw with the config path in the message when it cannot be read,
@@ -204,6 +219,7 @@ export async function loadSyncConfig(
     return {
       vaults: parseVaults(parsed.vaults, home),
       publish: parsePublish(parsed.publish, home),
+      dataRoot: parseDataRoot(parsed.dataRoot, home),
     };
   } catch (cause) {
     throw new Error(
@@ -211,4 +227,12 @@ export async function loadSyncConfig(
       { cause },
     );
   }
+}
+
+/**
+ * Resolve the default raw directory: `<dataRoot>/raw` when a data repo
+ * is configured, otherwise the code repo's own `raw/` skeleton.
+ */
+export function resolveRawDir(dataRoot: string | undefined, repoRoot: string) {
+  return dataRoot === undefined ? join(repoRoot, "raw") : join(dataRoot, "raw");
 }

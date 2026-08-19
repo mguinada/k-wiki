@@ -4,7 +4,11 @@ import { mkdir, readFile, rm, rmdir, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { loadSyncConfig, type SyncVaultConfig } from "./config.ts";
+import {
+  loadSyncConfig,
+  resolveRawDir,
+  type SyncVaultConfig,
+} from "./config.ts";
 import { isSelectedNote } from "./frontmatter.ts";
 import {
   emptyManifest,
@@ -287,9 +291,10 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 export async function main(): Promise<void> {
   const [configArg, rawArg] = process.argv.slice(2);
   const configPath = configArg ?? join(repoRoot, "sync.json");
-  const rawDir = rawArg ?? join(repoRoot, "raw");
 
   try {
+    const config = await loadSyncConfig(configPath);
+    const rawDir = rawArg ?? resolveRawDir(config.dataRoot, repoRoot);
     const reports = await runSync({ configPath, rawDir });
 
     console.log(formatReport(reports));
