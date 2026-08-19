@@ -2,7 +2,8 @@ import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterAll, describe, expect, it } from "vitest";
 import { seedDataRepo } from "../src/data/init-data-repo.ts";
@@ -10,7 +11,7 @@ import { seedDataRepo } from "../src/data/init-data-repo.ts";
 const tempDirs: string[] = [];
 const run = promisify(execFile);
 
-const repoRoot = new URL("../", import.meta.url).pathname;
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const GIT_ENV = {
   PATH: process.env.PATH,
@@ -92,6 +93,20 @@ describe("seedDataRepo", () => {
 
     expect(result).toBe("already-seeded");
     expect(after).toBe(before);
+  });
+
+  it("refuses to seed into a non-empty directory that is not a seeded data repo", async () => {
+    const dataRoot = await makeTempDir();
+
+    await writeFile(join(dataRoot, "unrelated.txt"), "user data");
+
+    await expect(
+      seedDataRepo({
+        configPath: await writeConfig(dataRoot),
+        repoRoot,
+        env: GIT_ENV,
+      }),
+    ).rejects.toThrow(/not a seeded data repo/);
   });
 
   it("rejects a config without a data root", async () => {

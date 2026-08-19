@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { copyFile, mkdir, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
@@ -98,6 +98,18 @@ export async function seedDataRepo(
 
   if (isSeeded(config.dataRoot)) {
     return "already-seeded";
+  }
+
+  if (existsSync(config.dataRoot)) {
+    const entries = await readdir(config.dataRoot);
+
+    if (entries.length > 0) {
+      throw new Error(
+        `${config.dataRoot} is not empty and is not a seeded data repo; ` +
+          "refusing to seed into it — move its contents or point \"dataRoot\" " +
+          "at an empty directory",
+      );
+    }
   }
 
   await seed(config.dataRoot, repoRoot, env);
