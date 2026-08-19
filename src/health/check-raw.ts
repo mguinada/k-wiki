@@ -1,6 +1,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
+import { isMainModule } from "../cli/is-main.ts";
 import { sha256 } from "../sync/hash.ts";
 import { parseManifest, type VaultNotes } from "../sync/manifest.ts";
 
@@ -288,11 +289,7 @@ export async function main(): Promise<void> {
   }
 }
 
-/* v8 ignore next: import guard — distinguishes direct execution from
-   import; not exercisable in-process by construction */
-const isMain =
-  process.argv[1] !== undefined &&
-  import.meta.url === pathToFileURL(process.argv[1]).href;
+const isMain = isMainModule(import.meta.url);
 
 /* v8 ignore next: covered only under `node src/health/check-raw.ts` */
 if (isMain) {
