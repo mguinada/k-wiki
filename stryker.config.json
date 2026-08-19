@@ -3,6 +3,7 @@
   "testRunner": "vitest",
   "mutate": ["src/**/*.ts"],
   "incremental": true,
+  "vitest": { "related": false },
   "reporters": ["html", "clear-text", "json"],
   "ignorePatterns": ["tsconfig.json", ".claude"]
 }
