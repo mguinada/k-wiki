@@ -32,6 +32,7 @@ case "${1:-}" in
   --full)
     npx stryker run
     node scripts/mutation-survivors.ts
+    exit 0
     ;;
   --help|-h)
     usage
