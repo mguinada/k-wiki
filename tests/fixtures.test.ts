@@ -290,6 +290,40 @@ describe("fixture vault generator", () => {
   });
 });
 
+describe("fixtures CLI help", () => {
+  it("prints the usage line for --help", async () => {
+    const out = await runCli("--help");
+
+    expect(out).toContain("fixtures [-h | --help] <target-dir>");
+  });
+
+  it("prints the same help for -h as for --help", async () => {
+    expect(await runCli("-h")).toBe(await runCli("--help"));
+  });
+
+  it("documents the -h and --help switches themselves", async () => {
+    expect(await runCli("--help")).toContain("-h, --help");
+  });
+
+  it("explains what the target dir is for", async () => {
+    expect(await runCli("--help")).toContain("<target-dir>");
+  });
+
+  it("leaves the exit code unset for --help", async () => {
+    await runCli("--help");
+
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("writes no fixture vault for --help", async () => {
+    const target = await makeTempDir();
+
+    await runCli("--help");
+
+    expect(await collectFiles(target)).toEqual([]);
+  });
+});
+
 describe("fixture vault CLI", () => {
   it("exits with an error code when the target dir argument is missing", async () => {
     await runCli(undefined);

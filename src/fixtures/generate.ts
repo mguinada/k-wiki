@@ -197,8 +197,26 @@ export async function generateFixtureVault(targetDir: string): Promise<string> {
   return vaultRoot;
 }
 
+/** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
+const HELP = `Usage: fixtures [-h | --help] <target-dir>
+
+Write the synthetic Obsidian test vault to <target-dir>/Documents —
+deterministic bytes, no timestamps; the snapshot copy lives at
+tests/fixtures/Documents.
+
+  -h, --help      Print this help and exit; no side effects.
+  <target-dir>    Destination directory for the Documents/ vault.`;
+
 export async function main(): Promise<void> {
-  const targetDir = process.argv[2];
+  const args = process.argv.slice(2);
+
+  if (args.includes("-h") || args.includes("--help")) {
+    console.log(HELP);
+
+    return;
+  }
+
+  const targetDir = args[0];
 
   if (targetDir === undefined) {
     console.error("Usage: npm run fixtures -- <target-dir>");

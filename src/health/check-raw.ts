@@ -241,9 +241,31 @@ async function assertRawDir(
   }
 }
 
-/** check-raw entry point: `check-raw [<raw-dir>]` (default: repo raw/). */
+/** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
+const HELP = `Usage: check-raw [-h | --help] [<raw-dir>]
+
+Check a raw/ projection for coherence: every raw/notes/<vault>/ file
+matches its manifest.json sha-256, with no orphan files and no missing
+entries. Read-only; never touches the source vault.
+
+  -h, --help    Print this help and exit; no side effects.
+  <raw-dir>     The raw/ directory to check.
+                Default: the repo's own raw/.
+
+Exit status: 0 = coherent (healthy-empty counts), 1 = one line per
+problem.`;
+
+/** check-raw entry point: `check-raw [-h | --help] [<raw-dir>]` (default: repo raw/). */
 export async function main(): Promise<void> {
-  const rawDir = process.argv[2] ?? join(repoRoot, "raw");
+  const args = process.argv.slice(2);
+
+  if (args.includes("-h") || args.includes("--help")) {
+    console.log(HELP);
+
+    return;
+  }
+
+  const rawDir = args[0] ?? join(repoRoot, "raw");
 
   try {
     const report = await checkRaw(rawDir);

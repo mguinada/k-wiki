@@ -1205,4 +1205,64 @@ describe("sync-vault CLI", () => {
 
     expect(err).toContain("sync-vault: dry run, nothing will be written");
   });
+  describe("sync-vault CLI help", () => {
+    it("prints the usage line for --help", async () => {
+      const { out } = await runCli(["--help"]);
+
+      expect(out).toContain(
+        "sync-vault [--dry-run] [-h | --help] [<config>] [<raw-dir>]",
+      );
+    });
+
+    it("prints the same help for -h as for --help", async () => {
+      expect((await runCli(["-h"])).out).toBe((await runCli(["--help"])).out);
+    });
+
+    it("explains that --dry-run writes nothing", async () => {
+      const { out } = await runCli(["--help"]);
+
+      expect(out).toContain("write nothing");
+    });
+
+    it("documents the -h and --help switches themselves", async () => {
+      const { out } = await runCli(["--help"]);
+
+      expect(out).toContain("-h, --help");
+    });
+
+    it("states the default config path", async () => {
+      const { out } = await runCli(["--help"]);
+
+      expect(out).toContain("Default: the repo's own sync.json");
+    });
+
+    it("states the default raw dir and its dataRoot override", async () => {
+      const { out } = await runCli(["--help"]);
+
+      expect(out).toContain("<dataRoot>/raw");
+    });
+
+    it("leaves the exit code unset for --help", async () => {
+      await runCli(["--help"]);
+
+      expect(process.exitCode).toBeUndefined();
+    });
+
+    it("prints help without loading the config when --help precedes it", async () => {
+      const ws = await makeWorkspace();
+      const missing = join(ws.dir, "nope.json");
+
+      const { err } = await runCli(["--help", missing, ws.rawDir]);
+
+      expect(err).not.toMatch(/cannot read sync config/);
+    });
+
+    it("writes nothing to the raw dir for --help", async () => {
+      const ws = await makeWorkspace();
+
+      await runCli(["--help", ws.configPath, ws.rawDir]);
+
+      await expect(stat(ws.rawDir)).rejects.toMatchObject({ code: "ENOENT" });
+    });
+  });
 });

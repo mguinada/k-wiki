@@ -445,9 +445,34 @@ export function colorizeError(message: string): string {
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
-/** sync-vault entry point: `sync-vault [--dry-run] [config] [raw-dir]`. */
+/** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
+const HELP = `Usage: sync-vault [--dry-run] [-h | --help] [<config>] [<raw-dir>]
+
+Ingest every vault note not blocked by its exclusion rule (wiki: false
+in frontmatter) into raw/notes/<vault>/, or only list what would be
+ingested.
+
+  --dry-run      List the notes each vault would ingest; write nothing
+                 (no raw/ files, no manifest read or write).
+  -h, --help     Print this help and exit; no side effects.
+  <config>       Path to sync.json. Default: the repo's own sync.json.
+  <raw-dir>      Destination for notes/ and manifest.json. Default:
+                 <dataRoot>/raw when the config sets dataRoot, otherwise
+                 the repo's own raw/.
+
+Live progress goes to stderr, the report to stdout; NO_COLOR disables
+color.`;
+
+/** sync-vault entry point: `sync-vault [--dry-run] [-h | --help] [config] [raw-dir]`. */
 export async function main(): Promise<void> {
   const args = process.argv.slice(2);
+
+  if (args.includes("-h") || args.includes("--help")) {
+    console.log(HELP);
+
+    return;
+  }
+
   const dryRun = args.includes("--dry-run");
   const [configArg, rawArg] = args.filter((arg) => arg !== "--dry-run");
   const configPath = configArg ?? join(repoRoot, "sync.json");

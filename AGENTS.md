@@ -129,6 +129,17 @@ infrastructure, free to use for any unit or e2e work; the snapshot at
 - Put exactly one expectation in each `it` block.
 - Name each `it` block after the fact that its expectation verifies.
 
+### CLI scripts
+
+Every script meant to run on the terminal — every `main()` entry point
+under `src/` — responds to `-h` and `--help`. The help must state the
+usage line, explain every switch and positional argument with its
+default, say what the script writes (or that it writes nothing), and
+exit 0 without filesystem side effects. Help prints before any
+argument is validated or any file is read, so `--help` never fails.
+A new switch lands together with its help entry and its tests in the
+same change.
+
 ### Mutation testing (advisory)
 
 Mutation testing is an advisory signal, not a gate — but it is a

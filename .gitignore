@@ -29,7 +29,11 @@ reports/
 # Mutation-run debris: a StringLiteral mutant on the --dry-run flag
 # filter makes the CLI treat the flag as the raw-dir positional and
 # really sync into a ./--dry-run/ directory before the tests kill it.
+# Same class: mutants on the -h/--help checks in the fixture and sync
+# CLIs write a vault into ./--help/ or ./-h/.
 --dry-run/
+--help/
+-h/
 
 # In-process CLI import staging (transient; see tests/sync-cli-spawn.test.ts)
 tests/.cli-import-staging/

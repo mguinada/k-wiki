@@ -122,9 +122,28 @@ const defaultRepoRoot = resolve(
   "../..",
 );
 
-/** data:init entry point: `init-data-repo [config]`. */
+/** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
+const HELP = `Usage: init-data-repo [-h | --help] [<config>]
+
+Create and seed the data repo at the config's dataRoot: git init, copy
+the raw/ and wiki/ skeleton from the code repo, first commit.
+Idempotent — an already-seeded data repo is left untouched.
+
+  -h, --help    Print this help and exit; no side effects.
+  <config>      Path to sync.json.
+                Default: the repo's own sync.json.`;
+
+/** data:init entry point: `init-data-repo [-h | --help] [config]`. */
 export async function main(): Promise<void> {
-  const [configArg] = process.argv.slice(2);
+  const args = process.argv.slice(2);
+
+  if (args.includes("-h") || args.includes("--help")) {
+    console.log(HELP);
+
+    return;
+  }
+
+  const configArg = args[0];
   const configPath = configArg ?? join(defaultRepoRoot, "sync.json");
 
   try {

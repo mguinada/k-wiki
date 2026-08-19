@@ -62,6 +62,9 @@ them before it is done. CI (`.github/workflows/ci.yml`) enforces the same
 gates on every pull request, testing each PR's merge commit against
 `main`, with a 90% coverage floor on unit tests.
 
+Every CLI above also answers `-h` / `--help` with its usage line, every
+switch explained, defaults, and exit 0 with no side effects.
+
 Verification has three layers:
 
 | Layer | Commands | Status |
