@@ -63,13 +63,50 @@ until all three pass. Run them before every handoff.
 - `npm test` — unit tests (`vitest run`).
 - `npm run test:coverage` — unit tests with coverage; the run fails
   below the 90% thresholds in `vitest.config.ts`.
+- `npm run e2e` — end-to-end suite (`vitest.e2e.config.ts`): real CLI
+  child processes through a full vault lifecycle against the synthetic
+  fixture vault, in temp workspaces under `.e2e-tmp/` (gitignored).
+- `npm run health [-- <raw-dir>]` — coherence check of a `raw/`
+  projection (default: the repo's `raw/`); read-only, no vault access.
 
 `npm run format` (`biome format --write .`) is the fix command for
 formatting differences reported by `npm run lint`; it is not a gate.
 
 CI (`.github/workflows/ci.yml`) runs the gates on every pull request;
 the run tests the PR's merge commit against `main`, and the test job
-enforces the 90% coverage floor.
+enforces the 90% coverage floor. The `e2e` job runs `npm run e2e` and
+`npm run health` on every PR — blocking, like the gates.
+
+### End-to-end verification run order
+
+Run order from the repo root, before declaring work complete:
+
+```sh
+npm run typecheck   # gate — always
+npm run lint        # gate — always
+npm test            # gate — always (unit only; e2e is NOT included)
+npm run e2e         # when the change touches src/sync/, src/fixtures/, tests/e2e/, or raw/
+npm run health      # same trigger as e2e; also safe to run any time — read-only, no vault access
+```
+
+- `npm run e2e` takes no arguments. It builds its own fixture vault in a
+  temp dir and always passes explicit `<config> <raw>` arguments to the
+  CLI — never run the CLI bare (`node src/sync/sync-vault.ts` without
+  args uses the repo's real `sync.json` and vault root).
+- `npm run health` defaults to the repo's `raw/`; target another
+  projection with `npm run health -- <raw-dir>`. Exit 0 = coherent
+  (including healthy-empty); exit 1 = one line per problem,
+  repo-relative paths only.
+- A failed `e2e` or `health` run is a real failure, not advisory: fix
+  the cause or revert the change. (Only mutation testing is advisory.)
+- CI runs both in the `e2e` job on every PR, so a skipped local run
+  surfaces there — do not rely on that; run them locally first.
+
+The fixture vault template — `generateFixtureVault(target)` in
+`src/fixtures/generate.ts` — writes the deterministic synthetic vault
+(selected, excluded, edited, deleted, noise cases). It is shared
+infrastructure, free to use for any unit or e2e work; the snapshot at
+`tests/fixtures/Documents/` is its byte-exact reference copy.
 
 ### TypeScript and Node
 

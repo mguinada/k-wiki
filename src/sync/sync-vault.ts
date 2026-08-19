@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type { Stats } from "node:fs";
 import { mkdir, readFile, rm, rmdir, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -10,6 +9,7 @@ import {
   type SyncVaultConfig,
 } from "./config.ts";
 import { isSelectedNote } from "./frontmatter.ts";
+import { sha256 } from "./hash.ts";
 import {
   emptyManifest,
   type Manifest,
@@ -67,10 +67,6 @@ async function readTextIfExists(path: string): Promise<string | undefined> {
 
     throw error;
   }
-}
-
-function sha256(bytes: Uint8Array): string {
-  return createHash("sha256").update(bytes).digest("hex");
 }
 
 async function assertDirectory(vault: SyncVaultConfig): Promise<void> {

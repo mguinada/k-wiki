@@ -64,5 +64,9 @@ fi
 echo "Mutating changed src files:"
 echo "$changed" | sed 's/^/  /'
 
-npx stryker run --mutate $changed
+# Stryker's --mutate takes one comma-separated list; unquoted $changed
+# would word-split into extra positional arguments.
+mutate_list=$(printf '%s' "$changed" | tr '\n' ',')
+
+npx stryker run --mutate "$mutate_list"
 node scripts/mutation-survivors.ts
