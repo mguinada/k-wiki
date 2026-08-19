@@ -22,5 +22,12 @@ coverage/
 .stryker-tmp/
 reports/
 
+# E2E scratch: temp vaults, sync.json, and raw dirs (tests/e2e/helpers.ts);
+# gitignored also excludes it from Biome via vcs.useIgnoreFile.
+.e2e-tmp/
+
 # In-process CLI import staging (transient; see tests/sync-cli-spawn.test.ts)
 tests/.cli-import-staging/
+
+# In-process health-CLI import staging (transient; see tests/health-check.test.ts)
+tests/.health-import-staging/

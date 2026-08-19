@@ -13,6 +13,8 @@
     "format": "biome format --write .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "e2e": "vitest run --config vitest.e2e.config.ts",
+    "health": "node src/health/check-raw.ts",
     "fixtures": "node src/fixtures/generate.ts",
     "sync-vault": "node src/sync/sync-vault.ts",
     "data:init": "node src/data/init-data-repo.ts",

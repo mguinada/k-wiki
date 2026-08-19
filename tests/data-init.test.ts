@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -55,13 +55,35 @@ function git(dataRoot: string, ...args: string[]) {
   return run("git", ["-C", dataRoot, ...args], { env: GIT_ENV });
 }
 
+/**
+ * A hermetic stand-in for the code repo: a temp git repo whose tracked
+ * files are the raw/wiki skeleton. Tests must not depend on the outer
+ * repository — under Stryker's sandbox, `git ls-files` against the real
+ * repo returns nothing (the sandbox has no .git and a mismatched
+ * pathspec prefix), which breaks the seeding logic under test.
+ */
+async function makeCodeRepoFixture(): Promise<string> {
+  const dir = await makeTempDir();
+
+  await mkdir(join(dir, "raw", "notes"), { recursive: true });
+  await writeFile(join(dir, "raw", "notes", ".gitkeep"), "");
+  await mkdir(join(dir, "wiki"), { recursive: true });
+  await writeFile(join(dir, "wiki", "AGENTS.md"), "# wiki contract\n");
+  await writeFile(join(dir, "wiki", "index.md"), "# index\n");
+  await git(dir, "init", "--quiet");
+  await git(dir, "add", "-A");
+  await git(dir, "commit", "--quiet", "-m", "fixture skeleton");
+
+  return dir;
+}
+
 describe("seedDataRepo", () => {
   it("seeds the skeleton, README, and an initial commit at the data root", async () => {
     const dataRoot = await makeTempDir();
 
     await seedDataRepo({
       configPath: await writeConfig(dataRoot),
-      repoRoot,
+      repoRoot: await makeCodeRepoFixture(),
       env: GIT_ENV,
     });
 
@@ -78,6 +100,7 @@ describe("seedDataRepo", () => {
   it("is a no-op when the data root is already seeded", async () => {
     const dataRoot = await makeTempDir();
     const configPath = await writeConfig(dataRoot);
+    const repoRoot = await makeCodeRepoFixture();
 
     await seedDataRepo({ configPath, repoRoot, env: GIT_ENV });
 
@@ -103,7 +126,7 @@ describe("seedDataRepo", () => {
     await expect(
       seedDataRepo({
         configPath: await writeConfig(dataRoot),
-        repoRoot,
+        repoRoot: await makeCodeRepoFixture(),
         env: GIT_ENV,
       }),
     ).rejects.toThrow(/not a seeded data repo/);

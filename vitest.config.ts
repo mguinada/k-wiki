@@ -3,8 +3,10 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     // Keep vitest out of Stryker's sandbox copies: a crashed mutation run
-    // leaves them behind, and they would double the suite.
-    exclude: ["**/node_modules/**", ".stryker-tmp/**"],
+    // leaves them behind, and they would double the suite. Keep the e2e
+    // suite out of the unit run (npm test) and coverage: it spawns the
+    // real CLI and lives in vitest.e2e.config.ts (npm run e2e).
+    exclude: ["**/node_modules/**", ".stryker-tmp/**", "tests/e2e/**"],
     coverage: {
       provider: "v8",
       include: ["src/**"],

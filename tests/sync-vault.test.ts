@@ -3,7 +3,6 @@ import {
   chmod,
   mkdir,
   mkdtemp,
-  readdir,
   readFile,
   rm,
   stat,
@@ -15,16 +14,10 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { generateFixtureVault, VAULT_NAME } from "../src/fixtures/generate.ts";
 import { parseManifest } from "../src/sync/manifest.ts";
 import { main, runSync } from "../src/sync/sync-vault.ts";
+import { collectFiles, SELECTED_PATHS } from "./e2e/helpers.ts";
 
 const T1 = "2026-08-16T15:00:00.000Z";
 const T2 = "2026-08-16T16:00:00.000Z";
-
-const SELECTED_PATHS = [
-  "AI/RAG.md",
-  "AI/llms/attention-is-all-you-need.md",
-  "AI/rag-evaluation-notes.md",
-  "Scratch/temp-research.md",
-];
 
 const tempDirs: string[] = [];
 
@@ -100,24 +93,6 @@ function sourcePath(ws: Workspace, relPath: string): string {
 
 function rawNotePath(ws: Workspace, relPath: string): string {
   return join(ws.rawDir, "notes", VAULT_NAME, ...relPath.split("/"));
-}
-
-/** Recursively collect POSIX-style relative file paths under root. */
-async function collectFiles(root: string, prefix = ""): Promise<string[]> {
-  const entries = await readdir(root, { withFileTypes: true });
-  const files: string[] = [];
-
-  for (const entry of entries) {
-    const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
-
-    if (entry.isDirectory()) {
-      files.push(...(await collectFiles(join(root, entry.name), rel)));
-    } else if (entry.isFile()) {
-      files.push(rel);
-    }
-  }
-
-  return files.sort();
 }
 
 describe("runSync first run", () => {

@@ -47,6 +47,8 @@ sources directly, so there is no build step — install dependencies with
 | `npm run format` | Biome | Rewrite files to the canonical format — the fix command for lint findings, not a gate |
 | `npm test` | vitest | Run the unit test suite |
 | `npm run test:coverage` | vitest | Run the unit tests and fail below the 90% coverage thresholds — what CI runs |
+| `npm run e2e` | vitest | Run the end-to-end suite (`tests/e2e/`): the real sync CLI as child processes through a full vault lifecycle — first run, no-op re-run, edit, delete, flag flip, multi-vault — against the synthetic fixture vault in temp workspaces under `.e2e-tmp/` (gitignored) |
+| `npm run health [-- <raw-dir>]` | health CLI | Check the coherence of a `raw/` projection (default: the repo's `raw/`): every `raw/notes/<vault>/` file matches its `manifest.json` sha-256, with no orphans and no missing entries; read-only, no vault access; exit 0 = coherent (including healthy-empty), exit 1 = one line per problem |
 | `npm run fixtures -- <dir>` | fixture generator | Write the synthetic Obsidian test vault to `<dir>/Documents` |
 | `npm run sync-vault -- [<sync.json>] [<raw-dir>]` | sync CLI | Project `wiki:true` notes from the configured vaults into `raw/notes/` (deterministic, no LLM; defaults to the repo's `sync.json` and — when `dataRoot` is set — `<dataRoot>/raw`, otherwise the repo's `raw/`) |
 | `npm run data:init -- [<sync.json>]` | data repo seeder | Create and seed the data repo at `sync.json`'s `dataRoot`: git init, copy the `raw/`+`wiki/` skeleton from the code repo, first commit; idempotent |
@@ -59,6 +61,20 @@ Type check, lint, and unit tests are quality gates: every change passes
 them before it is done. CI (`.github/workflows/ci.yml`) enforces the same
 gates on every pull request, testing each PR's merge commit against
 `main`, with a 90% coverage floor on unit tests.
+
+Verification has three layers:
+
+| Layer | Commands | Status |
+|---|---|---|
+| Gates | `npm run typecheck`, `npm run lint`, `npm test` | blocking — every change, every PR |
+| End-to-end | `npm run e2e`, `npm run health` | blocking — CI's `e2e` job on every PR; required locally when a change touches `src/sync/`, `src/fixtures/`, `tests/e2e/`, or `raw/` |
+| Mutation | `npm run mutation:changed` | advisory — a signal, never a gate ([below](#mutation-testing)) |
+
+The e2e suite drives the real CLI through a full vault lifecycle against
+the synthetic fixture vault; the health check verifies that a `raw/`
+projection is internally consistent without the real vault. Both are
+deterministic and fast, so they gate CI like the unit tests do — unlike
+mutation testing, whose runtime grows with the suite.
 
 ### Mutation testing
 

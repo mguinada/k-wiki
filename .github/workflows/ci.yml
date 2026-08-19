@@ -1,14 +1,20 @@
 # Quality gates for pipeline development.
 #
-# Runs the three gates (typecheck, lint, test) on every pull request. The
-# run tests the PR's merge commit, so it catches incompatibilities with
-# main before merge. Pushes are not run separately: the pull_request run
+# Runs the gates (typecheck, lint, test) plus the end-to-end job
+# (e2e + health) on every pull request. The run tests the PR's merge
+# commit, so it catches incompatibilities with main before merge. Pushes are not run separately: the pull_request run
 # already covers each commit through its PR. The test job runs with
 # coverage and fails below the 90% thresholds in vitest.config.ts; the
 # report prints file paths and percentages only. The repo is private and
 # runs on GitHub-hosted runners: no step may print raw/ or vault contents
 # into logs — the gates emit tool diagnostics only, and the test suite
 # reads synthetic fixtures, never real vault data.
+#
+# The e2e job is blocking like the gates: `npm run e2e` drives the real
+# sync CLI as child processes against the synthetic fixture vault in
+# temp workspaces, and `npm run health` validates the committed raw/
+# snapshot (trivially healthy today; guards future synced content).
+# Both are deterministic and fast — unlike mutation testing.
 #
 # The mutation job is advisory, never a gate (issue #21): it runs only
 # when a PR carries the `mutation` label, nightly on main, or via manual
@@ -75,6 +81,20 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:coverage
+
+  e2e:
+    name: End-to-end and health
+    if: github.event_name == 'pull_request' && github.event.action != 'labeled'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run e2e
+      - run: npm run health
 
   mutation:
     name: Mutation testing (advisory)
