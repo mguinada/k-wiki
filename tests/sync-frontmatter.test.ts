@@ -57,6 +57,12 @@ describe("isSelectedNote", () => {
     expect(isSelectedNote(content, select)).toBe(false);
   });
 
+  it("rejects a note whose first line is not --- even when the flag precedes a later ---", () => {
+    const content = "# Title\nwiki: true\n---\n";
+
+    expect(isSelectedNote(content, select)).toBe(false);
+  });
+
   it("rejects a note whose frontmatter block never closes", () => {
     expect(isSelectedNote("---\nwiki: true\n", select)).toBe(false);
   });

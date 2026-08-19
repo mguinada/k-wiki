@@ -49,11 +49,86 @@ sources directly, so there is no build step — install dependencies with
 | `npm run test:coverage` | vitest | Run the unit tests and fail below the 90% coverage thresholds — what CI runs |
 | `npm run fixtures -- <dir>` | fixture generator | Write the synthetic Obsidian test vault to `<dir>/Documents` |
 | `npm run sync-vault -- [<sync.json>] [<raw-dir>]` | sync CLI | Project `wiki:true` notes from the configured vaults into `raw/notes/` (deterministic, no LLM; defaults to the repo's `sync.json` and `raw/`) |
+| `npm run mutation:changed` | StrykerJS | Advisory mutation run scoped to `src/` files changed vs `main` (uncommitted included); exits 0 without running when none changed, and ends by printing the actionable mutants — the default pre-handoff step |
+| `npm run mutation:changed -- --full` | StrykerJS | Advisory mutation run over all of `src/`, not just changed files; same printed summary |
+| `npm run mutation:survivors` | triage helper | Re-list the actionable mutants from the last report — no run, instant |
+| `npm run mutation` | StrykerJS | Raw full Stryker run without the printed summary — prefer the two above |
 
 Type check, lint, and unit tests are quality gates: every change passes
 them before it is done. CI (`.github/workflows/ci.yml`) enforces the same
 gates on every pull request, testing each PR's merge commit against
 `main`, with a 90% coverage floor on unit tests.
+
+### Mutation testing
+
+Green tests do not prove that the tests assert real behavior. Mutation
+testing checks that: StrykerJS injects deliberate faults (mutants) into
+`src/` code and verifies that the unit test suite fails for each one. A
+surviving mutant means no test can tell the faulty code from the correct
+code — a weak spot in the suite. A no-coverage mutant means no test even
+reaches the line. Mutation testing is an **advisory signal, not a gate**:
+its runtime grows with the suite (`mutants × tests`), so it never blocks
+a merge.
+
+#### The workflow
+
+Every run command ends by printing the actionable mutants — the
+Survived and NoCoverage entries — so one command is the whole check:
+
+```text
+$ npm run mutation:changed
+Actionable mutants (2) — kill or record as equivalent:
+  Survived  src/sync/config.ts:7  ConditionalExpression
+  Survived  src/sync/frontmatter.ts:33  BlockStatement
+```
+
+An empty list (`No actionable mutants — nothing survived, nothing
+uncovered.`) means the suite holds: nothing to triage.
+
+A non-empty list is handled by the
+[mutation-triage](.agents/skills/mutation-triage/SKILL.md) skill, which
+loops over each mutant and either kills it with a new or stronger test
+or records it as an equivalent mutant in the PR body.
+
+You do **not** run a script first and then invoke the skill — the skill
+re-runs the mutation itself if the report is stale. Two ways in:
+
+- **Agent, mid-issue (the normal path):** `AGENTS.md` requires the agent
+  to run `npm run mutation:changed` before declaring work complete; if
+  the run prints survivors, the agent loads the triage skill and works
+  the list in the same session.
+- **Human, any time:** run `npm run mutation:changed` (or re-list the
+  last report with `npm run mutation:survivors`), then tell the agent
+  `triage the survivors`.
+
+The scope rides on the prompt — one phrase runs and triages in one go:
+
+| You say | Agent runs |
+|---|---|
+| `triage the survivors` | `npm run mutation:changed` — diff scope (files changed vs `main`), the default |
+| `triage the full mutation run` / `run mutation across all of src and triage` | `npm run mutation:changed -- --full` — every file under `src/` |
+
+Any mention of "survivors" or "mutation triage" loads the skill; the
+word **full** (or its absence) picks the mode.
+
+Reports land in `reports/mutation/` (gitignored): `mutation.html` shows
+each mutant's original → replacement diff; `mutation.json` is the
+machine-readable source the triage skill and `mutation:survivors` read.
+Runs are incremental — results are reused from
+`reports/stryker-incremental.json`, so repeat runs cost seconds, not
+minutes.
+
+In CI, the mutation job runs only when a pull request carries the
+[`mutation`](https://github.com/mguinada/k-wiki/labels) label, nightly on
+`main`, or via manual workflow dispatch — never as a blocking check. Its
+HTML report is uploaded as an artifact (7-day retention). The agent
+rules are in [AGENTS.md](AGENTS.md).
+
+`stryker.config.json` keeps `tsconfig.json` out of the sandbox
+(`ignorePatterns`): the repo runs TypeScript 7 (native), whose package
+ships no JavaScript compiler API, which Stryker's sandbox tsconfig
+rewrite still requires (upstream: stryker-js#6111). Vitest compiles via
+esbuild and needs no tsconfig. Revisit when Stryker supports TypeScript 7.
 
 The fixture generator produces a deterministic fake vault — fixed bytes,
 no timestamps — covering every case the sync layer must handle (selected,

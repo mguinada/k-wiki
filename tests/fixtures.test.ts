@@ -293,4 +293,14 @@ describe("fixture vault CLI", () => {
       `Fixture vault written to ${join(target, VAULT_NAME)}`,
     );
   });
+
+  it("prints every fixture path before the vault root when run with a target dir", async () => {
+    const target = await makeTempDir();
+    const expected = [
+      ...fixtureFilePaths().map((path) => `${VAULT_NAME}/${path}`),
+      `Fixture vault written to ${join(target, VAULT_NAME)}`,
+    ].join("\n");
+
+    expect(await runCli(target)).toBe(expected);
+  });
 });

@@ -90,6 +90,29 @@ enforces the 90% coverage floor.
 - Put exactly one expectation in each `it` block.
 - Name each `it` block after the fact that its expectation verifies.
 
+### Mutation testing (advisory)
+
+Mutation testing is an advisory signal, not a gate — but it is a
+mandatory pre-handoff step. Before you declare work complete:
+
+1. Run `npm run mutation:changed`. It mutates the `src/` files changed
+   vs `origin/main` (uncommitted work included) and ends by printing
+   the actionable mutants (Survived and NoCoverage).
+2. Empty list — nothing to do; the step is complete.
+3. Non-empty list — load the mutation-triage skill
+   (`.agents/skills/mutation-triage/SKILL.md`) and follow it: kill every
+   survivor with a new or stronger test, or record it as an equivalent
+   mutant in the PR body. Re-run `npm run mutation:changed` until only
+   recorded equivalents remain.
+4. `npm run mutation:changed -- --full` replaces step 1 when the change
+   is broad, touches test infrastructure, or the user asks for a full
+   run; `npm run mutation:survivors` re-lists the last report without
+   re-running.
+
+The blocking gates (`npm run typecheck`, `npm run lint`, `npm test`)
+must still pass after any new tests. A `// Stryker disable` comment
+without a written justification line in the PR body is forbidden.
+
 ## Iron Rules
 
 These rules apply to all agent work in this repository and take precedence
