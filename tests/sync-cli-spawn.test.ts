@@ -258,6 +258,36 @@ describe("sync-vault CLI", () => {
     ).toBe("0truetrue");
   });
 
+  it("projects the fixture vault into the data root when sync.json sets dataRoot", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-sync-cli-"));
+
+    tempDirs.push(dir);
+
+    const srcDir = join(dirname(fileURLToPath(import.meta.url)), "../src");
+
+    await cp(srcDir, join(dir, "src"), { recursive: true });
+
+    const vaultRoot = await generateFixtureVault(dir);
+
+    await writeFile(
+      join(dir, "sync.json"),
+      JSON.stringify({
+        dataRoot: join(dir, "k-wiki-data"),
+        vaults: [{ name: VAULT_NAME, root: vaultRoot, select: "wiki:true" }],
+      }),
+    );
+
+    const result = await runNode([join(dir, "src", "sync", "sync-vault.ts")]);
+
+    const noteStat = await stat(
+      join(dir, "k-wiki-data", "raw", "notes", VAULT_NAME, "AI", "RAG.md"),
+    );
+
+    expect(
+      `${result.code}${result.out.includes("sync complete")}${noteStat.isFile()}`,
+    ).toBe("0truetrue");
+  });
+
   it("does nothing when imported as a module", async () => {
     const dir = await makeTmpRepo();
 

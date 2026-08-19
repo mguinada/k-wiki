@@ -7,7 +7,7 @@ A concise implementation guide for building an LLM-maintained wiki as a **derive
 ## 0. Target Architecture
 
 ```text
-MyVault/                         k-wiki/
+MyVault/                         k-wiki-data/
 Human source                    Derived machine knowledge
     │
     │ deterministic sync
@@ -28,7 +28,7 @@ Human source                    Derived machine knowledge
                                   └── comparisons/
 ```
 
-**Core rule:** `MyVault` is the source of truth. `k-wiki` is disposable derived data.
+**Core rule:** `MyVault` is the source of truth. `k-wiki-data` — the `raw/` and `wiki/` trees — is disposable derived data (Section 19).
 
 This does **not** violate the Karpathy-style wiki principles. It strengthens source immutability, provenance, separation of human/LLM ownership, and reproducibility.
 
@@ -111,10 +111,11 @@ Example:
 
 ```text
 ~/Obsidian/MyVault/     ← source vault (human-owned)
-k-wiki/                 ← wiki root (this repository)
+k-wiki/                 ← code repo (this repository)
+k-wiki-data/            ← data repo: raw/ and wiki/ contents (Section 19)
 ```
 
-Open both as separate Obsidian vaults. `k-wiki` can live anywhere on disk; every instruction in this guide is relative to the `k-wiki` root.
+Open both as separate Obsidian vaults. Both repos live in plain local folders (Section 26); every instruction in this guide is relative to the repo root that owns the path, and paths under `raw/` and `wiki/` refer to the data repo's trees (Section 19).
 
 One exception: a source vault that syncs via iCloud must live inside Obsidian's iCloud container, `~/Library/Mobile Documents/iCloud~md~obsidian/<VaultName>/`. Vault placement and transports are covered in Section 26.
 
@@ -123,10 +124,10 @@ Recommended ownership:
 | Area | Owner | LLM writes? |
 |---|---|---:|
 | `MyVault/` | Human | No |
-| `k-wiki/raw/` | Sync process | No |
-| `k-wiki/wiki/` | LLM | Yes |
-| `k-wiki/wiki/index.md` | LLM | Yes |
-| `k-wiki/wiki/log.md` | LLM | Append-only |
+| `k-wiki-data/raw/` | Sync process | No |
+| `k-wiki-data/wiki/` | LLM | Yes |
+| `k-wiki-data/wiki/index.md` | LLM | Yes |
+| `k-wiki-data/wiki/log.md` | LLM | Append-only |
 | `k-wiki/AGENTS.md` | Human (router, invariants); dev agent (conventions) | Conventions block only |
 | `k-wiki/wiki/AGENTS.md` | Human | Only via approved schema changes |
 | `k-wiki/sync.json` | Human | No |
@@ -215,15 +216,15 @@ MyVault/
     │
     │ deterministic sync
     ▼
-k-wiki/raw/
+k-wiki-data/raw/
     │
     │ LLM analysis
     ▼
-k-wiki/normalized/
+k-wiki-data/normalized/
     │
     │ LLM ingest
     ▼
-k-wiki/wiki/
+k-wiki-data/wiki/
 ```
 
 `normalized/` must also be derived data. Never use it to overwrite `MyVault/` automatically.
@@ -278,7 +279,14 @@ The wiki should **understand your source vault rather than require your source v
 ## 6. Create the Wiki Structure
 
 ```text
-k-wiki/
+k-wiki/                  ← code repo (this repository)
+├── outputs/
+├── sync.json            ← vault roots + dataRoot + publish target (Section 26)
+├── making-of/           ← this guide
+├── AGENTS.md
+└── .git/
+
+k-wiki-data/             ← data repo (Section 19)
 ├── raw/
 │   └── notes/
 │
@@ -293,11 +301,6 @@ k-wiki/
 │   ├── queries/
 │   └── comparisons/
 │
-├── outputs/
-│
-├── sync.json            ← vault roots + publish target (Section 26)
-├── making-of/            ← this guide
-├── AGENTS.md
 └── .git/
 ```
 
@@ -310,7 +313,7 @@ The exact taxonomy can evolve. Start small.
 The synchronization pipeline is:
 
 ```text
-MyVault → k-wiki/raw → k-wiki/wiki
+MyVault → k-wiki-data/raw → k-wiki-data/wiki
 ```
 
 Never:
@@ -341,7 +344,7 @@ Find wiki:true notes
     ↓
 Compare hashes
     ↓
-Copy new/changed notes → k-wiki/raw/
+Copy new/changed notes → k-wiki-data/raw/
     ↓
 Detect deleted notes
     ↓
@@ -357,7 +360,7 @@ On macOS, `launchd` plus a small TypeScript/Node CLI is a good implementation.
 Track hashes in something such as:
 
 ```text
-k-wiki/raw/manifest.json
+k-wiki-data/raw/manifest.json
 ```
 
 Example:
