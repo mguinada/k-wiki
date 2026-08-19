@@ -2,7 +2,7 @@
 
 An LLM-maintained knowledge wiki, derived from a human-owned Obsidian vault.
 
-`k-wiki` implements the [Karpathy-style LLM wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) pattern: a personal Obsidian vault remains the human-owned source of truth. Notes marked `wiki: true` are deterministically synced into an immutable `raw/` projection; an LLM agent then builds and maintains a structured, interlinked wiki under `wiki/`. Both trees are disposable derived data — versioned in a separate data repo placed by `sync.json`'s `dataRoot` (guide §19), auditable by diff, and publishable to all devices as a read-only mirror. This repository holds the pipeline and the directory skeleton only; the contents of `raw/` and `wiki/` are gitignored here.
+`k-wiki` implements the [Karpathy-style LLM wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) pattern: a personal Obsidian vault remains the human-owned source of truth. Notes sync into an immutable `raw/` projection unless they opt out with `wiki: false`; an LLM agent then builds and maintains a structured, interlinked wiki under `wiki/`. Both trees are disposable derived data — versioned in a separate data repo placed by `sync.json`'s `dataRoot` (guide §19), auditable by diff, and publishable to all devices as a read-only mirror. This repository holds the pipeline and the directory skeleton only; the contents of `raw/` and `wiki/` are gitignored here.
 
 ## Core invariant
 
@@ -47,11 +47,11 @@ sources directly, so there is no build step — install dependencies with
 | `npm run format` | Biome | Rewrite files to the canonical format — the fix command for lint findings, not a gate |
 | `npm test` | vitest | Run the unit test suite |
 | `npm run test:coverage` | vitest | Run the unit tests and fail below the 90% coverage thresholds — what CI runs |
-| `npm run e2e` | vitest | Run the end-to-end suite (`tests/e2e/`): the real sync CLI as child processes through a full vault lifecycle — first run, no-op re-run, edit, delete, flag flip, multi-vault — against the synthetic fixture vault in temp workspaces under `.e2e-tmp/` (gitignored) |
+| `npm run e2e` | vitest | Run the end-to-end suite (`tests/e2e/`): the real sync CLI as child processes through a full vault lifecycle — first run, no-op re-run, edit, delete, block flip, multi-vault — against the synthetic fixture vault in temp workspaces under `.e2e-tmp/` (gitignored) |
 | `npm run health [-- <raw-dir>]` | health CLI | Check the coherence of a `raw/` projection (default: the repo's `raw/`): every `raw/notes/<vault>/` file matches its `manifest.json` sha-256, with no orphans and no missing entries; read-only, no vault access; exit 0 = coherent (including healthy-empty), exit 1 = one line per problem |
 | `npm run check-links [-- <wiki-dir>]` | wikilink checker | Check that every `[[wikilink]]` under `wiki/` (default) resolves to an existing page by file name; exit 0 = all links resolve, exit 1 = one `file:line -> [[link]]` line per broken link |
 | `npm run fixtures -- <dir>` | fixture generator | Write the synthetic Obsidian test vault to `<dir>/Documents` |
-| `npm run sync-vault -- [<sync.json>] [<raw-dir>]` | sync CLI | Project `wiki:true` notes from the configured vaults into `raw/notes/` (deterministic, no LLM; defaults to the repo's `sync.json` and — when `dataRoot` is set — `<dataRoot>/raw`, otherwise the repo's `raw/`); live progress goes to stderr, the report to stdout, and output is colored unless `NO_COLOR` is set |
+| `npm run sync-vault -- [--dry-run] [<sync.json>] [<raw-dir>]` | sync CLI | Ingest every note not blocked by the vault's exclusion rule into `raw/notes/` (deterministic, no LLM; [details below](#running-the-sync)) |
 | `npm run data:init -- [<sync.json>]` | data repo seeder | Create and seed the data repo at `sync.json`'s `dataRoot`: git init, copy the `raw/`+`wiki/` skeleton from the code repo, first commit; idempotent |
 | `npm run mutation:changed` | StrykerJS | Advisory mutation run scoped to `src/` files changed vs `main` (uncommitted included); exits 0 without running when none changed, and ends by printing the actionable mutants — the default pre-handoff step |
 | `npm run mutation:changed -- --full` | StrykerJS | Advisory mutation run over all of `src/`, not just changed files; same printed summary |
@@ -62,6 +62,9 @@ Type check, lint, and unit tests are quality gates: every change passes
 them before it is done. CI (`.github/workflows/ci.yml`) enforces the same
 gates on every pull request, testing each PR's merge commit against
 `main`, with a 90% coverage floor on unit tests.
+
+Every CLI above also answers `-h` / `--help` with its usage line, every
+switch explained, defaults, and exit 0 with no side effects.
 
 Verification has three layers:
 
@@ -162,6 +165,59 @@ publish the mirror (guide §26). The
 hashes and timestamps — lives in `raw/manifest.json`, keyed per vault
 namespace (guide §25). Sync is idempotent: a run with no source changes
 copies, removes, and writes nothing.
+
+## Running the sync
+
+```sh
+npm run sync-vault -- [--dry-run] [<sync.json>] [<raw-dir>]
+```
+
+Examples:
+
+```sh
+npm run sync-vault -- --dry-run          # defaults: repo sync.json, dataRoot raw dir
+npm run sync-vault -- --dry-run my.json  # custom config, default raw dir
+npm run sync-vault                        # real sync, all defaults
+npm run sync-vault -- my.json /tmp/raw    # custom config and raw dir
+```
+
+Arguments:
+
+| Argument | Default | Meaning |
+|---|---|---|
+| `--dry-run` | off | List what **would** be ingested; write nothing (no `raw/` files, no manifest read or write). Flag position is free. |
+| `<sync.json>` | repo's `sync.json` | Config naming the vaults and their exclusion rules |
+| `<raw-dir>` | `<dataRoot>/raw`, else the repo's `raw/` | Destination for `notes/` and `manifest.json` |
+
+Live progress goes to stderr, the report to stdout; `NO_COLOR` disables
+color.
+
+### What gets ingested
+
+A note syncs **unless** its frontmatter blocks it. The rule comes from
+each vault's `exclude` field (`"exclude": "wiki:false"`):
+
+| Frontmatter | Ingested? |
+|---|---|
+| `wiki: false` | no |
+| `wiki: "false"` (quoted — web clipper style) | no |
+| `wiki: true` | yes |
+| property absent or blank | yes |
+| no frontmatter at all | yes |
+
+A `wiki: false` line in the note **body** never blocks. Configs still
+using the old `select` field fail with a migration error: replace it
+with `exclude`.
+
+### First sync after switching to opt-out
+
+The failure direction under opt-out is a **leak, not a loss**: a private
+note nobody blocked lands in `raw/` and git history. Review first:
+
+1. `npm run sync-vault -- --dry-run` — read the would-ingest list.
+2. Add `wiki: false` to any note that must stay private.
+3. Re-run the dry run until the list is clean.
+4. Run `npm run sync-vault` for real; check `npm run health` after.
 
 ## Gating changes with no-mistakes
 

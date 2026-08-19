@@ -93,7 +93,7 @@ wiki: false
 Private project tracking. Must stay out of the wiki.
 `;
 
-/** Excluded: no frontmatter at all. */
+/** Ingested under opt-out: no frontmatter means nothing blocks it. */
 const NO_FRONTMATTER_NOTE = `# Parking lot
 
 Unsorted clippings with no frontmatter. Sync must skip this note.
@@ -107,6 +107,43 @@ wiki: true
 # Old scratch note
 
 Deleted from the vault. Sync must never pick this up from .trash.
+`;
+
+/** Ingested: flag present but blank (the opt-out rule ingests it). */
+const BLANK_FLAG_NOTE = `---
+tags:
+  - inbox
+wiki:
+---
+
+# Quick idea
+
+One-liner captured on the go. A blank flag value must not block the
+note.
+`;
+
+/** Ingested: quoted flag, as the Obsidian web clipper writes it. */
+const CLIPPED_NOTE = `---
+source: https://example.com/rag-overview
+wiki: "true"
+---
+
+# Clipped overview
+
+Web clipper output. A Text property quotes its value; a quoted value
+counts like an unquoted one.
+`;
+
+/** Excluded: quoted block, as the web clipper writes it. */
+const PRIVATE_CLIPPED_NOTE = `---
+source: https://example.com/private
+wiki: "false"
+---
+
+# Private clipping
+
+Clipped private material. The quoted block must keep it out of the
+wiki.
 `;
 
 /** Noise: macOS Finder metadata (Bud1 magic header, fixed bytes). */
@@ -130,8 +167,11 @@ const FILES: readonly FixtureFile[] = [
   { path: "AI/RAG.md", content: RAG_NOTE },
   { path: "AI/llms/attention-is-all-you-need.md", content: ATTENTION_NOTE },
   { path: "AI/rag-evaluation-notes.md", content: RAG_EVALUATION_NOTE },
+  { path: "Inbox/clipped-note.md", content: CLIPPED_NOTE },
   { path: "Inbox/parking-lot.md", content: NO_FRONTMATTER_NOTE },
+  { path: "Inbox/quick-idea.md", content: BLANK_FLAG_NOTE },
   { path: "Projects/house-renovation.md", content: PRIVATE_PROJECT_NOTE },
+  { path: "Projects/private-clipped.md", content: PRIVATE_CLIPPED_NOTE },
   { path: "Scratch/temp-research.md", content: TEMP_RESEARCH_NOTE },
 ];
 
@@ -157,8 +197,26 @@ export async function generateFixtureVault(targetDir: string): Promise<string> {
   return vaultRoot;
 }
 
+/** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
+const HELP = `Usage: fixtures [-h | --help] <target-dir>
+
+Write the synthetic Obsidian test vault to <target-dir>/Documents —
+deterministic bytes, no timestamps; the snapshot copy lives at
+tests/fixtures/Documents.
+
+  -h, --help      Print this help and exit; no side effects.
+  <target-dir>    Destination directory for the Documents/ vault.`;
+
 export async function main(): Promise<void> {
-  const targetDir = process.argv[2];
+  const args = process.argv.slice(2);
+
+  if (args.includes("-h") || args.includes("--help")) {
+    console.log(HELP);
+
+    return;
+  }
+
+  const targetDir = args[0];
 
   if (targetDir === undefined) {
     console.error("Usage: npm run fixtures -- <target-dir>");

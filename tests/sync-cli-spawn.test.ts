@@ -124,7 +124,7 @@ async function makeTmpRepo(): Promise<string> {
   await writeFile(
     join(dir, "sync.json"),
     JSON.stringify({
-      vaults: [{ name: VAULT_NAME, root: vaultRoot, select: "wiki:true" }],
+      vaults: [{ name: VAULT_NAME, root: vaultRoot, exclude: "wiki:false" }],
     }),
   );
 
@@ -150,7 +150,7 @@ async function stageRepo(): Promise<string> {
   await writeFile(
     join(dir, "sync.json"),
     JSON.stringify({
-      vaults: [{ name: VAULT_NAME, root: vaultRoot, select: "wiki:true" }],
+      vaults: [{ name: VAULT_NAME, root: vaultRoot, exclude: "wiki:false" }],
     }),
   );
 
@@ -287,7 +287,7 @@ describe("sync-vault CLI", () => {
           {
             name: VAULT_NAME,
             root: join(dir, VAULT_NAME),
-            select: "wiki:true",
+            exclude: "wiki:false",
           },
         ],
       }),
@@ -325,7 +325,7 @@ describe("sync-vault CLI", () => {
     );
 
     expect(
-      `${out.includes("sync complete: 4 copied")}${noteStat.isFile()}`,
+      `${out.includes("sync complete: 7 copied")}${noteStat.isFile()}`,
     ).toBe("truetrue");
   });
   it("runs nothing when argv[1] is undefined", async () => {

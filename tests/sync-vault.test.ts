@@ -18,9 +18,11 @@ import {
   colorizeError,
   colorizeProgress,
   colorizeReportLine,
+  formatDryRunReport,
   formatReport,
   main,
   PROGRESS_EVERY,
+  runDryRun,
   runSync,
   type VaultSyncReport,
 } from "../src/sync/sync-vault.ts";
@@ -70,7 +72,7 @@ async function makeWorkspace(
         {
           name: options.name ?? VAULT_NAME,
           root: options.root ?? vaultRoot,
-          select: "wiki:true",
+          exclude: "wiki:false",
         },
       ],
     }),
@@ -145,8 +147,8 @@ describe("runSync first run", () => {
     expect(await run(ws)).toEqual([
       {
         vault: VAULT_NAME,
-        candidates: 6,
-        selected: 4,
+        candidates: 9,
+        selected: 7,
         copied: SELECTED_PATHS,
         unchanged: [],
         removed: [],
@@ -201,7 +203,7 @@ describe("runSync first run", () => {
     await writeFile(
       configPath,
       JSON.stringify({
-        vaults: [{ name: VAULT_NAME, root: filePath, select: "wiki:true" }],
+        vaults: [{ name: VAULT_NAME, root: filePath, exclude: "wiki:false" }],
       }),
     );
 
@@ -270,8 +272,8 @@ describe("runSync idempotence", () => {
     expect(second).toEqual([
       {
         vault: VAULT_NAME,
-        candidates: 6,
-        selected: 4,
+        candidates: 9,
+        selected: 7,
         copied: [],
         unchanged: SELECTED_PATHS,
         removed: [],
@@ -410,6 +412,9 @@ describe("runSync removal detection", () => {
         "AI/RAG.md",
         "AI/llms/attention-is-all-you-need.md",
         "AI/rag-evaluation-notes.md",
+        "Inbox/clipped-note.md",
+        "Inbox/parking-lot.md",
+        "Inbox/quick-idea.md",
       ].map((rel) => `${VAULT_NAME}/${rel}`),
     );
   });
@@ -467,7 +472,7 @@ describe("runSync removal detection", () => {
     },
   );
 
-  it("removes the raw copy when the note loses its flag", async () => {
+  it("removes the raw copy when a note is blocked", async () => {
     const ws = await makeWorkspace();
 
     await run(ws, T1);
@@ -557,7 +562,7 @@ describe("runSync progress", () => {
     expect(messages.slice(0, 3)).toEqual([
       `sync-vault: raw dir ${ws.rawDir}`,
       `vault "${VAULT_NAME}": scanning ${ws.vaultRoot}`,
-      `vault "${VAULT_NAME}": 6 candidates`,
+      `vault "${VAULT_NAME}": 9 candidates`,
     ]);
   });
 
@@ -578,8 +583,8 @@ describe("runSync progress", () => {
     expect(messages).toEqual([
       `sync-vault: raw dir ${ws.rawDir}`,
       `vault "${VAULT_NAME}": scanning ${ws.vaultRoot}`,
-      `vault "${VAULT_NAME}": ${PROGRESS_EVERY + 6} candidates`,
-      `vault "${VAULT_NAME}": ${PROGRESS_EVERY}/${PROGRESS_EVERY + 6} read, 0 selected`,
+      `vault "${VAULT_NAME}": ${PROGRESS_EVERY + 9} candidates`,
+      `vault "${VAULT_NAME}": ${PROGRESS_EVERY}/${PROGRESS_EVERY + 9} read, ${PROGRESS_EVERY} selected`,
     ]);
   });
 
@@ -596,7 +601,7 @@ describe("runSync candidate count", () => {
     const ws = await makeWorkspace();
     const { reports } = await runWithProgress(ws);
 
-    expect(reports[0]?.candidates).toBe(6);
+    expect(reports[0]?.candidates).toBe(9);
   });
 
   it("counts zero candidates for a vault without markdown files", async () => {
@@ -608,7 +613,7 @@ describe("runSync candidate count", () => {
     await writeFile(
       configPath,
       JSON.stringify({
-        vaults: [{ name: "Empty", root: emptyRoot, select: "wiki:true" }],
+        vaults: [{ name: "Empty", root: emptyRoot, exclude: "wiki:false" }],
       }),
     );
 
@@ -622,33 +627,33 @@ describe("runSync candidate count", () => {
   });
 });
 
-describe("formatReport zero-match hint", () => {
-  const noMatch: VaultSyncReport = {
+describe("formatReport all-blocked hint", () => {
+  const allBlocked: VaultSyncReport = {
     vault: VAULT_NAME,
-    candidates: 6,
+    candidates: 9,
     selected: 0,
     copied: [],
     unchanged: [],
     removed: [],
   };
 
-  it("appends the hint when candidates matched no selection rule", () => {
-    expect(formatReport([noMatch]).split("\n")[0]).toBe(
-      `vault "${VAULT_NAME}": 0 selected, 0 copied, 0 unchanged, 0 removed (6 candidates, none matched the selection rule)`,
+  it("appends the hint when every candidate is blocked", () => {
+    expect(formatReport([allBlocked]).split("\n")[0]).toBe(
+      `vault "${VAULT_NAME}": 0 selected, 0 copied, 0 unchanged, 0 removed (9 candidates, all blocked)`,
     );
   });
 
   it("omits the hint when the vault has no candidates", () => {
-    const report: VaultSyncReport = { ...noMatch, candidates: 0 };
+    const report: VaultSyncReport = { ...allBlocked, candidates: 0 };
 
     expect(formatReport([report]).split("\n")[0]).toBe(
       `vault "${VAULT_NAME}": 0 selected, 0 copied, 0 unchanged, 0 removed`,
     );
   });
 
-  it("omits the hint when candidates matched", () => {
+  it("omits the hint when candidates were ingested", () => {
     const report: VaultSyncReport = {
-      ...noMatch,
+      ...allBlocked,
       selected: 1,
       copied: ["a.md"],
     };
@@ -695,8 +700,8 @@ describe("runSync multiple vaults", () => {
       configPath,
       JSON.stringify({
         vaults: [
-          { name: VAULT_NAME, root: documentsRoot, select: "wiki:true" },
-          { name: "Journal", root: journalRoot, select: "wiki:true" },
+          { name: VAULT_NAME, root: documentsRoot, exclude: "wiki:false" },
+          { name: "Journal", root: journalRoot, exclude: "wiki:false" },
         ],
       }),
     );
@@ -718,6 +723,9 @@ describe("runSync multiple vaults", () => {
       "Documents/AI/RAG.md",
       "Documents/AI/llms/attention-is-all-you-need.md",
       "Documents/AI/rag-evaluation-notes.md",
+      "Documents/Inbox/clipped-note.md",
+      "Documents/Inbox/parking-lot.md",
+      "Documents/Inbox/quick-idea.md",
       "Documents/Scratch/temp-research.md",
       "Journal/Daily/day-1.md",
       "Journal/day-2.md",
@@ -750,6 +758,112 @@ describe("runSync multiple vaults", () => {
     await run(ws, T1);
 
     expect((await readManifestOf(ws)).vaults.Retired).toEqual(retired);
+  });
+});
+
+describe("runDryRun", () => {
+  it("lists every note the exclusion rule would ingest", async () => {
+    const ws = await makeWorkspace();
+
+    expect(
+      await runDryRun({ configPath: ws.configPath, rawDir: ws.rawDir }),
+    ).toEqual([
+      { vault: VAULT_NAME, candidates: 9, wouldIngest: SELECTED_PATHS },
+    ]);
+  });
+
+  it("writes nothing to the raw dir", async () => {
+    const ws = await makeWorkspace();
+
+    await runDryRun({ configPath: ws.configPath, rawDir: ws.rawDir });
+
+    await expect(stat(ws.rawDir)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("leaves an existing manifest untouched", async () => {
+    const ws = await makeWorkspace();
+
+    await run(ws, T1);
+    const before = await readFile(join(ws.rawDir, "manifest.json"), "utf8");
+
+    await runDryRun({ configPath: ws.configPath, rawDir: ws.rawDir });
+
+    expect(await readFile(join(ws.rawDir, "manifest.json"), "utf8")).toBe(
+      before,
+    );
+  });
+
+  it("announces the dry run as the first progress message", async () => {
+    const ws = await makeWorkspace();
+    const messages: string[] = [];
+
+    await runDryRun({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+      onProgress: (message) => messages.push(message),
+    });
+
+    expect(messages[0]).toBe("sync-vault: dry run, nothing will be written");
+  });
+
+  it("emits the same scanning progress as a real run", async () => {
+    const ws = await makeWorkspace();
+    const messages: string[] = [];
+
+    await runDryRun({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+      onProgress: (message) => messages.push(message),
+    });
+
+    expect(messages.slice(1, 3)).toEqual([
+      `vault "${VAULT_NAME}": scanning ${ws.vaultRoot}`,
+      `vault "${VAULT_NAME}": 9 candidates`,
+    ]);
+  });
+
+  it("expands a tilde vault root against the home override", async () => {
+    const ws = await makeWorkspace({ root: `~/${VAULT_NAME}` });
+
+    const reports = await runDryRun({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+      home: ws.dir,
+    });
+
+    expect(reports[0]?.wouldIngest).toEqual(SELECTED_PATHS);
+  });
+
+  it("honors an explicitly empty home override", async () => {
+    const ws = await makeWorkspace();
+    const configPath = join(ws.dir, "empty-home-sync.json");
+
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        vaults: [{ name: VAULT_NAME, root: "~/v", exclude: "wiki:false" }],
+      }),
+    );
+
+    await expect(
+      runDryRun({ configPath, rawDir: ws.rawDir, home: "" }),
+    ).rejects.toThrow(/^vault root for "Documents" is not accessible: v$/);
+  });
+});
+
+describe("formatDryRunReport", () => {
+  it("renders the would-ingest list with a nothing-written summary", () => {
+    expect(
+      formatDryRunReport([
+        { vault: VAULT_NAME, candidates: 9, wouldIngest: ["AI/RAG.md"] },
+      ]),
+    ).toBe(
+      [
+        `vault "${VAULT_NAME}": 1 of 9 candidates would be ingested`,
+        "  + AI/RAG.md",
+        "dry-run complete: nothing written",
+      ].join("\n"),
+    );
   });
 });
 
@@ -924,7 +1038,7 @@ describe("sync-vault CLI", () => {
     const { out } = await runCli([ws.configPath, ws.rawDir]);
 
     expect(out).toContain(
-      `vault "${VAULT_NAME}": 4 selected, 4 copied, 0 unchanged, 0 removed`,
+      `vault "${VAULT_NAME}": 7 selected, 7 copied, 0 unchanged, 0 removed`,
     );
   });
 
@@ -941,7 +1055,7 @@ describe("sync-vault CLI", () => {
 
     const { out } = await runCli([ws.configPath, ws.rawDir]);
 
-    expect(out).toContain("sync complete: 4 copied, 0 removed");
+    expect(out).toContain("sync complete: 7 copied, 0 removed");
   });
 
   it("reports no changes on the second run", async () => {
@@ -962,7 +1076,7 @@ describe("sync-vault CLI", () => {
 
     expect(out).toBe(
       [
-        `vault "${VAULT_NAME}": 3 selected, 0 copied, 3 unchanged, 1 removed`,
+        `vault "${VAULT_NAME}": 6 selected, 0 copied, 6 unchanged, 1 removed`,
         "  - Scratch/temp-research.md",
         "sync complete: 0 copied, 1 removed",
       ].join("\n"),
@@ -1052,5 +1166,103 @@ describe("sync-vault CLI", () => {
     const { out } = await runCli([configPath, join(dir, "raw")]);
 
     expect(out).toContain("sync complete: no changes");
+  });
+
+  it("exits 0 and lists the would-ingest notes for --dry-run", async () => {
+    const ws = await makeWorkspace();
+
+    const { out } = await runCli(["--dry-run", ws.configPath, ws.rawDir]);
+
+    expect(out).toBe(
+      [
+        `vault "${VAULT_NAME}": 7 of 9 candidates would be ingested`,
+        ...SELECTED_PATHS.map((rel) => `  + ${rel}`),
+        "dry-run complete: nothing written",
+      ].join("\n"),
+    );
+  });
+
+  it("writes nothing to the raw dir during a --dry-run CLI run", async () => {
+    const ws = await makeWorkspace();
+
+    await runCli(["--dry-run", ws.configPath, ws.rawDir]);
+
+    await expect(stat(ws.rawDir)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("accepts --dry-run after the config argument", async () => {
+    const ws = await makeWorkspace();
+
+    const { out } = await runCli([ws.configPath, "--dry-run", ws.rawDir]);
+
+    expect(out).toContain("dry-run complete: nothing written");
+  });
+
+  it("writes dry-run progress to stderr", async () => {
+    const ws = await makeWorkspace();
+
+    const { err } = await runCli(["--dry-run", ws.configPath, ws.rawDir]);
+
+    expect(err).toContain("sync-vault: dry run, nothing will be written");
+  });
+  describe("sync-vault CLI help", () => {
+    it("prints the usage line for --help", async () => {
+      const { out } = await runCli(["--help"]);
+
+      expect(out).toContain(
+        "sync-vault [--dry-run] [-h | --help] [<config>] [<raw-dir>]",
+      );
+    });
+
+    it("prints the same help for -h as for --help", async () => {
+      expect((await runCli(["-h"])).out).toBe((await runCli(["--help"])).out);
+    });
+
+    it("explains that --dry-run writes nothing", async () => {
+      const { out } = await runCli(["--help"]);
+
+      expect(out).toContain("write nothing");
+    });
+
+    it("documents the -h and --help switches themselves", async () => {
+      const { out } = await runCli(["--help"]);
+
+      expect(out).toContain("-h, --help");
+    });
+
+    it("states the default config path", async () => {
+      const { out } = await runCli(["--help"]);
+
+      expect(out).toContain("Default: the repo's own sync.json");
+    });
+
+    it("states the default raw dir and its dataRoot override", async () => {
+      const { out } = await runCli(["--help"]);
+
+      expect(out).toContain("<dataRoot>/raw");
+    });
+
+    it("leaves the exit code unset for --help", async () => {
+      await runCli(["--help"]);
+
+      expect(process.exitCode).toBeUndefined();
+    });
+
+    it("prints help without loading the config when --help precedes it", async () => {
+      const ws = await makeWorkspace();
+      const missing = join(ws.dir, "nope.json");
+
+      const { err } = await runCli(["--help", missing, ws.rawDir]);
+
+      expect(err).not.toMatch(/cannot read sync config/);
+    });
+
+    it("writes nothing to the raw dir for --help", async () => {
+      const ws = await makeWorkspace();
+
+      await runCli(["--help", ws.configPath, ws.rawDir]);
+
+      await expect(stat(ws.rawDir)).rejects.toMatchObject({ code: "ENOENT" });
+    });
   });
 });

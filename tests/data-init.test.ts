@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { afterAll, describe, expect, it } from "vitest";
-import { seedDataRepo } from "../src/data/init-data-repo.ts";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { main, seedDataRepo } from "../src/data/init-data-repo.ts";
 
 const tempDirs: string[] = [];
 const run = promisify(execFile);
@@ -26,6 +26,118 @@ afterAll(async () => {
   await Promise.all(
     tempDirs.map((dir) => rm(dir, { recursive: true, force: true })),
   );
+});
+
+afterEach(() => {
+  process.exitCode = undefined;
+});
+
+describe("data:init CLI help", () => {
+  async function runInitCli(args: string[]): Promise<{
+    out: string;
+    err: string;
+  }> {
+    const argv = process.argv;
+    const out: string[] = [];
+    const err: string[] = [];
+
+    const savedEnv = new Map(
+      Object.keys(GIT_ENV).map((key) => [key, process.env[key]]),
+    );
+
+    process.argv = [...argv.slice(0, 2), ...args];
+    Object.assign(process.env, GIT_ENV);
+
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) => err.push(parts.join(" ")));
+
+    try {
+      await main();
+    } finally {
+      process.argv = argv;
+
+      for (const [key, value] of savedEnv) {
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      }
+
+      logSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
+
+    return { out: out.join("\n"), err: err.join("\n") };
+  }
+
+  it("prints the usage line for --help", async () => {
+    expect((await runInitCli(["--help"])).out).toContain(
+      "init-data-repo [-h | --help] [<config>]",
+    );
+  });
+
+  it("prints the same help for -h as for --help", async () => {
+    expect((await runInitCli(["-h"])).out).toBe(
+      (await runInitCli(["--help"])).out,
+    );
+  });
+
+  it("documents the -h and --help switches themselves", async () => {
+    expect((await runInitCli(["--help"])).out).toContain("-h, --help");
+  });
+
+  it("states the default config path", async () => {
+    expect((await runInitCli(["--help"])).out).toContain(
+      "Default: the repo's own sync.json",
+    );
+  });
+
+  it("leaves the exit code unset for --help", async () => {
+    await runInitCli(["--help"]);
+
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("seeds and reports success when run with a config argument", async () => {
+    const dir = await makeTempDir();
+    const dataRoot = join(dir, "data");
+    const configPath = await writeConfig(dataRoot);
+
+    const { out } = await runInitCli([configPath]);
+
+    expect(out).toBe(`data:init: seeded ${dataRoot}`);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("prints the failure and sets the exit code when the config is missing", async () => {
+    const dir = await makeTempDir();
+
+    const { err } = await runInitCli([join(dir, "nope.json")]);
+
+    expect(err).toContain("cannot read sync config");
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("reports an already-seeded data root without reseeding", async () => {
+    const dataRoot = await makeTempDir();
+    const configPath = await writeConfig(dataRoot);
+
+    await seedDataRepo({
+      configPath,
+      repoRoot: await makeCodeRepoFixture(),
+      env: GIT_ENV,
+    });
+
+    const { out } = await runInitCli([configPath]);
+
+    expect(out).toBe(`data:init: ${dataRoot} already seeded`);
+    expect(process.exitCode).toBeUndefined();
+  });
 });
 
 async function makeTempDir(): Promise<string> {
@@ -97,6 +209,18 @@ describe("seedDataRepo", () => {
     expect(stdout.trim().length).toBeGreaterThan(0);
   });
 
+  it('returns "seeded" after the first seed', async () => {
+    const dataRoot = await makeTempDir();
+
+    const result = await seedDataRepo({
+      configPath: await writeConfig(dataRoot),
+      repoRoot: await makeCodeRepoFixture(),
+      env: GIT_ENV,
+    });
+
+    expect(result).toBe("seeded");
+  });
+
   it("is a no-op when the data root is already seeded", async () => {
     const dataRoot = await makeTempDir();
     const configPath = await writeConfig(dataRoot);
@@ -129,7 +253,37 @@ describe("seedDataRepo", () => {
         repoRoot: await makeCodeRepoFixture(),
         env: GIT_ENV,
       }),
-    ).rejects.toThrow(/not a seeded data repo/);
+    ).rejects.toThrow(
+      'is not empty and is not a seeded data repo; refusing to seed into it — move its contents or point "dataRoot" at an empty directory',
+    );
+  });
+
+  it("seeds into a data root that does not exist yet", async () => {
+    const dir = await makeTempDir();
+    const dataRoot = join(dir, "nested", "data");
+
+    const result = await seedDataRepo({
+      configPath: await writeConfig(dataRoot),
+      repoRoot: await makeCodeRepoFixture(),
+      env: GIT_ENV,
+    });
+
+    expect(result).toBe("seeded");
+    expect(existsSync(join(dataRoot, "README.md"))).toBe(true);
+  });
+
+  it("commits with the author from the given environment", async () => {
+    const dataRoot = await makeTempDir();
+
+    await seedDataRepo({
+      configPath: await writeConfig(dataRoot),
+      repoRoot: await makeCodeRepoFixture(),
+      env: GIT_ENV,
+    });
+
+    const { stdout } = await git(dataRoot, "log", "-1", "--format=%an");
+
+    expect(stdout.trim()).toBe(GIT_ENV.GIT_AUTHOR_NAME);
   });
 
   it("rejects a config without a data root", async () => {

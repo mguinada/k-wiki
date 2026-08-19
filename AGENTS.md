@@ -2,9 +2,9 @@
 
 This repository hosts a derived knowledge wiki and the pipeline that builds
 it. A human-owned Obsidian vault — outside this repository — is the source of
-truth; notes marked `wiki: true` are synced deterministically into an
-immutable `raw/` projection, and an LLM agent maintains the structured,
-interlinked wiki under `wiki/`. The wiki is disposable derived data, versioned
+truth; notes sync deterministically into an immutable `raw/` projection
+unless their frontmatter opts out with `wiki: false`, and an LLM agent
+maintains the structured, interlinked wiki under `wiki/`. The wiki is disposable derived data, versioned
 in git. The design of record is
 [`making-of/karpathy_obsidian_wiki_implementation_guide.md`](making-of/karpathy_obsidian_wiki_implementation_guide.md).
 
@@ -128,6 +128,17 @@ infrastructure, free to use for any unit or e2e work; the snapshot at
 
 - Put exactly one expectation in each `it` block.
 - Name each `it` block after the fact that its expectation verifies.
+
+### CLI scripts
+
+Every script meant to run on the terminal — every `main()` entry point
+under `src/` — responds to `-h` and `--help`. The help must state the
+usage line, explain every switch and positional argument with its
+default, say what the script writes (or that it writes nothing), and
+exit 0 without filesystem side effects. Help prints before any
+argument is validated or any file is read, so `--help` never fails.
+A new switch lands together with its help entry and its tests in the
+same change.
 
 ### Mutation testing (advisory)
 
