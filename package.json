@@ -21,6 +21,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",
+    "@stryker-mutator/core": "^10.0.0",
     "@stryker-mutator/vitest-runner": "^10.0.0",
     "@types/node": "^22.20.1",
     "@vitest/coverage-v8": "^4.1.10",

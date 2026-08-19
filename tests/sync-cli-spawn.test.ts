@@ -291,19 +291,28 @@ describe("sync-vault CLI", () => {
     expect(`${out}${err}`).toBe("");
   });
 
-  it("runs nothing when argv[1] is a different module, even with CLI args given", async () => {
+  it("stays silent when argv[1] is a different module, even with CLI args given", async () => {
     const repo = await stageRepo();
     const modulePath = join(repo, "src", "sync", "sync-vault.ts");
-    const rawDir = join(repo, "raw-untouched");
 
     const { out, err } = await importWithArgv(
       modulePath,
       join(repo, "other.js"),
-      [join(repo, "sync.json"), rawDir],
+      [join(repo, "sync.json"), join(repo, "raw-untouched")],
     );
 
-    expect(out).toBe("");
-    expect(err).toBe("");
+    expect(`${out}${err}`).toBe("");
+  });
+
+  it("leaves the raw directory untouched when argv[1] is a different module, even with CLI args given", async () => {
+    const repo = await stageRepo();
+    const modulePath = join(repo, "src", "sync", "sync-vault.ts");
+    const rawDir = join(repo, "raw-untouched");
+
+    await importWithArgv(modulePath, join(repo, "other.js"), [
+      join(repo, "sync.json"),
+      rawDir,
+    ]);
 
     await expect(stat(rawDir)).rejects.toThrow();
   });

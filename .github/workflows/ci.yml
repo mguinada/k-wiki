@@ -31,7 +31,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event.action || 'push' }}
   cancel-in-progress: true
 
 jobs:

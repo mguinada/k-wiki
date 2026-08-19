@@ -51,7 +51,10 @@ esac
 # the local branch is checked out elsewhere or missing. Plain two-endpoint
 # diff (not `origin/main...HEAD`): it includes uncommitted work, so the
 # pre-handoff run sees what the agent actually changed.
-changed=$(git diff --name-only origin/main -- 'src/**/*.ts')
+changed=$(
+  git diff --name-only origin/main -- 'src/*.ts'
+  git ls-files --others --exclude-standard -- 'src/*.ts'
+)
 
 if [ -z "$changed" ]; then
   echo "No src/ changes vs origin/main -- skipping mutation run."
