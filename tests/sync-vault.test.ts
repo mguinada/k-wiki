@@ -6,6 +6,7 @@ import {
   readdir,
   readFile,
   rm,
+  stat,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -221,9 +222,46 @@ describe("runSync first run", () => {
       `failed to read note "AI/RAG.md" in vault "${VAULT_NAME}"`,
     );
   });
+
+  itRequiresPermissionChecks(
+    "keeps the read error as the cause when a candidate cannot be read",
+    async () => {
+      const ws = await makeWorkspace();
+
+      await chmod(sourcePath(ws, "AI/RAG.md"), 0o000);
+
+      const error: unknown = await run(ws).catch((reason: unknown) => reason);
+
+      expect((error as NodeJS.ErrnoException).cause).toMatchObject({
+        code: "EACCES",
+      });
+    },
+  );
 });
 
 describe("runSync idempotence", () => {
+  it("rejects with the raw read error when the manifest path is a directory", async () => {
+    const ws = await makeWorkspace();
+
+    await mkdir(join(ws.rawDir, "manifest.json"), { recursive: true });
+
+    await expect(run(ws)).rejects.toThrow(
+      "EISDIR: illegal operation on a directory, read",
+    );
+  });
+
+  it("does not rewrite the manifest on the second run", async () => {
+    const ws = await makeWorkspace();
+    const manifestPath = join(ws.rawDir, "manifest.json");
+
+    await run(ws, T1);
+
+    const before = (await stat(manifestPath)).mtimeMs;
+
+    await run(ws, T2);
+
+    expect((await stat(manifestPath)).mtimeMs).toBe(before);
+  });
   it("copies and removes nothing on the second run", async () => {
     const ws = await makeWorkspace();
 
@@ -405,6 +443,30 @@ describe("runSync removal detection", () => {
     },
   );
 
+  itRequiresPermissionChecks(
+    "keeps the prune error as the cause when pruning fails",
+    async () => {
+      const ws = await makeWorkspace();
+      const namespaceRoot = join(ws.rawDir, "notes", VAULT_NAME);
+
+      await run(ws, T1);
+      await rm(sourcePath(ws, "Scratch/temp-research.md"));
+      await chmod(namespaceRoot, 0o555);
+
+      try {
+        const error: unknown = await run(ws, T2).catch(
+          (reason: unknown) => reason,
+        );
+
+        expect((error as NodeJS.ErrnoException).cause).toMatchObject({
+          code: "EACCES",
+        });
+      } finally {
+        await chmod(namespaceRoot, 0o755);
+      }
+    },
+  );
+
   it("removes the raw copy when the note loses its flag", async () => {
     const ws = await makeWorkspace();
 
@@ -413,6 +475,66 @@ describe("runSync removal detection", () => {
       sourcePath(ws, "Scratch/temp-research.md"),
       "---\ntags:\n  - scratch\nwiki: false\n---\n\n# Temp research\n",
     );
+
+    expect((await run(ws, T2))[0]?.removed).toEqual([
+      "Scratch/temp-research.md",
+    ]);
+  });
+
+  it("keeps the vault namespace directory after the last note is removed", async () => {
+    const ws = await makeWorkspace();
+    const namespaceRoot = join(ws.rawDir, "notes", VAULT_NAME);
+
+    await run(ws, T1);
+
+    for (const relPath of SELECTED_PATHS) {
+      await rm(sourcePath(ws, relPath));
+    }
+
+    await run(ws, T2);
+
+    expect((await stat(namespaceRoot)).isDirectory()).toBe(true);
+  });
+
+  it("succeeds when two removed notes shared one directory", async () => {
+    const ws = await makeWorkspace();
+
+    await writeFile(
+      sourcePath(ws, "Scratch/second-research.md"),
+      "---\nwiki: true\n---\n\n# Second\n",
+    );
+    await run(ws, T1);
+    await rm(rawNotePath(ws, "Scratch/temp-research.md"));
+    await rm(sourcePath(ws, "Scratch/temp-research.md"));
+    await rm(sourcePath(ws, "Scratch/second-research.md"));
+
+    expect((await run(ws, T2))[0]?.removed).toEqual([
+      "Scratch/second-research.md",
+      "Scratch/temp-research.md",
+    ]);
+  });
+
+  it("lists removals in sorted order whatever the manifest order", async () => {
+    const ws = await makeWorkspace();
+    const entry = { hash: "0".repeat(64), last_synced: T1 };
+
+    await mkdir(ws.rawDir, { recursive: true });
+    await writeFile(
+      join(ws.rawDir, "manifest.json"),
+      JSON.stringify({
+        vaults: { [VAULT_NAME]: { "b.md": entry, "a.md": entry } },
+      }),
+    );
+
+    expect((await run(ws, T1))[0]?.removed).toEqual(["a.md", "b.md"]);
+  });
+
+  it("reports a removal whose raw file is already gone", async () => {
+    const ws = await makeWorkspace();
+
+    await run(ws, T1);
+    await rm(rawNotePath(ws, "Scratch/temp-research.md"));
+    await rm(sourcePath(ws, "Scratch/temp-research.md"));
 
     expect((await run(ws, T2))[0]?.removed).toEqual([
       "Scratch/temp-research.md",
@@ -574,6 +696,22 @@ describe("sync-vault CLI", () => {
     const { out } = await runCli([ws.configPath, ws.rawDir]);
 
     expect(out).toContain("sync complete: no changes");
+  });
+
+  it("renders a removal run line for line", async () => {
+    const ws = await makeWorkspace();
+
+    await runCli([ws.configPath, ws.rawDir]);
+    await rm(sourcePath(ws, "Scratch/temp-research.md"));
+    const { out } = await runCli([ws.configPath, ws.rawDir]);
+
+    expect(out).toBe(
+      [
+        `vault "${VAULT_NAME}": 3 selected, 0 copied, 3 unchanged, 1 removed`,
+        "  - Scratch/temp-research.md",
+        "sync complete: 0 copied, 1 removed",
+      ].join("\n"),
+    );
   });
 
   it("exits with an error code when the config file is missing", async () => {

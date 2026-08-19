@@ -1,0 +1,9 @@
+{
+  "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker-js/master/packages/api/schema/stryker-schema.json",
+  "testRunner": "vitest",
+  "mutate": ["src/**/*.ts"],
+  "incremental": true,
+  "vitest": { "related": false },
+  "reporters": ["html", "clear-text", "json"],
+  "ignorePatterns": ["tsconfig.json", ".claude"]
+}
