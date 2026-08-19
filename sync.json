@@ -3,7 +3,7 @@
   "vaults": [
     {
       "name": "Documents",
-      "root": "~/Library/Mobile Documents/iCloud~md~obsidian/Documents",
+      "root": "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/Engineering",
       "select": "wiki:true"
     }
   ],
