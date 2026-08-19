@@ -107,6 +107,44 @@ describe("extractWikilinks", () => {
       extractWikilinks("[[#Details]] and [[|alias]] and [not a link]"),
     ).toEqual([]);
   });
+
+  it("skips wikilinks inside a fenced code block", () => {
+    const text = [
+      "Example:",
+      "",
+      "```text",
+      "[[missing-page|alias]]",
+      "```",
+      "",
+      "See [[real-page]].",
+    ].join("\n");
+
+    expect(extractWikilinks(text)).toEqual([
+      {
+        target: "real-page",
+        line: 7,
+        raw: "[[real-page]]",
+      },
+    ]);
+  });
+
+  it("does not end a backtick fence at a tilde delimiter", () => {
+    const text = [
+      "```text",
+      "~~~",
+      "[[inside-fence]]",
+      "```",
+      "[[after-fence]]",
+    ].join("\n");
+
+    expect(extractWikilinks(text)).toEqual([
+      {
+        target: "after-fence",
+        line: 5,
+        raw: "[[after-fence]]",
+      },
+    ]);
+  });
 });
 
 describe("buildPageIndex", () => {
@@ -167,6 +205,57 @@ describe("checkWikiLinks", () => {
       "wiki/index.md:1 -> [[missing-page|alias]]",
     ]);
   });
+
+  it("does not report wikilinks inside AGENTS.md", async () => {
+    const root = await makeWiki({
+      "AGENTS.md": "Use `[[missing-page]]` syntax.\n",
+      "index.md": "# Home\n",
+    });
+
+    const report = await checkWikiLinks(join(root, "wiki"));
+
+    expect(report.broken).toEqual([]);
+  });
+
+  it("does not count AGENTS.md as a scanned page", async () => {
+    const root = await makeWiki({
+      "AGENTS.md": "# Contract\n",
+      "index.md": "# Home\n",
+    });
+
+    const report = await checkWikiLinks(join(root, "wiki"));
+
+    expect(report.pages).toBe(1);
+  });
+
+  it("does not resolve AGENTS as a wikilink target", async () => {
+    const root = await makeWiki({
+      "AGENTS.md": "# Contract\n",
+      "index.md": "See [[AGENTS]].\n",
+    });
+
+    const report = await checkWikiLinks(join(root, "wiki"));
+
+    expect(report.broken).toEqual(["wiki/index.md:1 -> [[AGENTS]]"]);
+  });
+
+  it("rejects a wiki directory that does not exist", async () => {
+    const root = await makeWiki({ "index.md": "# Home\n" });
+
+    await expect(checkWikiLinks(join(root, "missing"))).rejects.toThrow(
+      `wiki directory does not exist: ${join(root, "missing")}`,
+    );
+  });
+
+  it("rejects a wiki directory path that is a file", async () => {
+    const root = await makeWiki({ "index.md": "# Home\n" });
+
+    await expect(
+      checkWikiLinks(join(root, "wiki", "index.md")),
+    ).rejects.toThrow(
+      `wiki directory is not a directory: ${join(root, "wiki", "index.md")}`,
+    );
+  });
 });
 
 describe("check-links CLI", () => {
@@ -199,5 +288,27 @@ describe("check-links CLI", () => {
     const result = await runNode([]);
 
     expect(`${result.code}: ${result.out.startsWith("ok:")}`).toBe("0: true");
+  });
+
+  it("exits 1 with a clean message when the wiki directory does not exist", async () => {
+    const root = await makeWiki({ "index.md": "# Home\n" });
+    const missing = join(root, "missing");
+
+    const result = await runNode([missing]);
+
+    expect(`${result.code}: ${result.err}`).toBe(
+      `1: check-links: wiki directory does not exist: ${missing}\n`,
+    );
+  });
+
+  it("exits 1 with a clean message when the wiki path is a file", async () => {
+    const root = await makeWiki({ "index.md": "# Home\n" });
+    const file = join(root, "wiki", "index.md");
+
+    const result = await runNode([file]);
+
+    expect(`${result.code}: ${result.err}`).toBe(
+      `1: check-links: wiki directory is not a directory: ${file}\n`,
+    );
   });
 });

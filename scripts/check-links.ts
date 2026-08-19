@@ -1,4 +1,4 @@
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -31,26 +31,41 @@ export interface LinkReport {
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /**
- * Extract every wikilink from markdown text. Aliased links keep only
- * the page name, heading anchors are dropped, and anchor-only or
- * alias-only links are ignored.
+ * Extract every wikilink from markdown text, skipping fenced code
+ * blocks. Aliased links keep only the page name, heading anchors are
+ * dropped, and anchor-only or alias-only links are ignored.
  */
 export function extractWikilinks(text: string): Wikilink[] {
   const links: Wikilink[] = [];
+  let fenceChar: string | null = null;
 
-  for (const match of text.matchAll(/\[\[([^\]]+)\]\]/g)) {
-    const body = match[1] ?? "";
-    const target = body.split("|")[0]?.split("#")[0]?.trim() ?? "";
+  for (const [i, line] of text.split("\n").entries()) {
+    const fence = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
 
-    if (target === "") {
+    if (fence !== undefined) {
+      if (fenceChar === null) {
+        fenceChar = fence[0] ?? null;
+      } else if (fence[0] === fenceChar) {
+        fenceChar = null;
+      }
+
       continue;
     }
 
-    links.push({
-      target,
-      line: text.slice(0, match.index).split("\n").length,
-      raw: match[0],
-    });
+    if (fenceChar !== null) {
+      continue;
+    }
+
+    for (const match of line.matchAll(/\[\[([^\]]+)\]\]/g)) {
+      const body = match[1] ?? "";
+      const target = body.split("|")[0]?.split("#")[0]?.trim() ?? "";
+
+      if (target === "") {
+        continue;
+      }
+
+      links.push({ target, line: i + 1, raw: match[0] });
+    }
   }
 
   return links;
@@ -95,15 +110,20 @@ async function listFiles(
 
 /**
  * Check every wikilink under `wikiDirInput`, reporting broken links
- * with paths relative to the wiki root's parent directory.
+ * with paths relative to the wiki root's parent directory. Agent
+ * contract files (AGENTS.md) are not wiki pages and are skipped.
+ * Throws when the wiki directory is missing or not a directory.
  */
 export async function checkWikiLinks(
   wikiDirInput: string,
 ): Promise<LinkReport> {
   const wikiDir = resolve(wikiDirInput);
+
+  await assertWikiDir(wikiDir, wikiDirInput);
+
   const displayRoot = resolve(wikiDir, "..");
-  const files = (await listFiles(wikiDir)).filter((file) =>
-    file.endsWith(".md"),
+  const files = (await listFiles(wikiDir)).filter(
+    (file) => file.endsWith(".md") && basename(file) !== "AGENTS.md",
   );
   const index = buildPageIndex(files);
   const broken: string[] = [];
@@ -126,27 +146,52 @@ export async function checkWikiLinks(
   return { broken, links, pages: files.length };
 }
 
+async function assertWikiDir(
+  wikiDir: string,
+  wikiDirInput: string,
+): Promise<void> {
+  let isDirectory: boolean;
+
+  try {
+    isDirectory = (await stat(wikiDir)).isDirectory();
+  } catch {
+    throw new Error(`wiki directory does not exist: ${wikiDirInput}`);
+  }
+
+  if (!isDirectory) {
+    throw new Error(`wiki directory is not a directory: ${wikiDirInput}`);
+  }
+}
+
 /** check-links entry point: `check-links [<wiki-dir>]` (default: repo wiki/). */
 export async function main(): Promise<void> {
   const wikiDir = process.argv[2] ?? join(repoRoot, "wiki");
-  const report = await checkWikiLinks(wikiDir);
 
-  if (report.broken.length === 0) {
-    const links = `${report.links} ${report.links === 1 ? "wikilink" : "wikilinks"}`;
-    const pages = `${report.pages} ${report.pages === 1 ? "page" : "pages"}`;
+  try {
+    const report = await checkWikiLinks(wikiDir);
 
-    console.log(
-      `ok: ${links} ${report.links === 1 ? "resolves" : "resolve"} across ${pages}`,
+    if (report.broken.length === 0) {
+      const links = `${report.links} ${report.links === 1 ? "wikilink" : "wikilinks"}`;
+      const pages = `${report.pages} ${report.pages === 1 ? "page" : "pages"}`;
+
+      console.log(
+        `ok: ${links} ${report.links === 1 ? "resolves" : "resolve"} across ${pages}`,
+      );
+
+      return;
+    }
+
+    for (const line of report.broken) {
+      console.error(line);
+    }
+
+    process.exitCode = 1;
+  } catch (error) {
+    console.error(
+      `check-links: ${error instanceof Error ? error.message : String(error)}`,
     );
-
-    return;
+    process.exitCode = 1;
   }
-
-  for (const line of report.broken) {
-    console.error(line);
-  }
-
-  process.exitCode = 1;
 }
 
 /* v8 ignore next: import guard — distinguishes direct execution from
