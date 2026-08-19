@@ -1359,10 +1359,14 @@ Folder names are illustrative; each instance is simply its own `k-wiki` root, an
 
 Keep the opt-out mechanism; give each instance its own exclusion key.
 The private instance syncs everything (`exclude: "wiki:false"`); the
-publishable instance also drops notes marked `public: false`
-(e.g. `exclude: "public:false"`). Two manifests, two instances, one
-vault — each note lands in every wiki whose exclusion rule admits it,
-so the public wiki is a subset of the private one.
+publishable instance drops notes marked `public: false`
+(`exclude: "public:false"`). Two manifests, two instances, one vault —
+but each vault takes a single `<key>:false` predicate, so the public
+wiki stays a subset of the private one only by frontmatter convention:
+a note that opts out of every wiki carries both `wiki: false` and
+`public: false`; `wiki: false` alone keeps it out of the private wiki
+only. A positive per-wiki partition (`wiki: public`) would need the
+select-style grammar back as a deliberate design change.
 
 ### Changing Your Mind Later
 
