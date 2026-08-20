@@ -763,8 +763,12 @@ Answer questions against the wiki, not against `raw/` directly:
 1. Read `index.md` to find relevant pages.
 2. Read those pages; consult `overview.md` for broad questions.
 3. Synthesize the answer with wikilink citations.
-4. If the answer is novel and valuable, file it under `queries/` with
+4. If the question is likely to recur and the answer synthesizes or
+   reframes more than one page, offer to file it under `queries/` with
    `type: query` frontmatter, then update `index.md` and `log.md`.
+   A verbatim restatement of a single page needs no filing. When
+   borderline, offer and let the human decide — never silently skip;
+   a declined filing states its reason.
 
 If the wiki cannot answer a question, say so and suggest sources to ingest.
 
@@ -976,7 +980,10 @@ You are answering questions against a structured knowledge wiki.
 2. Read those pages. Consult wiki/overview.md for broad questions.
 3. Synthesize an answer, citing pages with wikilinks.
 4. If the wiki cannot answer the question, say so and suggest which sources to ingest next.
-5. If the answer is novel and valuable, offer to file it:
+5. If the question is likely to recur and the answer synthesizes or
+   reframes more than one page, offer to file it. A verbatim restatement
+   of a single page needs no filing. When borderline, offer anyway and
+   let the human decide:
    - create wiki/queries/<kebab-name>.md with type: query frontmatter;
    - record the question and the answer;
    - link the pages and sources used;
