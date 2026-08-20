@@ -943,10 +943,9 @@ describe("runWikiIngest", () => {
   it("leaves the snapshot untouched when the digest write fails", async () => {
     const h = await makeHarness({ "a.md": entry("a") });
 
-    await mkdir(
-      join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"),
-      { recursive: true },
-    );
+    await mkdir(join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"), {
+      recursive: true,
+    });
 
     await expect(runWikiIngest(optionsFor(h))).rejects.toThrow();
 
@@ -1117,9 +1116,7 @@ describe("createAgentProgressSink", () => {
 
     sink.render("wiki-ingest: agent still running (2m07s)");
 
-    expect(written).toEqual([
-      "\r⠋ <wiki-ingest: agent still running (2m07s)>",
-    ]);
+    expect(written).toEqual(["\r⠋ <wiki-ingest: agent still running (2m07s)>"]);
   });
 
   it("scrolls non-heartbeat messages as events on the animated sink", () => {

@@ -591,7 +591,7 @@ describe("health CLI", () => {
   it("defaults to the repository's own raw directory", async () => {
     const { out } = await runHealth([]);
 
-    expect(out).toMatch(/^\u001b\[32mhealthy:/);
+    expect(out.startsWith("\u001b[32mhealthy:")).toBe(true);
   });
 
   it("exits 1 with an error message when the raw directory cannot be read", async () => {
@@ -616,8 +616,10 @@ describe("health CLI", () => {
       errorSpy.mockRestore();
     }
 
+    const esc = "\u001b";
+
     expect(`${process.exitCode}|${err}`).toMatch(
-      /^1\|\u001b\[31mcheck-raw: .*no-such-raw-dir/,
+      new RegExp(`^1\\|${esc}\\[31mcheck-raw: .*no-such-raw-dir`),
     );
   });
 });
