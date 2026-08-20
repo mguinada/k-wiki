@@ -283,6 +283,14 @@ the shared `.git/config` so every worktree inherits it:
 git config remote.no-mistakes.pushoption no-mistakes.skip=pr
 ```
 
+A self-healing backstop re-applies the same option even if the
+repo-local setting is ever lost: `~/.gitconfig` has an
+`includeIf "gitdir:~/Lab/k-wiki/"` pointing at `~/.gitconfig-k-wiki`,
+which carries the pushoption. Conditional includes resolve against the
+repo's common `.git`, so every linked worktree — including the gate's
+disposable ones, wherever they live — inherits it, while other
+repositories stay untouched.
+
 Every trigger path — a plain gate push, the TUI wizard, and
 `/no-mistakes` (which drives `axi run`) — pushes to the gate remote,
 so all of them carry the option; the gate merges it into the run's
