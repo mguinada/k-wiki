@@ -267,3 +267,42 @@ selection, review and document rules — lives in
 [`.no-mistakes.yaml`](.no-mistakes.yaml). The
 pipeline-development context is the gate's main user; see
 [AGENTS.md](AGENTS.md) for the split between it and wiki operations.
+
+### The PR step is permanently skipped here
+
+no-mistakes' `pr` step regenerates the PR title and body from scratch
+on every run — a full replacement, not a merge — which discards
+agent-authored PR text and issue-closing keywords such as
+`Closes #N` (upstream defects:
+[kunchenguid/no-mistakes#763](https://github.com/kunchenguid/no-mistakes/issues/763),
+[#713](https://github.com/kunchenguid/no-mistakes/issues/713)).
+This repo disables the step permanently with a git pushoption, set in
+the shared `.git/config` so every worktree inherits it:
+
+```sh
+git config remote.no-mistakes.pushoption no-mistakes.skip=pr
+```
+
+Every trigger path — a plain gate push, the TUI wizard, and
+`/no-mistakes` (which drives `axi run`) — pushes to the gate remote,
+so all of them carry the option; the gate merges it into the run's
+skip list. Agents create PRs themselves, so the body and issue
+linkage survive every gated run.
+
+Consequences:
+
+- **No CI watch or CI auto-fix.** With no `pr` step the run records no
+  PR URL, so the `ci` step skips. GitHub Actions still run and branch
+  protection still blocks merges — only the gate's monitoring is gone.
+- **Two paths bypass push options.** `no-mistakes rerun` and the
+  unchanged-HEAD `axi run` fallback go over IPC, not git push; pass
+  `--skip pr` explicitly when using them.
+- **No PR is auto-created.** If no PR is open on the branch when the
+  gate finishes, none appears — create it before or after gating.
+
+To revert (the next gated push runs the `pr` step again, which rewrites
+any existing PR body on the branch once):
+
+```sh
+git config --unset remote.no-mistakes.pushoption
+```
