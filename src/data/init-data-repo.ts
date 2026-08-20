@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { copyFile, mkdir, readdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,6 +8,26 @@ import { isMainModule } from "../cli/is-main.ts";
 import { loadSyncConfig } from "../sync/config.ts";
 
 const run = promisify(execFile);
+
+/**
+ * Run git against one directory, with repository discovery confined to
+ * that directory: `GIT_CEILING_DIRECTORIES` at the parent makes git fail
+ * loudly ("not a git repository") when the target owns no `.git`, instead
+ * of discovering an enclosing repository — under Stryker's sandbox that
+ * escape made a rogue commit in the code repo (issue #52). The working
+ * directory itself is exempt from the ceiling, so a target that owns its
+ * `.git` is discovered normally; the realpath keeps the ceiling entry
+ * comparable with git's canonicalized paths (macOS `/var` symlink).
+ */
+export function runGit(
+  dir: string,
+  args: readonly string[],
+  env: NodeJS.ProcessEnv,
+) {
+  return run("git", ["-C", dir, ...args], {
+    env: { ...env, GIT_CEILING_DIRECTORIES: realpathSync(dirname(dir)) },
+  });
+}
 
 /**
  * data:init — seed the data repo named by `sync.json`'s `dataRoot`
@@ -50,10 +70,10 @@ async function listSkeletonPaths(
   repoRoot: string,
   env: NodeJS.ProcessEnv,
 ): Promise<readonly string[]> {
-  const { stdout } = await run(
-    "git",
-    ["-C", repoRoot, "ls-files", "--", "raw", "wiki"],
-    { env },
+  const { stdout } = await runGit(
+    repoRoot,
+    ["ls-files", "--", "raw", "wiki"],
+    env,
   );
 
   return stdout.split("\n").filter(Boolean).sort();
@@ -66,7 +86,7 @@ async function seed(
   env: NodeJS.ProcessEnv,
 ): Promise<void> {
   await mkdir(dataRoot, { recursive: true });
-  await run("git", ["-C", dataRoot, "init", "--quiet"], { env });
+  await runGit(dataRoot, ["init", "--quiet"], env);
 
   for (const relPath of await listSkeletonPaths(repoRoot, env)) {
     const destination = join(dataRoot, relPath);
@@ -79,10 +99,8 @@ async function seed(
 
   const message = "Seed data repo from k-wiki skeleton";
 
-  await run("git", ["-C", dataRoot, "add", "-A"], { env });
-  await run("git", ["-C", dataRoot, "commit", "--quiet", "-m", message], {
-    env,
-  });
+  await runGit(dataRoot, ["add", "-A"], env);
+  await runGit(dataRoot, ["commit", "--quiet", "-m", message], env);
 }
 
 /** Seed the data repo at the configured `dataRoot`. */

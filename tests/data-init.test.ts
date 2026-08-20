@@ -1,16 +1,13 @@
-import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { promisify } from "node:util";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
-import { main, seedDataRepo } from "../src/data/init-data-repo.ts";
+import { main, runGit, seedDataRepo } from "../src/data/init-data-repo.ts";
 
 const tempDirs: string[] = [];
-const run = promisify(execFile);
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -104,17 +101,6 @@ describe("data:init CLI help", () => {
     expect(process.exitCode).toBeUndefined();
   });
 
-  it("seeds and reports success when run with a config argument", async () => {
-    const dir = await makeTempDir();
-    const dataRoot = join(dir, "data");
-    const configPath = await writeConfig(dataRoot);
-
-    const { out } = await runInitCli([configPath]);
-
-    expect(out).toBe(`data:init: seeded ${dataRoot}`);
-    expect(process.exitCode).toBeUndefined();
-  });
-
   it("prints the failure and sets the exit code when the config is missing", async () => {
     const dir = await makeTempDir();
 
@@ -165,7 +151,7 @@ async function writeConfig(dataRoot: string): Promise<string> {
 }
 
 function git(dataRoot: string, ...args: string[]) {
-  return run("git", ["-C", dataRoot, ...args], { env: GIT_ENV });
+  return runGit(dataRoot, args, GIT_ENV);
 }
 
 /**
@@ -188,6 +174,23 @@ async function makeCodeRepoFixture(): Promise<string> {
   await git(dir, "commit", "--quiet", "-m", "fixture skeleton");
 
   return dir;
+}
+
+/**
+ * The rogue-commit shape of issue #52: a committed repo whose working
+ * tree holds a dirty tracked file — what `git add -A` would stage if
+ * discovery escaped to it from a nested directory without `.git`.
+ */
+async function makeEnclosingRepoWithDirtyFile(): Promise<string> {
+  const enclosing = await makeCodeRepoFixture();
+  const dirtyFile = join(enclosing, "dirty-tracked.txt");
+
+  await writeFile(dirtyFile, "tracked");
+  await git(enclosing, "add", "dirty-tracked.txt");
+  await git(enclosing, "commit", "--quiet", "-m", "track dirty file");
+  await writeFile(dirtyFile, "edited while dirty");
+
+  return enclosing;
 }
 
 describe("seedDataRepo", () => {
@@ -327,6 +330,61 @@ describe("seedDataRepo", () => {
   });
 });
 
+describe("git discovery ceiling (issue #52)", () => {
+  it("rejects a git call aimed at a directory that owns no .git", async () => {
+    const enclosing = await makeEnclosingRepoWithDirtyFile();
+    const orphan = join(enclosing, "staging", "data");
+
+    await mkdir(orphan, { recursive: true });
+
+    await expect(runGit(orphan, ["add", "-A"], GIT_ENV)).rejects.toThrow(
+      /not a git repository/,
+    );
+  });
+
+  it("leaves the enclosing repository untouched when the git target owns no .git", async () => {
+    const enclosing = await makeEnclosingRepoWithDirtyFile();
+    const orphan = join(enclosing, "staging", "data");
+
+    await mkdir(orphan, { recursive: true });
+
+    await runGit(orphan, ["add", "-A"], GIT_ENV).catch(() => undefined);
+    await runGit(
+      orphan,
+      ["commit", "--quiet", "-m", "Seed data repo from k-wiki skeleton"],
+      GIT_ENV,
+    ).catch(() => undefined);
+
+    const commits = (
+      await git(enclosing, "rev-list", "--count", "HEAD")
+    ).stdout.trim();
+    const staged = (await git(enclosing, "diff", "--cached", "--name-only"))
+      .stdout;
+
+    expect(`${commits}:${staged}`).toBe("2:");
+  });
+
+  it("seeds a data root nested inside another git repository", async () => {
+    const enclosing = await makeCodeRepoFixture();
+    const dataRoot = join(enclosing, "nested", "data");
+
+    await seedDataRepo({
+      configPath: await writeConfig(dataRoot),
+      repoRoot: await makeCodeRepoFixture(),
+      env: GIT_ENV,
+    });
+
+    const dataCommits = (
+      await git(dataRoot, "rev-list", "--count", "HEAD")
+    ).stdout.trim();
+    const enclosingCommits = (
+      await git(enclosing, "rev-list", "--count", "HEAD")
+    ).stdout.trim();
+
+    expect(`${dataCommits}:${enclosingCommits}`).toBe("1:1");
+  });
+});
+
 describe("data:init import guard", () => {
   /**
    * A staged copy of src/ inside the test tree, importable in-process
@@ -370,12 +428,15 @@ describe("data:init import guard", () => {
     readonly err: string;
   }
 
-  async function importWithArgv(modulePath: string): Promise<ImportOutcome> {
+  async function importWithArgv(
+    modulePath: string,
+    args: readonly string[],
+  ): Promise<ImportOutcome> {
     const argv = process.argv;
     const out: string[] = [];
     const err: string[] = [];
 
-    process.argv = [argv[0] ?? "node", modulePath];
+    process.argv = [argv[0] ?? "node", modulePath, ...args];
 
     const savedEnv = new Map(
       Object.keys(GIT_ENV).map((key) => [key, process.env[key]]),
@@ -414,8 +475,24 @@ describe("data:init import guard", () => {
     const repo = await stageRepo();
     const modulePath = join(repo, "src", "data", "init-data-repo.ts");
 
-    const { out } = await importWithArgv(modulePath);
+    const { out } = await importWithArgv(modulePath, []);
 
     expect(out).toBe(`data:init: seeded ${join(repo, "data")}`);
+  });
+
+  it("seeds the data root of the config given as an argument, not the default one", async () => {
+    const repo = await stageRepo();
+    const modulePath = join(repo, "src", "data", "init-data-repo.ts");
+    const argDataRoot = join(repo, "data-arg");
+    const configPath = join(repo, "arg-sync.json");
+
+    await writeFile(
+      configPath,
+      JSON.stringify({ vaults: [], dataRoot: argDataRoot }),
+    );
+
+    const { out } = await importWithArgv(modulePath, [configPath]);
+
+    expect(out).toBe(`data:init: seeded ${argDataRoot}`);
   });
 });
