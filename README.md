@@ -52,6 +52,7 @@ sources directly, so there is no build step — install dependencies with
 | `npm run check-links [-- <wiki-dir>]` | wikilink checker | Check that every `[[wikilink]]` under `wiki/` (default) resolves to an existing page by file name; exit 0 = all links resolve, exit 1 = one `file:line -> [[link]]` line per broken link |
 | `npm run fixtures -- <dir>` | fixture generator | Write the synthetic Obsidian test vault to `<dir>/Documents` |
 | `npm run sync-vault -- [--dry-run] [<sync.json>] [<raw-dir>]` | sync CLI | Ingest every note not blocked by the vault's exclusion rule into `raw/notes/` (deterministic, no LLM; [details below](#running-the-sync)) |
+| `npm run wiki-ingest -- [-h \| --help] [--settings <path>] [--outputs <dir>] [<raw-dir>]` | ingest wrapper | Run the wiki agent headless over the sources that changed since the last ingest and write the per-run digest (reads `settings.yml`; [details below](#running-the-wiki-agent-wiki-ingest)) |
 | `npm run data:init -- [<sync.json>]` | data repo seeder | Create and seed the data repo at `sync.json`'s `dataRoot`: git init, copy the `raw/`+`wiki/` skeleton from the code repo, first commit; idempotent |
 | `npm run mutation:changed` | StrykerJS | Advisory mutation run scoped to `src/` files changed vs `main` (uncommitted included); exits 0 without running when none changed, and ends by printing the actionable mutants — the default pre-handoff step |
 | `npm run mutation:changed -- --full` | StrykerJS | Advisory mutation run over all of `src/`, not just changed files; same printed summary |
@@ -238,6 +239,46 @@ note nobody blocked lands in `raw/` and git history. Review first:
 2. Add `wiki: false` to any note that must stay private.
 3. Re-run the dry run until the list is clean.
 4. Run `npm run sync-vault` for real; check `npm run health` after.
+
+## Running the wiki agent (`wiki-ingest`)
+
+```sh
+npm run sync-vault   # 1. sync the vault into raw/
+npm run wiki-ingest  # 2. run the agent headless, digest the run
+```
+
+`wiki-ingest` is the unattended ingest step (guide §18, issue #11). It
+reads `raw/manifest.json`, diffs it against the snapshot from the
+previous successful run (`outputs/last-ingested-manifest.json`), and
+runs the agent non-interactively **in the data repo root** — `prompts/ingest.md`
+for the first run, `prompts/incremental.md` with the changed sources
+(`+` added, `~` changed, `-` removed) appended for every later one. The
+agent itself follows `wiki/AGENTS.md`, never touches `raw/`, and gets
+30 minutes; with no changed sources nothing runs and the wrapper exits 0.
+
+The agent invocation lives in `settings.yml` at the repo root — never
+hardcoded:
+
+```yaml
+command: pi        # agent CLI, run non-interactively in the data repo
+model: GLM-5.2     # passed as --model
+reasoning: high    # pi thinking level, passed as --thinking
+```
+
+The per-run digest — the human's review surface while runs are
+unsupervised — is written to `outputs/runs/<timestamp>.md` and printed
+to stdout: agent command, model, and reasoning level; mode and prompt
+file; sources added/changed/removed; wiki pages created/updated (read
+from the data repo's git status, so it matches the `git diff` you
+review); and the agent's final report, which the prompt requires to
+state sources processed, pages created/updated, contradictions
+detected, and unresolved questions. Page counts come from the data
+repo's git status, so they cover everything uncommitted — review the
+`git diff`, then commit the data repo after each run to keep every
+digest scoped to its own run. A failed agent run exits 1 and
+leaves the snapshot untouched, so the next run retries the same
+sources; guardrails (lint, checks, auto-revert) are issue #12, the
+one-command orchestration #13, scheduling #14.
 
 ## Gating changes with no-mistakes
 

@@ -1,0 +1,7 @@
+# Agent configuration for wiki-ingest (guide §18, issue #11).
+# The wrapper reads these values and passes them to the agent CLI;
+# nothing is hardcoded. Top-level `key: value` scalars only.
+
+command: pi        # agent CLI, run non-interactively in the data repo
+model: GLM-5.2     # passed as --model
+reasoning: high    # pi thinking level, passed as --thinking
