@@ -268,7 +268,7 @@ selection, review and document rules — lives in
 pipeline-development context is the gate's main user; see
 [AGENTS.md](AGENTS.md) for the split between it and wiki operations.
 
-### The PR step is permanently skipped here
+### Excluding the PR step here
 
 no-mistakes' `pr` step regenerates the PR title and body from scratch
 on every run — a full replacement, not a merge — which discards
@@ -276,41 +276,63 @@ agent-authored PR text and issue-closing keywords such as
 `Closes #N` (upstream defects:
 [kunchenguid/no-mistakes#763](https://github.com/kunchenguid/no-mistakes/issues/763),
 [#713](https://github.com/kunchenguid/no-mistakes/issues/713)).
-This repo disables the step permanently with a git pushoption, set in
-the shared `.git/config` so every worktree inherits it:
+Agents create PRs themselves, so the body and issue linkage survive
+every gated run.
+
+There is **no config-file key** to skip a pipeline step — not in
+`~/.no-mistakes/config.yaml` (global) and not in `.no-mistakes.yaml`
+(repo). The skip rides per-run flags or git push options (verified
+against v1.53.0 source).
+
+Ways that work, per trigger:
+
+| Trigger | How to exclude `pr` |
+|---|---|
+| TUI (`no-mistakes`, `no-mistakes -y`) | `--skip pr` flag, or the push-option config below |
+| Agent / headless (`axi run`) | **always pass `--skip pr`** (see trap below) |
+| Manual gate push (`git push no-mistakes …`) | `-o no-mistakes.skip=pr`, or the push-option config below |
+| `no-mistakes rerun` | **cannot skip** — v1.53.0 exposes only `--intent`; avoid rerun here, start a fresh `axi run --skip pr` instead |
+
+**Push-option config (automatic for pushes without explicit `-o`):**
 
 ```sh
-git config remote.no-mistakes.pushoption no-mistakes.skip=pr
+git config push.pushoption no-mistakes.skip=pr
 ```
 
-A self-healing backstop re-applies the same option even if the
-repo-local setting is ever lost: `~/.gitconfig` has an
-`includeIf "gitdir:~/Lab/k-wiki/"` pointing at `~/.gitconfig-k-wiki`,
-which carries the pushoption. Conditional includes resolve against the
-repo's common `.git`, so every linked worktree — including the gate's
-disposable ones, wherever they live — inherits it, while other
-repositories stay untouched.
+A self-healing backstop re-applies it if the repo-local setting is
+ever lost: `~/.gitconfig` has an `includeIf "gitdir:~/Lab/k-wiki/"`
+pointing at `~/.gitconfig-k-wiki`, which carries the same
+`[push] pushOption`. Conditional includes resolve against the repo's
+common `.git`, so every linked worktree — including the gate's
+disposable ones — inherits it; other repositories are untouched. The
+option also rides pushes to `origin`; GitHub ignores unknown push
+options.
 
-Every trigger path — a plain gate push, the TUI wizard, and
-`/no-mistakes` (which drives `axi run`) — pushes to the gate remote,
-so all of them carry the option; the gate merges it into the run's
-skip list. Agents create PRs themselves, so the body and issue
-linkage survive every gated run.
+**Do not use `remote.<name>.pushoption`** — this repo used it and the
+`pr` step still ran. git 2.50.1 (Apple Git-155) silently drops that
+key: a packet trace and a clean two-repo reproduction show it is never
+transmitted, while `push.pushOption` and explicit `-o` are. If git
+fixes this, either key works.
+
+**Trap: `axi run --intent` suppresses the config option.** git sends
+`push.pushOption` only when no `-o` flag is given, and `axi run
+--intent …` pushes with its own `-o no-mistakes.intent=…`. So agents
+passing intent must pass `--skip pr` explicitly — the flag forwards
+the skip on both the push path and the IPC fallback.
 
 Consequences:
 
 - **No CI watch or CI auto-fix.** With no `pr` step the run records no
   PR URL, so the `ci` step skips. GitHub Actions still run and branch
   protection still blocks merges — only the gate's monitoring is gone.
-- **Two paths bypass push options.** `no-mistakes rerun` and the
-  unchanged-HEAD `axi run` fallback go over IPC, not git push; pass
-  `--skip pr` explicitly when using them.
 - **No PR is auto-created.** If no PR is open on the branch when the
   gate finishes, none appears — create it before or after gating.
+- **`axi respond --action skip` cannot skip `pr`** — the step never
+  parks for approval; only pre-skip works.
 
-To revert (the next gated push runs the `pr` step again, which rewrites
-any existing PR body on the branch once):
+To revert (the next gated push without `-o` runs the `pr` step again,
+which rewrites any existing PR body on the branch once):
 
 ```sh
-git config --unset remote.no-mistakes.pushoption
+git config --unset push.pushoption
 ```
