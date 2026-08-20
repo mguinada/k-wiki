@@ -261,19 +261,30 @@ describe("generate CLI", () => {
   });
 });
 
+/**
+ * Read the projected note; on failure, embed the child's exit code,
+ * stdout, and stderr instead of letting stat throw a bare ENOENT
+ * (issue #44: a failed child surfaced as an undiagnosable ENOENT).
+ */
+async function noteMarker(rawDir: string, result: RunResult): Promise<string> {
+  return stat(join(rawDir, "notes", VAULT_NAME, "AI", "RAG.md")).then(
+    (info) => (info.isFile() ? "true" : "false"),
+    () =>
+      `stat failed; child exit ${result.code}, stdout: ${JSON.stringify(result.out)}, stderr: ${JSON.stringify(result.err)}`,
+  );
+}
+
 describe("sync-vault CLI", () => {
   it("projects the fixture vault with its default arguments", async () => {
     const dir = await makeTmpRepo();
 
     const result = await runNode([join(dir, "src", "sync", "sync-vault.ts")]);
 
-    const noteStat = await stat(
-      join(dir, "raw", "notes", VAULT_NAME, "AI", "RAG.md"),
-    );
+    const note = await noteMarker(join(dir, "raw"), result);
 
-    expect(
-      `${result.code}${result.out.includes("sync complete")}${noteStat.isFile()}`,
-    ).toBe("0truetrue");
+    expect(`${result.code}${result.out.includes("sync complete")}${note}`).toBe(
+      "0truetrue",
+    );
   });
 
   it("projects the fixture vault into the data root when sync.json sets dataRoot", async () => {
@@ -295,13 +306,11 @@ describe("sync-vault CLI", () => {
 
     const result = await runNode([join(dir, "src", "sync", "sync-vault.ts")]);
 
-    const noteStat = await stat(
-      join(dir, "k-wiki-data", "raw", "notes", VAULT_NAME, "AI", "RAG.md"),
-    );
+    const note = await noteMarker(join(dir, "k-wiki-data", "raw"), result);
 
-    expect(
-      `${result.code}${result.out.includes("sync complete")}${noteStat.isFile()}`,
-    ).toBe("0truetrue");
+    expect(`${result.code}${result.out.includes("sync complete")}${note}`).toBe(
+      "0truetrue",
+    );
   });
 
   it("does nothing when imported as a module", async () => {
