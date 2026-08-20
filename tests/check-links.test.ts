@@ -311,4 +311,28 @@ describe("check-links CLI", () => {
       `1: check-links: wiki directory is not a directory: ${file}\n`,
     );
   });
+
+  it("prints the usage line for --help with exit 0", async () => {
+    const result = await runNode(["--help"]);
+
+    expect(`${result.code}|${result.out}`).toMatch(
+      /0\|Usage: check-links \[-h \| --help\] \[<wiki-dir>\]/,
+    );
+  });
+
+  it("prints the same help for -h as for --help", async () => {
+    expect((await runNode(["-h"])).out).toBe((await runNode(["--help"])).out);
+  });
+
+  it("documents the -h and --help switches themselves", async () => {
+    expect((await runNode(["--help"])).out).toContain("-h, --help");
+  });
+
+  it("prints help before validating the wiki path", async () => {
+    const result = await runNode(["--help", "/no/such/wiki"]);
+
+    expect(result.code).toBe(0);
+    expect(result.err).toBe("");
+    expect(result.out).toContain("Usage: check-links");
+  });
 });

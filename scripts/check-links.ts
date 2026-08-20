@@ -164,9 +164,30 @@ async function assertWikiDir(
   }
 }
 
-/** check-links entry point: `check-links [<wiki-dir>]` (default: repo wiki/). */
+/** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
+const HELP = `Usage: check-links [-h | --help] [<wiki-dir>]
+
+Check that every [[wikilink]] under a wiki resolves to an existing
+page by file name (bare, aliased, and heading-anchor links).
+
+  -h, --help    Print this help and exit; no side effects.
+  <wiki-dir>    Wiki root to scan. Default: the repo's own wiki/.
+
+Writes nothing. Prints one \`file:line -> [[link]]\` line per broken
+link to stderr and exits 1; prints an ok summary and exits 0 when
+every link resolves (an empty wiki is ok).`;
+
+/** check-links entry point: `check-links [-h | --help] [<wiki-dir>]` (default: repo wiki/). */
 export async function main(): Promise<void> {
-  const wikiDir = process.argv[2] ?? join(repoRoot, "wiki");
+  const args = process.argv.slice(2);
+
+  if (args.includes("-h") || args.includes("--help")) {
+    console.log(HELP);
+
+    return;
+  }
+
+  const wikiDir = args[0] ?? join(repoRoot, "wiki");
 
   try {
     const report = await checkWikiLinks(wikiDir);

@@ -786,6 +786,80 @@ describe("runWikiIngest", () => {
     ]);
   });
 
+  it("emits a heartbeat while a slow agent run is in flight", async () => {
+    const h = await makeHarness({ "a.md": entry("a") });
+    const messages: string[] = [];
+    const slow: AgentRunner = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
+      return { stdout: "slow agent report", stderr: "" };
+    };
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: slow,
+      heartbeatMs: 40,
+      onProgress: (message) => messages.push(message),
+    });
+
+    expect(messages).toEqual(
+      expect.arrayContaining(["wiki-ingest: agent still running (0s)"]),
+    );
+  });
+
+  it("stops the heartbeat when the agent run ends", async () => {
+    const h = await makeHarness({ "a.md": entry("a") });
+    const messages: string[] = [];
+    const fast: AgentRunner = async () => ({
+      stdout: "fast report",
+      stderr: "",
+    });
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: fast,
+      heartbeatMs: 40,
+      onProgress: (message) => messages.push(message),
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 120));
+
+    expect(
+      messages.filter((message) => message.includes("still running")),
+    ).toEqual([]);
+  });
+
+  it("enforces the timeout on the real agent runner", async () => {
+    const h = await makeHarness({ "a.md": entry("a") });
+    const sleeper = join(h.dataRoot, "sleep-agent.mjs");
+
+    await writeFile(
+      sleeper,
+      "#!/usr/bin/env node\nsetTimeout(() => {}, 30000);\n",
+      { mode: 0o755 },
+    );
+    await writeFile(
+      h.settingsPath,
+      `command: ${sleeper}\nmodel: M\nreasoning: low\n`,
+    );
+
+    let message = "";
+
+    try {
+      await runWikiIngest({
+        settingsPath: h.settingsPath,
+        rawDir: join(h.dataRoot, "raw"),
+        outputsDir: h.outputsDir,
+        promptsDir: h.promptsDir,
+        timeoutMs: 200,
+      });
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(message).toMatch(/^agent .* timed out after 1 second$/);
+  });
+
   it("fails with a sync hint when the raw dir has no manifest", async () => {
     const h = await makeHarness({ "a.md": entry("a") });
 
@@ -887,12 +961,41 @@ describe("spawnAgent", () => {
   });
 
   it("kills and fails an agent that exceeds its timeout", async () => {
-    await expect(
-      spawnAgent(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], {
-        ...noOptions,
-        timeoutMs: 150,
-      }),
-    ).rejects.toThrow("timed out after 0 minutes");
+    let message = "";
+
+    try {
+      await spawnAgent(
+        process.execPath,
+        ["-e", "setTimeout(() => {}, 30000)"],
+        {
+          ...noOptions,
+          timeoutMs: 150,
+        },
+      );
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(message).toMatch(/^agent .* timed out after 1 second$/);
+  });
+
+  it("reports a multi-second timeout in plural", async () => {
+    let message = "";
+
+    try {
+      await spawnAgent(
+        process.execPath,
+        ["-e", "setTimeout(() => {}, 30000)"],
+        {
+          ...noOptions,
+          timeoutMs: 1500,
+        },
+      );
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(message).toMatch(/^agent .* timed out after 2 seconds$/);
   });
 
   it("kills and fails an agent that floods past the output cap", async () => {
@@ -1002,7 +1105,7 @@ console.log("stub report");
 
   it("prints the usage line for --help", async () => {
     expect((await runCli(["--help"])).out).toContain(
-      "wiki-ingest [-h | --help] [--settings <path>] [--outputs <dir>] [<raw-dir>]",
+      "wiki-ingest [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<raw-dir>]",
     );
   });
 
@@ -1076,6 +1179,78 @@ console.log("stub report");
     expect(process.exitCode).toBeUndefined();
   });
 
+  it("accepts a valid --timeout and runs the agent under it", async () => {
+    const h = await makeCliHarness();
+    const { out } = await runCli([
+      "--settings",
+      h.settingsPath,
+      "--outputs",
+      h.outputsDir,
+      "--timeout",
+      "1800",
+      join(h.dataRoot, "raw"),
+    ]);
+
+    expect(out).toContain("Wiki ingest digest");
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("converts --timeout seconds to the agent deadline", async () => {
+    const h = await makeCliHarness();
+    const stub = join(h.dataRoot, "slow-stub.mjs");
+
+    await writeFile(
+      stub,
+      "#!/usr/bin/env node\nawait new Promise((r) => setTimeout(r, 50));\nconsole.log('slow but fine');\n",
+      { mode: 0o755 },
+    );
+    await writeFile(
+      h.settingsPath,
+      `command: ${stub}\nmodel: M\nreasoning: low\n`,
+    );
+
+    const { out } = await runCli([
+      "--settings",
+      h.settingsPath,
+      "--outputs",
+      h.outputsDir,
+      "--timeout",
+      "1",
+      join(h.dataRoot, "raw"),
+    ]);
+
+    expect(out).toContain("slow but fine");
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("kills a stalled agent at the --timeout deadline", async () => {
+    const h = await makeCliHarness();
+    const stub = join(h.dataRoot, "stalled-stub.mjs");
+
+    await writeFile(
+      stub,
+      "#!/usr/bin/env node\nsetTimeout(() => {}, 60000);\n",
+      { mode: 0o755 },
+    );
+    await writeFile(
+      h.settingsPath,
+      `command: ${stub}\nmodel: M\nreasoning: low\n`,
+    );
+
+    const { err } = await runCli([
+      "--settings",
+      h.settingsPath,
+      "--outputs",
+      h.outputsDir,
+      "--timeout",
+      "1",
+      join(h.dataRoot, "raw"),
+    ]);
+
+    expect(err).toMatch(/timed out after 1 second/);
+    expect(process.exitCode).toBe(1);
+  });
+
   it("exits 1 for an unknown option", async () => {
     const { err } = await runCli(["--bogus"]);
 
@@ -1101,6 +1276,58 @@ console.log("stub report");
     const { err } = await runCli(["--outputs"]);
 
     expect(err).toContain("--outputs needs a path value");
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("documents the --timeout switch and its default in the help text", async () => {
+    const out = (await runCli(["--help"])).out;
+
+    expect(out).toContain("--timeout <secs>");
+    expect(out).toContain("1800");
+  });
+
+  it("exits 1 for --timeout without a value", async () => {
+    const { err } = await runCli(["--timeout"]);
+
+    expect(err).toContain(
+      "--timeout needs a positive integer number of seconds",
+    );
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("exits 1 for --timeout zero", async () => {
+    const { err } = await runCli(["--timeout", "0"]);
+
+    expect(err).toContain(
+      "--timeout needs a positive integer number of seconds",
+    );
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("exits 1 for --timeout negative", async () => {
+    const { err } = await runCli(["--timeout", "-5"]);
+
+    expect(err).toContain(
+      "--timeout needs a positive integer number of seconds",
+    );
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("exits 1 for --timeout non-numeric", async () => {
+    const { err } = await runCli(["--timeout", "abc"]);
+
+    expect(err).toContain(
+      "--timeout needs a positive integer number of seconds",
+    );
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("exits 1 for --timeout with trailing junk", async () => {
+    const { err } = await runCli(["--timeout", "5x"]);
+
+    expect(err).toContain(
+      "--timeout needs a positive integer number of seconds",
+    );
     expect(process.exitCode).toBe(1);
   });
 });

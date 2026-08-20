@@ -277,4 +277,33 @@ describe("wiki-ingest e2e", () => {
       readFile(join(repo.outputsDir, "last-ingested-manifest.json"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
+
+  it("kills a stuck agent at --timeout and fails the run", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag" });
+
+    await writeFile(
+      join(repo.dataRoot, "stub-agent.mjs"),
+      "#!/usr/bin/env node\nsetTimeout(() => {}, 120000);\n",
+      {
+        mode: 0o755,
+      },
+    );
+
+    const result = await runCli(INGEST_SCRIPT, [
+      "--settings",
+      repo.settingsPath,
+      "--outputs",
+      repo.outputsDir,
+      "--timeout",
+      "5",
+      join(repo.dataRoot, "raw"),
+    ]);
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("timed out after 5 seconds");
+
+    await expect(
+      readFile(join(repo.outputsDir, "last-ingested-manifest.json"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
 });
