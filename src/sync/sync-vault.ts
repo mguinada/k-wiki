@@ -25,6 +25,7 @@ import {
   type Manifest,
   type ManifestEntry,
   parseManifest,
+  readManifestText,
   serializeManifest,
   type VaultNotes,
   writeManifest,
@@ -78,19 +79,6 @@ interface SelectedNote {
   readonly relPath: string;
   readonly bytes: Uint8Array;
   readonly hash: string;
-}
-
-/** Read the manifest text if it exists; undefined when it does not. */
-async function readTextIfExists(path: string): Promise<string | undefined> {
-  try {
-    return await readFile(path, "utf8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return undefined;
-    }
-
-    throw error;
-  }
 }
 
 async function assertDirectory(vault: SyncVaultConfig): Promise<void> {
@@ -308,7 +296,7 @@ export async function runSync(options: SyncOptions): Promise<SyncReport> {
 
   const config = await loadSyncConfig(options.configPath, home);
   const manifestPath = join(options.rawDir, "manifest.json");
-  const previousText = await readTextIfExists(manifestPath);
+  const previousText = await readManifestText(manifestPath);
   const manifest =
     previousText === undefined
       ? emptyManifest()
@@ -387,12 +375,42 @@ export async function runDryRun(
   return reports;
 }
 
+/** Color functions a report renderer applies; identity when plain. */
+export interface ReportColors {
+  readonly bold: (text: string) => string;
+  readonly green: (text: string) => string;
+  readonly red: (text: string) => string;
+  readonly dim: (text: string) => string;
+}
+
+const PLAIN_COLORS: ReportColors = {
+  bold: (text) => text,
+  green: (text) => text,
+  red: (text) => text,
+  dim: (text) => text,
+};
+
+/** Report colors from the environment (NO_COLOR disables them). */
+export function reportColors(): ReportColors {
+  const colors = createColors(!process.env.NO_COLOR);
+
+  return {
+    bold: colors.bold,
+    green: colors.green,
+    red: colors.red,
+    dim: colors.dim,
+  };
+}
+
 /** Render the run summary; `+` marks copies and `-` marks removals. */
-export function formatReport(report: SyncReport): string {
+export function formatReport(
+  report: SyncReport,
+  colors: ReportColors = PLAIN_COLORS,
+): string {
   const lines: string[] = [];
 
   for (const vault of report.vaults) {
-    const counts = `vault "${vault.vault}": ${vault.selected} selected, ${vault.copied.length} copied, ${vault.unchanged.length} unchanged, ${vault.removed.length} removed`;
+    const counts = `vault ${colors.bold(`"${vault.vault}"`)}: ${vault.selected} selected, ${vault.copied.length} copied, ${vault.unchanged.length} unchanged, ${vault.removed.length} removed`;
     const hint =
       vault.selected === 0 && vault.candidates > 0
         ? ` (${vault.candidates} candidates, all blocked)`
@@ -401,16 +419,18 @@ export function formatReport(report: SyncReport): string {
     lines.push(counts + hint);
 
     for (const relPath of vault.copied) {
-      lines.push(`  + ${relPath}`);
+      lines.push(`  + ${colors.green(relPath)}`);
     }
 
     for (const relPath of vault.removed) {
-      lines.push(`  - ${relPath}`);
+      lines.push(`  - ${colors.red(relPath)}`);
     }
   }
 
   for (const name of report.prunedNamespaces) {
-    lines.push(`  - ${name}/ (stale namespace, not configured)`);
+    lines.push(
+      `  - ${colors.red(`${name}/ (stale namespace, not configured)`)}`,
+    );
   }
 
   const copied = report.vaults.reduce(
@@ -422,16 +442,23 @@ export function formatReport(report: SyncReport): string {
     0,
   );
   const pruned = report.prunedNamespaces.length;
+
+  if (copied === 0 && removed === 0 && pruned === 0) {
+    lines.push(colors.dim("sync complete: no changes"));
+
+    return lines.join("\n");
+  }
+
   const prunedClause =
     pruned === 0
       ? ""
       : `, ${pruned} namespace${pruned === 1 ? "" : "s"} pruned`;
-  const summary =
-    copied === 0 && removed === 0 && pruned === 0
-      ? "sync complete: no changes"
-      : `sync complete: ${copied} copied, ${removed} removed${prunedClause}`;
 
-  lines.push(summary);
+  lines.push(
+    colors[removed > 0 || pruned > 0 ? "red" : "green"](
+      `sync complete: ${copied} copied, ${removed} removed${prunedClause}`,
+    ),
+  );
 
   return lines.join("\n");
 }
@@ -439,16 +466,17 @@ export function formatReport(report: SyncReport): string {
 /** Render the dry-run would-ingest listing; nothing is written. */
 export function formatDryRunReport(
   reports: readonly VaultDryRunReport[],
+  colors: ReportColors = PLAIN_COLORS,
 ): string {
   const lines: string[] = [];
 
   for (const report of reports) {
     lines.push(
-      `vault "${report.vault}": ${report.wouldIngest.length} of ${report.candidates} candidates would be ingested`,
+      `vault ${colors.bold(`"${report.vault}"`)}: ${report.wouldIngest.length} of ${report.candidates} candidates would be ingested`,
     );
 
     for (const relPath of report.wouldIngest) {
-      lines.push(`  + ${relPath}`);
+      lines.push(`  + ${colors.green(relPath)}`);
     }
   }
 
@@ -474,38 +502,6 @@ export function colorizeProgress(message: string): string {
     `vault "${name}":`,
     () => `vault ${colors().bold(`"${name}"`)}:`,
   );
-}
-
-/** Apply the color scheme to one report line at the render boundary. */
-export function colorizeReportLine(line: string): string {
-  if (line.startsWith("  + ")) {
-    return `  + ${colors().green(line.slice(4))}`;
-  }
-
-  if (line.startsWith("  - ")) {
-    return `  - ${colors().red(line.slice(4))}`;
-  }
-
-  const vaulted = colorizeProgress(line);
-
-  if (vaulted !== line) {
-    return vaulted;
-  }
-
-  if (line === "sync complete: no changes") {
-    return colors().dim(line);
-  }
-
-  if (line.startsWith("sync complete: ")) {
-    const removed = Number(/[0-9]+(?= removed)/.exec(line)?.[0] ?? 0);
-    const pruned = Number(/[0-9]+(?= namespaces? pruned)/.exec(line)?.[0] ?? 0);
-
-    return removed > 0 || pruned > 0
-      ? colors().red(line)
-      : colors().green(line);
-  }
-
-  return line;
 }
 
 /** Color an error line red at the render boundary. */
@@ -550,6 +546,8 @@ export async function main(): Promise<void> {
   try {
     const config = await loadSyncConfig(configPath);
     const rawDir = rawArg ?? resolveRawDir(config.dataRoot, repoRoot);
+    const colors = reportColors();
+
     if (dryRun) {
       const reports = await runDryRun({
         configPath,
@@ -557,12 +555,7 @@ export async function main(): Promise<void> {
         onProgress: (message) => console.error(colorizeProgress(message)),
       });
 
-      console.log(
-        formatDryRunReport(reports)
-          .split("\n")
-          .map(colorizeReportLine)
-          .join("\n"),
-      );
+      console.log(formatDryRunReport(reports, colors));
 
       return;
     }
@@ -573,9 +566,7 @@ export async function main(): Promise<void> {
       onProgress: (message) => console.error(colorizeProgress(message)),
     });
 
-    console.log(
-      formatReport(report).split("\n").map(colorizeReportLine).join("\n"),
-    );
+    console.log(formatReport(report, colors));
   } catch (error) {
     console.error(
       colorizeError(

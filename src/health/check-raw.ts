@@ -3,7 +3,11 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMainModule } from "../cli/is-main.ts";
 import { sha256 } from "../sync/hash.ts";
-import { parseManifest, type VaultNotes } from "../sync/manifest.ts";
+import {
+  parseManifest,
+  readManifestText,
+  type VaultNotes,
+} from "../sync/manifest.ts";
 
 /**
  * raw/ health check: a read-only, vault-free coherence check of the
@@ -37,19 +41,6 @@ export function displayPath(
   return repoRelative.startsWith("..")
     ? relative(rawDir, absPath)
     : repoRelative;
-}
-
-/** Read the file text if it exists; undefined when it does not. */
-async function readTextIfExists(path: string): Promise<string | undefined> {
-  try {
-    return await readFile(path, "utf8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return undefined;
-    }
-
-    throw error;
-  }
 }
 
 /** Vault namespaces under the notes root, following directory symlinks. */
@@ -139,7 +130,7 @@ export async function checkRaw(rawDirInput: string): Promise<HealthReport> {
 
   const notesRoot = join(rawDir, "notes");
   const manifestPath = join(rawDir, "manifest.json");
-  const manifestText = await readTextIfExists(manifestPath);
+  const manifestText = await readManifestText(manifestPath);
   const problems: string[] = [];
   let entriesByVault: Record<string, VaultNotes> = {};
 
@@ -172,6 +163,7 @@ export async function checkRaw(rawDirInput: string): Promise<HealthReport> {
     }
 
     const paths = [...new Set([...Object.keys(entries), ...files])].sort();
+    const fileSet = new Set(files);
 
     for (const relPath of paths) {
       const abs = join(notesRoot, vault, ...relPath.split("/"));
@@ -185,7 +177,7 @@ export async function checkRaw(rawDirInput: string): Promise<HealthReport> {
         continue;
       }
 
-      if (!files.includes(relPath)) {
+      if (!fileSet.has(relPath)) {
         problems.push(
           `${displayPath(abs, rawDir)}: missing (manifest entry without file)`,
         );

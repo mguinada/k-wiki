@@ -1,5 +1,5 @@
-import { rename, writeFile } from "node:fs/promises";
-import { RESERVED_NAMES } from "./config.ts";
+import { readFile, rename, writeFile } from "node:fs/promises";
+import { isPlainObject, RESERVED_NAMES } from "./config.ts";
 
 /**
  * Sync state (guide §8, §25 Scenario A): `raw/manifest.json` records, per
@@ -23,8 +23,19 @@ export function emptyManifest(): Manifest {
   return { vaults: {} };
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+/** Read the manifest file's text if it exists; undefined when it does not. */
+export async function readManifestText(
+  path: string,
+): Promise<string | undefined> {
+  try {
+    return await readFile(path, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return undefined;
+    }
+
+    throw error;
+  }
 }
 
 /**

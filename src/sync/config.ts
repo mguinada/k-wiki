@@ -65,7 +65,10 @@ export function parseExclude(exclude: string): ExcludeExpression {
   return { key, value: "false" };
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
+/** Whether the value is a non-array, non-null object. */
+export function isPlainObject(
+  value: unknown,
+): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -242,5 +245,5 @@ export async function loadSyncConfig(
  * is configured, otherwise the code repo's own `raw/` skeleton.
  */
 export function resolveRawDir(dataRoot: string | undefined, repoRoot: string) {
-  return dataRoot === undefined ? join(repoRoot, "raw") : join(dataRoot, "raw");
+  return join(dataRoot ?? repoRoot, "raw");
 }
