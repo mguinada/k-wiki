@@ -3,6 +3,7 @@ import { cp, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { createColors } from "picocolors";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { checkRaw, displayPath, main } from "../src/health/check-raw.ts";
 import {
@@ -15,6 +16,8 @@ const NOTE = "---\nwiki: true\n---\n\n# Note\n";
 const OTHER_NOTE = "---\nwiki: true\n---\n\n# Other note\n";
 
 const tempDirs: string[] = [];
+
+const paint = createColors(true);
 
 afterAll(async () => {
   await Promise.all(
@@ -487,6 +490,9 @@ describe("health CLI", () => {
 
     process.argv = [...argv.slice(0, 2), ...args];
     process.exitCode = undefined;
+    const hadNoColor = process.env.NO_COLOR;
+
+    delete process.env.NO_COLOR;
 
     const logSpy = vi
       .spyOn(console, "log")
@@ -499,6 +505,13 @@ describe("health CLI", () => {
       await main();
     } finally {
       process.argv = argv;
+
+      if (hadNoColor === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = hadNoColor;
+      }
+
       logSpy.mockRestore();
       errorSpy.mockRestore();
     }
@@ -549,7 +562,7 @@ describe("health CLI", () => {
     const { out } = await runHealth([rawDir]);
 
     expect(`${out}|${process.exitCode ?? 0}`).toBe(
-      "healthy: manifest and projection agree (1 note, 1 vault)|0",
+      `${paint.green("healthy: manifest and projection agree (1 note, 1 vault)")}|0`,
     );
   });
 
@@ -570,13 +583,15 @@ describe("health CLI", () => {
 
     const { err } = await runHealth([rawDir]);
 
-    expect(err).toContain("notes/Documents/AI/RAG.md: orphan");
+    expect(err).toContain(
+      paint.red("notes/Documents/AI/RAG.md: orphan (no manifest entry)"),
+    );
   });
 
   it("defaults to the repository's own raw directory", async () => {
     const { out } = await runHealth([]);
 
-    expect(out).toMatch(/^healthy:/);
+    expect(out).toMatch(/^\u001b\[32mhealthy:/);
   });
 
   it("exits 1 with an error message when the raw directory cannot be read", async () => {
@@ -602,7 +617,7 @@ describe("health CLI", () => {
     }
 
     expect(`${process.exitCode}|${err}`).toMatch(
-      /^1\|check-raw: .*no-such-raw-dir/,
+      /^1\|\u001b\[31mcheck-raw: .*no-such-raw-dir/,
     );
   });
 });
@@ -674,7 +689,9 @@ describe("check-raw import guard", () => {
     const { out } = await importWithArgv(modulePath, modulePath);
 
     expect(out).toBe(
-      "healthy: empty projection (no manifest entries, no projected notes)",
+      paint.green(
+        "healthy: empty projection (no manifest entries, no projected notes)",
+      ),
     );
   });
 
@@ -691,7 +708,7 @@ describe("check-raw import guard", () => {
     const { out } = await importWithArgv(modulePath, modulePath);
 
     expect(out).toBe(
-      "healthy: manifest and projection agree (1 note, 1 vault)",
+      paint.green("healthy: manifest and projection agree (1 note, 1 vault)"),
     );
   });
 

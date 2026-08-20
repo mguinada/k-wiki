@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createColors } from "picocolors";
 import { afterAll, describe, expect, it } from "vitest";
 import {
   buildPageIndex,
@@ -50,8 +51,14 @@ function runNode(args: readonly string[]): Promise<RunResult> {
   // import guard compare unequal and skip main().
   const realArgs = [realpathSync(script), ...args];
 
+  // Colored expectations: drop NO_COLOR so the child always renders
+  // codes (one dedicated test below runs with NO_COLOR=1 instead).
+  const env = { ...process.env };
+
+  delete env.NO_COLOR;
+
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, realArgs, { stdio: "pipe" });
+    const child = spawn(process.execPath, realArgs, { stdio: "pipe", env });
 
     let out = "";
     let err = "";
@@ -259,7 +266,9 @@ describe("checkWikiLinks", () => {
 });
 
 describe("check-links CLI", () => {
-  it("exits 0 with a summary on a wiki tree where every link resolves", async () => {
+  const paint = createColors(true);
+
+  it("exits 0 with a green summary on a wiki tree where every link resolves", async () => {
     const root = await makeWiki({
       "index.md": "Start at [[vector-database]].\n",
       "concepts/vector-database.md": "# Vector Database\n",
@@ -268,7 +277,7 @@ describe("check-links CLI", () => {
     const result = await runNode([join(root, "wiki")]);
 
     expect(`${result.code}: ${result.out}`).toBe(
-      "0: ok: 1 wikilink resolves across 2 pages\n",
+      `0: ${paint.green("ok: 1 wikilink resolves across 2 pages")}\n`,
     );
   });
 
@@ -280,14 +289,16 @@ describe("check-links CLI", () => {
     const result = await runNode([join(root, "wiki")]);
 
     expect(`${result.code}: ${result.err}`).toBe(
-      "1: wiki/index.md:2 -> [[missing-page]]\n",
+      `1: ${paint.red("wiki/index.md:2 -> [[missing-page]]")}\n`,
     );
   });
 
   it("exits 0 on the repository wiki with no arguments", async () => {
     const result = await runNode([]);
 
-    expect(`${result.code}: ${result.out.startsWith("ok:")}`).toBe("0: true");
+    expect(`${result.code}: ${result.out.startsWith("\u001b[32mok:")}`).toBe(
+      "0: true",
+    );
   });
 
   it("exits 1 with a clean message when the wiki directory does not exist", async () => {
@@ -297,7 +308,7 @@ describe("check-links CLI", () => {
     const result = await runNode([missing]);
 
     expect(`${result.code}: ${result.err}`).toBe(
-      `1: check-links: wiki directory does not exist: ${missing}\n`,
+      `1: ${paint.red(`check-links: wiki directory does not exist: ${missing}`)}\n`,
     );
   });
 
@@ -308,7 +319,7 @@ describe("check-links CLI", () => {
     const result = await runNode([file]);
 
     expect(`${result.code}: ${result.err}`).toBe(
-      `1: check-links: wiki directory is not a directory: ${file}\n`,
+      `1: ${paint.red(`check-links: wiki directory is not a directory: ${file}`)}\n`,
     );
   });
 
@@ -326,6 +337,27 @@ describe("check-links CLI", () => {
 
   it("documents the -h and --help switches themselves", async () => {
     expect((await runNode(["--help"])).out).toContain("-h, --help");
+  });
+
+  it("prints plain text when NO_COLOR is set", async () => {
+    const root = await makeWiki({ "index.md": "Broken [[missing]].\n" });
+    const realArgs = [realpathSync(script), join(root, "wiki")];
+    const child = spawn(process.execPath, realArgs, {
+      stdio: "pipe",
+      env: { ...process.env, NO_COLOR: "1" },
+    });
+
+    const err = await new Promise<string>((resolve, reject) => {
+      let text = "";
+
+      child.stderr.on("data", (chunk: Buffer) => {
+        text += chunk;
+      });
+      child.on("error", reject);
+      child.on("close", () => resolve(text));
+    });
+
+    expect(err).toBe("wiki/index.md:1 -> [[missing]]\n");
   });
 
   it("prints help before validating the wiki path", async () => {

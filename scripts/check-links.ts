@@ -1,6 +1,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createColors } from "picocolors";
 import { isMainModule } from "../src/cli/is-main.ts";
 
 /**
@@ -30,6 +31,12 @@ export interface LinkReport {
 }
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+/** Colors at the render boundary: green = ok, red = broken/error;
+ *  NO_COLOR yields plain text. */
+function colors() {
+  return createColors(!process.env.NO_COLOR);
+}
 
 /**
  * Extract every wikilink from markdown text, skipping fenced code
@@ -170,12 +177,13 @@ const HELP = `Usage: check-links [-h | --help] [<wiki-dir>]
 Check that every [[wikilink]] under a wiki resolves to an existing
 page by file name (bare, aliased, and heading-anchor links).
 
-  -h, --help    Print this help and exit; no side effects.
   <wiki-dir>    Wiki root to scan. Default: the repo's own wiki/.
+  -h, --help    Print this help and exit; no side effects.
 
 Writes nothing. Prints one \`file:line -> [[link]]\` line per broken
-link to stderr and exits 1; prints an ok summary and exits 0 when
-every link resolves (an empty wiki is ok).`;
+link (red) to stderr and exits 1; prints an ok summary (green) and
+exits 0 when every link resolves (an empty wiki is ok). NO_COLOR
+disables color.`;
 
 /** check-links entry point: `check-links [-h | --help] [<wiki-dir>]` (default: repo wiki/). */
 export async function main(): Promise<void> {
@@ -197,20 +205,24 @@ export async function main(): Promise<void> {
       const pages = `${report.pages} ${report.pages === 1 ? "page" : "pages"}`;
 
       console.log(
-        `ok: ${links} ${report.links === 1 ? "resolves" : "resolve"} across ${pages}`,
+        colors().green(
+          `ok: ${links} ${report.links === 1 ? "resolves" : "resolve"} across ${pages}`,
+        ),
       );
 
       return;
     }
 
     for (const line of report.broken) {
-      console.error(line);
+      console.error(colors().red(line));
     }
 
     process.exitCode = 1;
   } catch (error) {
     console.error(
-      `check-links: ${error instanceof Error ? error.message : String(error)}`,
+      colors().red(
+        `check-links: ${error instanceof Error ? error.message : String(error)}`,
+      ),
     );
     process.exitCode = 1;
   }

@@ -1,6 +1,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createColors } from "picocolors";
 import { isMainModule } from "../cli/is-main.ts";
 import { sha256 } from "../sync/hash.ts";
 import {
@@ -26,6 +27,12 @@ export interface HealthReport {
 }
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+
+/** Colors at the render boundary: green = healthy, red = problems;
+ *  NO_COLOR yields plain text. */
+function colors() {
+  return createColors(!process.env.NO_COLOR);
+}
 
 /**
  * The display path for an absolute path: repo-relative when it lies
@@ -264,18 +271,20 @@ export async function main(): Promise<void> {
     const report = await checkRaw(rawDir);
 
     if (report.healthy) {
-      console.log(report.summary);
+      console.log(colors().green(report.summary));
       return;
     }
 
     for (const line of report.problems) {
-      console.error(line);
+      console.error(colors().red(line));
     }
 
     process.exitCode = 1;
   } catch (error) {
     console.error(
-      `check-raw: ${error instanceof Error ? error.message : String(error)}`,
+      colors().red(
+        `check-raw: ${error instanceof Error ? error.message : String(error)}`,
+      ),
     );
     process.exitCode = 1;
   }

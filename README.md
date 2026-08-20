@@ -34,6 +34,34 @@ This repository hosts two agent contexts with deliberately different permissions
 
 See [Two Agent Contexts](making-of/karpathy_obsidian_wiki_implementation_guide.md#1-two-agent-contexts) in the guide before doing either.
 
+## The pipeline
+
+One cycle, vault to reviewed wiki — each step a repo command:
+
+```text
+Obsidian vault            sync-vault                wiki-ingest               review & commit
+(human-owned,   ──►  raw/ projection  ──►  wiki/ updated by  ──►  read the digest,   ──►  git diff +
+ outside repo)       (deterministic,       the agent (LLM,          then the git diff       commit in the
+                      no LLM)               per settings.yml,        in the data repo        data repo
+                                            contract wiki/AGENTS.md)
+```
+
+1. **Sync** — `npm run sync-vault`: project every vault note not
+   blocked by `wiki: false` into `raw/` and update `raw/manifest.json`
+   ([details](#running-the-sync)).
+2. **Ingest** — `npm run wiki-ingest`: diff the manifest against the
+   last successful ingest, run the agent over the changed sources, and
+   write the digest ([details](#running-the-wiki-agent-wiki-ingest)).
+3. **Review** — read the digest (`outputs/runs/<timestamp>.md`, also on
+   stdout), then the `git diff` it summarizes, in the data repo.
+4. **Commit** — commit the data repo, so the next digest covers only
+   its own run.
+
+`raw/` and `wiki/` contents live in the data repo at `sync.json`'s
+`dataRoot`; this repo holds the pipeline and the skeleton only.
+Today steps 1–4 are separate commands (issue #13 will chain them,
+#12 adds guardrails, #14 scheduling).
+
 ## Tooling
 
 The pipeline is TypeScript on Node.js (ESM). Node ≥ 22.18 runs the `.ts`
@@ -288,6 +316,15 @@ digest scoped to its own run. A failed agent run exits 1 and
 leaves the snapshot untouched, so the next run retries the same
 sources; guardrails (lint, checks, auto-revert) are issue #12, the
 one-command orchestration #13, scheduling #14.
+
+**Timeout budgeting:** the 1800 s default fits the steady state —
+incremental runs measured at 1–2 minutes (about one minute per note,
+including page updates). A first full ingest is much larger (136
+uningested notes at the time of the #10 drill); at the measured rate
+that is hours, so give it an explicit budget, for example
+`npm run wiki-ingest -- --timeout 14400`, and watch the spinner's
+elapsed clock. A timed-out run fails cleanly and retries the same
+sources on the next run.
 
 ## Gating changes with no-mistakes
 

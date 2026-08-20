@@ -85,7 +85,7 @@ Run order from the repo root, before declaring work complete:
 npm run typecheck   # gate — always
 npm run lint        # gate — always
 npm test            # gate — always (unit only; e2e is NOT included)
-npm run e2e         # when the change touches src/sync/, src/fixtures/, tests/e2e/, or raw/
+npm run e2e         # when the change touches src/sync/, src/ingest/, src/cli/, src/fixtures/, tests/e2e/, or raw/
 npm run health      # same trigger as e2e; also safe to run any time — read-only, no vault access
 ```
 
@@ -132,7 +132,7 @@ infrastructure, free to use for any unit or e2e work; the snapshot at
 ### CLI scripts
 
 Every script meant to run on the terminal — every `main()` entry point
-under `src/` — responds to `-h` and `--help`. The help must state the
+under `src/` or `scripts/` — responds to `-h` and `--help`. The help must state the
 usage line, explain every switch and positional argument with its
 default, say what the script writes (or that it writes nothing), and
 exit 0 without filesystem side effects. Help prints before any
