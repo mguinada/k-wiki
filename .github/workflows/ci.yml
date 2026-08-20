@@ -11,10 +11,11 @@
 # reads synthetic fixtures, never real vault data.
 #
 # The e2e job is blocking like the gates: `npm run e2e` drives the real
-# sync CLI as child processes against the synthetic fixture vault in
-# temp workspaces, and `npm run health` validates the committed raw/
-# snapshot (trivially healthy today; guards future synced content).
-# Both are deterministic and fast — unlike mutation testing.
+# sync and wiki-ingest CLIs as child processes — against the synthetic
+# fixture vault and a stub agent in temp workspaces — and `npm run
+# health` validates the committed raw/ snapshot (trivially healthy
+# today; guards future synced content). Both are deterministic and
+# fast — unlike mutation testing.
 #
 # The mutation job is advisory, never a gate (issue #21): it runs only
 # when a PR carries the `mutation` label, nightly on main, or via manual

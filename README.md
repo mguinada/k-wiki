@@ -75,7 +75,7 @@ sources directly, so there is no build step — install dependencies with
 | `npm run format` | Biome | Rewrite files to the canonical format — the fix command for lint findings, not a gate |
 | `npm test` | vitest | Run the unit test suite |
 | `npm run test:coverage` | vitest | Run the unit tests and fail below the 90% coverage thresholds — what CI runs |
-| `npm run e2e` | vitest | Run the end-to-end suite (`tests/e2e/`): the real sync CLI as child processes through a full vault lifecycle — first run, no-op re-run, edit, delete, block flip, multi-vault — against the synthetic fixture vault in temp workspaces under `.e2e-tmp/` (gitignored) |
+| `npm run e2e` | vitest | Run the end-to-end suite (`tests/e2e/`): real CLI child processes — sync-vault through a full vault lifecycle (first run, no-op re-run, edit, delete, block flip, multi-vault) against the synthetic fixture vault in temp workspaces under `.e2e-tmp/` (gitignored), plus wiki-ingest through first-run, incremental, skip, failure, and timeout runs against a stub agent in temp data repos |
 | `npm run health [-- <raw-dir>]` | health CLI | Check the coherence of a `raw/` projection (default: the repo's `raw/`): every `raw/notes/<vault>/` file matches its `manifest.json` sha-256, with no orphans and no missing entries; read-only, no vault access; exit 0 = coherent (including healthy-empty), exit 1 = one line per problem |
 | `npm run check-links [-- <wiki-dir>]` | wikilink checker | Check that every `[[wikilink]]` under `wiki/` (default) resolves to an existing page by file name; exit 0 = all links resolve, exit 1 = one `file:line -> [[link]]` line per broken link |
 | `npm run fixtures -- <dir>` | fixture generator | Write the synthetic Obsidian test vault to `<dir>/Documents` |
@@ -100,14 +100,15 @@ Verification has three layers:
 | Layer | Commands | Status |
 |---|---|---|
 | Gates | `npm run typecheck`, `npm run lint`, `npm test` | blocking — every change, every PR |
-| End-to-end | `npm run e2e`, `npm run health` | blocking — CI's `e2e` job on every PR; required locally when a change touches `src/sync/`, `src/fixtures/`, `tests/e2e/`, or `raw/` |
+| End-to-end | `npm run e2e`, `npm run health` | blocking — CI's `e2e` job on every PR; required locally when a change touches the sync, ingest, or CLI layers (exact trigger list in [AGENTS.md](AGENTS.md)) |
 | Mutation | `npm run mutation:changed` | advisory — a signal, never a gate ([below](#mutation-testing)) |
 
-The e2e suite drives the real CLI through a full vault lifecycle against
-the synthetic fixture vault; the health check verifies that a `raw/`
-projection is internally consistent without the real vault. Both are
-deterministic and fast, so they gate CI like the unit tests do — unlike
-mutation testing, whose runtime grows with the suite.
+The e2e suites drive the real CLIs — sync-vault against the synthetic
+fixture vault, wiki-ingest against a stub agent in a temp data repo;
+the health check verifies that a `raw/` projection is internally
+consistent without the real vault. Both are deterministic and fast, so
+they gate CI like the unit tests do — unlike mutation testing, whose
+runtime grows with the suite.
 
 ### Renaming or removing a vault
 
