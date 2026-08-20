@@ -13,6 +13,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
 import { isMainModule } from "../cli/is-main.ts";
+import { createProgressRenderer, formatDuration } from "../cli/progress.ts";
 import {
   loadSyncConfig,
   resolveRawDir,
@@ -54,6 +55,8 @@ export interface SyncOptions {
   readonly home?: string;
   /** Clock for `last_synced`; defaults to the wall clock. */
   readonly now?: () => Date;
+  /** Read-loop heartbeat cadence in files read; default: every 500. */
+  readonly progressEvery?: number | undefined;
   /** Progress sink (uncolored messages); default: silent. */
   readonly onProgress?: (message: string) => void;
 }
@@ -166,10 +169,14 @@ async function listNamespaceDirs(notesRoot: string): Promise<string[]> {
 /** Heartbeat interval for the read loop: one line per files read. */
 export const PROGRESS_EVERY = 500;
 
+/** Heartbeat interval for the directory walk: one line per dirs. */
+export const SCAN_HEARTBEAT_EVERY = 1000;
+
 /** Read and select the candidates of one vault, hashing every match. */
 async function selectNotes(
   vault: SyncVaultConfig,
   candidates: readonly string[],
+  progressEvery: number,
   onProgress: (message: string) => void,
 ): Promise<SelectedNote[]> {
   const selected: SelectedNote[] = [];
@@ -182,7 +189,7 @@ async function selectNotes(
       selected.push({ relPath, bytes, hash: sha256(bytes) });
     }
 
-    if ((index + 1) % PROGRESS_EVERY === 0) {
+    if ((index + 1) % progressEvery === 0) {
       onProgress(
         `vault "${vault.name}": ${index + 1}/${candidates.length} read, ${selected.length} selected`,
       );
@@ -195,6 +202,7 @@ async function selectNotes(
 /** Verify the vault root, scan it, and select its notes. */
 async function scanAndSelect(
   vault: SyncVaultConfig,
+  progressEvery: number,
   onProgress: (message: string) => void,
 ): Promise<{
   candidates: readonly string[];
@@ -204,11 +212,25 @@ async function scanAndSelect(
 
   onProgress(`vault "${vault.name}": scanning ${vault.root}`);
 
-  const candidates = await scanVault(vault.root);
+  const walkStartedAt = Date.now();
+  const candidates = await scanVault(vault.root, (visited) => {
+    if (visited % SCAN_HEARTBEAT_EVERY === 0) {
+      const elapsed = formatDuration(Date.now() - walkStartedAt);
+
+      onProgress(
+        `vault "${vault.name}": scanning (${elapsed}, ${visited} dirs)`,
+      );
+    }
+  });
 
   onProgress(`vault "${vault.name}": ${candidates.length} candidates`);
 
-  const selected = await selectNotes(vault, candidates, onProgress);
+  const selected = await selectNotes(
+    vault,
+    candidates,
+    progressEvery,
+    onProgress,
+  );
 
   return { candidates, selected };
 }
@@ -218,9 +240,14 @@ async function syncVault(
   rawDir: string,
   now: () => Date,
   previous: VaultNotes,
+  progressEvery: number,
   onProgress: (message: string) => void,
 ): Promise<{ notes: VaultNotes; report: VaultSyncReport }> {
-  const { candidates, selected } = await scanAndSelect(vault, onProgress);
+  const { candidates, selected } = await scanAndSelect(
+    vault,
+    progressEvery,
+    onProgress,
+  );
 
   const namespaceRoot = join(rawDir, "notes", vault.name);
 
@@ -331,6 +358,7 @@ export async function runSync(options: SyncOptions): Promise<SyncReport> {
       options.rawDir,
       now,
       manifest.vaults[vault.name] ?? {},
+      options.progressEvery ?? PROGRESS_EVERY,
       onProgress,
     );
 
@@ -363,7 +391,11 @@ export async function runDryRun(
   const reports: VaultDryRunReport[] = [];
 
   for (const vault of config.vaults) {
-    const { candidates, selected } = await scanAndSelect(vault, onProgress);
+    const { candidates, selected } = await scanAndSelect(
+      vault,
+      options.progressEvery ?? PROGRESS_EVERY,
+      onProgress,
+    );
 
     reports.push({
       vault: vault.name,
@@ -526,10 +558,54 @@ ingested.
                  <dataRoot>/raw when the config sets dataRoot, otherwise
                  the repo's own raw/.
 
-Live progress goes to stderr, the report to stdout; NO_COLOR disables
-color.`;
+Live progress goes to stderr, the report to stdout. On a terminal
+(TTY, color enabled) the scan and read heartbeats share one animated
+status line - a braille spinner plus the sentence - rewritten in
+place; piped, redirected, CI, or NO_COLOR runs get plain appended
+lines instead (read heartbeat every 500 files by default).`;
 
-/** sync-vault entry point: `sync-vault [--dry-run] [-h | --help] [config] [raw-dir]`. */
+/** Live status patterns: the read heartbeat and the scan-walk heartbeat. */
+export const LIVE_PROGRESS =
+  /^[^:]+: (\d+\/\d+ read, \d+ selected|scanning \([^)]* dirs\))$/;
+
+/** A stderr progress surface: plain lines, or one animated line. */
+export interface ProgressSink {
+  render(message: string): void;
+  end(): void;
+}
+
+/**
+ * The stderr presentation for one sync run: read and scan heartbeats
+ * keep one animated line (spinner + sentence) on a TTY; every other
+ * message scrolls. Non-animated runs append plain lines only.
+ */
+export function createSyncProgressSink(
+  write: (text: string) => void,
+  writeLine: (text: string) => void,
+  animated: boolean,
+  colorize: (message: string) => string,
+): ProgressSink {
+  if (!animated) {
+    return {
+      render: (message) => writeLine(colorize(message)),
+      end: () => {},
+    };
+  }
+
+  const renderer = createProgressRenderer(write);
+
+  return {
+    render: (message) => {
+      if (LIVE_PROGRESS.test(message)) {
+        renderer.live(colorize(message));
+      } else {
+        renderer.event(colorize(message));
+      }
+    },
+    end: () => renderer.end(),
+  };
+}
+
 export async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
@@ -547,14 +623,24 @@ export async function main(): Promise<void> {
     const config = await loadSyncConfig(configPath);
     const rawDir = rawArg ?? resolveRawDir(config.dataRoot, repoRoot);
     const colors = reportColors();
+    const animated = process.stderr.isTTY === true && !process.env.NO_COLOR;
+    const sink = createSyncProgressSink(
+      (text) => process.stderr.write(text),
+      (text) => console.error(text),
+      animated,
+      colorizeProgress,
+    );
+    const progressEvery = animated ? 1 : undefined;
 
     if (dryRun) {
       const reports = await runDryRun({
         configPath,
         rawDir,
-        onProgress: (message) => console.error(colorizeProgress(message)),
+        progressEvery,
+        onProgress: sink.render,
       });
 
+      sink.end();
       console.log(formatDryRunReport(reports, colors));
 
       return;
@@ -563,9 +649,11 @@ export async function main(): Promise<void> {
     const report = await runSync({
       configPath,
       rawDir,
-      onProgress: (message) => console.error(colorizeProgress(message)),
+      progressEvery,
+      onProgress: sink.render,
     });
 
+    sink.end();
     console.log(formatReport(report, colors));
   } catch (error) {
     console.error(

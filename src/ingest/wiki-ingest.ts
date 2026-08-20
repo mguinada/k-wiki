@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
 import { isMainModule } from "../cli/is-main.ts";
+import { createProgressRenderer, formatDuration } from "../cli/progress.ts";
 import { runGit } from "../data/init-data-repo.ts";
 import { loadSyncConfig, resolveRawDir } from "../sync/config.ts";
 import {
@@ -325,7 +326,11 @@ export function formatDigest(run: IngestRun): string {
 export type AgentRunner = (
   command: string,
   args: readonly string[],
-  options: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs?: number | undefined },
+  options: {
+    cwd: string;
+    env: NodeJS.ProcessEnv;
+    timeoutMs?: number | undefined;
+  },
 ) => Promise<{ stdout: string; stderr: string }>;
 
 /** The agent gets 30 minutes by default; a hung run must not hang the wrapper. */
@@ -333,6 +338,10 @@ export const AGENT_TIMEOUT_MS = 30 * 60_000;
 
 /** Liveness line on the progress sink while the agent runs. */
 export const HEARTBEAT_MS = 60_000;
+
+/** Prefix of the agent heartbeat sentence; the TTY renderer keeps the
+ *  matching messages on one animated line (spinner + clock). */
+export const AGENT_HEARTBEAT_PREFIX = "wiki-ingest: agent still running";
 
 /** Collected output cap: 16 MB, far above any final agent report. */
 const AGENT_MAX_BUFFER = 16 * 1024 * 1024;
@@ -352,7 +361,11 @@ function tail(text: string): string {
 export function spawnAgent(
   command: string,
   args: readonly string[],
-  options: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs?: number | undefined },
+  options: {
+    cwd: string;
+    env: NodeJS.ProcessEnv;
+    timeoutMs?: number | undefined;
+  },
 ): Promise<{ stdout: string; stderr: string }> {
   const timeoutMs = options.timeoutMs ?? AGENT_TIMEOUT_MS;
 
@@ -484,7 +497,7 @@ export interface IngestOptions {
   /** Kill the agent run after this many milliseconds; default 30 min. */
   readonly timeoutMs?: number | undefined;
   /** Heartbeat interval while the agent runs; default 60 s. */
-  readonly heartbeatMs?: number;
+  readonly heartbeatMs?: number | undefined;
   /** Progress sink (uncolored messages); default: silent. */
   readonly onProgress?: (message: string) => void;
 }
@@ -571,9 +584,9 @@ export async function runWikiIngest(
 
   const agentStartedAt = Date.now();
   const heartbeat = setInterval(() => {
-    const elapsed = Math.round((Date.now() - agentStartedAt) / 1000);
+    const elapsed = formatDuration(Date.now() - agentStartedAt);
 
-    onProgress(`wiki-ingest: agent still running (${elapsed}s)`);
+    onProgress(`${AGENT_HEARTBEAT_PREFIX} (${elapsed})`);
   }, options.heartbeatMs ?? HEARTBEAT_MS);
 
   let stdout: string;
@@ -655,12 +668,14 @@ What it writes:
   - outputs/runs/<timestamp>.md — the digest, also printed to stdout.
 
 With no changed sources since the snapshot nothing runs: it says so
-and exits 0. While the agent runs, a heartbeat line goes to stderr
-every 60 seconds. A run that fails or exceeds the timeout exits 1
-and leaves the snapshot and digest untouched, so the next run
-retries the same sources. Live progress goes to stderr;
-NO_COLOR disables color. Guardrails (checks, auto-revert) are issue
-#12; scheduling is #14.`;
+and exits 0. On a terminal (TTY, color enabled) the agent run shows
+one animated status line - a braille spinner plus the elapsed time -
+rewritten in place; piped, redirected, CI, or NO_COLOR runs get one
+plain heartbeat line per 60 seconds instead. A run that fails or
+exceeds the timeout exits 1 and leaves the snapshot and digest
+untouched, so the next run retries the same sources. Live progress
+goes to stderr; the digest goes to stdout. Guardrails (checks,
+auto-revert) are issue #12; scheduling is #14.`;
 
 function colors() {
   return createColors(!process.env.NO_COLOR);
@@ -672,7 +687,45 @@ function fail(message: string): void {
   process.exitCode = 1;
 }
 
-/** wiki-ingest entry point: `wiki-ingest [-h | --help] [--settings <path>] [--outputs <dir>] [<raw-dir>]`. */
+/** A stderr progress surface: plain lines, or one animated line. */
+export interface ProgressSink {
+  render(message: string): void;
+  end(): void;
+}
+
+/**
+ * The stderr presentation for one wiki-ingest run: agent heartbeats
+ * keep one animated line (spinner + clock) on a TTY; every other
+ * message scrolls. Non-animated runs append plain lines only.
+ */
+export function createAgentProgressSink(
+  write: (text: string) => void,
+  writeLine: (text: string) => void,
+  animated: boolean,
+  dim: (text: string) => string,
+): ProgressSink {
+  if (!animated) {
+    return {
+      render: (message) => writeLine(dim(message)),
+      end: () => {},
+    };
+  }
+
+  const renderer = createProgressRenderer(write);
+
+  return {
+    render: (message) => {
+      if (message.startsWith(AGENT_HEARTBEAT_PREFIX)) {
+        renderer.live(dim(message));
+      } else {
+        renderer.event(dim(message));
+      }
+    },
+    end: () => renderer.end(),
+  };
+}
+
+/** wiki-ingest entry point: `wiki-ingest [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<raw-dir>]`. */
 export async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
@@ -743,6 +796,14 @@ export async function main(): Promise<void> {
   const settingsPath =
     values.get("--settings") ?? join(repoRoot, "settings.yml");
 
+  const animated = process.stderr.isTTY === true && !process.env.NO_COLOR;
+  const sink = createAgentProgressSink(
+    (text) => process.stderr.write(text),
+    (text) => console.error(text),
+    animated,
+    (text) => colors().dim(text),
+  );
+
   try {
     const config = await loadSyncConfig(join(repoRoot, "sync.json"), homedir());
     const rawDir = positional[0] ?? resolveRawDir(config.dataRoot, repoRoot);
@@ -753,8 +814,11 @@ export async function main(): Promise<void> {
       promptsDir: join(repoRoot, "prompts"),
       timeoutMs:
         timeoutArg === undefined ? undefined : Number(timeoutArg) * 1000,
-      onProgress: (message) => console.error(colors().dim(message)),
+      heartbeatMs: animated ? 100 : undefined,
+      onProgress: sink.render,
     });
+
+    sink.end();
 
     if (result.status === "skipped") {
       console.log(`wiki-ingest: ${result.reason}`);
@@ -764,6 +828,7 @@ export async function main(): Promise<void> {
 
     console.log(result.digest);
   } catch (error) {
+    sink.end();
     console.error(
       colors().red(
         `wiki-ingest: ${error instanceof Error ? error.message : String(error)}`,

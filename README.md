@@ -210,8 +210,11 @@ Arguments:
 | `<sync.json>` | repo's `sync.json` | Config naming the vaults and their exclusion rules |
 | `<raw-dir>` | `<dataRoot>/raw`, else the repo's `raw/` | Destination for `notes/` and `manifest.json` |
 
-Live progress goes to stderr, the report to stdout; `NO_COLOR` disables
-color.
+Live progress goes to stderr, the report to stdout. On a terminal
+(TTY, color enabled) the scan and read heartbeats share one animated
+status line — a braille spinner plus the sentence — rewritten in
+place; piped, redirected, CI, or `NO_COLOR` runs get plain appended
+lines instead (read heartbeat every 500 files by default).
 
 ### What gets ingested
 
@@ -254,9 +257,13 @@ runs the agent non-interactively **in the data repo root** — `prompts/ingest.m
 for the first run, `prompts/incremental.md` with the changed sources
 (`+` added, `~` changed, `-` removed) appended for every later one. The
 agent itself follows `wiki/AGENTS.md`, never touches `raw/`, and gets
-30 minutes (override with `--timeout <seconds>`); while it runs, a
-heartbeat line goes to stderr every 60 seconds; with no changed
-sources nothing runs and the wrapper exits 0.
+30 minutes (override with `--timeout <seconds>`); while it runs, one
+animated status line — a braille spinner plus the elapsed time — is
+rewritten in place on the terminal (a 10-per-second heartbeat, no
+invented ETA: the agent emits its output only at completion); piped,
+redirected, CI, or `NO_COLOR` runs get one plain heartbeat line per 60
+seconds instead; with no changed sources nothing runs and the wrapper
+exits 0.
 
 The agent invocation lives in `settings.yml` at the repo root — never
 hardcoded:

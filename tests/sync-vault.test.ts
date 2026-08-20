@@ -17,6 +17,7 @@ import { parseManifest } from "../src/sync/manifest.ts";
 import {
   colorizeError,
   colorizeProgress,
+  createSyncProgressSink,
   formatDryRunReport,
   formatReport,
   main,
@@ -614,6 +615,128 @@ describe("runSync progress", () => {
     const { messages } = await runWithProgress(ws);
 
     expect(messages.every((message) => !message.includes("\x1b["))).toBe(true);
+  });
+
+  it("emits a read heartbeat after every file when progressEvery is 1", async () => {
+    const ws = await makeWorkspace();
+    const messages: string[] = [];
+
+    await runSync({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+      progressEvery: 1,
+      onProgress: (message) => messages.push(message),
+    });
+
+    expect(messages).toContain(`vault "${VAULT_NAME}": 1/9 read, 1 selected`);
+    expect(messages).toContain(`vault "${VAULT_NAME}": 2/9 read, 2 selected`);
+  });
+
+  it("emits a scanning heartbeat every thousand directories visited", async () => {
+    const ws = await makeWorkspace();
+
+    for (let index = 0; index < 1000; index += 1) {
+      await mkdir(join(ws.vaultRoot, `AAbulk-${index}`), { recursive: true });
+    }
+
+    const { messages } = await runWithProgress(ws);
+
+    expect(messages).toContain(
+      `vault "${VAULT_NAME}": scanning (0s, 1000 dirs)`,
+    );
+  });
+
+  it("honors progressEvery in a dry run too", async () => {
+    const ws = await makeWorkspace();
+    const messages: string[] = [];
+
+    await runDryRun({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+      progressEvery: 1,
+      onProgress: (message) => messages.push(message),
+    });
+
+    expect(messages).toContain(`vault "${VAULT_NAME}": 1/9 read, 1 selected`);
+  });
+});
+
+describe("createSyncProgressSink", () => {
+  const colorize = (message: string) => `[${message}]`;
+
+  function makeSink(animated: boolean) {
+    const written: string[] = [];
+    const lines: string[] = [];
+    const sink = createSyncProgressSink(
+      (text) => written.push(text),
+      (text) => lines.push(text),
+      animated,
+      colorize,
+    );
+
+    return { sink, written, lines };
+  }
+
+  it("appends plain lines when not animated", () => {
+    const { sink, written, lines } = makeSink(false);
+
+    sink.render(`vault "${VAULT_NAME}": 1/9 read, 1 selected`);
+
+    expect(written).toEqual([]);
+    expect(lines).toEqual([`[vault "${VAULT_NAME}": 1/9 read, 1 selected]`]);
+  });
+
+  it("keeps read heartbeats on the animated line", () => {
+    const { sink, written } = makeSink(true);
+
+    sink.render(`vault "${VAULT_NAME}": 1/9 read, 1 selected`);
+
+    expect(written).toEqual([
+      `\r⠋ [vault "${VAULT_NAME}": 1/9 read, 1 selected]`,
+    ]);
+  });
+
+  it("keeps scan heartbeats on the animated line", () => {
+    const { sink, written } = makeSink(true);
+
+    sink.render(`vault "${VAULT_NAME}": scanning (0s, 1000 dirs)`);
+
+    expect(written[0]).toMatch(/^\r⠋ \[.*scanning \(0s, 1000 dirs\)\]$/);
+  });
+
+  it("scrolls announcements as events on the animated sink", () => {
+    const { sink, written } = makeSink(true);
+
+    sink.render(`vault "${VAULT_NAME}": scanning /some/root`);
+
+    expect(written).toEqual([`[vault "${VAULT_NAME}": scanning /some/root]\n`]);
+  });
+
+  it("keeps multi-digit read heartbeats on the animated line", () => {
+    const { sink, written } = makeSink(true);
+
+    sink.render(`vault "${VAULT_NAME}": 12/345 read, 67 selected`);
+
+    expect(written[0]).toMatch(/^\r⠋ \[.*12\/345 read, 67 selected\]$/);
+  });
+
+  it("treats a message merely containing a heartbeat as an event", () => {
+    const { sink, written } = makeSink(true);
+
+    sink.render(`note: vault "${VAULT_NAME}": 1/9 read, 1 selected (quoted)`);
+
+    expect(written).toEqual([
+      `[note: vault "${VAULT_NAME}": 1/9 read, 1 selected (quoted)]\n`,
+    ]);
+  });
+
+  it("clears the animated line on end", () => {
+    const { sink, written } = makeSink(true);
+
+    sink.render(`vault "${VAULT_NAME}": 1/9 read, 1 selected`);
+    sink.end();
+
+    expect(written[1]).toMatch(/^\r\s+\r$/);
   });
 });
 

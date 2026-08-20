@@ -10,6 +10,7 @@ import {
   type AgentRunner,
   type AgentSettings,
   composePrompt,
+  createAgentProgressSink,
   diffManifests,
   formatDigest,
   type IngestRun,
@@ -807,6 +808,43 @@ describe("runWikiIngest", () => {
     );
   });
 
+  it("formats the heartbeat clock as minutes and padded seconds", async () => {
+    const h = await makeHarness({ "a.md": entry("a") });
+    const messages: string[] = [];
+    const slow: AgentRunner = () =>
+      new Promise((resolve) =>
+        setTimeout(() => resolve({ stdout: "R", stderr: "" }), 200_000),
+      );
+
+    vi.useFakeTimers();
+
+    try {
+      const run = runWikiIngest({
+        ...optionsFor(h),
+        runAgent: slow,
+        heartbeatMs: 1000,
+        onProgress: (message) => messages.push(message),
+      });
+      let settled = false;
+
+      run.finally(() => {
+        settled = true;
+      });
+
+      // Advance fake time in slices so real I/O (manifest reads, git)
+      // keeps progressing between timer ticks.
+      for (let tick = 0; !settled && tick < 500; tick++) {
+        await vi.advanceTimersByTimeAsync(1000);
+      }
+
+      await run;
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(messages).toContain("wiki-ingest: agent still running (2m07s)");
+  });
+
   it("stops the heartbeat when the agent run ends", async () => {
     const h = await makeHarness({ "a.md": entry("a") });
     const messages: string[] = [];
@@ -1029,6 +1067,68 @@ describe("spawnAgent", () => {
     );
 
     expect(result.stdout).toContain("stdin-eof");
+  });
+});
+
+describe("createAgentProgressSink", () => {
+  const dim = (text: string) => `<${text}>`;
+
+  function makeSink(animated: boolean) {
+    const written: string[] = [];
+    const lines: string[] = [];
+    const sink = createAgentProgressSink(
+      (text) => written.push(text),
+      (text) => lines.push(text),
+      animated,
+      dim,
+    );
+
+    return { sink, written, lines };
+  }
+
+  it("appends plain lines when not animated", () => {
+    const { sink, written, lines } = makeSink(false);
+
+    sink.render("wiki-ingest: agent finished");
+
+    expect(written).toEqual([]);
+    expect(lines).toEqual(["<wiki-ingest: agent finished>"]);
+  });
+
+  it("keeps heartbeat messages on the animated line", () => {
+    const { sink, written } = makeSink(true);
+
+    sink.render("wiki-ingest: agent still running (2m07s)");
+
+    expect(written).toEqual([
+      "\r⠋ <wiki-ingest: agent still running (2m07s)>",
+    ]);
+  });
+
+  it("scrolls non-heartbeat messages as events on the animated sink", () => {
+    const { sink, written } = makeSink(true);
+
+    sink.render("wiki-ingest: agent finished");
+
+    expect(written).toEqual(["<wiki-ingest: agent finished>\n"]);
+  });
+
+  it("clears the animated line on end", () => {
+    const { sink, written } = makeSink(true);
+
+    sink.render("wiki-ingest: agent still running (0s)");
+    sink.end();
+
+    expect(written[1]).toMatch(/^\r\s+\r$/);
+  });
+
+  it("does nothing on end when not animated", () => {
+    const { sink, written, lines } = makeSink(false);
+
+    sink.end();
+
+    expect(written).toEqual([]);
+    expect(lines).toEqual([]);
   });
 });
 
