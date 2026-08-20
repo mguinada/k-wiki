@@ -618,19 +618,19 @@ export async function main(): Promise<void> {
   const dryRun = args.includes("--dry-run");
   const [configArg, rawArg] = args.filter((arg) => arg !== "--dry-run");
   const configPath = configArg ?? join(repoRoot, "sync.json");
+  const animated = process.stderr.isTTY === true && !process.env.NO_COLOR;
+  const sink = createSyncProgressSink(
+    (text) => process.stderr.write(text),
+    (text) => console.error(text),
+    animated,
+    colorizeProgress,
+  );
+  const progressEvery = animated ? 1 : undefined;
 
   try {
     const config = await loadSyncConfig(configPath);
     const rawDir = rawArg ?? resolveRawDir(config.dataRoot, repoRoot);
     const colors = reportColors();
-    const animated = process.stderr.isTTY === true && !process.env.NO_COLOR;
-    const sink = createSyncProgressSink(
-      (text) => process.stderr.write(text),
-      (text) => console.error(text),
-      animated,
-      colorizeProgress,
-    );
-    const progressEvery = animated ? 1 : undefined;
 
     if (dryRun) {
       const reports = await runDryRun({
@@ -656,6 +656,7 @@ export async function main(): Promise<void> {
     sink.end();
     console.log(formatReport(report, colors));
   } catch (error) {
+    sink.end();
     console.error(
       colorizeError(
         `sync-vault: ${error instanceof Error ? error.message : String(error)}`,

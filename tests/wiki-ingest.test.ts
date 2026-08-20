@@ -939,6 +939,23 @@ describe("runWikiIngest", () => {
       ),
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
+
+  it("leaves the snapshot untouched when the digest write fails", async () => {
+    const h = await makeHarness({ "a.md": entry("a") });
+
+    await mkdir(
+      join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"),
+      { recursive: true },
+    );
+
+    await expect(runWikiIngest(optionsFor(h))).rejects.toThrow();
+
+    const { readFile } = await import("node:fs/promises");
+
+    await expect(
+      readFile(join(h.outputsDir, "last-ingested-manifest.json"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
 });
 
 describe("spawnAgent", () => {

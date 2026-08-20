@@ -607,7 +607,6 @@ export async function runWikiIngest(
 
   await mkdir(options.outputsDir, { recursive: true });
   await mkdir(join(options.outputsDir, "runs"), { recursive: true });
-  await writeManifest(snapshotPath, current);
 
   const startedAt = now();
   const run: IngestRun = {
@@ -627,6 +626,7 @@ export async function runWikiIngest(
   );
 
   await writeFile(digestPath, digest, "utf8");
+  await writeManifest(snapshotPath, current);
 
   return { status: "ran", mode, digestPath, digest, pages };
 }

@@ -1551,6 +1551,34 @@ describe("sync-vault CLI", () => {
     expect(err.startsWith("\x1b[31m")).toBe(true);
   });
 
+  it("clears the animated live line before printing the failure", async () => {
+    const ws = await makeWorkspace();
+
+    await mkdir(join(ws.rawDir, "notes"), { recursive: true });
+    await writeFile(join(ws.rawDir, "notes", VAULT_NAME), "not a directory");
+
+    const writes: string[] = [];
+    const writeSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation((chunk) => {
+        writes.push(String(chunk));
+
+        return true;
+      });
+    const wasTty = process.stderr.isTTY;
+
+    process.stderr.isTTY = true;
+
+    try {
+      await runCli([ws.configPath, ws.rawDir], { color: true });
+    } finally {
+      process.stderr.isTTY = wasTty;
+      writeSpy.mockRestore();
+    }
+
+    expect(writes.at(-1)).toMatch(/^\r +\r$/);
+  });
+
   it("reports no changes for a config without vaults", async () => {
     const dir = await makeTempDir();
     const configPath = join(dir, "sync.json");
