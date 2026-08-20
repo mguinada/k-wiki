@@ -12,7 +12,7 @@ import { isMainModule } from "../cli/is-main.ts";
  * vault's shape. A checked-in copy lives at tests/fixtures/Documents.
  */
 
-/** Mirrors the real vault's name so path handling stays honest. */
+/** Realistic vault name so path handling in tests stays honest. */
 export const VAULT_NAME = "Documents";
 
 interface FixtureFile {

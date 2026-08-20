@@ -24,6 +24,7 @@ import {
   PROGRESS_EVERY,
   runDryRun,
   runSync,
+  type SyncReport,
   type VaultSyncReport,
 } from "../src/sync/sync-vault.ts";
 import { collectFiles, SELECTED_PATHS } from "./e2e/helpers.ts";
@@ -86,24 +87,30 @@ function fixedClock(iso: string): () => Date {
 }
 
 async function run(ws: Workspace, iso: string = T1) {
-  return runSync({
+  const { vaults } = await runSync({
     configPath: ws.configPath,
     rawDir: ws.rawDir,
     now: fixedClock(iso),
   });
+
+  return vaults;
 }
 
 /** Run with a progress collector; returns reports and messages. */
 async function runWithProgress(ws: Workspace, iso: string = T1) {
   const messages: string[] = [];
-  const reports = await runSync({
+  const report = await runSync({
     configPath: ws.configPath,
     rawDir: ws.rawDir,
     now: fixedClock(iso),
     onProgress: (message) => messages.push(message),
   });
 
-  return { reports, messages };
+  return {
+    reports: report.vaults,
+    pruned: report.prunedNamespaces,
+    messages,
+  };
 }
 
 async function readManifestOf(ws: Workspace) {
@@ -118,6 +125,19 @@ function sourcePath(ws: Workspace, relPath: string): string {
 
 function rawNotePath(ws: Workspace, relPath: string): string {
   return join(ws.rawDir, "notes", VAULT_NAME, ...relPath.split("/"));
+}
+
+/** Re-add a retired namespace on top of an existing projection. */
+async function readdRetiredNamespace(ws: Workspace): Promise<void> {
+  const manifestPath = join(ws.rawDir, "manifest.json");
+  const current = JSON.parse(await readFile(manifestPath, "utf8"));
+
+  current.vaults.Retired = {
+    "Old.md": { hash: "0".repeat(64), last_synced: T1 },
+  };
+  await writeFile(manifestPath, JSON.stringify(current));
+  await mkdir(join(ws.rawDir, "notes", "Retired"), { recursive: true });
+  await writeFile(join(ws.rawDir, "notes", "Retired", "Old.md"), "# old\n");
 }
 
 describe("runSync first run", () => {
@@ -617,13 +637,13 @@ describe("runSync candidate count", () => {
       }),
     );
 
-    const reports = await runSync({
+    const { vaults } = await runSync({
       configPath,
       rawDir: ws.rawDir,
       now: fixedClock(T1),
     });
 
-    expect(reports[0]?.candidates).toBe(0);
+    expect(vaults[0]?.candidates).toBe(0);
   });
 });
 
@@ -637,8 +657,15 @@ describe("formatReport all-blocked hint", () => {
     removed: [],
   };
 
+  function reportOf(
+    vault: VaultSyncReport,
+    prunedNamespaces: readonly string[] = [],
+  ): SyncReport {
+    return { vaults: [vault], prunedNamespaces };
+  }
+
   it("appends the hint when every candidate is blocked", () => {
-    expect(formatReport([allBlocked]).split("\n")[0]).toBe(
+    expect(formatReport(reportOf(allBlocked)).split("\n")[0]).toBe(
       `vault "${VAULT_NAME}": 0 selected, 0 copied, 0 unchanged, 0 removed (9 candidates, all blocked)`,
     );
   });
@@ -646,7 +673,7 @@ describe("formatReport all-blocked hint", () => {
   it("omits the hint when the vault has no candidates", () => {
     const report: VaultSyncReport = { ...allBlocked, candidates: 0 };
 
-    expect(formatReport([report]).split("\n")[0]).toBe(
+    expect(formatReport(reportOf(report)).split("\n")[0]).toBe(
       `vault "${VAULT_NAME}": 0 selected, 0 copied, 0 unchanged, 0 removed`,
     );
   });
@@ -658,8 +685,58 @@ describe("formatReport all-blocked hint", () => {
       copied: ["a.md"],
     };
 
-    expect(formatReport([report]).split("\n")[0]).toBe(
+    expect(formatReport(reportOf(report)).split("\n")[0]).toBe(
       `vault "${VAULT_NAME}": 1 selected, 1 copied, 0 unchanged, 0 removed`,
+    );
+  });
+
+  it("keeps the no-changes summary when nothing was pruned", () => {
+    expect(formatReport(reportOf(allBlocked)).split("\n").at(-1)).toBe(
+      "sync complete: no changes",
+    );
+  });
+});
+
+describe("formatReport pruned namespaces", () => {
+  const unchanged: VaultSyncReport = {
+    vault: VAULT_NAME,
+    candidates: 6,
+    selected: 4,
+    copied: [],
+    unchanged: SELECTED_PATHS,
+    removed: [],
+  };
+
+  it("lists each pruned namespace with a minus sign", () => {
+    const report: SyncReport = {
+      vaults: [unchanged],
+      prunedNamespaces: ["Retired"],
+    };
+
+    expect(formatReport(report)).toContain(
+      "  - Retired/ (stale namespace, not configured)",
+    );
+  });
+
+  it("counts a pruned namespace in the summary instead of reporting no changes", () => {
+    const report: SyncReport = {
+      vaults: [unchanged],
+      prunedNamespaces: ["Retired"],
+    };
+
+    expect(formatReport(report).split("\n").at(-1)).toBe(
+      "sync complete: 0 copied, 0 removed, 1 namespace pruned",
+    );
+  });
+
+  it("pluralizes the prune count for several namespaces", () => {
+    const report: SyncReport = {
+      vaults: [],
+      prunedNamespaces: ["Old", "Retired"],
+    };
+
+    expect(formatReport(report).split("\n").at(-1)).toBe(
+      "sync complete: 0 copied, 0 removed, 2 namespaces pruned",
     );
   });
 });
@@ -667,14 +744,14 @@ describe("formatReport all-blocked hint", () => {
 describe("runSync home expansion", () => {
   it("syncs a vault whose root is a tilde path", async () => {
     const ws = await makeWorkspace({ root: `~/${VAULT_NAME}` });
-    const reports = await runSync({
+    const { vaults } = await runSync({
       configPath: ws.configPath,
       rawDir: ws.rawDir,
       home: ws.dir,
       now: fixedClock(T1),
     });
 
-    expect(reports[0]?.copied).toEqual(SELECTED_PATHS);
+    expect(vaults[0]?.copied).toEqual(SELECTED_PATHS);
   });
 });
 
@@ -742,22 +819,145 @@ describe("runSync multiple vaults", () => {
       "Journal",
     ]);
   });
+});
 
-  it("preserves manifest entries of vaults no longer configured", async () => {
+describe("runSync stale namespace pruning", () => {
+  const retiredEntry = { hash: "0".repeat(64), last_synced: T1 };
+
+  async function seedRetiredNamespace(ws: Workspace): Promise<void> {
+    await mkdir(ws.rawDir, { recursive: true });
+    await writeFile(
+      join(ws.rawDir, "manifest.json"),
+      JSON.stringify({ vaults: { Retired: { "Old.md": retiredEntry } } }),
+    );
+    await mkdir(join(ws.rawDir, "notes", "Retired"), { recursive: true });
+    await writeFile(join(ws.rawDir, "notes", "Retired", "Old.md"), "# old\n");
+  }
+
+  it("drops the manifest section of a namespace absent from the config", async () => {
     const ws = await makeWorkspace();
-    const retired: Record<string, { hash: string; last_synced: string }> = {
-      "Old.md": { hash: "0".repeat(64), last_synced: T1 },
-    };
+
+    await seedRetiredNamespace(ws);
+    await run(ws, T1);
+
+    expect(Object.keys((await readManifestOf(ws)).vaults)).toEqual([
+      VAULT_NAME,
+    ]);
+  });
+
+  it("deletes the projected tree of a namespace absent from the config", async () => {
+    const ws = await makeWorkspace();
+
+    await seedRetiredNamespace(ws);
+    await run(ws, T1);
+
+    expect(await collectFiles(join(ws.rawDir, "notes"))).toEqual(
+      SELECTED_PATHS.map((rel) => `${VAULT_NAME}/${rel}`),
+    );
+  });
+
+  it("drops a stale manifest section whose projected tree is already gone", async () => {
+    const ws = await makeWorkspace();
 
     await mkdir(ws.rawDir, { recursive: true });
     await writeFile(
       join(ws.rawDir, "manifest.json"),
-      JSON.stringify({ vaults: { Retired: retired } }),
+      JSON.stringify({ vaults: { Retired: { "Old.md": retiredEntry } } }),
     );
-
     await run(ws, T1);
 
-    expect((await readManifestOf(ws)).vaults.Retired).toEqual(retired);
+    expect(Object.keys((await readManifestOf(ws)).vaults)).toEqual([
+      VAULT_NAME,
+    ]);
+  });
+
+  it("deletes an orphan namespace directory without a manifest entry", async () => {
+    const ws = await makeWorkspace();
+
+    await mkdir(join(ws.rawDir, "notes", "Retired"), { recursive: true });
+    await writeFile(join(ws.rawDir, "notes", "Retired", "Old.md"), "# old\n");
+    await run(ws, T1);
+
+    await expect(
+      stat(join(ws.rawDir, "notes", "Retired")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("leaves files that are not namespace directories in the notes root", async () => {
+    const ws = await makeWorkspace();
+    const keepPath = join(ws.rawDir, "notes", ".gitkeep");
+
+    await mkdir(join(ws.rawDir, "notes"), { recursive: true });
+    await writeFile(keepPath, "");
+    await run(ws, T1);
+
+    expect((await stat(keepPath)).isFile()).toBe(true);
+  });
+
+  it("announces each removed namespace as progress", async () => {
+    const ws = await makeWorkspace();
+
+    await seedRetiredNamespace(ws);
+    const { messages } = await runWithProgress(ws);
+
+    expect(messages).toContain(
+      'vault "Retired": removed stale namespace (not configured)',
+    );
+  });
+
+  it("lists pruned namespaces in the run report", async () => {
+    const ws = await makeWorkspace();
+
+    await seedRetiredNamespace(ws);
+    const { pruned } = await runWithProgress(ws);
+
+    expect(pruned).toEqual(["Retired"]);
+  });
+
+  it("does not rewrite the manifest on the run after pruning", async () => {
+    const ws = await makeWorkspace();
+    const manifestPath = join(ws.rawDir, "manifest.json");
+
+    await seedRetiredNamespace(ws);
+    await run(ws, T1);
+
+    const before = (await stat(manifestPath)).mtimeMs;
+
+    await run(ws, T2);
+
+    expect((await stat(manifestPath)).mtimeMs).toBe(before);
+  });
+
+  it("keeps every manifest section when the config lists no vaults", async () => {
+    const ws = await makeWorkspace();
+
+    await seedRetiredNamespace(ws);
+    await writeFile(ws.configPath, JSON.stringify({ vaults: [] }));
+    await run(ws);
+
+    expect(Object.keys((await readManifestOf(ws)).vaults)).toEqual(["Retired"]);
+  });
+
+  it("keeps every projected tree when the config lists no vaults", async () => {
+    const ws = await makeWorkspace();
+
+    await seedRetiredNamespace(ws);
+    await writeFile(ws.configPath, JSON.stringify({ vaults: [] }));
+    await run(ws);
+
+    expect(await collectFiles(join(ws.rawDir, "notes"))).toEqual([
+      "Retired/Old.md",
+    ]);
+  });
+
+  it("reports no pruned namespaces when the config lists no vaults", async () => {
+    const ws = await makeWorkspace();
+
+    await seedRetiredNamespace(ws);
+    await writeFile(ws.configPath, JSON.stringify({ vaults: [] }));
+    const { pruned } = await runWithProgress(ws);
+
+    expect(pruned).toEqual([]);
   });
 });
 
@@ -908,6 +1108,14 @@ describe("colorized output", () => {
     expect(colorizeReportLine("sync complete: 0 copied, 1 removed")).toBe(
       pc.red("sync complete: 0 copied, 1 removed"),
     );
+  });
+
+  it("colors a prune-only summary red", () => {
+    expect(
+      colorizeReportLine(
+        "sync complete: 0 copied, 0 removed, 1 namespace pruned",
+      ),
+    ).toBe(pc.red("sync complete: 0 copied, 0 removed, 1 namespace pruned"));
   });
 
   it("colors errors red", () => {
@@ -1166,6 +1374,22 @@ describe("sync-vault CLI", () => {
     const { out } = await runCli([configPath, join(dir, "raw")]);
 
     expect(out).toContain("sync complete: no changes");
+  });
+
+  it("renders a prune-only run line for line", async () => {
+    const ws = await makeWorkspace();
+
+    await runCli([ws.configPath, ws.rawDir]);
+    await readdRetiredNamespace(ws);
+    const { out } = await runCli([ws.configPath, ws.rawDir]);
+
+    expect(out).toBe(
+      [
+        `vault "${VAULT_NAME}": 7 selected, 0 copied, 7 unchanged, 0 removed`,
+        "  - Retired/ (stale namespace, not configured)",
+        "sync complete: 0 copied, 0 removed, 1 namespace pruned",
+      ].join("\n"),
+    );
   });
 
   it("exits 0 and lists the would-ingest notes for --dry-run", async () => {

@@ -80,6 +80,26 @@ projection is internally consistent without the real vault. Both are
 deterministic and fast, so they gate CI like the unit tests do — unlike
 mutation testing, whose runtime grows with the suite.
 
+### Renaming or removing a vault
+
+Sync prunes what the config no longer names: edit the vault's `name` (or
+delete its entry) in `sync.json`, then re-run `npm run sync-vault` — the
+old `raw/notes/<name>/` tree and its `manifest.json` section are deleted
+automatically, and the removal shows in the report as
+`- <name>/ (stale namespace, not configured)`.
+
+Two safety properties hold:
+
+- A config with an empty `vaults` array prunes nothing — a truncated or
+  mis-edited `sync.json` can never wipe the projection.
+- `raw/` is disposable derived data versioned in the data repo: if a
+  prune is ever wrong, `git revert` (or `git restore`) in the data repo
+  brings the previous projection back.
+
+Wiki pages whose `sources:` frontmatter cites the old `notes/<name>/…`
+path still need updating after a rename; that is wiki maintenance under
+`wiki/AGENTS.md`, not part of the sync run.
+
 ### Mutation testing
 
 Green tests do not prove that the tests assert real behavior. Mutation

@@ -2,7 +2,7 @@
   "dataRoot": "~/Lab/k-wiki-data",
   "vaults": [
     {
-      "name": "Documents",
+      "name": "Engineering",
       "root": "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/Engineering",
       "exclude": "wiki:false"
     }
