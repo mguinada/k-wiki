@@ -40,3 +40,6 @@ tests/.cli-import-staging/
 
 # In-process health-CLI import staging (transient; see tests/health-check.test.ts)
 tests/.health-import-staging/
+
+# In-process data-init CLI import staging (transient; see tests/data-init.test.ts)
+tests/.data-init-import-staging/
