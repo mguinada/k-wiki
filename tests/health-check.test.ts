@@ -678,6 +678,23 @@ describe("check-raw import guard", () => {
     );
   });
 
+  it("checks the staged repository's raw/ directory when run without arguments", async () => {
+    const repo = await stageRepo();
+    const rawDir = join(repo, "raw");
+    const modulePath = join(repo, "src", "health", "check-raw.ts");
+
+    await projectNote(rawDir, "Documents", "AI/RAG.md", NOTE);
+    await writeManifestFile(rawDir, {
+      Documents: { "AI/RAG.md": entryFor(NOTE) },
+    });
+
+    const { out } = await importWithArgv(modulePath, modulePath);
+
+    expect(out).toBe(
+      "healthy: manifest and projection agree (1 note, 1 vault)",
+    );
+  });
+
   it("runs nothing when argv[1] is a different module", async () => {
     const repo = await stageRepo();
     const modulePath = join(repo, "src", "health", "check-raw.ts");
