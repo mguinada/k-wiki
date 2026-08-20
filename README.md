@@ -302,17 +302,21 @@ git config push.pushoption no-mistakes.skip=pr
 A self-healing backstop re-applies it if the repo-local setting is
 ever lost: `~/.gitconfig` has an `includeIf "gitdir:~/Lab/k-wiki/"`
 pointing at `~/.gitconfig-k-wiki`, which carries the same
-`[push] pushOption`. Conditional includes resolve against the repo's
-common `.git`, so every linked worktree — including the gate's
-disposable ones — inherits it; other repositories are untouched. The
+`[push] pushOption`. The `gitdir:` pattern matches the worktree's
+gitdir, so every worktree of this repository — linked ones via
+`~/Lab/k-wiki/.git/worktrees/…` — inherits it; other repositories
+are untouched. The gate's disposable worktrees belong to the bare
+gate repo under `~/.no-mistakes/`, so they see no option — harmless,
+since every trigger push originates in this repository. The
 option also rides pushes to `origin`; GitHub ignores unknown push
 options.
 
 **Do not use `remote.<name>.pushoption`** — this repo used it and the
 `pr` step still ran. git 2.50.1 (Apple Git-155) silently drops that
 key: a packet trace and a clean two-repo reproduction show it is never
-transmitted, while `push.pushOption` and explicit `-o` are. If git
-fixes this, either key works.
+transmitted, while `push.pushOption` and explicit `-o` are. git has
+never read that key — upstream parses only `push.pushOption` — so no
+upgrade will make it work.
 
 **Trap: `axi run --intent` suppresses the config option.** git sends
 `push.pushOption` only when no `-o` flag is given, and `axi run
@@ -331,8 +335,11 @@ Consequences:
   parks for approval; only pre-skip works.
 
 To revert (the next gated push without `-o` runs the `pr` step again,
-which rewrites any existing PR body on the branch once):
+which rewrites any existing PR body on the branch once), unset the
+repo-local key **and** the backstop — removing only one leaves the
+other still supplying the option:
 
 ```sh
 git config --unset push.pushoption
+git config --file ~/.gitconfig-k-wiki --unset push.pushoption
 ```
