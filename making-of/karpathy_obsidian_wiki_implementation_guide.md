@@ -799,6 +799,22 @@ Exception: filed queries and human corrections form an accreted layer that
 exists only in the wiki. Deleting `wiki/` loses that layer; git history is
 its record.
 
+Two files in `wiki/` are not derivable from `raw/`: this contract
+(`wiki/AGENTS.md`) and `wiki/queries/`. A rebuild removes the wiki content
+pages and preserves both.
+
+Rebuild procedure:
+
+1. Remove the wiki content pages: `index.md`, `overview.md`, `log.md`, and
+   everything under `concepts/`, `entities/`, `sources/`, `comparisons/`,
+   and `queries/`. Keep `wiki/AGENTS.md`.
+2. Run the rebuild prompt against `raw/`, following this contract.
+3. Restore the accreted layer from git: `git restore wiki/queries/`.
+4. Spot-check the rebuilt pages against the pre-deletion versions
+   (`git show HEAD:wiki/<path>`): same concepts covered, sources
+   attributed, contradictions preserved. Wording may differ; LLM output
+   is not byte-identical.
+
 ## Final Principle
 
 Human knowledge lives in the source vault.
@@ -966,6 +982,12 @@ Do not modify raw/.
 
 The resulting wiki must be understandable without reading every raw source.
 ```
+
+The rebuild procedure is defined in the operating contract (Section 10):
+remove the content pages but keep the contract, run this prompt against
+`raw/`, then restore the accreted `wiki/queries/` layer from git. The
+contract and `queries/` are the two things in the wiki tree that are not
+derivable from `raw/`.
 
 ---
 

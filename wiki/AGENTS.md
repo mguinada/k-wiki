@@ -163,8 +163,12 @@ Answer questions against the wiki, not against `raw/` directly:
 1. Read `index.md` to find relevant pages.
 2. Read those pages; consult `overview.md` for broad questions.
 3. Synthesize the answer with wikilink citations.
-4. If the answer is novel and valuable, file it under `queries/` with
+4. If the question is likely to recur and the answer synthesizes or
+   reframes more than one page, offer to file it under `queries/` with
    `type: query` frontmatter, then update `index.md` and `log.md`.
+   A verbatim restatement of a single page needs no filing. When
+   borderline, offer and let the human decide — never silently skip;
+   a declined filing states its reason.
 
 If the wiki cannot answer a question, say so and suggest sources to ingest.
 
@@ -195,6 +199,22 @@ Exception: filed queries and human corrections form an accreted layer that
 exists only in the wiki. Deleting `wiki/` loses that layer; git history is
 its record.
 
+Two files in `wiki/` are not derivable from `raw/`: this contract
+(`wiki/AGENTS.md`) and `wiki/queries/`. A rebuild removes the wiki content
+pages and preserves both.
+
+Rebuild procedure:
+
+1. Remove the wiki content pages: `index.md`, `overview.md`, `log.md`, and
+   everything under `concepts/`, `entities/`, `sources/`, `comparisons/`,
+   and `queries/`. Keep `wiki/AGENTS.md`.
+2. Run the rebuild prompt against `raw/`, following this contract.
+3. Restore the accreted layer from git: `git restore wiki/queries/`.
+4. Spot-check the rebuilt pages against the pre-deletion versions
+   (`git show HEAD:wiki/<path>`): same concepts covered, sources
+   attributed, contradictions preserved. Wording may differ; LLM output
+   is not byte-identical.
+
 ## Final Principle
 
 Human knowledge lives in the source vault.
@@ -219,5 +239,6 @@ derived.
 
 ## Multiple Source Vaults
 
-This wiki currently has a single source vault. Append the multi-vault addendum
-(guide §25, Scenario A) here when it is adopted.
+This wiki currently has a single source vault. When multiple source
+vaults are adopted, a human-approved change to this contract adds the
+multi-vault rules here.
