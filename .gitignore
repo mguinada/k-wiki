@@ -43,3 +43,11 @@ tests/.health-import-staging/
 
 # In-process data-init CLI import staging (transient; see tests/data-init.test.ts)
 tests/.data-init-import-staging/
+
+# wiki-ingest machine outputs (decision from PR #60 review): the
+# manifest snapshot is per-machine pipeline state, and the per-run
+# digests are high-frequency machine output whose review surface is
+# the data repo's git diff. Hand-written reports directly under
+# outputs/ stay tracked.
+outputs/runs/
+outputs/last-ingested-manifest.json

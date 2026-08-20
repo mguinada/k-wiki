@@ -303,8 +303,10 @@ reasoning: high    # pi thinking level, passed as --thinking
 ```
 
 The per-run digest — the human's review surface while runs are
-unsupervised — is written to `outputs/runs/<timestamp>.md` and printed
-to stdout: agent command, model, and reasoning level; mode and prompt
+unsupervised — is written to `outputs/runs/<timestamp>.md` (gitignored
+machine output; the durable review surface is the data repo's git
+diff) and printed to stdout: agent command, model, and reasoning level;
+mode and prompt
 file; sources added/changed/removed; wiki pages created/updated (read
 from the data repo's git status, so it matches the `git diff` you
 review); and the agent's final report, which the prompt requires to
