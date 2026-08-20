@@ -1,6 +1,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
+import { isMainModule } from "../src/cli/is-main.ts";
 
 /**
  * Wikilink checker: scans every Markdown page under wiki/, extracts
@@ -194,13 +195,7 @@ export async function main(): Promise<void> {
   }
 }
 
-/* v8 ignore next: import guard — distinguishes direct execution from
-   import; not exercisable in-process by construction */
-const isMain =
-  process.argv[1] !== undefined &&
-  import.meta.url === pathToFileURL(process.argv[1]).href;
-
 /* v8 ignore next: covered only under `node scripts/check-links.ts` */
-if (isMain) {
+if (isMainModule(import.meta.url)) {
   await main();
 }

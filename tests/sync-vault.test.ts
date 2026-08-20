@@ -17,14 +17,15 @@ import { parseManifest } from "../src/sync/manifest.ts";
 import {
   colorizeError,
   colorizeProgress,
-  colorizeReportLine,
   formatDryRunReport,
   formatReport,
   main,
   PROGRESS_EVERY,
+  reportColors,
   runDryRun,
   runSync,
   type SyncReport,
+  type VaultDryRunReport,
   type VaultSyncReport,
 } from "../src/sync/sync-vault.ts";
 import { collectFiles, SELECTED_PATHS } from "./e2e/helpers.ts";
@@ -1070,52 +1071,88 @@ describe("formatDryRunReport", () => {
 describe("colorized output", () => {
   const pc = createColors(true);
 
+  function reportOf(
+    vault: Partial<VaultSyncReport> = {},
+    prunedNamespaces: readonly string[] = [],
+  ): SyncReport {
+    return {
+      vaults: [
+        {
+          vault: VAULT_NAME,
+          candidates: 0,
+          selected: 0,
+          copied: [],
+          unchanged: [],
+          removed: [],
+          ...vault,
+        },
+      ],
+      prunedNamespaces,
+    };
+  }
+
   it("colors copied paths green", () => {
-    expect(colorizeReportLine("  + AI/RAG.md")).toBe(
+    expect(formatReport(reportOf({ copied: ["AI/RAG.md"] }), pc)).toContain(
       `  + ${pc.green("AI/RAG.md")}`,
     );
   });
 
   it("colors removed paths red", () => {
-    expect(colorizeReportLine("  - AI/RAG.md")).toBe(
+    expect(formatReport(reportOf({ removed: ["AI/RAG.md"] }), pc)).toContain(
       `  - ${pc.red("AI/RAG.md")}`,
     );
   });
 
   it("colors vault names bold in report lines", () => {
-    expect(
-      colorizeReportLine(
-        `vault "${VAULT_NAME}": 4 selected, 4 copied, 0 unchanged, 0 removed`,
-      ),
-    ).toBe(
-      `vault ${pc.bold(`"${VAULT_NAME}"`)}: 4 selected, 4 copied, 0 unchanged, 0 removed`,
+    expect(formatReport(reportOf(), pc).split("\n")[0]).toBe(
+      `vault ${pc.bold(`"${VAULT_NAME}"`)}: 0 selected, 0 copied, 0 unchanged, 0 removed`,
     );
   });
 
   it("dims the no-changes summary", () => {
-    expect(colorizeReportLine("sync complete: no changes")).toBe(
+    expect(formatReport(reportOf(), pc).split("\n").at(-1)).toBe(
       pc.dim("sync complete: no changes"),
     );
   });
 
   it("colors a copy-only summary green", () => {
-    expect(colorizeReportLine("sync complete: 4 copied, 0 removed")).toBe(
+    const report = reportOf({ copied: ["a.md", "b.md", "c.md", "d.md"] });
+
+    expect(formatReport(report, pc).split("\n").at(-1)).toBe(
       pc.green("sync complete: 4 copied, 0 removed"),
     );
   });
 
   it("colors a summary with removals red", () => {
-    expect(colorizeReportLine("sync complete: 0 copied, 1 removed")).toBe(
+    const report = reportOf({ removed: ["a.md"] });
+
+    expect(formatReport(report, pc).split("\n").at(-1)).toBe(
       pc.red("sync complete: 0 copied, 1 removed"),
     );
   });
 
   it("colors a prune-only summary red", () => {
-    expect(
-      colorizeReportLine(
-        "sync complete: 0 copied, 0 removed, 1 namespace pruned",
-      ),
-    ).toBe(pc.red("sync complete: 0 copied, 0 removed, 1 namespace pruned"));
+    const report = reportOf({}, ["Retired"]);
+
+    expect(formatReport(report, pc).split("\n").at(-1)).toBe(
+      pc.red("sync complete: 0 copied, 0 removed, 1 namespace pruned"),
+    );
+  });
+
+  it("colors pruned namespace lines red", () => {
+    const report = reportOf({}, ["Retired"]);
+
+    expect(formatReport(report, pc)).toContain(
+      `  - ${pc.red("Retired/ (stale namespace, not configured)")}`,
+    );
+  });
+
+  it("colors a pruned namespace summary red for several namespaces", () => {
+    const report = reportOf({}, ["Old", "Retired"]);
+
+    expect(formatReport(report, pc).split("\n").at(-1)).toBe(
+      pc.red("sync complete: 0 copied, 0 removed, 2 namespaces pruned"),
+    );
   });
 
   it("colors errors red", () => {
@@ -1146,20 +1183,46 @@ describe("colorized output", () => {
     );
   });
 
+  it("colors a dry-run header bold and its paths green", () => {
+    const reports: readonly VaultDryRunReport[] = [
+      { vault: VAULT_NAME, candidates: 9, wouldIngest: ["AI/RAG.md"] },
+    ];
+
+    expect(formatDryRunReport(reports, pc)).toBe(
+      [
+        `vault ${pc.bold(`"${VAULT_NAME}"`)}: 1 of 9 candidates would be ingested`,
+        `  + ${pc.green("AI/RAG.md")}`,
+        "dry-run complete: nothing written",
+      ].join("\n"),
+    );
+  });
+
+  it("leaves the dry-run completion line plain", () => {
+    const reports: readonly VaultDryRunReport[] = [
+      { vault: VAULT_NAME, candidates: 0, wouldIngest: [] },
+    ];
+
+    expect(formatDryRunReport(reports, pc).split("\n").at(-1)).toBe(
+      "dry-run complete: nothing written",
+    );
+  });
+
   it("colors a summary without a removed count green", () => {
-    expect(colorizeReportLine("sync complete: 4 copied")).toBe(
-      pc.green("sync complete: 4 copied"),
+    const report = reportOf({ copied: ["a.md"] });
+
+    expect(formatReport(report, pc).split("\n").at(-1)).toBe(
+      pc.green("sync complete: 1 copied, 0 removed"),
     );
   });
 
   it("colors a multi-digit-removal summary red", () => {
-    expect(colorizeReportLine("sync complete: 0 copied, 10 removed")).toBe(
+    const report = reportOf({
+      removed: Array.from({ length: 10 }, (_, i) => `${i}.md`),
+    });
+
+    expect(formatReport(report, pc).split("\n").at(-1)).toBe(
       pc.red("sync complete: 0 copied, 10 removed"),
     );
-  });
-
-  it("leaves unrelated lines plain", () => {
-    expect(colorizeReportLine("banana")).toBe("banana");
   });
 
   describe("NO_COLOR", () => {
@@ -1176,7 +1239,7 @@ describe("colorized output", () => {
     it("strips report color", () => {
       process.env.NO_COLOR = "1";
 
-      expect(colorizeReportLine("  + AI/RAG.md")).toBe("  + AI/RAG.md");
+      expect(reportColors().green("AI/RAG.md")).toBe("AI/RAG.md");
     });
 
     it("strips progress color", () => {
