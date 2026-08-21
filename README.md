@@ -186,8 +186,8 @@ into its own `raw/notes/<name>/` namespace with its own manifest key:
 ```
 
 **Sync is supported today; wiki-contract operation is not.** The e2e
-suite runs a full lifecycle with two vaults (namespaces, per-vault
-manifest keys, pruning), but
+suite covers a full single-vault lifecycle plus two-vault sync
+(namespaces, per-vault manifest keys), but
 [`wiki/AGENTS.md` § Multiple Source Vaults](wiki/AGENTS.md#multiple-source-vaults)
 reserves multi-vault rules for a human-approved addendum that has not
 landed — the wiki contract today covers a single source vault. Treat
