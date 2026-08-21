@@ -1,0 +1,309 @@
+import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { promisify } from "node:util";
+import { afterAll, describe, expect, it } from "vitest";
+import { INGEST_SCRIPT, runCli } from "./helpers.ts";
+
+/**
+ * wiki-ingest e2e: the real CLI as a child process, driving a stub
+ * agent through the full lifecycle — first run (full prompt), changed
+ * source (incremental prompt), no change (skip). The stub receives the
+ * exact argv the real agent would (pi flags from settings.yml), writes
+ * wiki pages like the real agent, and records the composed prompt so
+ * the tests can assert what the agent actually saw. A real LLM run
+ * stays a human check (issue #11 acceptance): it costs money and is
+ * not deterministic.
+ */
+
+const run = promisify(execFile);
+
+const tempDirs: string[] = [];
+
+afterAll(async () => {
+  await Promise.all(
+    tempDirs.map((dir) => rm(dir, { recursive: true, force: true })),
+  );
+});
+
+function hashOf(content: string): string {
+  return createHash("sha256").update(content).digest("hex");
+}
+
+/**
+ * The stub agent: an executable script (shebang) so settings.yml can
+ * name it as the command — it receives the exact argv the real agent
+ * would (pi flags from settings.yml). It records the --print payload
+ * and updates the wiki like the real agent would. Exits 3 when the
+ * payload is missing — the wrapper must pass the prompt.
+ */
+const STUB_AGENT = `#!/usr/bin/env node
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+
+const index = process.argv.indexOf("--print");
+const prompt = index === -1 ? undefined : process.argv[index + 1];
+
+if (prompt === undefined || prompt === "") {
+  process.exit(3);
+}
+
+await writeFile(join(process.cwd(), "stub-prompt.txt"), prompt);
+await mkdir(join(process.cwd(), "wiki", "concepts"), { recursive: true });
+await writeFile(join(process.cwd(), "wiki", "concepts", "stub.md"), "stub\\n");
+await writeFile(join(process.cwd(), "wiki", "index.md"), "# Index v2\\n");
+console.log("stub agent: sources processed; no contradictions; no unresolved questions");
+`;
+
+interface Repo {
+  readonly dataRoot: string;
+  readonly outputsDir: string;
+  readonly settingsPath: string;
+}
+
+/** A temp data repo: git-tracked wiki/, raw/manifest.json, stub agent. */
+async function makeRepo(notes: Record<string, string>): Promise<Repo> {
+  const dataRoot = await mkdtemp(join(tmpdir(), "k-wiki-ingest-e2e-"));
+
+  tempDirs.push(dataRoot);
+
+  const manifest = {
+    vaults: {
+      Engineering: Object.fromEntries(
+        Object.entries(notes).map(([path, content]) => [
+          path,
+          { hash: hashOf(content), last_synced: "2026-08-20T00:00:00.000Z" },
+        ]),
+      ),
+    },
+  };
+  const outputsDir = await mkdtemp(join(tmpdir(), "k-wiki-ingest-out-"));
+
+  tempDirs.push(outputsDir);
+
+  await mkdir(join(dataRoot, "raw"), { recursive: true });
+  await mkdir(join(dataRoot, "wiki"), { recursive: true });
+  await writeFile(
+    join(dataRoot, "raw", "manifest.json"),
+    `${JSON.stringify(manifest, null, 2)}\n`,
+  );
+  await writeFile(join(dataRoot, "wiki", "index.md"), "# Index\n");
+
+  await run("git", ["init", "--quiet"], { cwd: dataRoot });
+  await run("git", ["add", "-A"], { cwd: dataRoot });
+  await run(
+    "git",
+    [
+      "-c",
+      "user.email=t@t",
+      "-c",
+      "user.name=t",
+      "commit",
+      "--quiet",
+      "-m",
+      "init",
+    ],
+    { cwd: dataRoot },
+  );
+
+  await writeFile(join(dataRoot, "stub-agent.mjs"), STUB_AGENT, {
+    mode: 0o755,
+  });
+
+  const settingsPath = join(dataRoot, "settings.yml");
+
+  await writeFile(
+    settingsPath,
+    `command: ${join(dataRoot, "stub-agent.mjs")}\nmodel: E2E-MODEL\nreasoning: low\n`,
+  );
+
+  return { dataRoot, outputsDir, settingsPath };
+}
+
+function ingest(repo: Repo) {
+  return runCli(INGEST_SCRIPT, [
+    "--settings",
+    repo.settingsPath,
+    "--outputs",
+    repo.outputsDir,
+    join(repo.dataRoot, "raw"),
+  ]);
+}
+
+async function setNotes(repo: Repo, notes: Record<string, string>) {
+  const manifest = {
+    vaults: {
+      Engineering: Object.fromEntries(
+        Object.entries(notes).map(([path, content]) => [
+          path,
+          { hash: hashOf(content), last_synced: "2026-08-20T01:00:00.000Z" },
+        ]),
+      ),
+    },
+  };
+
+  await writeFile(
+    join(repo.dataRoot, "raw", "manifest.json"),
+    `${JSON.stringify(manifest, null, 2)}\n`,
+  );
+}
+
+describe("wiki-ingest e2e", () => {
+  it("answers --help with usage and exit 0", async () => {
+    const result = await runCli(INGEST_SCRIPT, ["--help"]);
+
+    expect(`${result.code}|${result.out}`).toMatch(/0\|Usage: wiki-ingest/);
+  });
+
+  it("runs the agent headless on a first ingest and digests it", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag" });
+    const result = await ingest(repo);
+
+    expect(`${result.code}|${result.out}${result.err}`).toMatch(
+      /0\|[\s\S]*Wiki ingest digest/,
+    );
+    expect(result.out).toContain("stub-agent.mjs");
+    expect(result.out).toContain("`E2E-MODEL`");
+    expect(result.out).toContain("`low`");
+    expect(result.out).toContain("**Mode:** full");
+
+    const prompt = await readFile(
+      join(repo.dataRoot, "stub-prompt.txt"),
+      "utf8",
+    );
+
+    expect(prompt).toContain("You are maintaining a structured knowledge wiki");
+    expect(prompt).not.toContain(
+      "Changed sources since the previous ingestion",
+    );
+  });
+
+  it("persists the digest and the manifest snapshot", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag" });
+    const result = await ingest(repo);
+    const runsDir = join(repo.outputsDir, "runs");
+    const { readdir } = await import("node:fs/promises");
+    const digests = (await readdir(runsDir)).filter((name) =>
+      name.endsWith(".md"),
+    );
+    const [digestName] = digests;
+
+    expect(digests).toHaveLength(1);
+
+    if (digestName === undefined) {
+      throw new Error("no digest written");
+    }
+
+    expect(digestName).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.\d+Z\.md$/,
+    );
+    expect(result.out.trimEnd()).toBe(
+      (await readFile(join(runsDir, digestName), "utf8")).trimEnd(),
+    );
+
+    const snapshot = await readFile(
+      join(repo.outputsDir, "last-ingested-manifest.json"),
+      "utf8",
+    );
+
+    expect(snapshot).toContain(hashOf("rag"));
+  });
+
+  it("derives the wiki page counts from the data repo git status", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag" });
+    const result = await ingest(repo);
+
+    expect(result.out).toContain("**Wiki pages:** 1 created, 1 updated");
+    expect(result.out).toContain("- wiki/concepts/stub.md");
+    expect(result.out).toContain("- wiki/index.md");
+  });
+
+  it("switches to the incremental prompt and names the changed source", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag" });
+
+    await ingest(repo);
+    await setNotes(repo, { "AI/RAG.md": "rag v2" });
+
+    const result = await ingest(repo);
+
+    expect(result.out).toContain("**Mode:** incremental");
+    expect(result.out).toContain("~ Engineering/AI/RAG.md");
+
+    const prompt = await readFile(
+      join(repo.dataRoot, "stub-prompt.txt"),
+      "utf8",
+    );
+
+    expect(prompt).toContain("Changed sources since the previous ingestion:");
+    expect(prompt).toContain("~ Engineering/AI/RAG.md");
+  });
+
+  it("skips the agent when nothing changed since the snapshot", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag" });
+
+    await ingest(repo);
+    await rm(join(repo.dataRoot, "stub-prompt.txt"));
+
+    const result = await ingest(repo);
+
+    expect(`${result.code}|${result.out}`).toMatch(
+      /0\|wiki-ingest: no changed sources/,
+    );
+
+    await expect(
+      readFile(join(repo.dataRoot, "stub-prompt.txt"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("exits 1 and keeps the snapshot when the agent fails", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag" });
+
+    await writeFile(
+      join(repo.dataRoot, "stub-agent.mjs"),
+      "#!/usr/bin/env node\nprocess.exit(4);\n",
+      {
+        mode: 0o755,
+      },
+    );
+
+    const result = await ingest(repo);
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("code 4");
+
+    await expect(
+      readFile(join(repo.outputsDir, "last-ingested-manifest.json"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("kills a stuck agent at --timeout and fails the run", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag" });
+
+    await writeFile(
+      join(repo.dataRoot, "stub-agent.mjs"),
+      "#!/usr/bin/env node\nsetTimeout(() => {}, 120000);\n",
+      {
+        mode: 0o755,
+      },
+    );
+
+    const result = await runCli(INGEST_SCRIPT, [
+      "--settings",
+      repo.settingsPath,
+      "--outputs",
+      repo.outputsDir,
+      "--timeout",
+      "5",
+      join(repo.dataRoot, "raw"),
+    ]);
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("timed out after 5 seconds");
+
+    await expect(
+      readFile(join(repo.outputsDir, "last-ingested-manifest.json"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+});

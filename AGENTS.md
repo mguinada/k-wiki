@@ -64,8 +64,9 @@ until all three pass. Run them before every handoff.
 - `npm run test:coverage` — unit tests with coverage; the run fails
   below the 90% thresholds in `vitest.config.ts`.
 - `npm run e2e` — end-to-end suite (`vitest.e2e.config.ts`): real CLI
-  child processes through a full vault lifecycle against the synthetic
-  fixture vault, in temp workspaces under `.e2e-tmp/` (gitignored).
+  child processes — sync-vault through a full vault lifecycle against
+  the synthetic fixture vault in temp workspaces under `.e2e-tmp/`
+  (gitignored), wiki-ingest against a stub agent in temp data repos.
 - `npm run health [-- <raw-dir>]` — coherence check of a `raw/`
   projection (default: the repo's `raw/`); read-only, no vault access.
 
@@ -85,14 +86,16 @@ Run order from the repo root, before declaring work complete:
 npm run typecheck   # gate — always
 npm run lint        # gate — always
 npm test            # gate — always (unit only; e2e is NOT included)
-npm run e2e         # when the change touches src/sync/, src/fixtures/, tests/e2e/, or raw/
+npm run e2e         # when the change touches src/sync/, src/ingest/, src/cli/, src/fixtures/, tests/e2e/, or raw/
 npm run health      # same trigger as e2e; also safe to run any time — read-only, no vault access
 ```
 
-- `npm run e2e` takes no arguments. It builds its own fixture vault in a
-  temp dir and always passes explicit `<config> <raw>` arguments to the
-  CLI — never run the CLI bare (`node src/sync/sync-vault.ts` without
-  args uses the repo's real `sync.json` and vault root).
+- `npm run e2e` takes no arguments. It builds its own fixture vault and
+  temp data repos, and passes explicit arguments to every CLI it runs —
+  never run a CLI bare (without args, `node src/sync/sync-vault.ts`
+  uses the repo's real `sync.json` and vault root, and `node
+  src/ingest/wiki-ingest.ts` uses the repo's real `settings.yml`,
+  `outputs/`, and data repo).
 - `npm run health` defaults to the repo's `raw/`; target another
   projection with `npm run health -- <raw-dir>`. Exit 0 = coherent
   (including healthy-empty); exit 1 = one line per problem,
@@ -132,7 +135,7 @@ infrastructure, free to use for any unit or e2e work; the snapshot at
 ### CLI scripts
 
 Every script meant to run on the terminal — every `main()` entry point
-under `src/` — responds to `-h` and `--help`. The help must state the
+under `src/` or `scripts/` — responds to `-h` and `--help`. The help must state the
 usage line, explain every switch and positional argument with its
 default, say what the script writes (or that it writes nothing), and
 exit 0 without filesystem side effects. Help prints before any

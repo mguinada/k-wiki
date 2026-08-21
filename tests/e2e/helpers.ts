@@ -10,11 +10,13 @@ import {
 } from "../../src/fixtures/generate.ts";
 
 /**
- * Shared e2e infrastructure. Every scratch artifact lives under
- * `.e2e-tmp/<unique>/` at the repo root (gitignored; project-root
- * paths dodge the macOS `/var/folders` symlink trap), and every CLI
- * run passes explicit `<config> <raw>` arguments — a bare CLI run
- * would use the repo's real `sync.json` and vault root (log hygiene).
+ * Shared e2e infrastructure. Sync and health scratch workspaces live
+ * under `.e2e-tmp/<unique>/` at the repo root (gitignored; project-root
+ * paths dodge the macOS `/var/folders` symlink trap); the wiki-ingest
+ * suite builds its own temp data repos under the system tmpdir. Every
+ * CLI run passes explicit arguments — a bare CLI run would use the
+ * repo's real `sync.json`, `settings.yml`, and vault root (log
+ * hygiene).
  */
 
 export const repoRoot = resolve(
@@ -24,6 +26,7 @@ export const repoRoot = resolve(
 
 export const SYNC_SCRIPT = join(repoRoot, "src", "sync", "sync-vault.ts");
 export const HEALTH_SCRIPT = join(repoRoot, "src", "health", "check-raw.ts");
+export const INGEST_SCRIPT = join(repoRoot, "src", "ingest", "wiki-ingest.ts");
 
 /** The fixture vault's notes ingested under `exclude: "wiki:false"`, sorted. */
 export const SELECTED_PATHS = [

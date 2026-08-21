@@ -20,6 +20,20 @@ const REPORT_PATH = "reports/mutation/mutation.json";
 
 const ACTIONABLE_STATUSES = new Set(["Survived", "NoCoverage"]);
 
+/** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
+const HELP = `Usage: mutation-survivors [-h | --help]
+
+Re-list the actionable mutants (Survived, NoCoverage) from the last
+Stryker JSON report at reports/mutation/mutation.json — no mutation
+run, instant. Takes no arguments.
+
+  -h, --help    Print this help and exit; no side effects.
+
+Writes nothing. Exit 0 whenever a report exists — even with
+survivors, because mutation testing is advisory and this printer
+must stay unusable as a gate; exit 1 with a hint when no report
+exists yet.`;
+
 /** Actionable entries — Survived or NoCoverage — as sorted, readable lines. */
 export function actionableLines(report: Report): string[] {
   const entries: {
@@ -50,6 +64,14 @@ export function actionableLines(report: Report): string[] {
 }
 
 function main(): void {
+  const args = process.argv.slice(2);
+
+  if (args.includes("-h") || args.includes("--help")) {
+    console.log(HELP);
+
+    return;
+  }
+
   let report: Report;
 
   try {

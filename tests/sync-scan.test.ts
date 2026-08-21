@@ -114,4 +114,26 @@ describe("scanVault", () => {
 
     expect(await scanVault(vaultRoot)).not.toContain("AI/alias.md");
   });
+
+  it("reports each visited directory to the walk callback", async () => {
+    const root = await makeTempDir();
+
+    await mkdir(join(root, "a"), { recursive: true });
+    await mkdir(join(root, "a", "b"), { recursive: true });
+    await writeFile(join(root, "a.md"), "x");
+    await writeFile(join(root, "a", "n.md"), "x");
+    await writeFile(join(root, "a", "b", "n.md"), "x");
+
+    const visited: number[] = [];
+
+    await scanVault(root, (count) => visited.push(count));
+
+    expect(visited).toEqual([1, 2, 3]);
+  });
+
+  it("keeps the walk callback optional", async () => {
+    const root = await newVault();
+
+    expect(await scanVault(root)).toContain("AI/RAG.md");
+  });
 });
