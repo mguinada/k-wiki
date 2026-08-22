@@ -58,6 +58,36 @@ describe("parseStatus", () => {
     ]);
   });
 
+  it("keeps a non-rename path containing ' -> ' whole", () => {
+    expect(parseStatus('?? "raw/notes/draft -> final.md"\n')).toEqual([
+      { code: "??", path: "raw/notes/draft -> final.md" },
+    ]);
+  });
+
+  it("unquotes a C-quoted path", () => {
+    expect(parseStatus(' M "wiki/my page.md"\n')).toEqual([
+      { code: " M", path: "wiki/my page.md" },
+    ]);
+  });
+
+  it("unquotes an escaped quote inside a quoted path", () => {
+    expect(parseStatus('?? "weird\\"name.md"\n')).toEqual([
+      { code: "??", path: 'weird"name.md' },
+    ]);
+  });
+
+  it("unquotes both paths of a quoted rename", () => {
+    expect(parseStatus('R  "wiki/a b.md" -> "wiki/c d.md"\n')).toEqual([
+      { code: "R ", path: "wiki/c d.md", origin: "wiki/a b.md" },
+    ]);
+  });
+
+  it("splits a rename whose quoted origin contains ' -> '", () => {
+    expect(parseStatus('R  "wiki/a -> b.md" -> wiki/c.md\n')).toEqual([
+      { code: "R ", path: "wiki/c.md", origin: "wiki/a -> b.md" },
+    ]);
+  });
+
   it("returns no entries for empty output", () => {
     expect(parseStatus("")).toEqual([]);
   });
@@ -284,6 +314,38 @@ describe("runGuardrails — check 1, immutability", () => {
     expect(post.failure?.problems.join("\n")).toContain("ノート.md");
   });
 
+  it("trips when the run edits a pre-run-dirty note whose name contains ' -> '", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(
+      join(dataRoot, "raw", "notes", "draft -> final.md"),
+      "# one\n",
+    );
+
+    const pre = await capturePreRunState(dataRoot, process.env);
+
+    await writeFile(
+      join(dataRoot, "raw", "notes", "draft -> final.md"),
+      "# tampered\n",
+    );
+
+    const post = await runGuardrails(dataRoot, process.env, pre);
+
+    expect(post.failure?.check).toBe(1);
+    expect(post.failure?.problems.join("\n")).toContain(
+      "raw/notes/draft -> final.md",
+    );
+  });
+
+  it("passes a run that creates a wiki page with a space in its name", async () => {
+    const dataRoot = await makeRepo();
+    const post = await guardedRun(dataRoot, async (root) => {
+      await writeFile(join(root, "wiki", "my page.md"), page());
+    });
+
+    expect(post.failure).toBeUndefined();
+  });
+
   it("trips when the run moves HEAD with its own commit", async () => {
     const dataRoot = await makeRepo();
     const post = await guardedRun(dataRoot, async (root) => {
@@ -414,6 +476,26 @@ describe("runGuardrails — check 3, wikilinks", () => {
     expect(post.failure?.problems[0]).toMatch(
       /^wiki\/linker\.md:\d+ -> \[\[target\]\]$/,
     );
+  });
+
+  it("passes a legitimate run after a rename was staged before the run", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(join(dataRoot, "wiki", "target.md"), page("# Target\n"));
+    await writeFile(
+      join(dataRoot, "wiki", "linker.md"),
+      page("See [[target]]."),
+    );
+    await commit(dataRoot, "linker");
+    await run("git", ["mv", "wiki/target.md", "wiki/renamed.md"], {
+      cwd: dataRoot,
+    });
+
+    const post = await guardedRun(dataRoot, async (root) => {
+      await writeFile(join(root, "wiki", "new.md"), page());
+    });
+
+    expect(post.failure).toBeUndefined();
   });
 
   it("reports only the first tripped check", async () => {

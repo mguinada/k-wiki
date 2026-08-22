@@ -57,10 +57,90 @@ export interface GuardrailFailure {
   readonly problems: readonly string[];
 }
 
+/** Undo git's C-string quoting of one porcelain path: git quotes
+ *  every path containing whitespace, quotes, or control bytes, and
+ *  escapes `"`, `\\`, and control bytes inside the quotes. */
+function unquote(path: string): string {
+  if (!path.startsWith('"') || !path.endsWith('"')) {
+    return path;
+  }
+
+  const inner = path.slice(1, -1);
+  const C_ESCAPES: Record<string, string> = {
+    a: "\x07",
+    b: "\b",
+    f: "\f",
+    n: "\n",
+    r: "\r",
+    t: "\t",
+    v: "\v",
+    "\\": "\\",
+    '"': '"',
+  };
+
+  let result = "";
+  let i = 0;
+
+  while (i < inner.length) {
+    const char = inner[i];
+
+    i += 1;
+
+    if (char !== "\\" || i === inner.length) {
+      result += char;
+
+      continue;
+    }
+
+    const escaped = inner[i];
+
+    i += 1;
+
+    const octal = /^[0-7]{1,3}/.exec(inner.slice(i - 1));
+
+    if (C_ESCAPES[escaped] !== undefined) {
+      result += C_ESCAPES[escaped];
+    } else if (octal !== null) {
+      i += octal[0].length - 1;
+
+      result += String.fromCharCode(Number.parseInt(octal[0], 8));
+    } else {
+      result += escaped;
+    }
+  }
+
+  return result;
+}
+
+/** The ` -> ` separating a rename's two paths: a quoted origin may
+ *  itself contain ` -> `, so the separator is only searched for
+ *  after the origin's closing quote. */
+function findRenameSeparator(rest: string): number {
+  if (!rest.startsWith('"')) {
+    return rest.indexOf(" -> ");
+  }
+
+  for (let i = 1; i < rest.length; i += 1) {
+    if (rest[i] === "\\") {
+      i += 1;
+
+      continue;
+    }
+
+    if (rest[i] === '"' && rest.startsWith(" -> ", i + 1)) {
+      return i + 1;
+    }
+  }
+
+  return -1;
+}
+
 /**
  * Parse `git status --porcelain -uall` output. Rename lines
  * (`R  old -> new`) report both paths: `path` is the target,
- * `origin` the source.
+ * `origin` the source; only rename codes carry the ` -> `
+ * separator. Both status calls must use `core.quotePath=false` so
+ * pre-run and post-run paths compare equal.
  */
 export function parseStatus(stdout: string): StatusEntry[] {
   const entries: StatusEntry[] = [];
@@ -72,12 +152,13 @@ export function parseStatus(stdout: string): StatusEntry[] {
 
     const code = line.slice(0, 2);
     const rest = line.slice(3);
-    const renamed = rest.indexOf(" -> ");
+    const separator = code.includes("R") ? findRenameSeparator(rest) : -1;
 
     entries.push({
       code,
-      path: renamed === -1 ? rest : rest.slice(renamed + 4),
-      origin: renamed === -1 ? undefined : rest.slice(0, renamed),
+      path:
+        separator === -1 ? unquote(rest) : unquote(rest.slice(separator + 4)),
+      origin: separator === -1 ? undefined : unquote(rest.slice(0, separator)),
     });
   }
 
@@ -376,19 +457,25 @@ function checkChangedFrontmatter(
 /**
  * Wiki page names the run removed, by deletion or rename: every
  * remaining link to one is newly dangling. A page already deleted
- * before the run dangled already — not this run's doing.
+ * or renamed away before the run dangled already — not this run's
+ * doing — so pre-run deletions and rename origins are skipped.
  */
 function deletedWikiPageNames(
   pre: PreRunState,
   entries: readonly StatusEntry[],
 ): Set<string> {
-  const before = statusIndex(pre.status);
+  const alreadyGone = new Set<string>();
+
+  for (const entry of pre.status) {
+    if (entry.origin !== undefined || isDeleted(entry)) {
+      alreadyGone.add(entry.origin ?? entry.path);
+    }
+  }
+
   const deleted = new Set<string>();
 
   const take = (path: string): void => {
-    const prior = before.get(path);
-
-    if (prior === undefined || !prior.includes("D")) {
+    if (!alreadyGone.has(path)) {
       deleted.add(basename(path, ".md"));
     }
   };
