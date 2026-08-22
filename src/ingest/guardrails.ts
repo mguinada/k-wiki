@@ -17,7 +17,8 @@ import { buildPageIndex, extractWikilinks, listFiles } from "../wiki-links.ts";
  *     state, and HEAD must not move;
  *  2. frontmatter — every wiki page the run changed carries the
  *     required fields (`title`, `type`, `created`, `updated`, `tags`;
- *     plus `sources` for pages not of type `source`);
+ *     plus `sources` for pages not of type `source`) — except
+ *     `wiki/log.md`, the append-only log, which has none by design;
  *  3. wikilinks — every `[[wikilink]]` in a changed page resolves to
  *     an existing wiki file, and no remaining page keeps a link to a
  *     page the run deleted.
@@ -31,6 +32,11 @@ const ALLOWED_EXACT = "raw/manifest.json";
 
 /** The wiki contract file: no run may write it (guide §10). */
 const FORBIDDEN_EXACT = "wiki/AGENTS.md";
+
+/** The contract's append-only log (guide §10): no §9 frontmatter by
+ *  design — the agent appends to it on every meaningful run, so
+ *  check 2 exempts it (first exposed by a real logged run, #13). */
+const FRONTMATTER_EXEMPT = "wiki/log.md";
 
 /** Frontmatter fields every wiki page must carry (§9). */
 const REQUIRED_FIELDS = [
@@ -480,6 +486,10 @@ function checkChangedFrontmatter(
   const problems: string[] = [];
 
   for (const [path, text] of texts) {
+    if (path === FRONTMATTER_EXEMPT) {
+      continue;
+    }
+
     for (const problem of checkWikiFrontmatter(text)) {
       problems.push(`${path}: ${problem}`);
     }

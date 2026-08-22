@@ -1167,7 +1167,8 @@ After every agent run three guardrails check the data repo (guide
 §1, §7, §9; issue #12): (1) immutability — only wiki/ (never the
 wiki/AGENTS.md contract), outputs/, and raw/manifest.json may change,
 and HEAD may not move; (2) frontmatter — every changed wiki page
-parses with the required fields; (3) wikilinks — every [[wikilink]]
+parses with the required fields (wiki/log.md, the append-only log,
+is exempt); (3) wikilinks — every [[wikilink]]
 in a changed page resolves, and no remaining page links to a page
 the run deleted. A tripped check auto-reverts the data repo to its
 pre-run state (the pre-run commit plus the uncommitted work that

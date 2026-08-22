@@ -1,5 +1,12 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -472,6 +479,25 @@ describe("runGuardrails — check 2, frontmatter", () => {
     const dataRoot = await makeRepo();
     const post = await guardedRun(dataRoot, async (root) => {
       await rm(join(root, "wiki", "index.md"));
+    });
+
+    expect(post.failure).toBeUndefined();
+  });
+
+  it("exempts wiki/log.md, the contract's append-only log", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(
+      join(dataRoot, "wiki", "log.md"),
+      "## [2026-08-22] verify | prior entry\n",
+    );
+    await commit(dataRoot, "add log");
+
+    const post = await guardedRun(dataRoot, async (root) => {
+      await appendFile(
+        join(root, "wiki", "log.md"),
+        "## [2026-08-22] ingest | this run's entry\n",
+      );
     });
 
     expect(post.failure).toBeUndefined();
