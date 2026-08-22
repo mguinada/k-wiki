@@ -7,6 +7,11 @@ indirectly.
 
 Follow wiki/AGENTS.md exactly, including its Expungement section.
 
+The changed-source list below may also carry added, edited, or renamed
+sources (`+`, `~`, `→`). When it does, the incremental prompt is
+appended below: ingest those sources in the same run, exactly as an
+incremental run would.
+
 The removed notes, their last synced content, and the deterministic
 direct set of affected pages are appended below. The direct set is a
 lower bound, not a boundary: also search the wiki full text for the
@@ -37,7 +42,8 @@ retraction record lives in log.md and git history.
 
 Do not modify raw/.
 Do not modify the original source vault.
-Do not rewrite pages outside the affected set.
+Do not rewrite pages outside the affected set and the pages of the
+added, edited, or renamed sources.
 
 At the end, report:
 - claims removed as unsourced;

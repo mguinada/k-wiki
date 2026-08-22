@@ -232,6 +232,9 @@ influence: no claim, concept, entity, comparison, or filed query may
 rest on material whose only support was the removed note, directly or
 indirectly.
 
+An expunge run may also carry added, edited, or renamed sources from
+the same sync; they are ingested in the same run, never deferred.
+
 For every affected page, re-derive it from its remaining sources — do
 not surgically delete content:
 

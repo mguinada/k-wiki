@@ -542,7 +542,10 @@ note's last synced content is recovered from the data repo's git
 history, the wrapper computes a deterministic direct set (the source
 page, every page citing it in `sources`, `index.md`, `overview.md`),
 and the agent **re-derives** every affected page from its remaining
-sources instead of surgically deleting content. Design details: guide
+sources instead of surgically deleting content. A mixed sync — a
+deletion plus additions or edits — stays one expunge run: the
+incremental prompt is appended below the expunge prompt, so the other
+changed sources are ingested in the same run. Design details: guide
 [§14a](making-of/karpathy_obsidian_wiki_implementation_guide.md).
 
 What you see:

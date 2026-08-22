@@ -501,6 +501,66 @@ describe("composeExpungePrompt", () => {
       "(last synced content unavailable: no committed git history — purge by path, title, and full-text search)",
     );
   });
+
+  const mixedDiff = diffManifests(
+    manifestWith("Engineering", {
+      "gone.md": entry("gone"),
+      "keep.md": entry("keep"),
+    }),
+    manifestWith("Engineering", {
+      "keep.md": entry("keep"),
+      "fresh.md": entry("fresh"),
+    }),
+  );
+
+  it("embeds the incremental prompt when the run also carries additions", () => {
+    const composed = composeExpungePrompt(
+      "EXPUNGE PROMPT",
+      mixedDiff,
+      [
+        {
+          vault: "Engineering",
+          path: "gone.md",
+          rawPath: "raw/notes/Engineering/gone.md",
+          content: "last body",
+        },
+      ],
+      [],
+      "INCREMENTAL PROMPT",
+    );
+
+    expect(composed).toContain(
+      [
+        "EXPUNGE PROMPT",
+        "",
+        "This run also carries added, edited, or renamed sources (`+`, `~`, `→` in the list below). In the same run, process them exactly as an incremental ingestion would:",
+        "",
+        "INCREMENTAL PROMPT",
+      ].join("\n"),
+    );
+    expect(composed).toContain("+ Engineering/fresh.md");
+    expect(composed).toContain("- Engineering/gone.md");
+  });
+
+  it("wraps a note body whose own fences are four backticks long", () => {
+    const composed = composeExpungePrompt(
+      "P",
+      diff,
+      [
+        {
+          vault: "Engineering",
+          path: "gone.md",
+          rawPath: "raw/notes/Engineering/gone.md",
+          content: "````\nnested fence\n````",
+        },
+      ],
+      [],
+    );
+
+    expect(composed).toContain(
+      "`````markdown\n````\nnested fence\n````\n`````",
+    );
+  });
 });
 
 function digestRun(overrides: Partial<IngestRun> = {}): IngestRun {
@@ -1220,6 +1280,57 @@ describe("runWikiIngest", () => {
     expect(prompt).toContain("- wiki/index.md");
   });
 
+  it("delivers the incremental prompt inside a mixed expunge run", async () => {
+    const h = await makeHarness({ "gone.md": "GONE BODY", "keep.md": "KEEP" });
+
+    await runWikiIngest(optionsFor(h));
+    await rm(join(h.dataRoot, "raw", "notes", "Engineering", "gone.md"));
+    await writeFile(
+      join(h.dataRoot, "raw", "notes", "Engineering", "fresh.md"),
+      "FRESH",
+    );
+    await writeFile(
+      join(h.dataRoot, "raw", "manifest.json"),
+      serializeManifest(
+        manifestWith("Engineering", {
+          "keep.md": entry("KEEP"),
+          "fresh.md": entry("FRESH"),
+        }),
+      ),
+    );
+
+    const result = await runWikiIngest(optionsFor(h));
+
+    expect(result.status).toBe("ran");
+    if (result.status !== "ran") {
+      return;
+    }
+
+    expect(result.mode).toBe("expunge");
+
+    const prompt = invocation(h, 1).args.at(-1) ?? "";
+
+    expect(prompt).toContain("EXPUNGE PROMPT");
+    expect(prompt).toContain("INCREMENTAL PROMPT");
+    expect(prompt).toContain("+ Engineering/fresh.md");
+    expect(prompt).toContain("- Engineering/gone.md");
+  });
+
+  it("delivers no incremental prompt when the run removes sources only", async () => {
+    const h = await makeHarness({ "gone.md": "GONE BODY" });
+
+    await runWikiIngest(optionsFor(h));
+    await rm(join(h.dataRoot, "raw", "notes", "Engineering", "gone.md"));
+    await writeFile(
+      join(h.dataRoot, "raw", "manifest.json"),
+      serializeManifest(manifestWith("Engineering", {})),
+    );
+
+    await runWikiIngest(optionsFor(h));
+
+    expect(invocation(h, 1).args.at(-1)).not.toContain("INCREMENTAL PROMPT");
+  });
+
   it("digests an expunge run with the mode label and direct set", async () => {
     const h = await makeHarness({ "gone.md": "GONE BODY" });
 
@@ -1395,6 +1506,71 @@ describe("runWikiIngest", () => {
     expect(result.pages.deleted).toEqual([]);
     expect(result.pages.created).toEqual([]);
     expect(result.pages.updated).toEqual([]);
+  });
+
+  it("counts an untracked page the run deleted as deleted", async () => {
+    const h = await makeHarness({ "gone.md": "GONE BODY" });
+
+    await runWikiIngest(optionsFor(h));
+    await rm(join(h.dataRoot, "raw", "notes", "Engineering", "gone.md"));
+    await writeFile(
+      join(h.dataRoot, "raw", "manifest.json"),
+      serializeManifest(manifestWith("Engineering", {})),
+    );
+
+    const deleting: AgentRunner = async (_command, _args, options) => {
+      await rm(join(options.cwd, "wiki", "concepts", "new.md"));
+      await writeFile(
+        join(options.cwd, "wiki", "index.md"),
+        wikiPage("# Index v2"),
+      );
+
+      return { stdout: "page deleted", stderr: "" };
+    };
+
+    const result = await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: deleting,
+    });
+
+    expect(result.status).toBe("ran");
+    if (result.status !== "ran") {
+      return;
+    }
+
+    expect(result.pages.deleted).toEqual(["wiki/concepts/new.md"]);
+  });
+
+  it("does not count a wiki deletion that predates the run", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const quiet: AgentRunner = async (_command, _args, options) => {
+      await writeFile(
+        join(options.cwd, "wiki", "index.md"),
+        wikiPage("# Index v2"),
+      );
+
+      return { stdout: "quiet report", stderr: "" };
+    };
+
+    await runWikiIngest(optionsFor(h));
+    await rm(join(h.dataRoot, "wiki", "A-page.md"));
+    await writeFile(
+      join(h.dataRoot, "raw", "notes", "Engineering", "a.md"),
+      "a2",
+    );
+    await writeFile(
+      join(h.dataRoot, "raw", "manifest.json"),
+      serializeManifest(manifestWith("Engineering", { "a.md": entry("a2") })),
+    );
+
+    const result = await runWikiIngest({ ...optionsFor(h), runAgent: quiet });
+
+    expect(result.status).toBe("ran");
+    if (result.status !== "ran") {
+      return;
+    }
+
+    expect(result.pages.deleted).toEqual([]);
   });
 
   it("keeps the underlying read error as cause when the prompt is missing", async () => {

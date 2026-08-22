@@ -29,6 +29,7 @@ import {
   capturePreRunState,
   type GuardrailFailure,
   parseStatus,
+  type PreRunState,
   revertToPreRun,
   runGuardrails,
 } from "./guardrails.ts";
@@ -40,7 +41,9 @@ import {
  * `prompts/incremental.md` (changed sources appended), or
  * `prompts/expunge.md` (a synced note was deleted — issue #65: the
  * removed note's last content from git history and the deterministic
- * direct set are appended), invokes the agent CLI non-interactively in
+ * direct set are appended, and a mixed run also gets incremental.md
+ * appended so its non-removed sources are ingested), invokes the agent
+ * CLI non-interactively in
  * the data repo root, runs the post-run guardrails (issue #12:
  * immutability, frontmatter, wikilinks — auto-reverting to the
  * pre-run commit on failure, expunge runs included), and writes a
@@ -325,20 +328,47 @@ export interface RemovedNote {
   readonly content: string | undefined;
 }
 
+/** A markdown fence longer than any backtick run in the content it wraps,
+ *  so a note body can never close its own wrapper. */
+function wrappingFence(content: string): string {
+  let longest = 0;
+
+  for (const run of content.matchAll(/`+/g)) {
+    longest = Math.max(longest, run[0].length);
+  }
+
+  return "`".repeat(Math.max(4, longest + 1));
+}
+
 /**
  * Compose the expunge agent message: the expunge prompt, the changed
  * sources (an expunge run may also carry adds and edits), each removed
  * note's last synced content, and the deterministic direct set. The
  * direct set is a lower bound the agent extends by search (guide §14a).
+ * When the run also carries added, edited, or renamed sources, the
+ * incremental prompt is appended so those sources are ingested in the
+ * same run instead of being marked processed without ever reaching
+ * the agent.
  */
 export function composeExpungePrompt(
   promptText: string,
   diff: ManifestDiff,
   removedNotes: readonly RemovedNote[],
   directSet: readonly string[],
+  incrementalText?: string,
 ): string {
-  const lines = [
-    promptText,
+  const lines = [promptText];
+
+  if (incrementalText !== undefined) {
+    lines.push(
+      "",
+      "This run also carries added, edited, or renamed sources (`+`, `~`, `→` in the list below). In the same run, process them exactly as an incremental ingestion would:",
+      "",
+      incrementalText,
+    );
+  }
+
+  lines.push(
     "",
     "Changed sources since the previous ingestion:",
     "",
@@ -346,7 +376,7 @@ export function composeExpungePrompt(
     "",
     "Removed notes with their last synced content:",
     "",
-  ];
+  );
 
   for (const note of removedNotes) {
     lines.push(`### ${note.vault}/${note.path} (${note.rawPath})`, "");
@@ -356,7 +386,9 @@ export function composeExpungePrompt(
         "(last synced content unavailable: no committed git history — purge by path, title, and full-text search)",
       );
     } else {
-      lines.push("````markdown", note.content, "````");
+      const fence = wrappingFence(note.content);
+
+      lines.push(`${fence}markdown`, note.content, fence);
     }
 
     lines.push("");
@@ -734,13 +766,17 @@ export function spawnAgent(
  * Wiki pages created, updated, and deleted by the run, from the data
  * repo's git status: untracked or added paths count as created,
  * modified paths as updated, deleted paths (staged or not) as deleted.
- * When git cannot report, the digest says so instead of failing a run
- * that did update the wiki.
+ * Deleting a page that was still untracked leaves no status entry at
+ * all, so with the pre-run state those pages count as deleted when
+ * their file is gone; a deletion that predates the run (already `D`
+ * pre-run) is not the run's doing. When git cannot report, the digest
+ * says so instead of failing a run that did update the wiki.
  */
 export async function wikiPages(
   dataRoot: string,
   env: NodeJS.ProcessEnv,
   pathspec = "wiki",
+  pre?: PreRunState,
 ): Promise<WikiPages> {
   let stdout: string;
 
@@ -764,17 +800,32 @@ export async function wikiPages(
     return { created: [], updated: [], deleted: [], unavailable: reason };
   }
 
+  const entries = parseStatus(stdout);
+  const before = new Map(
+    (pre?.status ?? []).map((entry) => [entry.path, entry] as const),
+  );
   const created: string[] = [];
   const updated: string[] = [];
   const deleted: string[] = [];
 
-  for (const { code, path } of parseStatus(stdout)) {
+  for (const { code, path } of entries) {
     if (code.includes("A") || code.includes("?")) {
       created.push(path);
     } else if (code.includes("M")) {
       updated.push(path);
-    } else if (code.includes("D")) {
+    } else if (code.includes("D") && !before.get(path)?.code.includes("D")) {
       deleted.push(path);
+    }
+  }
+
+  for (const entry of before.values()) {
+    if (
+      entry.code.includes("?") &&
+      entry.path.startsWith(`${pathspec}/`) &&
+      entry.path.endsWith(".md") &&
+      !entries.some((current) => current.path === entry.path)
+    ) {
+      deleted.push(entry.path);
     }
   }
 
@@ -919,7 +970,23 @@ export async function runWikiIngest(
       join(dataRoot, "wiki"),
       removedNotes.map((note) => note.rawPath),
     );
-    composed = composeExpungePrompt(promptText, diff, removedNotes, directSet);
+
+    const carriesNonRemovals =
+      sourceCount(diff, "added") +
+        sourceCount(diff, "changed") +
+        sourceCount(diff, "renamed") >
+      0;
+    const incrementalText = carriesNonRemovals
+      ? await readPrompt(join(options.promptsDir, "incremental.md"))
+      : undefined;
+
+    composed = composeExpungePrompt(
+      promptText,
+      diff,
+      removedNotes,
+      directSet,
+      incrementalText,
+    );
 
     onProgress(
       `wiki-ingest: expunge — ${removedCount} removed source${removedCount === 1 ? "" : "s"}; direct set: ${directSet.map((page) => `wiki/${page}`).join(", ")}`,
@@ -1028,7 +1095,7 @@ export async function runWikiIngest(
     throw agentError;
   }
 
-  const pages = await wikiPages(dataRoot, env);
+  const pages = await wikiPages(dataRoot, env, "wiki", pre);
 
   const run: IngestRun = {
     startedAt,
@@ -1064,9 +1131,11 @@ prompts/expunge.md (a synced note was deleted — the removed note's
 last content is recovered from the data repo's git history and
 appended with the deterministic direct set of affected wiki pages; a
 remove+add pair in one vault with an identical content hash is a
-rename/retitle, not a deletion), invoke the agent CLI
-non-interactively in the data repo root (the parent of the raw dir),
-and record what happened.
+rename/retitle, not a deletion; an expunge run that also carries
+added, edited, or renamed sources gets prompts/incremental.md
+appended below the expunge prompt, so those sources are ingested in
+the same run), invoke the agent CLI non-interactively in the data
+repo root (the parent of the raw dir), and record what happened.
 
 Switches and arguments:
   --settings <path>  Agent settings file. Default: the repo's

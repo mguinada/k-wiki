@@ -838,6 +838,9 @@ influence: no claim, concept, entity, comparison, or filed query may
 rest on material whose only support was the removed note, directly or
 indirectly.
 
+An expunge run may also carry added, edited, or renamed sources from
+the same sync; they are ingested in the same run, never deferred.
+
 For every affected page, re-derive it from its remaining sources — do
 not surgically delete content:
 
@@ -1043,7 +1046,11 @@ ingest discipline with new routing, seeding, and a contract section
 `wiki-ingest` routes to `prompts/expunge.md` when the manifest diff has
 `removed` entries. A remove+add pair in the same vault with an identical
 content hash is a **rename**: the run treats it as a change/retitle,
-never as a deletion. After sync the note is gone from `raw/`, but the
+never as a deletion. A mixed diff — a deletion plus additions or edits
+in one sync — stays one expunge run: the wrapper appends
+`prompts/incremental.md` below the expunge prompt, so the non-removed
+sources are ingested in the same run instead of being silently marked
+processed. After sync the note is gone from `raw/`, but the
 data repo versions `raw/`, so git history holds the note in full — the
 wrapper recovers the last synced content (`git show`, falling back to
 the deletion commit's parent tree) and inlines it in the prompt. No
