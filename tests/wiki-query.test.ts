@@ -319,14 +319,14 @@ describe("classifyVerdict", () => {
     ).toEqual({ kind: "not-answerable", suggestion: "" });
   });
 
-  it("does not flag a claimed filing when git status was unavailable", () => {
+  it("reports the filing status as unavailable when git failed and the agent claims filing", () => {
     const verdict = classifyVerdict(
       { created: [], updated: [], unavailable: "no git" },
       parseAgentReply("A.\nQUERY: filed — wiki/queries/rag.md"),
       false,
     );
 
-    expect(verdict.kind).toBe("none");
+    expect(verdict).toEqual({ kind: "unavailable", reason: "no git" });
   });
 
   it("flags an agent that met the bar in file mode but filed nothing", () => {
@@ -429,6 +429,12 @@ describe("renderVerdict", () => {
     expect(
       renderVerdict({ kind: "not-answerable", suggestion: "ingest X first" }),
     ).toEqual([{ text: "Not answerable: ingest X first", bold: false }]);
+  });
+
+  it("renders the unavailable filing status plain", () => {
+    expect(renderVerdict({ kind: "unavailable", reason: "no git" })).toEqual([
+      { text: "Filing status unavailable: no git", bold: false },
+    ]);
   });
 
   it("renders nothing for the silent verdict", () => {
@@ -926,6 +932,20 @@ if (prompt.includes("answer-only")) {
 
   it("exits 1 with a stderr message when the question is missing", async () => {
     const { err } = await runCli(["--settings", "/no/such/settings.yml"]);
+
+    expect(err).toContain("a question is required");
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("exits 1 when the question is an empty string", async () => {
+    const { err } = await runCli([""]);
+
+    expect(err).toContain("a question is required");
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("exits 1 when the question is only whitespace", async () => {
+    const { err } = await runCli(["   "]);
 
     expect(err).toContain("a question is required");
     expect(process.exitCode).toBe(1);

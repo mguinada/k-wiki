@@ -107,6 +107,7 @@ export type Verdict =
   | { readonly kind: "not-filed"; readonly reason: string }
   | { readonly kind: "not-answerable"; readonly suggestion: string }
   | { readonly kind: "offer"; readonly reason: string }
+  | { readonly kind: "unavailable"; readonly reason: string }
   | { readonly kind: "none" };
 
 const EMPTY_PAGES: WikiPages = {
@@ -139,6 +140,10 @@ export function classifyVerdict(
         kind: "not-filed",
         reason: `agent reported filing, but git shows no wiki/queries change (${reply.detail ?? "no detail"})`,
       };
+    }
+
+    if (reply.kind === "filed" && pages.unavailable !== undefined) {
+      return { kind: "unavailable", reason: pages.unavailable };
     }
 
     if (reply.kind === "meets-bar") {
@@ -190,6 +195,13 @@ export function renderVerdict(verdict: Verdict): VerdictLine[] {
       ];
     case "not-answerable":
       return [{ text: `Not answerable: ${verdict.suggestion}`, bold: false }];
+    case "unavailable":
+      return [
+        {
+          text: `Filing status unavailable: ${verdict.reason}`,
+          bold: false,
+        },
+      ];
     default:
       return [];
   }
@@ -422,6 +434,14 @@ export async function main(): Promise<void> {
     return;
   }
 
+  const question = positional[0] ?? "";
+
+  if (question.trim() === "") {
+    fail('a question is required: wiki-query "<question>"');
+
+    return;
+  }
+
   const settingsPath =
     values.get("--settings") ?? join(repoRoot, "settings.yml");
   const colors = terminalColors(process.env);
@@ -442,7 +462,7 @@ export async function main(): Promise<void> {
       settingsPath,
       rawDir,
       promptsDir: join(repoRoot, "prompts"),
-      question: positional[0] ?? "",
+      question,
       noFiling,
       timeoutMs:
         timeoutArg === undefined ? undefined : Number(timeoutArg) * 1000,

@@ -541,9 +541,11 @@ reframes more than one page gets filed under `wiki/queries/` with
 `type: query` frontmatter; a verbatim restatement of a single page
 does not. The wrapper never writes wiki files itself — it reads the
 data repo's git status to name the filed pages under `Filed:`, or
-prints the agent's reason nothing was filed, so the gate is visible
-every run. A question the wiki cannot answer prints plainly with
-suggested sources and exits 0. With `--no-filing` nothing is written
+prints the agent's reason nothing was filed; if the git status
+itself cannot be read, it prints that the filing status is
+unavailable — the gate is visible every run. A question the wiki
+cannot answer prints plainly with suggested sources and exits 0.
+With `--no-filing` nothing is written
 anywhere under `wiki/`; if the answer would have met the bar, the
 wrapper prints the hint to rerun without the switch. Switches:
 `--settings <path>`, `--raw-dir <dir>`, `--timeout <secs>` (default
