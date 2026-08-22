@@ -18,6 +18,11 @@ Check for:
 14. Wiki pages that contain excessive filler.
 15. Missing comparison where sources explicitly contrast named approaches
     (report, do not auto-create).
+16. Single-source pages: list every page whose `sources` has exactly one entry.
+17. `sources` entries that point at non-source pages (type other than `source`)
+    — each is an error.
+18. Pages that should carry `status: needs-review` under the corroboration
+    lifecycle but do not.
 
 Do not make speculative corrections.
 Never modify wiki/AGENTS.md.

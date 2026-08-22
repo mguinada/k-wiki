@@ -606,6 +606,7 @@ function digestRun(overrides: Partial<IngestRun> = {}): IngestRun {
       unavailable: undefined,
     },
     agentOutput: "AGENT REPORT",
+    unverifiedFrontier: [],
     ...overrides,
   };
 }
@@ -846,6 +847,28 @@ describe("formatDigest", () => {
         "",
         "## Wiki pages (git diff)",
       ].join("\n"),
+    );
+  });
+
+  it("omits the Unverified frontier section when it is empty", () => {
+    expect(formatDigest(digestRun())).not.toContain("## Unverified frontier");
+  });
+
+  it("renders the Unverified frontier section with single-source pages", () => {
+    const digest = formatDigest(
+      digestRun({
+        unverifiedFrontier: [
+          { path: "wiki/concepts/new.md", sources: ['"[[Source A]]"'] },
+        ],
+      }),
+    );
+
+    expect(digest).toContain("## Unverified frontier");
+    expect(digest).toContain(
+      '- wiki/concepts/new.md (1 source: "[[Source A]]")',
+    );
+    expect(digest.indexOf("## Unverified frontier")).toBeLessThan(
+      digest.indexOf("## Agent report"),
     );
   });
 

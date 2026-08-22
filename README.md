@@ -546,6 +546,20 @@ that is hours, so give it an explicit budget, for example
 elapsed clock. A timed-out run fails cleanly and retries the same
 sources on the next run.
 
+### Unverified frontier in the digest
+
+The digest carries an **Unverified frontier** section between the
+changed-source list and the agent report. It lists every wiki page the
+run created or updated whose `sources` frontmatter has exactly one entry
+— the mechanical signal that a claim rests on a single source and has
+not yet been independently corroborated.
+
+Review these pages first in the `git diff`. The agent report also lists
+any new load-bearing claims it identified with no second source; read
+both together. A page on the mechanical list is not automatically wrong
+— it may be the first authoritative source on a new topic — but it is
+where bad-source contamination would first appear.
+
 ### When a note is deleted (expungement)
 
 Deleting a vault note must purge its influence — not merely drop its
