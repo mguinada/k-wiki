@@ -92,7 +92,7 @@ function unquote(path: string): string {
       continue;
     }
 
-    const escaped = inner[i];
+    const escaped = inner[i] ?? "";
 
     i += 1;
 
@@ -242,13 +242,15 @@ export interface PreRunState {
   readonly commit: string;
   /** The full pre-run git status. */
   readonly status: readonly StatusEntry[];
-  /** Content hashes of every dirty path — clean-tree status codes
+  /** Content hashes of every dirty path and every rename origin
+   *  ("absent" when the file is gone) — clean-tree status codes
    *  alone cannot tell an agent re-edit of an already-dirty page
    *  (the normal case: nothing commits the wiki between runs) from
-   *  an untouched one. */
+   *  an untouched one, nor a file restored onto a rename origin. */
   readonly hashes: ReadonlyMap<string, string>;
-  /** The bytes of every dirty path (null: absent), so the revert can
-   *  restore uncommitted pre-run work a reset alone would destroy. */
+  /** The bytes of every dirty path and rename origin (null: absent),
+   *  so the revert can restore uncommitted pre-run work a reset
+   *  alone would destroy. */
   readonly contents: ReadonlyMap<string, Buffer | null>;
 }
 
@@ -285,11 +287,19 @@ export async function capturePreRunState(
   const contents = new Map<string, Buffer | null>();
   const hashes = new Map<string, string>();
 
-  for (const entry of status) {
-    const content = await readContent(join(dataRoot, entry.path));
+  const capture = async (path: string): Promise<void> => {
+    const content = await readContent(join(dataRoot, path));
 
-    contents.set(entry.path, content);
-    hashes.set(entry.path, content === null ? "absent" : sha256(content));
+    contents.set(path, content);
+    hashes.set(path, content === null ? "absent" : sha256(content));
+  };
+
+  for (const entry of status) {
+    await capture(entry.path);
+
+    if (entry.origin !== undefined) {
+      await capture(entry.origin);
+    }
   }
 
   return { commit, status, contents, hashes };
@@ -392,14 +402,20 @@ export interface PostRunState {
   readonly failure: GuardrailFailure | undefined;
 }
 
-/** The outside-whitelist path an entry changed, if any: a rename
- *  touches both its paths, so either may be the violation. */
-function changedOutside(entry: StatusEntry): string | undefined {
+/** The outside-whitelist paths an entry changed: a rename touches
+ *  both its paths, so either may be the violation. */
+function outsidePaths(entry: StatusEntry): string[] {
+  const outside: string[] = [];
+
   if (entry.origin !== undefined && !isAllowed(entry.origin)) {
-    return entry.origin;
+    outside.push(entry.origin);
   }
 
-  return isAllowed(entry.path) ? undefined : entry.path;
+  if (!isAllowed(entry.path)) {
+    outside.push(entry.path);
+  }
+
+  return outside;
 }
 
 /**
@@ -415,23 +431,22 @@ async function checkImmutability(
 ): Promise<GuardrailFailure | undefined> {
   const before = statusIndex(pre.status);
   const problems = new Set<string>();
+  const preRunOrigins = new Set(
+    pre.status.flatMap((entry) =>
+      entry.origin === undefined ? [] : [entry.origin],
+    ),
+  );
 
   for (const entry of entries) {
-    const outside = changedOutside(entry);
+    for (const outside of outsidePaths(entry)) {
+      const preExisting =
+        outside === entry.origin
+          ? preRunOrigins.has(outside)
+          : isPreExisting(before.get(entry.path), entry);
 
-    if (outside === undefined) {
-      continue;
-    }
-
-    const prior = before.get(entry.path);
-
-    const preExisting =
-      outside === entry.origin
-        ? prior?.origin === entry.origin
-        : isPreExisting(prior, entry);
-
-    if (!preExisting) {
-      problems.add(`${outside} changed by the run`);
+      if (!preExisting) {
+        problems.add(`${outside} changed by the run`);
+      }
     }
   }
 
@@ -568,7 +583,7 @@ async function checkChangedWikilinks(
       const text = await readFile(join(dataRoot, "wiki", file), "utf8");
 
       for (const link of extractWikilinks(text)) {
-        if (deletedNames.has(link.target)) {
+        if (deletedNames.has(link.target) && !index.has(link.target)) {
           problems.push(`wiki/${file}:${link.line} -> ${link.raw}`);
         }
       }
@@ -626,9 +641,10 @@ export async function runGuardrails(
 /**
  * Revert a failed run: hard-reset the data repo to the pre-run commit,
  * remove the untracked files the run created (reset alone leaves them),
- * then restore the uncommitted pre-run dirty paths from the captured
- * contents — a reset alone would destroy work from earlier runs that
- * nobody has committed yet (the normal case between runs).
+ * then restore every path captured before the run — dirty paths and
+ * rename origins alike — from the captured contents; a reset alone
+ * would destroy work from earlier runs that nobody has committed yet
+ * (the normal case between runs).
  */
 export async function revertToPreRun(
   dataRoot: string,
@@ -653,15 +669,10 @@ export async function revertToPreRun(
     await runGit(dataRoot, ["clean", "-fd", "--", ...fresh], env);
   }
 
-  for (const entry of pre.status) {
-    if (entry.origin !== undefined) {
-      await rm(join(dataRoot, entry.origin), { force: true });
-    }
+  for (const [path, content] of pre.contents) {
+    const target = join(dataRoot, path);
 
-    const target = join(dataRoot, entry.path);
-    const content = pre.contents.get(entry.path);
-
-    if (content === null || content === undefined) {
+    if (content === null) {
       await rm(target, { force: true });
 
       continue;

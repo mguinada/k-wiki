@@ -337,6 +337,39 @@ describe("runGuardrails — check 1, immutability", () => {
     expect(post.failure).toBeUndefined();
   });
 
+  it("passes a run that renames the target of a pre-run staged rename", async () => {
+    const dataRoot = await makeRepo();
+
+    await mkdir(join(dataRoot, "outputs"), { recursive: true });
+    await run("git", ["mv", "raw/notes/src.md", "outputs/y.md"], {
+      cwd: dataRoot,
+    });
+
+    const post = await guardedRun(dataRoot, async (root) => {
+      await run("git", ["mv", "outputs/y.md", "outputs/z.md"], { cwd: root });
+    });
+
+    expect(post.failure).toBeUndefined();
+  });
+
+  it("trips when the run moves a pre-run rename target back onto the raw note", async () => {
+    const dataRoot = await makeRepo();
+
+    await mkdir(join(dataRoot, "outputs"), { recursive: true });
+    await run("git", ["mv", "raw/notes/src.md", "outputs/y.md"], {
+      cwd: dataRoot,
+    });
+
+    const post = await guardedRun(dataRoot, async (root) => {
+      await run("git", ["mv", "-f", "outputs/y.md", "raw/notes/src.md"], {
+        cwd: root,
+      });
+    });
+
+    expect(post.failure?.check).toBe(1);
+    expect(post.failure?.problems.join("\n")).toContain("raw/notes/src.md");
+  });
+
   it("trips when the run rewrites the wiki/AGENTS.md contract", async () => {
     const dataRoot = await makeRepo();
     const post = await guardedRun(dataRoot, async (root) => {
@@ -523,6 +556,32 @@ describe("runGuardrails — check 3, wikilinks", () => {
     );
   });
 
+  it("passes a deleted page whose name still resolves to a surviving page", async () => {
+    const dataRoot = await makeRepo();
+
+    await mkdir(join(dataRoot, "wiki", "sources"), { recursive: true });
+    await mkdir(join(dataRoot, "wiki", "concepts"), { recursive: true });
+    await writeFile(
+      join(dataRoot, "wiki", "sources", "target.md"),
+      page("# Source\n"),
+    );
+    await writeFile(
+      join(dataRoot, "wiki", "concepts", "target.md"),
+      page("# Concept\n"),
+    );
+    await writeFile(
+      join(dataRoot, "wiki", "linker.md"),
+      page("See [[target]]."),
+    );
+    await commit(dataRoot, "targets");
+
+    const post = await guardedRun(dataRoot, async (root) => {
+      await rm(join(root, "wiki", "sources", "target.md"));
+    });
+
+    expect(post.failure).toBeUndefined();
+  });
+
   it("trips when the run renames a linked wiki page away", async () => {
     const dataRoot = await makeRepo();
 
@@ -692,6 +751,32 @@ describe("revertToPreRun", () => {
     ).toBe("# src\n");
     await expect(
       readFile(join(dataRoot, "outputs", "src.md"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("restores a pre-run staged rename the run moved back onto the raw note", async () => {
+    const dataRoot = await makeRepo();
+
+    await mkdir(join(dataRoot, "outputs"), { recursive: true });
+    await run("git", ["mv", "raw/notes/src.md", "outputs/y.md"], {
+      cwd: dataRoot,
+    });
+
+    const pre = await capturePreRunState(dataRoot, process.env);
+
+    await run("git", ["mv", "-f", "outputs/y.md", "raw/notes/src.md"], {
+      cwd: dataRoot,
+    });
+
+    const post = await runGuardrails(dataRoot, process.env, pre);
+
+    await revertToPreRun(dataRoot, process.env, pre, post.entries);
+
+    expect(await readFile(join(dataRoot, "outputs", "y.md"), "utf8")).toBe(
+      "# src\n",
+    );
+    await expect(
+      readFile(join(dataRoot, "raw", "notes", "src.md"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 });

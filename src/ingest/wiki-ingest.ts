@@ -617,7 +617,8 @@ export async function runWikiIngest(
     onProgress(`${AGENT_HEARTBEAT_PREFIX} (${elapsed})`);
   }, options.heartbeatMs ?? HEARTBEAT_MS);
 
-  let stdout: string;
+  let stdout = "";
+  let agentError: unknown;
 
   try {
     ({ stdout } = await runAgent(settings.command, args, {
@@ -625,11 +626,15 @@ export async function runWikiIngest(
       env,
       timeoutMs: options.timeoutMs,
     }));
+  } catch (error) {
+    agentError = error;
   } finally {
     clearInterval(heartbeat);
   }
 
-  onProgress("wiki-ingest: agent finished");
+  if (agentError === undefined) {
+    onProgress("wiki-ingest: agent finished");
+  }
 
   const post = await runGuardrails(dataRoot, env, pre);
   const startedAt = now();
@@ -672,10 +677,17 @@ export async function runWikiIngest(
 
     throw new Error(
       `guardrail check ${failure.check} (${failure.name}) failed; run reverted to ${pre.commit.slice(0, 8)} — ${failure.problems.join("; ")}`,
+      { cause: agentError },
     );
   }
 
   onProgress("wiki-ingest: guardrails passed");
+
+  if (agentError !== undefined) {
+    onProgress("wiki-ingest: agent failed — guardrails passed, changes kept");
+
+    throw agentError;
+  }
 
   const pages = await wikiPages(dataRoot, env);
 
@@ -748,8 +760,8 @@ and exits 0. On a terminal (TTY, color enabled) the agent run shows
 one animated status line - a braille spinner plus the elapsed time -
 rewritten in place; piped, redirected, CI, or NO_COLOR runs get one
 plain heartbeat line per 60 seconds instead. A run that fails or
-exceeds the timeout exits 1 and leaves the snapshot and digest
-untouched, so the next run retries the same sources. Live progress
+exceeds the timeout still runs the guardrails, exits 1, and leaves
+the snapshot untouched, so the next run retries the same sources. Live progress
 goes to stderr; the digest goes to stdout. Scheduling is #14.`;
 
 function colors() {
