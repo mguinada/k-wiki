@@ -57,9 +57,13 @@ export interface AgentSettings {
   readonly model: string;
   /** Reasoning level; passed to the agent as `--thinking`. */
   readonly reasoning: string;
+  /** Passed to the agent as `--provider` when set. */
+  readonly provider?: string;
 }
 
-const SETTING_KEYS = ["command", "model", "reasoning"] as const;
+const REQUIRED_KEYS = ["command", "model", "reasoning"] as const;
+const OPTIONAL_KEYS = ["provider"] as const;
+const SETTING_KEYS = [...REQUIRED_KEYS, ...OPTIONAL_KEYS] as const;
 
 type SettingKey = (typeof SETTING_KEYS)[number];
 
@@ -131,7 +135,7 @@ export function parseSettings(text: string, origin: string): AgentSettings {
     values.set(key as SettingKey, value);
   }
 
-  for (const key of SETTING_KEYS) {
+  for (const key of REQUIRED_KEYS) {
     if (!values.has(key)) {
       throw new Error(
         `invalid agent settings at ${origin}: missing setting ${JSON.stringify(key)}`,
@@ -139,10 +143,13 @@ export function parseSettings(text: string, origin: string): AgentSettings {
     }
   }
 
+  const provider = values.get("provider");
+
   return {
     command: values.get("command") ?? "",
     model: values.get("model") ?? "",
     reasoning: values.get("reasoning") ?? "",
+    ...(provider !== undefined && { provider }),
   };
 }
 
@@ -537,7 +544,9 @@ export interface IngestRun {
   readonly guardrailFailure?: GuardrailFailure | undefined;
 }
 
-function sourceCount(
+/** Total note count of one kind (added, changed, or removed) across
+ *  every vault of a diff. */
+export function sourceCount(
   diff: ManifestDiff,
   key: "added" | "changed" | "removed" | "renamed",
 ): number {
@@ -580,7 +589,7 @@ export function formatDigest(run: IngestRun): string {
   const lines: string[] = [
     `# Wiki ingest digest${label} — ${run.startedAt.toISOString()}`,
     "",
-    `- **Agent:** \`${settings.command}\` · model \`${settings.model}\` · reasoning \`${settings.reasoning}\``,
+    `- **Agent:** \`${settings.command}\`${settings.provider ? ` · provider \`${settings.provider}\`` : ""} · model \`${settings.model}\` · reasoning \`${settings.reasoning}\``,
     `- **Mode:** ${run.mode} · prompt \`${run.promptFile}\``,
     `- **Sources:** ${sourceCount(run.diff, "added")} added, ${sourceCount(run.diff, "changed")} changed, ${sourceCount(run.diff, "removed")} removed, ${sourceCount(run.diff, "renamed")} renamed`,
   ];
@@ -671,9 +680,12 @@ export const AGENT_TIMEOUT_MS = 30 * 60_000;
 /** Liveness line on the progress sink while the agent runs. */
 export const HEARTBEAT_MS = 60_000;
 
-/** Heartbeat sentence pattern (plain or expunge-labeled); the TTY
+/** Heartbeat sentence prefixes (plain or expunge-labeled); the TTY
  *  renderer keeps matching messages on one animated line (spinner + clock). */
-export const AGENT_HEARTBEAT = /^wiki-ingest: (?:expunge )?agent still running/;
+export const AGENT_HEARTBEAT_PREFIX = [
+  "wiki-ingest: agent still running",
+  "wiki-ingest: expunge agent still running",
+] as const;
 
 /** Collected output cap: 16 MB, far above any final agent report. */
 const AGENT_MAX_BUFFER = 16 * 1024 * 1024;
@@ -851,7 +863,7 @@ export interface IngestOptions {
   /** Clock for the digest timestamp; defaults to the wall clock. */
   readonly now?: () => Date;
   /** Agent runner; defaults to the real non-interactive invocation. */
-  readonly runAgent?: AgentRunner;
+  readonly runAgent?: AgentRunner | undefined;
   /** Kill the agent run after this many milliseconds; default 30 min. */
   readonly timeoutMs?: number | undefined;
   /** Heartbeat interval while the agent runs; default 60 s. */
@@ -868,6 +880,9 @@ export type IngestResult =
       readonly digestPath: string;
       readonly digest: string;
       readonly pages: WikiPages;
+      /** The manifest diff the run ingested; feeds the cycle's commit
+       *  message (issue #13). */
+      readonly diff: ManifestDiff;
     };
 
 export async function readPrompt(path: string): Promise<string> {
@@ -999,6 +1014,7 @@ export async function runWikiIngest(
   }
 
   const args = [
+    ...(settings.provider ? ["--provider", settings.provider] : []),
     "--model",
     settings.model,
     "--thinking",
@@ -1009,8 +1025,10 @@ export async function runWikiIngest(
   const runAgent = options.runAgent ?? spawnAgent;
   const pre = await capturePreRunState(dataRoot, env);
 
+  const providerFlag = settings.provider ? ` --provider ${settings.provider}` : "";
+
   onProgress(
-    `wiki-ingest: mode ${mode}, invoking agent: ${settings.command} --model ${settings.model} --thinking ${settings.reasoning}`,
+    `wiki-ingest: mode ${mode}, invoking agent: ${settings.command}${providerFlag} --model ${settings.model} --thinking ${settings.reasoning}`,
   );
 
   const agentStartedAt = now().getTime();
@@ -1112,7 +1130,7 @@ export async function runWikiIngest(
   await writeFile(digestPath, digest, "utf8");
   await writeManifest(snapshotPath, current);
 
-  return { status: "ran", mode, digestPath, digest, pages };
+  return { status: "ran", mode, digestPath, digest, pages, diff };
 }
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -1139,9 +1157,9 @@ repo root (the parent of the raw dir), and record what happened.
 
 Switches and arguments:
   --settings <path>  Agent settings file. Default: the repo's
-                     settings.yml — command, model, and reasoning
+                     settings.yml — command, model, provider, and reasoning
                      level, passed to the agent as --model/--thinking;
-                     never hardcoded.
+                     provider is optional and passed as --provider when set.
   --outputs <dir>    Where the digest (runs/<timestamp>.md) and the
                      manifest snapshot go. Default: the repo's outputs/.
   --timeout <secs>   Kill the agent run after this many seconds and
@@ -1162,7 +1180,8 @@ After every agent run three guardrails check the data repo (guide
 §1, §7, §9; issue #12): (1) immutability — only wiki/ (never the
 wiki/AGENTS.md contract), outputs/, and raw/manifest.json may change,
 and HEAD may not move; (2) frontmatter — every changed wiki page
-parses with the required fields; (3) wikilinks — every [[wikilink]]
+parses with the required fields (wiki/log.md, the append-only log,
+is exempt); (3) wikilinks — every [[wikilink]]
 in a changed page resolves, and no remaining page links to a page
 the run deleted. A tripped check auto-reverts the data repo to its
 pre-run state (the pre-run commit plus the uncommitted work that
@@ -1206,9 +1225,11 @@ export function createAgentProgressSink(
   writeLine: (text: string) => void,
   animated: boolean,
   dim: (text: string) => string,
-  isHeartbeat: (message: string) => boolean = (message) =>
-    AGENT_HEARTBEAT.test(message),
+  heartbeatPrefix: string | readonly string[] = AGENT_HEARTBEAT_PREFIX,
 ): ProgressSink {
+  const prefixes =
+    typeof heartbeatPrefix === "string" ? [heartbeatPrefix] : heartbeatPrefix;
+
   if (!animated) {
     return {
       render: (message) => writeLine(dim(message)),
@@ -1220,7 +1241,7 @@ export function createAgentProgressSink(
 
   return {
     render: (message) => {
-      if (isHeartbeat(message)) {
+      if (prefixes.some((prefix) => message.startsWith(prefix))) {
         renderer.live(dim(message));
       } else {
         renderer.event(dim(message));

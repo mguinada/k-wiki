@@ -950,7 +950,8 @@ Append significant findings to log.md.
 
 ## 18. Recommended Automation
 
-Eventually make one command perform:
+One command performs the whole cycle — implemented as
+`npm run wiki-sync` (issue #13; the README documents the command):
 
 ```text
 wiki-sync

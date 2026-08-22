@@ -1,5 +1,12 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -126,6 +133,15 @@ describe("checkWikiFrontmatter", () => {
     expect(
       checkWikiFrontmatter(page().replace('sources:\n  - "[[index]]"\n', "")),
     ).toEqual(['missing required frontmatter field "sources"']);
+  });
+
+  it("skips the sources check when skipSources is true", () => {
+    expect(
+      checkWikiFrontmatter(
+        page().replace('sources:\n  - "[[index]]"\n', ""),
+        { skipSources: true },
+      ),
+    ).toEqual([]);
   });
 });
 
@@ -472,6 +488,25 @@ describe("runGuardrails — check 2, frontmatter", () => {
     const dataRoot = await makeRepo();
     const post = await guardedRun(dataRoot, async (root) => {
       await rm(join(root, "wiki", "index.md"));
+    });
+
+    expect(post.failure).toBeUndefined();
+  });
+
+  it("exempts wiki/index.md and wiki/overview.md from the sources field", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(
+      join(dataRoot, "wiki", "overview.md"),
+      "---\ntitle: Overview\ntype: topic\ncreated: 2026-08-22\nupdated: 2026-08-22\ntags:\n  - wiki\n---\n\n# Overview\n",
+    );
+    await commit(dataRoot, "add overview");
+
+    const post = await guardedRun(dataRoot, async (root) => {
+      await writeFile(
+        join(root, "wiki", "index.md"),
+        "---\ntitle: Index\ntype: topic\ncreated: 2026-08-22\nupdated: 2026-08-22\ntags:\n  - wiki\n---\n\n# Index v2\n",
+      );
     });
 
     expect(post.failure).toBeUndefined();

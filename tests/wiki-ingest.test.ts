@@ -19,6 +19,7 @@ import {
   loadAgentSettings,
   main,
   parseSettings,
+  readPrompt,
   removedNoteContent,
   runWikiIngest,
   spawnAgent,
@@ -68,7 +69,17 @@ describe("parseSettings", () => {
       command: "pi",
       model: "GLM-5.2",
       reasoning: "high",
+      provider: undefined,
     });
+  });
+
+  it("parses an optional provider setting", () => {
+    const settings = parseSettings(
+      "command: pi\nmodel: m\nprovider: zai\nreasoning: h\n",
+      "s",
+    );
+
+    expect(settings.provider).toBe("zai");
   });
 
   it("unquotes single-quoted values", () => {
@@ -606,6 +617,17 @@ describe("formatDigest", () => {
     expect(digest).toContain("`pi`");
     expect(digest).toContain("`GLM-5.2`");
     expect(digest).toContain("`high`");
+    expect(digest).not.toContain("provider");
+  });
+
+  it("names the provider in the digest when it is set", () => {
+    const digest = formatDigest(
+      digestRun({
+        settings: { ...digestRun().settings, provider: "zai" },
+      }),
+    );
+
+    expect(digest).toContain("provider `zai`");
   });
 
   it("opens with the digest heading and run timestamp", () => {
@@ -1174,6 +1196,21 @@ describe("runWikiIngest", () => {
     await runWikiIngest(optionsFor(h));
 
     expect(invocation(h, 0).cwd).toBe(h.dataRoot);
+  });
+
+  it("passes --provider when the setting is present", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    await writeFile(
+      h.settingsPath,
+      "command: pi\nmodel: GLM-5.2\nprovider: zai\nreasoning: high\n",
+    );
+    await runWikiIngest(optionsFor(h));
+
+    const args = invocation(h, 0).args;
+
+    expect(args).toContain("--provider");
+    expect(args[args.indexOf("--provider") + 1]).toBe("zai");
   });
 
   it("passes the model and reasoning level from settings as agent flags", async () => {
@@ -2277,8 +2314,12 @@ describe("runGit reuse sanity", () => {
 
 describe("wiki-ingest CLI", () => {
   const STUB = `#!/usr/bin/env node
+import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+// Guard: a mutated wrapper may redirect this stub into the real data
+// repo; refuse to write anywhere but this harness's data root.
+if (!existsSync(join(process.cwd(), ".cli-test-repo"))) process.exit(5);
 const index = process.argv.indexOf("--print");
 await mkdir(join(process.cwd(), "outputs"), { recursive: true });
 await writeFile(join(process.cwd(), "outputs", "stub-prompt.txt"), process.argv[index + 1] ?? "");
@@ -2306,6 +2347,7 @@ console.log("stub report");
     const h = await makeHarness({ "a.md": "a" });
     const stub = join(h.dataRoot, "stub-agent.mjs");
 
+    await writeFile(join(h.dataRoot, ".cli-test-repo"), "");
     await writeFile(stub, STUB, { mode: 0o755 });
     await writeFile(
       h.settingsPath,
@@ -2313,6 +2355,16 @@ console.log("stub report");
     );
 
     return h;
+  }
+
+  function cliArgs(h: Harness): string[] {
+    return [
+      "--settings",
+      h.settingsPath,
+      "--outputs",
+      h.outputsDir,
+      join(h.dataRoot, "raw"),
+    ];
   }
 
   async function runCli(args: string[]): Promise<{ out: string; err: string }> {
@@ -2373,7 +2425,14 @@ console.log("stub report");
   });
 
   it("exits 1 with a stderr message when settings cannot be read", async () => {
-    const { err } = await runCli(["--settings", "/no/such/settings.yml"]);
+    const h = await makeCliHarness();
+    const { err } = await runCli([
+      "--settings",
+      "/no/such/settings.yml",
+      "--outputs",
+      h.outputsDir,
+      join(h.dataRoot, "raw"),
+    ]);
 
     expect(err).toContain(
       "cannot read agent settings at /no/such/settings.yml",
@@ -2490,7 +2549,8 @@ console.log("stub report");
   });
 
   it("exits 1 for an unknown option", async () => {
-    const { err } = await runCli(["--bogus"]);
+    const h = await makeCliHarness();
+    const { err } = await runCli([...cliArgs(h), "--bogus"]);
 
     expect(err).toContain("unknown option");
     expect(process.exitCode).toBe(1);
@@ -2515,21 +2575,34 @@ console.log("stub report");
   });
 
   it("exits 1 when --settings has no value", async () => {
-    const { err } = await runCli(["--settings"]);
+    const h = await makeCliHarness();
+    const { err } = await runCli([
+      "--outputs",
+      h.outputsDir,
+      join(h.dataRoot, "raw"),
+      "--settings",
+    ]);
 
     expect(err).toContain("needs a path value");
     expect(process.exitCode).toBe(1);
   });
 
   it("exits 1 for more than one positional argument", async () => {
-    const { err } = await runCli(["one", "two"]);
+    const h = await makeCliHarness();
+    const { err } = await runCli([...cliArgs(h), "one", "two"]);
 
     expect(err).toContain("expected at most one <raw-dir>");
     expect(process.exitCode).toBe(1);
   });
 
   it("exits 1 for --outputs without a value", async () => {
-    const { err } = await runCli(["--outputs"]);
+    const h = await makeCliHarness();
+    const { err } = await runCli([
+      "--settings",
+      h.settingsPath,
+      join(h.dataRoot, "raw"),
+      "--outputs",
+    ]);
 
     expect(err).toContain("--outputs needs a path value");
     expect(process.exitCode).toBe(1);
@@ -2543,7 +2616,8 @@ console.log("stub report");
   });
 
   it("exits 1 for --timeout without a value", async () => {
-    const { err } = await runCli(["--timeout"]);
+    const h = await makeCliHarness();
+    const { err } = await runCli([...cliArgs(h), "--timeout"]);
 
     expect(err).toContain(
       "--timeout needs a positive integer number of seconds",
@@ -2552,7 +2626,8 @@ console.log("stub report");
   });
 
   it("exits 1 for --timeout zero", async () => {
-    const { err } = await runCli(["--timeout", "0"]);
+    const h = await makeCliHarness();
+    const { err } = await runCli([...cliArgs(h), "--timeout", "0"]);
 
     expect(err).toContain(
       "--timeout needs a positive integer number of seconds",
@@ -2561,7 +2636,8 @@ console.log("stub report");
   });
 
   it("exits 1 for --timeout negative", async () => {
-    const { err } = await runCli(["--timeout", "-5"]);
+    const h = await makeCliHarness();
+    const { err } = await runCli([...cliArgs(h), "--timeout", "-5"]);
 
     expect(err).toContain(
       "--timeout needs a positive integer number of seconds",
@@ -2570,7 +2646,8 @@ console.log("stub report");
   });
 
   it("exits 1 for --timeout non-numeric", async () => {
-    const { err } = await runCli(["--timeout", "abc"]);
+    const h = await makeCliHarness();
+    const { err } = await runCli([...cliArgs(h), "--timeout", "abc"]);
 
     expect(err).toContain(
       "--timeout needs a positive integer number of seconds",
@@ -2579,11 +2656,152 @@ console.log("stub report");
   });
 
   it("exits 1 for --timeout with trailing junk", async () => {
-    const { err } = await runCli(["--timeout", "5x"]);
+    const h = await makeCliHarness();
+    const { err } = await runCli([...cliArgs(h), "--timeout", "5x"]);
 
     expect(err).toContain(
       "--timeout needs a positive integer number of seconds",
     );
     expect(process.exitCode).toBe(1);
+  });
+});
+
+describe("formatDigest structure", () => {
+  it("separates the guardrails-failed heading with blank lines", () => {
+    const digest = formatDigest(
+      digestRun({
+        guardrailFailure: {
+          check: 1,
+          name: "immutability",
+          problems: ["raw/x changed by the run"],
+        },
+      }),
+    );
+
+    expect(digest).toContain("\n## Guardrails failed\n");
+    expect(digest).toContain(
+      "tripped; the run was auto-reverted to the pre-run commit.",
+    );
+  });
+
+  it("separates the changed-sources heading with blank lines", () => {
+    expect(formatDigest(digestRun())).toContain(
+      "\n\n## Changed sources\n\n**Engineering**",
+    );
+  });
+
+  it("ends with a newline", () => {
+    expect(formatDigest(digestRun()).endsWith("\n")).toBe(true);
+  });
+});
+
+describe("runWikiIngest failure reporting detail", () => {
+  it("names the check, the revert target, and the problems in the error", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const progress: string[] = [];
+    const saboteur: AgentRunner = async (_command, _args, options) => {
+      await writeFile(join(options.cwd, "wiki", "bad.md"), "no frontmatter\n");
+
+      return { stdout: "rogue report", stderr: "" };
+    };
+
+    const error = await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: saboteur,
+      onProgress: (message) => progress.push(message),
+    }).then(
+      () => undefined,
+      (cause: unknown) => cause,
+    );
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toMatch(
+      /^guardrail check 2 \(frontmatter\) failed; run reverted to [0-9a-f]{8} — wiki\/bad\.md: no frontmatter block$/,
+    );
+    expect((error as Error).cause).toBeUndefined();
+    expect(progress.join("\n")).toMatch(
+      /^wiki-ingest: guardrail check 2 \(frontmatter\) failed — reverting to [0-9a-f]{8}$/m,
+    );
+  });
+
+  it("states the mode and prompt file in the failure digest", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const saboteur: AgentRunner = async (_command, _args, options) => {
+      await writeFile(join(options.cwd, "wiki", "bad.md"), "no frontmatter\n");
+
+      return { stdout: "rogue report", stderr: "" };
+    };
+
+    await expect(
+      runWikiIngest({ ...optionsFor(h), runAgent: saboteur }),
+    ).rejects.toThrow();
+
+    const digest = await readFile(
+      join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"),
+      "utf8",
+    );
+
+    expect(digest).toContain("**Mode:** full");
+    expect(digest).toContain("prompt `prompts/ingest.md`");
+    expect(digest).toContain(
+      "**Wiki pages:** unavailable — run reverted — guardrail check 2 (frontmatter) tripped",
+    );
+  });
+
+  it("announces a kept-changes agent failure on progress", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const progress: string[] = [];
+    const failing: AgentRunner = async () => {
+      throw new Error("agent exited with code 9");
+    };
+
+    await expect(
+      runWikiIngest({
+        ...optionsFor(h),
+        runAgent: failing,
+        onProgress: (message) => progress.push(message),
+      }),
+    ).rejects.toThrow("agent exited with code 9");
+
+    expect(progress).toContain(
+      "wiki-ingest: agent failed — guardrails passed, changes kept",
+    );
+  });
+});
+
+describe("error causes and sink prefixes", () => {
+  it("attaches the read error as the cause of a settings failure", async () => {
+    const error = await loadAgentSettings("/no/such/settings.yml").then(
+      () => undefined,
+      (cause: unknown) => cause,
+    );
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).cause).toBeInstanceOf(Error);
+  });
+
+  it("attaches the read error as the cause of a prompt failure", async () => {
+    const error = await readPrompt("/no/such/prompt.md").then(
+      () => undefined,
+      (cause: unknown) => cause,
+    );
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).cause).toBeInstanceOf(Error);
+  });
+
+  it("animates any of several heartbeat prefixes", () => {
+    const written: string[] = [];
+    const sink = createAgentProgressSink(
+      (text) => written.push(text),
+      () => {},
+      true,
+      (text) => text,
+      ["first-prefix:", "second-prefix:"],
+    );
+
+    sink.render("second-prefix: still running (1m)");
+
+    expect(written).toEqual(["\r⠋ second-prefix: still running (1m)"]);
   });
 });

@@ -601,6 +601,21 @@ describe("runWikiQuery", () => {
     expect(invocation(h, 0).cwd).toBe(h.dataRoot);
   });
 
+  it("passes --provider when the setting is present", async () => {
+    const h = await makeHarness();
+
+    await writeFile(
+      h.settingsPath,
+      "command: pi\nmodel: GLM-5.2\nprovider: zai\nreasoning: high\n",
+    );
+    await runWikiQuery(optionsFor(h));
+
+    const args = invocation(h, 0).args;
+
+    expect(args).toContain("--provider");
+    expect(args[args.indexOf("--provider") + 1]).toBe("zai");
+  });
+
   it("passes the model and reasoning level from settings as agent flags", async () => {
     const h = await makeHarness();
 
@@ -835,8 +850,12 @@ describe("runWikiQuery", () => {
 
 describe("wiki-query CLI", () => {
   const STUB = `#!/usr/bin/env node
+import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+// Guard: a mutated wrapper may redirect this stub into the real data
+// repo; refuse to write anywhere but this harness's data root.
+if (!existsSync(join(process.cwd(), ".cli-test-repo"))) process.exit(5);
 const index = process.argv.indexOf("--print");
 const prompt = index === -1 ? undefined : process.argv[index + 1];
 
@@ -860,6 +879,7 @@ if (prompt.includes("answer-only")) {
     const h = await makeHarness();
     const stub = join(h.dataRoot, "stub-agent.mjs");
 
+    await writeFile(join(h.dataRoot, ".cli-test-repo"), "");
     await writeFile(stub, STUB, { mode: 0o755 });
     await writeFile(
       h.settingsPath,
@@ -939,56 +959,92 @@ if (prompt.includes("answer-only")) {
   });
 
   it("exits 1 with a stderr message when the question is missing", async () => {
-    const { err } = await runCli(["--settings", "/no/such/settings.yml"]);
+    const h = await makeCliHarness();
+    const { err } = await runCli([
+      "--settings",
+      h.settingsPath,
+      "--raw-dir",
+      join(h.dataRoot, "raw"),
+    ]);
 
     expect(err).toContain("a question is required");
     expect(process.exitCode).toBe(1);
   });
 
   it("exits 1 when the question is an empty string", async () => {
-    const { err } = await runCli([""]);
+    const h = await makeCliHarness();
+    const { err } = await runCli([
+      "--settings",
+      h.settingsPath,
+      "--raw-dir",
+      join(h.dataRoot, "raw"),
+      "",
+    ]);
 
     expect(err).toContain("a question is required");
     expect(process.exitCode).toBe(1);
   });
 
   it("exits 1 when the question is only whitespace", async () => {
-    const { err } = await runCli(["   "]);
+    const h = await makeCliHarness();
+    const { err } = await runCli([
+      "--settings",
+      h.settingsPath,
+      "--raw-dir",
+      join(h.dataRoot, "raw"),
+      "   ",
+    ]);
 
     expect(err).toContain("a question is required");
     expect(process.exitCode).toBe(1);
   });
 
   it("exits 1 for more than one positional argument", async () => {
-    const { err } = await runCli(["one", "two"]);
+    const h = await makeCliHarness();
+    const { err } = await runCli([
+      "--settings",
+      h.settingsPath,
+      "--raw-dir",
+      join(h.dataRoot, "raw"),
+      "one",
+      "two",
+    ]);
 
     expect(err).toContain("expected exactly one <question>");
     expect(process.exitCode).toBe(1);
   });
 
   it("exits 1 for an unknown option", async () => {
-    const { err } = await runCli(["--bogus", "q"]);
+    const h = await makeCliHarness();
+    const { err } = await runCli([...queryArgs(h), "--bogus"]);
 
     expect(err).toContain("unknown option");
     expect(process.exitCode).toBe(1);
   });
 
   it("exits 1 when --settings has no value", async () => {
-    const { err } = await runCli(["--settings"]);
+    const h = await makeCliHarness();
+    const { err } = await runCli([
+      "--raw-dir",
+      join(h.dataRoot, "raw"),
+      "--settings",
+    ]);
 
     expect(err).toContain("--settings needs a path value");
     expect(process.exitCode).toBe(1);
   });
 
   it("exits 1 when --raw-dir has no value", async () => {
-    const { err } = await runCli(["--raw-dir"]);
+    const h = await makeCliHarness();
+    const { err } = await runCli(["--settings", h.settingsPath, "--raw-dir"]);
 
     expect(err).toContain("--raw-dir needs a path value");
     expect(process.exitCode).toBe(1);
   });
 
   it("exits 1 for --timeout without a value", async () => {
-    const { err } = await runCli(["--timeout"]);
+    const h = await makeCliHarness();
+    const { err } = await runCli([...queryArgs(h), "--timeout"]);
 
     expect(err).toContain(
       "--timeout needs a positive integer number of seconds",
@@ -997,7 +1053,8 @@ if (prompt.includes("answer-only")) {
   });
 
   it("exits 1 for --timeout zero", async () => {
-    const { err } = await runCli(["--timeout", "0", "q"]);
+    const h = await makeCliHarness();
+    const { err } = await runCli(queryArgs(h, ["--timeout", "0"]));
 
     expect(err).toContain(
       "--timeout needs a positive integer number of seconds",
@@ -1006,7 +1063,8 @@ if (prompt.includes("answer-only")) {
   });
 
   it("exits 1 for --timeout negative", async () => {
-    const { err } = await runCli(["--timeout", "-5", "q"]);
+    const h = await makeCliHarness();
+    const { err } = await runCli(queryArgs(h, ["--timeout", "-5"]));
 
     expect(err).toContain(
       "--timeout needs a positive integer number of seconds",
@@ -1015,7 +1073,8 @@ if (prompt.includes("answer-only")) {
   });
 
   it("exits 1 for --timeout non-numeric", async () => {
-    const { err } = await runCli(["--timeout", "abc", "q"]);
+    const h = await makeCliHarness();
+    const { err } = await runCli(queryArgs(h, ["--timeout", "abc"]));
 
     expect(err).toContain(
       "--timeout needs a positive integer number of seconds",
@@ -1024,7 +1083,8 @@ if (prompt.includes("answer-only")) {
   });
 
   it("exits 1 for --timeout with trailing junk", async () => {
-    const { err } = await runCli(["--timeout", "5x", "q"]);
+    const h = await makeCliHarness();
+    const { err } = await runCli(queryArgs(h, ["--timeout", "5x"]));
 
     expect(err).toContain(
       "--timeout needs a positive integer number of seconds",
@@ -1033,7 +1093,14 @@ if (prompt.includes("answer-only")) {
   });
 
   it("exits 1 with a stderr message when settings cannot be read", async () => {
-    const { err } = await runCli(["--settings", "/no/such/settings.yml", "q"]);
+    const h = await makeCliHarness();
+    const { err } = await runCli([
+      "--settings",
+      "/no/such/settings.yml",
+      "--raw-dir",
+      join(h.dataRoot, "raw"),
+      "q",
+    ]);
 
     expect(err).toContain(
       "cannot read agent settings at /no/such/settings.yml",
