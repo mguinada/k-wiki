@@ -458,6 +458,7 @@ title: "GPU Memory Math for LLMs (2026 Edition)"
 type: source
 
 source: "https://x.com/TheAhmadOsman/status/2040103488714068245"
+origin: "raw/notes/X/2026/gpu-memory-math.md"
 author:
   - "[[@TheAhmadOsman]]"
 published: 2026-04-03
@@ -478,6 +479,11 @@ status: active
 ```
 
 Optional in multi-vault setups: `vault: <name>` records which source vault a source page originated from (Section 25).
+
+`origin` records the raw projection path backing the source page —
+written at ingest time, backfilled onto older pages in one wiki
+operation — and is the deterministic handle expungement uses (Section
+14a).
 
 #### Derived concept pages
 
@@ -725,6 +731,12 @@ For source pages, where applicable:
 - `author`
 - `published`
 - `description`
+- `origin`
+
+`origin` records the raw projection path backing the source page
+(`raw/notes/<vault>/<path>`), written at ingest time. Add it to any
+source page that lacks it whenever the page is touched; it enables
+deterministic expungement.
 
 Use ISO dates: `YYYY-MM-DD`.
 
@@ -818,6 +830,45 @@ Rebuild procedure:
    attributed, contradictions preserved. Wording may differ; LLM output
    is not byte-identical.
 
+## Expungement
+
+When a synced source note is deleted, the next run expunges its
+influence: no claim, concept, entity, comparison, or filed query may
+rest on material whose only support was the removed note, directly or
+indirectly.
+
+For every affected page, re-derive it from its remaining sources — do
+not surgically delete content:
+
+- claims supported only by the removed note die;
+- independently supported claims survive;
+- confidence drops where support thinned;
+- a `CONTRADICTION` callout that lost one side is dissolved, not
+  preserved;
+- a page left without sources, or demoted to a stub, is deleted.
+
+Filed queries under `queries/` that cite the removed note are expunged
+the same way; the layer itself is preserved.
+
+Beyond the deterministic direct set (the removed note's source page,
+every page citing it in `sources`, `index.md`, `overview.md`), search
+the wiki full text for uncited mentions and follow `related` links and
+body wikilinks in reverse.
+
+Record the run in `log.md` as `## [YYYY-MM-DD] expunge | <title>`.
+
+No tombstone pages: the wiki reflects the current `raw/`; the retraction
+record lives in `log.md` and git history.
+
+Threshold escape hatch: when the affected set exceeds roughly one third
+of the wiki, execute the rebuild procedure instead of a surgical pass
+(restore `queries/` from git afterwards, then expunge it) and say so in
+the report.
+
+Known residual risk: frontmatter tracing cannot prove the absence of
+uncited influence. Mitigations: full-text search in the run, the
+dead-provenance check, recurring lint, periodic rebuild.
+
 ## Final Principle
 
 Human knowledge lives in the source vault.
@@ -910,13 +961,16 @@ For each changed source:
 4. Inspect the existing wiki before creating pages.
 5. Update existing pages when appropriate.
 6. Create new pages only when justified.
-7. Add source attribution to every affected page.
-8. Add appropriate wikilinks.
-9. Preserve contradictions and uncertainty.
-10. Do not invent facts.
-11. Update index.md.
-12. Revise overview.md if the source changes the overall picture.
-13. Append a concise operation summary to log.md.
+7. Record `origin: raw/notes/<vault>/<path>` in the frontmatter of every
+   source page you create, and add it to any source page you touch that
+   lacks it.
+8. Add source attribution to every affected page.
+9. Add appropriate wikilinks.
+10. Preserve contradictions and uncertainty.
+11. Do not invent facts.
+12. Update index.md.
+13. Revise overview.md if the source changes the overall picture.
+14. Append a concise operation summary to log.md.
 
 Do not modify raw/.
 Do not modify the original source vault.
@@ -946,17 +1000,106 @@ Determine whether the changes require:
 - updates;
 - relationship/link changes;
 - removal of obsolete claims;
-- contradiction handling.
+- contradiction handling;
+- retitles (a renamed note keeps its source page and citations).
 
 When two or more sources explicitly contrast named approaches, file a
 comparison page (or extend an existing one).
 
 Make the smallest set of changes necessary.
 
+Record `origin: raw/notes/<vault>/<path>` in the frontmatter of every
+source page you create, and add it to any source page you touch that
+lacks it.
+
 Do not regenerate unrelated pages.
 
 Update index.md, revise overview.md if the overall picture changed, and append to log.md.
 ```
+
+---
+
+## 14a. Expungement
+
+Deleting a note from the vault must purge its influence from the wiki —
+not merely drop its source page. A removed note `N` contaminates in two
+classes:
+
+| Class | Example | Discovery |
+|---|---|---|
+| **Direct** | `N`'s source page; pages listing `N` in `sources` | Deterministic (frontmatter) |
+| **Indirect** | conclusions that absorbed `N`'s claims; stubs promoted only by `N`; comparisons and filed queries built partly on `N`; contradiction and confidence states that used `N`; `overview.md`; links and index entries | Judgment (agent) + reverse reachability |
+
+Core insight: **expungement is re-derivation with a subtracted source
+set.** The faithful per-page operation is not "delete what came from
+`N`" but "re-derive the page from its remaining sources" — the same
+ingest discipline with new routing, seeding, and a contract section
+(Section 10, Expungement).
+
+### Trigger and routing
+
+`wiki-ingest` routes to `prompts/expunge.md` when the manifest diff has
+`removed` entries. A remove+add pair in the same vault with an identical
+content hash is a **rename**: the run treats it as a change/retitle,
+never as a deletion. After sync the note is gone from `raw/`, but the
+data repo versions `raw/`, so git history holds the note in full — the
+wrapper recovers the last synced content (`git show`, falling back to
+the deletion commit's parent tree) and inlines it in the prompt. No
+archive is needed.
+
+### Two-phase process
+
+1. **Deterministic seed (wrapper).** Removed raw path → the source page
+   whose `origin` names it → every page citing that raw path or source
+   page in `sources` → plus `index.md` and `overview.md`
+   unconditionally. The seed is a lower bound, not a boundary.
+2. **Agent re-derivation (expunge prompt).** Full-text search over the
+   wiki using the removed note's distinctive terms, reverse
+   reachability over `related` links and body wikilinks, then
+   re-derivation of every affected page.
+
+Before the agent runs, a progress line announces the trigger and the
+direct set; the digest is labeled `expunge`, carries the direct set,
+and reports a **pages deleted** category, so a deletion never hides
+inside an ordinary incremental run.
+
+### Contract amendments
+
+- A `CONTRADICTION` callout that lost one side is **dissolved, not
+  preserved** — the one exception to Section 10's preserve-contradictions
+  rule.
+- Filed `queries/` pages citing `N` are expunged too — a rebuild alone
+  would not clean them; `queries/` is the preserved accreted layer.
+- **No tombstones, no confirmation gate**: the wiki reflects the current
+  `raw/`; the retraction record lives in `log.md`
+  (`## [YYYY-MM-DD] expunge | <title>`) and git history. The review
+  mechanism stays the git diff, like every run.
+
+### Threshold rebuild
+
+Surgical expunge by default. When the affected set exceeds roughly ⅓ of
+the wiki, the agent executes the Regeneration procedure instead
+(restoring `queries/` from git, then expunging it) and reports the
+threshold decision. The threshold lives in prompt text, never in code.
+
+### Backfill
+
+Deletions that predate this mechanism are handled manually: run the
+agent with `prompts/expunge.md` plus the removed raw path (content from
+`git show` in the data repo). No dedicated CLI exists for this.
+
+Source pages created before the `origin` field existed get it
+backfilled in one wiki operation: touch every `type: source` page and
+record its `origin` raw path. Any later run that touches a source page
+adds a missing `origin` automatically (Sections 13–14).
+
+### Residual risk
+
+Frontmatter tracing cannot *prove* the absence of uncited influence.
+Mitigations: phase-1 full-text search, the permanent dead-provenance
+check (`npm run check-provenance`: every `sources` entry resolves, every
+`origin` exists under `raw/`), recurring lint, periodic rebuild. A
+surgical pass is not a proof — do not pretend it is.
 
 ---
 

@@ -2,21 +2,24 @@ import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { runGit } from "../src/data/init-data-repo.ts";
 import {
   type AgentRunner,
   type AgentSettings,
+  composeExpungePrompt,
   composePrompt,
   createAgentProgressSink,
   diffManifests,
+  directSetForRemovals,
   formatDigest,
   type IngestRun,
   loadAgentSettings,
   main,
   parseSettings,
+  removedNoteContent,
   runWikiIngest,
   spawnAgent,
 } from "../src/ingest/wiki-ingest.ts";
@@ -259,6 +262,99 @@ describe("diffManifests", () => {
       "z.md",
     ]);
   });
+
+  it("pairs a remove and add with equal hashes in one vault as renamed", () => {
+    const diff = diffManifests(
+      manifestWith("Engineering", { "old.md": entry("same") }),
+      manifestWith("Engineering", { "new.md": entry("same") }),
+    );
+
+    expect(diff.vaults[0]).toMatchObject({
+      added: [],
+      changed: [],
+      removed: [],
+      renamed: [{ from: "old.md", to: "new.md" }],
+    });
+  });
+
+  it("keeps a remove and add with different hashes as removed and added", () => {
+    const diff = diffManifests(
+      manifestWith("Engineering", { "old.md": entry("v1") }),
+      manifestWith("Engineering", { "old2.md": entry("v2") }),
+    );
+
+    expect(diff.vaults[0]).toMatchObject({
+      added: ["old2.md"],
+      removed: ["old.md"],
+      renamed: [],
+    });
+  });
+
+  it("does not pair a remove and add across different vaults", () => {
+    const diff = diffManifests(
+      manifestWith("One", { "a.md": entry("same") }),
+      manifestWith("Two", { "a.md": entry("same") }),
+    );
+
+    expect(diff.vaults).toHaveLength(2);
+    expect(diff.vaults[0]).toMatchObject({ vault: "One", removed: ["a.md"] });
+    expect(diff.vaults[1]).toMatchObject({ vault: "Two", added: ["a.md"] });
+  });
+
+  it("pairs two renames of equal-content notes deterministically", () => {
+    const diff = diffManifests(
+      manifestWith("Engineering", {
+        "a.md": entry("same"),
+        "b.md": entry("same"),
+      }),
+      manifestWith("Engineering", {
+        "c.md": entry("same"),
+        "d.md": entry("same"),
+      }),
+    );
+
+    expect(diff.vaults[0]?.renamed).toEqual([
+      { from: "a.md", to: "c.md" },
+      { from: "b.md", to: "d.md" },
+    ]);
+  });
+
+  it("leaves a renamed note's changed sibling in removed", () => {
+    const diff = diffManifests(
+      manifestWith("Engineering", {
+        "moved.md": entry("same"),
+        "edited.md": entry("v1"),
+      }),
+      manifestWith("Engineering", {
+        "moved-2.md": entry("same"),
+        "edited.md": entry("v2"),
+      }),
+    );
+
+    expect(diff.vaults[0]).toMatchObject({
+      changed: ["edited.md"],
+      removed: [],
+      renamed: [{ from: "moved.md", to: "moved-2.md" }],
+    });
+  });
+
+  it("keeps an added path that pairs with no removal", () => {
+    const diff = diffManifests(
+      manifestWith("Engineering", { "old.md": entry("same") }),
+      manifestWith("Engineering", {
+        "new.md": entry("same"),
+        "extra.md": entry("extra"),
+      }),
+    );
+
+    expect(diff.vaults[0]).toEqual({
+      vault: "Engineering",
+      added: ["extra.md"],
+      changed: [],
+      removed: [],
+      renamed: [{ from: "old.md", to: "new.md" }],
+    });
+  });
 });
 
 describe("loadAgentSettings", () => {
@@ -266,6 +362,18 @@ describe("loadAgentSettings", () => {
     await expect(loadAgentSettings("/no/such/settings.yml")).rejects.toThrow(
       "cannot read agent settings at /no/such/settings.yml",
     );
+  });
+
+  it("keeps the underlying read error as the cause", async () => {
+    let cause: unknown;
+
+    try {
+      await loadAgentSettings("/no/such/settings.yml");
+    } catch (error) {
+      cause = (error as Error).cause;
+    }
+
+    expect(cause).toBeInstanceOf(Error);
   });
 });
 
@@ -307,6 +415,92 @@ describe("composePrompt", () => {
       ].join("\n"),
     );
   });
+
+  it("renders a rename pair as one arrow line", () => {
+    const renamed = diffManifests(
+      manifestWith("Engineering", { "old.md": entry("same") }),
+      manifestWith("Engineering", { "new.md": entry("same") }),
+    );
+
+    expect(composePrompt("PROMPT", renamed)).toBe(
+      [
+        "PROMPT",
+        "",
+        "Changed sources since the previous ingestion:",
+        "",
+        "→ Engineering/old.md → Engineering/new.md",
+      ].join("\n"),
+    );
+  });
+});
+
+describe("composeExpungePrompt", () => {
+  const diff = diffManifests(
+    manifestWith("Engineering", {
+      "gone.md": entry("gone"),
+      "a.md": entry("a"),
+    }),
+    manifestWith("Engineering", { "a.md": entry("a") }),
+  );
+
+  it("appends the changed sources, note content, and direct set", () => {
+    const composed = composeExpungePrompt(
+      "EXPUNGE PROMPT",
+      diff,
+      [
+        {
+          vault: "Engineering",
+          path: "gone.md",
+          rawPath: "raw/notes/Engineering/gone.md",
+          content: "last body",
+        },
+      ],
+      ["index.md", "overview.md"],
+    );
+
+    expect(composed).toBe(
+      [
+        "EXPUNGE PROMPT",
+        "",
+        "Changed sources since the previous ingestion:",
+        "",
+        "- Engineering/gone.md",
+        "",
+        "Removed notes with their last synced content:",
+        "",
+        "### Engineering/gone.md (raw/notes/Engineering/gone.md)",
+        "",
+        "````markdown",
+        "last body",
+        "````",
+        "",
+        "Direct set (deterministic seed — a lower bound, not a boundary):",
+        "",
+        "- wiki/index.md",
+        "- wiki/overview.md",
+      ].join("\n"),
+    );
+  });
+
+  it("states unavailable content instead of an empty fence", () => {
+    const composed = composeExpungePrompt(
+      "P",
+      diff,
+      [
+        {
+          vault: "Engineering",
+          path: "gone.md",
+          rawPath: "raw/notes/Engineering/gone.md",
+          content: undefined,
+        },
+      ],
+      [],
+    );
+
+    expect(composed).toContain(
+      "(last synced content unavailable: no committed git history — purge by path, title, and full-text search)",
+    );
+  });
 });
 
 function digestRun(overrides: Partial<IngestRun> = {}): IngestRun {
@@ -333,9 +527,11 @@ function digestRun(overrides: Partial<IngestRun> = {}): IngestRun {
         "d.md": entry("d"),
       }),
     ),
+    directSet: undefined,
     pages: {
       created: ["wiki/concepts/new.md"],
       updated: ["wiki/index.md", "wiki/log.md"],
+      deleted: ["wiki/gone.md"],
       unavailable: undefined,
     },
     agentOutput: "AGENT REPORT",
@@ -367,10 +563,12 @@ describe("formatDigest", () => {
     expect(digest).toContain("`prompts/ingest.md`");
   });
 
-  it("counts sources added, changed, and removed", () => {
+  it("counts sources added, changed, removed, and renamed", () => {
     const digest = formatDigest(digestRun());
 
-    expect(digest).toContain("**Sources:** 1 added, 1 changed, 1 removed");
+    expect(digest).toContain(
+      "**Sources:** 1 added, 1 changed, 1 removed, 0 renamed",
+    );
   });
 
   it("lists the changed source paths with vault names", () => {
@@ -398,12 +596,14 @@ describe("formatDigest", () => {
     expect(digest).toContain("AGENT REPORT");
   });
 
-  it("counts and lists created and updated wiki pages", () => {
+  it("counts and lists created, updated, and deleted wiki pages", () => {
     const digest = formatDigest(digestRun());
 
-    expect(digest).toContain("**Wiki pages:** 1 created, 2 updated");
+    expect(digest).toContain("**Wiki pages:** 1 created, 2 updated, 1 deleted");
     expect(digest).toContain("- wiki/concepts/new.md");
     expect(digest).toContain("- wiki/index.md");
+    expect(digest).toContain("Deleted:");
+    expect(digest).toContain("- wiki/gone.md");
   });
 
   it("embeds the agent report verbatim", () => {
@@ -420,6 +620,7 @@ describe("formatDigest", () => {
         pages: {
           created: [],
           updated: [],
+          deleted: [],
           unavailable: "run reverted — guardrail check 2 (frontmatter) tripped",
         },
         guardrailFailure: {
@@ -438,7 +639,14 @@ describe("formatDigest", () => {
 
   it("notes when the wiki git diff was unavailable", () => {
     const digest = formatDigest(
-      digestRun({ pages: { created: [], updated: [], unavailable: "no git" } }),
+      digestRun({
+        pages: {
+          created: [],
+          updated: [],
+          deleted: [],
+          unavailable: "no git",
+        },
+      }),
     );
 
     expect(digest).toContain("**Wiki pages:** unavailable — no git");
@@ -471,23 +679,298 @@ describe("formatDigest", () => {
       }),
     );
 
-    expect(digest).toContain("**Sources:** 2 added");
+    expect(digest).toContain(
+      "**Sources:** 2 added, 0 changed, 0 removed, 0 renamed",
+    );
     expect(digest).not.toContain("- + Engineering/");
+  });
+
+  it("lists renamed sources with an arrow and counts them", () => {
+    const digest = formatDigest(
+      digestRun({
+        diff: diffManifests(
+          manifestWith("Engineering", { "old.md": entry("same") }),
+          manifestWith("Engineering", { "new.md": entry("same") }),
+        ),
+      }),
+    );
+
+    expect(digest).toContain(
+      "**Sources:** 0 added, 0 changed, 0 removed, 1 renamed",
+    );
+    expect(digest).toContain("→ Engineering/old.md → Engineering/new.md");
+  });
+
+  it("labels the digest header with the expunge mode", () => {
+    const digest = formatDigest(
+      digestRun({
+        mode: "expunge",
+        promptFile: "prompts/expunge.md",
+        directSet: ["wiki/index.md", "wiki/overview.md"],
+      }),
+    );
+
+    expect(digest).toContain(
+      "# Wiki ingest digest (expunge) — 2026-08-20T17:30:00.000Z",
+    );
+    expect(digest).toContain("**Mode:** expunge");
+  });
+
+  it("carries the expunge direct set under its own heading", () => {
+    const digest = formatDigest(
+      digestRun({
+        mode: "expunge",
+        promptFile: "prompts/expunge.md",
+        directSet: ["sources/gone.md", "index.md"],
+      }),
+    );
+
+    expect(digest).toContain("## Expunge direct set");
+    expect(digest).toContain("- wiki/sources/gone.md");
+    expect(digest).toContain("- wiki/index.md");
+  });
+
+  it("omits the expunge section for a non-expunge run carrying a direct set", () => {
+    const digest = formatDigest(digestRun({ directSet: ["sources/gone.md"] }));
+
+    expect(digest).not.toContain("## Expunge direct set");
+  });
+
+  it("omits the expunge section when an expunge run has no direct set", () => {
+    const digest = formatDigest(
+      digestRun({ mode: "expunge", promptFile: "prompts/expunge.md" }),
+    );
+
+    expect(digest).not.toContain("## Expunge direct set");
+  });
+
+  it("renders the exact expunge section between changed sources and pages", () => {
+    const digest = formatDigest(
+      digestRun({
+        mode: "expunge",
+        promptFile: "prompts/expunge.md",
+        directSet: ["index.md", "overview.md"],
+      }),
+    );
+
+    expect(digest).toContain(
+      [
+        "- − Engineering/c.md",
+        "",
+        "## Expunge direct set",
+        "",
+        "- wiki/index.md",
+        "- wiki/overview.md",
+        "",
+        "## Wiki pages (git diff)",
+      ].join("\n"),
+    );
+  });
+
+  it("renders the exact digest document for a run", () => {
+    expect(formatDigest(digestRun())).toBe(
+      [
+        "# Wiki ingest digest — 2026-08-20T17:30:00.000Z",
+        "",
+        "- **Agent:** `pi` · model `GLM-5.2` · reasoning `high`",
+        "- **Mode:** incremental · prompt `prompts/incremental.md`",
+        "- **Sources:** 1 added, 1 changed, 1 removed, 0 renamed",
+        "- **Wiki pages:** 1 created, 2 updated, 1 deleted",
+        "- **Contradictions and unresolved questions:** in the agent report below",
+        "",
+        "## Changed sources",
+        "",
+        "**Engineering**",
+        "- + Engineering/d.md",
+        "~ Engineering/a.md",
+        "- − Engineering/c.md",
+        "",
+        "## Wiki pages (git diff)",
+        "",
+        "Created:",
+        "- wiki/concepts/new.md",
+        "",
+        "Updated:",
+        "- wiki/index.md",
+        "- wiki/log.md",
+        "",
+        "Deleted:",
+        "- wiki/gone.md",
+        "",
+        "## Agent report",
+        "",
+        "AGENT REPORT",
+        "",
+      ].join("\n"),
+    );
   });
 });
 
+describe("removedNoteContent", () => {
+  it("returns the HEAD content while the removal is uncommitted", async () => {
+    const dataRoot = await makeDataRepo({ "a.md": "last body" });
+
+    await rm(join(dataRoot, "raw", "notes", "Engineering", "a.md"));
+
+    await expect(
+      removedNoteContent(dataRoot, "raw/notes/Engineering/a.md", process.env),
+    ).resolves.toBe("last body");
+  });
+
+  it("returns the parent-tree content after the deletion is committed", async () => {
+    const dataRoot = await makeDataRepo({ "a.md": "final body" });
+
+    await rm(join(dataRoot, "raw", "notes", "Engineering", "a.md"));
+    await run("git", ["-C", dataRoot, "add", "-A"]);
+    await run("git", [
+      "-C",
+      dataRoot,
+      "-c",
+      "user.email=t@t",
+      "-c",
+      "user.name=t",
+      "commit",
+      "--quiet",
+      "-m",
+      "remove note",
+    ]);
+
+    await expect(
+      removedNoteContent(dataRoot, "raw/notes/Engineering/a.md", process.env),
+    ).resolves.toBe("final body");
+  });
+
+  it("returns undefined for a path git never knew", async () => {
+    const dataRoot = await makeDataRepo({ "a.md": "a" });
+
+    await expect(
+      removedNoteContent(
+        dataRoot,
+        "raw/notes/Engineering/never.md",
+        process.env,
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it("returns undefined outside a git repository", async () => {
+    const dataRoot = await makeDataRepo({ "a.md": "a" });
+
+    await rm(join(dataRoot, ".git"), { recursive: true });
+
+    await expect(
+      removedNoteContent(dataRoot, "raw/notes/Engineering/a.md", process.env),
+    ).resolves.toBeUndefined();
+  });
+});
+
+describe("directSetForRemovals", () => {
+  it("seeds the origin page, citing pages, index, and overview", async () => {
+    const wikiRoot = await makeExpungeWiki();
+
+    expect(
+      await directSetForRemovals(wikiRoot, ["raw/notes/V/Scratch/temp.md"]),
+    ).toEqual([
+      "concepts/cites.md",
+      "index.md",
+      "overview.md",
+      "queries/q.md",
+      "sources/Temp research.md",
+    ]);
+  });
+
+  it("matches an origin written without the raw/ prefix", async () => {
+    const wikiRoot = await makeExpungeWiki();
+
+    expect(
+      await directSetForRemovals(wikiRoot, ["raw/notes/V/Other/note.md"]),
+    ).toEqual(["index.md", "overview.md", "sources/prefixless.md"]);
+  });
+
+  it("does not seed a page whose wikilink target is not an origin page", async () => {
+    const wikiRoot = await makeExpungeWiki();
+
+    expect(
+      await directSetForRemovals(wikiRoot, ["raw/notes/V/Scratch/temp.md"]),
+    ).not.toContain("concepts/ignore-wikilink.md");
+  });
+
+  it("does not strip a raw/ segment from inside an origin path", async () => {
+    const wikiRoot = await makeExpungeWiki();
+
+    expect(await directSetForRemovals(wikiRoot, ["raw/notes/V/a.md"])).toEqual([
+      "index.md",
+      "overview.md",
+    ]);
+  });
+
+  it("falls back to index and overview when the wiki dir is missing", async () => {
+    await expect(
+      directSetForRemovals("/no/such/wiki", ["raw/notes/V/a.md"]),
+    ).resolves.toEqual(["index.md", "overview.md"]);
+  });
+});
+
+/** A wiki tree with an origin page, citing pages, and noise. */
+async function makeExpungeWiki(): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), "k-wiki-seed-"));
+
+  tempDirs.push(root);
+
+  const wikiRoot = join(root, "wiki");
+  const files: Record<string, string> = {
+    "sources/Temp research.md":
+      "---\ntitle: Temp research\ntype: source\norigin: raw/notes/V/Scratch/temp.md\n---\nbody",
+    "sources/prefixless.md":
+      "---\ntitle: Prefixless\ntype: source\norigin: notes/V/Other/note.md\n---\nbody",
+    "sources/tricky.md":
+      "---\ntitle: Tricky\ntype: source\norigin: notes/V/raw/a.md\n---\nbody",
+    "concepts/cites.md":
+      '---\ntitle: Cites\nsources:\n  - "notes/V/Scratch/temp.md"\n---\nbody',
+    "concepts/other.md":
+      '---\ntitle: Other\nsources:\n  - "notes/V/AI/rag.md"\n---\nbody',
+    "concepts/ignore-wikilink.md":
+      '---\ntitle: Ignores\nsources:\n  - "[[Prefixless]]"\n---\nbody',
+    "queries/q.md":
+      '---\ntitle: Q\ntype: query\nsources:\n  - "[[Temp research]]"\n---\nbody',
+    "index.md": "# Index",
+    "overview.md": "# Overview",
+  };
+
+  for (const [file, content] of Object.entries(files)) {
+    await mkdir(join(wikiRoot, dirname(file)), { recursive: true });
+    await writeFile(join(wikiRoot, file), content);
+  }
+
+  return wikiRoot;
+}
+
 const run = promisify(execFile);
 
-/** A data repo: raw/ with a manifest, wiki/ with a page, committed to git. */
-async function makeDataRepo(notes: VaultNotes): Promise<string> {
+/** A data repo: raw/ with a manifest and note files, wiki/ with pages, committed to git. */
+async function makeDataRepo(notes: Record<string, string>): Promise<string> {
   const dataRoot = await mkdtemp(join(tmpdir(), "k-wiki-ingest-"));
 
   tempDirs.push(dataRoot);
 
-  const manifest = manifestWith("Engineering", notes);
+  const manifest = manifestWith(
+    "Engineering",
+    Object.fromEntries(
+      Object.entries(notes).map(([path, content]) => [path, entry(content)]),
+    ),
+  );
 
-  await mkdir(join(dataRoot, "raw"), { recursive: true });
+  await mkdir(join(dataRoot, "raw", "notes", "Engineering"), {
+    recursive: true,
+  });
   await mkdir(join(dataRoot, "wiki"), { recursive: true });
+
+  for (const [path, content] of Object.entries(notes)) {
+    await writeFile(
+      join(dataRoot, "raw", "notes", "Engineering", path),
+      content,
+    );
+  }
+
   await writeFile(
     join(dataRoot, "raw", "manifest.json"),
     serializeManifest(manifest),
@@ -548,7 +1031,7 @@ function wikiPage(body: string): string {
 }
 
 /** Fixture prompt files plus a recording, wiki-writing fake agent. */
-async function makeHarness(notes: VaultNotes): Promise<Harness> {
+async function makeHarness(notes: Record<string, string>): Promise<Harness> {
   const dataRoot = await makeDataRepo(notes);
   const outputsDir = join(dataRoot, "outputs");
   const promptsDir = join(dataRoot, "prompts");
@@ -556,6 +1039,7 @@ async function makeHarness(notes: VaultNotes): Promise<Harness> {
   await mkdir(promptsDir, { recursive: true });
   await writeFile(join(promptsDir, "ingest.md"), "FULL PROMPT");
   await writeFile(join(promptsDir, "incremental.md"), "INCREMENTAL PROMPT");
+  await writeFile(join(promptsDir, "expunge.md"), "EXPUNGE PROMPT");
 
   const settingsPath = join(dataRoot, "settings.yml");
 
@@ -617,7 +1101,7 @@ function invocation(h: Harness, index: number) {
 
 describe("runWikiIngest", () => {
   it("uses the full ingest prompt when no snapshot exists", async () => {
-    const h = await makeHarness({ "a.md": entry("a") });
+    const h = await makeHarness({ "a.md": "a" });
     const result = await runWikiIngest(optionsFor(h));
 
     expect(result.status).toBe("ran");
@@ -625,7 +1109,7 @@ describe("runWikiIngest", () => {
   });
 
   it("invokes the agent in the data repo root", async () => {
-    const h = await makeHarness({ "a.md": entry("a") });
+    const h = await makeHarness({ "a.md": "a" });
 
     await runWikiIngest(optionsFor(h));
 
@@ -633,7 +1117,7 @@ describe("runWikiIngest", () => {
   });
 
   it("passes the model and reasoning level from settings as agent flags", async () => {
-    const h = await makeHarness({ "a.md": entry("a") });
+    const h = await makeHarness({ "a.md": "a" });
 
     await runWikiIngest(optionsFor(h));
 
@@ -647,7 +1131,7 @@ describe("runWikiIngest", () => {
   });
 
   it("writes the manifest snapshot the next run diffs against", async () => {
-    const h = await makeHarness({ "a.md": entry("a") });
+    const h = await makeHarness({ "a.md": "a" });
 
     await runWikiIngest(optionsFor(h));
 
@@ -663,7 +1147,7 @@ describe("runWikiIngest", () => {
   });
 
   it("skips the agent when nothing changed since the snapshot", async () => {
-    const h = await makeHarness({ "a.md": entry("a") });
+    const h = await makeHarness({ "a.md": "a" });
     const messages: string[] = [];
     const first = await runWikiIngest(optionsFor(h));
     const second = await runWikiIngest({
@@ -691,7 +1175,7 @@ describe("runWikiIngest", () => {
   });
 
   it("selects the incremental prompt and names the changed source", async () => {
-    const h = await makeHarness({ "a.md": entry("a") });
+    const h = await makeHarness({ "a.md": "a" });
 
     await runWikiIngest(optionsFor(h));
     await writeFile(
@@ -706,10 +1190,282 @@ describe("runWikiIngest", () => {
     expect(invocation(h, 1).args.at(-1)).toContain("Engineering/a.md");
   });
 
-  it("names a removed source in the incremental prompt", async () => {
-    const h = await makeHarness({ "a.md": entry("a") });
+  it("routes a removed source to the expunge prompt with its content", async () => {
+    const h = await makeHarness({ "gone.md": "DISTINCTIVE GONE BODY" });
 
     await runWikiIngest(optionsFor(h));
+    await rm(join(h.dataRoot, "raw", "notes", "Engineering", "gone.md"));
+    await writeFile(
+      join(h.dataRoot, "raw", "manifest.json"),
+      serializeManifest(manifestWith("Engineering", {})),
+    );
+
+    const result = await runWikiIngest(optionsFor(h));
+
+    expect(result.status).toBe("ran");
+    if (result.status !== "ran") {
+      return;
+    }
+
+    expect(result.mode).toBe("expunge");
+
+    const prompt = invocation(h, 1).args.at(-1) ?? "";
+
+    expect(prompt).toContain("EXPUNGE PROMPT");
+    expect(prompt).toContain("- Engineering/gone.md");
+    expect(prompt).toContain(
+      "### Engineering/gone.md (raw/notes/Engineering/gone.md)",
+    );
+    expect(prompt).toContain("DISTINCTIVE GONE BODY");
+    expect(prompt).toContain("- wiki/index.md");
+  });
+
+  it("digests an expunge run with the mode label and direct set", async () => {
+    const h = await makeHarness({ "gone.md": "GONE BODY" });
+
+    await runWikiIngest(optionsFor(h));
+    await rm(join(h.dataRoot, "raw", "notes", "Engineering", "gone.md"));
+    await writeFile(
+      join(h.dataRoot, "raw", "manifest.json"),
+      serializeManifest(manifestWith("Engineering", {})),
+    );
+
+    const result = await runWikiIngest(optionsFor(h));
+
+    expect(result.status).toBe("ran");
+    if (result.status !== "ran") {
+      return;
+    }
+
+    expect(result.digest).toContain(
+      "# Wiki ingest digest (expunge) — 2026-08-20T18:00:00.000Z",
+    );
+    expect(result.digest).toContain("**Mode:** expunge");
+    expect(result.digest).toContain("## Expunge direct set");
+    expect(result.digest).toContain("- wiki/index.md");
+  });
+
+  it("treats an equal-hash remove and add pair as a change, not expunge", async () => {
+    const h = await makeHarness({ "a.md": "same" });
+
+    await runWikiIngest(optionsFor(h));
+    await rm(join(h.dataRoot, "raw", "notes", "Engineering", "a.md"));
+    await writeFile(
+      join(h.dataRoot, "raw", "notes", "Engineering", "b.md"),
+      "same",
+    );
+    await writeFile(
+      join(h.dataRoot, "raw", "manifest.json"),
+      serializeManifest(manifestWith("Engineering", { "b.md": entry("same") })),
+    );
+
+    const result = await runWikiIngest(optionsFor(h));
+
+    expect(result.status).toBe("ran");
+    if (result.status !== "ran") {
+      return;
+    }
+
+    expect(result.mode).toBe("incremental");
+    expect(invocation(h, 1).args.at(-1)).toContain(
+      "→ Engineering/a.md → Engineering/b.md",
+    );
+  });
+
+  it("announces the expunge trigger and direct set on the progress sink", async () => {
+    const h = await makeHarness({ "gone.md": "GONE BODY" });
+    const messages: string[] = [];
+
+    await runWikiIngest(optionsFor(h));
+    await rm(join(h.dataRoot, "raw", "notes", "Engineering", "gone.md"));
+    await writeFile(
+      join(h.dataRoot, "raw", "manifest.json"),
+      serializeManifest(manifestWith("Engineering", {})),
+    );
+    await runWikiIngest({
+      ...optionsFor(h),
+      onProgress: (message) => messages.push(message),
+    });
+
+    expect(messages).toContain(
+      "wiki-ingest: expunge — 1 removed source; direct set: wiki/index.md, wiki/overview.md",
+    );
+  });
+
+  it("pluralizes the preview line for several removed sources", async () => {
+    const h = await makeHarness({ "a.md": "A", "b.md": "B" });
+    const messages: string[] = [];
+
+    await runWikiIngest(optionsFor(h));
+    await writeFile(
+      join(h.dataRoot, "raw", "manifest.json"),
+      serializeManifest(manifestWith("Engineering", {})),
+    );
+    await runWikiIngest({
+      ...optionsFor(h),
+      onProgress: (message) => messages.push(message),
+    });
+
+    expect(messages).toContain(
+      "wiki-ingest: expunge — 2 removed sources; direct set: wiki/index.md, wiki/overview.md",
+    );
+  });
+
+  it("seeds the source page whose origin names the removed note", async () => {
+    const h = await makeHarness({ "gone.md": "GONE BODY" });
+    const messages: string[] = [];
+
+    await mkdir(join(h.dataRoot, "wiki", "sources"), { recursive: true });
+    await writeFile(
+      join(h.dataRoot, "wiki", "sources", "gone note.md"),
+      "---\ntitle: Gone note\ntype: source\norigin: raw/notes/Engineering/gone.md\n---\nbody",
+    );
+    await run("git", ["-C", h.dataRoot, "add", "-A"]);
+    await run("git", [
+      "-C",
+      h.dataRoot,
+      "-c",
+      "user.email=t@t",
+      "-c",
+      "user.name=t",
+      "commit",
+      "--quiet",
+      "-m",
+      "origin page",
+    ]);
+    await runWikiIngest(optionsFor(h));
+    await rm(join(h.dataRoot, "raw", "notes", "Engineering", "gone.md"));
+    await writeFile(
+      join(h.dataRoot, "raw", "manifest.json"),
+      serializeManifest(manifestWith("Engineering", {})),
+    );
+
+    const result = await runWikiIngest({
+      ...optionsFor(h),
+      onProgress: (message) => messages.push(message),
+    });
+
+    expect(result.status).toBe("ran");
+
+    const prompt = invocation(h, 1).args.at(-1) ?? "";
+
+    expect(prompt).toContain("- wiki/sources/gone note.md");
+    expect(messages.some((m) => m.includes("wiki/sources/gone note.md"))).toBe(
+      true,
+    );
+  });
+
+  it("passes the injected environment through to the agent", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const env = { KWIKI_TEST: "yes" };
+    let seen: NodeJS.ProcessEnv | undefined;
+    const recording: AgentRunner = async (command, args, options) => {
+      seen = options.env;
+
+      return { stdout: "report", stderr: "" };
+    };
+
+    await runWikiIngest({ ...optionsFor(h), env, runAgent: recording });
+
+    expect(seen).toBe(env);
+  });
+
+  it("does not count a staged wiki rename as a deleted page", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const quiet: AgentRunner = async () => ({
+      stdout: "quiet report",
+      stderr: "",
+    });
+
+    await run("git", [
+      "-C",
+      h.dataRoot,
+      "mv",
+      "wiki/A-page.md",
+      "wiki/B-page.md",
+    ]);
+
+    const result = await runWikiIngest({ ...optionsFor(h), runAgent: quiet });
+
+    expect(result.status).toBe("ran");
+    if (result.status !== "ran") {
+      return;
+    }
+
+    expect(result.pages.deleted).toEqual([]);
+    expect(result.pages.created).toEqual([]);
+    expect(result.pages.updated).toEqual([]);
+  });
+
+  it("keeps the underlying read error as cause when the prompt is missing", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    await rm(join(h.promptsDir, "ingest.md"));
+
+    let cause: unknown;
+
+    try {
+      await runWikiIngest(optionsFor(h));
+    } catch (error) {
+      cause = (error as Error).cause;
+    }
+
+    expect(cause).toBeInstanceOf(Error);
+  });
+
+  it("labels the heartbeat line for an expunge run", async () => {
+    const h = await makeHarness({ "gone.md": "GONE BODY" });
+    const messages: string[] = [];
+    const slow: AgentRunner = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
+      return { stdout: "slow agent report", stderr: "" };
+    };
+
+    await runWikiIngest(optionsFor(h));
+    await rm(join(h.dataRoot, "raw", "notes", "Engineering", "gone.md"));
+    await writeFile(
+      join(h.dataRoot, "raw", "manifest.json"),
+      serializeManifest(manifestWith("Engineering", {})),
+    );
+    await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: slow,
+      heartbeatMs: 40,
+      onProgress: (message) => messages.push(message),
+    });
+
+    expect(messages).toContain("wiki-ingest: expunge agent still running (0s)");
+  });
+
+  it("states unavailable content when the removed note has no git history", async () => {
+    const h = await makeHarness({ "gone.md": "GONE BODY" });
+
+    // Rewrite the initial commit without the note: the repo keeps a
+    // commit to revert to (guardrails), but no history knows the note.
+    await run("git", [
+      "-C",
+      h.dataRoot,
+      "rm",
+      "--quiet",
+      "--cached",
+      "raw/notes/Engineering/gone.md",
+    ]);
+    await run("git", [
+      "-C",
+      h.dataRoot,
+      "-c",
+      "user.email=t@t",
+      "-c",
+      "user.name=t",
+      "commit",
+      "--quiet",
+      "--amend",
+      "--no-edit",
+    ]);
+
+    await runWikiIngest(optionsFor(h));
+    await rm(join(h.dataRoot, "raw", "notes", "Engineering", "gone.md"));
     await writeFile(
       join(h.dataRoot, "raw", "manifest.json"),
       serializeManifest(manifestWith("Engineering", {})),
@@ -717,11 +1473,11 @@ describe("runWikiIngest", () => {
 
     await runWikiIngest(optionsFor(h));
 
-    expect(invocation(h, 1).args.at(-1)).toContain("- Engineering/a.md");
+    expect(invocation(h, 1).args.at(-1)).toContain("no committed git history");
   });
 
   it("derives created and updated wiki pages from git status", async () => {
-    const h = await makeHarness({ "a.md": entry("a") });
+    const h = await makeHarness({ "a.md": "a" });
 
     const result = await runWikiIngest(optionsFor(h));
 
@@ -734,8 +1490,8 @@ describe("runWikiIngest", () => {
     expect(result.pages.updated).toEqual(["wiki/A-page.md", "wiki/index.md"]);
   });
 
-  it("ignores wiki pages the run deleted", async () => {
-    const h = await makeHarness({ "a.md": entry("a") });
+  it("reports wiki pages the run deleted under their own category", async () => {
+    const h = await makeHarness({ "a.md": "a" });
     const result = await runWikiIngest(optionsFor(h));
 
     expect(result.status).toBe("ran");
@@ -745,10 +1501,11 @@ describe("runWikiIngest", () => {
 
     expect(result.pages.created).not.toContain("wiki/gone.md");
     expect(result.pages.updated).not.toContain("wiki/gone.md");
+    expect(result.pages.deleted).toEqual(["wiki/gone.md"]);
   });
 
   it("writes the digest under outputs/runs with a sortable timestamp", async () => {
-    const h = await makeHarness({ "a.md": entry("a") });
+    const h = await makeHarness({ "a.md": "a" });
     const { readFile } = await import("node:fs/promises");
     const result = await runWikiIngest(optionsFor(h));
 
@@ -770,7 +1527,7 @@ describe("runWikiIngest", () => {
   });
 
   it("fails before the agent runs when the data repo has no git to revert to", async () => {
-    const h = await makeHarness({ "a.md": entry("a") });
+    const h = await makeHarness({ "a.md": "a" });
 
     await rm(join(h.dataRoot, ".git"), { recursive: true });
 
@@ -781,7 +1538,7 @@ describe("runWikiIngest", () => {
   });
 
   it("fails naming the prompt file when it is missing", async () => {
-    const h = await makeHarness({ "a.md": entry("a") });
+    const h = await makeHarness({ "a.md": "a" });
 
     await rm(join(h.promptsDir, "ingest.md"));
 
@@ -791,7 +1548,7 @@ describe("runWikiIngest", () => {
   });
 
   it("falls back to the wall clock for the digest timestamp", async () => {
-    const h = await makeHarness({ "a.md": entry("a") });
+    const h = await makeHarness({ "a.md": "a" });
     const result = await runWikiIngest({
       settingsPath: h.settingsPath,
       rawDir: join(h.dataRoot, "raw"),
@@ -811,7 +1568,7 @@ describe("runWikiIngest", () => {
   });
 
   it("reports each pipeline step on the progress sink", async () => {
-    const h = await makeHarness({ "a.md": entry("a") });
+    const h = await makeHarness({ "a.md": "a" });
     const messages: string[] = [];
 
     await runWikiIngest({
@@ -830,7 +1587,7 @@ describe("runWikiIngest", () => {
   });
 
   it("emits a heartbeat while a slow agent run is in flight", async () => {
-    const h = await makeHarness({ "a.md": entry("a") });
+    const h = await makeHarness({ "a.md": "a" });
     const messages: string[] = [];
     const slow: AgentRunner = async () => {
       await new Promise((resolve) => setTimeout(resolve, 150));
@@ -851,7 +1608,7 @@ describe("runWikiIngest", () => {
   });
 
   it("formats the heartbeat clock as minutes and padded seconds", async () => {
-    const h = await makeHarness({ "a.md": entry("a") });
+    const h = await makeHarness({ "a.md": "a" });
     const messages: string[] = [];
     let clock = new Date("2026-08-20T17:58:00.000Z");
     const slow: AgentRunner = async () => {
@@ -874,7 +1631,7 @@ describe("runWikiIngest", () => {
   });
 
   it("stops the heartbeat when the agent run ends", async () => {
-    const h = await makeHarness({ "a.md": entry("a") });
+    const h = await makeHarness({ "a.md": "a" });
     const messages: string[] = [];
     const fast: AgentRunner = async () => ({
       stdout: "fast report",
@@ -896,7 +1653,7 @@ describe("runWikiIngest", () => {
   });
 
   it("enforces the timeout on the real agent runner", async () => {
-    const h = await makeHarness({ "a.md": entry("a") });
+    const h = await makeHarness({ "a.md": "a" });
     const sleeper = join(h.dataRoot, "sleep-agent.mjs");
 
     await writeFile(
@@ -927,7 +1684,7 @@ describe("runWikiIngest", () => {
   });
 
   it("fails with a sync hint when the raw dir has no manifest", async () => {
-    const h = await makeHarness({ "a.md": entry("a") });
+    const h = await makeHarness({ "a.md": "a" });
 
     await rm(join(h.dataRoot, "raw", "manifest.json"));
 
@@ -935,7 +1692,7 @@ describe("runWikiIngest", () => {
   });
 
   it("reports an agent failure with its exit code", async () => {
-    const h = await makeHarness({ "a.md": entry("a") });
+    const h = await makeHarness({ "a.md": "a" });
     const failing: AgentRunner = async () => {
       throw new Error("agent exited with code 1\nstderr tail");
     };
@@ -946,7 +1703,7 @@ describe("runWikiIngest", () => {
   });
 
   it("leaves no snapshot and no digest when the agent fails", async () => {
-    const h = await makeHarness({ "a.md": entry("a") });
+    const h = await makeHarness({ "a.md": "a" });
     const failing: AgentRunner = async () => {
       throw new Error("agent exited with code 1");
     };
@@ -969,7 +1726,7 @@ describe("runWikiIngest", () => {
   });
 
   it("leaves the snapshot untouched when the digest write fails", async () => {
-    const h = await makeHarness({ "a.md": entry("a") });
+    const h = await makeHarness({ "a.md": "a" });
 
     await mkdir(join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"), {
       recursive: true,
@@ -990,7 +1747,7 @@ describe("runWikiIngest guardrails", () => {
     join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md");
 
   it("keeps the agent's changes on a clean run", async () => {
-    const h = await makeHarness({ "a.md": entry("a") });
+    const h = await makeHarness({ "a.md": "a" });
     const result = await runWikiIngest(optionsFor(h));
 
     expect(result.status).toBe("ran");
@@ -1004,7 +1761,7 @@ describe("runWikiIngest guardrails", () => {
   });
 
   it("reverts and fails the run when a changed page has broken frontmatter", async () => {
-    const h = await makeHarness({ "a.md": entry("a") });
+    const h = await makeHarness({ "a.md": "a" });
     const saboteur: AgentRunner = async (_command, _args, options) => {
       await writeFile(join(options.cwd, "wiki", "bad.md"), "no frontmatter\n");
 
@@ -1023,7 +1780,7 @@ describe("runWikiIngest guardrails", () => {
   });
 
   it("writes a failure digest naming the tripped check", async () => {
-    const h = await makeHarness({ "a.md": entry("a") });
+    const h = await makeHarness({ "a.md": "a" });
     const saboteur: AgentRunner = async (_command, _args, options) => {
       await writeFile(join(options.cwd, "wiki", "bad.md"), "no frontmatter\n");
 
@@ -1042,7 +1799,7 @@ describe("runWikiIngest guardrails", () => {
   });
 
   it("reverts and fails the run when the agent writes outside the whitelist", async () => {
-    const h = await makeHarness({ "a.md": entry("a") });
+    const h = await makeHarness({ "a.md": "a" });
     const saboteur: AgentRunner = async (_command, _args, options) => {
       await mkdir(join(options.cwd, "raw", "notes"), { recursive: true });
       await writeFile(join(options.cwd, "raw", "notes", "rogue.md"), "x\n");
@@ -1059,7 +1816,7 @@ describe("runWikiIngest guardrails", () => {
   });
 
   it("reverts raw tampering even when the agent fails", async () => {
-    const h = await makeHarness({ "a.md": entry("a") });
+    const h = await makeHarness({ "a.md": "a" });
     const saboteur: AgentRunner = async (_command, _args, options) => {
       await mkdir(join(options.cwd, "raw", "notes"), { recursive: true });
       await writeFile(join(options.cwd, "raw", "notes", "rogue.md"), "x\n");
@@ -1076,7 +1833,7 @@ describe("runWikiIngest guardrails", () => {
   });
 
   it("keeps valid changes when the agent fails and guardrails pass", async () => {
-    const h = await makeHarness({ "a.md": entry("a") });
+    const h = await makeHarness({ "a.md": "a" });
     const failing: AgentRunner = async (_command, _args, options) => {
       await writeFile(join(options.cwd, "wiki", "ok.md"), wikiPage("Kept"));
 
@@ -1092,7 +1849,7 @@ describe("runWikiIngest guardrails", () => {
   });
 
   it("reverts and fails the run when a changed page leaves a dangling wikilink", async () => {
-    const h = await makeHarness({ "a.md": entry("a") });
+    const h = await makeHarness({ "a.md": "a" });
     const saboteur: AgentRunner = async (_command, _args, options) => {
       await writeFile(
         join(options.cwd, "wiki", "dangling.md"),
@@ -1111,7 +1868,7 @@ describe("runWikiIngest guardrails", () => {
   });
 
   it("checks a wiki page that was already dirty before the run", async () => {
-    const h = await makeHarness({ "a.md": entry("a") });
+    const h = await makeHarness({ "a.md": "a" });
 
     await writeFile(
       join(h.dataRoot, "wiki", "index.md"),
@@ -1324,7 +2081,7 @@ describe("createAgentProgressSink", () => {
 
 describe("runGit reuse sanity", () => {
   it("reports git status for a wiki change in the temp data repo", async () => {
-    const dataRoot = await makeDataRepo({ "a.md": entry("a") });
+    const dataRoot = await makeDataRepo({ "a.md": "a" });
 
     await writeFile(join(dataRoot, "wiki", "index.md"), "# Index v2\n");
     await mkdir(join(dataRoot, "wiki", "concepts"));
@@ -1370,7 +2127,7 @@ console.log("stub report");
 
   /** A harness whose settings point at an executable stub agent. */
   async function makeCliHarness(): Promise<Harness> {
-    const h = await makeHarness({ "a.md": entry("a") });
+    const h = await makeHarness({ "a.md": "a" });
     const stub = join(h.dataRoot, "stub-agent.mjs");
 
     await writeFile(stub, STUB, { mode: 0o755 });
@@ -1459,7 +2216,7 @@ console.log("stub report");
     ]);
 
     expect(out).toContain("Wiki ingest digest");
-    expect(out).toContain("**Wiki pages:** 1 created, 0 updated");
+    expect(out).toContain("**Wiki pages:** 1 created, 0 updated, 0 deleted");
     expect(err).toContain("wiki-ingest: mode full, invoking agent");
     expect(process.exitCode).toBeUndefined();
   });
@@ -1561,6 +2318,24 @@ console.log("stub report");
 
     expect(err).toContain("unknown option");
     expect(process.exitCode).toBe(1);
+  });
+
+  it("prints no color codes under NO_COLOR", async () => {
+    const prior = process.env.NO_COLOR;
+
+    process.env.NO_COLOR = "1";
+
+    try {
+      const { err } = await runCli(["--bogus"]);
+
+      expect(err).not.toContain("\u001b[");
+    } finally {
+      if (prior === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = prior;
+      }
+    }
   });
 
   it("exits 1 when --settings has no value", async () => {

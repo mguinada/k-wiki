@@ -11,12 +11,17 @@ Determine whether the changes require:
 - updates;
 - relationship/link changes;
 - removal of obsolete claims;
-- contradiction handling.
+- contradiction handling;
+- retitles (a renamed note keeps its source page and citations).
 
 When two or more sources explicitly contrast named approaches, file a
 comparison page (or extend an existing one).
 
 Make the smallest set of changes necessary.
+
+Record `origin: raw/notes/<vault>/<path>` in the frontmatter of every
+source page you create, and add it to any source page you touch that
+lacks it.
 
 Do not regenerate unrelated pages.
 Do not modify raw/.

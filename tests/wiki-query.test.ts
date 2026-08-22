@@ -200,7 +200,12 @@ describe("parseAgentReply", () => {
   });
 });
 
-const NO_PAGES = { created: [], updated: [], unavailable: undefined };
+const NO_PAGES = {
+  created: [],
+  updated: [],
+  deleted: [],
+  unavailable: undefined,
+};
 
 describe("classifyVerdict", () => {
   it("reports the filed pages in file mode", () => {
@@ -208,6 +213,7 @@ describe("classifyVerdict", () => {
       {
         created: ["wiki/queries/rag.md"],
         updated: ["wiki/queries/other.md"],
+        deleted: [],
         unavailable: undefined,
       },
       parseAgentReply("A.\nQUERY: filed — wiki/queries/rag.md"),
@@ -321,7 +327,7 @@ describe("classifyVerdict", () => {
 
   it("reports the filing status as unavailable when git failed and the agent claims filing", () => {
     const verdict = classifyVerdict(
-      { created: [], updated: [], unavailable: "no git" },
+      { created: [], updated: [], deleted: [], unavailable: "no git" },
       parseAgentReply("A.\nQUERY: filed — wiki/queries/rag.md"),
       false,
     );
@@ -626,6 +632,7 @@ describe("runWikiQuery", () => {
     expect(result.pages).toEqual({
       created: ["wiki/queries/rag-vs-finetuning.md"],
       updated: [],
+      deleted: [],
       unavailable: undefined,
     });
   });
@@ -820,6 +827,7 @@ describe("runWikiQuery", () => {
     expect(result.pages).toEqual({
       created: [],
       updated: [],
+      deleted: [],
       unavailable: expect.any(String),
     });
   });

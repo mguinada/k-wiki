@@ -5,7 +5,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, describe, expect, it } from "vitest";
-import { INGEST_SCRIPT, runCli } from "./helpers.ts";
+import {
+  INGEST_SCRIPT,
+  buildWorkspace,
+  runCli,
+  SYNC_SCRIPT,
+} from "./helpers.ts";
 
 /**
  * wiki-ingest e2e: the real CLI as a child process, driving a stub
@@ -38,11 +43,12 @@ function hashOf(content: string): string {
  * would (pi flags from settings.yml). It records the --print payload
  * under outputs/ (the wrapper's whitelist) and updates the wiki like
  * the real agent would, §9 frontmatter included, so the post-run
- * guardrails pass. Exits 3 when the payload is missing — the wrapper
- * must pass the prompt.
+ * guardrails pass. On an expunge prompt it deletes the seeded wiki
+ * pages for the removed note. Exits 3 when the payload is missing —
+ * the wrapper must pass the prompt.
  */
 const STUB_AGENT = `#!/usr/bin/env node
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const index = process.argv.indexOf("--print");
@@ -71,27 +77,52 @@ await writeFile(
     "",
     "stub body",
     "",
-  ].join("\\n"),
+  ].join("\n"),
 );
-await writeFile(
-  join(process.cwd(), "wiki", "index.md"),
-  [
-    "---",
-    'title: "Index"',
-    "type: topic",
-    "created: 2026-08-20",
-    "updated: 2026-08-20",
-    "tags:",
-    "  - llm",
-    "sources:",
-    '  - "[[index]]"',
-    "---",
-    "",
-    "# Index v2",
-    "",
-  ].join("\\n"),
-);
-console.log("stub agent: sources processed; no contradictions; no unresolved questions");
+
+if (prompt.includes("deleted from the vault")) {
+  await rm(join(process.cwd(), "wiki", "sources", "temp-research.md"));
+  await rm(join(process.cwd(), "wiki", "concepts", "cites.md"));
+  await writeFile(
+    join(process.cwd(), "wiki", "index.md"),
+    [
+      "---",
+      'title: "Index"',
+      "type: topic",
+      "created: 2026-08-20",
+      "updated: 2026-08-20",
+      "tags:",
+      "  - llm",
+      "sources:",
+      '  - "[[index]]"',
+      "---",
+      "",
+      "# Index v3",
+      "",
+    ].join("\n"),
+  );
+  console.log("stub agent: expunge run; claims removed; 2 pages deleted; 0 contradictions dissolved; 0 queries expunged; threshold: surgical pass");
+} else {
+  await writeFile(
+    join(process.cwd(), "wiki", "index.md"),
+    [
+      "---",
+      'title: "Index"',
+      "type: topic",
+      "created: 2026-08-20",
+      "updated: 2026-08-20",
+      "tags:",
+      "  - llm",
+      "sources:",
+      '  - "[[index]]"',
+      "---",
+      "",
+      "# Index v2",
+      "",
+    ].join("\n"),
+  );
+  console.log("stub agent: sources processed; no contradictions; no unresolved questions");
+}
 `;
 
 interface Repo {
@@ -250,7 +281,9 @@ describe("wiki-ingest e2e", () => {
     const repo = await makeRepo({ "AI/RAG.md": "rag" });
     const result = await ingest(repo);
 
-    expect(result.out).toContain("**Wiki pages:** 1 created, 1 updated");
+    expect(result.out).toContain(
+      "**Wiki pages:** 1 created, 1 updated, 0 deleted",
+    );
     expect(result.out).toContain("- wiki/concepts/stub.md");
     expect(result.out).toContain("- wiki/index.md");
   });
@@ -409,5 +442,196 @@ describe("wiki-ingest e2e", () => {
     await expect(
       readFile(join(repo.dataRoot, "raw", "notes", "rogue.md"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+});
+
+/** The seeded wiki state a previous agent run would have left behind. */
+const SEEDED_SOURCE_PAGE = `---
+title: Temp research
+type: source
+origin: raw/notes/Documents/Scratch/temp-research.md
+sources:
+  - "notes/Documents/Scratch/temp-research.md"
+---
+
+Ephemeral scratch note ([[cites]] its findings).
+`;
+
+const SEEDED_CONCEPT_PAGE = `---
+title: Cites
+type: concept
+sources:
+  - "notes/Documents/Scratch/temp-research.md"
+---
+
+Findings from the temp research note.
+`;
+
+async function git(dir: string, ...args: string[]): Promise<void> {
+  await run("git", [
+    "-C",
+    dir,
+    "-c",
+    "user.email=t@t",
+    "-c",
+    "user.name=t",
+    ...args,
+  ]);
+}
+
+/**
+ * A sync-driven data repo: the real fixture vault and sync CLI, a stub
+ * agent, and a committed wiki state that cites Scratch/temp-research.md
+ * — so the expunge scenario exercises sync → removal detection →
+ * ingest routing end to end.
+ */
+async function makeSyncedRepo(): Promise<{
+  readonly dataRoot: string;
+  readonly configPath: string;
+  readonly rawDir: string;
+  readonly settingsPath: string;
+}> {
+  const ws = await buildWorkspace();
+  const dataRoot = ws.dir;
+
+  await runCli(SYNC_SCRIPT, [ws.configPath, ws.rawDir]);
+
+  await mkdir(join(dataRoot, "wiki", "sources"), { recursive: true });
+  await mkdir(join(dataRoot, "wiki", "concepts"), { recursive: true });
+  await writeFile(join(dataRoot, "wiki", "index.md"), "# Index\n");
+  await writeFile(join(dataRoot, "wiki", "overview.md"), "# Overview\n");
+  await writeFile(
+    join(dataRoot, "wiki", "sources", "temp-research.md"),
+    SEEDED_SOURCE_PAGE,
+  );
+  await writeFile(
+    join(dataRoot, "wiki", "concepts", "cites.md"),
+    SEEDED_CONCEPT_PAGE,
+  );
+  await writeFile(join(dataRoot, "stub-agent.mjs"), STUB_AGENT, {
+    mode: 0o755,
+  });
+
+  const settingsPath = join(dataRoot, "settings.yml");
+
+  await writeFile(
+    settingsPath,
+    `command: ${join(dataRoot, "stub-agent.mjs")}\nmodel: E2E-MODEL\nreasoning: low\n`,
+  );
+  await git(dataRoot, "init", "--quiet");
+  await git(dataRoot, "add", "-A");
+  await git(dataRoot, "commit", "--quiet", "-m", "sync + seeded wiki");
+
+  return {
+    dataRoot,
+    configPath: ws.configPath,
+    rawDir: ws.rawDir,
+    settingsPath,
+  };
+}
+
+function ingestSynced(repo: Awaited<ReturnType<typeof makeSyncedRepo>>) {
+  return runCli(INGEST_SCRIPT, [
+    "--settings",
+    repo.settingsPath,
+    "--outputs",
+    join(repo.dataRoot, "outputs"),
+    repo.rawDir,
+  ]);
+}
+
+describe("wiki-ingest expunge e2e (sync-driven)", () => {
+  it("labels the run expunge, digests the direct set and deleted pages, and writes the snapshot", async () => {
+    const repo = await makeSyncedRepo();
+    const first = await ingestSynced(repo);
+
+    expect(first.code).toBe(0);
+    await git(repo.dataRoot, "add", "-A");
+    await git(repo.dataRoot, "commit", "--quiet", "-m", "after first ingest");
+
+    await rm(join(repo.dataRoot, "Documents", "Scratch", "temp-research.md"));
+    const sync = await runCli(SYNC_SCRIPT, [repo.configPath, repo.rawDir]);
+
+    expect(sync.code).toBe(0);
+
+    const result = await ingestSynced(repo);
+
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("# Wiki ingest digest (expunge)");
+    expect(result.out).toContain("**Mode:** expunge");
+    expect(result.out).toContain("## Expunge direct set");
+    expect(result.out).toContain("- wiki/concepts/cites.md");
+    expect(result.out).toContain("- wiki/sources/temp-research.md");
+    expect(result.out).toContain("- wiki/index.md");
+    expect(result.out).toContain("Deleted:");
+    expect(result.out).toContain("- wiki/concepts/cites.md");
+    expect(result.err).toContain("wiki-ingest: expunge — 1 removed source");
+
+    const prompt = await readFile(
+      join(repo.dataRoot, "outputs", "stub-prompt.txt"),
+      "utf8",
+    );
+
+    expect(prompt).toContain("deleted from the vault");
+    expect(prompt).toContain(
+      "### Documents/Scratch/temp-research.md (raw/notes/Documents/Scratch/temp-research.md)",
+    );
+    expect(prompt).toContain("Ephemeral note");
+    expect(prompt).toContain("- wiki/sources/temp-research.md");
+
+    const snapshot = await readFile(
+      join(repo.dataRoot, "outputs", "last-ingested-manifest.json"),
+      "utf8",
+    );
+
+    expect(snapshot).not.toContain("Scratch/temp-research.md");
+  });
+
+  it("treats a same-content rename as a change, not an expunge", async () => {
+    const repo = await makeSyncedRepo();
+    const first = await ingestSynced(repo);
+
+    expect(first.code).toBe(0);
+    await git(repo.dataRoot, "add", "-A");
+    await git(repo.dataRoot, "commit", "--quiet", "-m", "after first ingest");
+
+    const note = await readFile(
+      join(repo.dataRoot, "Documents", "AI", "RAG.md"),
+      "utf8",
+    );
+
+    await rm(join(repo.dataRoot, "Documents", "AI", "RAG.md"));
+    await writeFile(
+      join(
+        repo.dataRoot,
+        "Documents",
+        "AI",
+        "retrieval-augmented-generation.md",
+      ),
+      note,
+    );
+
+    const sync = await runCli(SYNC_SCRIPT, [repo.configPath, repo.rawDir]);
+
+    expect(sync.code).toBe(0);
+
+    const result = await ingestSynced(repo);
+
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("**Mode:** incremental");
+    expect(result.out).not.toContain("**Mode:** expunge");
+    expect(result.out).toContain(
+      "→ Documents/AI/RAG.md → Documents/AI/retrieval-augmented-generation.md",
+    );
+
+    const prompt = await readFile(
+      join(repo.dataRoot, "outputs", "stub-prompt.txt"),
+      "utf8",
+    );
+
+    expect(prompt).not.toContain("deleted from the vault");
+    expect(prompt).toContain(
+      "→ Documents/AI/RAG.md → Documents/AI/retrieval-augmented-generation.md",
+    );
   });
 });

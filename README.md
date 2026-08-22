@@ -82,6 +82,7 @@ npm run sync-vault                              # vault → raw/
 npm run wiki-ingest                             # raw/ changes → wiki/
 # read the digest, review the git diff in the data repo, commit it
 npm run check-links -- ~/Lab/k-wiki-data/wiki   # every [[wikilink]] resolves
+npm run check-provenance -- ~/Lab/k-wiki-data/wiki  # every sources entry and origin is alive
 npm run health -- ~/Lab/k-wiki-data/raw         # raw/ matches its manifest
 ```
 
@@ -272,6 +273,7 @@ sources directly, so there is no build step — install dependencies with
 | `npm run e2e` | vitest | Run the end-to-end suite (`tests/e2e/`): real CLI child processes — sync-vault through a full vault lifecycle (first run, no-op re-run, edit, delete, block flip, multi-vault) against the synthetic fixture vault in temp workspaces under `.e2e-tmp/` (gitignored), plus wiki-ingest through first-run, incremental, skip, failure, timeout, and guardrail auto-revert runs against a stub agent in temp data repos |
 | `npm run health [-- <raw-dir>]` | health CLI | Check the coherence of a `raw/` projection (default: the repo's `raw/`): every `raw/notes/<vault>/` file matches its `manifest.json` sha-256, with no orphans and no missing entries; read-only, no vault access; exit 0 = coherent (including healthy-empty), exit 1 = one line per problem |
 | `npm run check-links [-- <wiki-dir>]` | wikilink checker | Check that every `[[wikilink]]` under `wiki/` (default) resolves to an existing page by file name; exit 0 = all links resolve, exit 1 = one `file:line -> [[link]]` line per broken link |
+| `npm run check-provenance [-- <wiki-dir> [<raw-dir>]]` | dead-provenance checker | Check that every `sources` entry under `wiki/` resolves (wikilink → an existing page, path → an existing `raw/` file) and every source page's `origin` exists under `raw/` (default: the repo's `wiki/` and its sibling `raw/`); exit 0 = coherent, exit 1 = one `wiki/<page> -> …` line per problem — the deterministic backstop that catches any purge miss |
 | `npm run fixtures -- <dir>` | fixture generator | Write the synthetic Obsidian test vault to `<dir>/Documents` |
 | `npm run sync-vault -- [--dry-run] [<sync.json>] [<raw-dir>]` | sync CLI | Ingest every note not blocked by the vault's exclusion rule into `raw/notes/` (deterministic, no LLM; [details below](#running-the-sync)) |
 | `npm run wiki-ingest -- [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<raw-dir>]` | ingest wrapper | Run the wiki agent headless over the sources that changed since the last ingest and write the per-run digest (reads `settings.yml`; [details below](#running-the-wiki-agent-wiki-ingest)) |
@@ -527,6 +529,48 @@ that is hours, so give it an explicit budget, for example
 `npm run wiki-ingest -- --timeout 14400`, and watch the spinner's
 elapsed clock. A timed-out run fails cleanly and retries the same
 sources on the next run.
+
+### When a note is deleted (expungement)
+
+Deleting a vault note must purge its influence — not merely drop its
+source page. When the manifest diff after a sync has removed entries,
+`wiki-ingest` routes the run to `prompts/expunge.md`: the removed
+note's last synced content is recovered from the data repo's git
+history, the wrapper computes a deterministic direct set (the source
+page, every page citing it in `sources`, `index.md`, `overview.md`),
+and the agent **re-derives** every affected page from its remaining
+sources instead of surgically deleting content. Design details: guide
+[§14a](making-of/karpathy_obsidian_wiki_implementation_guide.md).
+
+What you see:
+
+- the digest is labeled `expunge` (`# Wiki ingest digest (expunge)`);
+- before the agent runs, a progress line announces the trigger and the
+  direct set;
+- the digest carries an **Expunge direct set** section and a **pages
+deleted** category, plus the agent's report: claims removed, pages
+deleted/updated, contradictions dissolved, queries expunged, and the
+threshold decision;
+- when the affected set exceeded roughly ⅓ of the wiki, the agent
+  rebuilds instead and the digest carries the bolded line
+  **Threshold exceeded — full rebuild executed; expect a large diff
+covering the whole wiki.**
+
+What to review in the git diff: claims that only the deleted note
+supported are gone, shared claims survive with lower confidence where
+support thinned, one-sided `CONTRADICTION` callouts are dissolved,
+citing `queries/` pages are expunged, and `log.md` carries the
+`## [YYYY-MM-DD] expunge | <title>` entry. There are no tombstone
+pages — the wiki reflects the current `raw/`.
+
+Rename exception: deleting `AI/old.md` and adding `AI/new.md` with
+identical content in the same sync is a **move**, not a deletion — the
+run treats it as a change/retitle (`→ vault/old → vault/new`) and never
+routes to expunge. A rename *with* edits still routes to expunge.
+
+Afterwards, `npm run check-provenance -- <wiki-dir>` is the permanent
+backstop: every `sources` entry and every `origin` must resolve, so a
+missed purge surfaces as a dead link, not as silent contamination.
 
 ## Running queries (`wiki-query`)
 
