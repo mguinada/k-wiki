@@ -63,6 +63,9 @@ For every new or changed source:
 Create a new concept or entity page only when the term appears in more than
 one source or is clearly central; avoid stub pages.
 
+When two or more sources explicitly contrast named approaches, file a
+comparison page (or extend an existing one).
+
 Do not rewrite unrelated pages.
 
 ## Page Quality
