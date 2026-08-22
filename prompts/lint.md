@@ -16,6 +16,8 @@ Check for:
 12. Missing important relationships.
 13. Index entries missing from the wiki.
 14. Wiki pages that contain excessive filler.
+15. Missing comparison where sources explicitly contrast named approaches
+    (report, do not auto-create).
 
 Do not make speculative corrections.
 Never modify wiki/AGENTS.md.
