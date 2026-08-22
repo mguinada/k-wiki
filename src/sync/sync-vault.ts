@@ -76,6 +76,8 @@ export interface SyncReport {
   readonly vaults: readonly VaultSyncReport[];
   /** Namespaces removed because they are absent from the config. */
   readonly prunedNamespaces: readonly string[];
+  /** Elapsed wall time for the entire run, in milliseconds. */
+  readonly elapsedMs?: number;
 }
 
 interface SelectedNote {
@@ -474,9 +476,13 @@ export function formatReport(
     0,
   );
   const pruned = report.prunedNamespaces.length;
+  const duration =
+    report.elapsedMs !== undefined
+      ? ` (${formatDuration(report.elapsedMs)})`
+      : "";
 
   if (copied === 0 && removed === 0 && pruned === 0) {
-    lines.push(colors.dim("sync complete: no changes"));
+    lines.push(colors.dim(`sync complete: no changes${duration}`));
 
     return lines.join("\n");
   }
@@ -488,7 +494,7 @@ export function formatReport(
 
   lines.push(
     colors[removed > 0 || pruned > 0 ? "red" : "green"](
-      `sync complete: ${copied} copied, ${removed} removed${prunedClause}`,
+      `sync complete: ${copied} copied, ${removed} removed${prunedClause}${duration}`,
     ),
   );
 
@@ -499,6 +505,7 @@ export function formatReport(
 export function formatDryRunReport(
   reports: readonly VaultDryRunReport[],
   colors: ReportColors = PLAIN_COLORS,
+  elapsedMs?: number,
 ): string {
   const lines: string[] = [];
 
@@ -512,7 +519,10 @@ export function formatDryRunReport(
     }
   }
 
-  lines.push("dry-run complete: nothing written");
+  const duration =
+    elapsedMs !== undefined ? ` (${formatDuration(elapsedMs)})` : "";
+
+  lines.push(`dry-run complete: nothing written${duration}`);
 
   return lines.join("\n");
 }
@@ -633,28 +643,32 @@ export async function main(): Promise<void> {
     const colors = reportColors();
 
     if (dryRun) {
+      const startedAt = Date.now();
       const reports = await runDryRun({
         configPath,
         rawDir,
         progressEvery,
         onProgress: sink.render,
       });
+      const elapsedMs = Date.now() - startedAt;
 
       sink.end();
-      console.log(formatDryRunReport(reports, colors));
+      console.log(formatDryRunReport(reports, colors, elapsedMs));
 
       return;
     }
 
+    const startedAt = Date.now();
     const report = await runSync({
       configPath,
       rawDir,
       progressEvery,
       onProgress: sink.render,
     });
+    const elapsedMs = Date.now() - startedAt;
 
     sink.end();
-    console.log(formatReport(report, colors));
+    console.log(formatReport({ ...report, elapsedMs }, colors));
   } catch (error) {
     sink.end();
     console.error(

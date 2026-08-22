@@ -1025,7 +1025,9 @@ export async function runWikiIngest(
   const runAgent = options.runAgent ?? spawnAgent;
   const pre = await capturePreRunState(dataRoot, env);
 
-  const providerFlag = settings.provider ? ` --provider ${settings.provider}` : "";
+  const providerFlag = settings.provider
+    ? ` --provider ${settings.provider}`
+    : "";
 
   onProgress(
     `wiki-ingest: mode ${mode}, invoking agent: ${settings.command}${providerFlag} --model ${settings.model} --thinking ${settings.reasoning}`,
