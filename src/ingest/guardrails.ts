@@ -38,6 +38,10 @@ const FORBIDDEN_EXACT = "wiki/AGENTS.md";
  *  check 2 exempts it (first exposed by a real logged run, #13). */
 const FRONTMATTER_EXEMPT = "wiki/log.md";
 
+/** Structural meta pages (guide §9): they carry frontmatter but are
+ *  not derived from source material, so the `sources` field is optional. */
+const SOURCES_EXEMPT = new Set(["wiki/index.md", "wiki/overview.md"]);
+
 /** Frontmatter fields every wiki page must carry (§9). */
 const REQUIRED_FIELDS = [
   "title",
@@ -358,7 +362,10 @@ async function readPages(
  * `source` derive from source material and must also name `sources`.
  * Field semantics (date formats, vocabulary) stay lint's job.
  */
-export function checkWikiFrontmatter(text: string): string[] {
+export function checkWikiFrontmatter(
+  text: string,
+  options: { skipSources?: boolean } = {},
+): string[] {
   const lines = text.split(/\r?\n/);
 
   if (lines[0] !== "---") {
@@ -393,7 +400,7 @@ export function checkWikiFrontmatter(text: string): string[] {
 
   const missing: string[] = REQUIRED_FIELDS.filter((field) => !keys.has(field));
 
-  if (type !== undefined && type !== "source" && !keys.has("sources")) {
+  if (type !== undefined && type !== "source" && !options.skipSources && !keys.has("sources")) {
     missing.push("sources");
   }
 
@@ -490,7 +497,9 @@ function checkChangedFrontmatter(
       continue;
     }
 
-    for (const problem of checkWikiFrontmatter(text)) {
+    for (const problem of checkWikiFrontmatter(text, {
+      skipSources: SOURCES_EXEMPT.has(path),
+    })) {
       problems.push(`${path}: ${problem}`);
     }
   }

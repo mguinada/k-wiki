@@ -134,6 +134,15 @@ describe("checkWikiFrontmatter", () => {
       checkWikiFrontmatter(page().replace('sources:\n  - "[[index]]"\n', "")),
     ).toEqual(['missing required frontmatter field "sources"']);
   });
+
+  it("skips the sources check when skipSources is true", () => {
+    expect(
+      checkWikiFrontmatter(
+        page().replace('sources:\n  - "[[index]]"\n', ""),
+        { skipSources: true },
+      ),
+    ).toEqual([]);
+  });
 });
 
 /** Commit everything in a fixture data repo. */
@@ -484,19 +493,19 @@ describe("runGuardrails — check 2, frontmatter", () => {
     expect(post.failure).toBeUndefined();
   });
 
-  it("exempts wiki/log.md, the contract's append-only log", async () => {
+  it("exempts wiki/index.md and wiki/overview.md from the sources field", async () => {
     const dataRoot = await makeRepo();
 
     await writeFile(
-      join(dataRoot, "wiki", "log.md"),
-      "## [2026-08-22] verify | prior entry\n",
+      join(dataRoot, "wiki", "overview.md"),
+      "---\ntitle: Overview\ntype: topic\ncreated: 2026-08-22\nupdated: 2026-08-22\ntags:\n  - wiki\n---\n\n# Overview\n",
     );
-    await commit(dataRoot, "add log");
+    await commit(dataRoot, "add overview");
 
     const post = await guardedRun(dataRoot, async (root) => {
-      await appendFile(
-        join(root, "wiki", "log.md"),
-        "## [2026-08-22] ingest | this run's entry\n",
+      await writeFile(
+        join(root, "wiki", "index.md"),
+        "---\ntitle: Index\ntype: topic\ncreated: 2026-08-22\nupdated: 2026-08-22\ntags:\n  - wiki\n---\n\n# Index v2\n",
       );
     });
 

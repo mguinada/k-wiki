@@ -3,8 +3,8 @@
 # nothing is hardcoded. Top-level `key: value` scalars only.
 
 command: pi        # agent CLI, run non-interactively in the data repo
-provider: zai    # passed as --provider; omit to use pi's default
-model: GLM-5.2     # passed as --model
-# model: moonshotai/kimi-k2.6
-# provider: openrouter
+# provider: zai    # passed as --provider; omit to use pi's default
+# model: GLM-5.2     # passed as --model
+model: moonshotai/kimi-k2.6
+provider: openrouter
 reasoning: high    # pi thinking level, passed as --thinking
