@@ -19,6 +19,7 @@ import {
 import {
   capturePreRunState,
   type GuardrailFailure,
+  parseStatus,
   revertToPreRun,
   runGuardrails,
 } from "./guardrails.ts";
@@ -482,14 +483,7 @@ async function wikiPages(
   const created: string[] = [];
   const updated: string[] = [];
 
-  for (const line of stdout.split("\n")) {
-    if (line === "") {
-      continue;
-    }
-
-    const code = line.slice(0, 2);
-    const path = line.slice(3);
-
+  for (const { code, path } of parseStatus(stdout)) {
     if (code.includes("A") || code.includes("?")) {
       created.push(path);
     } else if (code.includes("M")) {

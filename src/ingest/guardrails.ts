@@ -83,6 +83,21 @@ function isAllowed(path: string): boolean {
   );
 }
 
+/** True when git reports the path as untracked. */
+function isUntracked(entry: StatusEntry): boolean {
+  return entry.code.includes("?");
+}
+
+/** True when git reports the path as deleted. */
+function isDeleted(entry: StatusEntry): boolean {
+  return entry.code.includes("D");
+}
+
+/** Index one status snapshot by path, for code-to-code comparison. */
+function statusIndex(status: readonly StatusEntry[]): Map<string, string> {
+  return new Map(status.map((entry) => [entry.path, entry.code]));
+}
+
 /** SHA-256 of a file's bytes; "absent" when the file is gone. */
 async function hashPath(path: string): Promise<string> {
   try {
@@ -90,6 +105,16 @@ async function hashPath(path: string): Promise<string> {
   } catch {
     return "absent";
   }
+}
+
+/** HEAD's full commit hash in the data repo. */
+async function headCommit(
+  dataRoot: string,
+  env: NodeJS.ProcessEnv,
+): Promise<string> {
+  const { stdout } = await runGit(dataRoot, ["rev-parse", "HEAD"], env);
+
+  return stdout.trim();
 }
 
 /** The state a failed run is reverted to. */
@@ -118,9 +143,7 @@ export async function capturePreRunState(
   let commit: string;
 
   try {
-    const { stdout } = await runGit(dataRoot, ["rev-parse", "HEAD"], env);
-
-    commit = stdout.trim();
+    commit = await headCommit(dataRoot, env);
   } catch (cause) {
     throw new Error(
       `cannot capture the pre-run commit in ${dataRoot}: the data repo has no commit to revert to — run data:init or commit the data repo first`,
@@ -146,7 +169,7 @@ async function changedWikiPages(
   pre: PreRunState,
   entries: readonly StatusEntry[],
 ): Promise<string[]> {
-  const before = new Map(pre.status.map((entry) => [entry.path, entry.code]));
+  const before = statusIndex(pre.status);
   const changed: string[] = [];
 
   for (const entry of entries) {
@@ -154,7 +177,7 @@ async function changedWikiPages(
       !entry.path.startsWith("wiki/") ||
       !entry.path.endsWith(".md") ||
       basename(entry.path) === "AGENTS.md" ||
-      entry.code.includes("D")
+      isDeleted(entry)
     ) {
       continue;
     }
@@ -172,6 +195,20 @@ async function changedWikiPages(
   }
 
   return changed;
+}
+
+/** Read each changed wiki page; checks 2 and 3 share the texts. */
+async function readPages(
+  dataRoot: string,
+  paths: readonly string[],
+): Promise<Map<string, string>> {
+  const texts = new Map<string, string>();
+
+  for (const path of paths) {
+    texts.set(path, await readFile(join(dataRoot, path), "utf8"));
+  }
+
+  return texts;
 }
 
 /**
@@ -231,21 +268,17 @@ export interface PostRunState {
 }
 
 /**
- * Run the three guardrails against the data repo and return the first
- * one that tripped. Check 1 compares the post-run status against the
- * pre-run state: no path outside the whitelist may change (by status
- * code or by content), and HEAD must not move. Checks 2 and 3 read
- * every wiki page the run changed.
+ * Guardrail 1: no path outside the whitelist changed by status code
+ * or by content, and HEAD did not move. Compares the post-run status
+ * and hashes against the pre-run state.
  */
-export async function runGuardrails(
+async function checkImmutability(
   dataRoot: string,
   env: NodeJS.ProcessEnv,
   pre: PreRunState,
-): Promise<PostRunState> {
-  const entries = parseStatus(
-    (await runGit(dataRoot, ["status", "--porcelain", "-uall"], env)).stdout,
-  );
-  const before = new Map(pre.status.map((entry) => [entry.path, entry.code]));
+  entries: readonly StatusEntry[],
+): Promise<GuardrailFailure | undefined> {
+  const before = statusIndex(pre.status);
   const problems = new Set<string>();
 
   for (const entry of entries) {
@@ -256,59 +289,55 @@ export async function runGuardrails(
 
   for (const [path, was] of pre.hashes) {
     if (!isAllowed(path) && (await hashPath(join(dataRoot, path))) !== was) {
-      problems.add(`${path} modified by the run`);
+      problems.add(`${path} changed by the run`);
     }
   }
 
-  const { stdout: headLine } = await runGit(
-    dataRoot,
-    ["rev-parse", "HEAD"],
-    env,
-  );
-  const head = headLine.trim();
+  const head = await headCommit(dataRoot, env);
 
   if (head !== pre.commit) {
     problems.add(`HEAD moved to ${head.slice(0, 8)} by the run`);
   }
 
-  if (problems.size > 0) {
-    return {
-      entries,
-      failure: {
-        check: 1,
-        name: "immutability",
-        problems: [...problems],
-      },
-    };
+  if (problems.size === 0) {
+    return undefined;
   }
 
-  const changed = await changedWikiPages(dataRoot, pre, entries);
-  const frontmatterProblems: string[] = [];
+  return {
+    check: 1,
+    name: "immutability",
+    problems: [...problems],
+  };
+}
 
-  for (const path of changed) {
-    const text = await readFile(join(dataRoot, path), "utf8");
+/** Guardrail 2: every changed page carries the §9 required fields. */
+function checkChangedFrontmatter(
+  texts: ReadonlyMap<string, string>,
+): GuardrailFailure | undefined {
+  const problems: string[] = [];
 
+  for (const [path, text] of texts) {
     for (const problem of checkWikiFrontmatter(text)) {
-      frontmatterProblems.push(`${path}: ${problem}`);
+      problems.push(`${path}: ${problem}`);
     }
   }
 
-  if (frontmatterProblems.length > 0) {
-    return {
-      entries,
-      failure: {
-        check: 2,
-        name: "frontmatter",
-        problems: frontmatterProblems,
-      },
-    };
+  if (problems.length === 0) {
+    return undefined;
   }
 
-  const wikiDir = join(dataRoot, "wiki");
+  return { check: 2, name: "frontmatter", problems };
+}
+
+/** Guardrail 3: every wikilink in every changed page resolves. */
+async function checkChangedWikilinks(
+  dataRoot: string,
+  texts: ReadonlyMap<string, string>,
+): Promise<GuardrailFailure | undefined> {
   let files: string[] = [];
 
   try {
-    files = (await listFiles(wikiDir)).filter(
+    files = (await listFiles(join(dataRoot, "wiki"))).filter(
       (file) => file.endsWith(".md") && basename(file) !== "AGENTS.md",
     );
   } catch {
@@ -316,26 +345,51 @@ export async function runGuardrails(
   }
 
   const index = buildPageIndex(files);
-  const linkProblems: string[] = [];
+  const problems: string[] = [];
 
-  for (const path of changed) {
-    const text = await readFile(join(dataRoot, path), "utf8");
-
+  for (const [path, text] of texts) {
     for (const link of extractWikilinks(text)) {
       if (!index.has(link.target)) {
-        linkProblems.push(`${path}:${link.line} -> ${link.raw}`);
+        problems.push(`${path}:${link.line} -> ${link.raw}`);
       }
     }
   }
 
-  if (linkProblems.length > 0) {
-    return {
-      entries,
-      failure: { check: 3, name: "wikilinks", problems: linkProblems },
-    };
+  if (problems.length === 0) {
+    return undefined;
   }
 
-  return { entries, failure: undefined };
+  return { check: 3, name: "wikilinks", problems };
+}
+
+/**
+ * Run the three guardrails against the data repo and return the first
+ * one that tripped. Checks 2 and 3 read every wiki page the run
+ * changed (checks run in issue-#12 order: cheap git comparison first).
+ */
+export async function runGuardrails(
+  dataRoot: string,
+  env: NodeJS.ProcessEnv,
+  pre: PreRunState,
+): Promise<PostRunState> {
+  const entries = parseStatus(
+    (await runGit(dataRoot, ["status", "--porcelain", "-uall"], env)).stdout,
+  );
+  const immutability = await checkImmutability(dataRoot, env, pre, entries);
+
+  if (immutability !== undefined) {
+    return { entries, failure: immutability };
+  }
+
+  const changed = await changedWikiPages(dataRoot, pre, entries);
+  const texts = await readPages(dataRoot, changed);
+  const frontmatter = checkChangedFrontmatter(texts);
+
+  if (frontmatter !== undefined) {
+    return { entries, failure: frontmatter };
+  }
+
+  return { entries, failure: await checkChangedWikilinks(dataRoot, texts) };
 }
 
 /**
@@ -355,14 +409,12 @@ export async function revertToPreRun(
   await runGit(dataRoot, ["reset", "--hard", pre.commit], env);
 
   const before = new Set(
-    pre.status
-      .filter((entry) => entry.code.includes("?"))
-      .map((entry) => entry.path),
+    pre.status.filter(isUntracked).map((entry) => entry.path),
   );
   const fresh = [
     ...new Set(
       postEntries
-        .filter((entry) => entry.code.includes("?") && !before.has(entry.path))
+        .filter((entry) => isUntracked(entry) && !before.has(entry.path))
         .map((entry) => entry.path),
     ),
   ];
