@@ -17,6 +17,11 @@ export interface Wikilink {
   readonly raw: string;
 }
 
+/** The page-name part of a wikilink's inner text; empty when blank. */
+export function wikilinkBodyTarget(body: string): string {
+  return body.split("|")[0]?.split("#")[0]?.trim() ?? "";
+}
+
 /**
  * Extract every wikilink from markdown text, skipping fenced code
  * blocks. Aliased links keep only the page name, heading anchors are
@@ -44,8 +49,7 @@ export function extractWikilinks(text: string): Wikilink[] {
     }
 
     for (const match of line.matchAll(/\[\[([^\]]+)\]\]/g)) {
-      const body = match[1] ?? "";
-      const target = body.split("|")[0]?.split("#")[0]?.trim() ?? "";
+      const target = wikilinkBodyTarget(match[1] ?? "");
 
       if (target === "") {
         continue;

@@ -7,7 +7,11 @@ import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
 import { afterAll, describe, expect, it } from "vitest";
 import { checkWikiLinks } from "../scripts/check-links.ts";
-import { buildPageIndex, extractWikilinks } from "../src/wiki-links.ts";
+import {
+  buildPageIndex,
+  extractWikilinks,
+  wikilinkBodyTarget,
+} from "../src/wiki-links.ts";
 
 const script = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -148,6 +152,26 @@ describe("extractWikilinks", () => {
         raw: "[[after-fence]]",
       },
     ]);
+  });
+});
+
+describe("wikilinkBodyTarget", () => {
+  it("keeps only the page name before an alias", () => {
+    expect(wikilinkBodyTarget("vector-database|my db")).toBe("vector-database");
+  });
+
+  it("keeps only the page name before a heading anchor", () => {
+    expect(wikilinkBodyTarget("vector-database#Vendors")).toBe(
+      "vector-database",
+    );
+  });
+
+  it("trims surrounding whitespace", () => {
+    expect(wikilinkBodyTarget(" vector-db ")).toBe("vector-db");
+  });
+
+  it("returns the body unchanged when it has no alias or anchor", () => {
+    expect(wikilinkBodyTarget("Temp research")).toBe("Temp research");
   });
 });
 

@@ -13,13 +13,16 @@ For each changed source:
 4. Inspect the existing wiki before creating pages.
 5. Update existing pages when appropriate.
 6. Create new pages only when justified.
-7. Add source attribution to every affected page.
-8. Add appropriate wikilinks.
-9. Preserve contradictions and uncertainty.
-10. Do not invent facts.
-11. Update index.md.
-12. Revise overview.md if the source changes the overall picture.
-13. Append a concise operation summary to log.md.
+7. Record `origin: raw/notes/<vault>/<path>` in the frontmatter of every
+   source page you create, and add it to any source page you touch that
+   lacks it.
+8. Add source attribution to every affected page.
+9. Add appropriate wikilinks.
+10. Preserve contradictions and uncertainty.
+11. Do not invent facts.
+12. Update index.md.
+13. Revise overview.md if the source changes the overall picture.
+14. Append a concise operation summary to log.md.
 
 Do not modify raw/.
 Do not modify the original source vault.

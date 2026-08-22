@@ -125,6 +125,13 @@ For source pages, where applicable:
 - `author`
 - `published`
 - `description`
+- `origin`
+
+`origin` records the raw projection path backing the source page
+(`raw/notes/<vault>/<path>`), written at ingest time. Add it to any
+source page that lacks it whenever the page is touched, and update it —
+and any `sources` entry citing the old path — when its note is renamed;
+it enables deterministic expungement.
 
 Use ISO dates: `YYYY-MM-DD`.
 
@@ -217,6 +224,48 @@ Rebuild procedure:
    (`git show HEAD:wiki/<path>`): same concepts covered, sources
    attributed, contradictions preserved. Wording may differ; LLM output
    is not byte-identical.
+
+## Expungement
+
+When a synced source note is deleted, the next run expunges its
+influence: no claim, concept, entity, comparison, or filed query may
+rest on material whose only support was the removed note, directly or
+indirectly.
+
+An expunge run may also carry added, edited, or renamed sources from
+the same sync; they are ingested in the same run, never deferred.
+
+For every affected page, re-derive it from its remaining sources — do
+not surgically delete content:
+
+- claims supported only by the removed note die;
+- independently supported claims survive;
+- confidence drops where support thinned;
+- a `CONTRADICTION` callout that lost one side is dissolved, not
+  preserved;
+- a page left without sources, or demoted to a stub, is deleted.
+
+Filed queries under `queries/` that cite the removed note are expunged
+the same way; the layer itself is preserved.
+
+Beyond the deterministic direct set (the removed note's source page,
+every page citing it in `sources`, `index.md`, `overview.md`), search
+the wiki full text for uncited mentions and follow `related` links and
+body wikilinks in reverse.
+
+Record the run in `log.md` as `## [YYYY-MM-DD] expunge | <title>`.
+
+No tombstone pages: the wiki reflects the current `raw/`; the retraction
+record lives in `log.md` and git history.
+
+Threshold escape hatch: when the affected set exceeds roughly one third
+of the wiki, execute the rebuild procedure instead of a surgical pass
+(restore `queries/` from git afterwards, then expunge it) and say so in
+the report.
+
+Known residual risk: frontmatter tracing cannot prove the absence of
+uncited influence. Mitigations: full-text search in the run, the
+dead-provenance check, recurring lint, periodic rebuild.
 
 ## Final Principle
 

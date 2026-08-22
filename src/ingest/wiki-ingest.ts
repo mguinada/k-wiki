@@ -17,8 +17,18 @@ import {
   writeManifest,
 } from "../sync/manifest.ts";
 import {
+  buildPageIndex,
+  isWikilinkEntry,
+  listWikiPages,
+  normalizeRawPath,
+  type PageFields,
+  readPageFields,
+  wikilinkTarget,
+} from "../wiki/pages.ts";
+import {
   capturePreRunState,
   type GuardrailFailure,
+  type PreRunState,
   parseStatus,
   revertToPreRun,
   runGuardrails,
@@ -27,11 +37,16 @@ import {
 /**
  * wiki-ingest: the headless wiki agent run (guide §18, issue #11). It
  * diffs `raw/manifest.json` against the snapshot from the previous
- * successful run, picks `prompts/ingest.md` (first run) or
- * `prompts/incremental.md` (with the changed sources appended), invokes
- * the agent CLI non-interactively in the data repo root, runs the
- * post-run guardrails (issue #12: immutability, frontmatter, wikilinks
- * — auto-reverting to the pre-run commit on failure), and writes a
+ * successful run, picks `prompts/ingest.md` (first run),
+ * `prompts/incremental.md` (changed sources appended), or
+ * `prompts/expunge.md` (a synced note was deleted — issue #65: the
+ * removed note's last content from git history and the deterministic
+ * direct set are appended, and a mixed run also gets incremental.md
+ * appended so its non-removed sources are ingested), invokes the agent
+ * CLI non-interactively in
+ * the data repo root, runs the post-run guardrails (issue #12:
+ * immutability, frontmatter, wikilinks — auto-reverting to the
+ * pre-run commit on failure, expunge runs included), and writes a
  * digest the human can review in under a minute. Scheduling is #14.
  */
 
@@ -150,12 +165,54 @@ export interface VaultSourceChange {
   readonly added: readonly string[];
   readonly changed: readonly string[];
   readonly removed: readonly string[];
+  /** Remove+add pairs with identical content hash: moves, not deletions. */
+  readonly renamed: readonly NoteRename[];
+}
+
+/** A note that moved within one vault without changing its content. */
+export interface NoteRename {
+  readonly from: string;
+  readonly to: string;
 }
 
 export interface ManifestDiff {
   /** Only vaults with at least one change, sorted by vault name. */
   readonly vaults: readonly VaultSourceChange[];
   readonly empty: boolean;
+}
+
+/**
+ * Pair remove+add notes with equal hashes as renames (a move in the
+ * same vault, issue #65): each added path pairs with the first
+ * unmatched removed path of equal hash, in sorted order, so the
+ * pairing is deterministic even between equal-content notes.
+ */
+function extractRenames(
+  before: VaultNotes,
+  after: VaultNotes,
+  added: readonly string[],
+  removed: readonly string[],
+): { renamed: NoteRename[]; added: string[]; removed: string[] } {
+  const renamed: NoteRename[] = [];
+  const taken = new Set<string>();
+
+  for (const to of added) {
+    const hash = after[to]?.hash;
+    const from = removed.find(
+      (path) => !taken.has(path) && before[path]?.hash === hash,
+    );
+
+    if (from !== undefined) {
+      taken.add(from);
+      renamed.push({ from, to });
+    }
+  }
+
+  return {
+    renamed,
+    added: added.filter((path) => !renamed.some((r) => r.to === path)),
+    removed: removed.filter((path) => !taken.has(path)),
+  };
 }
 
 /** Diff two manifests by note path and hash; vaults sort by name. */
@@ -174,7 +231,7 @@ export function diffManifests(
       const before: VaultNotes = previous.vaults[name] ?? {};
       const after: VaultNotes = current.vaults[name] ?? {};
 
-      const added = Object.keys(after)
+      const addedRaw = Object.keys(after)
         .filter((path) => before[path] === undefined)
         .sort();
       const changed = Object.keys(after)
@@ -187,18 +244,55 @@ export function diffManifests(
             : false;
         })
         .sort();
-      const removed = Object.keys(before)
+      const removedRaw = Object.keys(before)
         .filter((path) => after[path] === undefined)
         .sort();
+      const { renamed, added, removed } = extractRenames(
+        before,
+        after,
+        addedRaw,
+        removedRaw,
+      );
 
-      return { vault: name, added, changed, removed };
+      return { vault: name, added, changed, removed, renamed };
     })
     .filter(
       (vault) =>
-        vault.added.length + vault.changed.length + vault.removed.length > 0,
+        vault.added.length +
+          vault.changed.length +
+          vault.removed.length +
+          vault.renamed.length >
+        0,
     );
 
   return { vaults, empty: vaults.length === 0 };
+}
+
+/** Render the changed-source list appended below incremental and expunge prompts. */
+function changedSourceLines(diff: ManifestDiff): string[] {
+  const lines: string[] = [];
+
+  for (const vault of diff.vaults) {
+    for (const path of vault.added) {
+      lines.push(`+ ${vault.vault}/${path}`);
+    }
+
+    for (const path of vault.changed) {
+      lines.push(`~ ${vault.vault}/${path}`);
+    }
+
+    for (const rename of vault.renamed) {
+      lines.push(
+        `→ ${vault.vault}/${rename.from} → ${vault.vault}/${rename.to}`,
+      );
+    }
+
+    for (const path of vault.removed) {
+      lines.push(`- ${vault.vault}/${path}`);
+    }
+  }
+
+  return lines;
 }
 
 /**
@@ -214,34 +308,216 @@ export function composePrompt(
     return promptText;
   }
 
-  const lines = [
+  return [
     promptText,
     "",
     "Changed sources since the previous ingestion:",
     "",
-  ];
+    ...changedSourceLines(diff),
+  ].join("\n");
+}
 
-  for (const vault of diff.vaults) {
-    for (const path of vault.added) {
-      lines.push(`+ ${vault.vault}/${path}`);
+/** A removed source note: its identity plus its last synced content. */
+export interface RemovedNote {
+  readonly vault: string;
+  /** Vault-relative note path, as the manifest records it. */
+  readonly path: string;
+  /** Data-repo-relative raw path, `raw/notes/<vault>/<path>`. */
+  readonly rawPath: string;
+  /** Last synced content from git history; undefined when unrecorded. */
+  readonly content: string | undefined;
+}
+
+/** A markdown fence longer than any backtick run in the content it wraps,
+ *  so a note body can never close its own wrapper. */
+function wrappingFence(content: string): string {
+  let longest = 0;
+
+  for (const run of content.matchAll(/`+/g)) {
+    longest = Math.max(longest, run[0].length);
+  }
+
+  return "`".repeat(Math.max(4, longest + 1));
+}
+
+/**
+ * Compose the expunge agent message: the expunge prompt, the changed
+ * sources (an expunge run may also carry adds and edits), each removed
+ * note's last synced content, and the deterministic direct set. The
+ * direct set is a lower bound the agent extends by search (guide §14a).
+ * When the run also carries added, edited, or renamed sources, the
+ * incremental prompt is appended so those sources are ingested in the
+ * same run instead of being marked processed without ever reaching
+ * the agent.
+ */
+export function composeExpungePrompt(
+  promptText: string,
+  diff: ManifestDiff,
+  removedNotes: readonly RemovedNote[],
+  directSet: readonly string[],
+  incrementalText?: string,
+): string {
+  const lines = [promptText];
+
+  if (incrementalText !== undefined) {
+    lines.push(
+      "",
+      "This run also carries added, edited, or renamed sources (`+`, `~`, `→` in the list below). In the same run, process them exactly as an incremental ingestion would:",
+      "",
+      incrementalText,
+    );
+  }
+
+  lines.push(
+    "",
+    "Changed sources since the previous ingestion:",
+    "",
+    ...changedSourceLines(diff),
+    "",
+    "Removed notes with their last synced content:",
+    "",
+  );
+
+  for (const note of removedNotes) {
+    lines.push(`### ${note.vault}/${note.path} (${note.rawPath})`, "");
+
+    if (note.content === undefined) {
+      lines.push(
+        "(last synced content unavailable: no committed git history — purge by path, title, and full-text search)",
+      );
+    } else {
+      const fence = wrappingFence(note.content);
+
+      lines.push(`${fence}markdown`, note.content, fence);
     }
 
-    for (const path of vault.changed) {
-      lines.push(`~ ${vault.vault}/${path}`);
-    }
+    lines.push("");
+  }
 
-    for (const path of vault.removed) {
-      lines.push(`- ${vault.vault}/${path}`);
-    }
+  lines.push(
+    "Direct set (deterministic seed — a lower bound, not a boundary):",
+    "",
+  );
+
+  for (const page of directSet) {
+    lines.push(`- wiki/${page}`);
   }
 
   return lines.join("\n");
+}
+
+/** A git command's stdout, or undefined when git fails for any reason. */
+async function tryGit(
+  dataRoot: string,
+  args: readonly string[],
+  env: NodeJS.ProcessEnv,
+): Promise<string | undefined> {
+  try {
+    const { stdout } = await runGit(dataRoot, args, env);
+
+    return stdout;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The last synced content of a removed raw note, from the data repo's
+ * git history. The note is absent from the working tree (sync removed
+ * it), so HEAD either still holds it (removal not yet committed) or the
+ * last commit that touched the path is its deletion — whose parent
+ * tree holds the final content. Undefined when git never knew the path.
+ */
+export async function removedNoteContent(
+  dataRoot: string,
+  rawRelPath: string,
+  env: NodeJS.ProcessEnv,
+): Promise<string | undefined> {
+  const atHead = await tryGit(dataRoot, ["show", `HEAD:${rawRelPath}`], env);
+
+  if (atHead !== undefined) {
+    return atHead;
+  }
+
+  const sha = (
+    await tryGit(dataRoot, ["rev-list", "-1", "HEAD", "--", rawRelPath], env)
+  )?.trim();
+
+  if (sha === undefined || sha === "") {
+    return undefined;
+  }
+
+  return tryGit(dataRoot, ["show", `${sha}^:${rawRelPath}`], env);
+}
+
+/**
+ * The deterministic expunge seed (guide §14a): every source page whose
+ * `origin` names a removed raw path, every page whose `sources` cites a
+ * removed raw path or a seeded source page, plus `index.md` and
+ * `overview.md` unconditionally. A missing wiki tree seeds only the
+ * unconditional pair — the prompt's full-text search covers the rest.
+ */
+export async function directSetForRemovals(
+  wikiRoot: string,
+  removedRawPaths: readonly string[],
+): Promise<readonly string[]> {
+  let files: string[];
+
+  try {
+    files = await listWikiPages(wikiRoot);
+  } catch {
+    files = [];
+  }
+
+  const wanted = new Set(removedRawPaths.map(normalizeRawPath));
+  const fields = new Map<string, PageFields>();
+  const originPages = new Set<string>();
+
+  for (const file of files) {
+    const pageFields = await readPageFields(join(wikiRoot, file));
+
+    fields.set(file, pageFields);
+
+    if (
+      pageFields.origin !== undefined &&
+      wanted.has(normalizeRawPath(pageFields.origin))
+    ) {
+      originPages.add(file);
+    }
+  }
+
+  const nameToPage = buildPageIndex(files);
+  const seed = new Set<string>(["index.md", "overview.md"]);
+
+  for (const file of originPages) {
+    seed.add(file);
+  }
+
+  for (const [file, pageFields] of fields) {
+    const cites = pageFields.sources.some((entry) => {
+      if (isWikilinkEntry(entry)) {
+        const cited = nameToPage.get(wikilinkTarget(entry));
+
+        return cited !== undefined && originPages.has(cited);
+      }
+
+      return wanted.has(normalizeRawPath(entry));
+    });
+
+    if (cites) {
+      seed.add(file);
+    }
+  }
+
+  return [...seed].sort();
 }
 
 /** Wiki page changes, read from the data repo's git status. */
 export interface WikiPages {
   readonly created: readonly string[];
   readonly updated: readonly string[];
+  /** Pages the run deleted — an expunge run's most important action. */
+  readonly deleted: readonly string[];
   /** Set when git could not report; the run itself still succeeded. */
   readonly unavailable: string | undefined;
 }
@@ -249,11 +525,13 @@ export interface WikiPages {
 /** One completed run, everything the digest reports. */
 export interface IngestRun {
   readonly startedAt: Date;
-  readonly mode: "full" | "incremental";
+  readonly mode: "full" | "incremental" | "expunge";
   readonly promptFile: string;
   readonly settings: AgentSettings;
   readonly diff: ManifestDiff;
   readonly pages: WikiPages;
+  /** Deterministic expunge seed; set only for expunge runs. */
+  readonly directSet: readonly string[] | undefined;
   readonly agentOutput: string;
   /** The guardrail that tripped, when the run was auto-reverted. */
   readonly guardrailFailure?: GuardrailFailure | undefined;
@@ -261,25 +539,55 @@ export interface IngestRun {
 
 function sourceCount(
   diff: ManifestDiff,
-  key: "added" | "changed" | "removed",
+  key: "added" | "changed" | "removed" | "renamed",
 ): number {
   return diff.vaults.reduce((total, vault) => total + vault[key].length, 0);
+}
+
+/** Render the digest's per-vault changed-source listing. */
+function digestVaultLines(diff: ManifestDiff): string[] {
+  const lines: string[] = [];
+
+  for (const vault of diff.vaults) {
+    lines.push(`**${vault.vault}**`);
+
+    for (const path of vault.added) {
+      lines.push(`- + ${vault.vault}/${path}`);
+    }
+
+    for (const path of vault.changed) {
+      lines.push(`~ ${vault.vault}/${path}`);
+    }
+
+    for (const rename of vault.renamed) {
+      lines.push(
+        `→ ${vault.vault}/${rename.from} → ${vault.vault}/${rename.to}`,
+      );
+    }
+
+    for (const path of vault.removed) {
+      lines.push(`- − ${vault.vault}/${path}`);
+    }
+  }
+
+  return lines;
 }
 
 /** Render the per-run digest markdown: counts first, details after. */
 export function formatDigest(run: IngestRun): string {
   const { settings } = run;
+  const label = run.mode === "expunge" ? " (expunge)" : "";
   const lines: string[] = [
-    `# Wiki ingest digest — ${run.startedAt.toISOString()}`,
+    `# Wiki ingest digest${label} — ${run.startedAt.toISOString()}`,
     "",
     `- **Agent:** \`${settings.command}\` · model \`${settings.model}\` · reasoning \`${settings.reasoning}\``,
     `- **Mode:** ${run.mode} · prompt \`${run.promptFile}\``,
-    `- **Sources:** ${sourceCount(run.diff, "added")} added, ${sourceCount(run.diff, "changed")} changed, ${sourceCount(run.diff, "removed")} removed`,
+    `- **Sources:** ${sourceCount(run.diff, "added")} added, ${sourceCount(run.diff, "changed")} changed, ${sourceCount(run.diff, "removed")} removed, ${sourceCount(run.diff, "renamed")} renamed`,
   ];
 
   if (run.pages.unavailable === undefined) {
     lines.push(
-      `- **Wiki pages:** ${run.pages.created.length} created, ${run.pages.updated.length} updated`,
+      `- **Wiki pages:** ${run.pages.created.length} created, ${run.pages.updated.length} updated, ${run.pages.deleted.length} deleted`,
     );
   } else {
     lines.push(`- **Wiki pages:** unavailable — ${run.pages.unavailable}`);
@@ -305,23 +613,15 @@ export function formatDigest(run: IngestRun): string {
     "- **Contradictions and unresolved questions:** in the agent report below",
   );
 
-  if (run.mode === "incremental") {
-    lines.push("", "## Changed sources", "");
+  if (run.mode !== "full") {
+    lines.push("", "## Changed sources", "", ...digestVaultLines(run.diff));
+  }
 
-    for (const vault of run.diff.vaults) {
-      lines.push(`**${vault.vault}**`);
+  if (run.mode === "expunge" && run.directSet !== undefined) {
+    lines.push("", "## Expunge direct set", "");
 
-      for (const path of vault.added) {
-        lines.push(`- + ${vault.vault}/${path}`);
-      }
-
-      for (const path of vault.changed) {
-        lines.push(`~ ${vault.vault}/${path}`);
-      }
-
-      for (const path of vault.removed) {
-        lines.push(`- − ${vault.vault}/${path}`);
-      }
+    for (const page of run.directSet) {
+      lines.push(`- wiki/${page}`);
     }
   }
 
@@ -339,6 +639,12 @@ export function formatDigest(run: IngestRun): string {
     lines.push("", "Updated:");
 
     for (const path of run.pages.updated) {
+      lines.push(`- ${path}`);
+    }
+
+    lines.push("", "Deleted:");
+
+    for (const path of run.pages.deleted) {
       lines.push(`- ${path}`);
     }
   }
@@ -365,9 +671,9 @@ export const AGENT_TIMEOUT_MS = 30 * 60_000;
 /** Liveness line on the progress sink while the agent runs. */
 export const HEARTBEAT_MS = 60_000;
 
-/** Prefix of the agent heartbeat sentence; the TTY renderer keeps the
- *  matching messages on one animated line (spinner + clock). */
-export const AGENT_HEARTBEAT_PREFIX = "wiki-ingest: agent still running";
+/** Heartbeat sentence pattern (plain or expunge-labeled); the TTY
+ *  renderer keeps matching messages on one animated line (spinner + clock). */
+export const AGENT_HEARTBEAT = /^wiki-ingest: (?:expunge )?agent still running/;
 
 /** Collected output cap: 16 MB, far above any final agent report. */
 const AGENT_MAX_BUFFER = 16 * 1024 * 1024;
@@ -457,15 +763,20 @@ export function spawnAgent(
 }
 
 /**
- * Wiki pages created and updated by the run, from the data repo's git
- * status: untracked or added paths count as created, modified paths as
- * updated. When git cannot report, the digest says so instead of
- * failing a run that did update the wiki.
+ * Wiki pages created, updated, and deleted by the run, from the data
+ * repo's git status: untracked or added paths count as created,
+ * modified paths as updated, deleted paths (staged or not) as deleted.
+ * Deleting a page that was still untracked leaves no status entry at
+ * all, so with the pre-run state those pages count as deleted when
+ * their file is gone; a deletion that predates the run (already `D`
+ * pre-run) is not the run's doing. When git cannot report, the digest
+ * says so instead of failing a run that did update the wiki.
  */
 export async function wikiPages(
   dataRoot: string,
   env: NodeJS.ProcessEnv,
   pathspec = "wiki",
+  pre?: PreRunState,
 ): Promise<WikiPages> {
   let stdout: string;
 
@@ -486,23 +797,42 @@ export async function wikiPages(
   } catch (cause) {
     const reason = cause instanceof Error ? cause.message : String(cause);
 
-    return { created: [], updated: [], unavailable: reason };
+    return { created: [], updated: [], deleted: [], unavailable: reason };
   }
 
+  const entries = parseStatus(stdout);
+  const before = new Map(
+    (pre?.status ?? []).map((entry) => [entry.path, entry] as const),
+  );
   const created: string[] = [];
   const updated: string[] = [];
+  const deleted: string[] = [];
 
-  for (const { code, path } of parseStatus(stdout)) {
+  for (const { code, path } of entries) {
     if (code.includes("A") || code.includes("?")) {
       created.push(path);
     } else if (code.includes("M")) {
       updated.push(path);
+    } else if (code.includes("D") && !before.get(path)?.code.includes("D")) {
+      deleted.push(path);
+    }
+  }
+
+  for (const entry of before.values()) {
+    if (
+      entry.code.includes("?") &&
+      entry.path.startsWith(`${pathspec}/`) &&
+      entry.path.endsWith(".md") &&
+      !entries.some((current) => current.path === entry.path)
+    ) {
+      deleted.push(entry.path);
     }
   }
 
   return {
     created: created.sort(),
     updated: updated.sort(),
+    deleted: deleted.sort(),
     unavailable: undefined,
   };
 }
@@ -534,7 +864,7 @@ export type IngestResult =
   | { readonly status: "skipped"; readonly reason: string }
   | {
       readonly status: "ran";
-      readonly mode: "full" | "incremental";
+      readonly mode: "full" | "incremental" | "expunge";
       readonly digestPath: string;
       readonly digest: string;
       readonly pages: WikiPages;
@@ -548,10 +878,42 @@ export async function readPrompt(path: string): Promise<string> {
   }
 }
 
+/** Prompt file per mode: first run, later changes, deletions. */
+function promptFileFor(mode: "full" | "incremental" | "expunge"): string {
+  if (mode === "full") {
+    return "ingest.md";
+  }
+
+  return mode === "expunge" ? "expunge.md" : "incremental.md";
+}
+
+/** The removed notes of a diff, each with its last synced content
+ *  recovered from the data repo's git history. */
+async function collectRemovedNotes(
+  dataRoot: string,
+  diff: ManifestDiff,
+  env: NodeJS.ProcessEnv,
+): Promise<RemovedNote[]> {
+  const removedNotes: RemovedNote[] = [];
+
+  for (const vault of diff.vaults) {
+    for (const path of vault.removed) {
+      const rawPath = `raw/notes/${vault.vault}/${path}`;
+      const content = await removedNoteContent(dataRoot, rawPath, env);
+
+      removedNotes.push({ vault: vault.vault, path, rawPath, content });
+    }
+  }
+
+  return removedNotes;
+}
+
 /**
  * One headless ingest run. The snapshot is written only after a
  * successful agent run, so a failure retries the same sources next
- * time instead of silently skipping them.
+ * time instead of silently skipping them. A manifest diff with removed
+ * entries routes to the expunge flow (issue #65); removed entries that
+ * pair with equal-hash additions are renames and never route there.
  */
 export async function runWikiIngest(
   options: IngestOptions,
@@ -587,13 +949,54 @@ export async function runWikiIngest(
     return { status: "skipped", reason };
   }
 
-  const mode = previous === undefined ? "full" : "incremental";
-  const promptFile = mode === "full" ? "ingest.md" : "incremental.md";
+  const dataRoot = dirname(options.rawDir);
+  const removedCount = sourceCount(diff, "removed");
+  const mode =
+    previous === undefined
+      ? "full"
+      : removedCount > 0
+        ? "expunge"
+        : "incremental";
+  const promptFile = promptFileFor(mode);
   const promptText = await readPrompt(join(options.promptsDir, promptFile));
-  const composed = composePrompt(
-    promptText,
-    mode === "incremental" ? diff : undefined,
-  );
+
+  let composed: string;
+  let directSet: readonly string[] | undefined;
+
+  if (mode === "expunge") {
+    const removedNotes = await collectRemovedNotes(dataRoot, diff, env);
+
+    directSet = await directSetForRemovals(
+      join(dataRoot, "wiki"),
+      removedNotes.map((note) => note.rawPath),
+    );
+
+    const carriesNonRemovals =
+      sourceCount(diff, "added") +
+        sourceCount(diff, "changed") +
+        sourceCount(diff, "renamed") >
+      0;
+    const incrementalText = carriesNonRemovals
+      ? await readPrompt(join(options.promptsDir, "incremental.md"))
+      : undefined;
+
+    composed = composeExpungePrompt(
+      promptText,
+      diff,
+      removedNotes,
+      directSet,
+      incrementalText,
+    );
+
+    onProgress(
+      `wiki-ingest: expunge — ${removedCount} removed source${removedCount === 1 ? "" : "s"}; direct set: ${directSet.map((page) => `wiki/${page}`).join(", ")}`,
+    );
+  } else {
+    composed = composePrompt(
+      promptText,
+      mode === "incremental" ? diff : undefined,
+    );
+  }
 
   const args = [
     "--model",
@@ -603,7 +1006,6 @@ export async function runWikiIngest(
     "--print",
     composed,
   ];
-  const dataRoot = dirname(options.rawDir);
   const runAgent = options.runAgent ?? spawnAgent;
   const pre = await capturePreRunState(dataRoot, env);
 
@@ -614,8 +1016,9 @@ export async function runWikiIngest(
   const agentStartedAt = now().getTime();
   const heartbeat = setInterval(() => {
     const elapsed = formatDuration(now().getTime() - agentStartedAt);
+    const label = mode === "expunge" ? "expunge " : "";
 
-    onProgress(`${AGENT_HEARTBEAT_PREFIX} (${elapsed})`);
+    onProgress(`wiki-ingest: ${label}agent still running (${elapsed})`);
   }, options.heartbeatMs ?? HEARTBEAT_MS);
 
   let stdout = "";
@@ -668,8 +1071,10 @@ export async function runWikiIngest(
         pages: {
           created: [],
           updated: [],
+          deleted: [],
           unavailable: `run reverted — guardrail check ${failure.check} (${failure.name}) tripped`,
         },
+        directSet: undefined,
         agentOutput: stdout,
         guardrailFailure: failure,
       }),
@@ -690,7 +1095,7 @@ export async function runWikiIngest(
     throw agentError;
   }
 
-  const pages = await wikiPages(dataRoot, env);
+  const pages = await wikiPages(dataRoot, env, "wiki", pre);
 
   const run: IngestRun = {
     startedAt,
@@ -699,6 +1104,7 @@ export async function runWikiIngest(
     settings,
     diff,
     pages,
+    directSet,
     agentOutput: stdout,
   };
   const digest = formatDigest(run);
@@ -719,10 +1125,17 @@ last ingest, then write a per-run digest (guide §18, issue #11).
 
 Flow: read the raw manifest, diff it against the snapshot from the
 previous successful run (outputs/last-ingested-manifest.json), pick
-prompts/ingest.md (no snapshot yet — first run) or
-prompts/incremental.md (changed sources appended to the prompt), invoke
-the agent CLI non-interactively in the data repo root (the parent of
-the raw dir), and record what happened.
+prompts/ingest.md (no snapshot yet — first run),
+prompts/incremental.md (changed sources appended to the prompt), or
+prompts/expunge.md (a synced note was deleted — the removed note's
+last content is recovered from the data repo's git history and
+appended with the deterministic direct set of affected wiki pages; a
+remove+add pair in one vault with an identical content hash is a
+rename/retitle, not a deletion; an expunge run that also carries
+added, edited, or renamed sources gets prompts/incremental.md
+appended below the expunge prompt, so those sources are ingested in
+the same run), invoke the agent CLI non-interactively in the data
+repo root (the parent of the raw dir), and record what happened.
 
 Switches and arguments:
   --settings <path>  Agent settings file. Default: the repo's
@@ -757,7 +1170,9 @@ preceded the run), writes a failure digest naming the check, and
 exits 1.
 
 With no changed sources since the snapshot nothing runs: it says so
-and exits 0. On a terminal (TTY, color enabled) the agent run shows
+and exits 0. A digest is labeled expunge when the run purged deleted
+sources: it carries the direct-set preview, a deleted wiki-pages
+category, and the agent's threshold decision. On a terminal (TTY, color enabled) the agent run shows
 one animated status line - a braille spinner plus the elapsed time -
 rewritten in place; piped, redirected, CI, or NO_COLOR runs get one
 plain heartbeat line per 60 seconds instead. A run that fails or
@@ -791,7 +1206,8 @@ export function createAgentProgressSink(
   writeLine: (text: string) => void,
   animated: boolean,
   dim: (text: string) => string,
-  heartbeatPrefix: string = AGENT_HEARTBEAT_PREFIX,
+  isHeartbeat: (message: string) => boolean = (message) =>
+    AGENT_HEARTBEAT.test(message),
 ): ProgressSink {
   if (!animated) {
     return {
@@ -804,7 +1220,7 @@ export function createAgentProgressSink(
 
   return {
     render: (message) => {
-      if (message.startsWith(heartbeatPrefix)) {
+      if (isHeartbeat(message)) {
         renderer.live(dim(message));
       } else {
         renderer.event(dim(message));

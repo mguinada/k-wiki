@@ -179,7 +179,7 @@ a dry run (`sync-vault --dry-run`) and block private notes.
 
 Your source vault does **not** need perfectly consistent tags, filenames, links, or frontmatter before you build the wiki.
 
-Treat source metadata as **hints**, not authoritative semantic information. The actual note content is the stronger signal. The agent-facing rules for this are defined in `wiki/AGENTS.md` (Section 10).
+Treat source metadata as **hints**, not authoritative semantic information. The actual note content is the stronger signal. The agent-facing rules for this are defined in `wiki/AGENTS.md`.
 
 ### Impact of source-vault messiness
 
@@ -458,6 +458,7 @@ title: "GPU Memory Math for LLMs (2026 Edition)"
 type: source
 
 source: "https://x.com/TheAhmadOsman/status/2040103488714068245"
+origin: "raw/notes/X/2026/gpu-memory-math.md"
 author:
   - "[[@TheAhmadOsman]]"
 published: 2026-04-03
@@ -478,6 +479,11 @@ status: active
 ```
 
 Optional in multi-vault setups: `vault: <name>` records which source vault a source page originated from (Section 25).
+
+`origin` records the raw projection path backing the source page —
+written at ingest time, backfilled onto older pages in one wiki
+operation — and is the deterministic handle expungement uses (Section
+14a).
 
 #### Derived concept pages
 
@@ -593,239 +599,14 @@ Put these in the Markdown body:
 
 ## 10. `wiki/AGENTS.md`
 
-Use this as the wiki operating contract (`wiki/AGENTS.md`). The root `AGENTS.md` is a thin router plus development conventions, defined in Section 1; this file consolidates all wiki-agent rules, including the source-metadata rules from Section 5.
-
-For multi-vault wikis, also append the addendum in Section 25 (Scenario A).
-
-```markdown
-# Karpathy Wiki Instructions
-
-## Mission
-
-Maintain `wiki/` as a structured, high-quality knowledge base derived from
-the source material in `raw/`.
-
-The human-owned source vault is outside this repository and is authoritative.
-
-## Ownership Rules
-
-- NEVER modify the original Obsidian source vault.
-- NEVER modify files under `raw/`.
-- `raw/` is immutable input.
-- You may create and modify files under `wiki/`.
-- NEVER modify `wiki/AGENTS.md` — this contract is not editable during operations.
-- `index.md` must remain current.
-- `overview.md` must reflect the current synthesis.
-- `log.md` is append-only.
-
-## Source of Truth
-
-Facts must ultimately be traceable to material in `raw/`.
-
-Do not fabricate information.
-
-If a source is ambiguous, incomplete, or contradictory:
-- state the uncertainty;
-- preserve competing claims when appropriate;
-- record the issue in `log.md`.
-
-## Source Metadata
-
-Source tags, filenames, folders, and frontmatter are hints, not authoritative
-semantic information.
-
-Infer meaning primarily from the actual source content.
-
-When source metadata conflicts with source content, prefer the content.
-
-The wiki may introduce canonical terminology, relationships, and categories
-that do not exist in the source vault.
-
-## Ingestion Workflow
-
-For every new or changed source:
-
-1. Read the source completely.
-2. Identify concepts, entities, topics, comparisons, and relationships.
-3. Find relevant existing wiki pages.
-4. Create missing pages.
-5. Update affected existing pages.
-6. Add source attribution.
-7. Add/update cross-links.
-8. Update `index.md`.
-9. Revise `overview.md` when the overall picture changes.
-10. Append a concise entry to `log.md`.
-11. Check for contradictions, duplicates, orphan pages, and unsupported claims.
-12. Run `npm run check-links -- <wiki-dir>` from the code-repo checkout
-    (the data repo does not ship the tool) and fix every broken
-    `[[wikilink]]` it reports.
-
-Create a new concept or entity page only when the term appears in more than
-one source or is clearly central; avoid stub pages.
-
-When two or more sources explicitly contrast named approaches, file a
-comparison page (or extend an existing one).
-
-Do not rewrite unrelated pages.
-
-## Page Quality
-
-Pages should be:
-- concise;
-- factual;
-- structured;
-- independently understandable;
-- linked to related knowledge;
-- explicit about uncertainty.
-
-Avoid:
-- unnecessary prose;
-- duplicated information;
-- unsupported claims;
-- generic filler;
-- summaries that add no value over the source.
-
-Every page must link to at least two related pages.
-Mark open questions with a `> **OPEN QUESTION**` callout and preserved
-contradictions with a `> **CONTRADICTION**` callout.
-
-## Naming
-
-Use lowercase kebab-case filenames for concepts, comparisons, and queries.
-
-Examples:
-
-- `retrieval-augmented-generation.md`
-- `vector-database.md`
-- `rag-vs-fine-tuning.md`
-
-Use stable, human-readable names for entities where appropriate.
-
-## Obsidian Frontmatter
-
-Every wiki page must use valid Obsidian-compatible YAML frontmatter.
-
-Required fields:
-
-- `title`
-- `type`
-- `created`
-- `updated`
-- `tags`
-
-For pages derived from source material:
-
-- `sources`
-- `confidence`
-- `status`
-
-For source pages, where applicable:
-
-- `source`
-- `author`
-- `published`
-- `description`
-
-Use ISO dates: `YYYY-MM-DD`.
-
-Use Obsidian wikilinks for references to other notes.
-
-Tags must use the canonical wiki vocabulary.
-
-Do not put detailed knowledge, reasoning, evidence, or contradictions into frontmatter;
-keep those in the Markdown body.
-
-Do not modify source-vault metadata to make it conform to wiki metadata.
-
-## Index
-
-`wiki/index.md` is the navigation map of the wiki.
-
-Update it whenever meaningful pages are created, renamed, or removed.
-
-## Overview
-
-`wiki/overview.md` is the short, evolving synthesis across all ingested material.
-
-Revise it when new sources change the overall picture. Keep it brief; details
-live on the individual pages.
-
-## Log
-
-`wiki/log.md` records meaningful ingestion operations.
-
-Keep entries short and factual.
-
-Start every entry with `## [YYYY-MM-DD] <operation> | <title>` so the log stays
-parseable with standard tools.
-
-## Queries
-
-Answer questions against the wiki, not against `raw/` directly:
-
-1. Read `index.md` to find relevant pages.
-2. Read those pages; consult `overview.md` for broad questions.
-3. Synthesize the answer with wikilink citations.
-4. If the question is likely to recur and the answer synthesizes or
-   reframes more than one page, offer to file it under `queries/` with
-   `type: query` frontmatter, then update `index.md` and `log.md`.
-   A verbatim restatement of a single page needs no filing. When
-   borderline, offer and let the human decide — never silently skip;
-   a declined filing states its reason.
-
-If the wiki cannot answer a question, say so and suggest sources to ingest.
-
-## Contradictions
-
-Never silently resolve contradictory source material.
-
-If sources disagree:
-- preserve the disagreement;
-- identify the relevant sources;
-- explain the disagreement briefly;
-- lower confidence when appropriate.
-
-Mark each preserved contradiction in the page body with a
-`> **CONTRADICTION**` callout.
-
-## Regeneration
-
-The wiki is derived data.
-
-It must always be possible, in principle, to delete `wiki/` and regenerate it from
-`raw/`.
-
-Do not make the wiki depend on information that exists only in generated pages
-unless that information is explicitly treated as a derived conclusion.
-
-Exception: filed queries and human corrections form an accreted layer that
-exists only in the wiki. Deleting `wiki/` loses that layer; git history is
-its record.
-
-Two files in `wiki/` are not derivable from `raw/`: this contract
-(`wiki/AGENTS.md`) and `wiki/queries/`. A rebuild removes the wiki content
-pages and preserves both.
-
-Rebuild procedure:
-
-1. Remove the wiki content pages: `index.md`, `overview.md`, `log.md`, and
-   everything under `concepts/`, `entities/`, `sources/`, `comparisons/`,
-   and `queries/`. Keep `wiki/AGENTS.md`.
-2. Run the rebuild prompt against `raw/`, following this contract.
-3. Restore the accreted layer from git: `git restore wiki/queries/`.
-4. Spot-check the rebuilt pages against the pre-deletion versions
-   (`git show HEAD:wiki/<path>`): same concepts covered, sources
-   attributed, contradictions preserved. Wording may differ; LLM output
-   is not byte-identical.
-
-## Final Principle
-
-Human knowledge lives in the source vault.
-
-The LLM organizes and maintains the derived wiki.
-
-Never reverse these responsibilities.
-```
+The wiki operating contract is `wiki/AGENTS.md` — the canonical text;
+this guide does not reproduce it. The root `AGENTS.md` is a thin router plus
+development conventions, defined in Section 1; the contract consolidates all
+wiki-agent rules, including the source-metadata rules from Section 5, the
+rebuild procedure, and the expungement section added with Section 14a. The
+copy shipped into the data repository is derived from the canonical file
+(Section 19). For multi-vault wikis, the contract gains the
+`## Multiple Source Vaults` addendum defined in Section 25 (Scenario A).
 
 ---
 
@@ -910,13 +691,16 @@ For each changed source:
 4. Inspect the existing wiki before creating pages.
 5. Update existing pages when appropriate.
 6. Create new pages only when justified.
-7. Add source attribution to every affected page.
-8. Add appropriate wikilinks.
-9. Preserve contradictions and uncertainty.
-10. Do not invent facts.
-11. Update index.md.
-12. Revise overview.md if the source changes the overall picture.
-13. Append a concise operation summary to log.md.
+7. Record `origin: raw/notes/<vault>/<path>` in the frontmatter of every
+   source page you create, and add it to any source page you touch that
+   lacks it.
+8. Add source attribution to every affected page.
+9. Add appropriate wikilinks.
+10. Preserve contradictions and uncertainty.
+11. Do not invent facts.
+12. Update index.md.
+13. Revise overview.md if the source changes the overall picture.
+14. Append a concise operation summary to log.md.
 
 Do not modify raw/.
 Do not modify the original source vault.
@@ -946,17 +730,114 @@ Determine whether the changes require:
 - updates;
 - relationship/link changes;
 - removal of obsolete claims;
-- contradiction handling.
+- contradiction handling;
+- retitles (a renamed note keeps its source page and citations).
 
 When two or more sources explicitly contrast named approaches, file a
 comparison page (or extend an existing one).
 
 Make the smallest set of changes necessary.
 
+Record `origin: raw/notes/<vault>/<path>` in the frontmatter of every
+source page you create, and add it to any source page you touch that
+lacks it. When a note is renamed, update its raw path in the kept
+source page's `origin` and in every `sources` entry that cites it.
+
 Do not regenerate unrelated pages.
 
 Update index.md, revise overview.md if the overall picture changed, and append to log.md.
 ```
+
+---
+
+## 14a. Expungement
+
+Deleting a note from the vault must purge its influence from the wiki —
+not merely drop its source page. A removed note `N` contaminates in two
+classes:
+
+| Class | Example | Discovery |
+|---|---|---|
+| **Direct** | `N`'s source page; pages listing `N` in `sources` | Deterministic (frontmatter) |
+| **Indirect** | conclusions that absorbed `N`'s claims; stubs promoted only by `N`; comparisons and filed queries built partly on `N`; contradiction and confidence states that used `N`; `overview.md`; links and index entries | Judgment (agent) + reverse reachability |
+
+Core insight: **expungement is re-derivation with a subtracted source
+set.** The faithful per-page operation is not "delete what came from
+`N`" but "re-derive the page from its remaining sources" — the same
+ingest discipline with new routing, seeding, and a contract section
+(`wiki/AGENTS.md`, Expungement).
+
+### Trigger and routing
+
+`wiki-ingest` routes to `prompts/expunge.md` when the manifest diff has
+`removed` entries. A remove+add pair in the same vault with an identical
+content hash is a **rename**: the run treats it as a change/retitle,
+never as a deletion. A mixed diff — a deletion plus additions or edits
+in one sync — stays one expunge run: the wrapper appends
+`prompts/incremental.md` below the expunge prompt, so the non-removed
+sources are ingested in the same run instead of being silently marked
+processed. After sync the note is gone from `raw/`, but the
+data repo versions `raw/`, so git history holds the note in full — the
+wrapper recovers the last synced content (`git show`, falling back to
+the deletion commit's parent tree) and inlines it in the prompt. No
+archive is needed. Recovery reaches back only to the last committed
+sync: an edit synced and then deleted before the human commits is
+lost — the origin-path seed is unaffected, but full-text search then
+works from the older committed text.
+
+### Two-phase process
+
+1. **Deterministic seed (wrapper).** Removed raw path → the source page
+   whose `origin` names it → every page citing that raw path or source
+   page in `sources` → plus `index.md` and `overview.md`
+   unconditionally. The seed is a lower bound, not a boundary.
+2. **Agent re-derivation (expunge prompt).** Full-text search over the
+   wiki using the removed note's distinctive terms, reverse
+   reachability over `related` links and body wikilinks, then
+   re-derivation of every affected page.
+
+Before the agent runs, a progress line announces the trigger and the
+direct set; the digest is labeled `expunge`, carries the direct set,
+and reports a **pages deleted** category, so a deletion never hides
+inside an ordinary incremental run.
+
+### Contract amendments
+
+- A `CONTRADICTION` callout that lost one side is **dissolved, not
+  preserved** — the one exception to the contract's
+  preserve-contradictions rule.
+- Filed `queries/` pages citing `N` are expunged too — a rebuild alone
+  would not clean them; `queries/` is the preserved accreted layer.
+- **No tombstones, no confirmation gate**: the wiki reflects the current
+  `raw/`; the retraction record lives in `log.md`
+  (`## [YYYY-MM-DD] expunge | <title>`) and git history. The review
+  mechanism stays the git diff, like every run.
+
+### Threshold rebuild
+
+Surgical expunge by default. When the affected set exceeds roughly ⅓ of
+the wiki, the agent executes the Regeneration procedure instead
+(restoring `queries/` from git, then expunging it) and reports the
+threshold decision. The threshold lives in prompt text, never in code.
+
+### Backfill
+
+Deletions that predate this mechanism are handled manually: run the
+agent with `prompts/expunge.md` plus the removed raw path (content from
+`git show` in the data repo). No dedicated CLI exists for this.
+
+Source pages created before the `origin` field existed get it
+backfilled in one wiki operation: touch every `type: source` page and
+record its `origin` raw path. Any later run that touches a source page
+adds a missing `origin` automatically (Sections 13–14).
+
+### Residual risk
+
+Frontmatter tracing cannot *prove* the absence of uncited influence.
+Mitigations: phase-1 full-text search, the permanent dead-provenance
+check (`npm run check-provenance`: every `sources` entry resolves, every
+`origin` exists under `raw/`), recurring lint, periodic rebuild. A
+surgical pass is not a proof — do not pretend it is.
 
 ---
 
@@ -991,7 +872,8 @@ Do not modify raw/.
 The resulting wiki must be understandable without reading every raw source.
 ```
 
-The rebuild procedure is defined in the operating contract (Section 10):
+The rebuild procedure is defined in the operating contract
+(`wiki/AGENTS.md`):
 remove the content pages but keep the contract, run this prompt against
 `raw/`, then restore the accreted `wiki/queries/` layer from git. The
 contract and `queries/` are the two things in the wiki tree that are not
@@ -1077,7 +959,7 @@ wiki-sync
    │
    ├── 2. Determine changed/deleted sources
    │
-   ├── 3. Run incremental ingest
+   ├── 3. Run wiki-ingest (incremental or expunge prompt)
    │
    ├── 4. Run lint
    │

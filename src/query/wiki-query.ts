@@ -113,6 +113,7 @@ export type Verdict =
 const EMPTY_PAGES: WikiPages = {
   created: [],
   updated: [],
+  deleted: [],
   unavailable: undefined,
 };
 
@@ -451,7 +452,7 @@ export async function main(): Promise<void> {
     (text) => console.error(text),
     animated,
     (text) => colors.dim(text),
-    QUERY_HEARTBEAT_PREFIX,
+    (message) => message.startsWith(QUERY_HEARTBEAT_PREFIX),
   );
 
   try {
