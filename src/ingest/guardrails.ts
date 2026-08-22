@@ -1,5 +1,5 @@
-import { readFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 import { runGit } from "../data/init-data-repo.ts";
 import { sha256 } from "../sync/hash.ts";
 import { buildPageIndex, extractWikilinks, listFiles } from "../wiki-links.ts";
@@ -11,14 +11,16 @@ import { buildPageIndex, extractWikilinks, listFiles } from "../wiki-links.ts";
  * job (§17); these checks only catch catastrophic failure classes that
  * are cheap to verify mechanically.
  *
- *  1. immutability — the run may change only `wiki/`, `outputs/`, and
- *     `raw/manifest.json`; everything else must be untouched relative
- *     to the pre-run state, and HEAD must not move;
+ *  1. immutability — the run may change only `wiki/` (never the
+ *     wiki/AGENTS.md contract), `outputs/`, and `raw/manifest.json`;
+ *     everything else must be untouched relative to the pre-run
+ *     state, and HEAD must not move;
  *  2. frontmatter — every wiki page the run changed carries the
  *     required fields (`title`, `type`, `created`, `updated`, `tags`;
  *     plus `sources` for pages not of type `source`);
  *  3. wikilinks — every `[[wikilink]]` in a changed page resolves to
- *     an existing wiki file.
+ *     an existing wiki file, and no remaining page keeps a link to a
+ *     page the run deleted.
  */
 
 /** Paths only these guardrails may see changed after a run. */
@@ -26,6 +28,9 @@ const ALLOWED_PREFIXES = ["wiki/", "outputs/"] as const;
 
 /** The manifest is sync-owned, but a run may legitimately rewrite it. */
 const ALLOWED_EXACT = "raw/manifest.json";
+
+/** The wiki contract file: no run may write it (guide §10). */
+const FORBIDDEN_EXACT = "wiki/AGENTS.md";
 
 /** Frontmatter fields every wiki page must carry (§9). */
 const REQUIRED_FIELDS = [
@@ -41,6 +46,8 @@ export interface StatusEntry {
   readonly code: string;
   /** Repository-relative path; for renames, the target path. */
   readonly path: string;
+  /** For renames, the repository-relative origin path. */
+  readonly origin: string | undefined;
 }
 
 /** One tripped guardrail: which check, and every problem found. */
@@ -52,7 +59,8 @@ export interface GuardrailFailure {
 
 /**
  * Parse `git status --porcelain -uall` output. Rename lines
- * (`R  old -> new`) report the target path.
+ * (`R  old -> new`) report both paths: `path` is the target,
+ * `origin` the source.
  */
 export function parseStatus(stdout: string): StatusEntry[] {
   const entries: StatusEntry[] = [];
@@ -69,6 +77,7 @@ export function parseStatus(stdout: string): StatusEntry[] {
     entries.push({
       code,
       path: renamed === -1 ? rest : rest.slice(renamed + 4),
+      origin: renamed === -1 ? undefined : rest.slice(0, renamed),
     });
   }
 
@@ -78,9 +87,15 @@ export function parseStatus(stdout: string): StatusEntry[] {
 /** True when a path is one the run is allowed to have changed. */
 function isAllowed(path: string): boolean {
   return (
-    path === ALLOWED_EXACT ||
-    ALLOWED_PREFIXES.some((prefix) => path.startsWith(prefix))
+    path !== FORBIDDEN_EXACT &&
+    (path === ALLOWED_EXACT ||
+      ALLOWED_PREFIXES.some((prefix) => path.startsWith(prefix)))
   );
+}
+
+/** True for wiki content pages (`.md` files under `wiki/`). */
+function isWikiPage(path: string): boolean {
+  return path.startsWith("wiki/") && path.endsWith(".md");
 }
 
 /** True when git reports the path as untracked. */
@@ -96,6 +111,15 @@ function isDeleted(entry: StatusEntry): boolean {
 /** Index one status snapshot by path, for code-to-code comparison. */
 function statusIndex(status: readonly StatusEntry[]): Map<string, string> {
   return new Map(status.map((entry) => [entry.path, entry.code]));
+}
+
+/** A file's bytes, or null when the path is absent. */
+async function readContent(path: string): Promise<Buffer | null> {
+  try {
+    return await readFile(path);
+  } catch {
+    return null;
+  }
 }
 
 /** SHA-256 of a file's bytes; "absent" when the file is gone. */
@@ -128,6 +152,9 @@ export interface PreRunState {
    *  (the normal case: nothing commits the wiki between runs) from
    *  an untouched one. */
   readonly hashes: ReadonlyMap<string, string>;
+  /** The bytes of every dirty path (null: absent), so the revert can
+   *  restore uncommitted pre-run work a reset alone would destroy. */
+  readonly contents: ReadonlyMap<string, Buffer | null>;
 }
 
 /**
@@ -152,15 +179,25 @@ export async function capturePreRunState(
   }
 
   const status = parseStatus(
-    (await runGit(dataRoot, ["status", "--porcelain", "-uall"], env)).stdout,
+    (
+      await runGit(
+        dataRoot,
+        ["-c", "core.quotePath=false", "status", "--porcelain", "-uall"],
+        env,
+      )
+    ).stdout,
   );
+  const contents = new Map<string, Buffer | null>();
   const hashes = new Map<string, string>();
 
   for (const entry of status) {
-    hashes.set(entry.path, await hashPath(join(dataRoot, entry.path)));
+    const content = await readContent(join(dataRoot, entry.path));
+
+    contents.set(entry.path, content);
+    hashes.set(entry.path, content === null ? "absent" : sha256(content));
   }
 
-  return { commit, status, hashes };
+  return { commit, status, contents, hashes };
 }
 
 /** Wiki `.md` pages this run created or modified (not deleted). */
@@ -173,12 +210,7 @@ async function changedWikiPages(
   const changed: string[] = [];
 
   for (const entry of entries) {
-    if (
-      !entry.path.startsWith("wiki/") ||
-      !entry.path.endsWith(".md") ||
-      basename(entry.path) === "AGENTS.md" ||
-      isDeleted(entry)
-    ) {
+    if (!isWikiPage(entry.path) || isDeleted(entry)) {
       continue;
     }
 
@@ -267,6 +299,16 @@ export interface PostRunState {
   readonly failure: GuardrailFailure | undefined;
 }
 
+/** The outside-whitelist path an entry changed, if any: a rename
+ *  touches both its paths, so either may be the violation. */
+function changedOutside(entry: StatusEntry): string | undefined {
+  if (entry.origin !== undefined && !isAllowed(entry.origin)) {
+    return entry.origin;
+  }
+
+  return isAllowed(entry.path) ? undefined : entry.path;
+}
+
 /**
  * Guardrail 1: no path outside the whitelist changed by status code
  * or by content, and HEAD did not move. Compares the post-run status
@@ -282,8 +324,10 @@ async function checkImmutability(
   const problems = new Set<string>();
 
   for (const entry of entries) {
-    if (!isAllowed(entry.path) && before.get(entry.path) !== entry.code) {
-      problems.add(`${entry.path} changed by the run`);
+    const outside = changedOutside(entry);
+
+    if (outside !== undefined && before.get(entry.path) !== entry.code) {
+      problems.add(`${outside} changed by the run`);
     }
   }
 
@@ -329,10 +373,45 @@ function checkChangedFrontmatter(
   return { check: 2, name: "frontmatter", problems };
 }
 
-/** Guardrail 3: every wikilink in every changed page resolves. */
+/**
+ * Wiki page names the run removed, by deletion or rename: every
+ * remaining link to one is newly dangling. A page already deleted
+ * before the run dangled already — not this run's doing.
+ */
+function deletedWikiPageNames(
+  pre: PreRunState,
+  entries: readonly StatusEntry[],
+): Set<string> {
+  const before = statusIndex(pre.status);
+  const deleted = new Set<string>();
+
+  const take = (path: string): void => {
+    const prior = before.get(path);
+
+    if (prior === undefined || !prior.includes("D")) {
+      deleted.add(basename(path, ".md"));
+    }
+  };
+
+  for (const entry of entries) {
+    if (entry.origin !== undefined && isWikiPage(entry.origin)) {
+      take(entry.origin);
+    }
+
+    if (isWikiPage(entry.path) && isDeleted(entry)) {
+      take(entry.path);
+    }
+  }
+
+  return deleted;
+}
+
+/** Guardrail 3: every wikilink in every changed page resolves, and no
+ *  remaining page keeps a link to a page the run deleted. */
 async function checkChangedWikilinks(
   dataRoot: string,
   texts: ReadonlyMap<string, string>,
+  deletedNames: ReadonlySet<string>,
 ): Promise<GuardrailFailure | undefined> {
   let files: string[] = [];
 
@@ -355,6 +434,24 @@ async function checkChangedWikilinks(
     }
   }
 
+  if (deletedNames.size > 0) {
+    const checked = new Set(texts.keys());
+
+    for (const file of files) {
+      if (checked.has(`wiki/${file}`)) {
+        continue;
+      }
+
+      const text = await readFile(join(dataRoot, "wiki", file), "utf8");
+
+      for (const link of extractWikilinks(text)) {
+        if (deletedNames.has(link.target)) {
+          problems.push(`wiki/${file}:${link.line} -> ${link.raw}`);
+        }
+      }
+    }
+  }
+
   if (problems.length === 0) {
     return undefined;
   }
@@ -373,7 +470,13 @@ export async function runGuardrails(
   pre: PreRunState,
 ): Promise<PostRunState> {
   const entries = parseStatus(
-    (await runGit(dataRoot, ["status", "--porcelain", "-uall"], env)).stdout,
+    (
+      await runGit(
+        dataRoot,
+        ["-c", "core.quotePath=false", "status", "--porcelain", "-uall"],
+        env,
+      )
+    ).stdout,
   );
   const immutability = await checkImmutability(dataRoot, env, pre, entries);
 
@@ -389,16 +492,20 @@ export async function runGuardrails(
     return { entries, failure: frontmatter };
   }
 
-  return { entries, failure: await checkChangedWikilinks(dataRoot, texts) };
+  const deletedNames = deletedWikiPageNames(pre, entries);
+
+  return {
+    entries,
+    failure: await checkChangedWikilinks(dataRoot, texts, deletedNames),
+  };
 }
 
 /**
- * Revert a failed run: hard-reset the data repo to the pre-run commit
- * and remove the untracked files the run created (reset alone leaves
- * them). Untracked files that existed before the run are kept.
- * ponytail: pre-existing uncommitted changes reset to the commit; a
- * content-snapshot revert is the upgrade path if runs ever start on a
- * dirty tree that must survive a sibling run's failure.
+ * Revert a failed run: hard-reset the data repo to the pre-run commit,
+ * remove the untracked files the run created (reset alone leaves them),
+ * then restore the uncommitted pre-run dirty paths from the captured
+ * contents — a reset alone would destroy work from earlier runs that
+ * nobody has committed yet (the normal case between runs).
  */
 export async function revertToPreRun(
   dataRoot: string,
@@ -421,5 +528,23 @@ export async function revertToPreRun(
 
   if (fresh.length > 0) {
     await runGit(dataRoot, ["clean", "-fd", "--", ...fresh], env);
+  }
+
+  for (const entry of pre.status) {
+    if (entry.origin !== undefined) {
+      await rm(join(dataRoot, entry.origin), { force: true });
+    }
+
+    const target = join(dataRoot, entry.path);
+    const content = pre.contents.get(entry.path);
+
+    if (content === null || content === undefined) {
+      await rm(target, { force: true });
+
+      continue;
+    }
+
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(target, content);
   }
 }

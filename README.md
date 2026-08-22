@@ -514,7 +514,8 @@ digest scoped to its own run. A failed agent run exits 1 and
 leaves the snapshot untouched, so the next run retries the same
 sources. After every agent run three mechanical guardrails check the
 data repo (immutability, frontmatter, wikilinks — guide §1, §7, §9):
-a tripped check auto-reverts the data repo to the pre-run commit,
+a tripped check auto-reverts the data repo to its pre-run state (the
+pre-run commit plus the uncommitted work that preceded the run),
 writes a failure digest naming the check, and exits 1; the
 one-command orchestration is #13, scheduling #14.
 

@@ -52,9 +52,9 @@ describe("parseStatus", () => {
     ]);
   });
 
-  it("reports the target path of a rename", () => {
+  it("reports the target and origin of a rename", () => {
     expect(parseStatus("R  wiki/old.md -> wiki/new.md\n")).toEqual([
-      { code: "R ", path: "wiki/new.md" },
+      { code: "R ", path: "wiki/new.md", origin: "wiki/old.md" },
     ]);
   });
 
@@ -99,6 +99,25 @@ describe("checkWikiFrontmatter", () => {
   });
 });
 
+/** Commit everything in a fixture data repo. */
+async function commit(root: string, message: string): Promise<void> {
+  await run("git", ["add", "-A"], { cwd: root });
+  await run(
+    "git",
+    [
+      "-c",
+      "user.email=t@t",
+      "-c",
+      "user.name=t",
+      "commit",
+      "--quiet",
+      "-m",
+      message,
+    ],
+    { cwd: root },
+  );
+}
+
 /** A committed data repo: raw/notes + manifest, wiki/index.md. */
 async function makeRepo(): Promise<string> {
   const dataRoot = await mkdtemp(join(tmpdir(), "k-wiki-guard-"));
@@ -111,21 +130,7 @@ async function makeRepo(): Promise<string> {
   await writeFile(join(dataRoot, "raw", "notes", "src.md"), "# src\n");
   await writeFile(join(dataRoot, "wiki", "index.md"), page("# Index\n"));
   await run("git", ["init", "--quiet"], { cwd: dataRoot });
-  await run("git", ["add", "-A"], { cwd: dataRoot });
-  await run(
-    "git",
-    [
-      "-c",
-      "user.email=t@t",
-      "-c",
-      "user.name=t",
-      "commit",
-      "--quiet",
-      "-m",
-      "init",
-    ],
-    { cwd: dataRoot },
-  );
+  await commit(dataRoot, "init");
 
   return dataRoot;
 }
@@ -240,25 +245,50 @@ describe("runGuardrails — check 1, immutability", () => {
     expect(post.failure?.problems.join("\n")).toContain("settings.yml");
   });
 
+  it("trips when the run renames a raw note into outputs/", async () => {
+    const dataRoot = await makeRepo();
+    const post = await guardedRun(dataRoot, async (root) => {
+      await mkdir(join(root, "outputs"), { recursive: true });
+      await run("git", ["mv", "raw/notes/src.md", "outputs/src.md"], {
+        cwd: root,
+      });
+    });
+
+    expect(post.failure?.check).toBe(1);
+    expect(post.failure?.problems[0]).toContain("raw/notes/src.md");
+  });
+
+  it("trips when the run rewrites the wiki/AGENTS.md contract", async () => {
+    const dataRoot = await makeRepo();
+    const post = await guardedRun(dataRoot, async (root) => {
+      await writeFile(join(root, "wiki", "AGENTS.md"), "rogue contract\n");
+    });
+
+    expect(post.failure?.check).toBe(1);
+    expect(post.failure?.name).toBe("immutability");
+    expect(post.failure?.problems[0]).toContain("wiki/AGENTS.md");
+  });
+
+  it("trips when the run edits a non-ASCII-named untracked file", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(join(dataRoot, "raw", "notes", "ノート.md"), "# one\n");
+
+    const pre = await capturePreRunState(dataRoot, process.env);
+
+    await writeFile(join(dataRoot, "raw", "notes", "ノート.md"), "# two\n");
+
+    const post = await runGuardrails(dataRoot, process.env, pre);
+
+    expect(post.failure?.check).toBe(1);
+    expect(post.failure?.problems.join("\n")).toContain("ノート.md");
+  });
+
   it("trips when the run moves HEAD with its own commit", async () => {
     const dataRoot = await makeRepo();
     const post = await guardedRun(dataRoot, async (root) => {
       await writeFile(join(root, "wiki", "index.md"), page("# rogue\n"));
-      await run("git", ["add", "-A"], { cwd: root });
-      await run(
-        "git",
-        [
-          "-c",
-          "user.email=t@t",
-          "-c",
-          "user.name=t",
-          "commit",
-          "--quiet",
-          "-m",
-          "rogue",
-        ],
-        { cwd: root },
-      );
+      await commit(root, "rogue");
     });
 
     expect(post.failure?.check).toBe(1);
@@ -302,15 +332,6 @@ describe("runGuardrails — check 2, frontmatter", () => {
 
     expect(post.failure).toBeUndefined();
   });
-
-  it("skips wiki/AGENTS.md, which is not a wiki page", async () => {
-    const dataRoot = await makeRepo();
-    const post = await guardedRun(dataRoot, async (root) => {
-      await writeFile(join(root, "wiki", "AGENTS.md"), "contract edit\n");
-    });
-
-    expect(post.failure).toBeUndefined();
-  });
 });
 
 describe("runGuardrails — check 3, wikilinks", () => {
@@ -350,6 +371,49 @@ describe("runGuardrails — check 3, wikilinks", () => {
     });
 
     expect(post.failure?.check).toBe(3);
+  });
+
+  it("trips when the run deletes a page other pages link to", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(join(dataRoot, "wiki", "target.md"), page("# Target\n"));
+    await writeFile(
+      join(dataRoot, "wiki", "linker.md"),
+      page("See [[target]]."),
+    );
+    await commit(dataRoot, "linker");
+
+    const post = await guardedRun(dataRoot, async (root) => {
+      await rm(join(root, "wiki", "target.md"));
+    });
+
+    expect(post.failure?.check).toBe(3);
+    expect(post.failure?.problems[0]).toMatch(
+      /^wiki\/linker\.md:\d+ -> \[\[target\]\]$/,
+    );
+  });
+
+  it("trips when the run renames a linked wiki page away", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(join(dataRoot, "wiki", "target.md"), page("# Target\n"));
+    await writeFile(
+      join(dataRoot, "wiki", "linker.md"),
+      page("See [[target]]."),
+    );
+    await commit(dataRoot, "linker");
+
+    const post = await guardedRun(dataRoot, async (root) => {
+      await mkdir(join(root, "outputs"), { recursive: true });
+      await run("git", ["mv", "wiki/target.md", "outputs/target.md"], {
+        cwd: root,
+      });
+    });
+
+    expect(post.failure?.check).toBe(3);
+    expect(post.failure?.problems[0]).toMatch(
+      /^wiki\/linker\.md:\d+ -> \[\[target\]\]$/,
+    );
   });
 
   it("reports only the first tripped check", async () => {
@@ -410,21 +474,7 @@ describe("revertToPreRun", () => {
     const pre = await capturePreRunState(dataRoot, process.env);
 
     await writeFile(join(dataRoot, "wiki", "index.md"), page("# rogue\n"));
-    await run("git", ["add", "-A"], { cwd: dataRoot });
-    await run(
-      "git",
-      [
-        "-c",
-        "user.email=t@t",
-        "-c",
-        "user.name=t",
-        "commit",
-        "--quiet",
-        "-m",
-        "rogue",
-      ],
-      { cwd: dataRoot },
-    );
+    await commit(dataRoot, "rogue");
 
     const post = await runGuardrails(dataRoot, process.env, pre);
 
@@ -436,5 +486,62 @@ describe("revertToPreRun", () => {
     expect(await readFile(join(dataRoot, "wiki", "index.md"), "utf8")).toBe(
       page("# Index\n"),
     );
+  });
+
+  it("restores uncommitted work that preceded the run", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(join(dataRoot, "wiki", "index.md"), page("# prior run\n"));
+
+    const pre = await capturePreRunState(dataRoot, process.env);
+
+    await writeFile(join(dataRoot, "wiki", "index.md"), page("# wrecked\n"));
+
+    const post = await runGuardrails(dataRoot, process.env, pre);
+
+    await revertToPreRun(dataRoot, process.env, pre, post.entries);
+
+    expect(await readFile(join(dataRoot, "wiki", "index.md"), "utf8")).toBe(
+      page("# prior run\n"),
+    );
+  });
+
+  it("keeps a file deleted before the run deleted after the revert", async () => {
+    const dataRoot = await makeRepo();
+
+    await rm(join(dataRoot, "raw", "notes", "src.md"));
+
+    const pre = await capturePreRunState(dataRoot, process.env);
+
+    await writeFile(join(dataRoot, "wiki", "index.md"), page("# wrecked\n"));
+
+    const post = await runGuardrails(dataRoot, process.env, pre);
+
+    await revertToPreRun(dataRoot, process.env, pre, post.entries);
+
+    await expect(
+      readFile(join(dataRoot, "raw", "notes", "src.md"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("restores a raw note the run renamed into outputs/", async () => {
+    const dataRoot = await makeRepo();
+    const pre = await capturePreRunState(dataRoot, process.env);
+
+    await mkdir(join(dataRoot, "outputs"), { recursive: true });
+    await run("git", ["mv", "raw/notes/src.md", "outputs/src.md"], {
+      cwd: dataRoot,
+    });
+
+    const post = await runGuardrails(dataRoot, process.env, pre);
+
+    await revertToPreRun(dataRoot, process.env, pre, post.entries);
+
+    expect(
+      await readFile(join(dataRoot, "raw", "notes", "src.md"), "utf8"),
+    ).toBe("# src\n");
+    await expect(
+      readFile(join(dataRoot, "outputs", "src.md"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
   });
 });

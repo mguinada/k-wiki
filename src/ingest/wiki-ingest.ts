@@ -471,7 +471,15 @@ async function wikiPages(
   try {
     ({ stdout } = await runGit(
       dataRoot,
-      ["status", "--porcelain", "-uall", "--", "wiki"],
+      [
+        "-c",
+        "core.quotePath=false",
+        "status",
+        "--porcelain",
+        "-uall",
+        "--",
+        "wiki",
+      ],
       env,
     ));
   } catch (cause) {
@@ -725,12 +733,15 @@ What it writes:
   - outputs/runs/<timestamp>.md — the digest, also printed to stdout.
 
 After every agent run three guardrails check the data repo (guide
-§1, §7, §9; issue #12): (1) immutability — only wiki/, outputs/, and
-raw/manifest.json may change, and HEAD may not move; (2) frontmatter
-— every changed wiki page parses with the required fields; (3)
-wikilinks — every [[wikilink]] in a changed page resolves. A tripped
-check auto-reverts the data repo to the pre-run commit, writes a
-failure digest naming the check, and exits 1.
+§1, §7, §9; issue #12): (1) immutability — only wiki/ (never the
+wiki/AGENTS.md contract), outputs/, and raw/manifest.json may change,
+and HEAD may not move; (2) frontmatter — every changed wiki page
+parses with the required fields; (3) wikilinks — every [[wikilink]]
+in a changed page resolves, and no remaining page links to a page
+the run deleted. A tripped check auto-reverts the data repo to its
+pre-run state (the pre-run commit plus the uncommitted work that
+preceded the run), writes a failure digest naming the check, and
+exits 1.
 
 With no changed sources since the snapshot nothing runs: it says so
 and exits 0. On a terminal (TTY, color enabled) the agent run shows
