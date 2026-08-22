@@ -261,8 +261,9 @@ These modes are documented when their issue lands, not before:
 
 - **Read-only mirror publish** — the iPhone/iPad reading copy (#15).
 - **Scheduled unattended operation** (#14).
-- **Orchestrated cycle and `--batch N`** — one command, sync through
-  commit; batch construction stops being snapshot surgery (#13).
+- **`--batch N` for `wiki-ingest`** — batch construction stops
+  being snapshot surgery; deferred from #13 until batched runs
+  become the standing procedure for large backlogs.
 
 ## Tooling
 
@@ -309,9 +310,9 @@ Verification has three layers:
 | Mutation | `npm run mutation:changed` | advisory — a signal, never a gate ([below](#mutation-testing)) |
 
 The e2e suites drive the real CLIs — sync-vault against the synthetic
-fixture vault, wiki-ingest against a stub agent in a temp data repo;
-the health check verifies that a `raw/` projection is internally
-consistent without the real vault. Both are deterministic and fast, so
+fixture vault, wiki-ingest and wiki-sync against a stub agent in temp
+data repos; the health check verifies that a `raw/` projection is
+internally consistent without the real vault. Both are deterministic and fast, so
 they gate CI like the unit tests do — unlike mutation testing, whose
 runtime grows with the suite.
 
