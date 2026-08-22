@@ -607,7 +607,9 @@ It chains the proven pieces and adds no capability of its own:
    agent session in the data repo root. The report lands in the
    **data repo's** `outputs/lint-<date>.md` (the #61 convention:
    quality history travels with the content), and the same three
-   guardrails check the run with the same auto-revert.
+   guardrails check the run with the same auto-revert. The orchestrator
+   pins the date and passes the concrete report path in the prompt, so
+   its report check and the prompt cannot disagree.
 4. **commit** — one data-repo commit staging `wiki/`, `raw/`, and
    `outputs/`, with a message summarizing sources processed, pages
    touched, and the lint report.
@@ -621,9 +623,12 @@ own (cost scales with activity, not the clock), lint is skipped with
 it, a clean data repo commits nothing, and the command exits 0.
 Because the skip keys on the ingest snapshot — which a failed agent
 run leaves untouched — the next cycle retries a failed ingest even
-when sync then reports no changes. A failure at any stage stops the
-chain and exits 1; a tripped guardrail has already reverted its agent
-run. Switches: `--settings <path>`, `--outputs <dir>` (the ingest
+when sync then reports no changes. Lint gets no such retry: it runs
+only in a cycle whose ingest ran, so after a failed lint the report
+waits for the next cycle with changed sources (or a manual lint run).
+A failure at any stage stops the chain and exits 1; a tripped
+guardrail has already reverted its agent run. Switches:
+`--settings <path>`, `--outputs <dir>` (the ingest
 snapshot and digest location; default the repo's `outputs/`),
 `--timeout <secs>` (default 1800, applies to both agent stages), plus
 the `<sync.json>` and `<raw-dir>` positionals — `-h` documents them

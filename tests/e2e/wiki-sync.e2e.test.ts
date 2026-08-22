@@ -98,9 +98,11 @@ await writeFile(
 );
 
 if (prompt.startsWith("Audit the wiki")) {
+  const reportPath = prompt.match(/outputs\\/lint-\\d{4}-\\d{2}-\\d{2}\\.md/)?.[0];
+  if (reportPath === undefined) process.exit(6);
   await mkdir(join(process.cwd(), "outputs"), { recursive: true });
   await writeFile(
-    join(process.cwd(), "outputs", process.env.STUB_LINT_REPORT ?? "lint-stub.md"),
+    join(process.cwd(), reportPath),
     "# Lint report\\n\\nAll checks passed.\\n",
   );
   console.log("lint: all pages audited, no problems");
@@ -181,16 +183,19 @@ describe("wiki-sync e2e", () => {
 
   it("runs the full cycle into one readable data-repo commit", async () => {
     const repo = await makeRepo();
-    const today = new Date().toISOString().slice(0, 10);
-    const result = await runCycle(repo, {
-      STUB_LINT_REPORT: `lint-${today}.md`,
-    });
+    const result = await runCycle(repo);
+    const lintPath =
+      /- \*\*Lint:\*\* report `(outputs\/lint-\d{4}-\d{2}-\d{2}\.md)`/.exec(
+        result.out,
+      )?.[1];
+
+    if (lintPath === undefined) {
+      throw new Error("expected a lint report path in the digest");
+    }
 
     expect(result.code).toBe(0);
     expect(result.out).toContain("# wiki-sync cycle digest");
-    expect(result.out).toContain(
-      `**Lint:** report \`outputs/lint-${today}.md\``,
-    );
+    expect(result.out).toContain(`**Lint:** report \`${lintPath}\``);
     expect(result.out).toContain("**Commit:** `");
 
     const { stdout: log } = await run("git", ["log", "-1", "--pretty=%B"], {
@@ -200,10 +205,10 @@ describe("wiki-sync e2e", () => {
     expect(log).toMatch(
       /^wiki-sync: \d+ sources processed, \d+ pages touched$/m,
     );
-    expect(log).toContain(`- lint: outputs/lint-${today}.md`);
+    expect(log).toContain(`- lint: ${lintPath}`);
 
     await expect(
-      readFile(join(repo.dataRoot, "outputs", `lint-${today}.md`), "utf8"),
+      readFile(join(repo.dataRoot, lintPath), "utf8"),
     ).resolves.toContain("Lint report");
     await expect(
       readFile(join(repo.dataRoot, "wiki", "concepts", "stub.md"), "utf8"),

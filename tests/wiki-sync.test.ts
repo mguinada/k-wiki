@@ -85,13 +85,18 @@ const ingestStub: AgentRunner = async (_command, _args, options) => {
   return { stdout: "agent final report", stderr: "" };
 };
 
-/** The default lint stub: write the lint report into data-repo outputs/. */
-const lintStub: AgentRunner = async (_command, _args, options) => {
-  await mkdir(join(options.cwd, "outputs"), { recursive: true });
-  await writeFile(
-    join(options.cwd, "outputs", "lint-2026-08-20.md"),
-    "# Lint report\n\nAll checks passed.\n",
-  );
+/** The default lint stub: write the report where the prompt says. */
+const lintStub: AgentRunner = async (_command, args, options) => {
+  const prompt = args[args.indexOf("--print") + 1] ?? "";
+  const reportPath = /outputs\/lint-\d{4}-\d{2}-\d{2}\.md/.exec(prompt)?.[0];
+
+  if (reportPath !== undefined) {
+    await mkdir(join(options.cwd, "outputs"), { recursive: true });
+    await writeFile(
+      join(options.cwd, reportPath),
+      "# Lint report\n\nAll checks passed.\n",
+    );
+  }
 
   return { stdout: "lint: 149 pages audited, 0 problems", stderr: "" };
 };
@@ -128,7 +133,10 @@ async function makeHarness(
   await mkdir(promptsDir, { recursive: true });
   await writeFile(join(promptsDir, "ingest.md"), "FULL PROMPT");
   await writeFile(join(promptsDir, "incremental.md"), "INCREMENTAL PROMPT");
-  await writeFile(join(promptsDir, "lint.md"), "AUDIT THE WIKI PROMPT");
+  await writeFile(
+    join(promptsDir, "lint.md"),
+    "AUDIT THE WIKI PROMPT\n\nSave the report to `outputs/lint-<YYYY-MM-DD>.md`.\n",
+  );
 
   await mkdir(join(dataRoot, "raw"), { recursive: true });
   await mkdir(join(dataRoot, "wiki"), { recursive: true });
@@ -251,7 +259,10 @@ describe("runWikiSync", () => {
     expect(result.lint).toBeUndefined();
     expect(result.commit.status).toBe("nothing-to-commit");
     expect(await headOf(h.dataRoot)).toBe(headBefore);
-    expect(h.invocations).toEqual(["FULL PROMPT", "AUDIT THE WIKI PROMPT"]);
+    expect(h.invocations).toEqual([
+      "FULL PROMPT",
+      "AUDIT THE WIKI PROMPT\n\nSave the report to `outputs/lint-2026-08-20.md`.\n",
+    ]);
   });
 
   it("stops the chain and commits nothing when the ingest agent fails", async () => {
@@ -449,10 +460,19 @@ describe("runWikiSync lint stage", () => {
       expect.stringMatching(/lint agent still running/),
     );
   });
+
+  it("delivers the lint prompt with the concrete report path substituted", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    await runWikiSync(optionsFor(h));
+
+    expect(h.invocations[1]).toContain("`outputs/lint-2026-08-20.md`");
+    expect(h.invocations[1]).not.toContain("<YYYY-MM-DD>");
+  });
 });
 
 const CLI_STUB =
-  '#!/usr/bin/env node\nimport { existsSync } from "node:fs";\nimport { mkdir, writeFile } from "node:fs/promises";\nimport { join } from "node:path";\n// Guard: a mutated wrapper may redirect this stub into the real data\n// repo; refuse to write anywhere but this harness\'s data root.\nif (!existsSync(join(process.cwd(), ".cli-test-repo"))) process.exit(5);\nconst index = process.argv.indexOf("--print");\nconst prompt = index === -1 ? "" : process.argv[index + 1] ?? "";\nawait mkdir(join(process.cwd(), "wiki", "concepts"), { recursive: true });\nawait writeFile(join(process.cwd(), "wiki", "concepts", "stub.md"), [\n  "---",\n  \'title: "Stub"\',\n  "type: concept",\n  "created: 2026-08-20",\n  "updated: 2026-08-20",\n  "tags:",\n  "  - llm",\n  "sources:",\n  \'  - "[[index]]"\',\n  "---",\n  "",\n  "stub body",\n  "",\n].join("\\n"));\nif (prompt.startsWith("Audit the wiki")) {\n  await mkdir(join(process.cwd(), "outputs"), { recursive: true });\n  const today = new Date().toISOString().slice(0, 10);\n  await writeFile(join(process.cwd(), "outputs", "lint-" + today + ".md"), "# Lint\\n");\n  console.log("lint: clean");\n} else {\n  console.log("ingest report");\n}\n';
+  '#!/usr/bin/env node\nimport { existsSync } from "node:fs";\nimport { mkdir, writeFile } from "node:fs/promises";\nimport { join } from "node:path";\n// Guard: a mutated wrapper may redirect this stub into the real data\n// repo; refuse to write anywhere but this harness\'s data root.\nif (!existsSync(join(process.cwd(), ".cli-test-repo"))) process.exit(5);\nconst index = process.argv.indexOf("--print");\nconst prompt = index === -1 ? "" : process.argv[index + 1] ?? "";\nawait mkdir(join(process.cwd(), "wiki", "concepts"), { recursive: true });\nawait writeFile(join(process.cwd(), "wiki", "concepts", "stub.md"), [\n  "---",\n  \'title: "Stub"\',\n  "type: concept",\n  "created: 2026-08-20",\n  "updated: 2026-08-20",\n  "tags:",\n  "  - llm",\n  "sources:",\n  \'  - "[[index]]"\',\n  "---",\n  "",\n  "stub body",\n  "",\n].join("\\n"));\nif (prompt.startsWith("Audit the wiki")) {\n  const reportPath = prompt.match(/outputs\\/lint-\\d{4}-\\d{2}-\\d{2}\\.md/)?.[0];\n  if (reportPath) {\n    await mkdir(join(process.cwd(), "outputs"), { recursive: true });\n    await writeFile(join(process.cwd(), reportPath), "# Lint\\n");\n  }\n  console.log("lint: clean");\n} else {\n  console.log("ingest report");\n}\n';
 
 describe("wiki-sync CLI", () => {
   async function makeCliHarness() {
@@ -842,6 +862,31 @@ describe("runWikiSync commit contents", () => {
     expect(names).toContain("wiki/concepts/new.md");
     expect(names).toContain("raw/notes/Engineering/AI/RAG.md");
     expect(names).not.toContain("stray.txt");
+  });
+
+  it("leaves files staged outside the cycle pathspecs out of the commit", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    await writeFile(join(h.dataRoot, "hand-notes.md"), "hand notes\n");
+    await runGit(h.dataRoot, ["add", "hand-notes.md"], process.env);
+
+    await runWikiSync(optionsFor(h));
+
+    const { stdout: names } = await runGit(
+      h.dataRoot,
+      ["show", "--name-only", "--pretty=format:", "HEAD"],
+      process.env,
+    );
+
+    expect(names).not.toContain("hand-notes.md");
+
+    const { stdout: status } = await runGit(
+      h.dataRoot,
+      ["status", "--porcelain"],
+      process.env,
+    );
+
+    expect(status).toContain("A  hand-notes.md");
   });
 
   it("counts a removed source in the next cycle's commit message", async () => {

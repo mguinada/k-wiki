@@ -102,7 +102,10 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
 
   onProgress("wiki-sync: lint — reading prompts/lint.md");
 
-  const promptText = await readPrompt(join(options.promptsDir, "lint.md"));
+  const reportPath = lintReportPath(now);
+  const promptText = (
+    await readPrompt(join(options.promptsDir, "lint.md"))
+  ).replaceAll("outputs/lint-<YYYY-MM-DD>.md", reportPath);
   const args = [
     "--model",
     settings.model,
@@ -167,7 +170,6 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
     throw agentError;
   }
 
-  const reportPath = lintReportPath(now);
   const reportWritten = await stat(
     absoluteReportPath(dataRoot, reportPath),
   ).then(
@@ -264,7 +266,11 @@ async function commitDataRepo(
   }
 
   await runGit(dataRoot, ["add", "-A", "--", ...pathspecs], env);
-  await runGit(dataRoot, ["commit", "--quiet", "-m", message], env);
+  await runGit(
+    dataRoot,
+    ["commit", "--quiet", "-m", message, "--", ...pathspecs],
+    env,
+  );
 
   const { stdout: hash } = await runGit(dataRoot, ["rev-parse", "HEAD"], env);
 
