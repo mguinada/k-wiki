@@ -288,6 +288,24 @@ describe("runGuardrails — check 1, immutability", () => {
     expect(post.failure?.problems[0]).toContain("raw/notes/src.md");
   });
 
+  it("trips when the run renames a raw note onto a pre-run rename target", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(join(dataRoot, "wiki", "a.md"), page("# A\n"));
+    await commit(dataRoot, "a");
+    await mkdir(join(dataRoot, "outputs"), { recursive: true });
+    await run("git", ["mv", "wiki/a.md", "outputs/x.md"], { cwd: dataRoot });
+
+    const post = await guardedRun(dataRoot, async (root) => {
+      await run("git", ["mv", "-f", "raw/notes/src.md", "outputs/x.md"], {
+        cwd: root,
+      });
+    });
+
+    expect(post.failure?.check).toBe(1);
+    expect(post.failure?.problems.join("\n")).toContain("raw/notes/src.md");
+  });
+
   it("trips when the run rewrites the wiki/AGENTS.md contract", async () => {
     const dataRoot = await makeRepo();
     const post = await guardedRun(dataRoot, async (root) => {
@@ -444,6 +462,25 @@ describe("runGuardrails — check 3, wikilinks", () => {
       page("See [[target]]."),
     );
     await commit(dataRoot, "linker");
+
+    const post = await guardedRun(dataRoot, async (root) => {
+      await rm(join(root, "wiki", "target.md"));
+    });
+
+    expect(post.failure?.check).toBe(3);
+    expect(post.failure?.problems[0]).toMatch(
+      /^wiki\/linker\.md:\d+ -> \[\[target\]\]$/,
+    );
+  });
+
+  it("trips when the run deletes an untracked page other pages link to", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(join(dataRoot, "wiki", "target.md"), page("# Target\n"));
+    await writeFile(
+      join(dataRoot, "wiki", "linker.md"),
+      page("See [[target]]."),
+    );
 
     const post = await guardedRun(dataRoot, async (root) => {
       await rm(join(root, "wiki", "target.md"));

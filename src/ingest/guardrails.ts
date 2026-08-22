@@ -189,9 +189,23 @@ function isDeleted(entry: StatusEntry): boolean {
   return entry.code.includes("D");
 }
 
-/** Index one status snapshot by path, for code-to-code comparison. */
-function statusIndex(status: readonly StatusEntry[]): Map<string, string> {
-  return new Map(status.map((entry) => [entry.path, entry.code]));
+/** Index one status snapshot by path, for entry-to-entry comparison. */
+function statusIndex(status: readonly StatusEntry[]): Map<string, StatusEntry> {
+  return new Map(status.map((entry) => [entry.path, entry]));
+}
+
+/** True when the entry was already dirty before the run: same
+ *  status code and, for renames, same origin — a rename's identity
+ *  is the pair of its paths, not the target alone. */
+function isPreExisting(
+  prior: StatusEntry | undefined,
+  entry: StatusEntry,
+): boolean {
+  return (
+    prior !== undefined &&
+    prior.code === entry.code &&
+    prior.origin === entry.origin
+  );
 }
 
 /** A file's bytes, or null when the path is absent. */
@@ -295,10 +309,8 @@ async function changedWikiPages(
       continue;
     }
 
-    const priorCode = before.get(entry.path);
     const isDirty =
-      priorCode === undefined ||
-      priorCode !== entry.code ||
+      !isPreExisting(before.get(entry.path), entry) ||
       (await hashPath(join(dataRoot, entry.path))) !==
         pre.hashes.get(entry.path);
 
@@ -407,7 +419,10 @@ async function checkImmutability(
   for (const entry of entries) {
     const outside = changedOutside(entry);
 
-    if (outside !== undefined && before.get(entry.path) !== entry.code) {
+    if (
+      outside !== undefined &&
+      !isPreExisting(before.get(entry.path), entry)
+    ) {
       problems.add(`${outside} changed by the run`);
     }
   }
@@ -459,11 +474,14 @@ function checkChangedFrontmatter(
  * remaining link to one is newly dangling. A page already deleted
  * or renamed away before the run dangled already — not this run's
  * doing — so pre-run deletions and rename origins are skipped.
+ * Deleting an untracked page leaves no status trace, so a pre-run
+ * untracked page whose file is now gone also counts as deleted.
  */
-function deletedWikiPageNames(
+async function deletedWikiPageNames(
+  dataRoot: string,
   pre: PreRunState,
   entries: readonly StatusEntry[],
-): Set<string> {
+): Promise<Set<string>> {
   const alreadyGone = new Set<string>();
 
   for (const entry of pre.status) {
@@ -479,6 +497,16 @@ function deletedWikiPageNames(
       deleted.add(basename(path, ".md"));
     }
   };
+
+  for (const entry of pre.status) {
+    if (
+      isWikiPage(entry.path) &&
+      isUntracked(entry) &&
+      (await readContent(join(dataRoot, entry.path))) === null
+    ) {
+      take(entry.path);
+    }
+  }
 
   for (const entry of entries) {
     if (entry.origin !== undefined && isWikiPage(entry.origin)) {
@@ -579,7 +607,7 @@ export async function runGuardrails(
     return { entries, failure: frontmatter };
   }
 
-  const deletedNames = deletedWikiPageNames(pre, entries);
+  const deletedNames = await deletedWikiPageNames(dataRoot, pre, entries);
 
   return {
     entries,
