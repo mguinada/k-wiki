@@ -270,7 +270,7 @@ sources directly, so there is no build step — install dependencies with
 | `npm run format` | Biome | Rewrite files to the canonical format — the fix command for lint findings, not a gate |
 | `npm test` | vitest | Run the unit test suite |
 | `npm run test:coverage` | vitest | Run the unit tests and fail below the 90% coverage thresholds — what CI runs |
-| `npm run e2e` | vitest | Run the end-to-end suite (`tests/e2e/`): real CLI child processes — sync-vault through a full vault lifecycle (first run, no-op re-run, edit, delete, block flip, multi-vault) against the synthetic fixture vault in temp workspaces under `.e2e-tmp/` (gitignored), plus wiki-ingest through first-run, incremental, skip, failure, timeout, and guardrail auto-revert runs against a stub agent in temp data repos |
+| `npm run e2e` | vitest | Run the end-to-end suite (`tests/e2e/`): real CLI child processes — sync-vault through a full vault lifecycle (first run, no-op re-run, edit, delete, block flip, multi-vault) against the synthetic fixture vault in temp workspaces under `.e2e-tmp/` (gitignored), plus wiki-ingest through first-run, incremental, expunge, rename, skip, failure, timeout, and guardrail auto-revert runs against a stub agent in temp data repos |
 | `npm run health [-- <raw-dir>]` | health CLI | Check the coherence of a `raw/` projection (default: the repo's `raw/`): every `raw/notes/<vault>/` file matches its `manifest.json` sha-256, with no orphans and no missing entries; read-only, no vault access; exit 0 = coherent (including healthy-empty), exit 1 = one line per problem |
 | `npm run check-links [-- <wiki-dir>]` | wikilink checker | Check that every `[[wikilink]]` under `wiki/` (default) resolves to an existing page by file name; exit 0 = all links resolve, exit 1 = one `file:line -> [[link]]` line per broken link |
 | `npm run check-provenance [-- <wiki-dir> [<raw-dir>]]` | dead-provenance checker | Check that every `sources` entry under `wiki/` resolves (wikilink → an existing page, path → an existing `raw/` file) and every source page's `origin` exists under `raw/` (default: the repo's `wiki/` and its sibling `raw/`); exit 0 = coherent, exit 1 = one `wiki/<page> -> …` line per problem — the deterministic backstop that catches any purge miss |
@@ -481,7 +481,9 @@ reads `raw/manifest.json`, diffs it against the snapshot from the
 previous successful run (`outputs/last-ingested-manifest.json`), and
 runs the agent non-interactively **in the data repo root** — `prompts/ingest.md`
 for the first run, `prompts/incremental.md` with the changed sources
-(`+` added, `~` changed, `-` removed) appended for every later one. The
+(`+` added, `~` changed, `→` renamed, `-` removed) appended for every
+later one, except that removals route to `prompts/expunge.md` (see
+[below](#when-a-note-is-deleted-expungement)). The
 agent itself follows `wiki/AGENTS.md`, never touches `raw/`, and gets
 30 minutes (override with `--timeout <seconds>`); while it runs, one
 animated status line — a braille spinner plus the elapsed time — is
@@ -505,7 +507,8 @@ unsupervised — is written to `outputs/runs/<timestamp>.md` (gitignored
 machine output; the durable review surface is the data repo's git
 diff) and printed to stdout: agent command, model, and reasoning level;
 mode and prompt
-file; sources added/changed/removed; wiki pages created/updated (read
+file; sources added/changed/removed/renamed; wiki pages
+created/updated/deleted (read
 from the data repo's git status, so it matches the `git diff` you
 review); and the agent's final report, which the prompt requires to
 state sources processed, pages created/updated, contradictions

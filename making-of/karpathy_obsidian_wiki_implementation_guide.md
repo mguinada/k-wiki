@@ -1225,7 +1225,7 @@ wiki-sync
    │
    ├── 2. Determine changed/deleted sources
    │
-   ├── 3. Run incremental ingest
+   ├── 3. Run wiki-ingest (incremental or expunge prompt)
    │
    ├── 4. Run lint
    │
