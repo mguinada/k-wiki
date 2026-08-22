@@ -419,10 +419,18 @@ async function checkImmutability(
   for (const entry of entries) {
     const outside = changedOutside(entry);
 
-    if (
-      outside !== undefined &&
-      !isPreExisting(before.get(entry.path), entry)
-    ) {
+    if (outside === undefined) {
+      continue;
+    }
+
+    const prior = before.get(entry.path);
+
+    const preExisting =
+      outside === entry.origin
+        ? prior?.origin === entry.origin
+        : isPreExisting(prior, entry);
+
+    if (!preExisting) {
       problems.add(`${outside} changed by the run`);
     }
   }

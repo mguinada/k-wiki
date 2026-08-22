@@ -306,6 +306,37 @@ describe("runGuardrails — check 1, immutability", () => {
     expect(post.failure?.problems.join("\n")).toContain("raw/notes/src.md");
   });
 
+  it("passes a run that writes the target of a rename staged before the run", async () => {
+    const dataRoot = await makeRepo();
+
+    await mkdir(join(dataRoot, "outputs"), { recursive: true });
+    await run("git", ["mv", "raw/notes/src.md", "outputs/y.md"], {
+      cwd: dataRoot,
+    });
+
+    const post = await guardedRun(dataRoot, async (root) => {
+      await writeFile(join(root, "outputs", "y.md"), "# y v2\n");
+    });
+
+    expect(post.failure).toBeUndefined();
+  });
+
+  it("passes a run that restores the target of a pre-run modified rename", async () => {
+    const dataRoot = await makeRepo();
+
+    await mkdir(join(dataRoot, "outputs"), { recursive: true });
+    await run("git", ["mv", "raw/notes/src.md", "outputs/y.md"], {
+      cwd: dataRoot,
+    });
+    await writeFile(join(dataRoot, "outputs", "y.md"), "# dirty\n");
+
+    const post = await guardedRun(dataRoot, async (root) => {
+      await run("git", ["checkout", "--", "outputs/y.md"], { cwd: root });
+    });
+
+    expect(post.failure).toBeUndefined();
+  });
+
   it("trips when the run rewrites the wiki/AGENTS.md contract", async () => {
     const dataRoot = await makeRepo();
     const post = await guardedRun(dataRoot, async (root) => {
