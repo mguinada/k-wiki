@@ -129,8 +129,9 @@ For source pages, where applicable:
 
 `origin` records the raw projection path backing the source page
 (`raw/notes/<vault>/<path>`), written at ingest time. Add it to any
-source page that lacks it whenever the page is touched; it enables
-deterministic expungement.
+source page that lacks it whenever the page is touched, and update it —
+and any `sources` entry citing the old path — when its note is renamed;
+it enables deterministic expungement.
 
 Use ISO dates: `YYYY-MM-DD`.
 

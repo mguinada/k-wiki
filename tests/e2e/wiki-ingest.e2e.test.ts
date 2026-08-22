@@ -8,6 +8,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import {
   INGEST_SCRIPT,
   buildWorkspace,
+  cleanupWorkspaces,
   runCli,
   SYNC_SCRIPT,
 } from "./helpers.ts";
@@ -28,9 +29,10 @@ const run = promisify(execFile);
 const tempDirs: string[] = [];
 
 afterAll(async () => {
-  await Promise.all(
-    tempDirs.map((dir) => rm(dir, { recursive: true, force: true })),
-  );
+  await Promise.all([
+    ...tempDirs.map((dir) => rm(dir, { recursive: true, force: true })),
+    cleanupWorkspaces(),
+  ]);
 });
 
 function hashOf(content: string): string {

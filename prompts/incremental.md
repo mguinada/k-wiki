@@ -21,7 +21,8 @@ Make the smallest set of changes necessary.
 
 Record `origin: raw/notes/<vault>/<path>` in the frontmatter of every
 source page you create, and add it to any source page you touch that
-lacks it.
+lacks it. When a note is renamed, update its raw path in the kept
+source page's `origin` and in every `sources` entry that cites it.
 
 Do not regenerate unrelated pages.
 Do not modify raw/.

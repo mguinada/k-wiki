@@ -735,8 +735,9 @@ For source pages, where applicable:
 
 `origin` records the raw projection path backing the source page
 (`raw/notes/<vault>/<path>`), written at ingest time. Add it to any
-source page that lacks it whenever the page is touched; it enables
-deterministic expungement.
+source page that lacks it whenever the page is touched, and update it —
+and any `sources` entry citing the old path — when its note is renamed;
+it enables deterministic expungement.
 
 Use ISO dates: `YYYY-MM-DD`.
 
@@ -1010,7 +1011,8 @@ Make the smallest set of changes necessary.
 
 Record `origin: raw/notes/<vault>/<path>` in the frontmatter of every
 source page you create, and add it to any source page you touch that
-lacks it.
+lacks it. When a note is renamed, update its raw path in the kept
+source page's `origin` and in every `sources` entry that cites it.
 
 Do not regenerate unrelated pages.
 
@@ -1045,7 +1047,10 @@ never as a deletion. After sync the note is gone from `raw/`, but the
 data repo versions `raw/`, so git history holds the note in full — the
 wrapper recovers the last synced content (`git show`, falling back to
 the deletion commit's parent tree) and inlines it in the prompt. No
-archive is needed.
+archive is needed. Recovery reaches back only to the last committed
+sync: an edit synced and then deleted before the human commits is
+lost — the origin-path seed is unaffected, but full-text search then
+works from the older committed text.
 
 ### Two-phase process
 
