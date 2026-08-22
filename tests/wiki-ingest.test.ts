@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -414,6 +414,28 @@ describe("formatDigest", () => {
     expect(formatDigest(digestRun())).toContain("unresolved questions");
   });
 
+  it("records the guardrail failure when a check tripped", () => {
+    const digest = formatDigest(
+      digestRun({
+        pages: {
+          created: [],
+          updated: [],
+          unavailable: "run reverted — guardrail check 2 (frontmatter) tripped",
+        },
+        guardrailFailure: {
+          check: 2,
+          name: "frontmatter",
+          problems: ["wiki/bad.md: no frontmatter block"],
+        },
+      }),
+    );
+
+    expect(digest).toContain("## Guardrails failed");
+    expect(digest).toContain("Check 2 (frontmatter)");
+    expect(digest).toContain("- wiki/bad.md: no frontmatter block");
+    expect(digest).toContain("**Wiki pages:** unavailable — run reverted");
+  });
+
   it("notes when the wiki git diff was unavailable", () => {
     const digest = formatDigest(
       digestRun({ pages: { created: [], updated: [], unavailable: "no git" } }),
@@ -506,6 +528,25 @@ interface Harness {
   runAgent: AgentRunner;
 }
 
+/** A wiki page body with valid §9 frontmatter (guardrail 2 must pass). */
+function wikiPage(body: string): string {
+  return [
+    "---",
+    'title: "Page"',
+    "type: concept",
+    "created: 2026-08-20",
+    "updated: 2026-08-20",
+    "tags:",
+    "  - llm",
+    "sources:",
+    '  - "[[index]]"',
+    "---",
+    "",
+    body,
+    "",
+  ].join("\n");
+}
+
 /** Fixture prompt files plus a recording, wiki-writing fake agent. */
 async function makeHarness(notes: VaultNotes): Promise<Harness> {
   const dataRoot = await makeDataRepo(notes);
@@ -524,11 +565,19 @@ async function makeHarness(notes: VaultNotes): Promise<Harness> {
   const runAgent: AgentRunner = async (command, args, options) => {
     invocations.push({ command, args, cwd: options.cwd });
     await mkdir(join(options.cwd, "wiki", "concepts"), { recursive: true });
-    await writeFile(join(options.cwd, "wiki", "concepts", "new.md"), "New", {
-      flag: "wx",
-    }).catch(() => {});
-    await writeFile(join(options.cwd, "wiki", "index.md"), "# Index v2\n");
-    await writeFile(join(options.cwd, "wiki", "A-page.md"), "# A page v2\n");
+    await writeFile(
+      join(options.cwd, "wiki", "concepts", "new.md"),
+      wikiPage("New"),
+      { flag: "wx" },
+    ).catch(() => {});
+    await writeFile(
+      join(options.cwd, "wiki", "index.md"),
+      wikiPage("# Index v2"),
+    );
+    await writeFile(
+      join(options.cwd, "wiki", "A-page.md"),
+      wikiPage("# A page v2"),
+    );
     await rm(join(options.cwd, "wiki", "gone.md")).catch(() => {});
 
     return { stdout: "agent final report", stderr: "" };
@@ -720,23 +769,15 @@ describe("runWikiIngest", () => {
     expect(digest).toContain("agent final report");
   });
 
-  it("reports unavailable wiki counts when the data repo has no git", async () => {
+  it("fails before the agent runs when the data repo has no git to revert to", async () => {
     const h = await makeHarness({ "a.md": entry("a") });
 
     await rm(join(h.dataRoot, ".git"), { recursive: true });
 
-    const result = await runWikiIngest(optionsFor(h));
-
-    expect(result.status).toBe("ran");
-    if (result.status !== "ran") {
-      return;
-    }
-
-    expect(result.pages).toEqual({
-      created: [],
-      updated: [],
-      unavailable: expect.any(String),
-    });
+    await expect(runWikiIngest(optionsFor(h))).rejects.toThrow(
+      "no commit to revert to",
+    );
+    expect(h.invocations).toHaveLength(0);
   });
 
   it("fails naming the prompt file when it is missing", async () => {
@@ -784,6 +825,7 @@ describe("runWikiIngest", () => {
         "invoking agent: pi --model GLM-5.2 --thinking high",
       ),
       "wiki-ingest: agent finished",
+      "wiki-ingest: guardrails passed",
     ]);
   });
 
@@ -811,36 +853,22 @@ describe("runWikiIngest", () => {
   it("formats the heartbeat clock as minutes and padded seconds", async () => {
     const h = await makeHarness({ "a.md": entry("a") });
     const messages: string[] = [];
-    const slow: AgentRunner = () =>
-      new Promise((resolve) =>
-        setTimeout(() => resolve({ stdout: "R", stderr: "" }), 200_000),
-      );
+    let clock = new Date("2026-08-20T17:58:00.000Z");
+    const slow: AgentRunner = async () => {
+      clock = new Date(clock.getTime() + 127_000);
 
-    vi.useFakeTimers();
+      await new Promise((resolve) => setTimeout(resolve, 60));
 
-    try {
-      const run = runWikiIngest({
-        ...optionsFor(h),
-        runAgent: slow,
-        heartbeatMs: 1000,
-        onProgress: (message) => messages.push(message),
-      });
-      let settled = false;
+      return { stdout: "slow agent report", stderr: "" };
+    };
 
-      run.finally(() => {
-        settled = true;
-      });
-
-      // Advance fake time in slices so real I/O (manifest reads, git)
-      // keeps progressing between timer ticks.
-      for (let tick = 0; !settled && tick < 500; tick++) {
-        await vi.advanceTimersByTimeAsync(1000);
-      }
-
-      await run;
-    } finally {
-      vi.useRealTimers();
-    }
+    await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: slow,
+      heartbeatMs: 20,
+      now: () => clock,
+      onProgress: (message) => messages.push(message),
+    });
 
     expect(messages).toContain("wiki-ingest: agent still running (2m07s)");
   });
@@ -954,6 +982,121 @@ describe("runWikiIngest", () => {
     await expect(
       readFile(join(h.outputsDir, "last-ingested-manifest.json"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+});
+
+describe("runWikiIngest guardrails", () => {
+  const digestPath = (h: Harness) =>
+    join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md");
+
+  it("keeps the agent's changes on a clean run", async () => {
+    const h = await makeHarness({ "a.md": entry("a") });
+    const result = await runWikiIngest(optionsFor(h));
+
+    expect(result.status).toBe("ran");
+
+    const page = await readFile(
+      join(h.dataRoot, "wiki", "concepts", "new.md"),
+      "utf8",
+    );
+
+    expect(page).toContain("New");
+  });
+
+  it("reverts and fails the run when a changed page has broken frontmatter", async () => {
+    const h = await makeHarness({ "a.md": entry("a") });
+    const saboteur: AgentRunner = async (_command, _args, options) => {
+      await writeFile(join(options.cwd, "wiki", "bad.md"), "no frontmatter\n");
+
+      return { stdout: "rogue report", stderr: "" };
+    };
+
+    await expect(
+      runWikiIngest({ ...optionsFor(h), runAgent: saboteur }),
+    ).rejects.toThrow("guardrail check 2 (frontmatter)");
+    await expect(
+      readFile(join(h.dataRoot, "wiki", "bad.md"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(
+      readFile(join(h.outputsDir, "last-ingested-manifest.json"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("writes a failure digest naming the tripped check", async () => {
+    const h = await makeHarness({ "a.md": entry("a") });
+    const saboteur: AgentRunner = async (_command, _args, options) => {
+      await writeFile(join(options.cwd, "wiki", "bad.md"), "no frontmatter\n");
+
+      return { stdout: "rogue report", stderr: "" };
+    };
+
+    await expect(
+      runWikiIngest({ ...optionsFor(h), runAgent: saboteur }),
+    ).rejects.toThrow();
+
+    const digest = await readFile(digestPath(h), "utf8");
+
+    expect(digest).toContain("Check 2 (frontmatter)");
+    expect(digest).toContain("wiki/bad.md");
+    expect(digest).toContain("rogue report");
+  });
+
+  it("reverts and fails the run when the agent writes outside the whitelist", async () => {
+    const h = await makeHarness({ "a.md": entry("a") });
+    const saboteur: AgentRunner = async (_command, _args, options) => {
+      await mkdir(join(options.cwd, "raw", "notes"), { recursive: true });
+      await writeFile(join(options.cwd, "raw", "notes", "rogue.md"), "x\n");
+
+      return { stdout: "rogue report", stderr: "" };
+    };
+
+    await expect(
+      runWikiIngest({ ...optionsFor(h), runAgent: saboteur }),
+    ).rejects.toThrow("guardrail check 1 (immutability)");
+    await expect(
+      readFile(join(h.dataRoot, "raw", "notes", "rogue.md"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("reverts and fails the run when a changed page leaves a dangling wikilink", async () => {
+    const h = await makeHarness({ "a.md": entry("a") });
+    const saboteur: AgentRunner = async (_command, _args, options) => {
+      await writeFile(
+        join(options.cwd, "wiki", "dangling.md"),
+        wikiPage("See [[Nowhere]]."),
+      );
+
+      return { stdout: "rogue report", stderr: "" };
+    };
+
+    await expect(
+      runWikiIngest({ ...optionsFor(h), runAgent: saboteur }),
+    ).rejects.toThrow("guardrail check 3 (wikilinks)");
+    await expect(
+      readFile(join(h.dataRoot, "wiki", "dangling.md"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("checks a wiki page that was already dirty before the run", async () => {
+    const h = await makeHarness({ "a.md": entry("a") });
+
+    await writeFile(
+      join(h.dataRoot, "wiki", "index.md"),
+      wikiPage("# Index v2"),
+    );
+
+    const saboteur: AgentRunner = async () => {
+      await writeFile(
+        join(h.dataRoot, "wiki", "index.md"),
+        "still dirty, now broken\n",
+      );
+
+      return { stdout: "rogue report", stderr: "" };
+    };
+
+    await expect(
+      runWikiIngest({ ...optionsFor(h), runAgent: saboteur }),
+    ).rejects.toThrow("guardrail check 2 (frontmatter)");
   });
 });
 
@@ -1171,9 +1314,24 @@ describe("wiki-ingest CLI", () => {
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 const index = process.argv.indexOf("--print");
-await writeFile(join(process.cwd(), "stub-prompt.txt"), process.argv[index + 1] ?? "");
+await mkdir(join(process.cwd(), "outputs"), { recursive: true });
+await writeFile(join(process.cwd(), "outputs", "stub-prompt.txt"), process.argv[index + 1] ?? "");
 await mkdir(join(process.cwd(), "wiki", "concepts"), { recursive: true });
-await writeFile(join(process.cwd(), "wiki", "concepts", "stub.md"), "stub");
+await writeFile(join(process.cwd(), "wiki", "concepts", "stub.md"), [
+  "---",
+  'title: "Stub"',
+  "type: concept",
+  "created: 2026-08-20",
+  "updated: 2026-08-20",
+  "tags:",
+  "  - llm",
+  "sources:",
+  '  - "[[index]]"',
+  "---",
+  "",
+  "stub body",
+  "",
+].join("\\n"));
 console.log("stub report");
 `;
 

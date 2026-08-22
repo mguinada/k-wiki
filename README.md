@@ -60,7 +60,8 @@ Obsidian vault            sync-vault                wiki-ingest               re
 `raw/` and `wiki/` contents live in the data repo at `sync.json`'s
 `dataRoot`; this repo holds the pipeline and the skeleton only.
 Today steps 1–4 are separate commands (issue #13 will chain them,
-#12 adds guardrails, #14 scheduling).
+#14 adds scheduling; wiki-ingest already runs the post-run guardrails
+— checks and auto-revert — after every agent run).
 
 ## Usage models
 
@@ -511,8 +512,11 @@ repo's git status, so they cover everything uncommitted — review the
 `git diff`, then commit the data repo after each run to keep every
 digest scoped to its own run. A failed agent run exits 1 and
 leaves the snapshot untouched, so the next run retries the same
-sources; guardrails (lint, checks, auto-revert) are issue #12, the
-one-command orchestration #13, scheduling #14.
+sources. After every agent run three mechanical guardrails check the
+data repo (immutability, frontmatter, wikilinks — guide §1, §7, §9):
+a tripped check auto-reverts the data repo to the pre-run commit,
+writes a failure digest naming the check, and exits 1; the
+one-command orchestration is #13, scheduling #14.
 
 **Timeout budgeting:** the 1800 s default fits the steady state —
 incremental runs measured at 1–2 minutes (about one minute per note,

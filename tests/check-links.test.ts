@@ -6,11 +6,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
 import { afterAll, describe, expect, it } from "vitest";
-import {
-  buildPageIndex,
-  checkWikiLinks,
-  extractWikilinks,
-} from "../scripts/check-links.ts";
+import { checkWikiLinks } from "../scripts/check-links.ts";
+import { buildPageIndex, extractWikilinks } from "../src/wiki-links.ts";
 
 const script = join(
   dirname(fileURLToPath(import.meta.url)),

@@ -16,15 +16,22 @@ import {
   type VaultNotes,
   writeManifest,
 } from "../sync/manifest.ts";
+import {
+  capturePreRunState,
+  type GuardrailFailure,
+  revertToPreRun,
+  runGuardrails,
+} from "./guardrails.ts";
 
 /**
  * wiki-ingest: the headless wiki agent run (guide §18, issue #11). It
  * diffs `raw/manifest.json` against the snapshot from the previous
  * successful run, picks `prompts/ingest.md` (first run) or
  * `prompts/incremental.md` (with the changed sources appended), invokes
- * the agent CLI non-interactively in the data repo root, and writes a
- * digest the human can review in under a minute. Guardrails (checks,
- * auto-revert) are issue #12; scheduling is #14.
+ * the agent CLI non-interactively in the data repo root, runs the
+ * post-run guardrails (issue #12: immutability, frontmatter, wikilinks
+ * — auto-reverting to the pre-run commit on failure), and writes a
+ * digest the human can review in under a minute. Scheduling is #14.
  */
 
 export interface AgentSettings {
@@ -247,6 +254,8 @@ export interface IngestRun {
   readonly diff: ManifestDiff;
   readonly pages: WikiPages;
   readonly agentOutput: string;
+  /** The guardrail that tripped, when the run was auto-reverted. */
+  readonly guardrailFailure?: GuardrailFailure | undefined;
 }
 
 function sourceCount(
@@ -273,6 +282,22 @@ export function formatDigest(run: IngestRun): string {
     );
   } else {
     lines.push(`- **Wiki pages:** unavailable — ${run.pages.unavailable}`);
+  }
+
+  if (run.guardrailFailure !== undefined) {
+    const failure = run.guardrailFailure;
+
+    lines.push(
+      "",
+      "## Guardrails failed",
+      "",
+      `Check ${failure.check} (${failure.name}) tripped; the run was auto-reverted to the pre-run commit.`,
+      "",
+    );
+
+    for (const problem of failure.problems) {
+      lines.push(`- ${problem}`);
+    }
   }
 
   lines.push(
@@ -577,14 +602,15 @@ export async function runWikiIngest(
   ];
   const dataRoot = dirname(options.rawDir);
   const runAgent = options.runAgent ?? spawnAgent;
+  const pre = await capturePreRunState(dataRoot, env);
 
   onProgress(
     `wiki-ingest: mode ${mode}, invoking agent: ${settings.command} --model ${settings.model} --thinking ${settings.reasoning}`,
   );
 
-  const agentStartedAt = Date.now();
+  const agentStartedAt = now().getTime();
   const heartbeat = setInterval(() => {
-    const elapsed = formatDuration(Date.now() - agentStartedAt);
+    const elapsed = formatDuration(now().getTime() - agentStartedAt);
 
     onProgress(`${AGENT_HEARTBEAT_PREFIX} (${elapsed})`);
   }, options.heartbeatMs ?? HEARTBEAT_MS);
@@ -603,12 +629,54 @@ export async function runWikiIngest(
 
   onProgress("wiki-ingest: agent finished");
 
-  const pages = await wikiPages(dataRoot, env);
+  const post = await runGuardrails(dataRoot, env, pre);
+  const startedAt = now();
 
   await mkdir(options.outputsDir, { recursive: true });
   await mkdir(join(options.outputsDir, "runs"), { recursive: true });
 
-  const startedAt = now();
+  const digestPath = join(
+    options.outputsDir,
+    "runs",
+    `${startedAt.toISOString().replaceAll(":", "-")}.md`,
+  );
+
+  if (post.failure !== undefined) {
+    const failure = post.failure;
+
+    onProgress(
+      `wiki-ingest: guardrail check ${failure.check} (${failure.name}) failed — reverting to ${pre.commit.slice(0, 8)}`,
+    );
+
+    await revertToPreRun(dataRoot, env, pre, post.entries);
+    await writeFile(
+      digestPath,
+      formatDigest({
+        startedAt,
+        mode,
+        promptFile: `prompts/${promptFile}`,
+        settings,
+        diff,
+        pages: {
+          created: [],
+          updated: [],
+          unavailable: `run reverted — guardrail check ${failure.check} (${failure.name}) tripped`,
+        },
+        agentOutput: stdout,
+        guardrailFailure: failure,
+      }),
+      "utf8",
+    );
+
+    throw new Error(
+      `guardrail check ${failure.check} (${failure.name}) failed; run reverted to ${pre.commit.slice(0, 8)} — ${failure.problems.join("; ")}`,
+    );
+  }
+
+  onProgress("wiki-ingest: guardrails passed");
+
+  const pages = await wikiPages(dataRoot, env);
+
   const run: IngestRun = {
     startedAt,
     mode,
@@ -619,11 +687,6 @@ export async function runWikiIngest(
     agentOutput: stdout,
   };
   const digest = formatDigest(run);
-  const digestPath = join(
-    options.outputsDir,
-    "runs",
-    `${startedAt.toISOString().replaceAll(":", "-")}.md`,
-  );
 
   await writeFile(digestPath, digest, "utf8");
   await writeManifest(snapshotPath, current);
@@ -667,6 +730,14 @@ What it writes:
     next run diffs against (only after a successful agent run);
   - outputs/runs/<timestamp>.md — the digest, also printed to stdout.
 
+After every agent run three guardrails check the data repo (guide
+§1, §7, §9; issue #12): (1) immutability — only wiki/, outputs/, and
+raw/manifest.json may change, and HEAD may not move; (2) frontmatter
+— every changed wiki page parses with the required fields; (3)
+wikilinks — every [[wikilink]] in a changed page resolves. A tripped
+check auto-reverts the data repo to the pre-run commit, writes a
+failure digest naming the check, and exits 1.
+
 With no changed sources since the snapshot nothing runs: it says so
 and exits 0. On a terminal (TTY, color enabled) the agent run shows
 one animated status line - a braille spinner plus the elapsed time -
@@ -674,8 +745,7 @@ rewritten in place; piped, redirected, CI, or NO_COLOR runs get one
 plain heartbeat line per 60 seconds instead. A run that fails or
 exceeds the timeout exits 1 and leaves the snapshot and digest
 untouched, so the next run retries the same sources. Live progress
-goes to stderr; the digest goes to stdout. Guardrails (checks,
-auto-revert) are issue #12; scheduling is #14.`;
+goes to stderr; the digest goes to stdout. Scheduling is #14.`;
 
 function colors() {
   return createColors(!process.env.NO_COLOR);

@@ -2,6 +2,12 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
+    // Git- and clock-heavy tests (wiki-ingest, guardrails, sync
+    // progress) spawn real child processes and wait real intervals;
+    // under heavy machine load (e.g. endpoint-security scanning) the
+    // default 5 s starves them. The e2e config sets 30 s for the CLI
+    // suites for the same reason.
+    testTimeout: 30_000,
     // Keep vitest out of Stryker's sandbox copies: a crashed mutation run
     // leaves them behind, and they would double the suite. Keep the e2e
     // suite out of the unit run (npm test) and coverage: it spawns the
