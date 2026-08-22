@@ -158,14 +158,14 @@ describe("wiki-query e2e", () => {
     expect(prompt).toContain("Mode: file");
   });
 
-  it("answers without writing when --no-file is passed", async () => {
+  it("answers without writing when --no-filing is passed", async () => {
     const repo = await makeRepo();
-    const result = await query(repo, ["--no-file"]);
+    const result = await query(repo, ["--no-filing"]);
 
     expect(result.code).toBe(0);
     expect(result.out).toContain("Graph engineering is the discipline of…");
     expect(result.out).toContain(
-      "Meets the filing bar (synthesizes 3 pages); rerun without --no-file to file it.",
+      "Meets the filing bar (synthesizes 3 pages); rerun without --no-filing to file it.",
     );
 
     const { stdout } = await run(

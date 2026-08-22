@@ -275,7 +275,7 @@ sources directly, so there is no build step — install dependencies with
 | `npm run fixtures -- <dir>` | fixture generator | Write the synthetic Obsidian test vault to `<dir>/Documents` |
 | `npm run sync-vault -- [--dry-run] [<sync.json>] [<raw-dir>]` | sync CLI | Ingest every note not blocked by the vault's exclusion rule into `raw/notes/` (deterministic, no LLM; [details below](#running-the-sync)) |
 | `npm run wiki-ingest -- [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<raw-dir>]` | ingest wrapper | Run the wiki agent headless over the sources that changed since the last ingest and write the per-run digest (reads `settings.yml`; [details below](#running-the-wiki-agent-wiki-ingest)) |
-| `npm run wiki-query -- [-h \| --help] [--no-file] [--settings <path>] [--raw-dir <dir>] [--timeout <secs>] <question>` | query wrapper | Ask the built wiki one question headless: print the answer and, unless `--no-file`, report the query pages the agent filed (reads `settings.yml`; [details below](#running-queries-wiki-query)) |
+| `npm run wiki-query -- [-h \| --help] [--no-filing] [--settings <path>] [--raw-dir <dir>] [--timeout <secs>] <question>` | query wrapper | Ask the built wiki one question headless: print the answer and, unless `--no-filing`, report the query pages the agent filed (reads `settings.yml`; [details below](#running-queries-wiki-query)) |
 | `npm run data:init -- [<sync.json>]` | data repo seeder | Create and seed the data repo at `sync.json`'s `dataRoot`: git init, copy the `raw/`+`wiki/` skeleton from the code repo, first commit; idempotent |
 | `npm run mutation:changed` | StrykerJS | Advisory mutation run scoped to `src/` files changed vs `main` (uncommitted included); exits 0 without running when none changed, and ends by printing the actionable mutants — the default pre-handoff step |
 | `npm run mutation:changed -- --full` | StrykerJS | Advisory mutation run over all of `src/`, not just changed files; same printed summary |
@@ -528,7 +528,7 @@ sources on the next run.
 
 ```sh
 npm run wiki-query -- "When should I prefer RAG over fine-tuning?"      # answers and files
-npm run wiki-query -- --no-file "What is graph engineering?"           # answers only
+npm run wiki-query -- --no-filing "What is graph engineering?"           # answers only
 ```
 
 `wiki-query` is the terminal front-end for asking the built wiki a
@@ -543,7 +543,7 @@ does not. The wrapper never writes wiki files itself — it reads the
 data repo's git status to name the filed pages under `Filed:`, or
 prints the agent's reason nothing was filed, so the gate is visible
 every run. A question the wiki cannot answer prints plainly with
-suggested sources and exits 0. With `--no-file` nothing is written
+suggested sources and exits 0. With `--no-filing` nothing is written
 anywhere under `wiki/`; if the answer would have met the bar, the
 wrapper prints the hint to rerun without the switch. Switches:
 `--settings <path>`, `--raw-dir <dir>`, `--timeout <secs>` (default

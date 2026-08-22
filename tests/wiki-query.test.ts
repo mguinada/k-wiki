@@ -52,7 +52,7 @@ describe("composeQueryPrompt", () => {
   it("states the answer-only mode as write nothing", () => {
     const composed = composeQueryPrompt("QUERY PROMPT", "q", true);
 
-    expect(composed).toContain("Mode: answer-only (--no-file)");
+    expect(composed).toContain("Mode: answer-only (--no-filing)");
     expect(composed).toContain("write nothing");
   });
 
@@ -90,7 +90,7 @@ describe("composeQueryPrompt", () => {
         "",
         "Question: What is X?",
         "",
-        "Mode: answer-only (--no-file) — write nothing: no query page, no index.md or log.md change; the reply is the only output.",
+        "Mode: answer-only (--no-filing) — write nothing: no query page, no index.md or log.md change; the reply is the only output.",
         "",
         "End your reply with exactly one status line, nothing after it, the first that applies:",
         "QUERY: filed — <the wiki/queries/ pages you created or updated>",
@@ -419,7 +419,7 @@ describe("renderVerdict", () => {
       renderVerdict({ kind: "offer", reason: "synthesizes 3 pages" }),
     ).toEqual([
       {
-        text: "Meets the filing bar (synthesizes 3 pages); rerun without --no-file to file it.",
+        text: "Meets the filing bar (synthesizes 3 pages); rerun without --no-filing to file it.",
         bold: true,
       },
     ]);
@@ -576,7 +576,7 @@ describe("runWikiQuery", () => {
   it("states the answer-only mode in the payload", async () => {
     const h = await makeHarness();
 
-    await runWikiQuery({ ...optionsFor(h), noFile: true });
+    await runWikiQuery({ ...optionsFor(h), noFiling: true });
 
     expect(invocation(h, 0).args.at(-1)).toContain("Mode: answer-only");
   });
@@ -661,7 +661,7 @@ describe("runWikiQuery", () => {
 
     const result = await runWikiQuery({
       ...optionsFor(h),
-      noFile: true,
+      noFiling: true,
       runAgent: writing,
     });
 
@@ -894,7 +894,7 @@ if (prompt.includes("answer-only")) {
 
   it("prints the usage line for --help", async () => {
     expect((await runCli(["--help"])).out).toContain(
-      "wiki-query [-h | --help] [--no-file] [--settings <path>] [--raw-dir <dir>] [--timeout <secs>] <question>",
+      "wiki-query [-h | --help] [--no-filing] [--settings <path>] [--raw-dir <dir>] [--timeout <secs>] <question>",
     );
   });
 
@@ -905,7 +905,7 @@ if (prompt.includes("answer-only")) {
   it("documents the switches and defaults in the help text", async () => {
     const out = (await runCli(["--help"])).out;
 
-    expect(out).toContain("--no-file");
+    expect(out).toContain("--no-filing");
     expect(out).toContain("--settings");
     expect(out).toContain("--raw-dir");
     expect(out).toContain("--timeout <secs>");
@@ -1038,13 +1038,13 @@ if (prompt.includes("answer-only")) {
     );
   });
 
-  it("prints the offer and writes nothing under wiki/ in --no-file mode", async () => {
+  it("prints the offer and writes nothing under wiki/ in --no-filing mode", async () => {
     const h = await makeCliHarness();
-    const { out } = await runCli(queryArgs(h, ["--no-file"]));
+    const { out } = await runCli(queryArgs(h, ["--no-filing"]));
 
     expect(out).toContain("Graph engineering is…");
     expect(out).toContain(
-      "Meets the filing bar (synthesizes 3 pages); rerun without --no-file to file it.",
+      "Meets the filing bar (synthesizes 3 pages); rerun without --no-filing to file it.",
     );
 
     const { stat } = await import("node:fs/promises");

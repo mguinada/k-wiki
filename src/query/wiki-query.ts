@@ -19,7 +19,7 @@ import { loadSyncConfig, resolveRawDir } from "../sync/config.ts";
 /**
  * wiki-query: the terminal front-end for asking questions against the
  * built wiki (guide §16, issue #67). It composes prompts/query.md
- * with the question and the mode (file, or --no-file answer-only),
+ * with the question and the mode (file, or --no-filing answer-only),
  * runs the agent CLI non-interactively in the data repo root, prints
  * the answer, and — in file mode — reports the query pages the agent
  * filed, read from the data repo's git status. The script itself
@@ -84,10 +84,10 @@ const STATUS_INSTRUCTIONS = [
 export function composeQueryPrompt(
   promptText: string,
   question: string,
-  noFile: boolean,
+  noFiling: boolean,
 ): string {
-  const mode = noFile
-    ? "Mode: answer-only (--no-file) — write nothing: no query page, no index.md or log.md change; the reply is the only output."
+  const mode = noFiling
+    ? "Mode: answer-only (--no-filing) — write nothing: no query page, no index.md or log.md change; the reply is the only output."
     : "Mode: file — filing is allowed: when the answer meets the bar, create the query page and update index.md and log.md per the rules above.";
 
   return [
@@ -125,9 +125,9 @@ const EMPTY_PAGES: WikiPages = {
 export function classifyVerdict(
   pages: WikiPages,
   reply: AgentReply,
-  noFile: boolean,
+  noFiling: boolean,
 ): Verdict {
-  if (!noFile) {
+  if (!noFiling) {
     const filed = [...pages.created, ...pages.updated];
 
     if (filed.length > 0) {
@@ -184,7 +184,7 @@ export function renderVerdict(verdict: Verdict): VerdictLine[] {
     case "offer":
       return [
         {
-          text: `Meets the filing bar (${verdict.reason}); rerun without --no-file to file it.`,
+          text: `Meets the filing bar (${verdict.reason}); rerun without --no-filing to file it.`,
           bold: true,
         },
       ];
@@ -209,7 +209,7 @@ export interface QueryOptions {
   readonly question: string;
   /** Answer-only mode: the agent is told to write nothing, and the
    *  wrapper does not read the git status. */
-  readonly noFile?: boolean;
+  readonly noFiling?: boolean;
   /** Environment for child processes; defaults to process.env. */
   readonly env?: NodeJS.ProcessEnv;
   /** Agent runner; defaults to the real non-interactive invocation. */
@@ -235,14 +235,14 @@ export async function runWikiQuery(
 ): Promise<QueryResult> {
   const env = options.env ?? process.env;
   const onProgress = options.onProgress ?? (() => {});
-  const noFile = options.noFile ?? false;
+  const noFiling = options.noFiling ?? false;
   const settings = await loadAgentSettings(options.settingsPath);
   const dataRoot = dirname(options.rawDir);
 
   onProgress(`wiki-query: data repo ${dataRoot}`);
 
   const promptText = await readPrompt(join(options.promptsDir, "query.md"));
-  const composed = composeQueryPrompt(promptText, options.question, noFile);
+  const composed = composeQueryPrompt(promptText, options.question, noFiling);
   const args = [
     "--model",
     settings.model,
@@ -279,7 +279,7 @@ export async function runWikiQuery(
   onProgress("wiki-query: agent finished");
 
   const reply = parseAgentReply(stdout);
-  const pages = noFile
+  const pages = noFiling
     ? EMPTY_PAGES
     : await wikiPages(dataRoot, env, "wiki/queries");
 
@@ -289,7 +289,7 @@ export async function runWikiQuery(
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
-const HELP = `Usage: wiki-query [-h | --help] [--no-file] [--settings <path>] [--raw-dir <dir>] [--timeout <secs>] <question>
+const HELP = `Usage: wiki-query [-h | --help] [--no-filing] [--settings <path>] [--raw-dir <dir>] [--timeout <secs>] <question>
 
 Ask the built wiki one question headless (guide §16, issue #67):
 compose prompts/query.md with the question and the mode, run the
@@ -297,7 +297,7 @@ agent CLI non-interactively in the data repo root, print the answer,
 and report the filing verdict.
 
 Switches and arguments:
-  --no-file         Answer only: the agent writes nothing under wiki/
+  --no-filing         Answer only: the agent writes nothing under wiki/
                     (no query page, no index.md or log.md change).
                     When the answer would meet the filing bar, the
                     wrapper prints the hint to rerun without it.
@@ -344,7 +344,7 @@ function fail(message: string): void {
   process.exitCode = 1;
 }
 
-/** wiki-query entry point: `wiki-query [-h | --help] [--no-file] [--settings <path>] [--raw-dir <dir>] [--timeout <secs>] <question>`. */
+/** wiki-query entry point: `wiki-query [-h | --help] [--no-filing] [--settings <path>] [--raw-dir <dir>] [--timeout <secs>] <question>`. */
 export async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
@@ -356,7 +356,7 @@ export async function main(): Promise<void> {
 
   const values = new Map<string, string | undefined>();
   const positional: string[] = [];
-  let noFile = false;
+  let noFiling = false;
 
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
@@ -365,8 +365,8 @@ export async function main(): Promise<void> {
       continue;
     }
 
-    if (arg === "--no-file") {
-      noFile = true;
+    if (arg === "--no-filing") {
+      noFiling = true;
 
       continue;
     }
@@ -443,7 +443,7 @@ export async function main(): Promise<void> {
       rawDir,
       promptsDir: join(repoRoot, "prompts"),
       question: positional[0] ?? "",
-      noFile,
+      noFiling,
       timeoutMs:
         timeoutArg === undefined ? undefined : Number(timeoutArg) * 1000,
       heartbeatMs: animated ? 100 : undefined,
@@ -452,7 +452,7 @@ export async function main(): Promise<void> {
 
     sink.end();
 
-    const verdict = classifyVerdict(result.pages, result.reply, noFile);
+    const verdict = classifyVerdict(result.pages, result.reply, noFiling);
     const lines = renderVerdict(verdict);
 
     if (result.reply.answer !== "") {
