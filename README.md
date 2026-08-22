@@ -60,7 +60,8 @@ Obsidian vault            sync-vault                wiki-ingest               re
 `raw/` and `wiki/` contents live in the data repo at `sync.json`'s
 `dataRoot`; this repo holds the pipeline and the skeleton only.
 Today steps 1–4 are separate commands (issue #13 will chain them,
-#12 adds guardrails, #14 scheduling).
+#14 adds scheduling; wiki-ingest already runs the post-run guardrails
+— checks and auto-revert — after every agent run).
 
 ## Usage models
 
@@ -254,7 +255,6 @@ These modes are documented when their issue lands, not before:
 - **Scheduled unattended operation** (#14).
 - **Orchestrated cycle and `--batch N`** — one command, sync through
   commit; batch construction stops being snapshot surgery (#13).
-- **Post-run guardrails with auto-revert** (#12).
 
 ## Tooling
 
@@ -269,7 +269,7 @@ sources directly, so there is no build step — install dependencies with
 | `npm run format` | Biome | Rewrite files to the canonical format — the fix command for lint findings, not a gate |
 | `npm test` | vitest | Run the unit test suite |
 | `npm run test:coverage` | vitest | Run the unit tests and fail below the 90% coverage thresholds — what CI runs |
-| `npm run e2e` | vitest | Run the end-to-end suite (`tests/e2e/`): real CLI child processes — sync-vault through a full vault lifecycle (first run, no-op re-run, edit, delete, block flip, multi-vault) against the synthetic fixture vault in temp workspaces under `.e2e-tmp/` (gitignored), plus wiki-ingest through first-run, incremental, skip, failure, and timeout runs against a stub agent in temp data repos |
+| `npm run e2e` | vitest | Run the end-to-end suite (`tests/e2e/`): real CLI child processes — sync-vault through a full vault lifecycle (first run, no-op re-run, edit, delete, block flip, multi-vault) against the synthetic fixture vault in temp workspaces under `.e2e-tmp/` (gitignored), plus wiki-ingest through first-run, incremental, skip, failure, timeout, and guardrail auto-revert runs against a stub agent in temp data repos |
 | `npm run health [-- <raw-dir>]` | health CLI | Check the coherence of a `raw/` projection (default: the repo's `raw/`): every `raw/notes/<vault>/` file matches its `manifest.json` sha-256, with no orphans and no missing entries; read-only, no vault access; exit 0 = coherent (including healthy-empty), exit 1 = one line per problem |
 | `npm run check-links [-- <wiki-dir>]` | wikilink checker | Check that every `[[wikilink]]` under `wiki/` (default) resolves to an existing page by file name; exit 0 = all links resolve, exit 1 = one `file:line -> [[link]]` line per broken link |
 | `npm run fixtures -- <dir>` | fixture generator | Write the synthetic Obsidian test vault to `<dir>/Documents` |
@@ -512,8 +512,12 @@ repo's git status, so they cover everything uncommitted — review the
 `git diff`, then commit the data repo after each run to keep every
 digest scoped to its own run. A failed agent run exits 1 and
 leaves the snapshot untouched, so the next run retries the same
-sources; guardrails (lint, checks, auto-revert) are issue #12, the
-one-command orchestration #13, scheduling #14.
+sources. After every agent run three mechanical guardrails check the
+data repo (immutability, frontmatter, wikilinks — guide §1, §7, §9):
+a tripped check auto-reverts the data repo to its pre-run state (the
+pre-run commit plus the uncommitted work that preceded the run),
+writes a failure digest naming the check, and exits 1; the
+one-command orchestration is #13, scheduling #14.
 
 **Timeout budgeting:** the 1800 s default fits the steady state —
 incremental runs measured at 1–2 minutes (about one minute per note,

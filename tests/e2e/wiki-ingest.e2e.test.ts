@@ -36,8 +36,10 @@ function hashOf(content: string): string {
  * The stub agent: an executable script (shebang) so settings.yml can
  * name it as the command — it receives the exact argv the real agent
  * would (pi flags from settings.yml). It records the --print payload
- * and updates the wiki like the real agent would. Exits 3 when the
- * payload is missing — the wrapper must pass the prompt.
+ * under outputs/ (the wrapper's whitelist) and updates the wiki like
+ * the real agent would, §9 frontmatter included, so the post-run
+ * guardrails pass. Exits 3 when the payload is missing — the wrapper
+ * must pass the prompt.
  */
 const STUB_AGENT = `#!/usr/bin/env node
 import { mkdir, writeFile } from "node:fs/promises";
@@ -50,10 +52,45 @@ if (prompt === undefined || prompt === "") {
   process.exit(3);
 }
 
-await writeFile(join(process.cwd(), "stub-prompt.txt"), prompt);
+await mkdir(join(process.cwd(), "outputs"), { recursive: true });
+await writeFile(join(process.cwd(), "outputs", "stub-prompt.txt"), prompt);
 await mkdir(join(process.cwd(), "wiki", "concepts"), { recursive: true });
-await writeFile(join(process.cwd(), "wiki", "concepts", "stub.md"), "stub\\n");
-await writeFile(join(process.cwd(), "wiki", "index.md"), "# Index v2\\n");
+await writeFile(
+  join(process.cwd(), "wiki", "concepts", "stub.md"),
+  [
+    "---",
+    'title: "Stub"',
+    "type: concept",
+    "created: 2026-08-20",
+    "updated: 2026-08-20",
+    "tags:",
+    "  - llm",
+    "sources:",
+    '  - "[[index]]"',
+    "---",
+    "",
+    "stub body",
+    "",
+  ].join("\\n"),
+);
+await writeFile(
+  join(process.cwd(), "wiki", "index.md"),
+  [
+    "---",
+    'title: "Index"',
+    "type: topic",
+    "created: 2026-08-20",
+    "updated: 2026-08-20",
+    "tags:",
+    "  - llm",
+    "sources:",
+    '  - "[[index]]"',
+    "---",
+    "",
+    "# Index v2",
+    "",
+  ].join("\\n"),
+);
 console.log("stub agent: sources processed; no contradictions; no unresolved questions");
 `;
 
@@ -79,9 +116,7 @@ async function makeRepo(notes: Record<string, string>): Promise<Repo> {
       ),
     },
   };
-  const outputsDir = await mkdtemp(join(tmpdir(), "k-wiki-ingest-out-"));
-
-  tempDirs.push(outputsDir);
+  const outputsDir = join(dataRoot, "outputs");
 
   await mkdir(join(dataRoot, "raw"), { recursive: true });
   await mkdir(join(dataRoot, "wiki"), { recursive: true });
@@ -170,7 +205,7 @@ describe("wiki-ingest e2e", () => {
     expect(result.out).toContain("**Mode:** full");
 
     const prompt = await readFile(
-      join(repo.dataRoot, "stub-prompt.txt"),
+      join(repo.outputsDir, "stub-prompt.txt"),
       "utf8",
     );
 
@@ -232,7 +267,7 @@ describe("wiki-ingest e2e", () => {
     expect(result.out).toContain("~ Engineering/AI/RAG.md");
 
     const prompt = await readFile(
-      join(repo.dataRoot, "stub-prompt.txt"),
+      join(repo.outputsDir, "stub-prompt.txt"),
       "utf8",
     );
 
@@ -244,7 +279,7 @@ describe("wiki-ingest e2e", () => {
     const repo = await makeRepo({ "AI/RAG.md": "rag" });
 
     await ingest(repo);
-    await rm(join(repo.dataRoot, "stub-prompt.txt"));
+    await rm(join(repo.outputsDir, "stub-prompt.txt"));
 
     const result = await ingest(repo);
 
@@ -253,7 +288,7 @@ describe("wiki-ingest e2e", () => {
     );
 
     await expect(
-      readFile(join(repo.dataRoot, "stub-prompt.txt"), "utf8"),
+      readFile(join(repo.outputsDir, "stub-prompt.txt"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
@@ -304,6 +339,75 @@ describe("wiki-ingest e2e", () => {
 
     await expect(
       readFile(join(repo.outputsDir, "last-ingested-manifest.json"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("auto-reverts a run whose changed page has broken frontmatter", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag" });
+
+    await writeFile(
+      join(repo.dataRoot, "stub-agent.mjs"),
+      [
+        "#!/usr/bin/env node",
+        'import { mkdir, writeFile } from "node:fs/promises";',
+        'import { join } from "node:path";',
+        'await mkdir(join(process.cwd(), "wiki", "concepts"), { recursive: true });',
+        'await writeFile(join(process.cwd(), "wiki", "concepts", "broken.md"), "no frontmatter\\n");',
+        'console.log("rogue report");',
+        "",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+
+    const result = await ingest(repo);
+    const runsDir = join(repo.outputsDir, "runs");
+    const { readdir } = await import("node:fs/promises");
+    const digests = (await readdir(runsDir)).filter((name) =>
+      name.endsWith(".md"),
+    );
+    const digest =
+      digests.length === 1
+        ? await readFile(join(runsDir, digests[0] ?? ""), "utf8")
+        : undefined;
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("guardrail check 2 (frontmatter)");
+    expect(digest ?? "").toContain("Check 2 (frontmatter)");
+    expect(digest ?? "").toContain("wiki/concepts/broken.md");
+
+    await expect(
+      readFile(join(repo.dataRoot, "wiki", "concepts", "broken.md"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+
+    await expect(
+      readFile(join(repo.outputsDir, "last-ingested-manifest.json"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("auto-reverts a run that writes into raw/", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag" });
+
+    await writeFile(
+      join(repo.dataRoot, "stub-agent.mjs"),
+      [
+        "#!/usr/bin/env node",
+        'import { mkdir, writeFile } from "node:fs/promises";',
+        'import { join } from "node:path";',
+        'await mkdir(join(process.cwd(), "raw", "notes"), { recursive: true });',
+        'await writeFile(join(process.cwd(), "raw", "notes", "rogue.md"), "tampered\\n");',
+        'console.log("rogue report");',
+        "",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+
+    const result = await ingest(repo);
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("guardrail check 1 (immutability)");
+
+    await expect(
+      readFile(join(repo.dataRoot, "raw", "notes", "rogue.md"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 });

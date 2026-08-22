@@ -1101,7 +1101,7 @@ Two modes are planned for `wiki-ingest`:
 - **Autonomous** — scheduled, unsupervised; reviewed afterwards via the git diff.
 - **Interactive** — human-in-the-loop; the agent discusses takeaways and emphasis before writing pages.
 
-Start with autonomous mode. Its safety mechanism is reviewing the git diff after every run. Add the interactive mode later as a flag (`wiki-ingest --interactive`) for framing-sensitive sources that need supervision.
+Start with autonomous mode. Its safety mechanisms are the post-run guardrails — mechanical immutability, frontmatter, and wikilink checks that auto-revert the data repo to its pre-run state on failure (issue #12) — plus reviewing the git diff after every run. Add the interactive mode later as a flag (`wiki-ingest --interactive`) for framing-sensitive sources that need supervision.
 
 ### Operator rules
 

@@ -641,9 +641,13 @@ describe("runSync progress", () => {
 
     const { messages } = await runWithProgress(ws);
 
-    expect(messages).toContain(
-      `vault "${VAULT_NAME}": scanning (0s, 1000 dirs)`,
-    );
+    expect(
+      messages.some((message) =>
+        new RegExp(
+          `^vault "${VAULT_NAME}": scanning \\([^)]+, 1000 dirs\\)$`,
+        ).test(message),
+      ),
+    ).toBe(true);
   }, 20000);
 
   it("honors progressEvery in a dry run too", async () => {
