@@ -455,7 +455,7 @@ export async function main(): Promise<void> {
     (text) => console.error(text),
     animated,
     (text) => colors.dim(text),
-    (message) => message.startsWith(QUERY_HEARTBEAT_PREFIX),
+    QUERY_HEARTBEAT_PREFIX,
   );
 
   try {

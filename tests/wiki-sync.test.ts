@@ -133,6 +133,7 @@ async function makeHarness(
   await mkdir(promptsDir, { recursive: true });
   await writeFile(join(promptsDir, "ingest.md"), "FULL PROMPT");
   await writeFile(join(promptsDir, "incremental.md"), "INCREMENTAL PROMPT");
+  await writeFile(join(promptsDir, "expunge.md"), "EXPUNGE PROMPT");
   await writeFile(
     join(promptsDir, "lint.md"),
     "AUDIT THE WIKI PROMPT\n\nSave the report to `outputs/lint-<YYYY-MM-DD>.md`.\n",
@@ -997,7 +998,7 @@ describe("formatFinalDigest sections", () => {
         mode: "incremental" as const,
         digestPath: "outputs/runs/x.md",
         digest: "ingest digest body\n",
-        pages: { created: [], updated: [], unavailable: undefined },
+        pages: { created: [], updated: [], deleted: [], unavailable: undefined },
         diff: { vaults: [], empty: true },
       },
       lint: {

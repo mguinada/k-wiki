@@ -648,7 +648,7 @@ export async function main(): Promise<void> {
     (text) => console.error(text),
     animated,
     (text) => colors().dim(text),
-    [AGENT_HEARTBEAT_PREFIX, LINT_HEARTBEAT_PREFIX],
+    [...AGENT_HEARTBEAT_PREFIX, LINT_HEARTBEAT_PREFIX],
   );
 
   try {

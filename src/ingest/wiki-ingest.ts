@@ -680,9 +680,12 @@ export const AGENT_TIMEOUT_MS = 30 * 60_000;
 /** Liveness line on the progress sink while the agent runs. */
 export const HEARTBEAT_MS = 60_000;
 
-/** Heartbeat sentence pattern (plain or expunge-labeled); the TTY
+/** Heartbeat sentence prefixes (plain or expunge-labeled); the TTY
  *  renderer keeps matching messages on one animated line (spinner + clock). */
-export const AGENT_HEARTBEAT = /^wiki-ingest: (?:expunge )?agent still running/;
+export const AGENT_HEARTBEAT_PREFIX = [
+  "wiki-ingest: agent still running",
+  "wiki-ingest: expunge agent still running",
+] as const;
 
 /** Collected output cap: 16 MB, far above any final agent report. */
 const AGENT_MAX_BUFFER = 16 * 1024 * 1024;

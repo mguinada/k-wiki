@@ -1199,7 +1199,7 @@ describe("runWikiIngest", () => {
   });
 
   it("passes --provider when the setting is present", async () => {
-    const h = await makeHarness({ "a.md": entry("a") });
+    const h = await makeHarness({ "a.md": "a" });
 
     await writeFile(
       h.settingsPath,
@@ -2697,7 +2697,7 @@ describe("formatDigest structure", () => {
 
 describe("runWikiIngest failure reporting detail", () => {
   it("names the check, the revert target, and the problems in the error", async () => {
-    const h = await makeHarness({ "a.md": entry("a") });
+    const h = await makeHarness({ "a.md": "a" });
     const progress: string[] = [];
     const saboteur: AgentRunner = async (_command, _args, options) => {
       await writeFile(join(options.cwd, "wiki", "bad.md"), "no frontmatter\n");
@@ -2725,7 +2725,7 @@ describe("runWikiIngest failure reporting detail", () => {
   });
 
   it("states the mode and prompt file in the failure digest", async () => {
-    const h = await makeHarness({ "a.md": entry("a") });
+    const h = await makeHarness({ "a.md": "a" });
     const saboteur: AgentRunner = async (_command, _args, options) => {
       await writeFile(join(options.cwd, "wiki", "bad.md"), "no frontmatter\n");
 
@@ -2749,7 +2749,7 @@ describe("runWikiIngest failure reporting detail", () => {
   });
 
   it("announces a kept-changes agent failure on progress", async () => {
-    const h = await makeHarness({ "a.md": entry("a") });
+    const h = await makeHarness({ "a.md": "a" });
     const progress: string[] = [];
     const failing: AgentRunner = async () => {
       throw new Error("agent exited with code 9");
