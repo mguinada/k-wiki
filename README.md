@@ -323,9 +323,11 @@ Two safety properties hold:
   prune is ever wrong, `git revert` (or `git restore`) in the data repo
   brings the previous projection back.
 
-Wiki pages whose `sources:` frontmatter cites the old `notes/<name>/…`
-path still need updating after a rename; that is wiki maintenance under
-`wiki/AGENTS.md`, not part of the sync run.
+The prune is a batch of manifest removals, so the next `npm run
+wiki-ingest` routes it to
+[expungement](#when-a-note-is-deleted-expungement) and re-derives the
+affected wiki pages; that is wiki maintenance under `wiki/AGENTS.md`,
+not part of the sync run.
 
 ### Mutation testing
 

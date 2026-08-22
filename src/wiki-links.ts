@@ -17,16 +17,16 @@ export interface Wikilink {
   readonly raw: string;
 }
 
-/**
- * Extract every wikilink from markdown text, skipping fenced code
- * blocks. Aliased links keep only the page name, heading anchors are
- * dropped, and anchor-only or alias-only links are ignored.
- */
 /** The page-name part of a wikilink's inner text; empty when blank. */
 export function wikilinkBodyTarget(body: string): string {
   return body.split("|")[0]?.split("#")[0]?.trim() ?? "";
 }
 
+/**
+ * Extract every wikilink from markdown text, skipping fenced code
+ * blocks. Aliased links keep only the page name, heading anchors are
+ * dropped, and anchor-only or alias-only links are ignored.
+ */
 export function extractWikilinks(text: string): Wikilink[] {
   const links: Wikilink[] = [];
   let fenceChar: string | null = null;
