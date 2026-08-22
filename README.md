@@ -59,9 +59,11 @@ Obsidian vault            sync-vault                wiki-ingest               re
 
 `raw/` and `wiki/` contents live in the data repo at `sync.json`'s
 `dataRoot`; this repo holds the pipeline and the skeleton only.
-Today steps 1–4 are separate commands (issue #13 will chain them,
-#14 adds scheduling; wiki-ingest already runs the post-run guardrails
-— checks and auto-revert — after every agent run).
+`npm run wiki-sync` chains steps 1–4 into one command
+([details](#running-the-full-cycle-wiki-sync)); the separate commands
+stay available for debugging, and `wiki-ingest` already runs the
+post-run guardrails — checks and auto-revert — after every agent run.
+Scheduling is #14.
 
 ## Usage models
 
@@ -74,17 +76,22 @@ and documented only when they land.
 ### 1. One vault → one wiki (baseline)
 
 The current instance: one iCloud vault, one data repo, the four-step
-cycle above. After every ingest, review the digest and the `git diff`
-in the data repo, commit it, then run the standing checks:
+cycle above. Run the cycle with one command, then review and run the
+standing checks:
 
 ```sh
-npm run sync-vault                              # vault → raw/
-npm run wiki-ingest                             # raw/ changes → wiki/
-# read the digest, review the git diff in the data repo, commit it
+npm run wiki-sync                                  # sync → ingest → lint → commit
+# review: the printed digest, git log -1 in the data repo
 npm run check-links -- ~/Lab/k-wiki-data/wiki   # every [[wikilink]] resolves
 npm run check-provenance -- ~/Lab/k-wiki-data/wiki  # every sources entry and origin is alive
 npm run health -- ~/Lab/k-wiki-data/raw         # raw/ matches its manifest
 ```
+
+The command commits the data repo itself, so the next digest covers
+only its own run; the printed digest plus `git log -1` tell the whole
+story ([details](#running-the-full-cycle-wiki-sync)). The separate
+commands — `npm run sync-vault`, `npm run wiki-ingest` — stay
+available for debugging (guide §8).
 
 Both checks take a directory explicitly: their defaults are this
 repo's skeleton trees, not the data repo at `dataRoot`.
@@ -270,13 +277,14 @@ sources directly, so there is no build step — install dependencies with
 | `npm run format` | Biome | Rewrite files to the canonical format — the fix command for lint findings, not a gate |
 | `npm test` | vitest | Run the unit test suite |
 | `npm run test:coverage` | vitest | Run the unit tests and fail below the 90% coverage thresholds — what CI runs |
-| `npm run e2e` | vitest | Run the end-to-end suite (`tests/e2e/`): real CLI child processes — sync-vault through a full vault lifecycle (first run, no-op re-run, edit, delete, block flip, multi-vault) against the synthetic fixture vault in temp workspaces under `.e2e-tmp/` (gitignored), plus wiki-ingest through first-run, incremental, expunge, rename, skip, failure, timeout, and guardrail auto-revert runs against a stub agent in temp data repos |
+| `npm run e2e` | vitest | Run the end-to-end suite (`tests/e2e/`): real CLI child processes — sync-vault through a full vault lifecycle (first run, no-op re-run, edit, delete, block flip, multi-vault) against the synthetic fixture vault in temp workspaces under `.e2e-tmp/` (gitignored), wiki-ingest through first-run, incremental, expunge, rename, skip, failure, timeout, and guardrail auto-revert runs against a stub agent in temp data repos, and wiki-sync through full-cycle, no-change rerun, failure, and guardrail-revert runs |
 | `npm run health [-- <raw-dir>]` | health CLI | Check the coherence of a `raw/` projection (default: the repo's `raw/`): every `raw/notes/<vault>/` file matches its `manifest.json` sha-256, with no orphans and no missing entries; read-only, no vault access; exit 0 = coherent (including healthy-empty), exit 1 = one line per problem |
 | `npm run check-links [-- <wiki-dir>]` | wikilink checker | Check that every `[[wikilink]]` under `wiki/` (default) resolves to an existing page by file name; exit 0 = all links resolve, exit 1 = one `file:line -> [[link]]` line per broken link |
 | `npm run check-provenance [-- <wiki-dir> [<raw-dir>]]` | dead-provenance checker | Check that every `sources` entry under `wiki/` resolves (wikilink → an existing page, path → an existing `raw/` file) and every source page's `origin` exists under `raw/` (default: the repo's `wiki/` and its sibling `raw/`); exit 0 = coherent, exit 1 = one `wiki/<page> -> …` line per problem — the deterministic backstop that catches any purge miss |
 | `npm run fixtures -- <dir>` | fixture generator | Write the synthetic Obsidian test vault to `<dir>/Documents` |
 | `npm run sync-vault -- [--dry-run] [<sync.json>] [<raw-dir>]` | sync CLI | Ingest every note not blocked by the vault's exclusion rule into `raw/notes/` (deterministic, no LLM; [details below](#running-the-sync)) |
 | `npm run wiki-ingest -- [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<raw-dir>]` | ingest wrapper | Run the wiki agent headless over the sources that changed since the last ingest and write the per-run digest (reads `settings.yml`; [details below](#running-the-wiki-agent-wiki-ingest)) |
+| `npm run wiki-sync -- [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<sync.json>] [<raw-dir>]` | cycle orchestrator | Run the whole cycle — sync → ingest → lint → one data-repo commit — and print the digest (reads `settings.yml`; [details below](#running-the-full-cycle-wiki-sync)) |
 | `npm run wiki-query -- [-h \| --help] [--no-filing] [--settings <path>] [--raw-dir <dir>] [--timeout <secs>] <question>` | query wrapper | Ask the built wiki one question headless: print the answer and, unless `--no-filing`, report the query pages the agent filed (reads `settings.yml`; [details below](#running-queries-wiki-query)) |
 | `npm run data:init -- [<sync.json>]` | data repo seeder | Create and seed the data repo at `sync.json`'s `dataRoot`: git init, copy the `raw/`+`wiki/` skeleton from the code repo, first commit; idempotent |
 | `npm run mutation:changed` | StrykerJS | Advisory mutation run scoped to `src/` files changed vs `main` (uncommitted included); exits 0 without running when none changed, and ends by printing the actionable mutants — the default pre-handoff step |
@@ -524,7 +532,8 @@ data repo (immutability, frontmatter, wikilinks — guide §1, §7, §9):
 a tripped check auto-reverts the data repo to its pre-run state (the
 pre-run commit plus the uncommitted work that preceded the run),
 writes a failure digest naming the check, and exits 1; the
-one-command orchestration is #13, scheduling #14.
+one-command orchestration is [`wiki-sync`](#running-the-full-cycle-wiki-sync),
+scheduling #14.
 
 **Timeout budgeting:** the 1800 s default fits the steady state —
 incremental runs measured at 1–2 minutes (about one minute per note,
@@ -579,6 +588,46 @@ routes to expunge. A rename *with* edits still routes to expunge.
 Afterwards, `npm run check-provenance -- <wiki-dir>` is the permanent
 backstop: every `sources` entry and every `origin` must resolve, so a
 missed purge surfaces as a dead link, not as silent contamination.
+
+## Running the full cycle (`wiki-sync`)
+
+```sh
+npm run wiki-sync   # sync → ingest → lint → commit
+```
+
+`wiki-sync` is the one-command orchestrator (guide §18, issue #13).
+It chains the proven pieces and adds no capability of its own:
+
+1. **sync** — `sync-vault` in-process: vault → `raw/`.
+2. **ingest** — `wiki-ingest` in-process: the agent over changed
+   sources, the post-run guardrails, the digest in the code repo's
+   `outputs/runs/` (gitignored, per-checkout).
+3. **lint** — the headless sibling of the manual lint run: the same
+   `prompts/lint.md`, through the same agent settings, in a fresh
+   agent session in the data repo root. The report lands in the
+   **data repo's** `outputs/lint-<date>.md` (the #61 convention:
+   quality history travels with the content), and the same three
+   guardrails check the run with the same auto-revert.
+4. **commit** — one data-repo commit staging `wiki/`, `raw/`, and
+   `outputs/`, with a message summarizing sources processed, pages
+   touched, and the lint report.
+
+The final digest on stdout — sync summary, lint summary, the commit
+hash, then the full ingest digest — plus `git log -1` in the data
+repo tell the whole story of the run without opening any other file.
+
+With no changed sources nothing runs: the ingest stage skips on its
+own (cost scales with activity, not the clock), lint is skipped with
+it, a clean data repo commits nothing, and the command exits 0.
+Because the skip keys on the ingest snapshot — which a failed agent
+run leaves untouched — the next cycle retries a failed ingest even
+when sync then reports no changes. A failure at any stage stops the
+chain and exits 1; a tripped guardrail has already reverted its agent
+run. Switches: `--settings <path>`, `--outputs <dir>` (the ingest
+snapshot and digest location; default the repo's `outputs/`),
+`--timeout <secs>` (default 1800, applies to both agent stages), plus
+the `<sync.json>` and `<raw-dir>` positionals — `-h` documents them
+all. Scheduling is #14; the publish step joins with #15.
 
 ## Running queries (`wiki-query`)
 

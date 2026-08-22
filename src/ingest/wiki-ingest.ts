@@ -537,7 +537,9 @@ export interface IngestRun {
   readonly guardrailFailure?: GuardrailFailure | undefined;
 }
 
-function sourceCount(
+/** Total note count of one kind (added, changed, or removed) across
+ *  every vault of a diff. */
+export function sourceCount(
   diff: ManifestDiff,
   key: "added" | "changed" | "removed" | "renamed",
 ): number {
@@ -851,7 +853,7 @@ export interface IngestOptions {
   /** Clock for the digest timestamp; defaults to the wall clock. */
   readonly now?: () => Date;
   /** Agent runner; defaults to the real non-interactive invocation. */
-  readonly runAgent?: AgentRunner;
+  readonly runAgent?: AgentRunner | undefined;
   /** Kill the agent run after this many milliseconds; default 30 min. */
   readonly timeoutMs?: number | undefined;
   /** Heartbeat interval while the agent runs; default 60 s. */
@@ -868,6 +870,9 @@ export type IngestResult =
       readonly digestPath: string;
       readonly digest: string;
       readonly pages: WikiPages;
+      /** The manifest diff the run ingested; feeds the cycle's commit
+       *  message (issue #13). */
+      readonly diff: ManifestDiff;
     };
 
 export async function readPrompt(path: string): Promise<string> {
@@ -1112,7 +1117,7 @@ export async function runWikiIngest(
   await writeFile(digestPath, digest, "utf8");
   await writeManifest(snapshotPath, current);
 
-  return { status: "ran", mode, digestPath, digest, pages };
+  return { status: "ran", mode, digestPath, digest, pages, diff };
 }
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -1206,9 +1211,11 @@ export function createAgentProgressSink(
   writeLine: (text: string) => void,
   animated: boolean,
   dim: (text: string) => string,
-  isHeartbeat: (message: string) => boolean = (message) =>
-    AGENT_HEARTBEAT.test(message),
+  heartbeatPrefix: string | readonly string[] = AGENT_HEARTBEAT_PREFIX,
 ): ProgressSink {
+  const prefixes =
+    typeof heartbeatPrefix === "string" ? [heartbeatPrefix] : heartbeatPrefix;
+
   if (!animated) {
     return {
       render: (message) => writeLine(dim(message)),
@@ -1220,7 +1227,7 @@ export function createAgentProgressSink(
 
   return {
     render: (message) => {
-      if (isHeartbeat(message)) {
+      if (prefixes.some((prefix) => message.startsWith(prefix))) {
         renderer.live(dim(message));
       } else {
         renderer.event(dim(message));

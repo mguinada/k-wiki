@@ -27,6 +27,7 @@ export const repoRoot = resolve(
 export const SYNC_SCRIPT = join(repoRoot, "src", "sync", "sync-vault.ts");
 export const HEALTH_SCRIPT = join(repoRoot, "src", "health", "check-raw.ts");
 export const INGEST_SCRIPT = join(repoRoot, "src", "ingest", "wiki-ingest.ts");
+export const SYNC_CYCLE_SCRIPT = join(repoRoot, "src", "sync", "wiki-sync.ts");
 export const QUERY_SCRIPT = join(repoRoot, "src", "query", "wiki-query.ts");
 
 /** The fixture vault's notes ingested under `exclude: "wiki:false"`, sorted. */
@@ -51,12 +52,13 @@ export interface CliResult {
  * path: `import.meta.url` is realpath'd by Node, and a symlinked spawn
  * path would make the CLI import guards compare unequal and skip
  * `main()`. Children run with `NO_COLOR=1` so byte-exact output
- * assertions stay plain; pass `{ color: true }` to drop it.
+ * assertions stay plain; pass `{ color: true }` to drop it, or
+ * `env` to expose more variables to the child.
  */
 export function runCli(
   script: string,
   args: readonly string[],
-  options: { color?: boolean } = {},
+  options: { color?: boolean; env?: NodeJS.ProcessEnv } = {},
 ): Promise<CliResult> {
   const realScript = realpathSync(script);
   const env: NodeJS.ProcessEnv = { ...process.env, NO_COLOR: "1" };
@@ -64,6 +66,8 @@ export function runCli(
   if (options.color) {
     delete env.NO_COLOR;
   }
+
+  Object.assign(env, options.env);
 
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [realScript, ...args], {
