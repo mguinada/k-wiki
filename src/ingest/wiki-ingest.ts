@@ -17,13 +17,6 @@ import {
   writeManifest,
 } from "../sync/manifest.ts";
 import {
-  capturePreRunState,
-  type GuardrailFailure,
-  parseStatus,
-  revertToPreRun,
-  runGuardrails,
-} from "./guardrails.ts";
-import {
   buildPageIndex,
   isWikilinkEntry,
   listWikiPages,
@@ -32,6 +25,13 @@ import {
   readPageFields,
   wikilinkTarget,
 } from "../wiki/pages.ts";
+import {
+  capturePreRunState,
+  type GuardrailFailure,
+  parseStatus,
+  revertToPreRun,
+  runGuardrails,
+} from "./guardrails.ts";
 
 /**
  * wiki-ingest: the headless wiki agent run (guide §18, issue #11). It

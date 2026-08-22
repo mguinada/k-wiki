@@ -1359,7 +1359,7 @@ describe("runWikiIngest", () => {
     const h = await makeHarness({ "a.md": "a" });
     const env = { KWIKI_TEST: "yes" };
     let seen: NodeJS.ProcessEnv | undefined;
-    const recording: AgentRunner = async (command, args, options) => {
+    const recording: AgentRunner = async (_command, _args, options) => {
       seen = options.env;
 
       return { stdout: "report", stderr: "" };

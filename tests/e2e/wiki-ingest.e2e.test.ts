@@ -6,9 +6,9 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, describe, expect, it } from "vitest";
 import {
-  INGEST_SCRIPT,
   buildWorkspace,
   cleanupWorkspaces,
+  INGEST_SCRIPT,
   runCli,
   SYNC_SCRIPT,
 } from "./helpers.ts";
@@ -79,7 +79,7 @@ await writeFile(
     "",
     "stub body",
     "",
-  ].join("\n"),
+  ].join("\\n"),
 );
 
 if (prompt.includes("deleted from the vault")) {
@@ -101,7 +101,7 @@ if (prompt.includes("deleted from the vault")) {
       "",
       "# Index v3",
       "",
-    ].join("\n"),
+    ].join("\\n"),
   );
   console.log("stub agent: expunge run; claims removed; 2 pages deleted; 0 contradictions dissolved; 0 queries expunged; threshold: surgical pass");
 } else {
@@ -121,7 +121,7 @@ if (prompt.includes("deleted from the vault")) {
       "",
       "# Index v2",
       "",
-    ].join("\n"),
+    ].join("\\n"),
   );
   console.log("stub agent: sources processed; no contradictions; no unresolved questions");
 }
