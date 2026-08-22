@@ -462,9 +462,10 @@ export function spawnAgent(
  * updated. When git cannot report, the digest says so instead of
  * failing a run that did update the wiki.
  */
-async function wikiPages(
+export async function wikiPages(
   dataRoot: string,
   env: NodeJS.ProcessEnv,
+  pathspec = "wiki",
 ): Promise<WikiPages> {
   let stdout: string;
 
@@ -478,7 +479,7 @@ async function wikiPages(
         "--porcelain",
         "-uall",
         "--",
-        "wiki",
+        pathspec,
       ],
       env,
     ));
@@ -539,7 +540,7 @@ export type IngestResult =
       readonly pages: WikiPages;
     };
 
-async function readPrompt(path: string): Promise<string> {
+export async function readPrompt(path: string): Promise<string> {
   try {
     return await readFile(path, "utf8");
   } catch (cause) {
@@ -790,6 +791,7 @@ export function createAgentProgressSink(
   writeLine: (text: string) => void,
   animated: boolean,
   dim: (text: string) => string,
+  heartbeatPrefix: string = AGENT_HEARTBEAT_PREFIX,
 ): ProgressSink {
   if (!animated) {
     return {
@@ -802,7 +804,7 @@ export function createAgentProgressSink(
 
   return {
     render: (message) => {
-      if (message.startsWith(AGENT_HEARTBEAT_PREFIX)) {
+      if (message.startsWith(heartbeatPrefix)) {
         renderer.live(dim(message));
       } else {
         renderer.event(dim(message));

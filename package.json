@@ -19,6 +19,7 @@
     "fixtures": "node src/fixtures/generate.ts",
     "sync-vault": "node src/sync/sync-vault.ts",
     "wiki-ingest": "node src/ingest/wiki-ingest.ts",
+    "wiki-query": "node src/query/wiki-query.ts",
     "data:init": "node src/data/init-data-repo.ts",
     "mutation": "stryker run",
     "mutation:changed": "sh scripts/mutation-changed.sh",

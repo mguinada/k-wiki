@@ -13,6 +13,9 @@ Determine whether the changes require:
 - removal of obsolete claims;
 - contradiction handling.
 
+When two or more sources explicitly contrast named approaches, file a
+comparison page (or extend an existing one).
+
 Make the smallest set of changes necessary.
 
 Do not regenerate unrelated pages.
