@@ -27,6 +27,7 @@ import {
   buildPageIndex,
   isWikilinkEntry,
   listWikiPages,
+  normalizeRawPath,
   type PageFields,
   readPageFields,
   wikilinkTarget,
@@ -415,11 +416,6 @@ export async function removedNoteContent(
   }
 
   return tryGit(dataRoot, ["show", `${sha}^:${rawRelPath}`], env);
-}
-
-/** `raw/notes/…` with an optional `raw/` prefix removed. */
-function normalizeRawPath(path: string): string {
-  return path.replace(/^raw\//, "");
 }
 
 /**
@@ -840,6 +836,27 @@ function promptFileFor(mode: "full" | "incremental" | "expunge"): string {
   return mode === "expunge" ? "expunge.md" : "incremental.md";
 }
 
+/** The removed notes of a diff, each with its last synced content
+ *  recovered from the data repo's git history. */
+async function collectRemovedNotes(
+  dataRoot: string,
+  diff: ManifestDiff,
+  env: NodeJS.ProcessEnv,
+): Promise<RemovedNote[]> {
+  const removedNotes: RemovedNote[] = [];
+
+  for (const vault of diff.vaults) {
+    for (const path of vault.removed) {
+      const rawPath = `raw/notes/${vault.vault}/${path}`;
+      const content = await removedNoteContent(dataRoot, rawPath, env);
+
+      removedNotes.push({ vault: vault.vault, path, rawPath, content });
+    }
+  }
+
+  return removedNotes;
+}
+
 /**
  * One headless ingest run. The snapshot is written only after a
  * successful agent run, so a failure retries the same sources next
@@ -896,16 +913,7 @@ export async function runWikiIngest(
   let directSet: readonly string[] | undefined;
 
   if (mode === "expunge") {
-    const removedNotes: RemovedNote[] = [];
-
-    for (const vault of diff.vaults) {
-      for (const path of vault.removed) {
-        const rawPath = `raw/notes/${vault.vault}/${path}`;
-        const content = await removedNoteContent(dataRoot, rawPath, env);
-
-        removedNotes.push({ vault: vault.vault, path, rawPath, content });
-      }
-    }
+    const removedNotes = await collectRemovedNotes(dataRoot, diff, env);
 
     directSet = await directSetForRemovals(
       join(dataRoot, "wiki"),

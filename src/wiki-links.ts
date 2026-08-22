@@ -22,6 +22,11 @@ export interface Wikilink {
  * blocks. Aliased links keep only the page name, heading anchors are
  * dropped, and anchor-only or alias-only links are ignored.
  */
+/** The page-name part of a wikilink's inner text; empty when blank. */
+export function wikilinkBodyTarget(body: string): string {
+  return body.split("|")[0]?.split("#")[0]?.trim() ?? "";
+}
+
 export function extractWikilinks(text: string): Wikilink[] {
   const links: Wikilink[] = [];
   let fenceChar: string | null = null;
@@ -44,8 +49,7 @@ export function extractWikilinks(text: string): Wikilink[] {
     }
 
     for (const match of line.matchAll(/\[\[([^\]]+)\]\]/g)) {
-      const body = match[1] ?? "";
-      const target = body.split("|")[0]?.split("#")[0]?.trim() ?? "";
+      const target = wikilinkBodyTarget(match[1] ?? "");
 
       if (target === "") {
         continue;

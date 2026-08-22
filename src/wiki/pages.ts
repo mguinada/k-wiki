@@ -1,5 +1,8 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
+import { buildPageIndex, wikilinkBodyTarget } from "../wiki-links.ts";
+
+export { buildPageIndex };
 
 /**
  * Deterministic wiki-page reading, shared by the expunge seed
@@ -33,9 +36,12 @@ export function isWikilinkEntry(entry: string): boolean {
 
 /** The page-name part of a bracketed `sources` entry; empty when malformed. */
 export function wikilinkTarget(entry: string): string {
-  const body = entry.slice(2, -2);
+  return wikilinkBodyTarget(entry.slice(2, -2));
+}
 
-  return body.split("|")[0]?.split("#")[0]?.trim() ?? "";
+/** `raw/notes/…` with an optional `raw/` prefix removed. */
+export function normalizeRawPath(path: string): string {
+  return path.replace(/^raw\//, "");
 }
 
 /**
@@ -85,22 +91,6 @@ export function parsePageFields(text: string): PageFields {
   }
 
   return { origin: undefined, sources: [] };
-}
-
-/**
- * Map page names to their wiki-relative paths by file name (kebab-case
- * naming per wiki/AGENTS.md); later files win on duplicate names.
- */
-export function buildPageIndex(files: readonly string[]): Map<string, string> {
-  const index = new Map<string, string>();
-
-  for (const file of files) {
-    if (file.endsWith(".md")) {
-      index.set(basename(file, ".md"), file);
-    }
-  }
-
-  return index;
 }
 
 /** Recursively list every wiki-relative markdown path under `dir`. */

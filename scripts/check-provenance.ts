@@ -7,6 +7,7 @@ import {
   buildPageIndex,
   isWikilinkEntry,
   listWikiPages,
+  normalizeRawPath,
   readPageFields,
   wikilinkTarget,
 } from "../src/wiki/pages.ts";
@@ -39,23 +40,19 @@ function colors() {
   return createColors(!process.env.NO_COLOR);
 }
 
-async function assertDirectory(path: string, kind: string): Promise<void> {
+/** The raw projection must be a directory; named on failure. */
+async function assertRawDir(rawDir: string): Promise<void> {
   let isDirectory: boolean;
 
   try {
-    isDirectory = (await stat(path)).isDirectory();
+    isDirectory = (await stat(rawDir)).isDirectory();
   } catch {
-    throw new Error(`${kind} directory does not exist: ${path}`);
+    throw new Error(`raw directory does not exist: ${rawDir}`);
   }
 
   if (!isDirectory) {
-    throw new Error(`${kind} directory is not a directory: ${path}`);
+    throw new Error(`raw directory is not a directory: ${rawDir}`);
   }
-}
-
-/** `raw/notes/…` with an optional `raw/` prefix removed. */
-function normalizeOrigin(origin: string): string {
-  return origin.replace(/^raw\//, "");
 }
 
 /**
@@ -74,10 +71,11 @@ export async function checkWikiProvenance(
   const wikiDir = resolve(wikiDirInput);
   const rawDir = resolve(rawDirInput);
 
-  await assertDirectory(wikiDir, "wiki");
-  await assertDirectory(rawDir, "raw");
-
+  // listWikiPages asserts the wiki directory itself; only the raw
+  // side needs its own check here.
   const files = await listWikiPages(wikiDir);
+
+  await assertRawDir(rawDir);
   const index = buildPageIndex(files);
   const problems: string[] = [];
   let sources = 0;
@@ -99,7 +97,7 @@ export async function checkWikiProvenance(
       }
 
       try {
-        await stat(join(rawDir, normalizeOrigin(entry)));
+        await stat(join(rawDir, normalizeRawPath(entry)));
       } catch {
         problems.push(`${page} -> sources ${entry} (missing under raw/)`);
       }
@@ -109,7 +107,7 @@ export async function checkWikiProvenance(
       origins++;
 
       try {
-        await stat(join(rawDir, normalizeOrigin(fields.origin)));
+        await stat(join(rawDir, normalizeRawPath(fields.origin)));
       } catch {
         problems.push(
           `${page} -> origin ${fields.origin} (missing under raw/)`,
