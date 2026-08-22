@@ -62,6 +62,200 @@ Obsidian vault            sync-vault                wiki-ingest               re
 Today steps 1–4 are separate commands (issue #13 will chain them,
 #12 adds guardrails, #14 scheduling).
 
+## Usage models
+
+Every way this wiki can run today, one worked example each. The design
+behind them is [guide §25](making-of/karpathy_obsidian_wiki_implementation_guide.md#25-scaling-to-multiple-vaults-and-multiple-wikis);
+the examples here are the operator-level contract. Modes that arrive
+with open issues are [listed separately](#arriving-with-open-issues)
+and documented only when they land.
+
+### 1. One vault → one wiki (baseline)
+
+The current instance: one iCloud vault, one data repo, the four-step
+cycle above. After every ingest, review the digest and the `git diff`
+in the data repo, commit it, then run the standing checks:
+
+```sh
+npm run sync-vault                              # vault → raw/
+npm run wiki-ingest                             # raw/ changes → wiki/
+# read the digest, review the git diff in the data repo, commit it
+npm run check-links -- ~/Lab/k-wiki-data/wiki   # every [[wikilink]] resolves
+npm run health -- ~/Lab/k-wiki-data/raw         # raw/ matches its manifest
+```
+
+Both checks take a directory explicitly: their defaults are this
+repo's skeleton trees, not the data repo at `dataRoot`.
+
+### 2. Several vaults → several wikis
+
+Privacy or audience separation with full physical isolation: N
+checkouts of this repo, each with its own `sync.json`, `settings.yml`,
+and data repo. No process changes — the pipeline is per-checkout,
+and nothing about one instance leaks into another.
+
+A maximum-privacy instance beside the default one, for material with
+the strictest confidentiality requirements:
+
+```sh
+git clone git@github.com:mguinada/k-wiki.git ~/Lab/k-wiki-private
+cd ~/Lab/k-wiki-private && npm install
+```
+
+`sync.local.json` — uncommitted (see [operator rules](#7-operator-rules-that-keep-instances-safe));
+the vault lives on local disk and never syncs anywhere:
+
+```json
+{
+  "dataRoot": "~/Lab/k-wiki-private-data",
+  "vaults": [
+    { "name": "Private", "root": "~/Vaults/Private", "exclude": "wiki:false" }
+  ]
+}
+```
+
+`settings.local.yml` — uncommitted; this instance's own agent and
+model, pinned independently of the default instance:
+
+```yaml
+command: pi
+model: GLM-5.2
+reasoning: high
+```
+
+Seed once, then run the same cycle as model 1:
+
+```sh
+npm run data:init -- sync.local.json
+npm run sync-vault -- sync.local.json
+npm run wiki-ingest -- --settings settings.local.yml ~/Lab/k-wiki-private-data/raw
+```
+
+The data repo is seeded by `data:init` as a local git repository with
+no remote — **add none ever**: history, rollback, and audit all work
+without one ([model 6](#6-data-repo-location-and-privacy-posture)).
+Each instance encodes its own privacy posture in its own config and
+data location; the default instance's iCloud vault and optional
+remote never touch this one.
+
+### 3. One vault → several wikis by exclusion key
+
+The same vault feeding two instances that partition it by frontmatter.
+Each instance is set up like model 2 (own checkout, own data repo) but
+points at the same vault `root` with a different `exclude` key:
+
+```json
+{
+  "dataRoot": "~/Lab/k-wiki-public-data",
+  "vaults": [
+    { "name": "Engineering",
+      "root": "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/Engineering",
+      "exclude": "public:false" }
+  ]
+}
+```
+
+Each instance applies exactly one `<key>:false` rule, so what syncs
+is fully predictable from a note's frontmatter:
+
+| Note frontmatter | Private (`exclude: "wiki:false"`) | Public (`exclude: "public:false"`) |
+|---|---|---|
+| none, or any value but `false` | synced | synced |
+| `public: false` | synced | not synced |
+| `wiki: false` + `public: false` | not synced | not synced |
+| `wiki: false` only | not synced | **synced — subset breaks** |
+
+The public wiki stays a subset of the private one **only by frontmatter
+convention**: every note that carries `wiki: false` must also carry
+`public: false`. No code enforces the pairing; the vault author
+maintains it.
+
+### 4. Several vaults → one wiki
+
+`sync.json`'s `vaults` array with several entries — each vault syncs
+into its own `raw/notes/<name>/` namespace with its own manifest key:
+
+```json
+{
+  "dataRoot": "~/Lab/k-wiki-data",
+  "vaults": [
+    { "name": "Work", "root": "~/Vaults/Work", "exclude": "wiki:false" },
+    { "name": "Personal", "root": "~/Vaults/Personal", "exclude": "wiki:false" }
+  ]
+}
+```
+
+**Sync is supported today; wiki-contract operation is not.** The e2e
+suite covers a full single-vault lifecycle plus two-vault sync
+(namespaces, per-vault manifest keys), but
+[`wiki/AGENTS.md` § Multiple Source Vaults](wiki/AGENTS.md#multiple-source-vaults)
+reserves multi-vault rules for a human-approved addendum that has not
+landed — the wiki contract today covers a single source vault. Treat
+this as a supported sync configuration, not a working wiki mode.
+
+### 5. Topology changes by rebuild
+
+`wiki/` is derived from `raw/` alone, so topology changes are
+re-ingestion, never information loss:
+
+```text
+split:  partition raw/ by vault namespace  →  rebuild each wiki
+merge:  concatenate namespaced raw/ trees  →  rebuild one wiki
+```
+
+A rebuild is the agent run over all of `raw/` (`prompts/rebuild.md`)
+in a fresh data repo, or after clearing `wiki/`. Split first, merge
+later: once sensitive notes are merged into a wiki and its git
+history, privacy cannot be un-mixed without rewriting that history.
+
+### 6. Data repo location and privacy posture
+
+The data repo is a plain git repository — provider-agnostic. Every
+feature works with no remote at all: history, rollback, audit
+(guide §19). A remote is an explicit opt-in, and any git remote
+works — a private GitHub repo, a self-hosted one, or a bare repo on
+an external disk as the only remote:
+
+```sh
+git init --bare /Volumes/Backup/k-wiki-data.git   # once, on the disk
+cd ~/Lab/k-wiki-data
+git remote add origin /Volumes/Backup/k-wiki-data.git
+git push -u origin main
+```
+
+The data repo holds personal material: push it only to a private
+remote you explicitly control. It must live in a plain local folder,
+never inside a cloud-synced one (guide §26).
+
+### 7. Operator rules that keep instances safe
+
+Hardened during the first full build (issue #61):
+
+- **Run every `sync-vault` / `wiki-ingest` from its own checkout
+  root.** The manifest snapshot
+  (`outputs/last-ingested-manifest.json`) is gitignored per-checkout
+  state: the wrapper resolves `sync.json`, `settings.yml`, and
+  `outputs/` relative to the checkout you are standing in, and a
+  stale or foreign snapshot silently changes the change set — worst
+  case a full re-run where an incremental one was intended.
+- **Keep instance-specific config uncommitted or pass it
+  explicitly.** `sync.json` and `settings.yml` are tracked files in a
+  public repo; a private instance's vault paths and model choice must
+  never be committed. Either leave local edits uncommitted in the
+  instance checkout, or keep untracked local files and name them on
+  every run: `npm run sync-vault -- sync.local.json` and
+  `npm run wiki-ingest -- --settings settings.local.yml <raw-dir>`.
+
+### Arriving with open issues
+
+These modes are documented when their issue lands, not before:
+
+- **Read-only mirror publish** — the iPhone/iPad reading copy (#15).
+- **Scheduled unattended operation** (#14).
+- **Orchestrated cycle and `--batch N`** — one command, sync through
+  commit; batch construction stops being snapshot surgery (#13).
+- **Post-run guardrails with auto-revert** (#12).
+
 ## Tooling
 
 The pipeline is TypeScript on Node.js (ESM). Node ≥ 22.18 runs the `.ts`

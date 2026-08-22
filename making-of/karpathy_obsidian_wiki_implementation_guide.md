@@ -1093,6 +1093,13 @@ Two modes are planned for `wiki-ingest`:
 
 Start with autonomous mode. Its safety mechanism is reviewing the git diff after every run. Add the interactive mode later as a flag (`wiki-ingest --interactive`) for framing-sensitive sources that need supervision.
 
+### Operator rules
+
+Two rules keep multi-instance setups safe (hardened during the first full build, issue #61; the README's Usage models section has the worked examples):
+
+1. Run every `sync-vault` / `wiki-ingest` from its own checkout root. The ingest snapshot (`outputs/last-ingested-manifest.json`) is gitignored per-checkout state, and the wrapper resolves `sync.json`, `settings.yml`, and `outputs/` relative to the checkout it runs from — a stale or foreign snapshot silently changes the change set.
+2. Keep instance-specific configuration uncommitted or pass it explicitly (the config positional to `sync-vault`, `--settings <path>` to `wiki-ingest`): `sync.json` and `settings.yml` are tracked files in a publishable repo, and a private instance's vault paths must never be committed.
+
 ---
 
 ## 19. Git
@@ -1102,7 +1109,7 @@ Two repositories, two concerns:
 - **Code repo** (`k-wiki`): the pipeline — sync, prompts, tests, skills, this guide. It versions only the `raw/` and `wiki/` directory skeleton; the contents of both trees are gitignored. It holds no personal material, so it can be shared or published as-is.
 - **Data repo** (`k-wiki-data`, placed by `sync.json`'s `dataRoot`): the contents of `raw/` and `wiki/`, plus `raw/manifest.json`. Ingestion commits land here. The data repo can hold personal notes: push it only to a private remote you explicitly control. Local git — history, rollback, audit — works with no remote at all; the remote is the opt-in.
 
-Seed the data repo once with `npm run data:init`: git init, copy the skeleton from the code repo, first commit. The copy step derives from `git ls-files`, so the skeleton cannot drift. The code repo's `wiki/AGENTS.md` is the canonical contract; the copy shipped into the data repo is derived, exactly like the mirror copy (Section 26).
+Seed the data repo once with `npm run data:init`: git init, copy the skeleton from the code repo, first commit. The copy step derives from `git ls-files`, so the skeleton cannot drift. The code repo's `wiki/AGENTS.md` is the canonical contract; the copy shipped into the data repo is derived, exactly like the mirror copy (Section 26). Worked examples of data-repo privacy postures — local only, opt-in remote, bare repo on an external disk — are in the README's Usage models section.
 
 Keep both checkouts in plain local folders — never inside a cloud-synced folder — and share them between Macs through git remotes (Section 26).
 
@@ -1326,6 +1333,8 @@ Never let that direction reverse.
 ## 25. Scaling to Multiple Vaults and Multiple Wikis
 
 All topologies share one seam: the deterministic sync layer. `raw/` is a projection of selected notes, not a vault mirror, so everything downstream of sync is vault-agnostic. The default path (one vault → one wiki) needs none of what follows.
+
+Worked operator-level examples for every supported topology — paths, config, and commands — live in the README's Usage models section; this section is the design of record.
 
 ### Scenario A: Multiple Vaults → One Wiki
 
