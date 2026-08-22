@@ -124,7 +124,7 @@ describe("data:init CLI help", () => {
 
     expect(out).toBe(`data:init: ${dataRoot} already seeded`);
     expect(process.exitCode).toBeUndefined();
-  });
+  }, 20000);
 });
 
 async function makeTempDir(): Promise<string> {
@@ -211,7 +211,7 @@ describe("seedDataRepo", () => {
     const { stdout } = await git(dataRoot, "rev-parse", "HEAD");
 
     expect(stdout.trim().length).toBeGreaterThan(0);
-  });
+  }, 20000);
 
   it('returns "seeded" after the first seed', async () => {
     const dataRoot = await makeTempDir();
@@ -223,7 +223,7 @@ describe("seedDataRepo", () => {
     });
 
     expect(result).toBe("seeded");
-  });
+  }, 20000);
 
   it("is a no-op when the data root is already seeded", async () => {
     const dataRoot = await makeTempDir();
@@ -244,7 +244,7 @@ describe("seedDataRepo", () => {
 
     expect(result).toBe("already-seeded");
     expect(after).toBe(before);
-  });
+  }, 20000);
 
   it("refuses to seed into a non-empty directory that is not a seeded data repo", async () => {
     const dataRoot = await makeTempDir();

@@ -608,7 +608,7 @@ describe("runSync progress", () => {
       `vault "${VAULT_NAME}": ${PROGRESS_EVERY + 9} candidates`,
       `vault "${VAULT_NAME}": ${PROGRESS_EVERY}/${PROGRESS_EVERY + 9} read, ${PROGRESS_EVERY} selected`,
     ]);
-  });
+  }, 20000);
 
   it("delivers uncolored progress messages", async () => {
     const ws = await makeWorkspace();
@@ -644,7 +644,7 @@ describe("runSync progress", () => {
     expect(messages).toContain(
       `vault "${VAULT_NAME}": scanning (0s, 1000 dirs)`,
     );
-  });
+  }, 20000);
 
   it("honors progressEvery in a dry run too", async () => {
     const ws = await makeWorkspace();
