@@ -27,6 +27,7 @@ export const repoRoot = resolve(
 export const SYNC_SCRIPT = join(repoRoot, "src", "sync", "sync-vault.ts");
 export const HEALTH_SCRIPT = join(repoRoot, "src", "health", "check-raw.ts");
 export const INGEST_SCRIPT = join(repoRoot, "src", "ingest", "wiki-ingest.ts");
+export const QUERY_SCRIPT = join(repoRoot, "src", "query", "wiki-query.ts");
 
 /** The fixture vault's notes ingested under `exclude: "wiki:false"`, sorted. */
 export const SELECTED_PATHS = [
