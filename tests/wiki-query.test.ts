@@ -601,6 +601,21 @@ describe("runWikiQuery", () => {
     expect(invocation(h, 0).cwd).toBe(h.dataRoot);
   });
 
+  it("passes --provider when the setting is present", async () => {
+    const h = await makeHarness();
+
+    await writeFile(
+      h.settingsPath,
+      "command: pi\nmodel: GLM-5.2\nprovider: zai\nreasoning: high\n",
+    );
+    await runWikiQuery(optionsFor(h));
+
+    const args = invocation(h, 0).args;
+
+    expect(args).toContain("--provider");
+    expect(args[args.indexOf("--provider") + 1]).toBe("zai");
+  });
+
   it("passes the model and reasoning level from settings as agent flags", async () => {
     const h = await makeHarness();
 

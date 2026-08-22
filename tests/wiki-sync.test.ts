@@ -723,6 +723,21 @@ describe("runWikiSync progress and invocation contract", () => {
     }
   });
 
+  it("passes --provider to the lint agent when the setting is present", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    await writeFile(
+      h.settingsPath,
+      "command: pi\nmodel: GLM-5.2\nprovider: zai\nreasoning: high\n",
+    );
+    await runWikiSync(optionsFor(h));
+
+    const lintArgs = h.argRecords[1] ?? [];
+
+    expect(lintArgs).toContain("--provider");
+    expect(lintArgs[lintArgs.indexOf("--provider") + 1]).toBe("zai");
+  });
+
   it("passes the model and reasoning flags to the lint agent", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 

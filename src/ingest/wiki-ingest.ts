@@ -57,9 +57,13 @@ export interface AgentSettings {
   readonly model: string;
   /** Reasoning level; passed to the agent as `--thinking`. */
   readonly reasoning: string;
+  /** Passed to the agent as `--provider` when set. */
+  readonly provider?: string;
 }
 
-const SETTING_KEYS = ["command", "model", "reasoning"] as const;
+const REQUIRED_KEYS = ["command", "model", "reasoning"] as const;
+const OPTIONAL_KEYS = ["provider"] as const;
+const SETTING_KEYS = [...REQUIRED_KEYS, ...OPTIONAL_KEYS] as const;
 
 type SettingKey = (typeof SETTING_KEYS)[number];
 
@@ -131,7 +135,7 @@ export function parseSettings(text: string, origin: string): AgentSettings {
     values.set(key as SettingKey, value);
   }
 
-  for (const key of SETTING_KEYS) {
+  for (const key of REQUIRED_KEYS) {
     if (!values.has(key)) {
       throw new Error(
         `invalid agent settings at ${origin}: missing setting ${JSON.stringify(key)}`,
@@ -139,10 +143,13 @@ export function parseSettings(text: string, origin: string): AgentSettings {
     }
   }
 
+  const provider = values.get("provider");
+
   return {
     command: values.get("command") ?? "",
     model: values.get("model") ?? "",
     reasoning: values.get("reasoning") ?? "",
+    ...(provider !== undefined && { provider }),
   };
 }
 
@@ -582,7 +589,7 @@ export function formatDigest(run: IngestRun): string {
   const lines: string[] = [
     `# Wiki ingest digest${label} — ${run.startedAt.toISOString()}`,
     "",
-    `- **Agent:** \`${settings.command}\` · model \`${settings.model}\` · reasoning \`${settings.reasoning}\``,
+    `- **Agent:** \`${settings.command}\`${settings.provider ? ` · provider \`${settings.provider}\`` : ""} · model \`${settings.model}\` · reasoning \`${settings.reasoning}\``,
     `- **Mode:** ${run.mode} · prompt \`${run.promptFile}\``,
     `- **Sources:** ${sourceCount(run.diff, "added")} added, ${sourceCount(run.diff, "changed")} changed, ${sourceCount(run.diff, "removed")} removed, ${sourceCount(run.diff, "renamed")} renamed`,
   ];
@@ -1004,6 +1011,7 @@ export async function runWikiIngest(
   }
 
   const args = [
+    ...(settings.provider ? ["--provider", settings.provider] : []),
     "--model",
     settings.model,
     "--thinking",
@@ -1014,8 +1022,10 @@ export async function runWikiIngest(
   const runAgent = options.runAgent ?? spawnAgent;
   const pre = await capturePreRunState(dataRoot, env);
 
+  const providerFlag = settings.provider ? ` --provider ${settings.provider}` : "";
+
   onProgress(
-    `wiki-ingest: mode ${mode}, invoking agent: ${settings.command} --model ${settings.model} --thinking ${settings.reasoning}`,
+    `wiki-ingest: mode ${mode}, invoking agent: ${settings.command}${providerFlag} --model ${settings.model} --thinking ${settings.reasoning}`,
   );
 
   const agentStartedAt = now().getTime();
@@ -1144,9 +1154,9 @@ repo root (the parent of the raw dir), and record what happened.
 
 Switches and arguments:
   --settings <path>  Agent settings file. Default: the repo's
-                     settings.yml — command, model, and reasoning
+                     settings.yml — command, model, provider, and reasoning
                      level, passed to the agent as --model/--thinking;
-                     never hardcoded.
+                     provider is optional and passed as --provider when set.
   --outputs <dir>    Where the digest (runs/<timestamp>.md) and the
                      manifest snapshot go. Default: the repo's outputs/.
   --timeout <secs>   Kill the agent run after this many seconds and

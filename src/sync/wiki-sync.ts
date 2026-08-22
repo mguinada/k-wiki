@@ -107,6 +107,7 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
     await readPrompt(join(options.promptsDir, "lint.md"))
   ).replaceAll("outputs/lint-<YYYY-MM-DD>.md", reportPath);
   const args = [
+    ...(settings.provider ? ["--provider", settings.provider] : []),
     "--model",
     settings.model,
     "--thinking",
@@ -117,8 +118,10 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
   const runAgent = options.runAgent ?? spawnAgent;
   const pre = await capturePreRunState(dataRoot, env);
 
+  const providerFlag = settings.provider ? ` --provider ${settings.provider}` : "";
+
   onProgress(
-    `wiki-sync: lint — invoking agent: ${settings.command} --model ${settings.model} --thinking ${settings.reasoning}`,
+    `wiki-sync: lint — invoking agent: ${settings.command}${providerFlag} --model ${settings.model} --thinking ${settings.reasoning}`,
   );
 
   const startedAt = now().getTime();
@@ -516,9 +519,9 @@ sync-vault → wiki-ingest → headless lint (prompts/lint.md) → one
 data-repo commit. Every stage stays independently runnable for
 debugging; this command only chains them.
 
-  --settings <path>  Agent settings file (command, model, reasoning)
-                     for both agent stages — ingest and lint.
-                     Default: the repo's settings.yml.
+  --settings <path>  Agent settings file (command, model, provider,
+                     reasoning) for both agent stages — ingest and lint.
+                     Provider is optional. Default: the repo's settings.yml.
   --outputs <dir>    Where the ingest digest (runs/<timestamp>.md) and
                      the manifest snapshot go — the code repo's
                      per-checkout state. Default: the repo's outputs/.

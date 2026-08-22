@@ -257,6 +257,7 @@ export async function runWikiQuery(
   const promptText = await readPrompt(join(options.promptsDir, "query.md"));
   const composed = composeQueryPrompt(promptText, options.question, noFiling);
   const args = [
+    ...(settings.provider ? ["--provider", settings.provider] : []),
     "--model",
     settings.model,
     "--thinking",
@@ -266,8 +267,10 @@ export async function runWikiQuery(
   ];
   const runAgent = options.runAgent ?? spawnAgent;
 
+  const providerFlag = settings.provider ? ` --provider ${settings.provider}` : "";
+
   onProgress(
-    `wiki-query: invoking agent: ${settings.command} --model ${settings.model} --thinking ${settings.reasoning}`,
+    `wiki-query: invoking agent: ${settings.command}${providerFlag} --model ${settings.model} --thinking ${settings.reasoning}`,
   );
 
   const agentStartedAt = Date.now();
@@ -315,9 +318,9 @@ Switches and arguments:
                     When the answer would meet the filing bar, the
                     wrapper prints the hint to rerun without it.
   --settings <path> Agent settings file. Default: the repo's
-                    settings.yml — command, model, and reasoning
+                    settings.yml — command, model, provider, and reasoning
                     level, passed to the agent as --model/--thinking;
-                    never hardcoded.
+                    provider is optional and passed as --provider when set.
   --raw-dir <dir>   raw/ directory of the data repo to query; its
                     parent is the data repo root the agent runs in.
                     Default: <dataRoot>/raw from sync.json, otherwise

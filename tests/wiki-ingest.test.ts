@@ -69,7 +69,17 @@ describe("parseSettings", () => {
       command: "pi",
       model: "GLM-5.2",
       reasoning: "high",
+      provider: undefined,
     });
+  });
+
+  it("parses an optional provider setting", () => {
+    const settings = parseSettings(
+      "command: pi\nmodel: m\nprovider: zai\nreasoning: h\n",
+      "s",
+    );
+
+    expect(settings.provider).toBe("zai");
   });
 
   it("unquotes single-quoted values", () => {
@@ -607,6 +617,17 @@ describe("formatDigest", () => {
     expect(digest).toContain("`pi`");
     expect(digest).toContain("`GLM-5.2`");
     expect(digest).toContain("`high`");
+    expect(digest).not.toContain("provider");
+  });
+
+  it("names the provider in the digest when it is set", () => {
+    const digest = formatDigest(
+      digestRun({
+        settings: { ...digestRun().settings, provider: "zai" },
+      }),
+    );
+
+    expect(digest).toContain("provider `zai`");
   });
 
   it("opens with the digest heading and run timestamp", () => {
@@ -1175,6 +1196,21 @@ describe("runWikiIngest", () => {
     await runWikiIngest(optionsFor(h));
 
     expect(invocation(h, 0).cwd).toBe(h.dataRoot);
+  });
+
+  it("passes --provider when the setting is present", async () => {
+    const h = await makeHarness({ "a.md": entry("a") });
+
+    await writeFile(
+      h.settingsPath,
+      "command: pi\nmodel: GLM-5.2\nprovider: zai\nreasoning: high\n",
+    );
+    await runWikiIngest(optionsFor(h));
+
+    const args = invocation(h, 0).args;
+
+    expect(args).toContain("--provider");
+    expect(args[args.indexOf("--provider") + 1]).toBe("zai");
   });
 
   it("passes the model and reasoning level from settings as agent flags", async () => {
