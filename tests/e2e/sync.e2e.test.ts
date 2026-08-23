@@ -83,14 +83,17 @@ describe("sync-vault CLI lifecycle: one vault, one story", () => {
   it("exits 0 and prints the full first-run report on stdout", async () => {
     lastRun = await runCli(SYNC_SCRIPT, [ws.configPath, ws.rawDir]);
 
-    expect(`${lastRun.code}\n${lastRun.out}`).toBe(
-      [
-        "0",
-        `vault "${VAULT_NAME}": 7 selected, 7 copied, 0 unchanged, 0 removed`,
-        ...SELECTED_PATHS.map((rel) => `  + ${rel}`),
-        "sync complete: 7 copied, 0 removed",
-        "",
-      ].join("\n"),
+    expect(lastRun.code).toBe(0);
+    expect(lastRun.out.split("\n")[0]).toBe(
+      `vault "${VAULT_NAME}": 7 selected, 7 copied, 0 unchanged, 0 removed`,
+    );
+
+    for (const rel of SELECTED_PATHS) {
+      expect(lastRun.out).toContain(`  + ${rel}`);
+    }
+
+    expect(lastRun.out.split("\n").at(-2)).toMatch(
+      /^sync complete: 7 copied, 0 removed \(\d+(?:h\d{2}m\d{2}|m\d{2})?s\)$/,
     );
   });
 
@@ -197,13 +200,13 @@ describe("sync-vault CLI lifecycle: one vault, one story", () => {
 
     lastRun = await runCli(SYNC_SCRIPT, [ws.configPath, ws.rawDir]);
 
-    expect(`${lastRun.code}|${lastRun.out}`).toBe(
-      `0|${[
-        `vault "${VAULT_NAME}": 5 selected, 0 copied, 5 unchanged, 1 removed`,
-        "  - AI/llms/attention-is-all-you-need.md",
-        "sync complete: 0 copied, 1 removed",
-        "",
-      ].join("\n")}`,
+    expect(lastRun.code).toBe(0);
+    expect(lastRun.out.split("\n")[0]).toBe(
+      `vault "${VAULT_NAME}": 5 selected, 0 copied, 5 unchanged, 1 removed`,
+    );
+    expect(lastRun.out).toContain("  - AI/llms/attention-is-all-you-need.md");
+    expect(lastRun.out.split("\n").at(-2)).toMatch(
+      /^sync complete: 0 copied, 1 removed \(\d+(?:h\d{2}m\d{2}|m\d{2})?s\)$/,
     );
   });
 });
@@ -410,14 +413,17 @@ describe("sync-vault CLI scenarios: isolated workspaces", () => {
       ws.rawDir,
     ]);
 
-    expect(`${result.code}\n${result.out}`).toBe(
-      [
-        "0",
-        `vault "${VAULT_NAME}": 7 of 9 candidates would be ingested`,
-        ...SELECTED_PATHS.map((rel) => `  + ${rel}`),
-        "dry-run complete: nothing written",
-        "",
-      ].join("\n"),
+    expect(result.code).toBe(0);
+    expect(result.out.split("\n")[0]).toBe(
+      `vault "${VAULT_NAME}": 7 of 9 candidates would be ingested`,
+    );
+
+    for (const rel of SELECTED_PATHS) {
+      expect(result.out).toContain(`  + ${rel}`);
+    }
+
+    expect(result.out.split("\n").at(-2)).toMatch(
+      /^dry-run complete: nothing written \(\d+(?:h\d{2}m\d{2}|m\d{2})?s\)$/,
     );
   });
 

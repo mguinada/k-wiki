@@ -823,6 +823,22 @@ describe("formatReport all-blocked hint", () => {
       "sync complete: no changes",
     );
   });
+
+  it("appends the formatted duration to the summary", () => {
+    const report: SyncReport = { ...reportOf(allBlocked), elapsedMs: 1200 };
+
+    expect(formatReport(report).split("\n").at(-1)).toBe(
+      "sync complete: no changes (1s)",
+    );
+  });
+
+  it("appends a zero-second duration when the run is sub-second", () => {
+    const report: SyncReport = { ...reportOf(allBlocked), elapsedMs: 100 };
+
+    expect(formatReport(report).split("\n").at(-1)).toBe(
+      "sync complete: no changes (0s)",
+    );
+  });
 });
 
 describe("formatReport pruned namespaces", () => {
@@ -1334,6 +1350,16 @@ describe("colorized output", () => {
     );
   });
 
+  it("appends the formatted duration to the dry-run summary", () => {
+    const reports: readonly VaultDryRunReport[] = [
+      { vault: VAULT_NAME, candidates: 9, wouldIngest: ["AI/RAG.md"] },
+    ];
+
+    expect(formatDryRunReport(reports, pc, 65000).split("\n").at(-1)).toBe(
+      "dry-run complete: nothing written (1m05s)",
+    );
+  });
+
   it("colors a summary without a removed count green", () => {
     const report = reportOf({ copied: ["a.md"] });
 
@@ -1465,6 +1491,32 @@ describe("sync-vault CLI", () => {
     expect(out).toContain("sync complete: no changes");
   });
 
+  it("reports a zero-second elapsed time under a frozen clock", async () => {
+    const ws = await makeWorkspace();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+
+    try {
+      const { out } = await runCli([ws.configPath, ws.rawDir]);
+
+      expect(out).toContain("sync complete: 7 copied, 0 removed (0s)");
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("reports a zero-second elapsed time for a dry run under a frozen clock", async () => {
+    const ws = await makeWorkspace();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+
+    try {
+      const { out } = await runCli(["--dry-run", ws.configPath, ws.rawDir]);
+
+      expect(out).toContain("dry-run complete: nothing written (0s)");
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it("renders a removal run line for line", async () => {
     const ws = await makeWorkspace();
 
@@ -1472,12 +1524,12 @@ describe("sync-vault CLI", () => {
     await rm(sourcePath(ws, "Scratch/temp-research.md"));
     const { out } = await runCli([ws.configPath, ws.rawDir]);
 
-    expect(out).toBe(
-      [
-        `vault "${VAULT_NAME}": 6 selected, 0 copied, 6 unchanged, 1 removed`,
-        "  - Scratch/temp-research.md",
-        "sync complete: 0 copied, 1 removed",
-      ].join("\n"),
+    expect(out.split("\n")[0]).toBe(
+      `vault "${VAULT_NAME}": 6 selected, 0 copied, 6 unchanged, 1 removed`,
+    );
+    expect(out).toContain("  - Scratch/temp-research.md");
+    expect(out.split("\n").at(-1)).toMatch(
+      /^sync complete: 0 copied, 1 removed \(\d+(?:h\d{2}m\d{2}|m\d{2})?s\)$/,
     );
   });
 
@@ -1601,12 +1653,12 @@ describe("sync-vault CLI", () => {
     await readdRetiredNamespace(ws);
     const { out } = await runCli([ws.configPath, ws.rawDir]);
 
-    expect(out).toBe(
-      [
-        `vault "${VAULT_NAME}": 7 selected, 0 copied, 7 unchanged, 0 removed`,
-        "  - Retired/ (stale namespace, not configured)",
-        "sync complete: 0 copied, 0 removed, 1 namespace pruned",
-      ].join("\n"),
+    expect(out.split("\n")[0]).toBe(
+      `vault "${VAULT_NAME}": 7 selected, 0 copied, 7 unchanged, 0 removed`,
+    );
+    expect(out).toContain("  - Retired/ (stale namespace, not configured)");
+    expect(out.split("\n").at(-1)).toMatch(
+      /^sync complete: 0 copied, 0 removed, 1 namespace pruned \(\d+(?:h\d{2}m\d{2}|m\d{2})?s\)$/,
     );
   });
 
@@ -1615,12 +1667,16 @@ describe("sync-vault CLI", () => {
 
     const { out } = await runCli(["--dry-run", ws.configPath, ws.rawDir]);
 
-    expect(out).toBe(
-      [
-        `vault "${VAULT_NAME}": 7 of 9 candidates would be ingested`,
-        ...SELECTED_PATHS.map((rel) => `  + ${rel}`),
-        "dry-run complete: nothing written",
-      ].join("\n"),
+    expect(out.split("\n")[0]).toBe(
+      `vault "${VAULT_NAME}": 7 of 9 candidates would be ingested`,
+    );
+
+    for (const rel of SELECTED_PATHS) {
+      expect(out).toContain(`  + ${rel}`);
+    }
+
+    expect(out.split("\n").at(-1)).toMatch(
+      /^dry-run complete: nothing written \(\d+(?:h\d{2}m\d{2}|m\d{2})?s\)$/,
     );
   });
 

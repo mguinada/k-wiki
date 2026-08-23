@@ -400,7 +400,12 @@ export function checkWikiFrontmatter(
 
   const missing: string[] = REQUIRED_FIELDS.filter((field) => !keys.has(field));
 
-  if (type !== undefined && type !== "source" && !options.skipSources && !keys.has("sources")) {
+  if (
+    type !== undefined &&
+    type !== "source" &&
+    !options.skipSources &&
+    !keys.has("sources")
+  ) {
     missing.push("sources");
   }
 

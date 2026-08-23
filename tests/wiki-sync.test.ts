@@ -998,7 +998,12 @@ describe("formatFinalDigest sections", () => {
         mode: "incremental" as const,
         digestPath: "outputs/runs/x.md",
         digest: "ingest digest body\n",
-        pages: { created: [], updated: [], deleted: [], unavailable: undefined },
+        pages: {
+          created: [],
+          updated: [],
+          deleted: [],
+          unavailable: undefined,
+        },
         diff: { vaults: [], empty: true },
       },
       lint: {
