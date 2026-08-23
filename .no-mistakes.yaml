@@ -12,7 +12,7 @@ ignore_patterns:
 
 document:
   instructions: |
-    making-of/karpathy_obsidian_wiki_implementation_guide.md owns the design
+    docs/karpathy_wiki_implementation_guide.md owns the design
     of record. README.md owns the introduction. AGENTS.md owns the development
     conventions block only; its router and shared invariants are human-only.
     wiki/ pages are owned by the wiki agent contract in wiki/AGENTS.md: do not
@@ -39,7 +39,7 @@ review:
         Root router. The router and the shared invariants are human-only. Only
         the development conventions block may change, and only by the dev
         agent. Escalate any other change.
-    - path: "making-of/**"
+    - path: "docs/**"
       instructions: |
         Design of record. Prose changes only. Do not request test coverage.
     - path: "src/**"

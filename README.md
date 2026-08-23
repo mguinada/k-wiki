@@ -22,7 +22,7 @@ Stage 1 implementation is underway; code lands sequentially through the [Stage 1
 
 | Path | What it is |
 |---|---|
-| `making-of/karpathy_obsidian_wiki_implementation_guide.md` | The implementation guide — spec of record, including the target repository layout (§6) |
+| `docs/karpathy_wiki_implementation_guide.md` | The implementation guide — spec of record, including the target repository layout (§6) |
 | `AGENTS.md` / `wiki/AGENTS.md` | The two agent contexts ([issue #3](https://github.com/mguinada/k-wiki/issues/3)) |
 
 ## Working in this repo (humans and agents)
@@ -32,7 +32,7 @@ This repository hosts two agent contexts with deliberately different permissions
 - **Wiki operations** (ingest, lint, query) follow `wiki/AGENTS.md`.
 - **Pipeline development** (scripts, config, tests) follows the root `AGENTS.md`.
 
-See [Two Agent Contexts](making-of/karpathy_obsidian_wiki_implementation_guide.md#1-two-agent-contexts) in the guide before doing either.
+See [Two Agent Contexts](docs/karpathy_wiki_implementation_guide.md#1-two-agent-contexts) in the guide before doing either.
 
 ## The pipeline
 
@@ -68,7 +68,7 @@ Scheduling is #14.
 ## Usage models
 
 Every way this wiki can run today, one worked example each. The design
-behind them is [guide §25](making-of/karpathy_obsidian_wiki_implementation_guide.md#25-scaling-to-multiple-vaults-and-multiple-wikis);
+behind them is [guide §25](docs/karpathy_wiki_implementation_guide.md#25-scaling-to-multiple-vaults-and-multiple-wikis);
 the examples here are the operator-level contract. Modes that arrive
 with open issues are [listed separately](#arriving-with-open-issues)
 and documented only when they land.
@@ -559,7 +559,7 @@ sources instead of surgically deleting content. A mixed sync — a
 deletion plus additions or edits — stays one expunge run: the
 incremental prompt is appended below the expunge prompt, so the other
 changed sources are ingested in the same run. Design details: guide
-[§14a](making-of/karpathy_obsidian_wiki_implementation_guide.md).
+[§14a](docs/karpathy_wiki_implementation_guide.md).
 
 What you see:
 
