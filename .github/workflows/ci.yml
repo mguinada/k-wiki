@@ -20,9 +20,12 @@
 # The mutation job is advisory, never a gate (issue #21): it runs only
 # when a PR carries the `mutation` label, nightly on main, or via manual
 # dispatch, and continue-on-error keeps its outcome from blocking merge.
-# It follows the same log-hygiene rule: Stryker mutates and prints repo
-# code under src/ only; the suite reads synthetic fixtures, never vault
-# data.
+# PR runs are scoped like the local pre-handoff step (issue #99): they
+# mutate only the src/ hunks changed vs origin/main, so the checkout
+# needs full history (fetch-depth: 0). Nightly and dispatched runs stay
+# full. It follows the same log-hygiene rule: Stryker mutates and prints
+# repo code under src/ only; the suite reads synthetic fixtures, never
+# vault data.
 
 name: CI
 
@@ -109,12 +112,17 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history: mutation:changed diffs the working tree against
+          # origin/main, which a shallow checkout does not contain.
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run mutation
+      # PRs: diff-scoped (issue #99). Scheduled/dispatched: full run.
+      - run: ${{ github.event_name == 'pull_request' && 'npm run mutation:changed' || 'npm run mutation' }}
       - name: Upload mutation report
         if: always()
         uses: actions/upload-artifact@v4

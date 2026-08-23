@@ -17,12 +17,20 @@ Both modes end by printing the actionable mutants (Survived and
 NoCoverage) from reports/mutation/mutation.json. Re-list the last
 report any time with: npm run mutation:survivors
 
-Default:  Mutate only the src/**/*.ts files changed vs origin/main,
-          including uncommitted work. Exits 0 without running Stryker
+Default:  Mutate only the changed hunks of the src/*.ts files that
+          differ from origin/main (uncommitted work included), at
+          hunk granularity: one file:start-end range per changed
+          hunk (scripts/mutation-scope.ts builds the list). New or
+          untracked files mutate whole; deleted files are skipped;
+          code outside the hunks keeps its nightly full-run check.
+          Runs capped at --concurrency 4 — scoped runs are small and
+          the cap keeps sibling Stryker fleets from starving each
+          other's test timeouts. Exits 0 without running Stryker
           when no src file changed.
 
 --full:   Mutate every file matched by stryker.config.json's mutate
-          list (src/**/*.ts) — same as `npm run mutation`.
+          list (src/**/*.ts) — same as `npm run mutation`, at the
+          default concurrency.
 
 --help:   Print this help.
 EOF
@@ -50,23 +58,26 @@ esac
 # origin/main, not local main: survives fresh clones and worktrees where
 # the local branch is checked out elsewhere or missing. Plain two-endpoint
 # diff (not `origin/main...HEAD`): it includes uncommitted work, so the
-# pre-handoff run sees what the agent actually changed.
-changed=$(
-  git diff --name-only origin/main -- 'src/*.ts'
-  git ls-files --others --exclude-standard -- 'src/*.ts'
-)
+# pre-handoff run sees what the agent actually changed. scripts/mutation-
+# scope.ts turns that diff into hunk-range --mutate patterns.
+patterns=$(node scripts/mutation-scope.ts)
 
-if [ -z "$changed" ]; then
-  echo "No src/ changes vs origin/main -- skipping mutation run."
+if [ -z "$patterns" ]; then
+  changed=$(git diff --name-only origin/main -- 'src/*.ts'; git ls-files --others --exclude-standard -- 'src/*.ts')
+
+  if [ -z "$changed" ]; then
+    echo "No src/ changes vs origin/main -- skipping mutation run."
+  else
+    echo "src/ changes carry no new-side lines (deletions only) -- nothing to mutate."
+  fi
+
   exit 0
 fi
 
-echo "Mutating changed src files:"
-echo "$changed" | sed 's/^/  /'
+echo "Mutating changed src hunks:"
+printf '%s' "$patterns" | tr ',' '\n' | sed 's/^/  /'
 
-# Stryker's --mutate takes one comma-separated list; unquoted $changed
+# Stryker's --mutate takes one comma-separated list; unquoted $patterns
 # would word-split into extra positional arguments.
-mutate_list=$(printf '%s' "$changed" | tr '\n' ',')
-
-npx stryker run --mutate "$mutate_list"
+npx stryker run --mutate "$patterns" --concurrency 4
 node scripts/mutation-survivors.ts
