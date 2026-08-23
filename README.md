@@ -331,9 +331,13 @@ Hardened during the first full build (issue #61):
   root.** The manifest snapshot
   (`outputs/last-ingested-manifest.json`) is gitignored per-checkout
   state: the wrapper resolves `sync.json`, `settings.yml`, and
-  `outputs/` relative to the checkout you are standing in, and a
-  stale or foreign snapshot silently changes the change set — worst
-  case a full re-run where an incremental one was intended.
+  `outputs/` relative to the checkout you are standing in. A foreign
+  snapshot is caught mechanically (issue #95): the snapshot is
+  stamped with its data repo root at write time, and a read whose
+  stamp does not match — foreign or unstamped — warns loudly and
+  falls back to a full run. A crossed instance can therefore cost an
+  unintended full re-run, but never a silently wrong change set (the
+  spurious-expunge case).
 - **Keep instance-specific config uncommitted or pass it
   explicitly.** `sync.json` and `settings.yml` are tracked files in a
   public repo; a private instance's vault paths and model choice must
@@ -584,6 +588,11 @@ for the first run, `prompts/incremental.md` with the changed sources
 (`+` added, `~` changed, `→` renamed, `-` removed) appended for every
 later one, except that removals route to `prompts/expunge.md` (see
 [below](#when-a-note-is-deleted-expungement)). The
+snapshot is stamped with the data repo it belongs to (issue #95): one
+stamped for another instance — or an unstamped legacy one — is ignored
+with a loud warning and the run falls back to the full prompt, so a
+forgotten `--outputs` can never silently diff, or expunge, against a
+foreign instance's state. The
 agent itself follows `wiki/AGENTS.md`, never touches `raw/`, and gets
 30 minutes (override with `--timeout <seconds>`); while it runs, one
 animated status line — a braille spinner plus the elapsed time — is

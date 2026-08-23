@@ -608,7 +608,7 @@ describe("runSync progress", () => {
       `vault "${VAULT_NAME}": ${PROGRESS_EVERY + 9} candidates`,
       `vault "${VAULT_NAME}": ${PROGRESS_EVERY}/${PROGRESS_EVERY + 9} read, ${PROGRESS_EVERY} selected`,
     ]);
-  }, 20000);
+  });
 
   it("delivers uncolored progress messages", async () => {
     const ws = await makeWorkspace();

@@ -1005,7 +1005,7 @@ Start with autonomous mode. Its safety mechanisms are the post-run guardrails �
 
 Two rules keep multi-instance setups safe (hardened during the first full build, issue #61; the README's Usage models section has the worked examples):
 
-1. Run every `sync-vault` / `wiki-ingest` from its own checkout root. The ingest snapshot (`outputs/last-ingested-manifest.json`) is gitignored per-checkout state, and the wrapper resolves `sync.json`, `settings.yml`, and `outputs/` relative to the checkout it runs from — a stale or foreign snapshot silently changes the change set.
+1. Run every `sync-vault` / `wiki-ingest` from its own checkout root. The ingest snapshot (`outputs/last-ingested-manifest.json`) is gitignored per-checkout state, and the wrapper resolves `sync.json`, `settings.yml`, and `outputs/` relative to the checkout it runs from. A foreign snapshot is caught mechanically (issue #95): the snapshot is stamped with its data repo root at write time, and a read whose stamp does not match — foreign or unstamped — warns loudly and falls back to a full run, so a crossed instance costs at most an unintended full re-run, never a silently wrong change set.
 2. Keep instance-specific configuration uncommitted or pass it explicitly (the config positional to `sync-vault`, `--settings <path>` to `wiki-ingest`): `sync.json` and `settings.yml` are tracked files in a publishable repo, and a private instance's vault paths must never be committed.
 
 ---
