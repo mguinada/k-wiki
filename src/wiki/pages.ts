@@ -47,6 +47,14 @@ export function normalizeRawPath(path: string): string {
   return path.replace(/^raw\//, "");
 }
 
+/** The scalar value of a frontmatter key: unquoted and trimmed;
+ *  undefined when absent or empty. */
+function scalar(value: string | undefined): string | undefined {
+  return value !== undefined && value !== ""
+    ? unquote(value.trim())
+    : undefined;
+}
+
 /**
  * Parse `type`, `origin`, and `sources` from a wiki page's YAML
  * frontmatter: top-level scalars and one list of single-line items,
@@ -75,12 +83,12 @@ export function parsePageFields(text: string): PageFields {
     if (key !== null && key[1] !== undefined) {
       inSources = key[1] === "sources";
 
-      if (key[1] === "type" && key[2] !== undefined && key[2] !== "") {
-        type = unquote(key[2].trim());
+      if (key[1] === "type") {
+        type = scalar(key[2]);
       }
 
-      if (key[1] === "origin" && key[2] !== undefined && key[2] !== "") {
-        origin = unquote(key[2].trim());
+      if (key[1] === "origin") {
+        origin = scalar(key[2]);
       }
 
       continue;
