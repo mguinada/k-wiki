@@ -1,6 +1,8 @@
+import { execFile } from "node:child_process";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { createColors } from "picocolors";
 import { isMainModule } from "../src/cli/is-main.ts";
 import { runGit } from "../src/data/init-data-repo.ts";
@@ -9,6 +11,8 @@ import {
   listWikiPages,
   normalizeRawPath,
 } from "../src/wiki/pages.ts";
+
+const execFileAsync = promisify(execFile);
 
 /**
  * Deterministic origin backfill (guide §14a, issue #88): every
@@ -334,28 +338,50 @@ async function assertCleanWiki(
     return;
   }
 
-  try {
-    const { stdout } = await runGit(
-      wikiDir,
-      ["status", "--porcelain", "--", "."],
-      process.env,
-    );
+  // runGit sets GIT_CEILING_DIRECTORIES to the parent of its dir
+  // argument, so passing the wiki subdir would cut discovery at the
+  // data-repo root and make .git undiscoverable — the real data-repo
+  // layout; the guard would then misread it as "no git repo" and
+  // proceed without the safety net (found during the live run). So:
+  // resolve the repo root from the wiki dir first, then run the
+  // status check from that root — the same pattern the guardrails use.
+  const repoRoot = await gitRepoRoot(wikiDir);
 
-    if (stdout.trim() !== "") {
-      throw new Error(
-        `wiki tree has uncommitted changes — commit or stash first; the backfill's review surface is a clean git diff (see git -C ${wikiDir} status)`,
-      );
-    }
-  } catch (error) {
-    if (error instanceof Error && error.message.includes("uncommitted")) {
-      throw error;
-    }
-
+  if (repoRoot === undefined) {
     console.error(
       colors().yellow(
         "backfill-origin: no git repo at the wiki dir — proceeding without the git safety net",
       ),
     );
+
+    return;
+  }
+
+  const { stdout } = await runGit(
+    repoRoot,
+    ["status", "--porcelain", "--", "."],
+    process.env,
+  );
+
+  if (stdout.trim() !== "") {
+    throw new Error(
+      `wiki tree has uncommitted changes — commit or stash first; the backfill's review surface is a clean git diff (see git -C ${repoRoot} status)`,
+    );
+  }
+}
+
+/** The repo root containing `dir`, or undefined outside any git repo. */
+async function gitRepoRoot(dir: string): Promise<string | undefined> {
+  try {
+    const { stdout } = await execFileAsync(
+      "git",
+      ["-C", dir, "rev-parse", "--show-toplevel"],
+      { env: process.env },
+    );
+
+    return stdout.trim() || undefined;
+  } catch {
+    return undefined;
   }
 }
 
