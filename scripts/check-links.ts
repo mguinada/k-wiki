@@ -14,9 +14,9 @@ import {
  * Wikilink checker: scans every Markdown page under wiki/, extracts
  * each `[[wikilink]]` (bare, aliased, or with a heading anchor), and
  * resolves it by page file name against the scanned tree. Cross-wiki
- * `[[engineering/<page>]]` links are external to this wiki and are
- * skipped (issue #81); `check-crosslinks` validates them against the
- * engineering wiki itself. Prints one `file:line -> [[link]]` line
+ * `[[<vault>/<page>]]` links are external to this wiki and are
+ * skipped (issue #81); `check-crosslinks` validates them against
+ * the domain wikis themselves. Prints one `file:line -> [[link]]` line
  * per broken link and exits 1; exits 0 when every link resolves.
  */
 
@@ -25,7 +25,7 @@ export interface LinkReport {
   readonly broken: readonly string[];
   /** Total wikilinks found across all scanned pages. */
   readonly links: number;
-  /** Cross-wiki `[[engineering/<page>]]` links, skipped as external. */
+  /** Cross-wiki `[[<vault>/<page>]]` links, skipped as external. */
   readonly external: number;
   /** Markdown pages scanned under the wiki root. */
   readonly pages: number;
@@ -87,8 +87,8 @@ const HELP = `Usage: check-links [-h | --help] [<wiki-dir>]
 
 Check that every [[wikilink]] under a wiki resolves to an existing
 page by file name (bare, aliased, and heading-anchor links).
-Cross-wiki [[engineering/<page>]] links are external and skipped;
-check-crosslinks validates them against the engineering wiki.
+Cross-wiki [[<vault>/<page>]] links are external and skipped;
+check-crosslinks validates them against the domain wikis.
 
   <wiki-dir>    Wiki root to scan. Default: the repo's own wiki/.
   -h, --help    Print this help and exit; no side effects.

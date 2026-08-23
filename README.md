@@ -205,7 +205,7 @@ this as a supported sync configuration, not a working wiki mode.
 ### 5. The second brain
 
 One subject's own vault compiled into its own instance
-([guide §25, Scenario D](making-of/karpathy_obsidian_wiki_implementation_guide.md#scenario-d-the-second-brain)):
+([guide §25, Scenario D](docs/karpathy_wiki_implementation_guide.md#scenario-d-the-second-brain)):
 a profile layer the agent reads before every run and every query,
 `project`/`decision`/`attempt` pages under `wiki/second-brain/`, and
 one-way cross-wiki links into domain wikis. The subject can be a
