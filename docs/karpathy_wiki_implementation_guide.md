@@ -1291,7 +1291,12 @@ data repo, and config, each free to link into the same domain wikis:
    inside the second brain — the internal checkers skip slashed
    targets — and `check-crosslinks <wiki-dir> <domain-wiki-dir>…`
    enforces the discipline: unknown vaults, dead pages, and any
-   cross-wiki link inside a domain wiki are problems. The direction
+   cross-wiki link inside a domain wiki are problems. The
+   `wiki-sync` cycle runs this audit automatically for second
+   brains whose settings carry `secondBrain.domains: [<wiki dirs>]`
+   — after lint, before the commit; a failed audit fails the cycle,
+   so the discipline holds without a manual step (issue #96; the
+   README documents the key). The direction
    is deliberate: domain wikis are link sinks — they may be pointed
    at, never point out — so second-brain material can never leak
    into a publishable wiki. Only a second brain may use cross-wiki

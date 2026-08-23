@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { runGit } from "../src/data/init-data-repo.ts";
@@ -12,10 +12,12 @@ import {
 import { serializeManifest } from "../src/sync/manifest.ts";
 import {
   type CommitResult,
+  type CrosslinksResult,
   formatCommitMessage,
   formatFinalDigest,
   LINT_HEARTBEAT_PREFIX,
   main,
+  runCrosslinksStage,
   runWikiSync,
 } from "../src/sync/wiki-sync.ts";
 
@@ -359,10 +361,11 @@ describe("formatFinalDigest", () => {
       sync: { vaults: [], prunedNamespaces: [] },
       ingest: { status: "skipped", reason: "no changed sources" },
       lint: undefined,
+      crosslinks: undefined,
       commit: { status: "nothing-to-commit" },
     });
 
-    expect(digest).toContain("nothing to do");
+    expect(digest).toBe("wiki-sync: nothing to do — no changed sources\n");
   });
 
   it("leads with the counts of a committed cycle", async () => {
@@ -390,6 +393,7 @@ describe("formatFinalDigest", () => {
       sync: { vaults: [], prunedNamespaces: ["Old"] },
       ingest: { status: "skipped", reason: "no changed sources" },
       lint: undefined,
+      crosslinks: undefined,
       commit: { status: "committed", hash: "a1b2c3d4", message: "m" },
     });
 
@@ -439,6 +443,233 @@ describe("createAgentProgressSink with lint heartbeats", () => {
     sink.render(`${LINT_HEARTBEAT_PREFIX} (2m07s)`);
 
     expect(written[0]).toContain("\r");
+  });
+});
+
+describe("runWikiSync crosslinks stage", () => {
+  /** A domain wiki tree (wiki/ plus the sibling raw/manifest.json
+   *  naming vault Engineering) for the audit to validate links
+   *  against. */
+  async function makeDomainWiki(h: Harness): Promise<string> {
+    const root = join(dirname(h.dataRoot), "domain");
+
+    await mkdir(join(root, "raw"), { recursive: true });
+    await mkdir(join(root, "wiki"), { recursive: true });
+    await writeFile(
+      join(root, "raw", "manifest.json"),
+      `${JSON.stringify({ vaults: { Engineering: {} } }, null, 2)}\n`,
+    );
+    await writeFile(join(root, "wiki", "index.md"), "# Domain\\n");
+    await writeFile(join(root, "wiki", "stub.md"), "# Stub\\n");
+
+    return join(root, "wiki");
+  }
+
+  /** Point the instance's settings at the domain wiki and mark the
+   *  data repo as a second brain (the operator-owned `.second-brain`
+   *  marker, issue #94 — guardrails allow cross-wiki links only
+   *  there). */
+  async function configureDomains(h: Harness, domainWiki: string) {
+    await writeFile(join(h.dataRoot, ".second-brain"), "");
+    await writeFile(
+      h.settingsPath,
+      `${SETTINGS_YML}secondBrain.domains: [${domainWiki}]\n`,
+    );
+  }
+
+  /** An ingest stub filing one page whose body carries a cross-wiki
+   *  link to the domain wiki (second-brain identity itself is the
+   *  operator-owned `.second-brain` marker — see configureDomains). */
+  function crosslinkAgent(link: string): AgentRunner {
+    return async (_command, _args, options) => {
+      await writeFile(
+        join(options.cwd, "wiki", "decision.md"),
+        wikiPage(`Domain background in ${link}.`),
+        { flag: "wx" },
+      ).catch(() => {});
+      await writeFile(
+        join(options.cwd, "wiki", "index.md"),
+        wikiPage("# Index v2"),
+      );
+
+      return { stdout: "agent final report", stderr: "" };
+    };
+  }
+
+  it("audits a configured instance every cycle and reports it in the digest", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const domainWiki = await makeDomainWiki(h);
+
+    await configureDomains(h, domainWiki);
+    h.ingestAgent = crosslinkAgent("[[engineering/stub]]");
+
+    const result = await runWikiSync(optionsFor(h));
+
+    expect(result.crosslinks).toMatchObject({
+      domains: [domainWiki],
+      external: 1,
+      domainPages: 2,
+    });
+    expect(formatFinalDigest(result)).toContain(
+      "- **Crosslinks:** ok — 1 cross-wiki link against 2 domain pages",
+    );
+  });
+
+  it("numbers the crosslinks stage in the cycle progress", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const domainWiki = await makeDomainWiki(h);
+    const progress: string[] = [];
+
+    await configureDomains(h, domainWiki);
+    h.ingestAgent = crosslinkAgent("[[engineering/stub]]");
+    await runWikiSync({
+      ...optionsFor(h),
+      onProgress: (m) => progress.push(m),
+    });
+
+    expect(progress).toContainEqual("wiki-sync: stage 4/5 — crosslinks");
+  });
+
+  it("skips the stage outright when no domains are configured", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    await expect(
+      runCrosslinksStage({ rawDir: join(h.dataRoot, "raw") }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("announces the domain wiki count on the progress line", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const domainWiki = await makeDomainWiki(h);
+    const progress: string[] = [];
+
+    await expect(
+      runCrosslinksStage({
+        rawDir: join(h.dataRoot, "raw"),
+        domains: [domainWiki],
+        onProgress: (message) => progress.push(message),
+      }),
+    ).resolves.toBeDefined();
+
+    expect(progress).toContainEqual(
+      "wiki-sync: crosslinks — auditing against 1 domain wiki",
+    );
+  });
+
+  it("runs without a progress sink", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const domainWiki = await makeDomainWiki(h);
+
+    await expect(
+      runCrosslinksStage({
+        rawDir: join(h.dataRoot, "raw"),
+        domains: [domainWiki],
+      }),
+    ).resolves.toBeDefined();
+  });
+
+  it("audits the wiki dir only, not the data repo around it", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const domainWiki = await makeDomainWiki(h);
+
+    // A stray broken cross-wiki link OUTSIDE wiki/ must stay invisible
+    // to the audit: only the data repo's wiki/ is audited.
+    await writeFile(
+      join(h.dataRoot, "stray-note.md"),
+      "broken: [[engineering/missing]]\n",
+    );
+
+    await expect(
+      runCrosslinksStage({
+        rawDir: join(h.dataRoot, "raw"),
+        domains: [domainWiki],
+      }),
+    ).resolves.toBeDefined();
+  });
+
+  it("fails the cycle naming a broken cross-wiki link, with no commit", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const domainWiki = await makeDomainWiki(h);
+
+    await configureDomains(h, domainWiki);
+    h.ingestAgent = crosslinkAgent("[[engineering/missing]]");
+
+    const before = await headOf(h.dataRoot);
+
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow(
+      /wiki\/decision\.md:\d+ -> \[\[engineering\/missing\]\]/,
+    );
+    expect(await headOf(h.dataRoot)).toBe(before);
+  });
+
+  it("emits no crosslinks stage line when the instance is unconfigured", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const progress: string[] = [];
+
+    await runWikiSync({
+      ...optionsFor(h),
+      onProgress: (m) => progress.push(m),
+    });
+
+    expect(progress).not.toContainEqual(expect.stringMatching(/crosslinks/));
+  });
+
+  it("joins every broken link into the failure message", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const domainWiki = await makeDomainWiki(h);
+
+    await configureDomains(h, domainWiki);
+    h.ingestAgent = crosslinkAgent(
+      "[[engineering/missing]] and [[engineering/gone]]",
+    );
+
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow(
+      /\[\[engineering\/missing\]\]; wiki\/decision\.md:\d+ -> \[\[engineering\/gone\]\]/,
+    );
+  });
+
+  it("skips the audit when the instance is unconfigured", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const result = await runWikiSync(optionsFor(h));
+
+    expect(result.crosslinks).toBeUndefined();
+    expect(formatFinalDigest(result)).not.toContain("Crosslinks");
+  });
+
+  it("expands a leading ~ in a configured domain dir against home", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const domainWiki = await makeDomainWiki(h);
+    const home = process.env.HOME;
+
+    // Point HOME at the domain wiki's grandparent so `~/domain/wiki`
+    // names the same dir the harness built.
+    process.env.HOME = dirname(dirname(domainWiki));
+
+    try {
+      const result = await runCrosslinksStage({
+        rawDir: join(h.dataRoot, "raw"),
+        domains: ["~/domain/wiki"],
+      });
+
+      expect(result?.domains).toEqual([domainWiki]);
+    } finally {
+      process.env.HOME = home;
+    }
+  });
+
+  it("runs the audit even when the ingest stage skips", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const domainWiki = await makeDomainWiki(h);
+
+    await configureDomains(h, domainWiki);
+    h.ingestAgent = crosslinkAgent("[[engineering/stub]]");
+    await runWikiSync(optionsFor(h));
+
+    const second = await runWikiSync(optionsFor(h));
+
+    expect(second.ingest.status).toBe("skipped");
+    expect(second.crosslinks).toBeDefined();
+    expect(formatFinalDigest(second)).toContain("crosslink audit passed");
   });
 });
 
@@ -1013,6 +1244,7 @@ describe("formatCommitMessage shape", () => {
 describe("formatFinalDigest sections", () => {
   function ranResult(overrides: {
     lintSummary?: string;
+    crosslinks?: CrosslinksResult;
     commit?: CommitResult;
   }) {
     return {
@@ -1035,6 +1267,7 @@ describe("formatFinalDigest sections", () => {
         reportWritten: true,
         summary: overrides.lintSummary ?? "lint summary body",
       },
+      crosslinks: overrides.crosslinks,
       commit: overrides.commit ?? {
         status: "committed" as const,
         hash: "a1b2c3d4e5f6",
@@ -1042,6 +1275,18 @@ describe("formatFinalDigest sections", () => {
       },
     };
   }
+
+  it("lists the crosslink audit when the instance is configured", () => {
+    const digest = formatFinalDigest(
+      ranResult({
+        crosslinks: { domains: ["/d/wiki"], external: 1, domainPages: 12 },
+      }),
+    );
+
+    expect(digest).toContain(
+      "- **Crosslinks:** ok — 1 cross-wiki link against 12 domain pages",
+    );
+  });
 
   it("states plainly when the cycle ended with nothing to commit", () => {
     const digest = formatFinalDigest(

@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
 import { isMainModule } from "../cli/is-main.ts";
 import { formatDuration } from "../cli/progress.ts";
+import { checkCrossWikiLinks } from "../crosslinks.ts";
 import { runGit } from "../data/init-data-repo.ts";
 import {
   capturePreRunState,
@@ -24,16 +25,17 @@ import {
   spawnAgent,
   wikiPages,
 } from "../ingest/wiki-ingest.ts";
-import { loadSyncConfig, resolveRawDir } from "./config.ts";
+import { expandHome, loadSyncConfig, resolveRawDir } from "./config.ts";
 import { runSync, type SyncReport } from "./sync-vault.ts";
 
 /**
  * wiki-sync: the one-command orchestrator (guide §18, issue #13). It
  * chains the proven pieces — sync-vault → wiki-ingest → headless lint
- * (§17, prompts/lint.md) → data-repo commit — and prints one digest:
- * the run's ingest digest, the lint summary, and the commit hash.
- * Nothing here is new capability; every stage stays independently
- * runnable (guide §8).
+ * (§17, prompts/lint.md) → crosslink audit (issue #96, configured
+ * second brains only) → data-repo commit — and prints one digest: the
+ * run's ingest digest, the lint summary, the audit result, and the
+ * commit hash. Nothing here is new capability; every stage stays
+ * independently runnable (guide §8).
  *
  * The lint stage is the headless sibling of the manual lint run: the
  * same prompt file, invoked through the same agent settings, with the
@@ -41,6 +43,14 @@ import { runSync, type SyncReport } from "./sync-vault.ts";
  * report lands in the DATA repo's outputs/ (the #61 convention:
  * quality history travels with the content), so the cycle's single
  * commit carries it.
+ *
+ * The crosslink stage (issue #96) enforces the wiki/AGENTS.md contract
+ * that the cross-wiki audit runs after every run: an instance whose
+ * settings carry `secondBrain.domains: [<wiki dirs>]` gets the
+ * check-crosslinks core (src/crosslinks.ts) run over its wiki against
+ * every listed domain wiki, after lint and before the commit. A
+ * failed audit fails the cycle like lint does; instances without the
+ * key skip the stage, so the default instance is unchanged.
  */
 
 /** Liveness line while the lint agent runs (one animated line on a TTY). */
@@ -185,6 +195,66 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
   return { reportPath, reportWritten, summary: stdout };
 }
 
+/** What the crosslink stage reports back to the cycle digest. */
+export interface CrosslinksResult {
+  /** The expanded domain wiki dirs the audit ran against. */
+  readonly domains: readonly string[];
+  /** Cross-wiki links found in the audited wiki. */
+  readonly external: number;
+  /** Markdown pages scanned across the domain wikis. */
+  readonly domainPages: number;
+}
+
+export interface CrosslinksOptions {
+  /** The raw dir; its parent's wiki/ dir is the audited wiki. */
+  readonly rawDir: string;
+  /** Domain wiki dirs from the settings' `secondBrain.domains`;
+   *  undefined or absent (the key missing) skips the stage entirely. */
+  readonly domains?: readonly string[] | undefined;
+  /** Progress sink (uncolored messages); default: silent. */
+  readonly onProgress?: (message: string) => void;
+}
+
+/**
+ * The crosslink stage (issue #96): run the check-crosslinks core
+ * over the data repo's wiki against every configured domain wiki —
+ * every cycle, after lint, whatever the ingest stage did. A broken
+ * or forbidden link throws (one `file:line -> [[link]]` item per
+ * problem), stopping the cycle before the commit like a lint
+ * failure; a misconfigured domain dir (no sibling manifest) fails
+ * the same way. Nothing reverts: the agent run already passed its
+ * guardrails, and the uncommitted diff is the fix surface.
+ */
+export async function runCrosslinksStage(
+  options: CrosslinksOptions,
+): Promise<CrosslinksResult | undefined> {
+  if (options.domains === undefined) {
+    return undefined;
+  }
+
+  const onProgress = options.onProgress ?? (() => {});
+  const domains = options.domains.map((dir) => expandHome(dir));
+
+  onProgress(
+    `wiki-sync: crosslinks — auditing against ${pluralized(domains.length, "domain wiki")}`,
+  );
+
+  const report = await checkCrossWikiLinks(
+    join(dirname(options.rawDir), "wiki"),
+    ...domains,
+  );
+
+  if (report.problems.length > 0) {
+    throw new Error(`crosslink audit failed — ${report.problems.join("; ")}`);
+  }
+
+  return {
+    domains,
+    external: report.external,
+    domainPages: report.domainPages,
+  };
+}
+
 /** One cycle commit: what the message summarizes. */
 export interface CommitSummary {
   readonly sourcesCount: number;
@@ -288,6 +358,8 @@ export interface WikiSyncResult {
   readonly ingest: IngestResult;
   /** Undefined when the ingest stage skipped (nothing to lint). */
   readonly lint: LintResult | undefined;
+  /** Undefined when the instance has no `secondBrain.domains` key. */
+  readonly crosslinks: CrosslinksResult | undefined;
   readonly commit: CommitResult;
 }
 
@@ -370,14 +442,16 @@ async function commitSummaryOf(
 }
 
 /**
- * One full cycle: sync → ingest → lint → commit. Any stage failure
- * stops the chain and rejects (the CLI exits 1); guardrail failures
- * have already reverted their agent run. With no changed sources the
- * ingest stage skips on its own, lint is skipped with it, and a clean
- * data repo commits nothing — cost scales with activity, not the
- * clock. The ingest skip also keys on the manifest snapshot, so a run
- * whose agent failed (snapshot untouched) is retried by the next
- * cycle even when sync then reports no changes.
+ * One full cycle: sync → ingest → lint → crosslinks → commit. Any
+ * stage failure stops the chain and rejects (the CLI exits 1);
+ * guardrail failures have already reverted their agent run. With no
+ * changed sources the ingest stage skips on its own, lint is skipped
+ * with it, and a clean data repo commits nothing — cost scales with
+ * activity, not the clock. The configured crosslink audit still runs
+ * every cycle: its discipline holds or the cycle fails. The ingest
+ * skip also keys on the manifest snapshot, so a run whose agent
+ * failed (snapshot untouched) is retried by the next cycle even when
+ * sync then reports no changes.
  */
 export async function runWikiSync(
   options: WikiSyncOptions,
@@ -386,8 +460,12 @@ export async function runWikiSync(
   const now = options.now ?? (() => new Date());
   const onProgress = options.onProgress ?? (() => {});
   const dataRoot = dirname(options.rawDir);
+  const { secondBrainDomains: domains } = await loadAgentSettings(
+    options.settingsPath,
+  );
+  const total = domains === undefined ? 4 : 5;
 
-  onProgress("wiki-sync: stage 1/4 — sync-vault");
+  onProgress(`wiki-sync: stage 1/${total} — sync-vault`);
 
   const sync = await runSync({
     configPath: options.configPath,
@@ -396,7 +474,7 @@ export async function runWikiSync(
     onProgress,
   });
 
-  onProgress("wiki-sync: stage 2/4 — wiki-ingest");
+  onProgress(`wiki-sync: stage 2/${total} — wiki-ingest`);
 
   const ingest = await runWikiIngest({
     settingsPath: options.settingsPath,
@@ -414,7 +492,7 @@ export async function runWikiSync(
   let lint: LintResult | undefined;
 
   if (ingest.status === "ran") {
-    onProgress("wiki-sync: stage 3/4 — lint");
+    onProgress(`wiki-sync: stage 3/${total} — lint`);
 
     lint = await runLintStage({
       settingsPath: options.settingsPath,
@@ -428,10 +506,21 @@ export async function runWikiSync(
       onProgress,
     });
   } else {
-    onProgress("wiki-sync: stage 3/4 — lint skipped (no ingest ran)");
+    onProgress(`wiki-sync: stage 3/${total} — lint skipped (no ingest ran)`);
   }
 
-  onProgress("wiki-sync: stage 4/4 — commit");
+  let crosslinks: CrosslinksResult | undefined;
+
+  if (domains !== undefined) {
+    onProgress(`wiki-sync: stage 4/${total} — crosslinks`);
+    crosslinks = await runCrosslinksStage({
+      rawDir: options.rawDir,
+      domains,
+      onProgress,
+    });
+  }
+
+  onProgress(`wiki-sync: stage ${total}/${total} — commit`);
 
   const summary = await commitSummaryOf(sync, ingest, lint, dataRoot, env);
 
@@ -439,6 +528,7 @@ export async function runWikiSync(
     sync,
     ingest,
     lint,
+    crosslinks,
     commit: await commitDataRepo(dataRoot, env, formatCommitMessage(summary)),
   };
 }
@@ -462,16 +552,27 @@ function syncSummaryLines(sync: SyncReport): string[] {
   ];
 }
 
+/** The digest's crosslink sentence, shared by the full digest and
+ *  the nothing-to-do line: what was audited and that it holds. */
+function crosslinksLine(crosslinks: CrosslinksResult): string {
+  return `${pluralized(crosslinks.external, "cross-wiki link")} against ${pluralized(crosslinks.domainPages, "domain page")}`;
+}
+
 /**
  * The final printed digest: counts first, details after — the sync
  * summary, the lint summary, the commit hash, then the full ingest
  * digest.
  */
 export function formatFinalDigest(result: WikiSyncResult): string {
-  const { commit, ingest, lint, sync } = result;
+  const { commit, crosslinks, ingest, lint, sync } = result;
 
   if (commit.status === "nothing-to-commit" && ingest.status === "skipped") {
-    return `wiki-sync: nothing to do — ${ingest.reason}\n`;
+    const audit =
+      crosslinks === undefined
+        ? ""
+        : `; crosslink audit passed — ${crosslinksLine(crosslinks)}`;
+
+    return `wiki-sync: nothing to do — ${ingest.reason}${audit}\n`;
   }
 
   const lines: string[] = [
@@ -492,6 +593,10 @@ export function formatFinalDigest(result: WikiSyncResult): string {
     lines.push(
       `- **Lint:** ${lint.reportWritten ? `report \`${lint.reportPath}\`` : `report not written (expected \`${lint.reportPath}\`)`} — summary below`,
     );
+  }
+
+  if (crosslinks !== undefined) {
+    lines.push(`- **Crosslinks:** ok — ${crosslinksLine(crosslinks)}`);
   }
 
   if (commit.status === "committed") {
@@ -517,13 +622,16 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const HELP = `Usage: wiki-sync [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<config>] [<raw-dir>]
 
 Run the whole cycle in one command (guide §18, issue #13):
-sync-vault → wiki-ingest → headless lint (prompts/lint.md) → one
-data-repo commit. Every stage stays independently runnable for
-debugging; this command only chains them.
+sync-vault → wiki-ingest → headless lint (prompts/lint.md) →
+crosslink audit (configured second brains) → one data-repo commit.
+Every stage stays independently runnable for debugging; this
+command only chains them.
 
   --settings <path>  Agent settings file (command, model, provider,
-                     reasoning) for both agent stages — ingest and lint.
-                     Provider is optional. Default: the repo's settings.yml.
+                     reasoning) for both agent stages — ingest and
+                     lint — and the optional secondBrain.domains list
+                     of the crosslink stage. Provider is optional.
+                     Default: the repo's settings.yml.
   --outputs <dir>    Where the ingest digest (runs/<timestamp>.md) and
                      the manifest snapshot go — the code repo's
                      per-checkout state. Default: the repo's outputs/.
@@ -545,15 +653,23 @@ What it does, stage by stage:
   3. lint — run the agent headless with prompts/lint.md; the report
      lands in the DATA repo's outputs/ and is committed with the
      cycle. Same guardrails and auto-revert as the ingest stage.
-  4. commit — stage wiki/, raw/, and outputs/ in the data repo and
+  4. crosslinks — only for instances whose settings carry a
+     secondBrain.domains list ([<wiki dirs>], comma-separated,
+     brackets optional): run the check-crosslinks audit of the data
+     repo's wiki/ against every listed domain wiki — every cycle,
+     including no-change cycles. One broken or forbidden
+     [[<vault>/<page>]] link fails the cycle before the commit
+     (nothing reverts; the uncommitted diff is the fix surface).
+     Instances without the key skip the stage.
+  5. commit — stage wiki/, raw/, and outputs/ in the data repo and
      commit with a message summarizing sources processed and pages
      touched.
 
-With no changed sources nothing runs: the ingest stage skips on its
-own (cost scales with activity, not the clock), lint is skipped with
-it, a clean data repo commits nothing, and the command exits 0. A
-failed previous ingest is retried even when sync reports no changes —
-the skip keys on the manifest snapshot, which a failed run leaves
+With no changed sources the agent stages skip (cost scales with
+activity, not the clock), a clean data repo commits nothing, and the
+command exits 0; a configured crosslink audit still runs. A failed
+previous ingest is retried even when sync reports no changes — the
+skip keys on the manifest snapshot, which a failed run leaves
 untouched. A failure at any stage stops the chain and exits 1; a
 tripped guardrail has already reverted its agent run.
 

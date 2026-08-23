@@ -1,11 +1,19 @@
 # Agent configuration for wiki-ingest (guide §18, issue #11).
 # The wrapper reads these values and passes them to the agent CLI;
-# nothing is hardcoded. Top-level `key: value` scalars only.
+# nothing is hardcoded. Top-level `key: value` scalars only, plus
+# the optional `secondBrain.domains` list.
 
 command: pi        # agent CLI, run non-interactively in the data repo
 provider: zai      # passed as --provider; omit to use pi's default
 model: GLM-5.2     # passed as --model
 reasoning: high    # pi thinking level, passed as --thinking
+
+# Second-brain instances only (issue #96): comma-separated domain
+# wiki dirs — the wiki-sync cycle runs the check-crosslinks audit
+# against every listed wiki after lint, before the commit. Leave the
+# key out (as here) to skip the stage; the default instance is a
+# domain wiki and never audits.
+# secondBrain.domains: [~/Lab/k-wiki-data/wiki]
 
 # Example: how to add another model. Keep exactly one active
 # provider/model pair. To switch, comment the two lines above out and

@@ -59,43 +59,67 @@ if (mode === "break-lint" && prompt.startsWith("Audit the wiki")) {
   process.exit(0);
 }
 
-await mkdir(join(process.cwd(), "wiki", "concepts"), { recursive: true });
-await writeFile(
-  join(process.cwd(), "wiki", "concepts", "stub.md"),
-  [
+if (mode === "link-domain" || mode === "link-broken") {
+  // A second-brain run: a decision page carrying one cross-wiki link
+  // to the domain wiki (second-brain identity itself is the
+  // operator-owned .second-brain marker, written by the test).
+  const link = mode === "link-domain" ? "[[engineering/stub]]" : "[[engineering/missing]]";
+  const page = (title, type, body, source) => [
     "---",
-    'title: "Stub"',
-    "type: concept",
+    'title: "' + title + '"',
+    "type: " + type,
     "created: 2026-08-20",
     "updated: 2026-08-20",
     "tags:",
     "  - llm",
-    "sources:",
-    '  - "[[index]]"',
+    ...(source === undefined ? [] : ["sources:", '  - "' + source + '"']),
     "---",
     "",
-    "stub body",
+    body,
     "",
-  ].join("\\n"),
-);
-await writeFile(
-  join(process.cwd(), "wiki", "index.md"),
-  [
-    "---",
-    'title: "Index"',
-    "type: topic",
-    "created: 2026-08-20",
-    "updated: 2026-08-20",
-    "tags:",
-    "  - llm",
-    "sources:",
-    '  - "[[index]]"',
-    "---",
-    "",
-    "# Index v2",
-    "",
-  ].join("\\n"),
-);
+  ].join("\\n");
+
+  await writeFile(join(process.cwd(), "wiki", "decision.md"), page("Decision", "decision", "Chose vitest; domain background in " + link + ".", "[[index]]"));
+  await writeFile(join(process.cwd(), "wiki", "index.md"), page("Index", "topic", "# Index v2"));
+} else {
+  await mkdir(join(process.cwd(), "wiki", "concepts"), { recursive: true });
+  await writeFile(
+    join(process.cwd(), "wiki", "concepts", "stub.md"),
+    [
+      "---",
+      'title: "Stub"',
+      "type: concept",
+      "created: 2026-08-20",
+      "updated: 2026-08-20",
+      "tags:",
+      "  - llm",
+      "sources:",
+      '  - "[[index]]"',
+      "---",
+      "",
+      "stub body",
+      "",
+    ].join("\\n"),
+  );
+  await writeFile(
+    join(process.cwd(), "wiki", "index.md"),
+    [
+      "---",
+      'title: "Index"',
+      "type: topic",
+      "created: 2026-08-20",
+      "updated: 2026-08-20",
+      "tags:",
+      "  - llm",
+      "sources:",
+      '  - "[[index]]"',
+      "---",
+      "",
+      "# Index v2",
+      "",
+    ].join("\\n"),
+  );
+}
 
 if (prompt.startsWith("Audit the wiki")) {
   const reportPath = prompt.match(/outputs\\/lint-\\d{4}-\\d{2}-\\d{2}\\.md/)?.[0];
@@ -116,6 +140,37 @@ interface Repo {
   readonly configPath: string;
   readonly settingsPath: string;
   readonly outputsDir: string;
+}
+
+/** A domain wiki tree (wiki/ plus the sibling raw/manifest.json
+ *  naming vault Engineering) for the cycle's crosslink audit to
+ *  validate links against. */
+async function makeDomainWiki(): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), "k-wiki-eng-wiki-"));
+
+  tempDirs.push(dir);
+
+  await mkdir(join(dir, "wiki"), { recursive: true });
+  await mkdir(join(dir, "raw"), { recursive: true });
+  await writeFile(join(dir, "wiki", "index.md"), "# Engineering\n");
+  await writeFile(join(dir, "wiki", "stub.md"), "# Stub\n");
+  await writeFile(
+    join(dir, "raw", "manifest.json"),
+    `${JSON.stringify({ vaults: { Engineering: {} } }, null, 2)}\n`,
+  );
+
+  return join(dir, "wiki");
+}
+
+/** Point a repo's settings at a domain wiki for the crosslink stage
+ *  and mark the data repo as a second brain (the operator-owned
+ *  `.second-brain` marker, issue #94). */
+async function configureDomains(repo: Repo, domainWiki: string) {
+  await writeFile(join(repo.dataRoot, ".second-brain"), "");
+  await writeFile(
+    repo.settingsPath,
+    `command: ${join(repo.dataRoot, "stub-agent.mjs")}\nmodel: E2E-MODEL\nreasoning: low\nsecondBrain.domains: [${domainWiki}]\n`,
+  );
 }
 
 /** A temp data repo plus fixture vault, sync.json, and stub agent. */
@@ -261,6 +316,44 @@ describe("wiki-sync e2e", () => {
 
     expect(result.code).toBe(1);
     expect(result.err).toContain("code 4");
+
+    const { stdout: headAfter } = await run("git", ["rev-parse", "HEAD"], {
+      cwd: repo.dataRoot,
+    });
+
+    expect(headAfter).toBe(head);
+  });
+
+  it("runs the crosslink audit in the cycle when secondBrain.domains is configured", async () => {
+    const repo = await makeRepo();
+    const domainWiki = await makeDomainWiki();
+
+    await configureDomains(repo, domainWiki);
+
+    const result = await runCycle(repo, { STUB_MODE: "link-domain" });
+
+    expect(result.code).toBe(0);
+    expect(result.out).toContain(
+      "- **Crosslinks:** ok — 1 cross-wiki link against 2 domain pages",
+    );
+  });
+
+  it("fails the cycle naming a broken cross-wiki link, with no commit", async () => {
+    const repo = await makeRepo();
+    const domainWiki = await makeDomainWiki();
+
+    await configureDomains(repo, domainWiki);
+
+    const { stdout: head } = await run("git", ["rev-parse", "HEAD"], {
+      cwd: repo.dataRoot,
+    });
+    const result = await runCycle(repo, { STUB_MODE: "link-broken" });
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("crosslink audit failed");
+    expect(result.err).toMatch(
+      /wiki\/decision\.md:\d+ -> \[\[engineering\/missing\]\]/,
+    );
 
     const { stdout: headAfter } = await run("git", ["rev-parse", "HEAD"], {
       cwd: repo.dataRoot,
