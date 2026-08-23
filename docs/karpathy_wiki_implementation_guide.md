@@ -833,9 +833,18 @@ agent with `prompts/expunge.md` plus the removed raw path (content from
 `git show` in the data repo). No dedicated CLI exists for this.
 
 Source pages created before the `origin` field existed get it
-backfilled in one wiki operation: touch every `type: source` page and
-record its `origin` raw path. Any later run that touches a source page
-adds a missing `origin` automatically (Sections 13–14).
+backfilled deterministically where possible: `npm run backfill-origin
+-- <wiki-dir> <raw-dir>` writes `origin` on every `type: source` page
+whose `sources` cites exactly one path that exists under `raw/` and
+whose title corroborates that note's name; it reports every other
+page as needing judgment (zero or several verifiable paths, title
+mismatch) for a one-off agent pass — it never guesses. Safety
+envelope: `--dry-run` previews every pairing without writing; a real
+run refuses a dirty wiki tree (the clean git diff is the review
+surface, `git restore` the revert) and appends an audit entry naming
+each `page -> origin` pair to `wiki/log.md`. Idempotent — re-runs
+write nothing. Any later run that touches a source page adds a
+missing `origin` automatically (Sections 13–14).
 
 ### Residual risk
 

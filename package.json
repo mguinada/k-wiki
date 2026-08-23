@@ -18,6 +18,7 @@
     "check-links": "node scripts/check-links.ts",
     "check-crosslinks": "node scripts/check-crosslinks.ts",
     "check-provenance": "node scripts/check-provenance.ts",
+    "backfill-origin": "node scripts/backfill-origin.ts",
     "fixtures": "node src/fixtures/generate.ts",
     "sync-vault": "node src/sync/sync-vault.ts",
     "wiki-ingest": "node src/ingest/wiki-ingest.ts",
