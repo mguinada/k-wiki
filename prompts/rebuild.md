@@ -19,6 +19,11 @@ building, read it first, and rebuild the pages under
 
 Avoid duplicate pages.
 
+Every page you build must carry the required frontmatter fields
+(`title`, `type`, `created`, `updated`, `tags`) — including `index.md`
+and `overview.md`, which the skeleton ships bare; a run that writes
+either without frontmatter is auto-reverted.
+
 Every substantive claim must be traceable to source material.
 
 Preserve uncertainty and contradictions.

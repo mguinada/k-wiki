@@ -21,19 +21,23 @@ For each changed source:
 4. Inspect the existing wiki before creating pages.
 5. Update existing pages when appropriate.
 6. Create new pages only when justified.
-7. Record `origin: raw/notes/<vault>/<path>` in the frontmatter of every
+7. Every page you create or rewrite must carry the required frontmatter
+   fields (`title`, `type`, `created`, `updated`, `tags`) — including
+   `index.md` and `overview.md`, which the skeleton ships bare; a run
+   that writes either without frontmatter is auto-reverted.
+8. Record `origin: raw/notes/<vault>/<path>` in the frontmatter of every
    source page you create, and add it to any source page you touch that
    lacks it.
-8. Add source attribution to every affected page.
-9. Add appropriate wikilinks.
-10. Preserve contradictions and uncertainty.
-11. Do not invent facts.
-12. Update index.md.
-13. Revise overview.md if the source changes the overall picture.
-14. Revisit any `status: needs-review` pages that the new sources touch:
+9. Add source attribution to every affected page.
+10. Add appropriate wikilinks.
+11. Preserve contradictions and uncertainty.
+12. Do not invent facts.
+13. Update index.md.
+14. Revise overview.md if the source changes the overall picture.
+15. Revisit any `status: needs-review` pages that the new sources touch:
     corroborate → raise status and confidence; contradict → add or update
     a `CONTRADICTION` callout; unrelated → leave flagged.
-15. Append a concise operation summary to log.md.
+16. Append a concise operation summary to log.md.
 
 Do not modify raw/.
 Do not modify the original source vault.
