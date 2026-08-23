@@ -63,10 +63,15 @@ export interface AgentSettings {
   readonly reasoning: string;
   /** Passed to the agent as `--provider` when set. */
   readonly provider?: string;
+  /** Domain wiki dirs for the cycle's crosslink audit (wiki-sync,
+   *  issue #96); undefined leaves the stage out entirely. Paths are
+   *  as written — `~` expands at use, like every settings value. */
+  readonly secondBrainDomains?: readonly string[];
 }
 
 const REQUIRED_KEYS = ["command", "model", "reasoning"] as const;
 const OPTIONAL_KEYS = ["provider"] as const;
+const DOMAIN_KEY = "secondBrain.domains";
 const SETTING_KEYS = [...REQUIRED_KEYS, ...OPTIONAL_KEYS] as const;
 
 type SettingKey = (typeof SETTING_KEYS)[number];
@@ -79,14 +84,35 @@ function unquote(value: string): string {
     : value;
 }
 
+/** The dirs of a `secondBrain.domains` value: an optional `[...]`
+ *  wrapper, then comma-separated paths (each optionally quoted).
+ *  Empty items are dropped; an empty list is an error. */
+function parseDomainDirs(value: string, origin: string): string[] {
+  const list = value.replace(/^\[/, "").replace(/\]$/, "");
+  const dirs = list
+    .split(",")
+    .map((item) => unquote(item.trim()))
+    .filter((item) => item !== "");
+
+  if (dirs.length === 0) {
+    throw new Error(
+      `invalid agent settings at ${origin}: setting ${JSON.stringify(DOMAIN_KEY)} needs at least one wiki dir`,
+    );
+  }
+
+  return dirs;
+}
+
 /**
  * Parse the settings file: a YAML subset of top-level `key: value`
  * scalars, `#` comments on their own line or trailing the value, and
- * optionally quoted values. Anything else (nesting, lists) is rejected
- * so a typo cannot silently change the agent configuration.
+ * optionally quoted values — plus the one list-valued key
+ * `secondBrain.domains`. Anything else (nesting, other lists) is
+ * rejected so a typo cannot silently change the agent configuration.
  */
 export function parseSettings(text: string, origin: string): AgentSettings {
   const values = new Map<SettingKey, string>();
+  let domains: readonly string[] | undefined;
 
   for (const rawLine of text.split("\n")) {
     if (/^\s/.test(rawLine)) {
@@ -117,6 +143,18 @@ export function parseSettings(text: string, origin: string): AgentSettings {
 
     const key = line.slice(0, separator).trim();
     const value = unquote(line.slice(separator + 1).trim());
+
+    if (key === DOMAIN_KEY) {
+      if (domains !== undefined) {
+        throw new Error(
+          `invalid agent settings at ${origin}: duplicate setting ${JSON.stringify(key)}`,
+        );
+      }
+
+      domains = parseDomainDirs(value, origin);
+
+      continue;
+    }
 
     if (!(SETTING_KEYS as readonly string[]).includes(key)) {
       throw new Error(
@@ -154,6 +192,7 @@ export function parseSettings(text: string, origin: string): AgentSettings {
     model: values.get("model") ?? "",
     reasoning: values.get("reasoning") ?? "",
     ...(provider !== undefined && { provider }),
+    ...(domains !== undefined && { secondBrainDomains: domains }),
   };
 }
 

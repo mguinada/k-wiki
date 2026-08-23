@@ -403,7 +403,11 @@ A second brain may reference domain wikis, never the reverse:
   internal links never contain a slash. Several domain wikis may be
   linked from the same second brain.
 - The link never resolves in this wiki; `check-crosslinks` validates
-  it against the named domain wiki after every run.
+  it against the named domain wiki after every run — automatically
+  when the instance's `settings.yml` carries `secondBrain.domains:
+  [<wiki dirs>]` (the `wiki-sync` cycle runs the audit after lint,
+  before the commit, and a failed audit fails the cycle), and on
+  demand via the manual command.
 - Domain wikis never reference second-brain material: they are link
   sinks — other wikis may point at them; they point at nothing. No
   page of any other wiki may link here, and this wiki's material

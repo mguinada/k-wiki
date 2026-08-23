@@ -118,6 +118,65 @@ describe("parseSettings", () => {
     expect(settings.command).toBe("pi");
   });
 
+  it("parses a bracketed secondBrain.domains list", () => {
+    const settings = parseSettings(
+      "command: pi\nmodel: m\nreasoning: h\nsecondBrain.domains: [~/Lab/k-wiki-data/wiki, ~/Lab/other/wiki]\n",
+      "s",
+    );
+
+    expect(settings.secondBrainDomains).toEqual([
+      "~/Lab/k-wiki-data/wiki",
+      "~/Lab/other/wiki",
+    ]);
+  });
+
+  it("parses an unbracketed secondBrain.domains list of one dir", () => {
+    const settings = parseSettings(
+      "command: pi\nmodel: m\nreasoning: h\nsecondBrain.domains: ~/Lab/k-wiki-data/wiki\n",
+      "s",
+    );
+
+    expect(settings.secondBrainDomains).toEqual(["~/Lab/k-wiki-data/wiki"]);
+  });
+
+  it("unquotes secondBrain.domains items", () => {
+    const settings = parseSettings(
+      "command: pi\nmodel: m\nreasoning: h\nsecondBrain.domains: [\"/a/wiki\", '/b/wiki']\n",
+      "s",
+    );
+
+    expect(settings.secondBrainDomains).toEqual(["/a/wiki", "/b/wiki"]);
+  });
+
+  it("rejects an empty secondBrain.domains list", () => {
+    expect(() =>
+      parseSettings(
+        "command: pi\nmodel: m\nreasoning: h\nsecondBrain.domains: []\n",
+        "s",
+      ),
+    ).toThrow(
+      'invalid agent settings at s: setting "secondBrain.domains" needs at least one wiki dir',
+    );
+  });
+
+  it("keeps brackets inside a domain path", () => {
+    const settings = parseSettings(
+      "command: pi\nmodel: m\nreasoning: h\nsecondBrain.domains: /opt/[d]/wiki\n",
+      "s",
+    );
+
+    expect(settings.secondBrainDomains).toEqual(["/opt/[d]/wiki"]);
+  });
+
+  it("rejects a duplicate secondBrain.domains key", () => {
+    expect(() =>
+      parseSettings(
+        "command: pi\nmodel: m\nreasoning: h\nsecondBrain.domains: /a/wiki\nsecondBrain.domains: /b/wiki\n",
+        "s",
+      ),
+    ).toThrow('duplicate setting "secondBrain.domains"');
+  });
+
   it("rejects an unknown key", () => {
     expect(() =>
       parseSettings("command: pi\nmodel: m\nreasoning: high\nextra: x\n", "s"),

@@ -288,6 +288,44 @@ describe("checkCrossWikiLinks", () => {
       checkCrossWikiLinks(join(brain, "brain"), join(bare, "engineering")),
     ).rejects.toThrow(/no manifest at .*raw\/manifest\.json/);
   });
+
+  it("rejects a domain wiki whose manifest names no vaults", async () => {
+    const brain = await makeWiki("brain", { "index.md": "# P\n" });
+    const empty = await makeWiki(
+      "engineering",
+      { "index.md": "# E\n" },
+      "Empty",
+    );
+
+    await writeFile(
+      join(empty, "raw", "manifest.json"),
+      `${JSON.stringify({ vaults: {} }, null, 2)}\n`,
+    );
+    await expect(
+      checkCrossWikiLinks(join(brain, "brain"), join(empty, "engineering")),
+    ).rejects.toThrow(/names no vaults/);
+  });
+
+  it("lets a domain wiki keep internal links", async () => {
+    const brain = await makeWiki("brain", {
+      "decision.md": "Backed by [[engineering/stub]].\n",
+    });
+    const engineering = await makeWiki(
+      "engineering",
+      {
+        "concepts/stub.md": "# Stub\n\nSee also [[notes]].\n",
+        "concepts/notes.md": "# Notes\n",
+      },
+      "Engineering",
+    );
+
+    const report = await checkCrossWikiLinks(
+      join(brain, "brain"),
+      join(engineering, "engineering"),
+    );
+
+    expect(report.problems).toEqual([]);
+  });
 });
 
 describe("check-crosslinks CLI", () => {

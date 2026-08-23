@@ -80,7 +80,7 @@ cycle above. Run the cycle with one command, then review and run the
 standing checks:
 
 ```sh
-npm run wiki-sync                                  # sync → ingest → lint → commit
+npm run wiki-sync   # sync → ingest → lint → crosslinks (configured) → commit
 # review: the printed digest, git log -1 in the data repo
 npm run check-links -- ~/Lab/k-wiki-data/wiki   # every [[wikilink]] resolves
 npm run check-provenance -- ~/Lab/k-wiki-data/wiki  # every sources entry and origin is alive
@@ -235,7 +235,16 @@ command: pi
 provider: openrouter
 model: moonshotai/kimi-k2.6
 reasoning: high
+secondBrain.domains: [~/Lab/k-wiki-data/wiki]
 ```
+
+The `secondBrain.domains` key (a `[...]`-wrapped, comma-separated
+list of domain wiki dirs, one per linked domain wiki) wires the
+crosslink audit into the cycle: every `wiki-sync` run audits the
+second brain's cross-wiki links against every listed wiki after lint
+and before the commit, so the wiki/AGENTS.md "after every run"
+contract is enforced automatically. Omit the key and the cycle skips
+the audit (the manual command below still works).
 
 Seed once, then run the same cycle as model 1 — naming the config,
 the settings, **and a per-instance outputs dir** so the manifest
@@ -275,8 +284,11 @@ wiki; several domain wikis may be linked from the same second
 brain. Such links never resolve inside the second brain;
 `check-crosslinks` validates them, and domain wikis themselves may
 carry no cross-wiki links — only a second brain may use them, so a
-domain wiki writing one fails the ingest guardrails. Standing
-checks (one `<domain-wiki-dir>` per linked domain wiki):
+domain wiki writing one fails the ingest guardrails. When the
+instance's settings carry `secondBrain.domains` (above), the
+`wiki-sync` cycle runs this audit automatically after every run —
+failure fails the cycle before the commit. The manual commands (one
+`<domain-wiki-dir>` per linked domain wiki):
 
 ```sh
 npm run check-links -- ~/Lab/k-wiki-second-brain-data/wiki
@@ -373,7 +385,7 @@ sources directly, so there is no build step — install dependencies with
 | `npm run format` | Biome | Rewrite files to the canonical format — the fix command for lint findings, not a gate |
 | `npm test` | vitest | Run the unit test suite |
 | `npm run test:coverage` | vitest | Run the unit tests and fail below the 90% coverage thresholds — what CI runs |
-| `npm run e2e` | vitest | Run the end-to-end suite (`tests/e2e/`): real CLI child processes — sync-vault through a full vault lifecycle (first run, no-op re-run, edit, delete, block flip, multi-vault) against the synthetic fixture vault in temp workspaces under `.e2e-tmp/` (gitignored), wiki-ingest through first-run, incremental, expunge, rename, skip, failure, timeout, and guardrail auto-revert runs against a stub agent in temp data repos, the second brain through profile-layer ingest, cross-wiki link validation, the reverted domain→second-brain leak, and a health-checked second-brain sync, and wiki-sync through full-cycle, no-change rerun, failure, and guardrail-revert runs |
+| `npm run e2e` | vitest | Run the end-to-end suite (`tests/e2e/`): real CLI child processes — sync-vault through a full vault lifecycle (first run, no-op re-run, edit, delete, block flip, multi-vault) against the synthetic fixture vault in temp workspaces under `.e2e-tmp/` (gitignored), wiki-ingest through first-run, incremental, expunge, rename, skip, failure, timeout, and guardrail auto-revert runs against a stub agent in temp data repos, the second brain through profile-layer ingest, cross-wiki link validation, the reverted domain→second-brain leak, and a health-checked second-brain sync, and wiki-sync through full-cycle, no-change rerun, failure, guardrail-revert, and configured crosslink-audit (pass and fail) runs |
 | `npm run health [-- <raw-dir>]` | health CLI | Check the coherence of a `raw/` projection (default: the repo's `raw/`): every `raw/notes/<vault>/` file matches its `manifest.json` sha-256, with no orphans and no missing entries; read-only, no vault access; exit 0 = coherent (including healthy-empty), exit 1 = one line per problem |
 | `npm run check-links [-- <wiki-dir>]` | wikilink checker | Check that every `[[wikilink]]` under `wiki/` (default) resolves to an existing page by file name, skipping external slashed `[[<vault>/<page>]]` cross-wiki targets; exit 0 = all links resolve, exit 1 = one `file:line -> [[link]]` line per broken link |
 | `npm run check-crosslinks <wiki-dir> <domain-wiki-dir> [<domain-wiki-dir>…]` | cross-wiki link checker | Check the one-way link discipline between a wiki and its domain wikis: every slashed `[[<vault>/<page>]]` link names a vault of a passed domain wiki (validated against its `raw/manifest.json`, case-insensitive) and resolves to an existing page there, and the domain wikis carry no cross-wiki links; exit 0 = discipline holds, exit 1 = one `file:line -> [[link]]` line per problem |
@@ -382,7 +394,7 @@ sources directly, so there is no build step — install dependencies with
 | `npm run fixtures -- <dir>` | fixture generator | Write the synthetic Obsidian test vault to `<dir>/Documents` |
 | `npm run sync-vault -- [--dry-run] [<sync.json>] [<raw-dir>]` | sync CLI | Ingest every note not blocked by the vault's exclusion rule into `raw/notes/` (deterministic, no LLM; [details below](#running-the-sync)) |
 | `npm run wiki-ingest -- [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<raw-dir>]` | ingest wrapper | Run the wiki agent headless over the sources that changed since the last ingest and write the per-run digest (reads `settings.yml`; [details below](#running-the-wiki-agent-wiki-ingest)) |
-| `npm run wiki-sync -- [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<sync.json>] [<raw-dir>]` | cycle orchestrator | Run the whole cycle — sync → ingest → lint → one data-repo commit — and print the digest (reads `settings.yml`; [details below](#running-the-full-cycle-wiki-sync)) |
+| `npm run wiki-sync -- [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<sync.json>] [<raw-dir>]` | cycle orchestrator | Run the whole cycle — sync → ingest → lint → crosslink audit (configured second brains) → one data-repo commit — and print the digest (reads `settings.yml`, including its optional `secondBrain.domains` list; [details below](#running-the-full-cycle-wiki-sync)) |
 | `npm run wiki-query -- [-h \| --help] [--no-filing] [--settings <path>] [--raw-dir <dir>] [--timeout <secs>] <question>` | query wrapper | Ask the built wiki one question headless: print the answer and, unless `--no-filing`, report the query pages the agent filed (reads `settings.yml`; [details below](#running-queries-wiki-query)) |
 | `npm run data:init -- [--second-brain] [<sync.json>]` | data repo seeder | Create and seed the data repo at `sync.json`'s `dataRoot`: git init, copy the `raw/`+`wiki/` skeleton from the code repo, first commit; idempotent; `--second-brain` also writes the `.second-brain` identity marker ([§5](#5-the-second-brain)) |
 | `npm run mutation:changed` | StrykerJS | Advisory mutation run scoped to `src/` files changed vs `main` (uncommitted included); exits 0 without running when none changed, and ends by printing the actionable mutants — the default pre-handoff step |
@@ -710,7 +722,7 @@ missed purge surfaces as a dead link, not as silent contamination.
 ## Running the full cycle (`wiki-sync`)
 
 ```sh
-npm run wiki-sync   # sync → ingest → lint → commit
+npm run wiki-sync   # sync → ingest → lint → crosslinks (configured) → commit
 ```
 
 `wiki-sync` is the one-command orchestrator (guide §18, issue #13).
@@ -728,17 +740,29 @@ It chains the proven pieces and adds no capability of its own:
    guardrails check the run with the same auto-revert. The orchestrator
    pins the date and passes the concrete report path in the prompt, so
    its report check and the prompt cannot disagree.
-4. **commit** — one data-repo commit staging `wiki/`, `raw/`, and
+4. **crosslinks** — second brains only (issue #96): an instance whose
+   settings carry `secondBrain.domains: [<wiki dirs>]` gets the
+   `check-crosslinks` audit run over its wiki against every listed
+   domain wiki — every cycle, including no-change cycles, after lint
+   and before the commit. One broken or forbidden `[[<vault>/<page>]]`
+   link fails the cycle (exit 1, one `file:line -> [[link]]` line per
+   problem, no commit — the uncommitted diff is the fix surface), so
+   the wiki/AGENTS.md "after every run" contract is enforced, not
+   prose. Instances without the key skip the stage; the default
+   instance is unchanged.
+5. **commit** — one data-repo commit staging `wiki/`, `raw/`, and
    `outputs/`, with a message summarizing sources processed, pages
    touched, and the lint report.
 
-The final digest on stdout — sync summary, lint summary, the commit
-hash, then the full ingest digest — plus `git log -1` in the data
-repo tell the whole story of the run without opening any other file.
+The final digest on stdout — sync summary, lint summary, the
+crosslink audit result (configured instances), the commit hash, then
+the full ingest digest — plus `git log -1` in the data repo tell the
+whole story of the run without opening any other file.
 
-With no changed sources nothing runs: the ingest stage skips on its
-own (cost scales with activity, not the clock), lint is skipped with
-it, a clean data repo commits nothing, and the command exits 0.
+With no changed sources the agent stages skip (cost scales with
+activity, not the clock), a clean data repo commits nothing, and the
+command exits 0 — a configured crosslink audit still runs, and its
+pass is noted in the digest.
 Because the skip keys on the ingest snapshot — which a failed agent
 run leaves untouched — the next cycle retries a failed ingest even
 when sync then reports no changes. Lint gets no such retry: it runs
