@@ -92,15 +92,18 @@ above ride on the caller's discipline: an `axi run` without `--skip pr`,
 or any `rerun`, still runs the `pr` step (the IPC rerun path carries no
 skip at all). On this machine `~/.local/bin/no-mistakes` is therefore a
 wrapper script, not the installer's symlink. It appends `--skip pr` to
-every run-starting invocation (`axi run` and the bare TUI/wizard),
-merges `pr` into an existing `--skip` value instead of duplicating it,
-refuses `no-mistakes rerun` with the safe alternative printed, and passes
-every other subcommand through untouched. Every invocation prints a
-one-line shim notice to stderr (never stdout, where agents parse TOON
-output), so the shim cannot act invisibly. Self-updates replace only
-`~/.no-mistakes/bin/no-mistakes`, so the shim survives them; a full
-reinstall fails loudly when its plain `ln -s` hits the existing wrapper
-file. Remove the shim — restore the stock CLI — with:
+`axi run` invocations and merges `pr` into any `--skip` the caller
+passed explicitly; it refuses `no-mistakes rerun` with the safe
+alternative printed, and passes every other invocation through
+untouched. Bare `no-mistakes` (and `-y`) attach to an active run when
+one exists, and the CLI rejects `--skip` on attach — so the shim leaves
+those invocations alone; a wizard-started push carries the repo's
+`push.pushOption` above, which supplies the skip. Every invocation
+prints a one-line shim notice to stderr (never stdout, where agents
+parse TOON output), so the shim cannot act invisibly. Self-updates
+replace only `~/.no-mistakes/bin/no-mistakes`, so the shim survives
+them; a full reinstall fails loudly when its plain `ln -s` hits the
+existing wrapper file. Remove the shim — restore the stock CLI — with:
 
 ```sh
 ln -sf ~/.no-mistakes/bin/no-mistakes ~/.local/bin/no-mistakes
