@@ -679,80 +679,43 @@ Detected:
 
 ## 13. Ingestion Prompt
 
-Use this as the core prompt when processing changed sources:
+The operational prompt text lives only in `prompts/` in the code
+repository — the CLIs load these files verbatim at runtime. This guide
+describes what each prompt does and points to the file; it never embeds
+prompt text. Index of the seven operational prompts:
 
-```text
-You are maintaining a structured knowledge wiki.
+| Prompt file | Trigger | Purpose |
+|---|---|---|
+| `prompts/ingest.md` | First run or full re-run of `wiki-ingest` | Read the synced sources under `raw/` and build/update the wiki in one pass |
+| `prompts/incremental.md` | Later runs where one or more notes changed | Process only the changed sources; smallest necessary wiki updates |
+| `prompts/expunge.md` | A sync removes notes (manifest diff has `removed` entries; §14a) | Re-derive affected pages from their remaining sources |
+| `prompts/rebuild.md` | Rebuilding the wiki from scratch (§15); the expunge threshold (§14a) | Rebuild the whole wiki from `raw/` |
+| `prompts/query.md` | Asking questions against the built wiki (§16) | Synthesize a cited answer; offer to file recurring questions |
+| `prompts/lint.md` | After every ingestion (§17; step 4 of `wiki-sync`) | Audit wiki quality; fix mechanical problems, report the rest |
+| `prompts/comparison-harvest.md` | One-shot harvest run manually (trial) | File comparisons where two or more sources explicitly contrast named approaches |
 
-Read the changed source files under raw/ and update wiki/ accordingly.
+Use this as the core prompt when processing changed sources.
 
-Follow wiki/AGENTS.md exactly.
+Full text: `prompts/ingest.md`.
 
-For each changed source:
-
-1. Understand the complete source.
-2. Identify concepts, entities, topics, comparisons, and relationships.
-3. When two or more sources explicitly contrast named approaches, file a
-   comparison page (or extend an existing one).
-4. Inspect the existing wiki before creating pages.
-5. Update existing pages when appropriate.
-6. Create new pages only when justified.
-7. Record `origin: raw/notes/<vault>/<path>` in the frontmatter of every
-   source page you create, and add it to any source page you touch that
-   lacks it.
-8. Add source attribution to every affected page.
-9. Add appropriate wikilinks.
-10. Preserve contradictions and uncertainty.
-11. Do not invent facts.
-12. Update index.md.
-13. Revise overview.md if the source changes the overall picture.
-14. Append a concise operation summary to log.md.
-
-Do not modify raw/.
-Do not modify the original source vault.
-Do not rewrite unrelated wiki pages.
-
-At the end, report:
-- sources processed;
-- pages created;
-- pages updated;
-- contradictions detected;
-- unresolved questions.
-```
+Intent: the agent reads the changed sources under `raw/` and updates
+`wiki/` per `wiki/AGENTS.md` — existing pages updated before new ones
+are created, every claim attributed and linked, contradictions and
+uncertainty preserved — never modifying `raw/`, the source vault, or
+unrelated wiki pages.
 
 ---
 
 ## 14. Incremental Update Prompt
 
-For an existing wiki when one or more notes changed:
+For an existing wiki when one or more notes changed.
 
-```text
-Process only the source files changed since the previous ingestion.
+Full text: `prompts/incremental.md`.
 
-First inspect the existing wiki pages related to those sources.
-
-Determine whether the changes require:
-- new pages;
-- updates;
-- relationship/link changes;
-- removal of obsolete claims;
-- contradiction handling;
-- retitles (a renamed note keeps its source page and citations).
-
-When two or more sources explicitly contrast named approaches, file a
-comparison page (or extend an existing one).
-
-Make the smallest set of changes necessary.
-
-Record `origin: raw/notes/<vault>/<path>` in the frontmatter of every
-source page you create, and add it to any source page you touch that
-lacks it. When a note is renamed, update its raw path in the kept
-source page's `origin` and in every `sources` entry that cites it.
-
-Do not regenerate unrelated pages.
-
-Update index.md, revise overview.md if the overall picture changed, and append to log.md.
-```
+Intent: process only the sources changed since the previous ingestion,
+inspect the existing related pages first, and make the smallest set of
+changes necessary — updates, link changes, obsolete-claim removal,
+contradiction handling, retitles — never regenerating unrelated pages.
 
 ---
 
@@ -858,34 +821,14 @@ surgical pass is not a proof — do not pretend it is.
 
 ## 15. Full/Rebuild Prompt
 
-Use when rebuilding the wiki from scratch:
+Use when rebuilding the wiki from scratch.
 
-```text
-Rebuild the knowledge wiki from all material under raw/.
+Full text: `prompts/rebuild.md`.
 
-Follow wiki/AGENTS.md.
-
-Process sources in logical batches.
-
-Build:
-- concepts;
-- entities;
-- sources;
-- comparisons;
-- relationships;
-- index.md;
-- log.md.
-
-Avoid duplicate pages.
-
-Every substantive claim must be traceable to source material.
-
-Preserve uncertainty and contradictions.
-
-Do not modify raw/.
-
-The resulting wiki must be understandable without reading every raw source.
-```
+Intent: rebuild the entire wiki from all material under `raw/`, every
+substantive claim traceable to source material, no duplicate pages,
+uncertainty and contradictions preserved — a wiki understandable
+without reading every raw source.
 
 The rebuild procedure is defined in the operating contract
 (`wiki/AGENTS.md`):
@@ -898,27 +841,14 @@ derivable from `raw/`.
 
 ## 16. Query Prompt
 
-Use this when asking questions against the wiki:
+Use this when asking questions against the wiki.
 
-```text
-You are answering questions against a structured knowledge wiki.
+Full text: `prompts/query.md`.
 
-1. Read wiki/index.md and identify the relevant pages.
-2. Read those pages. Consult wiki/overview.md for broad questions.
-3. Synthesize an answer, citing pages with wikilinks.
-4. If the wiki cannot answer the question, say so and suggest which sources to ingest next.
-5. If the question is likely to recur and the answer synthesizes or
-   reframes more than one page, offer to file it. A verbatim restatement
-   of a single page needs no filing. When borderline, offer anyway and
-   let the human decide:
-   - create wiki/queries/<kebab-name>.md with type: query frontmatter;
-   - record the question and the answer;
-   - link the pages and sources used;
-   - update index.md and append to log.md.
-
-Do not modify raw/.
-Do not invent facts beyond what wiki/ and raw/ support.
-```
+Intent: find the relevant pages via `index.md`, synthesize an answer
+citing them with wikilinks, say so when the wiki cannot answer, and
+offer to file recurring synthesized answers under `queries/` — never
+inventing facts beyond what `wiki/` and `raw/` support.
 
 Filed answers are how questions compound into knowledge: the next time the question arises, the wiki already contains the answer.
 
@@ -926,40 +856,14 @@ Filed answers are how questions compound into knowledge: the next time the quest
 
 ## 17. Lint Prompt
 
-Run after ingestion:
+Run after ingestion.
 
-```text
-Audit the wiki for quality problems.
+Full text: `prompts/lint.md`.
 
-Check for:
-
-1. Unsupported claims.
-2. Missing source attribution.
-3. Contradictory claims.
-4. Duplicate pages.
-5. Orphan pages.
-6. Broken wikilinks.
-7. Missing or invalid Obsidian frontmatter.
-8. Missing required frontmatter fields.
-9. Non-canonical or inconsistent wiki tags.
-10. Stale or obsolete claims.
-11. Incorrect page types.
-12. Missing important relationships.
-13. Index entries missing from the wiki.
-14. Wiki pages that contain excessive filler.
-15. Missing comparison where sources explicitly contrast named approaches
-    (report, do not auto-create).
-
-Do not make speculative corrections.
-Never modify wiki/AGENTS.md.
-
-Fix clear mechanical problems automatically.
-Report ambiguous problems instead of guessing.
-
-Save the report to `outputs/lint-<YYYY-MM-DD>.md`.
-
-Append significant findings to log.md.
-```
+Intent: audit the wiki for quality problems — fix the clear mechanical
+ones automatically, report the ambiguous ones instead of guessing,
+never touch `wiki/AGENTS.md`, and save the report to
+`outputs/lint-<YYYY-MM-DD>.md`.
 
 ---
 
