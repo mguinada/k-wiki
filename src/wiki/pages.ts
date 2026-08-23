@@ -7,14 +7,17 @@ export { buildPageIndex };
 /**
  * Deterministic wiki-page reading, shared by the expunge seed
  * (wiki-ingest) and the dead-provenance check (scripts/): which pages
- * exist, and the two frontmatter fields the pipeline treats as
- * machine-readable provenance — `origin` and `sources`. Agent-written
- * frontmatter is tolerant input: a page whose fields cannot be read
- * simply contributes nothing to the deterministic layer.
+ * exist, and the frontmatter fields the pipeline treats as
+ * machine-readable provenance — `type`, `origin`, and `sources`.
+ * Agent-written frontmatter is tolerant input: a page whose fields
+ * cannot be read simply contributes nothing to the deterministic
+ * layer.
  */
 
 /** The frontmatter fields the pipeline reads from a wiki page. */
 export interface PageFields {
+  /** The page type scalar (e.g. `source`), as written. */
+  readonly type: string | undefined;
   /** The raw projection path backing a source page, as written. */
   readonly origin: string | undefined;
   /** `sources` list entries as written (wikilinks still bracketed). */
@@ -44,25 +47,35 @@ export function normalizeRawPath(path: string): string {
   return path.replace(/^raw\//, "");
 }
 
+/** The scalar value of a frontmatter key: unquoted and trimmed;
+ *  undefined when absent or empty. */
+function scalar(value: string | undefined): string | undefined {
+  return value !== undefined && value !== ""
+    ? unquote(value.trim())
+    : undefined;
+}
+
 /**
- * Parse `origin` and `sources` from a wiki page's YAML frontmatter:
- * top-level scalars and one list of single-line items, nothing more.
- * Returns empty fields when there is no closed frontmatter block.
+ * Parse `type`, `origin`, and `sources` from a wiki page's YAML
+ * frontmatter: top-level scalars and one list of single-line items,
+ * nothing more. Returns empty fields when there is no closed
+ * frontmatter block.
  */
 export function parsePageFields(text: string): PageFields {
   const lines = text.split("\n");
 
   if (lines[0] !== FRONTMATTER_FENCE) {
-    return { origin: undefined, sources: [] };
+    return { type: undefined, origin: undefined, sources: [] };
   }
 
+  let type: string | undefined;
   let origin: string | undefined;
   const sources: string[] = [];
   let inSources = false;
 
   for (const line of lines.slice(1)) {
     if (line.trim() === FRONTMATTER_FENCE) {
-      return { origin, sources };
+      return { type, origin, sources };
     }
 
     const key = /^([A-Za-z][\w-]*):\s*(.*)$/.exec(line);
@@ -70,8 +83,12 @@ export function parsePageFields(text: string): PageFields {
     if (key !== null && key[1] !== undefined) {
       inSources = key[1] === "sources";
 
-      if (key[1] === "origin" && key[2] !== undefined && key[2] !== "") {
-        origin = unquote(key[2].trim());
+      if (key[1] === "type") {
+        type = scalar(key[2]);
+      }
+
+      if (key[1] === "origin") {
+        origin = scalar(key[2]);
       }
 
       continue;
@@ -90,7 +107,7 @@ export function parsePageFields(text: string): PageFields {
     sources.push(unquote(item.trim()));
   }
 
-  return { origin: undefined, sources: [] };
+  return { type: undefined, origin: undefined, sources: [] };
 }
 
 /** Recursively list every wiki-relative markdown path under `dir`. */
@@ -142,6 +159,6 @@ export async function readPageFields(path: string): Promise<PageFields> {
   try {
     return parsePageFields(await readFile(path, "utf8"));
   } catch {
-    return { origin: undefined, sources: [] };
+    return { type: undefined, origin: undefined, sources: [] };
   }
 }

@@ -6,6 +6,7 @@ import {
   buildPageIndex,
   isWikilinkEntry,
   listWikiPages,
+  normalizeRawPath,
   parsePageFields,
   readPageFields,
   wikilinkTarget,
@@ -32,6 +33,24 @@ describe("parsePageFields", () => {
     expect(
       parsePageFields('---\norigin: "raw/notes/V/a.md"\n---\n'),
     ).toMatchObject({ origin: "raw/notes/V/a.md" });
+  });
+
+  it("reads the page type scalar like origin", () => {
+    expect(parsePageFields('---\ntype: "source"\n---\n')).toMatchObject({
+      type: "source",
+    });
+  });
+
+  it("treats a whitespace-only scalar as absent", () => {
+    expect(parsePageFields("---\norigin:   \n---\n")).toMatchObject({
+      origin: undefined,
+    });
+  });
+
+  it("trims a whitespace-only sources item to an empty entry", () => {
+    expect(parsePageFields("---\nsources:\n  -   \n---\n").sources).toEqual([
+      "",
+    ]);
   });
 
   it("collects sources entries as written", () => {
@@ -209,6 +228,13 @@ describe("wikilink classification", () => {
 
   it("trims whitespace around the page name", () => {
     expect(wikilinkTarget("[[ vector-db ]]")).toBe("vector-db");
+  });
+});
+
+describe("normalizeRawPath", () => {
+  it("strips only a leading raw/ prefix", () => {
+    expect(normalizeRawPath("raw/notes/V/a.md")).toBe("notes/V/a.md");
+    expect(normalizeRawPath("notes/raw/a.md")).toBe("notes/raw/a.md");
   });
 });
 

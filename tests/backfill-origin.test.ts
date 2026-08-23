@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterAll, describe, expect, it } from "vitest";
 import { backfillOrigins } from "../scripts/backfill-origin.ts";
+import { parsePageFields } from "../src/wiki/pages.ts";
 
 const script = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -96,6 +97,99 @@ describe("backfillOrigins", () => {
     expect(
       await readFile(join(f.wikiDir, "sources/gpu-memory-math.md"), "utf8"),
     ).toContain(`origin: raw/${NOTE}`);
+  });
+
+  it("backfills a page whose origin line carries an empty value", async () => {
+    const f = await makeFixture(
+      {
+        "sources/gpu-memory-math.md": sourcePage([NOTE], { extra: "origin:" }),
+      },
+      { [NOTE]: "note body" },
+    );
+
+    const report = await backfillOrigins(f.wikiDir, f.rawDir, {
+      date: "2026-08-23",
+    });
+
+    expect(`${report.backfilled.length}: ${report.untouched}`).toBe("1: 0");
+  });
+
+  it("replaces the empty origin line instead of stacking a second one", async () => {
+    const f = await makeFixture(
+      {
+        "sources/gpu-memory-math.md": sourcePage([NOTE], { extra: "origin:" }),
+      },
+      { [NOTE]: "note body" },
+    );
+
+    await backfillOrigins(f.wikiDir, f.rawDir, { date: "2026-08-23" });
+
+    const page = await readFile(
+      join(f.wikiDir, "sources/gpu-memory-math.md"),
+      "utf8",
+    );
+
+    expect(page.match(/^origin:.*$/gm)).toEqual([`origin: raw/${NOTE}`]);
+  });
+
+  it("stays idempotent on a re-run over an empty-origin page just backfilled", async () => {
+    const f = await makeFixture(
+      {
+        "sources/gpu-memory-math.md": sourcePage([NOTE], { extra: "origin:" }),
+      },
+      { [NOTE]: "note body" },
+    );
+
+    await backfillOrigins(f.wikiDir, f.rawDir, { date: "2026-08-23" });
+    const report = await backfillOrigins(f.wikiDir, f.rawDir, {
+      date: "2026-08-23",
+    });
+
+    expect(`${report.backfilled.length}: ${report.untouched}`).toBe("0: 1");
+  });
+
+  it("backfills a page whose closing fence is indented", async () => {
+    const page = [
+      "---",
+      'title: "Gpu memory math"',
+      "type: source",
+      "updated: 2026-08-20",
+      "sources:",
+      `  - "${NOTE}"`,
+      "  ---",
+      "",
+      "body",
+    ].join("\n");
+    const f = await makeFixture(
+      { "sources/gpu-memory-math.md": page },
+      { [NOTE]: "note body" },
+    );
+
+    await backfillOrigins(f.wikiDir, f.rawDir, { date: "2026-08-23" });
+
+    expect(
+      parsePageFields(
+        await readFile(join(f.wikiDir, "sources/gpu-memory-math.md"), "utf8"),
+      ).origin,
+    ).toBe(`raw/${NOTE}`);
+  });
+
+  it("ignores a page with no opening fence even when the body mimics frontmatter", async () => {
+    const page = ["# Gpu memory math", "type: source", "---", "body"].join(
+      "\n",
+    );
+    const f = await makeFixture(
+      { "sources/gpu-memory-math.md": page },
+      { [NOTE]: "note body" },
+    );
+
+    const report = await backfillOrigins(f.wikiDir, f.rawDir, {
+      date: "2026-08-23",
+    });
+
+    expect(
+      `${report.backfilled.length}/${report.needsJudgment.length}/${report.untouched}`,
+    ).toBe("0/0/0");
   });
 
   it("bumps updated only inside the frontmatter, never a body line", async () => {

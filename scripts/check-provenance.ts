@@ -28,16 +28,46 @@ export interface ProvenanceReport {
   readonly sources: number;
   /** `origin` fields checked. */
   readonly origins: number;
+  /** `type: source` pages whose frontmatter lacks `origin`. */
+  readonly missingOrigins: number;
   /** Markdown pages scanned under the wiki root. */
   readonly pages: number;
 }
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-/** Colors at the render boundary: green = ok, red = problem/error;
- *  NO_COLOR yields plain text. */
+/** Colors at the render boundary: green = ok, yellow = warning, red =
+ *  problem/error; NO_COLOR yields plain text. */
 function colors() {
   return createColors(!process.env.NO_COLOR);
+}
+
+/**
+ * The missing-origin warning (issue #92): a signal, not a gate — the
+ * exit code stays 0. Names the exact backfill commands with the paths
+ * as resolved for this run, dry run first (it prints every pairing
+ * and writes nothing).
+ */
+function printBackfillWarning(
+  missing: number,
+  wikiDir: string,
+  rawDir: string,
+): void {
+  const noun = missing === 1 ? "page lacks" : "pages lack";
+  const date = new Date().toISOString().slice(0, 10);
+  const targets = `"${wikiDir}" "${rawDir}"`;
+
+  console.log(
+    colors().yellow(
+      `warning: ${missing} type: source ${noun} origin — run a backfill:`,
+    ),
+  );
+  console.log(
+    `  first preview:  npm run backfill-origin -- --dry-run --date ${date} ${targets}`,
+  );
+  console.log(
+    `  then write:     npm run backfill-origin -- --date ${date} ${targets}`,
+  );
 }
 
 /** The raw projection must be a directory; named on failure. */
@@ -80,10 +110,15 @@ export async function checkWikiProvenance(
   const problems: string[] = [];
   let sources = 0;
   let origins = 0;
+  let missingOrigins = 0;
 
   for (const file of files) {
     const fields = await readPageFields(join(wikiDir, file));
     const page = relative(resolve(wikiDir, ".."), join(wikiDir, file));
+
+    if (fields.type === "source" && fields.origin === undefined) {
+      missingOrigins++;
+    }
 
     for (const entry of fields.sources) {
       sources++;
@@ -116,7 +151,7 @@ export async function checkWikiProvenance(
     }
   }
 
-  return { problems, sources, origins, pages: files.length };
+  return { problems, sources, origins, missingOrigins, pages: files.length };
 }
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
@@ -134,8 +169,10 @@ every source page's \`origin\` raw path exists under the raw directory.
 
 Writes nothing. Prints one \`wiki/<page> -> …\` line per problem (red)
 to stderr and exits 1; prints an ok summary (green) and exits 0 when
-the provenance is coherent (an empty wiki is ok). NO_COLOR disables
-color.`;
+the provenance is coherent (an empty wiki is ok). When \`type: source\`
+pages lack \`origin\`, a yellow warning block below the ok summary
+names the exact backfill-origin commands to run, dry run first — a
+signal, not a gate; the exit code stays 0. NO_COLOR disables color.`;
 
 /** check-provenance entry point: `check-provenance [-h | --help] [<wiki-dir> [<raw-dir>]]` (defaults: repo wiki/, sibling raw/). */
 export async function main(): Promise<void> {
@@ -170,6 +207,10 @@ export async function main(): Promise<void> {
       console.log(
         colors().green(`ok: ${sourcePart}, ${originPart} across ${pages}`),
       );
+
+      if (report.missingOrigins > 0) {
+        printBackfillWarning(report.missingOrigins, wikiDir, rawDir);
+      }
 
       return;
     }

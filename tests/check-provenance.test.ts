@@ -56,7 +56,10 @@ interface RunResult {
   readonly err: string;
 }
 
-function runNode(args: readonly string[]): Promise<RunResult> {
+function runNode(
+  args: readonly string[],
+  extraEnv: Record<string, string> = {},
+): Promise<RunResult> {
   // argv[1] must be the real path: import.meta.url is realpath'd by
   // Node, and a symlinked spawn path (macOS tmp) would make the CLI
   // import guard compare unequal and skip main().
@@ -64,6 +67,7 @@ function runNode(args: readonly string[]): Promise<RunResult> {
   const env = { ...process.env };
 
   delete env.NO_COLOR;
+  Object.assign(env, extraEnv);
 
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, realArgs, { stdio: "pipe", env });
@@ -197,6 +201,44 @@ describe("checkWikiProvenance", () => {
     expect(report.pages).toBe(1);
   });
 
+  it("counts type: source pages that lack origin", async () => {
+    const { wikiDir, rawDir } = await makeFixture(
+      {
+        "sources/has.md":
+          "---\ntype: source\norigin: raw/notes/V/a.md\n---\nbody",
+        "sources/lacks.md":
+          "---\ntype: source\nsources:\n  - notes/V/a.md\n---\nbody",
+        "concepts/plain.md": "---\ntitle: Plain\n---\nbody",
+      },
+      { "notes/V/a.md": "a" },
+    );
+
+    const report = await checkWikiProvenance(wikiDir, rawDir);
+
+    expect(`${report.missingOrigins}: ${report.problems.length}`).toBe("1: 0");
+  });
+
+  it("reports zero missing origins when every source page carries one", async () => {
+    const { wikiDir, rawDir } = await makeFixture(
+      {
+        "sources/has.md":
+          "---\ntype: source\norigin: raw/notes/V/a.md\n---\nbody",
+        "concepts/plain.md": "---\ntitle: Plain\n---\nbody",
+      },
+      { "notes/V/a.md": "a" },
+    );
+
+    expect((await checkWikiProvenance(wikiDir, rawDir)).missingOrigins).toBe(0);
+  });
+
+  it("does not count a non-source page that lacks origin", async () => {
+    const { wikiDir, rawDir } = await makeFixture({
+      "concepts/plain.md": "---\ntitle: Plain\n---\nbody",
+    });
+
+    expect((await checkWikiProvenance(wikiDir, rawDir)).missingOrigins).toBe(0);
+  });
+
   it("passes on an empty wiki", async () => {
     const { wikiDir, rawDir } = await makeFixture({ "index.md": "# Index" });
 
@@ -287,6 +329,69 @@ describe("check-provenance CLI", () => {
     const failing = await runNode([wikiDir]);
 
     expect(failing.code).toBe(1);
+  });
+
+  it("exits 0 and prints the backfill warning when a source page lacks origin", async () => {
+    const { wikiDir, rawDir } = await makeFixture(
+      {
+        "sources/lacks.md":
+          "---\ntype: source\nsources:\n  - notes/V/a.md\n---\nbody",
+      },
+      { "notes/V/a.md": "a" },
+    );
+
+    const result = await runNode([wikiDir, rawDir]);
+    const date = result.out.match(/--dry-run --date (\S+)/)?.[1] ?? "";
+
+    expect(
+      `${/^\d{4}-\d{2}-\d{2}$/.test(date)}: ${result.code}: ${result.out}`,
+    ).toBe(
+      `true: 0: ${paint.green("ok: 1 source link resolves, 0 origins exist across 1 page")}\n${paint.yellow("warning: 1 type: source page lacks origin — run a backfill:")}\n  first preview:  npm run backfill-origin -- --dry-run --date ${date} "${wikiDir}" "${rawDir}"\n  then write:     npm run backfill-origin -- --date ${date} "${wikiDir}" "${rawDir}"\n`,
+    );
+  });
+
+  it("prints no warning when dead provenance exits 1 alongside missing origins", async () => {
+    const { wikiDir, rawDir } = await makeFixture({
+      "sources/lacks.md":
+        "---\ntype: source\nsources:\n  - notes/V/gone.md\n---\nbody",
+    });
+
+    const result = await runNode([wikiDir, rawDir]);
+
+    expect(`${result.code}: ${result.out.includes("warning:")}`).toBe(
+      "1: false",
+    );
+  });
+
+  it("pluralizes the missing-origin warning across several pages", async () => {
+    const { wikiDir, rawDir } = await makeFixture(
+      {
+        "sources/lacks.md": "---\ntype: source\n---\nbody",
+        "sources/lacks-too.md": "---\ntype: source\n---\nbody",
+      },
+      { "notes/V/a.md": "a" },
+    );
+
+    const result = await runNode([wikiDir, rawDir]);
+
+    expect(
+      `${result.code}: ${result.out.includes("warning: 2 type: source pages lack origin — run a backfill:")}`,
+    ).toBe("0: true");
+  });
+
+  it("prints the warning without color codes when NO_COLOR is set", async () => {
+    const { wikiDir, rawDir } = await makeFixture(
+      {
+        "sources/lacks.md": "---\ntype: source\n---\nbody",
+      },
+      { "notes/V/a.md": "a" },
+    );
+
+    const result = await runNode([wikiDir, rawDir], { NO_COLOR: "1" });
+
+    expect(
+      `${result.out.includes("warning: 1 type: source page lacks origin")}:${result.out.includes("\u001b[")}`,
+    ).toBe("true:false");
   });
 
   it("prints the usage line for --help with exit 0", async () => {
