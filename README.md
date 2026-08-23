@@ -385,7 +385,7 @@ sources directly, so there is no build step — install dependencies with
 | `npm run wiki-sync -- [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<sync.json>] [<raw-dir>]` | cycle orchestrator | Run the whole cycle — sync → ingest → lint → one data-repo commit — and print the digest (reads `settings.yml`; [details below](#running-the-full-cycle-wiki-sync)) |
 | `npm run wiki-query -- [-h \| --help] [--no-filing] [--settings <path>] [--raw-dir <dir>] [--timeout <secs>] <question>` | query wrapper | Ask the built wiki one question headless: print the answer and, unless `--no-filing`, report the query pages the agent filed (reads `settings.yml`; [details below](#running-queries-wiki-query)) |
 | `npm run data:init -- [--second-brain] [<sync.json>]` | data repo seeder | Create and seed the data repo at `sync.json`'s `dataRoot`: git init, copy the `raw/`+`wiki/` skeleton from the code repo, first commit; idempotent; `--second-brain` also writes the `.second-brain` identity marker ([§5](#5-the-second-brain)) |
-| `npm run mutation:changed` | StrykerJS | Advisory mutation run scoped to `src/` files changed vs `main` (uncommitted included); exits 0 without running when none changed, and ends by printing the actionable mutants — the default pre-handoff step |
+| `npm run mutation:changed` | StrykerJS | Advisory mutation run scoped to the changed hunks of the `src/` files that differ from `main` (uncommitted included; new files whole) — `scripts/mutation-scope.ts` builds the `file:start-end` ranges; exits 0 without running when nothing changed, and ends by printing the actionable mutants — the default pre-handoff step |
 | `npm run mutation:changed -- --full` | StrykerJS | Advisory mutation run over all of `src/`, not just changed files; same printed summary |
 | `npm run mutation:survivors` | triage helper | Re-list the actionable mutants from the last report — no run, instant |
 | `npm run mutation` | StrykerJS | Raw full Stryker run without the printed summary — prefer the two above |
@@ -481,7 +481,7 @@ The scope rides on the prompt — one phrase runs and triages in one go:
 
 | You say | Agent runs |
 |---|---|
-| `triage the survivors` | `npm run mutation:changed` — diff scope (files changed vs `main`), the default |
+| `triage the survivors` | `npm run mutation:changed` — diff scope (changed hunks of the files that differ vs `main`), the default |
 | `triage the full mutation run` / `run mutation across all of src and triage` | `npm run mutation:changed -- --full` — every file under `src/` |
 
 Any mention of "survivors" or "mutation triage" loads the skill; the
@@ -496,7 +496,10 @@ minutes.
 
 In CI, the mutation job runs only when a pull request carries the
 [`mutation`](https://github.com/mguinada/k-wiki/labels) label, nightly on
-`main`, or via manual workflow dispatch — never as a blocking check. Its
+`main`, or via manual workflow dispatch — never as a blocking check.
+Labeled-PR runs use the same hunk-scoped command as the local
+pre-handoff step (`npm run mutation:changed`, full checkout history);
+only the nightly and dispatched runs mutate all of `src/`. Its
 HTML report is uploaded as an artifact (7-day retention). The agent
 rules are in [AGENTS.md](AGENTS.md).
 

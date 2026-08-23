@@ -151,8 +151,9 @@ same change.
 Mutation testing is an advisory signal, not a gate — but it is a
 mandatory pre-handoff step. Before you declare work complete:
 
-1. Run `npm run mutation:changed`. It mutates the `src/` files changed
-   vs `origin/main` (uncommitted work included) and ends by printing
+1. Run `npm run mutation:changed`. It mutates the changed hunks of the
+   `src/` files that differ from `origin/main` (uncommitted work
+   included; new files whole) and ends by printing
    the actionable mutants (Survived and NoCoverage).
 2. Empty list — nothing to do; the step is complete.
 3. Non-empty list — load the mutation-triage skill
