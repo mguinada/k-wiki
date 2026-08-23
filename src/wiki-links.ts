@@ -62,24 +62,41 @@ export function extractWikilinks(text: string): Wikilink[] {
   return links;
 }
 
-/** The reserved external link prefix: `[[engineering/<page>]]` in any
- *  non-engineering wiki refers to the engineering wiki instance's page
- *  (issue #81). Such links never resolve internally — by design — so
- *  the internal checkers skip them and `scripts/check-crosslinks.ts`
- *  validates them against the engineering wiki itself. */
-const CROSS_WIKI_PREFIX = "engineering/";
+/** A wikilink target naming a page of another wiki instance (issue
+ *  #81): any target containing a `/` is cross-wiki — `[[<vault>/<page>]]`,
+ *  where `<vault>` is a domain wiki's vault name. Bare targets are
+ *  internal: page names come from file names, which cannot contain a
+ *  slash. A vault segment carrying a protocol (`http:`, `file:`, …) is
+ *  a URL, not a vault name. The internal checkers skip cross-wiki
+ *  targets and `scripts/check-crosslinks.ts` validates them against
+ *  the named domain wiki. */
+export interface CrossWikiTarget {
+  /** The vault segment before the first slash, case as written. */
+  readonly vault: string;
+  /** The page segment after the first slash, as written. */
+  readonly page: string;
+}
 
-/** The engineering page name of a cross-wiki target, or undefined when
- *  the target is internal. A target that is only the prefix carries no
- *  page name and stays internal (it dangles like any broken link). */
-export function crossWikiTarget(target: string): string | undefined {
-  if (!target.startsWith(CROSS_WIKI_PREFIX)) {
+const PROTOCOL_PREFIX = /^[A-Za-z][A-Za-z0-9+.-]*:/;
+
+/** The vault and page of a cross-wiki target, or undefined when the
+ *  target is internal (no slash), a bare prefix with no page, or a
+ *  protocol URL. */
+export function crossWikiTarget(target: string): CrossWikiTarget | undefined {
+  const separator = target.indexOf("/");
+
+  if (separator === -1) {
     return undefined;
   }
 
-  const page = target.slice(CROSS_WIKI_PREFIX.length);
+  const vault = target.slice(0, separator);
+  const page = target.slice(separator + 1);
 
-  return page === "" ? undefined : page;
+  if (vault === "" || page === "" || PROTOCOL_PREFIX.test(vault)) {
+    return undefined;
+  }
+
+  return { vault, page };
 }
 
 /**

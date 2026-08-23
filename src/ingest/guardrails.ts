@@ -26,8 +26,9 @@ import {
  *     `wiki/log.md`, the append-only log, which has none by design;
  *  3. wikilinks — every `[[wikilink]]` in a changed page resolves to
  *     an existing wiki file, and no remaining page keeps a link to a
- *     page the run deleted; cross-wiki `[[engineering/<page>]]` links
- *     are external (issue #81) and skip internal resolution.
+ *     page the run deleted; cross-wiki `[[<vault>/<page>]]` targets
+ *     (issue #81) are external only in a personal instance — in every
+ *     other wiki they are unresolvable and trip the check.
  */
 
 /** Paths only these guardrails may see changed after a run. */
@@ -580,6 +581,21 @@ async function deletedWikiPageNames(
   return deleted;
 }
 
+/** True when the wiki is a personal instance — identified by the
+ *  accreted profile layer (guide §25, Scenario D). Only a personal
+ *  instance may use cross-wiki links; in every other wiki a slashed
+ *  target is simply unresolvable, so the privacy direction (domain
+ *  wikis never reference personal material) is enforced per-run. */
+async function isPersonalInstance(dataRoot: string): Promise<boolean> {
+  try {
+    await readFile(join(dataRoot, "wiki", "personal", "profile.md"));
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Guardrail 3: every wikilink in every changed page resolves, and no
  *  remaining page keeps a link to a page the run deleted. */
 async function checkChangedWikilinks(
@@ -597,13 +613,13 @@ async function checkChangedWikilinks(
 
   const index = buildPageIndex(files);
   const problems: string[] = [];
+  const personal = await isPersonalInstance(dataRoot);
 
   for (const [path, text] of texts) {
     for (const link of extractWikilinks(text)) {
-      // Cross-wiki links (issue #81) are external by design: they
-      // never resolve in this wiki; check-crosslinks validates them
-      // against the engineering wiki instead.
-      if (crossWikiTarget(link.target) !== undefined) {
+      // Cross-wiki links (issue #81) are external by design — but
+      // only in a personal instance; elsewhere they never resolve.
+      if (personal && crossWikiTarget(link.target) !== undefined) {
         continue;
       }
 

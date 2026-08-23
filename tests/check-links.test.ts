@@ -195,26 +195,38 @@ describe("wikilinkBodyTarget", () => {
 });
 
 describe("crossWikiTarget", () => {
-  it("returns the page name of an engineering-prefixed target", () => {
-    expect(crossWikiTarget("engineering/rag-evaluation-notes")).toBe(
-      "rag-evaluation-notes",
-    );
+  it("splits a slashed target into its vault and page", () => {
+    expect(crossWikiTarget("anthropology/kinship")).toEqual({
+      vault: "anthropology",
+      page: "kinship",
+    });
   });
 
-  it("keeps an alias-free anchor in the returned page name", () => {
-    expect(crossWikiTarget("engineering/foo#section")).toBe("foo#section");
+  it("keeps the vault case as written", () => {
+    expect(crossWikiTarget("Engineering/stub")?.vault).toBe("Engineering");
   });
 
-  it("returns undefined for a target without the prefix", () => {
+  it("keeps everything after the first slash as the page", () => {
+    expect(crossWikiTarget("notes/engineering/rag")).toEqual({
+      vault: "notes",
+      page: "engineering/rag",
+    });
+  });
+
+  it("returns undefined for a bare internal target", () => {
     expect(crossWikiTarget("retrieval-augmented-generation")).toBeUndefined();
   });
 
-  it("returns undefined for a target that only contains the prefix", () => {
+  it("returns undefined for a target that is only a prefix", () => {
     expect(crossWikiTarget("engineering/")).toBeUndefined();
   });
 
-  it("does not treat a folder-local path as a cross-wiki target", () => {
-    expect(crossWikiTarget("notes/engineering/rag")).toBeUndefined();
+  it("returns undefined for an https URL target", () => {
+    expect(crossWikiTarget("https://example.com/page")).toBeUndefined();
+  });
+
+  it("returns undefined for a file URL target", () => {
+    expect(crossWikiTarget("file:///tmp/note")).toBeUndefined();
   });
 });
 

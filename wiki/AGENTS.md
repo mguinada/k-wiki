@@ -67,8 +67,8 @@ For every new or changed source:
 13. Run `npm run check-links -- <wiki-dir>` from the code-repo checkout
     (the data repo does not ship the tool) and fix every broken
     `[[wikilink]]` it reports. In a personal instance, also run
-    `npm run check-crosslinks -- <wiki-dir> <engineering-wiki-dir>`
-    and fix every cross-wiki link it reports.
+    `npm run check-crosslinks -- <wiki-dir> <domain-wiki-dir>
+    [<domain-wiki-dir>…]` and fix every cross-wiki link it reports.
 
 Create a new concept or entity page only when the term appears in more than
 one source or is clearly central; avoid stub pages.
@@ -387,14 +387,20 @@ did I try that failed" is answered from these pages, not guessed.
 
 ### Cross-wiki links
 
-A personal wiki may reference the engineering wiki, never the
-reverse:
+A personal wiki may reference domain wikis, never the reverse:
 
-- `[[engineering/<page>]]` links to the engineering wiki's page
-  `<page>`; the link never resolves in this wiki — `check-crosslinks`
-  validates it against the engineering wiki after every run.
-- The engineering wiki never references personal material: no page of
-  any other wiki may link here, and this wiki's material never leaves
-  this data repo.
-- The `engineering/` prefix is reserved: no wiki keeps a page or
-  folder under a path named `engineering/`.
+- A wikilink target containing a `/` is a cross-wiki link —
+  `[[<vault>/<page>]]` — where `<vault>` is a domain wiki's vault name
+  (matched case-insensitively against that wiki's `raw/manifest.json`)
+  and `<page>` a page of that wiki. Bare targets are internal;
+  internal links never contain a slash. Several domain wikis may be
+  linked from the same personal wiki.
+- The link never resolves in this wiki; `check-crosslinks` validates
+  it against the named domain wiki after every run.
+- Domain wikis never reference personal material: they are link
+  sinks — other wikis may point at them; they point at nothing. No
+  page of any other wiki may link here, and this wiki's material
+  never leaves this data repo.
+- Only a personal instance may use cross-wiki links; in any other
+  wiki a slashed target is unresolvable and trips the ingest
+  guardrails.

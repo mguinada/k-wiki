@@ -31,11 +31,12 @@ describe("personal instance wiring", () => {
     const contract = read("wiki/AGENTS.md");
     const section = contract.slice(
       contract.indexOf("### Cross-wiki links"),
-      contract.indexOf("### Cross-wiki links") + 600,
+      contract.indexOf("### Cross-wiki links") + 800,
     );
 
-    expect(section).toContain("never the\nreverse");
-    expect(section).toContain("[[engineering/<page>]]");
+    expect(section).toContain("never the reverse");
+    expect(section).toContain("[[<vault>/<page>]]");
+    expect(section).toContain("they point at nothing");
   });
 
   it("the ingest prompt loads the profile at start", () => {

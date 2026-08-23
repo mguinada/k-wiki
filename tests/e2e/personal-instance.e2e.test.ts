@@ -215,14 +215,22 @@ function ingest(repo: Repo) {
   ]);
 }
 
-/** A plain engineering wiki tree the personal wiki links into. */
+/** A domain wiki tree (with its sibling manifest naming the vault —
+ *  the cross-wiki prefix's identity source) that a personal wiki
+ *  links into. */
 async function makeEngineeringWiki(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "k-wiki-eng-wiki-"));
 
   tempDirs.push(dir);
+
   await mkdir(join(dir, "wiki", "concepts"), { recursive: true });
+  await mkdir(join(dir, "raw"), { recursive: true });
   await writeFile(join(dir, "wiki", "index.md"), "# Engineering\n");
   await writeFile(join(dir, "wiki", "concepts", "stub.md"), "# Stub\n");
+  await writeFile(
+    join(dir, "raw", "manifest.json"),
+    `${JSON.stringify({ vaults: { Engineering: {} } }, null, 2)}\n`,
+  );
 
   return join(dir, "wiki");
 }

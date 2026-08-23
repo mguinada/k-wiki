@@ -20,53 +20,42 @@ afterAll(async () => {
   );
 });
 
-/** A minimal wiki tree at `<root>/<name>` holding the given files. */
-async function makeWiki(
-  name: string,
-  files: Record<string, string>,
-): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "k-wiki-xlinks-"));
-
-  tempDirs.push(root);
-
-  await writeWiki(root, name, files);
-
-  return root;
-}
-
-/** Write one wiki tree (`<name>/` with files) under `root`. */
+/** Write one wiki tree (`<name>/` with files) under `root`; when
+ *  `vault` is given, also the sibling `raw/manifest.json` naming that
+ *  vault — a domain wiki's identity source. */
 async function writeWiki(
   root: string,
   name: string,
   files: Record<string, string>,
+  vault?: string,
 ): Promise<void> {
   for (const [file, content] of Object.entries(files)) {
     await mkdir(join(root, name, dirname(file)), { recursive: true });
     await writeFile(join(root, name, file), content);
   }
+
+  if (vault !== undefined) {
+    await mkdir(join(root, "raw"), { recursive: true });
+    await writeFile(
+      join(root, "raw", "manifest.json"),
+      `${JSON.stringify({ vaults: { [vault]: {} } }, null, 2)}\n`,
+    );
+  }
 }
 
-/** A personal wiki plus an engineering wiki under one temp root. */
-async function makePair(
-  personal: Record<string, string>,
-  engineering: Record<string, string>,
-): Promise<{
-  readonly root: string;
-  readonly personal: string;
-  readonly engineering: string;
-}> {
+/** A temp root holding `<name>/` wiki (plus a manifest naming `vault`
+ *  when given). */
+async function makeWiki(
+  name: string,
+  files: Record<string, string>,
+  vault?: string,
+): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "k-wiki-xlinks-"));
 
   tempDirs.push(root);
+  await writeWiki(root, name, files, vault);
 
-  await writeWiki(root, "personal", personal);
-  await writeWiki(root, "engineering", engineering);
-
-  return {
-    root,
-    personal: join(root, "personal"),
-    engineering: join(root, "engineering"),
-  };
+  return root;
 }
 
 interface RunResult {
@@ -109,90 +98,169 @@ function runNode(
 }
 
 describe("checkCrossWikiLinks", () => {
-  it("resolves an engineering link against the engineering page names", async () => {
-    const pair = await makePair(
-      {
-        "personal/decision-fast-tests.md": "Backed by [[engineering/stub]].\n",
-      },
+  it("resolves a cross-wiki link against the domain wiki's pages", async () => {
+    const personal = await makeWiki("personal", {
+      "personal/decision-fast-tests.md": "Backed by [[engineering/stub]].\n",
+    });
+    const engineering = await makeWiki(
+      "engineering",
       { "concepts/stub.md": "# Stub\n" },
+      "Engineering",
     );
 
-    const report = await checkCrossWikiLinks(pair.personal, pair.engineering);
+    const report = await checkCrossWikiLinks(
+      join(personal, "personal"),
+      join(engineering, "engineering"),
+    );
 
     expect(report.problems).toEqual([]);
     expect(report.external).toBe(1);
   });
 
-  it("resolves an engineering link with an alias and an anchor", async () => {
-    const pair = await makePair(
-      {
-        "index.md":
-          "See [[engineering/stub|the stub]] and [[engineering/stub#section]].\n",
-      },
+  it("matches the vault name case-insensitively", async () => {
+    const personal = await makeWiki("personal", {
+      "index.md": "See [[Engineering/stub]].\n",
+    });
+    const engineering = await makeWiki(
+      "engineering",
       { "entities/stub.md": "# Stub\n" },
+      "Engineering",
     );
 
-    const report = await checkCrossWikiLinks(pair.personal, pair.engineering);
+    const report = await checkCrossWikiLinks(
+      join(personal, "personal"),
+      join(engineering, "engineering"),
+    );
+
+    expect(report.problems).toEqual([]);
+    expect(report.external).toBe(1);
+  });
+
+  it("resolves links to several domain wikis in one run", async () => {
+    const personal = await makeWiki("personal", {
+      "index.md": "See [[engineering/stub]] and [[anthropology/kinship]].\n",
+    });
+    const engineering = await makeWiki(
+      "engineering",
+      { "concepts/stub.md": "# Stub\n" },
+      "Engineering",
+    );
+    const anthropology = await makeWiki(
+      "anthropology",
+      { "entities/kinship.md": "# Kinship\n" },
+      "Anthropology",
+    );
+
+    const report = await checkCrossWikiLinks(
+      join(personal, "personal"),
+      join(engineering, "engineering"),
+      join(anthropology, "anthropology"),
+    );
 
     expect(report.problems).toEqual([]);
     expect(report.external).toBe(2);
+    expect(report.auditedPages).toBe(1);
+    expect(report.domainPages).toBe(2);
   });
 
   it("reports a broken cross-wiki link as file:line -> [[link]]", async () => {
-    const pair = await makePair(
-      { "personal/profile.md": "Points at [[engineering/missing]].\n" },
+    const personal = await makeWiki("personal", {
+      "personal/profile.md": "Points at [[engineering/missing]].\n",
+    });
+    const engineering = await makeWiki(
+      "engineering",
       { "concepts/stub.md": "# Stub\n" },
+      "Engineering",
     );
 
-    const report = await checkCrossWikiLinks(pair.personal, pair.engineering);
+    const report = await checkCrossWikiLinks(
+      join(personal, "personal"),
+      join(engineering, "engineering"),
+    );
 
     expect(report.problems).toEqual([
       "personal/personal/profile.md:1 -> [[engineering/missing]]",
     ]);
   });
 
-  it("reports a cross-wiki self-reference inside the engineering wiki", async () => {
-    const pair = await makePair(
-      { "index.md": "# Personal\n" },
-      {
-        "concepts/stub.md": "# Stub\n",
-        "entities/leaky.md": "Dodges resolution via [[engineering/stub]].\n",
-      },
+  it("reports a link naming an unknown domain wiki", async () => {
+    const personal = await makeWiki("personal", {
+      "index.md": "Points at [[history/foo]].\n",
+    });
+    const engineering = await makeWiki(
+      "engineering",
+      { "index.md": "# Engineering\n" },
+      "Engineering",
     );
 
-    const report = await checkCrossWikiLinks(pair.personal, pair.engineering);
+    const report = await checkCrossWikiLinks(
+      join(personal, "personal"),
+      join(engineering, "engineering"),
+    );
 
     expect(report.problems).toEqual([
-      "engineering/entities/leaky.md:1 -> [[engineering/stub]]",
+      'personal/index.md:1 -> [[history/foo]] (unknown domain wiki "history")',
     ]);
   });
 
-  it("counts no external links for a wiki without cross-wiki links", async () => {
-    const pair = await makePair(
-      { "index.md": "Internal [[note]] only.\n", "note.md": "# Note\n" },
-      { "index.md": "# Engineering\n" },
+  it("reports a cross-wiki link inside a domain wiki", async () => {
+    const personal = await makeWiki("personal", { "index.md": "# Personal\n" });
+    const engineering = await makeWiki(
+      "engineering",
+      { "entities/leaky.md": "Dodges resolution via [[personal/decision]].\n" },
+      "Engineering",
     );
 
-    const report = await checkCrossWikiLinks(pair.personal, pair.engineering);
+    const report = await checkCrossWikiLinks(
+      join(personal, "personal"),
+      join(engineering, "engineering"),
+    );
+
+    expect(report.problems).toEqual([
+      "engineering/entities/leaky.md:1 -> [[personal/decision]] (domain wikis must not use cross-wiki links)",
+    ]);
+  });
+
+  it("ignores protocol links entirely", async () => {
+    const personal = await makeWiki("personal", {
+      "index.md": "Plain URL wikilink [[https://example.com/page]].\n",
+    });
+    const engineering = await makeWiki(
+      "engineering",
+      { "index.md": "# Engineering\n" },
+      "Engineering",
+    );
+
+    const report = await checkCrossWikiLinks(
+      join(personal, "personal"),
+      join(engineering, "engineering"),
+    );
 
     expect(report.problems).toEqual([]);
     expect(report.external).toBe(0);
-    expect(report.auditedPages).toBe(2);
   });
 
   it("skips AGENTS.md in both trees", async () => {
-    const pair = await makePair(
-      { "AGENTS.md": "Contract mentions [[engineering/missing]].\n" },
+    const personal = await makeWiki("personal", {
+      "AGENTS.md": "Contract mentions [[engineering/missing]].\n",
+    });
+    const engineering = await makeWiki(
+      "engineering",
       { "AGENTS.md": "Self [[engineering/missing]].\n", "index.md": "# E\n" },
+      "Engineering",
     );
 
-    const report = await checkCrossWikiLinks(pair.personal, pair.engineering);
+    const report = await checkCrossWikiLinks(
+      join(personal, "personal"),
+      join(engineering, "engineering"),
+    );
 
     expect(report.problems).toEqual([]);
-    expect(report.engineeringPages).toBe(1);
+    expect(report.auditedPages).toBe(0);
+    expect(report.domainPages).toBe(1);
   });
 
-  it("rejects an audited wiki directory that does not exist", async () => {
+  it("rejects a missing audited wiki directory", async () => {
     const root = await makeWiki("engineering", { "index.md": "# E\n" });
 
     await expect(
@@ -202,7 +270,7 @@ describe("checkCrossWikiLinks", () => {
     );
   });
 
-  it("rejects an engineering wiki directory that does not exist", async () => {
+  it("rejects a missing domain wiki directory", async () => {
     const root = await makeWiki("personal", { "index.md": "# P\n" });
 
     await expect(
@@ -211,27 +279,53 @@ describe("checkCrossWikiLinks", () => {
       `wiki directory does not exist: ${join(root, "missing")}`,
     );
   });
+
+  it("rejects a domain wiki without a sibling manifest", async () => {
+    const personal = await makeWiki("personal", { "index.md": "# P\n" });
+    const bare = await makeWiki("engineering", { "index.md": "# E\n" });
+
+    await expect(
+      checkCrossWikiLinks(
+        join(personal, "personal"),
+        join(bare, "engineering"),
+      ),
+    ).rejects.toThrow(/no manifest at .*raw\/manifest\.json/);
+  });
 });
 
 describe("check-crosslinks CLI", () => {
   it("exits 0 with an ok summary when every cross-wiki link resolves", async () => {
-    const pair = await makePair(
-      { "personal/decision.md": "Backed by [[engineering/stub]].\n" },
+    const personal = await makeWiki("personal", {
+      "personal/decision.md": "Backed by [[engineering/stub]].\n",
+    });
+    const engineering = await makeWiki(
+      "engineering",
       { "concepts/stub.md": "# Stub\n" },
+      "Engineering",
     );
-    const result = await runNode([pair.personal, pair.engineering]);
+    const result = await runNode([
+      join(personal, "personal"),
+      join(engineering, "engineering"),
+    ]);
 
     expect(`${result.code}|${result.out}`).toMatch(
-      /0\|.*ok: 1 cross-wiki link resolves against 1 engineering page/,
+      /0\|.*ok: 1 cross-wiki link resolves against 1 domain page/,
     );
   });
 
   it("exits 1 and prints the broken cross-wiki link", async () => {
-    const pair = await makePair(
-      { "personal/decision.md": "Points at [[engineering/missing]].\n" },
+    const personal = await makeWiki("personal", {
+      "personal/decision.md": "Points at [[engineering/missing]].\n",
+    });
+    const engineering = await makeWiki(
+      "engineering",
       { "concepts/stub.md": "# Stub\n" },
+      "Engineering",
     );
-    const result = await runNode([pair.personal, pair.engineering]);
+    const result = await runNode([
+      join(personal, "personal"),
+      join(engineering, "engineering"),
+    ]);
 
     expect(result.code).toBe(1);
     expect(result.err).toContain(
@@ -239,12 +333,35 @@ describe("check-crosslinks CLI", () => {
     );
   });
 
-  it("exits 1 when the engineering wiki self-references", async () => {
-    const pair = await makePair(
-      { "index.md": "# Personal\n" },
-      { "entities/leaky.md": "[[engineering/stub]]\n" },
+  it("exits 1 when a link names an unknown domain wiki", async () => {
+    const personal = await makeWiki("personal", {
+      "index.md": "Points at [[history/foo]].\n",
+    });
+    const engineering = await makeWiki(
+      "engineering",
+      { "index.md": "# Engineering\n" },
+      "Engineering",
     );
-    const result = await runNode([pair.personal, pair.engineering]);
+    const result = await runNode([
+      join(personal, "personal"),
+      join(engineering, "engineering"),
+    ]);
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain('unknown domain wiki "history"');
+  });
+
+  it("exits 1 when the domain wiki self-references", async () => {
+    const personal = await makeWiki("personal", { "index.md": "# Personal\n" });
+    const engineering = await makeWiki(
+      "engineering",
+      { "entities/leaky.md": "[[personal/decision]]\n" },
+      "Engineering",
+    );
+    const result = await runNode([
+      join(personal, "personal"),
+      join(engineering, "engineering"),
+    ]);
 
     expect(result.code).toBe(1);
     expect(result.err).toContain("engineering/entities/leaky.md:1");
@@ -258,12 +375,14 @@ describe("check-crosslinks CLI", () => {
     expect(result.err).toContain("wiki directory does not exist");
   });
 
-  it("exits 1 when a positional argument is missing", async () => {
+  it("exits 1 when a domain wiki dir is missing", async () => {
     const root = await makeWiki("personal", { "index.md": "# P\n" });
     const result = await runNode([join(root, "personal")]);
 
     expect(result.code).toBe(1);
-    expect(result.err).toContain("expected exactly two arguments");
+    expect(result.err).toContain(
+      "expected <wiki-dir> and at least one <domain-wiki-dir>",
+    );
   });
 
   it("prints the usage line for --help with exit 0", async () => {
@@ -298,23 +417,35 @@ describe("check-crosslinks CLI", () => {
   });
 
   it("prints plain text when NO_COLOR is set", async () => {
-    const pair = await makePair(
-      { "personal/decision.md": "Points at [[engineering/missing]].\n" },
-      { "concepts/stub.md": "# Stub\n" },
-    );
-    const result = await runNode([pair.personal, pair.engineering], {
-      env: { NO_COLOR: "1" },
+    const personal = await makeWiki("personal", {
+      "personal/decision.md": "Points at [[engineering/missing]].\n",
     });
+    const engineering = await makeWiki(
+      "engineering",
+      { "concepts/stub.md": "# Stub\n" },
+      "Engineering",
+    );
+    const result = await runNode(
+      [join(personal, "personal"), join(engineering, "engineering")],
+      { env: { NO_COLOR: "1" } },
+    );
 
     expect(result.err).not.toContain("\x1b[");
   });
 
   it("prints color when NO_COLOR is unset", async () => {
-    const pair = await makePair(
-      { "personal/decision.md": "Points at [[engineering/missing]].\n" },
+    const personal = await makeWiki("personal", {
+      "personal/decision.md": "Points at [[engineering/missing]].\n",
+    });
+    const engineering = await makeWiki(
+      "engineering",
       { "concepts/stub.md": "# Stub\n" },
+      "Engineering",
     );
-    const result = await runNode([pair.personal, pair.engineering]);
+    const result = await runNode([
+      join(personal, "personal"),
+      join(engineering, "engineering"),
+    ]);
 
     expect(result.err).toContain("\x1b[");
   });

@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { createColors } from "picocolors";
 import { isMainModule } from "../src/cli/is-main.ts";
+import { parseManifest, readManifestText } from "../src/sync/manifest.ts";
 import { listWikiPages } from "../src/wiki/pages.ts";
 import {
   buildPageIndex,
@@ -11,15 +12,16 @@ import {
 
 /**
  * Cross-wiki link checker (issue #81): validates the one-way link
- * discipline between a wiki and the engineering wiki.
+ * discipline between a wiki and its domain wikis.
  *
- *  1. every `[[engineering/<page>]]` link in the audited wiki must
- *     resolve to an existing page of the engineering wiki (personal
- *     notes may reference domain knowledge; the reference must be
- *     alive);
- *  2. the engineering wiki itself must contain no cross-wiki links —
- *     it stays self-contained and never points at personal material,
- *     and no page may dodge internal link resolution via the prefix.
+ *  1. every `[[<vault>/<page>]]` link in the audited wiki must name a
+ *     vault of one of the passed domain wikis (validated
+ *     case-insensitively against each domain repo's
+ *     `raw/manifest.json`) and resolve to an existing page of that
+ *     wiki — personal notes may reference domain knowledge, and the
+ *     reference must be alive;
+ *  2. the domain wikis themselves must contain no cross-wiki links —
+ *     they are link sinks and never point at personal material.
  *
  * Prints one `file:line -> [[link]]` line per problem and exits 1;
  * exits 0 when the discipline holds.
@@ -32,8 +34,18 @@ export interface CrossLinkReport {
   readonly external: number;
   /** Markdown pages scanned in the audited wiki. */
   readonly auditedPages: number;
-  /** Markdown pages scanned in the engineering wiki. */
-  readonly engineeringPages: number;
+  /** Markdown pages scanned across the domain wikis. */
+  readonly domainPages: number;
+}
+
+/** One linkable domain wiki: its dir, its files, the page-name index,
+ *  and the vault names its manifest declares (lowercased). */
+interface DomainWiki {
+  readonly dir: string;
+  readonly dirInput: string;
+  readonly files: readonly string[];
+  readonly vaults: ReadonlySet<string>;
+  readonly pages: ReadonlyMap<string, string>;
 }
 
 /** Colors at the render boundary: green = ok, red = broken/error;
@@ -42,21 +54,54 @@ function colors() {
   return createColors(!process.env.NO_COLOR);
 }
 
+/** Load one domain wiki: its pages plus the vault names its sibling
+ *  manifest declares. The manifest is the prefix's identity source —
+ *  without it there is nothing to validate the link grammar against. */
+async function loadDomainWiki(dirInput: string): Promise<DomainWiki> {
+  const dir = resolve(dirInput);
+  const files = await listWikiPages(dirInput);
+  const manifestPath = join(dir, "..", "raw", "manifest.json");
+  const manifestText = await readManifestText(manifestPath);
+
+  if (manifestText === undefined) {
+    throw new Error(
+      `cannot validate the domain wiki at ${dirInput}: no manifest at ${manifestPath} — pass a domain data repo's wiki dir`,
+    );
+  }
+
+  const vaults = new Set(
+    Object.keys(parseManifest(manifestText, manifestPath).vaults).map((vault) =>
+      vault.toLowerCase(),
+    ),
+  );
+
+  if (vaults.size === 0) {
+    throw new Error(
+      `cannot validate the domain wiki at ${dirInput}: the manifest at ${manifestPath} names no vaults`,
+    );
+  }
+
+  return { dir, dirInput, files, vaults, pages: buildPageIndex(files) };
+}
+
 /**
- * Audit the cross-wiki discipline of `wikiDirInput` against
- * `engineeringDirInput`, reporting problems with paths relative to
- * each wiki root's parent directory. Throws when either directory is
- * missing or not a directory.
+ * Audit the cross-wiki discipline of `wikiDirInput` against one or
+ * more domain wikis, reporting problems with paths relative to each
+ * wiki root's parent directory. Throws when a directory is missing or
+ * a domain wiki has no sibling manifest.
  */
 export async function checkCrossWikiLinks(
   wikiDirInput: string,
-  engineeringDirInput: string,
+  ...domainDirInputs: string[]
 ): Promise<CrossLinkReport> {
   const wikiDir = resolve(wikiDirInput);
-  const engineeringDir = resolve(engineeringDirInput);
-  const files = await listWikiPages(wikiDir);
-  const engineeringFiles = await listWikiPages(engineeringDir);
-  const index = buildPageIndex(engineeringFiles);
+  const files = await listWikiPages(wikiDirInput);
+  const domains = [];
+
+  for (const dirInput of domainDirInputs) {
+    domains.push(await loadDomainWiki(dirInput));
+  }
+
   const problems: string[] = [];
   let external = 0;
 
@@ -64,64 +109,72 @@ export async function checkCrossWikiLinks(
     const text = await readFile(join(wikiDir, file), "utf8");
 
     for (const link of extractWikilinks(text)) {
-      const page = crossWikiTarget(link.target);
+      const target = crossWikiTarget(link.target);
 
-      if (page === undefined) {
+      if (target === undefined) {
         continue;
       }
 
       external++;
 
-      if (!index.has(page)) {
-        problems.push(
-          `${relative(resolve(wikiDir, ".."), join(wikiDir, file))}:${link.line} -> ${link.raw}`,
-        );
+      const where = `${relative(resolve(wikiDir, ".."), join(wikiDir, file))}:${link.line} -> ${link.raw}`;
+      const domain = domains.find((wiki) =>
+        wiki.vaults.has(target.vault.toLowerCase()),
+      );
+
+      if (domain === undefined) {
+        problems.push(`${where} (unknown domain wiki "${target.vault}")`);
+      } else if (!domain.pages.has(target.page)) {
+        problems.push(where);
       }
     }
   }
 
-  for (const file of engineeringFiles) {
-    const text = await readFile(join(engineeringDir, file), "utf8");
+  let domainPages = 0;
 
-    for (const link of extractWikilinks(text)) {
-      if (crossWikiTarget(link.target) !== undefined) {
-        problems.push(
-          `${relative(resolve(engineeringDir, ".."), join(engineeringDir, file))}:${link.line} -> ${link.raw}`,
-        );
+  for (const domain of domains) {
+    domainPages += domain.files.length;
+
+    for (const file of domain.files) {
+      const text = await readFile(join(domain.dir, file), "utf8");
+
+      for (const link of extractWikilinks(text)) {
+        if (crossWikiTarget(link.target) !== undefined) {
+          problems.push(
+            `${relative(resolve(domain.dir, ".."), join(domain.dir, file))}:${link.line} -> ${link.raw} (domain wikis must not use cross-wiki links)`,
+          );
+        }
       }
     }
   }
 
-  return {
-    problems,
-    external,
-    auditedPages: files.length,
-    engineeringPages: engineeringFiles.length,
-  };
+  return { problems, external, auditedPages: files.length, domainPages };
 }
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
-const HELP = `Usage: check-crosslinks [-h | --help] <wiki-dir> <engineering-wiki-dir>
+const HELP = `Usage: check-crosslinks [-h | --help] <wiki-dir> <domain-wiki-dir> [<domain-wiki-dir>...]
 
-Check the one-way cross-wiki link discipline between a wiki and the
-engineering wiki (issue #81): every [[engineering/<page>]] link in
-<wiki-dir> must resolve to an existing page of the engineering wiki,
-and the engineering wiki itself must contain no cross-wiki links —
-it stays self-contained and never references personal material.
+Check the one-way cross-wiki link discipline between a wiki and its
+domain wikis (issue #81): every [[<vault>/<page>]] link in <wiki-dir>
+must name a vault of a passed domain wiki — validated
+case-insensitively against each domain repo's raw/manifest.json — and
+resolve to an existing page of that wiki. The domain wikis themselves
+must contain no cross-wiki links: they are link sinks and never
+reference personal material.
 
-  <wiki-dir>              Wiki root to audit (the personal or any
-                          other non-engineering wiki). Required.
-  <engineering-wiki-dir>  The engineering wiki that cross-wiki links
-                          resolve against. Required.
-  -h, --help              Print this help and exit; no side effects.
+  <wiki-dir>         Wiki root to audit (a personal wiki). Required.
+  <domain-wiki-dir>  A domain wiki's wiki/ dir, inside its data repo
+                     (the sibling raw/manifest.json supplies the vault
+                     name). One or more.
+  -h, --help         Print this help and exit; no side effects.
 
 Writes nothing. Prints one \`file:line -> [[link]]\` line per problem
 (red) to stderr and exits 1; prints an ok summary (green) and exits 0
 when the discipline holds. Internal [[wikilinks]] are check-links'
-business; this tool only audits the cross-wiki prefix. NO_COLOR
-disables color.`;
+business; this tool only audits cross-wiki links. NO_COLOR disables
+color.`;
 
-/** check-crosslinks entry point: `check-crosslinks [-h | --help] <wiki-dir> <engineering-wiki-dir>`. */
+/** check-crosslinks entry point: `check-crosslinks [-h | --help] <wiki-dir> <domain-wiki-dir> [<domain-wiki-dir>...]`. */
 export async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
@@ -131,10 +184,10 @@ export async function main(): Promise<void> {
     return;
   }
 
-  if (args.length !== 2) {
+  if (args.length < 2) {
     console.error(
       colors().red(
-        `check-crosslinks: expected exactly two arguments (<wiki-dir> <engineering-wiki-dir>), got ${args.length}`,
+        `check-crosslinks: expected <wiki-dir> and at least one <domain-wiki-dir>, got ${args.length} argument${args.length === 1 ? "" : "s"}`,
       ),
     );
     process.exitCode = 1;
@@ -142,12 +195,17 @@ export async function main(): Promise<void> {
     return;
   }
 
+  const [wikiDir, ...domainDirs] = args;
+
   try {
-    const report = await checkCrossWikiLinks(args[0] ?? "", args[1] ?? "");
+    const report = await checkCrossWikiLinks(
+      wikiDir ?? "",
+      ...(domainDirs as string[]),
+    );
 
     if (report.problems.length === 0) {
       const links = `${report.external} cross-wiki ${report.external === 1 ? "link" : "links"}`;
-      const pages = `${report.engineeringPages} engineering ${report.engineeringPages === 1 ? "page" : "pages"}`;
+      const pages = `${report.domainPages} domain ${report.domainPages === 1 ? "page" : "pages"}`;
 
       console.log(
         colors().green(

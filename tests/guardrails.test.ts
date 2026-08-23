@@ -540,8 +540,16 @@ describe("runGuardrails — check 2, frontmatter", () => {
 });
 
 describe("runGuardrails — check 3, wikilinks", () => {
-  it("accepts a cross-wiki engineering link in a changed page", async () => {
+  it("accepts a cross-wiki link in a changed page of a personal instance", async () => {
     const dataRoot = await makeRepo();
+
+    await mkdir(join(dataRoot, "wiki", "personal"), { recursive: true });
+    await writeFile(
+      join(dataRoot, "wiki", "personal", "profile.md"),
+      "---\ntitle: Profile\ntype: profile\ncreated: 2026-08-22\nupdated: 2026-08-22\ntags:\n  - personal\n---\n\n# Profile\n",
+    );
+    await commit(dataRoot, "seed personal profile");
+
     const post = await guardedRun(dataRoot, async (root) => {
       await writeFile(
         join(root, "wiki", "new.md"),
@@ -550,6 +558,39 @@ describe("runGuardrails — check 3, wikilinks", () => {
     });
 
     expect(post.failure).toBeUndefined();
+  });
+
+  it("still trips on a dangling internal link inside a personal instance", async () => {
+    const dataRoot = await makeRepo();
+
+    await mkdir(join(dataRoot, "wiki", "personal"), { recursive: true });
+    await writeFile(
+      join(dataRoot, "wiki", "personal", "profile.md"),
+      "---\ntitle: Profile\ntype: profile\ncreated: 2026-08-22\nupdated: 2026-08-22\ntags:\n  - personal\n---\n\n# Profile\n",
+    );
+    await commit(dataRoot, "seed personal profile");
+
+    const post = await guardedRun(dataRoot, async (root) => {
+      await writeFile(
+        join(root, "wiki", "new.md"),
+        page("See [[Does Not Exist]]."),
+      );
+    });
+
+    expect(post.failure?.check).toBe(3);
+  });
+
+  it("trips on a cross-wiki link in a wiki that is not a personal instance", async () => {
+    const dataRoot = await makeRepo();
+    const post = await guardedRun(dataRoot, async (root) => {
+      await writeFile(
+        join(root, "wiki", "new.md"),
+        page("References personal material: [[personal/decision-fast-tests]]."),
+      );
+    });
+
+    expect(post.failure?.check).toBe(3);
+    expect(post.failure?.name).toBe("wikilinks");
   });
 
   it("passes the wikilinks check when the run deletes every wiki page", async () => {

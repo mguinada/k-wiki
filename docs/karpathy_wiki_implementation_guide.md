@@ -1364,23 +1364,28 @@ knowledge repo:
    `wiki/personal/` as `project`, `decision`, or `attempt` pages —
    derived pages with full provenance (`sources`, `origin`),
    expunged like any other when their notes are deleted.
-3. **One-way cross-wiki links.** Personal pages may reference the
-   engineering wiki with `[[engineering/<page>]]`, where `<page>` is
-   the engineering page name. The link never resolves inside the
-   personal wiki — the internal checkers skip the reserved prefix —
-   and `check-crosslinks <wiki-dir> <engineering-wiki-dir>` validates
-   every such link against the engineering wiki, while rejecting any
-   cross-wiki link inside the engineering wiki itself. The direction
-   is deliberate: domain knowledge may inform personal conclusions,
-   but personal material must never leak into a publishable wiki —
-   and an engineering page linking at `[[personal/…]]` simply dangles
-   and fails the ingest guardrails.
+3. **One-way cross-wiki links.** A wikilink target containing a `/`
+   is a cross-wiki link — `[[<vault>/<page>]]` — referencing a page
+   of a **domain wiki** (any wiki compiled from domain material;
+   several may be linked from the same personal wiki). The vault
+   segment is the domain wiki's vault name, matched
+   case-insensitively against that wiki's `raw/manifest.json`; the
+   page segment must resolve in that wiki. Such links never resolve
+   inside the personal wiki — the internal checkers skip slashed
+   targets — and `check-crosslinks <wiki-dir> <domain-wiki-dir>…`
+   enforces the discipline: unknown vaults, dead pages, and any
+   cross-wiki link inside a domain wiki are problems. The direction
+   is deliberate: domain wikis are link sinks — they may be pointed
+   at, never point out — so personal material can never leak into a
+   publishable wiki. Only a personal instance may use cross-wiki
+   links at all; in any other wiki a slashed target is unresolvable
+   and trips the ingest guardrails.
 
 The plumbing is ordinary Scenario B: its own vault, its own data repo,
 its own sync config and settings file, drivable from a single checkout
 by naming every argument (README usage models). The privacy caution of
-Scenario A applies in full: never merge the personal vault into the
-engineering instance — un-mixing later requires history rewriting.
+Scenario A applies in full: never merge the personal vault into a
+domain instance — un-mixing later requires history rewriting.
 
 ### Changing Your Mind Later
 
