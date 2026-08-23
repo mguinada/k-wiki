@@ -22,7 +22,10 @@ For each changed source:
 11. Do not invent facts.
 12. Update index.md.
 13. Revise overview.md if the source changes the overall picture.
-14. Append a concise operation summary to log.md.
+14. Revisit any `status: needs-review` pages that the new sources touch:
+    corroborate → raise status and confidence; contradict → add or update
+    a `CONTRADICTION` callout; unrelated → leave flagged.
+15. Append a concise operation summary to log.md.
 
 Do not modify raw/.
 Do not modify the original source vault.
@@ -32,5 +35,6 @@ At the end, report:
 - sources processed;
 - pages created;
 - pages updated;
+- new load-bearing claims with no second source (claim + page + source);
 - contradictions detected;
 - unresolved questions.

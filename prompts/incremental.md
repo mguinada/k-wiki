@@ -31,10 +31,15 @@ Do not modify the original source vault.
 Update index.md, revise overview.md if the overall picture changed, and
 append a concise entry to log.md.
 
+Revisit any `status: needs-review` pages that the new sources touch:
+corroborate → raise status and confidence; contradict → add or update a
+`CONTRADICTION` callout; unrelated → leave flagged.
+
 At the end, report:
 - sources processed;
 - pages created;
 - pages updated;
 - claims removed as superseded;
+- new load-bearing claims with no second source (claim + page + source);
 - contradictions detected;
 - unresolved questions.

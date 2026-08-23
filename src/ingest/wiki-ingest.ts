@@ -519,6 +519,28 @@ export async function directSetForRemovals(
   return [...seed].sort();
 }
 
+/**
+ * Read the frontmatter of created and updated wiki pages and return
+ * those with exactly one sources entry — the mechanical unverified
+ * frontier (issue #79).
+ */
+async function readUnverifiedFrontier(
+  dataRoot: string,
+  pages: WikiPages,
+): Promise<{ path: string; sources: readonly string[] }[]> {
+  const result: { path: string; sources: readonly string[] }[] = [];
+
+  for (const path of [...pages.created, ...pages.updated]) {
+    const fields = await readPageFields(join(dataRoot, path));
+
+    if (fields.sources.length === 1) {
+      result.push({ path, sources: fields.sources });
+    }
+  }
+
+  return result;
+}
+
 /** Wiki page changes, read from the data repo's git status. */
 export interface WikiPages {
   readonly created: readonly string[];
@@ -530,6 +552,11 @@ export interface WikiPages {
 }
 
 /** One completed run, everything the digest reports. */
+export interface UnverifiedFrontierPage {
+  readonly path: string;
+  readonly sources: readonly string[];
+}
+
 export interface IngestRun {
   readonly startedAt: Date;
   readonly mode: "full" | "incremental" | "expunge";
@@ -540,6 +567,8 @@ export interface IngestRun {
   /** Deterministic expunge seed; set only for expunge runs. */
   readonly directSet: readonly string[] | undefined;
   readonly agentOutput: string;
+  /** Pages created or updated with exactly one sources entry. */
+  readonly unverifiedFrontier: readonly UnverifiedFrontierPage[];
   /** The guardrail that tripped, when the run was auto-reverted. */
   readonly guardrailFailure?: GuardrailFailure | undefined;
 }
@@ -631,6 +660,19 @@ export function formatDigest(run: IngestRun): string {
 
     for (const page of run.directSet) {
       lines.push(`- wiki/${page}`);
+    }
+  }
+
+  if (run.unverifiedFrontier.length > 0) {
+    lines.push(
+      "",
+      "## Unverified frontier",
+      "",
+      "Pages with exactly one source (mechanical):",
+    );
+
+    for (const page of run.unverifiedFrontier) {
+      lines.push(`- ${page.path} (1 source: ${page.sources[0]})`);
     }
   }
 
@@ -1096,6 +1138,7 @@ export async function runWikiIngest(
         },
         directSet: undefined,
         agentOutput: stdout,
+        unverifiedFrontier: [],
         guardrailFailure: failure,
       }),
       "utf8",
@@ -1116,6 +1159,7 @@ export async function runWikiIngest(
   }
 
   const pages = await wikiPages(dataRoot, env, "wiki", pre);
+  const unverifiedFrontier = await readUnverifiedFrontier(dataRoot, pages);
 
   const run: IngestRun = {
     startedAt,
@@ -1126,6 +1170,7 @@ export async function runWikiIngest(
     pages,
     directSet,
     agentOutput: stdout,
+    unverifiedFrontier,
   };
   const digest = formatDigest(run);
 

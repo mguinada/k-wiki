@@ -594,6 +594,11 @@ Put these in the Markdown body:
 8. Use canonical wiki tags rather than copying inconsistent source tags.
 9. Use `sources` for provenance; use `source` for a source page's external origin.
 10. Use `status: needs-review` when important information is uncertain or contradictory.
+11. A page's `confidence` may not exceed the lowest `confidence` among the source
+    pages its claims rest on (confidence-min propagation).
+12. `sources` frontmatter lists only `type: source` pages; never cite an
+    intermediate concept, entity, comparison, or query page (no derivative
+    citation).
 
 ---
 
@@ -1069,6 +1074,14 @@ Use this to influence confidence, contradiction handling, and review priorities.
 
 Do not let poor metadata alone reduce the confidence of otherwise well-supported content.
 
+> **Status: designed-not-built, with a revisit trigger.** The `source_quality`
+> scoring design (completeness/context/coherence at ingest) is **deferred**.
+> It judges internal coherence, not external truth, and the corroboration
+> lifecycle (rule 10 + §22) already captures the actionable consequence —
+> unverified claims stay flagged. Revisit when audits
+> (`outputs/audit-*.md`) repeatedly flag low-context sources as an
+> ingestion-quality problem.
+
 ---
 
 ## 22. Important Design Principles
@@ -1116,6 +1129,38 @@ Do not force false consistency.
 ### Minimize unnecessary changes
 
 Only update pages affected by new/changed information.
+
+### Contamination defense
+
+Bad-source contamination — a plausible-but-wrong source that passes every
+mechanical check — is the honest remaining gap of a closed-world pipeline.
+Four dimensions matter: ingestion probability, spread rate, detection latency,
+and recovery cost.
+
+**Why the existing stack cannot catch it.** Every layer verifies *form, not
+truth*: guardrails check only allowed paths and required fields; lint catches
+contradictions only when another source disagrees; human diff review is the
+only true detector, and review fatigue is real.
+
+**What this issue builds.** Two missing layers:
+
+1. **Spread-rate limits** (cheap, structural):
+   - *Confidence-min propagation*: a page's `confidence` may not exceed the
+     lowest confidence among its supporting sources.
+   - *No derivative citation*: `sources` lists only `type: source` pages,
+     never intermediate wiki pages — citation laundering dies mechanically.
+   - *Single-source corroboration lifecycle*: a substantive page resting on
+     exactly one source stays `status: needs-review` until a second
+     independent source corroborates it.
+
+2. **Detection sensors** (attention allocation): the ingest digest gains an
+   "**Unverified frontier**" section that lists every created or updated page
+   with exactly one `sources` entry, pointing human review at the risky delta.
+
+**What this issue does not claim.** These measures shrink probability, spread,
+and latency; they do not eliminate the risk. Recovery is bounded by
+expungement plus rebuild (§14a, §19). The contract states this honestly; no
+landed doc pretends otherwise.
 
 ---
 

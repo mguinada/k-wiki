@@ -24,6 +24,11 @@ Facts must ultimately be traceable to material in `raw/`.
 
 Do not fabricate information.
 
+A restated or derived claim carries the **original source's**
+attribution, never a citation of an intermediate wiki page.
+`sources` frontmatter lists only `type: source` pages, never
+concept, entity, comparison, or query pages.
+
 If a source is ambiguous, incomplete, or contradictory:
 - state the uncertainty;
 - preserve competing claims when appropriate;
@@ -56,7 +61,10 @@ For every new or changed source:
 9. Revise `overview.md` when the overall picture changes.
 10. Append a concise entry to `log.md`.
 11. Check for contradictions, duplicates, orphan pages, and unsupported claims.
-12. Run `npm run check-links -- <wiki-dir>` from the code-repo checkout
+12. Revisit any `status: needs-review` pages the new sources touch:
+    corroborate → raise status and confidence; contradict → add or update
+    a `CONTRADICTION` callout; unrelated → leave flagged.
+13. Run `npm run check-links -- <wiki-dir>` from the code-repo checkout
     (the data repo does not ship the tool) and fix every broken
     `[[wikilink]]` it reports.
 
@@ -88,6 +96,21 @@ Avoid:
 Every page must link to at least two related pages.
 Mark open questions with a `> **OPEN QUESTION**` callout and preserved
 contradictions with a `> **CONTRADICTION**` callout.
+
+### Confidence-min propagation
+
+A wiki page's `confidence` may not exceed the lowest `confidence`
+among the source pages its claims rest on. One low-confidence or
+`needs-review` source caps the whole page at that level.
+
+### Single-source corroboration lifecycle
+
+A substantive claim page whose every claim rests on exactly one
+source stays `status: needs-review` until a second independent
+source corroborates it. When a later ingest adds a source touching
+such a page, revisit it: corroborate → raise `status` and
+`confidence`; contradict → add or update a `CONTRADICTION` callout;
+unrelated → leave flagged.
 
 ## Naming
 
@@ -266,6 +289,22 @@ the report.
 Known residual risk: frontmatter tracing cannot prove the absence of
 uncited influence. Mitigations: full-text search in the run, the
 dead-provenance check, recurring lint, periodic rebuild.
+
+## Residual Risk
+
+The wiki is a closed-world system: it verifies consistency against
+what it has already ingested, and closed-world consistency is not
+truth. No mechanical check can prove a claim true.
+
+The measures in this contract — confidence-min propagation,
+no-derivative-citation, and the single-source corroboration lifecycle
+— shrink the probability, spread rate, and detection latency of
+bad-source contamination. They do not eliminate the risk.
+
+Recovery from a confirmed bad source uses expungement (see above)
+plus, if necessary, a full rebuild of `wiki/` from the current
+`raw/`. Recovery is bounded and deterministic; prevention is not
+perfect.
 
 ## Final Principle
 

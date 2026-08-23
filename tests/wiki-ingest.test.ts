@@ -606,6 +606,7 @@ function digestRun(overrides: Partial<IngestRun> = {}): IngestRun {
       unavailable: undefined,
     },
     agentOutput: "AGENT REPORT",
+    unverifiedFrontier: [],
     ...overrides,
   };
 }
@@ -846,6 +847,42 @@ describe("formatDigest", () => {
         "",
         "## Wiki pages (git diff)",
       ].join("\n"),
+    );
+  });
+
+  it("omits the Unverified frontier section when it is empty", () => {
+    expect(formatDigest(digestRun())).not.toContain("## Unverified frontier");
+  });
+
+  it("renders the Unverified frontier section with single-source pages", () => {
+    const digest = formatDigest(
+      digestRun({
+        unverifiedFrontier: [
+          { path: "wiki/concepts/new.md", sources: ['"[[Source A]]"'] },
+        ],
+      }),
+    );
+
+    expect(digest).toContain("## Unverified frontier");
+    expect(digest).toContain(
+      '- wiki/concepts/new.md (1 source: "[[Source A]]")',
+    );
+    expect(digest.indexOf("## Unverified frontier")).toBeLessThan(
+      digest.indexOf("## Agent report"),
+    );
+  });
+
+  it("renders the exact unverified-frontier block before the wiki-pages section", () => {
+    const digest = formatDigest(
+      digestRun({
+        unverifiedFrontier: [
+          { path: "wiki/concepts/new.md", sources: ['"[[Source A]]"'] },
+        ],
+      }),
+    );
+
+    expect(digest).toContain(
+      '\n\n## Unverified frontier\n\nPages with exactly one source (mechanical):\n- wiki/concepts/new.md (1 source: "[[Source A]]")\n\n## Wiki pages (git diff)',
     );
   });
 
@@ -1368,6 +1405,59 @@ describe("runWikiIngest", () => {
     expect(invocation(h, 1).args.at(-1)).not.toContain("INCREMENTAL PROMPT");
   });
 
+  it("appends the incremental prompt to an expunge run carrying edited sources", async () => {
+    const h = await makeHarness({ "gone.md": "GONE BODY", "keep.md": "KEEP" });
+
+    await runWikiIngest(optionsFor(h));
+    await rm(join(h.dataRoot, "raw", "notes", "Engineering", "gone.md"));
+    await writeFile(
+      join(h.dataRoot, "raw", "notes", "Engineering", "keep.md"),
+      "KEEP v2",
+    );
+    await writeFile(
+      join(h.dataRoot, "raw", "manifest.json"),
+      serializeManifest(
+        manifestWith("Engineering", { "keep.md": entry("KEEP v2") }),
+      ),
+    );
+
+    const result = await runWikiIngest(optionsFor(h));
+
+    expect(result.status).toBe("ran");
+    if (result.status !== "ran") {
+      return;
+    }
+
+    expect(invocation(h, 1).args.at(-1)).toContain("INCREMENTAL PROMPT");
+  });
+
+  it("appends the incremental prompt to an expunge run carrying renamed sources", async () => {
+    const h = await makeHarness({ "gone.md": "GONE BODY", "old.md": "SAME" });
+
+    await runWikiIngest(optionsFor(h));
+    await rm(join(h.dataRoot, "raw", "notes", "Engineering", "gone.md"));
+    await rm(join(h.dataRoot, "raw", "notes", "Engineering", "old.md"));
+    await writeFile(
+      join(h.dataRoot, "raw", "notes", "Engineering", "new.md"),
+      "SAME",
+    );
+    await writeFile(
+      join(h.dataRoot, "raw", "manifest.json"),
+      serializeManifest(
+        manifestWith("Engineering", { "new.md": entry("SAME") }),
+      ),
+    );
+
+    const result = await runWikiIngest(optionsFor(h));
+
+    expect(result.status).toBe("ran");
+    if (result.status !== "ran") {
+      return;
+    }
+
+    expect(invocation(h, 1).args.at(-1)).toContain("INCREMENTAL PROMPT");
+  });
+
   it("digests an expunge run with the mode label and direct set", async () => {
     const h = await makeHarness({ "gone.md": "GONE BODY" });
 
@@ -1715,6 +1805,47 @@ describe("runWikiIngest", () => {
     expect(result.pages.created).not.toContain("wiki/gone.md");
     expect(result.pages.updated).not.toContain("wiki/gone.md");
     expect(result.pages.deleted).toEqual(["wiki/gone.md"]);
+  });
+
+  it("counts a page deleted by the run even when it was dirty before the run", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const deleting: AgentRunner = async (_command, _args, options) => {
+      await rm(join(options.cwd, "wiki", "A-page.md"));
+      await writeFile(
+        join(options.cwd, "wiki", "index.md"),
+        wikiPage("# Index v2"),
+      );
+
+      return { stdout: "page deleted", stderr: "" };
+    };
+
+    await writeFile(join(h.dataRoot, "wiki", "A-page.md"), "# A page dirty\n");
+
+    const result = await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: deleting,
+    });
+
+    expect(result.status).toBe("ran");
+    if (result.status !== "ran") {
+      return;
+    }
+
+    expect(result.pages.deleted).toContain("wiki/A-page.md");
+  });
+
+  it("lists the run's single-source changed pages in the digest's unverified frontier", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const result = await runWikiIngest(optionsFor(h));
+
+    expect(result.status).toBe("ran");
+    if (result.status !== "ran") {
+      return;
+    }
+
+    expect(result.digest).toContain(
+      "- wiki/concepts/new.md (1 source: [[index]])",
+    );
   });
 
   it("writes the digest under outputs/runs with a sortable timestamp", async () => {
@@ -2684,6 +2815,22 @@ describe("formatDigest structure", () => {
     );
   });
 
+  it("renders the exact guardrails-failed block with its blank-line separators", () => {
+    const digest = formatDigest(
+      digestRun({
+        guardrailFailure: {
+          check: 2,
+          name: "frontmatter",
+          problems: ["wiki/bad.md: no frontmatter block"],
+        },
+      }),
+    );
+
+    expect(digest).toContain(
+      "\n\n## Guardrails failed\n\nCheck 2 (frontmatter) tripped; the run was auto-reverted to the pre-run commit.\n\n- wiki/bad.md: no frontmatter block\n",
+    );
+  });
+
   it("separates the changed-sources heading with blank lines", () => {
     expect(formatDigest(digestRun())).toContain(
       "\n\n## Changed sources\n\n**Engineering**",
@@ -2722,6 +2869,56 @@ describe("runWikiIngest failure reporting detail", () => {
     expect(progress.join("\n")).toMatch(
       /^wiki-ingest: guardrail check 2 \(frontmatter\) failed — reverting to [0-9a-f]{8}$/m,
     );
+  });
+
+  it("joins multiple guardrail problems with a semicolon in the error", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const saboteur: AgentRunner = async (_command, _args, options) => {
+      await writeFile(
+        join(options.cwd, "wiki", "bad-1.md"),
+        "no frontmatter\n",
+      );
+      await writeFile(
+        join(options.cwd, "wiki", "bad-2.md"),
+        "no frontmatter\n",
+      );
+
+      return { stdout: "rogue report", stderr: "" };
+    };
+
+    const error = await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: saboteur,
+    }).then(
+      () => undefined,
+      (cause: unknown) => cause,
+    );
+
+    expect((error as Error).message).toContain(
+      "wiki/bad-1.md: no frontmatter block; wiki/bad-2.md: no frontmatter block",
+    );
+  });
+
+  it("keeps the agent error as the cause when the guardrails also fail", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const saboteur: AgentRunner = async (_command, _args, options) => {
+      await mkdir(join(options.cwd, "raw", "notes"), { recursive: true });
+      await writeFile(join(options.cwd, "raw", "notes", "rogue.md"), "x\n");
+
+      throw new Error("agent exited with code 1");
+    };
+
+    const error = await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: saboteur,
+    }).then(
+      () => undefined,
+      (cause: unknown) => cause,
+    );
+
+    expect(error).toMatchObject({
+      cause: { message: "agent exited with code 1" },
+    });
   });
 
   it("states the mode and prompt file in the failure digest", async () => {
@@ -2803,5 +3000,20 @@ describe("error causes and sink prefixes", () => {
     sink.render("second-prefix: still running (1m)");
 
     expect(written).toEqual(["\r⠋ second-prefix: still running (1m)"]);
+  });
+
+  it("animates a single string heartbeat prefix", () => {
+    const written: string[] = [];
+    const sink = createAgentProgressSink(
+      (text) => written.push(text),
+      () => {},
+      true,
+      (text) => text,
+      "pfx:",
+    );
+
+    sink.render("pfx: agent still running (0s)");
+
+    expect(written).toEqual(["\r⠋ pfx: agent still running (0s)"]);
   });
 });
