@@ -1491,6 +1491,32 @@ describe("sync-vault CLI", () => {
     expect(out).toContain("sync complete: no changes");
   });
 
+  it("reports a zero-second elapsed time under a frozen clock", async () => {
+    const ws = await makeWorkspace();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+
+    try {
+      const { out } = await runCli([ws.configPath, ws.rawDir]);
+
+      expect(out).toContain("sync complete: 7 copied, 0 removed (0s)");
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("reports a zero-second elapsed time for a dry run under a frozen clock", async () => {
+    const ws = await makeWorkspace();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+
+    try {
+      const { out } = await runCli(["--dry-run", ws.configPath, ws.rawDir]);
+
+      expect(out).toContain("dry-run complete: nothing written (0s)");
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it("renders a removal run line for line", async () => {
     const ws = await makeWorkspace();
 
