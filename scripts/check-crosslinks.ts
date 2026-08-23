@@ -18,10 +18,10 @@ import {
  *     vault of one of the passed domain wikis (validated
  *     case-insensitively against each domain repo's
  *     `raw/manifest.json`) and resolve to an existing page of that
- *     wiki — personal notes may reference domain knowledge, and the
- *     reference must be alive;
+ *     wiki — second-brain notes may reference domain knowledge, and
+ *     the reference must be alive;
  *  2. the domain wikis themselves must contain no cross-wiki links —
- *     they are link sinks and never point at personal material.
+ *     they are link sinks and never point at second-brain material.
  *
  * Prints one `file:line -> [[link]]` line per problem and exits 1;
  * exits 0 when the discipline holds.
@@ -160,9 +160,9 @@ must name a vault of a passed domain wiki — validated
 case-insensitively against each domain repo's raw/manifest.json — and
 resolve to an existing page of that wiki. The domain wikis themselves
 must contain no cross-wiki links: they are link sinks and never
-reference personal material.
+reference second-brain material.
 
-  <wiki-dir>         Wiki root to audit (a personal wiki). Required.
+  <wiki-dir>         Wiki root to audit (a second brain). Required.
   <domain-wiki-dir>  A domain wiki's wiki/ dir, inside its data repo
                      (the sibling raw/manifest.json supplies the vault
                      name). One or more.

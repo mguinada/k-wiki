@@ -27,7 +27,7 @@ import {
  *  3. wikilinks — every `[[wikilink]]` in a changed page resolves to
  *     an existing wiki file, and no remaining page keeps a link to a
  *     page the run deleted; cross-wiki `[[<vault>/<page>]]` targets
- *     (issue #81) are external only in a personal instance — in every
+ *     (issue #81) are external only in a second brain — in every
  *     other wiki they are unresolvable and trip the check.
  */
 
@@ -50,9 +50,10 @@ const FRONTMATTER_EXEMPT = "wiki/log.md";
 const SOURCES_EXEMPT = new Set([
   "wiki/index.md",
   "wiki/overview.md",
-  // The personal instance's accreted profile layer (issue #81):
-  // evolving context about the person, not claims from one source.
-  "wiki/personal/profile.md",
+  // The second brain's accreted profile layer (issue #81):
+  // evolving context about the wiki's subject, not claims from one
+  // source.
+  "wiki/second-brain/profile.md",
 ]);
 
 /** Frontmatter fields every wiki page must carry (§9). */
@@ -581,14 +582,14 @@ async function deletedWikiPageNames(
   return deleted;
 }
 
-/** True when the wiki is a personal instance — identified by the
- *  accreted profile layer (guide §25, Scenario D). Only a personal
- *  instance may use cross-wiki links; in every other wiki a slashed
+/** True when the wiki is a second brain — identified by the
+ *  accreted profile layer (guide §25, Scenario D). Only a second
+ *  brain may use cross-wiki links; in every other wiki a slashed
  *  target is simply unresolvable, so the privacy direction (domain
- *  wikis never reference personal material) is enforced per-run. */
-async function isPersonalInstance(dataRoot: string): Promise<boolean> {
+ *  wikis never reference second-brain material) is enforced per-run. */
+async function isSecondBrain(dataRoot: string): Promise<boolean> {
   try {
-    await readFile(join(dataRoot, "wiki", "personal", "profile.md"));
+    await readFile(join(dataRoot, "wiki", "second-brain", "profile.md"));
 
     return true;
   } catch {
@@ -613,13 +614,13 @@ async function checkChangedWikilinks(
 
   const index = buildPageIndex(files);
   const problems: string[] = [];
-  const personal = await isPersonalInstance(dataRoot);
+  const secondBrain = await isSecondBrain(dataRoot);
 
   for (const [path, text] of texts) {
     for (const link of extractWikilinks(text)) {
       // Cross-wiki links (issue #81) are external by design — but
-      // only in a personal instance; elsewhere they never resolve.
-      if (personal && crossWikiTarget(link.target) !== undefined) {
+      // only in a second brain; elsewhere they never resolve.
+      if (secondBrain && crossWikiTarget(link.target) !== undefined) {
         continue;
       }
 

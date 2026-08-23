@@ -1347,45 +1347,48 @@ a note that opts out of every wiki carries both `wiki: false` and
 only. A positive per-wiki partition (`wiki: public`) would need the
 select-style grammar back as a deliberate design change.
 
-### Scenario D: The Personal Wiki (a Second Brain)
+### Scenario D: The Second Brain
 
-A personal wiki is Scenario B applied to one person's own vault, plus
-three additions that make it a second brain rather than another
-knowledge repo:
+A second brain is Scenario B applied to one subject's own vault — a
+person, a career, a venture — plus three additions that make it a
+compiled second brain rather than another knowledge repo. Several
+second brains are ordinary Scenario B instances: each its own vault,
+data repo, and config, each free to link into the same domain wikis:
 
-1. **A profile layer.** `wiki/personal/profile.md` is the agent's
-   evolving memory of the person — current projects, goals,
+1. **A profile layer.** `wiki/second-brain/profile.md` is the agent's
+   evolving memory of the wiki's subject — current projects, goals,
    communication style, standing preferences. It is an accreted layer
    (like `queries/`), not derived from `raw/`, and rebuilds preserve
    it. The agent reads it before every run and every query, and
    answers trajectory questions ("what did I try that failed?",
-   "why did I choose X?") from it together with the personal pages.
-2. **Personal page types.** Personal material files under
-   `wiki/personal/` as `project`, `decision`, or `attempt` pages —
+   "why did I choose X?") from it together with the second-brain
+   pages.
+2. **Second-brain page types.** Second-brain material files under
+   `wiki/second-brain/` as `project`, `decision`, or `attempt` pages —
    derived pages with full provenance (`sources`, `origin`),
    expunged like any other when their notes are deleted.
 3. **One-way cross-wiki links.** A wikilink target containing a `/`
    is a cross-wiki link — `[[<vault>/<page>]]` — referencing a page
    of a **domain wiki** (any wiki compiled from domain material;
-   several may be linked from the same personal wiki). The vault
+   several may be linked from the same second brain). The vault
    segment is the domain wiki's vault name, matched
    case-insensitively against that wiki's `raw/manifest.json`; the
    page segment must resolve in that wiki. Such links never resolve
-   inside the personal wiki — the internal checkers skip slashed
+   inside the second brain — the internal checkers skip slashed
    targets — and `check-crosslinks <wiki-dir> <domain-wiki-dir>…`
    enforces the discipline: unknown vaults, dead pages, and any
    cross-wiki link inside a domain wiki are problems. The direction
    is deliberate: domain wikis are link sinks — they may be pointed
-   at, never point out — so personal material can never leak into a
-   publishable wiki. Only a personal instance may use cross-wiki
+   at, never point out — so second-brain material can never leak
+   into a publishable wiki. Only a second brain may use cross-wiki
    links at all; in any other wiki a slashed target is unresolvable
    and trips the ingest guardrails.
 
 The plumbing is ordinary Scenario B: its own vault, its own data repo,
 its own sync config and settings file, drivable from a single checkout
 by naming every argument (README usage models). The privacy caution of
-Scenario A applies in full: never merge the personal vault into a
-domain instance — un-mixing later requires history rewriting.
+Scenario A applies in full: never merge a second brain's vault into
+a domain instance — un-mixing later requires history rewriting.
 
 ### Changing Your Mind Later
 

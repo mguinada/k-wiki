@@ -99,8 +99,8 @@ function runNode(
 
 describe("checkCrossWikiLinks", () => {
   it("resolves a cross-wiki link against the domain wiki's pages", async () => {
-    const personal = await makeWiki("personal", {
-      "personal/decision-fast-tests.md": "Backed by [[engineering/stub]].\n",
+    const brain = await makeWiki("brain", {
+      "decision-fast-tests.md": "Backed by [[engineering/stub]].\n",
     });
     const engineering = await makeWiki(
       "engineering",
@@ -109,7 +109,7 @@ describe("checkCrossWikiLinks", () => {
     );
 
     const report = await checkCrossWikiLinks(
-      join(personal, "personal"),
+      join(brain, "brain"),
       join(engineering, "engineering"),
     );
 
@@ -118,7 +118,7 @@ describe("checkCrossWikiLinks", () => {
   });
 
   it("matches the vault name case-insensitively", async () => {
-    const personal = await makeWiki("personal", {
+    const brain = await makeWiki("brain", {
       "index.md": "See [[Engineering/stub]].\n",
     });
     const engineering = await makeWiki(
@@ -128,7 +128,7 @@ describe("checkCrossWikiLinks", () => {
     );
 
     const report = await checkCrossWikiLinks(
-      join(personal, "personal"),
+      join(brain, "brain"),
       join(engineering, "engineering"),
     );
 
@@ -137,7 +137,7 @@ describe("checkCrossWikiLinks", () => {
   });
 
   it("resolves links to several domain wikis in one run", async () => {
-    const personal = await makeWiki("personal", {
+    const brain = await makeWiki("brain", {
       "index.md": "See [[engineering/stub]] and [[anthropology/kinship]].\n",
     });
     const engineering = await makeWiki(
@@ -152,7 +152,7 @@ describe("checkCrossWikiLinks", () => {
     );
 
     const report = await checkCrossWikiLinks(
-      join(personal, "personal"),
+      join(brain, "brain"),
       join(engineering, "engineering"),
       join(anthropology, "anthropology"),
     );
@@ -164,8 +164,8 @@ describe("checkCrossWikiLinks", () => {
   });
 
   it("reports a broken cross-wiki link as file:line -> [[link]]", async () => {
-    const personal = await makeWiki("personal", {
-      "personal/profile.md": "Points at [[engineering/missing]].\n",
+    const brain = await makeWiki("brain", {
+      "profile.md": "Points at [[engineering/missing]].\n",
     });
     const engineering = await makeWiki(
       "engineering",
@@ -174,17 +174,17 @@ describe("checkCrossWikiLinks", () => {
     );
 
     const report = await checkCrossWikiLinks(
-      join(personal, "personal"),
+      join(brain, "brain"),
       join(engineering, "engineering"),
     );
 
     expect(report.problems).toEqual([
-      "personal/personal/profile.md:1 -> [[engineering/missing]]",
+      "brain/profile.md:1 -> [[engineering/missing]]",
     ]);
   });
 
   it("reports a link naming an unknown domain wiki", async () => {
-    const personal = await makeWiki("personal", {
+    const brain = await makeWiki("brain", {
       "index.md": "Points at [[history/foo]].\n",
     });
     const engineering = await makeWiki(
@@ -194,35 +194,35 @@ describe("checkCrossWikiLinks", () => {
     );
 
     const report = await checkCrossWikiLinks(
-      join(personal, "personal"),
+      join(brain, "brain"),
       join(engineering, "engineering"),
     );
 
     expect(report.problems).toEqual([
-      'personal/index.md:1 -> [[history/foo]] (unknown domain wiki "history")',
+      'brain/index.md:1 -> [[history/foo]] (unknown domain wiki "history")',
     ]);
   });
 
   it("reports a cross-wiki link inside a domain wiki", async () => {
-    const personal = await makeWiki("personal", { "index.md": "# Personal\n" });
+    const brain = await makeWiki("brain", { "index.md": "# Brain\n" });
     const engineering = await makeWiki(
       "engineering",
-      { "entities/leaky.md": "Dodges resolution via [[personal/decision]].\n" },
+      { "entities/leaky.md": "Dodges resolution via [[brain/decision]].\n" },
       "Engineering",
     );
 
     const report = await checkCrossWikiLinks(
-      join(personal, "personal"),
+      join(brain, "brain"),
       join(engineering, "engineering"),
     );
 
     expect(report.problems).toEqual([
-      "engineering/entities/leaky.md:1 -> [[personal/decision]] (domain wikis must not use cross-wiki links)",
+      "engineering/entities/leaky.md:1 -> [[brain/decision]] (domain wikis must not use cross-wiki links)",
     ]);
   });
 
   it("ignores protocol links entirely", async () => {
-    const personal = await makeWiki("personal", {
+    const brain = await makeWiki("brain", {
       "index.md": "Plain URL wikilink [[https://example.com/page]].\n",
     });
     const engineering = await makeWiki(
@@ -232,7 +232,7 @@ describe("checkCrossWikiLinks", () => {
     );
 
     const report = await checkCrossWikiLinks(
-      join(personal, "personal"),
+      join(brain, "brain"),
       join(engineering, "engineering"),
     );
 
@@ -241,7 +241,7 @@ describe("checkCrossWikiLinks", () => {
   });
 
   it("skips AGENTS.md in both trees", async () => {
-    const personal = await makeWiki("personal", {
+    const brain = await makeWiki("brain", {
       "AGENTS.md": "Contract mentions [[engineering/missing]].\n",
     });
     const engineering = await makeWiki(
@@ -251,7 +251,7 @@ describe("checkCrossWikiLinks", () => {
     );
 
     const report = await checkCrossWikiLinks(
-      join(personal, "personal"),
+      join(brain, "brain"),
       join(engineering, "engineering"),
     );
 
@@ -271,32 +271,29 @@ describe("checkCrossWikiLinks", () => {
   });
 
   it("rejects a missing domain wiki directory", async () => {
-    const root = await makeWiki("personal", { "index.md": "# P\n" });
+    const root = await makeWiki("brain", { "index.md": "# P\n" });
 
     await expect(
-      checkCrossWikiLinks(join(root, "personal"), join(root, "missing")),
+      checkCrossWikiLinks(join(root, "brain"), join(root, "missing")),
     ).rejects.toThrow(
       `wiki directory does not exist: ${join(root, "missing")}`,
     );
   });
 
   it("rejects a domain wiki without a sibling manifest", async () => {
-    const personal = await makeWiki("personal", { "index.md": "# P\n" });
+    const brain = await makeWiki("brain", { "index.md": "# P\n" });
     const bare = await makeWiki("engineering", { "index.md": "# E\n" });
 
     await expect(
-      checkCrossWikiLinks(
-        join(personal, "personal"),
-        join(bare, "engineering"),
-      ),
+      checkCrossWikiLinks(join(brain, "brain"), join(bare, "engineering")),
     ).rejects.toThrow(/no manifest at .*raw\/manifest\.json/);
   });
 });
 
 describe("check-crosslinks CLI", () => {
   it("exits 0 with an ok summary when every cross-wiki link resolves", async () => {
-    const personal = await makeWiki("personal", {
-      "personal/decision.md": "Backed by [[engineering/stub]].\n",
+    const brain = await makeWiki("brain", {
+      "decision.md": "Backed by [[engineering/stub]].\n",
     });
     const engineering = await makeWiki(
       "engineering",
@@ -304,7 +301,7 @@ describe("check-crosslinks CLI", () => {
       "Engineering",
     );
     const result = await runNode([
-      join(personal, "personal"),
+      join(brain, "brain"),
       join(engineering, "engineering"),
     ]);
 
@@ -314,8 +311,8 @@ describe("check-crosslinks CLI", () => {
   });
 
   it("exits 1 and prints the broken cross-wiki link", async () => {
-    const personal = await makeWiki("personal", {
-      "personal/decision.md": "Points at [[engineering/missing]].\n",
+    const brain = await makeWiki("brain", {
+      "decision.md": "Points at [[engineering/missing]].\n",
     });
     const engineering = await makeWiki(
       "engineering",
@@ -323,18 +320,18 @@ describe("check-crosslinks CLI", () => {
       "Engineering",
     );
     const result = await runNode([
-      join(personal, "personal"),
+      join(brain, "brain"),
       join(engineering, "engineering"),
     ]);
 
     expect(result.code).toBe(1);
     expect(result.err).toContain(
-      "personal/personal/decision.md:1 -> [[engineering/missing]]",
+      "brain/decision.md:1 -> [[engineering/missing]]",
     );
   });
 
   it("exits 1 when a link names an unknown domain wiki", async () => {
-    const personal = await makeWiki("personal", {
+    const brain = await makeWiki("brain", {
       "index.md": "Points at [[history/foo]].\n",
     });
     const engineering = await makeWiki(
@@ -343,7 +340,7 @@ describe("check-crosslinks CLI", () => {
       "Engineering",
     );
     const result = await runNode([
-      join(personal, "personal"),
+      join(brain, "brain"),
       join(engineering, "engineering"),
     ]);
 
@@ -352,14 +349,14 @@ describe("check-crosslinks CLI", () => {
   });
 
   it("exits 1 when the domain wiki self-references", async () => {
-    const personal = await makeWiki("personal", { "index.md": "# Personal\n" });
+    const brain = await makeWiki("brain", { "index.md": "# Brain\n" });
     const engineering = await makeWiki(
       "engineering",
-      { "entities/leaky.md": "[[personal/decision]]\n" },
+      { "entities/leaky.md": "[[brain/decision]]\n" },
       "Engineering",
     );
     const result = await runNode([
-      join(personal, "personal"),
+      join(brain, "brain"),
       join(engineering, "engineering"),
     ]);
 
@@ -368,16 +365,16 @@ describe("check-crosslinks CLI", () => {
   });
 
   it("exits 1 with a clean message when a directory is missing", async () => {
-    const root = await makeWiki("personal", { "index.md": "# P\n" });
-    const result = await runNode([join(root, "personal"), join(root, "nope")]);
+    const root = await makeWiki("brain", { "index.md": "# P\n" });
+    const result = await runNode([join(root, "brain"), join(root, "nope")]);
 
     expect(result.code).toBe(1);
     expect(result.err).toContain("wiki directory does not exist");
   });
 
   it("exits 1 when a domain wiki dir is missing", async () => {
-    const root = await makeWiki("personal", { "index.md": "# P\n" });
-    const result = await runNode([join(root, "personal")]);
+    const root = await makeWiki("brain", { "index.md": "# P\n" });
+    const result = await runNode([join(root, "brain")]);
 
     expect(result.code).toBe(1);
     expect(result.err).toContain(
@@ -417,8 +414,8 @@ describe("check-crosslinks CLI", () => {
   });
 
   it("prints plain text when NO_COLOR is set", async () => {
-    const personal = await makeWiki("personal", {
-      "personal/decision.md": "Points at [[engineering/missing]].\n",
+    const brain = await makeWiki("brain", {
+      "decision.md": "Points at [[engineering/missing]].\n",
     });
     const engineering = await makeWiki(
       "engineering",
@@ -426,7 +423,7 @@ describe("check-crosslinks CLI", () => {
       "Engineering",
     );
     const result = await runNode(
-      [join(personal, "personal"), join(engineering, "engineering")],
+      [join(brain, "brain"), join(engineering, "engineering")],
       { env: { NO_COLOR: "1" } },
     );
 
@@ -434,8 +431,8 @@ describe("check-crosslinks CLI", () => {
   });
 
   it("prints color when NO_COLOR is unset", async () => {
-    const personal = await makeWiki("personal", {
-      "personal/decision.md": "Points at [[engineering/missing]].\n",
+    const brain = await makeWiki("brain", {
+      "decision.md": "Points at [[engineering/missing]].\n",
     });
     const engineering = await makeWiki(
       "engineering",
@@ -443,7 +440,7 @@ describe("check-crosslinks CLI", () => {
       "Engineering",
     );
     const result = await runNode([
-      join(personal, "personal"),
+      join(brain, "brain"),
       join(engineering, "engineering"),
     ]);
 

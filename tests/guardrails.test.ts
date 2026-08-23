@@ -525,13 +525,13 @@ describe("runGuardrails — check 2, frontmatter", () => {
     expect(post.failure).toBeUndefined();
   });
 
-  it("exempts wiki/personal/profile.md from the sources field", async () => {
+  it("exempts wiki/second-brain/profile.md from the sources field", async () => {
     const dataRoot = await makeRepo();
     const post = await guardedRun(dataRoot, async (root) => {
-      await mkdir(join(root, "wiki", "personal"), { recursive: true });
+      await mkdir(join(root, "wiki", "second-brain"), { recursive: true });
       await writeFile(
-        join(root, "wiki", "personal", "profile.md"),
-        "---\ntitle: Profile\ntype: profile\ncreated: 2026-08-22\nupdated: 2026-08-22\ntags:\n  - personal\n---\n\n# Profile\n",
+        join(root, "wiki", "second-brain", "profile.md"),
+        "---\ntitle: Profile\ntype: profile\ncreated: 2026-08-22\nupdated: 2026-08-22\ntags:\n  - brain\n---\n\n# Profile\n",
       );
     });
 
@@ -540,15 +540,15 @@ describe("runGuardrails — check 2, frontmatter", () => {
 });
 
 describe("runGuardrails — check 3, wikilinks", () => {
-  it("accepts a cross-wiki link in a changed page of a personal instance", async () => {
+  it("accepts a cross-wiki link in a changed page of a second brain", async () => {
     const dataRoot = await makeRepo();
 
-    await mkdir(join(dataRoot, "wiki", "personal"), { recursive: true });
+    await mkdir(join(dataRoot, "wiki", "second-brain"), { recursive: true });
     await writeFile(
-      join(dataRoot, "wiki", "personal", "profile.md"),
-      "---\ntitle: Profile\ntype: profile\ncreated: 2026-08-22\nupdated: 2026-08-22\ntags:\n  - personal\n---\n\n# Profile\n",
+      join(dataRoot, "wiki", "second-brain", "profile.md"),
+      "---\ntitle: Profile\ntype: profile\ncreated: 2026-08-22\nupdated: 2026-08-22\ntags:\n  - brain\n---\n\n# Profile\n",
     );
-    await commit(dataRoot, "seed personal profile");
+    await commit(dataRoot, "seed second-brain profile");
 
     const post = await guardedRun(dataRoot, async (root) => {
       await writeFile(
@@ -560,15 +560,15 @@ describe("runGuardrails — check 3, wikilinks", () => {
     expect(post.failure).toBeUndefined();
   });
 
-  it("still trips on a dangling internal link inside a personal instance", async () => {
+  it("still trips on a dangling internal link inside a second brain", async () => {
     const dataRoot = await makeRepo();
 
-    await mkdir(join(dataRoot, "wiki", "personal"), { recursive: true });
+    await mkdir(join(dataRoot, "wiki", "second-brain"), { recursive: true });
     await writeFile(
-      join(dataRoot, "wiki", "personal", "profile.md"),
-      "---\ntitle: Profile\ntype: profile\ncreated: 2026-08-22\nupdated: 2026-08-22\ntags:\n  - personal\n---\n\n# Profile\n",
+      join(dataRoot, "wiki", "second-brain", "profile.md"),
+      "---\ntitle: Profile\ntype: profile\ncreated: 2026-08-22\nupdated: 2026-08-22\ntags:\n  - brain\n---\n\n# Profile\n",
     );
-    await commit(dataRoot, "seed personal profile");
+    await commit(dataRoot, "seed second-brain profile");
 
     const post = await guardedRun(dataRoot, async (root) => {
       await writeFile(
@@ -580,12 +580,14 @@ describe("runGuardrails — check 3, wikilinks", () => {
     expect(post.failure?.check).toBe(3);
   });
 
-  it("trips on a cross-wiki link in a wiki that is not a personal instance", async () => {
+  it("trips on a cross-wiki link in a wiki that is not a second brain", async () => {
     const dataRoot = await makeRepo();
     const post = await guardedRun(dataRoot, async (root) => {
       await writeFile(
         join(root, "wiki", "new.md"),
-        page("References personal material: [[personal/decision-fast-tests]]."),
+        page(
+          "References second-brain material: [[brain/decision-fast-tests]].",
+        ),
       );
     });
 

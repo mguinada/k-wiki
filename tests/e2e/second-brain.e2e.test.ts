@@ -16,15 +16,15 @@ import {
 } from "./helpers.ts";
 
 /**
- * Personal-instance e2e (issue #81): one full second-brain cycle
- * against temp repos — a personal data repo whose stub agent files
- * `wiki/personal/profile.md` (the accreted profile, sources-exempt)
+ * Second-brain e2e (issue #81): one full second-brain cycle
+ * against temp repos — a second-brain data repo whose stub agent files
+ * `wiki/second-brain/profile.md` (the accreted profile, sources-exempt)
  * and a `decision` page carrying a cross-wiki `[[engineering/<page>]]`
  * link. The run must pass the guardrails (external links skip internal
  * resolution), the composed prompts must carry the profile
  * instructions, `check-crosslinks` must validate the one-way link
- * discipline, a rogue engineering run linking at personal material
- * must be auto-reverted, and `health` must confirm a synced personal
+ * discipline, a rogue domain run linking at second-brain material
+ * must be auto-reverted, and `health` must confirm a synced second-brain
  * vault's coherence. A real LLM run stays a human check: it costs
  * money and is not deterministic.
  */
@@ -44,13 +44,13 @@ function hashOf(content: string): string {
 }
 
 /**
- * The personal-instance stub agent: records the composed prompt, then
+ * The second-brain stub agent: records the composed prompt, then
  * files the profile (type: profile, no sources — the accreted layer)
  * and a decision page whose body carries one internal ([[profile]])
  * and one cross-wiki ([[engineering/stub]]) link, exactly as the
- * contract's Personal Instances section prescribes.
+ * contract's Second Brains section prescribes.
  */
-const PERSONAL_STUB = `#!/usr/bin/env node
+const SB_STUB = `#!/usr/bin/env node
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -63,9 +63,9 @@ if (prompt === undefined || prompt === "") {
 
 await mkdir(join(process.cwd(), "outputs"), { recursive: true });
 await writeFile(join(process.cwd(), "outputs", "stub-prompt.txt"), prompt);
-await mkdir(join(process.cwd(), "wiki", "personal"), { recursive: true });
+await mkdir(join(process.cwd(), "wiki", "second-brain"), { recursive: true });
 await writeFile(
-  join(process.cwd(), "wiki", "personal", "profile.md"),
+  join(process.cwd(), "wiki", "second-brain", "profile.md"),
   [
     "---",
     'title: "Profile"',
@@ -73,7 +73,7 @@ await writeFile(
     "created: 2026-08-23",
     "updated: 2026-08-23",
     "tags:",
-    "  - personal",
+    "  - brain",
     "---",
     "",
     "# Profile",
@@ -84,7 +84,7 @@ await writeFile(
   ].join("\\n"),
 );
 await writeFile(
-  join(process.cwd(), "wiki", "personal", "decision-fast-tests.md"),
+  join(process.cwd(), "wiki", "second-brain", "decision-fast-tests.md"),
   [
     "---",
     'title: "Decision: fast tests"',
@@ -92,9 +92,9 @@ await writeFile(
     "created: 2026-08-23",
     "updated: 2026-08-23",
     "tags:",
-    "  - personal",
+    "  - brain",
     "sources:",
-    '  - "raw/notes/Personal/Attempts/fast-tests.md"',
+    '  - "raw/notes/Brain/Attempts/fast-tests.md"',
     "---",
     "",
     "Chose vitest over jest for the macOS suite; context in [[profile]],",
@@ -111,9 +111,9 @@ await writeFile(
     "created: 2026-08-23",
     "updated: 2026-08-23",
     "tags:",
-    "  - personal",
+    "  - brain",
     "sources:",
-    '  - "raw/notes/Personal/Attempts/fast-tests.md"',
+    '  - "raw/notes/Brain/Attempts/fast-tests.md"',
     "---",
     "",
     "# Index",
@@ -216,7 +216,7 @@ function ingest(repo: Repo) {
 }
 
 /** A domain wiki tree (with its sibling manifest naming the vault —
- *  the cross-wiki prefix's identity source) that a personal wiki
+ *  the cross-wiki prefix's identity source) that a second brain
  *  links into. */
 async function makeEngineeringWiki(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "k-wiki-eng-wiki-"));
@@ -235,14 +235,14 @@ async function makeEngineeringWiki(): Promise<string> {
   return join(dir, "wiki");
 }
 
-describe("personal instance e2e", () => {
+describe("second brain e2e", () => {
   const CHECK_CROSSLINKS_SCRIPT = join(
     repoRoot,
     "scripts",
     "check-crosslinks.ts",
   );
-  it("ingests a personal run whose profile and cross-wiki link pass the guardrails", async () => {
-    const repo = await makeRepo("Personal", PERSONAL_STUB);
+  it("ingests a second-brain run whose profile and cross-wiki link pass the guardrails", async () => {
+    const repo = await makeRepo("Brain", SB_STUB);
     const result = await ingest(repo);
 
     expect(result.code).toBe(0);
@@ -252,7 +252,7 @@ describe("personal instance e2e", () => {
     );
 
     const profile = await readFile(
-      join(repo.dataRoot, "wiki", "personal", "profile.md"),
+      join(repo.dataRoot, "wiki", "second-brain", "profile.md"),
       "utf8",
     );
 
@@ -267,7 +267,7 @@ describe("personal instance e2e", () => {
   });
 
   it("composes the ingest prompt with the profile instruction", async () => {
-    const repo = await makeRepo("Personal", PERSONAL_STUB);
+    const repo = await makeRepo("Brain", SB_STUB);
     await ingest(repo);
 
     const prompt = await readFile(
@@ -275,12 +275,12 @@ describe("personal instance e2e", () => {
       "utf8",
     );
 
-    expect(prompt).toContain("wiki/personal/profile.md");
+    expect(prompt).toContain("wiki/second-brain/profile.md");
     expect(prompt).toContain("`attempt`");
   });
 
   it("validates the cross-wiki discipline with check-crosslinks", async () => {
-    const repo = await makeRepo("Personal", PERSONAL_STUB);
+    const repo = await makeRepo("Brain", SB_STUB);
     const engineering = await makeEngineeringWiki();
 
     await ingest(repo);
@@ -295,7 +295,7 @@ describe("personal instance e2e", () => {
     const decision = join(
       repo.dataRoot,
       "wiki",
-      "personal",
+      "second-brain",
       "decision-fast-tests.md",
     );
 
@@ -314,11 +314,11 @@ describe("personal instance e2e", () => {
 
     expect(broken.code).toBe(1);
     expect(broken.err).toContain(
-      "wiki/personal/decision-fast-tests.md:13 -> [[engineering/missing]]",
+      "wiki/second-brain/decision-fast-tests.md:13 -> [[engineering/missing]]",
     );
   });
 
-  it("auto-reverts an engineering run that links at personal material", async () => {
+  it("auto-reverts a domain run that links at second-brain material", async () => {
     const repo = await makeRepo(
       "Engineering",
       `#!/usr/bin/env node
@@ -347,7 +347,7 @@ await writeFile(
     '  - "raw/notes/Engineering/Attempts/fast-tests.md"',
     "---",
     "",
-    "References the personal wiki: [[personal/decision-fast-tests]].",
+    "References second-brain material: [[brain/decision-fast-tests]].",
     "",
   ].join("\\n"),
 );
@@ -366,7 +366,7 @@ console.log("rogue report");
   });
 
   it("composes the query prompt with the profile instruction", async () => {
-    const repo = await makeRepo("Personal", QUERY_STUB);
+    const repo = await makeRepo("Brain", QUERY_STUB);
     const result = await runCli(QUERY_SCRIPT, [
       "--settings",
       repo.settingsPath,
@@ -384,12 +384,12 @@ console.log("rogue report");
       "utf8",
     );
 
-    expect(prompt).toContain("wiki/personal/profile.md");
+    expect(prompt).toContain("wiki/second-brain/profile.md");
     expect(prompt).toContain("What did I try for fast tests?");
   });
 
-  it("health certifies a synced personal vault's raw projection", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "k-wiki-personal-sync-"));
+  it("health certifies a synced second-brain vault's raw projection", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-brain-sync-"));
 
     tempDirs.push(dir);
 
@@ -400,7 +400,7 @@ console.log("rogue report");
     await writeFile(
       configPath,
       JSON.stringify({
-        vaults: [{ name: "Personal", root: vaultRoot, exclude: "wiki:false" }],
+        vaults: [{ name: "Brain", root: vaultRoot, exclude: "wiki:false" }],
       }),
     );
 

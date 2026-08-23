@@ -6,13 +6,13 @@ const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 
 const read = (path: string) => readFileSync(`${repoRoot}${path}`, "utf8");
 
-describe("personal instance wiring", () => {
-  it("the wiki contract has a Personal Instances section", () => {
-    expect(read("wiki/AGENTS.md")).toContain("## Personal Instances");
+describe("second-brain instance wiring", () => {
+  it("the wiki contract has a Second Brains section", () => {
+    expect(read("wiki/AGENTS.md")).toContain("## Second Brains");
   });
 
   it("the contract names the profile layer path", () => {
-    expect(read("wiki/AGENTS.md")).toContain("wiki/personal/profile.md");
+    expect(read("wiki/AGENTS.md")).toContain("wiki/second-brain/profile.md");
   });
 
   it("the contract defines the project, decision, and attempt page types", () => {
@@ -23,7 +23,7 @@ describe("personal instance wiring", () => {
     expect(contract).toContain("`attempt`");
   });
 
-  it("the contract routes personal instances through check-crosslinks", () => {
+  it("the contract routes second brains through check-crosslinks", () => {
     expect(read("wiki/AGENTS.md")).toContain("check-crosslinks");
   });
 
@@ -41,30 +41,32 @@ describe("personal instance wiring", () => {
 
   it("the ingest prompt loads the profile at start", () => {
     expect(read("prompts/ingest.md")).toContain(
-      "read `wiki/personal/profile.md` before processing",
+      "read `wiki/second-brain/profile.md` before processing",
     );
   });
 
   it("the incremental prompt loads the profile at start", () => {
     expect(read("prompts/incremental.md")).toContain(
-      "read `wiki/personal/profile.md` first",
+      "read `wiki/second-brain/profile.md` first",
     );
   });
 
   it("the query prompt answers trajectory questions from the profile layer", () => {
     const prompt = read("prompts/query.md");
 
-    expect(prompt).toContain("wiki/personal/profile.md");
+    expect(prompt).toContain("wiki/second-brain/profile.md");
     expect(prompt).toContain("`attempt`");
   });
 
   it("the rebuild prompt restores the profile from git", () => {
     expect(read("prompts/rebuild.md")).toContain(
-      "restore `wiki/personal/profile.md` from git",
+      "restore `wiki/second-brain/profile.md` from git",
     );
   });
 
-  it("the repo skeleton carries the wiki/personal folder", () => {
-    expect(readFileSync(`${repoRoot}wiki/personal/.gitkeep`, "utf8")).toBe("");
+  it("the repo skeleton carries the wiki/second-brain folder", () => {
+    expect(readFileSync(`${repoRoot}wiki/second-brain/.gitkeep`, "utf8")).toBe(
+      "",
+    );
   });
 });

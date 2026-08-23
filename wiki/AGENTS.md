@@ -66,7 +66,7 @@ For every new or changed source:
     a `CONTRADICTION` callout; unrelated → leave flagged.
 13. Run `npm run check-links -- <wiki-dir>` from the code-repo checkout
     (the data repo does not ship the tool) and fix every broken
-    `[[wikilink]]` it reports. In a personal instance, also run
+    `[[wikilink]]` it reports. In a second brain, also run
     `npm run check-crosslinks -- <wiki-dir> <domain-wiki-dir>
     [<domain-wiki-dir>…]` and fix every cross-wiki link it reports.
 
@@ -205,11 +205,11 @@ Answer questions against the wiki, not against `raw/` directly:
    borderline, offer and let the human decide — never silently skip;
    a declined filing states its reason.
 
-In a personal instance, read `wiki/personal/profile.md` before
-answering and let it shape the answer: questions about the person's
+In a second brain, read `wiki/second-brain/profile.md` before
+answering and let it shape the answer: questions about the subject's
 trajectory ("what did I try", "why did I choose") are answered from
-the personal pages and the profile together, not from domain pages
-alone.
+the second-brain pages and the profile together, not from domain
+pages alone.
 
 If the wiki cannot answer a question, say so and suggest sources to ingest.
 
@@ -238,22 +238,22 @@ unless that information is explicitly treated as a derived conclusion.
 
 Exception: filed queries and human corrections form an accreted layer that
 exists only in the wiki. Deleting `wiki/` loses that layer; git history is
-its record. In a personal instance the profile joins that layer.
+its record. In a second brain the profile joins that layer.
 
 Two files in `wiki/` are not derivable from `raw/`: this contract
-(`wiki/AGENTS.md`) and `wiki/queries/`; a personal instance adds a third,
-`wiki/personal/profile.md`. A rebuild removes the wiki content pages and
-preserves all of them.
+(`wiki/AGENTS.md`) and `wiki/queries/`; a second brain adds a third,
+`wiki/second-brain/profile.md`. A rebuild removes the wiki content
+pages and preserves all of them.
 
 Rebuild procedure:
 
 1. Remove the wiki content pages: `index.md`, `overview.md`, `log.md`, and
    everything under `concepts/`, `entities/`, `sources/`, `comparisons/`,
-   `queries/`, and — in a personal instance — `personal/`. Keep
+   `queries/`, and — in a second brain — `second-brain/`. Keep
    `wiki/AGENTS.md`.
 2. Run the rebuild prompt against `raw/`, following this contract.
 3. Restore the accreted layer from git: `git restore wiki/queries/`, plus
-   `wiki/personal/profile.md` in a personal instance.
+   `wiki/second-brain/profile.md` in a second brain.
 4. Spot-check the rebuilt pages against the pre-deletion versions
    (`git show HEAD:wiki/<path>`): same concepts covered, sources
    attributed, contradictions preserved. Wording may differ; LLM output
@@ -345,19 +345,20 @@ This wiki currently has a single source vault. When multiple source
 vaults are adopted, a human-approved change to this contract adds the
 multi-vault rules here.
 
-## Personal Instances
+## Second Brains
 
-A wiki whose source vault holds one person's own material — project
-notes, decisions, attempts, lessons — is a **personal instance**. It is
-a separate data repo with this same contract; it is identified by the
-presence of `wiki/personal/profile.md`.
+A wiki whose source vault holds one subject's own material — project
+notes, decisions, attempts, lessons, about a person, a career, or a
+venture — is a **second brain**. It is a separate data repo with this
+same contract; it is identified by the presence of
+`wiki/second-brain/profile.md`.
 
 ### Profile layer
 
-`wiki/personal/profile.md` is the memory of the person the wiki is
-about: current projects, goals, communication style, standing
-preferences. It is the first file read on every operation and the last
-considered when answering a question.
+`wiki/second-brain/profile.md` is the memory of the subject the wiki
+is about — a person, a career, a venture: current projects, goals,
+communication style, standing preferences. It is the first file read
+on every operation and the last considered when answering a question.
 
 - Read it at the start of every ingestion and query.
 - Update it when sources reveal a change: a new goal, a finished
@@ -369,10 +370,11 @@ considered when answering a question.
   instead of deleting the history silently when the log already
   records the change.
 
-### Personal page types
+### Second-brain page types
 
-Personal material files under `wiki/personal/` with the same rules as
-any derived page (`sources`, `origin`, confidence) and three types:
+Second-brain material files under `wiki/second-brain/` with the same
+rules as any derived page (`sources`, `origin`, confidence) and three
+types:
 
 - `project` — an ongoing effort: its goal, status, and the decisions
   and attempts that shaped it;
@@ -387,20 +389,19 @@ did I try that failed" is answered from these pages, not guessed.
 
 ### Cross-wiki links
 
-A personal wiki may reference domain wikis, never the reverse:
+A second brain may reference domain wikis, never the reverse:
 
 - A wikilink target containing a `/` is a cross-wiki link —
   `[[<vault>/<page>]]` — where `<vault>` is a domain wiki's vault name
   (matched case-insensitively against that wiki's `raw/manifest.json`)
   and `<page>` a page of that wiki. Bare targets are internal;
   internal links never contain a slash. Several domain wikis may be
-  linked from the same personal wiki.
+  linked from the same second brain.
 - The link never resolves in this wiki; `check-crosslinks` validates
   it against the named domain wiki after every run.
-- Domain wikis never reference personal material: they are link
+- Domain wikis never reference second-brain material: they are link
   sinks — other wikis may point at them; they point at nothing. No
   page of any other wiki may link here, and this wiki's material
   never leaves this data repo.
-- Only a personal instance may use cross-wiki links; in any other
-  wiki a slashed target is unresolvable and trips the ingest
-  guardrails.
+- Only a second brain may use cross-wiki links; in any other wiki a
+  slashed target is unresolvable and trips the ingest guardrails.

@@ -291,7 +291,7 @@ describe("checkWikiLinks", () => {
 
   it("does not report a cross-wiki engineering link as broken", async () => {
     const root = await makeWiki({
-      "personal/decision-fast-tests.md": "Backed by [[engineering/stub]].\n",
+      "brain/decision-fast-tests.md": "Backed by [[engineering/stub]].\n",
     });
 
     const report = await checkWikiLinks(join(root, "wiki"));

@@ -4,7 +4,7 @@ Process only the source files changed since the previous ingestion.
 
 Follow wiki/AGENTS.md exactly.
 
-Personal instance: read `wiki/personal/profile.md` first when it
+Second brain: read `wiki/second-brain/profile.md` first when it
 exists, and update it when the changed sources reveal changes to
 goals, projects, or preferences.
 
