@@ -42,6 +42,14 @@ const ALLOWED_EXACT = "raw/manifest.json";
 /** The wiki contract file: no run may write it (guide §10). */
 const FORBIDDEN_EXACT = "wiki/AGENTS.md";
 
+/** The operator-owned second-brain identity marker (issue #94):
+ *  presence at the data root — not the agent-writable profile —
+ *  makes the wiki a second brain. It is captured in the pre-run
+ *  state regardless of git ignore rules, so guardrail 1 reverts any
+ *  run that creates, edits, or removes it: identity cannot be
+ *  self-granted. */
+const SECOND_BRAIN_MARKER = ".second-brain";
+
 /** The contract's append-only log (guide §10): no §9 frontmatter by
  *  design — the agent appends to it on every meaningful run, so
  *  check 2 exempts it (first exposed by a real logged run, #13). */
@@ -268,15 +276,16 @@ export interface PreRunState {
   readonly commit: string;
   /** The full pre-run git status. */
   readonly status: readonly StatusEntry[];
-  /** Content hashes of every dirty path and every rename origin
-   *  ("absent" when the file is gone) — clean-tree status codes
-   *  alone cannot tell an agent re-edit of an already-dirty page
-   *  (the normal case: nothing commits the wiki between runs) from
-   *  an untouched one, nor a file restored onto a rename origin. */
+  /** Content hashes of every dirty path, every rename origin, and
+   *  the second-brain marker ("absent" when the file is gone) —
+   *  clean-tree status codes alone cannot tell an agent re-edit of
+   *  an already-dirty page (the normal case: nothing commits the
+   *  wiki between runs) from an untouched one, nor a file restored
+   *  onto a rename origin. */
   readonly hashes: ReadonlyMap<string, string>;
-  /** The bytes of every dirty path and rename origin (null: absent),
-   *  so the revert can restore uncommitted pre-run work a reset
-   *  alone would destroy. */
+  /** The bytes of every dirty path, rename origin, and the
+   *  second-brain marker (null: absent), so the revert can restore
+   *  uncommitted pre-run work a reset alone would destroy. */
   readonly contents: ReadonlyMap<string, Buffer | null>;
 }
 
@@ -327,6 +336,8 @@ export async function capturePreRunState(
       await capture(entry.origin);
     }
   }
+
+  await capture(SECOND_BRAIN_MARKER);
 
   return { commit, status, contents, hashes };
 }
@@ -583,13 +594,6 @@ async function deletedWikiPageNames(
 
   return deleted;
 }
-
-/** The operator-owned second-brain identity marker (issue #94):
- *  presence at the data root — not the agent-writable profile —
- *  makes the wiki a second brain. It sits outside the run's
- *  writable whitelist, so guardrail 1 reverts any run that tries to
- *  create, edit, or remove it: identity cannot be self-granted. */
-const SECOND_BRAIN_MARKER = ".second-brain";
 
 /** True when the wiki is a second brain — identified by the
  *  operator-owned `.second-brain` marker at the data root (guide

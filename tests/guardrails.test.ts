@@ -263,6 +263,22 @@ describe("runGuardrails — check 1, immutability", () => {
     expect(post.failure?.problems[0]).toContain(".second-brain");
   });
 
+  it("trips when the run creates a second-brain identity marker hidden from git status", async () => {
+    const dataRoot = await makeRepo();
+    const post = await guardedRun(dataRoot, async (root) => {
+      await mkdir(join(root, ".git", "info"), { recursive: true });
+      await writeFile(join(root, ".git", "info", "exclude"), ".second-brain\n");
+      await writeFile(join(root, ".second-brain"), "");
+      await writeFile(
+        join(root, "wiki", "new.md"),
+        page("Leak: [[brain/decision-fast-tests]]."),
+      );
+    });
+
+    expect(post.failure?.check).toBe(1);
+    expect(post.failure?.problems.join("\n")).toContain(".second-brain");
+  });
+
   it("trips when the run edits an already-dirty raw note", async () => {
     const dataRoot = await makeRepo();
 
@@ -836,6 +852,22 @@ describe("revertToPreRun", () => {
     expect(await readFile(join(dataRoot, "settings.yml"), "utf8")).toBe(
       "command: pi\n",
     );
+  });
+
+  it("removes an ignored marker the run created when reverting", async () => {
+    const dataRoot = await makeRepo();
+    const pre = await capturePreRunState(dataRoot, process.env);
+
+    await writeFile(join(dataRoot, ".gitignore"), ".second-brain\n");
+    await writeFile(join(dataRoot, ".second-brain"), "");
+
+    const post = await runGuardrails(dataRoot, process.env, pre);
+
+    await revertToPreRun(dataRoot, process.env, pre, post.entries);
+
+    await expect(
+      readFile(join(dataRoot, ".second-brain"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("restores a rogue commit the run made", async () => {
