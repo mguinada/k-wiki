@@ -111,7 +111,9 @@ describe("loadSyncConfig", () => {
       "/home/alice",
     );
 
-    expect(config.vaults[0]?.exclude).toEqual({ key: "wiki", value: "false" });
+    expect(config.vaults[0]).toMatchObject({
+      exclude: { key: "wiki", value: "false" },
+    });
   });
 
   it("expands the publish mirror against home", async () => {
@@ -465,6 +467,126 @@ describe("dataRoot", () => {
     await expect(
       loadSyncConfig(await writeConfig(bad), "/home/alice"),
     ).rejects.toThrow(/"dataRoot" must be a non-empty string/);
+  });
+});
+
+const ONE_REPO = {
+  vaults: [
+    {
+      source: "repo",
+      name: "k-wiki",
+      root: "~/Lab/k-wiki",
+      include: ["README.md", "src/**/*.ts"],
+    },
+  ],
+};
+
+describe("loadSyncConfig discriminated sources", () => {
+  it("parses an entry with source repo as a repo source", async () => {
+    const config = await loadSyncConfig(
+      await writeConfig(ONE_REPO),
+      "/home/alice",
+    );
+
+    expect(config.vaults[0]).toEqual({
+      kind: "repo",
+      name: "k-wiki",
+      root: "/home/alice/Lab/k-wiki",
+      include: ["README.md", "src/**/*.ts"],
+    });
+  });
+
+  it("defaults an entry without a source key to the vault kind", async () => {
+    const config = await loadSyncConfig(
+      await writeConfig(ONE_VAULT),
+      "/home/alice",
+    );
+
+    expect(config.vaults[0]).toEqual({
+      kind: "vault",
+      name: "Documents",
+      root: "/home/alice/vaults/Documents",
+      exclude: { key: "wiki", value: "false" },
+    });
+  });
+
+  it("accepts an explicit source vault entry", async () => {
+    const config = await loadSyncConfig(
+      await writeConfig({
+        vaults: [{ ...ONE_VAULT.vaults[0], source: "vault" }],
+      }),
+      "/home/alice",
+    );
+
+    expect(config.vaults[0]?.kind).toBe("vault");
+  });
+
+  it("rejects a source value other than vault or repo", async () => {
+    const bad = { vaults: [{ ...ONE_VAULT.vaults[0], source: "git" }] };
+
+    await expect(
+      loadSyncConfig(await writeConfig(bad), "/home/alice"),
+    ).rejects.toThrow(/"source" must be "vault" or "repo", got "git"/);
+  });
+
+  it("rejects a repo source without an include list", async () => {
+    const bad = {
+      vaults: [
+        {
+          source: "repo",
+          name: "k-wiki",
+          root: "~/Lab/k-wiki",
+        },
+      ],
+    };
+
+    await expect(
+      loadSyncConfig(await writeConfig(bad), "/home/alice"),
+    ).rejects.toThrow(/repo source needs an "include" allowlist/);
+  });
+
+  it("rejects a repo source with an empty include list", async () => {
+    const bad = { vaults: [{ ...ONE_REPO.vaults[0], include: [] }] };
+
+    await expect(
+      loadSyncConfig(await writeConfig(bad), "/home/alice"),
+    ).rejects.toThrow(/repo source needs an "include" allowlist/);
+  });
+
+  it("rejects a repo source whose include list holds a non-string", async () => {
+    const bad = { vaults: [{ ...ONE_REPO.vaults[0], include: [42] }] };
+
+    await expect(
+      loadSyncConfig(await writeConfig(bad), "/home/alice"),
+    ).rejects.toThrow(/"include" must be an array of non-empty strings/);
+  });
+
+  it("rejects a repo source whose include list holds an empty string", async () => {
+    const bad = { vaults: [{ ...ONE_REPO.vaults[0], include: [""] }] };
+
+    await expect(
+      loadSyncConfig(await writeConfig(bad), "/home/alice"),
+    ).rejects.toThrow(/"include" must be an array of non-empty strings/);
+  });
+
+  it("rejects a repo source that also sets exclude", async () => {
+    const bad = {
+      vaults: [{ ...ONE_REPO.vaults[0], exclude: "wiki:false" }],
+    };
+
+    await expect(
+      loadSyncConfig(await writeConfig(bad), "/home/alice"),
+    ).rejects.toThrow(/repo source takes "include", not "exclude"/);
+  });
+
+  it("rejects a vault source that also sets include", async () => {
+    const bad = {
+      vaults: [{ ...ONE_VAULT.vaults[0], include: ["README.md"] }],
+    };
+
+    await expect(
+      loadSyncConfig(await writeConfig(bad), "/home/alice"),
+    ).rejects.toThrow(/vault source takes "exclude", not "include"/);
   });
 });
 

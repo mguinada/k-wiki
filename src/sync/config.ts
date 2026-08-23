@@ -15,13 +15,37 @@ export interface ExcludeExpression {
   readonly value: string;
 }
 
-/** One source vault projected under `raw/notes/<name>/`. */
-export interface SyncVaultConfig {
+/** An exclusion expression; only `<key>:false` is supported. */
+export interface ExcludeExpression {
+  readonly key: string;
+  readonly value: string;
+}
+
+/** A source vault projected under `raw/notes/<name>/` (guide §25):
+ *  selection is a frontmatter exclusion rule. */
+export interface VaultSourceConfig {
+  readonly kind: "vault";
   readonly name: string;
   /** Vault root with `~` already expanded. */
   readonly root: string;
   readonly exclude: ExcludeExpression;
 }
+
+/** A source repository projected under `raw/notes/<name>/` (issue #74):
+ *  selection is an allowlist — anything not listed is excluded by
+ *  construction — and the projection records the source repo's HEAD
+ *  commit SHA in the manifest. */
+export interface RepoSourceConfig {
+  readonly kind: "repo";
+  readonly name: string;
+  /** Repository checkout root with `~` already expanded. */
+  readonly root: string;
+  /** Allowlist patterns (`*` within, `**` across, path segments). */
+  readonly include: readonly string[];
+}
+
+/** One configured source; discriminated by `kind` (issue #74). */
+export type SourceConfig = VaultSourceConfig | RepoSourceConfig;
 
 /** Parsed from `sync.json`; parsed but unused by sync-vault for now. */
 export interface PublishConfig {
@@ -31,7 +55,7 @@ export interface PublishConfig {
 }
 
 export interface SyncConfig {
-  readonly vaults: readonly SyncVaultConfig[];
+  readonly vaults: readonly SourceConfig[];
   readonly publish: PublishConfig | undefined;
   /** Data repo root; `raw/` and `wiki/` contents are versioned there. */
   readonly dataRoot: string | undefined;
@@ -106,12 +130,23 @@ function parseVaultName(value: unknown): string {
   return name;
 }
 
-function parseVaults(value: unknown, home: string): SyncVaultConfig[] {
+function parseInclude(value: unknown): readonly string[] {
+  if (
+    !Array.isArray(value) ||
+    !value.every((item): item is string => isNonEmptyString(item))
+  ) {
+    throw new Error('"include" must be an array of non-empty strings');
+  }
+
+  return value;
+}
+
+function parseVaults(value: unknown, home: string): SourceConfig[] {
   if (!Array.isArray(value)) {
     throw new Error('"vaults" must be an array');
   }
 
-  const vaults: SyncVaultConfig[] = [];
+  const sources: SourceConfig[] = [];
   const seen = new Set<string>();
 
   value.forEach((entry: unknown, index: number) => {
@@ -130,20 +165,61 @@ function parseVaults(value: unknown, home: string): SyncVaultConfig[] {
         throw new Error('"root" must be a non-empty string');
       }
 
-      if (Object.hasOwn(entry, "select")) {
-        throw new Error('"select" was replaced by "exclude"; remove "select"');
+      if (
+        entry.source !== undefined &&
+        entry.source !== "vault" &&
+        entry.source !== "repo"
+      ) {
+        throw new Error(
+          `"source" must be "vault" or "repo", got ${JSON.stringify(entry.source)}`,
+        );
       }
 
-      if (typeof entry.exclude !== "string") {
-        throw new Error('"exclude" must be a string');
+      if (entry.source === "repo") {
+        if (Object.hasOwn(entry, "exclude")) {
+          throw new Error('repo source takes "include", not "exclude"');
+        }
+
+        if (!Object.hasOwn(entry, "include")) {
+          throw new Error('repo source needs an "include" allowlist');
+        }
+
+        const include = parseInclude(entry.include);
+
+        if (include.length === 0) {
+          throw new Error('repo source needs an "include" allowlist');
+        }
+
+        sources.push({
+          kind: "repo",
+          name,
+          root: expandHome(entry.root, home),
+          include,
+        });
+      } else {
+        if (Object.hasOwn(entry, "include")) {
+          throw new Error('vault source takes "exclude", not "include"');
+        }
+
+        if (Object.hasOwn(entry, "select")) {
+          throw new Error(
+            '"select" was replaced by "exclude"; remove "select"',
+          );
+        }
+
+        if (typeof entry.exclude !== "string") {
+          throw new Error('"exclude" must be a string');
+        }
+
+        sources.push({
+          kind: "vault",
+          name,
+          root: expandHome(entry.root, home),
+          exclude: parseExclude(entry.exclude),
+        });
       }
 
       seen.add(name);
-      vaults.push({
-        name,
-        root: expandHome(entry.root, home),
-        exclude: parseExclude(entry.exclude),
-      });
     } catch (cause) {
       throw new Error(`vaults[${index}]: ${(cause as Error).message}`, {
         cause,
@@ -151,7 +227,7 @@ function parseVaults(value: unknown, home: string): SyncVaultConfig[] {
     }
   });
 
-  return vaults;
+  return sources;
 }
 
 function parsePublish(value: unknown, home: string): PublishConfig | undefined {

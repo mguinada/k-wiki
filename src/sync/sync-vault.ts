@@ -21,7 +21,8 @@ import {
 import {
   loadSyncConfig,
   resolveRawDir,
-  type SyncVaultConfig,
+  type SourceConfig,
+  type VaultSourceConfig,
 } from "./config.ts";
 import { isSelectedNote } from "./frontmatter.ts";
 import { sha256 } from "./hash.ts";
@@ -90,7 +91,7 @@ interface SelectedNote {
   readonly hash: string;
 }
 
-async function assertDirectory(vault: SyncVaultConfig): Promise<void> {
+async function assertDirectory(vault: VaultSourceConfig): Promise<void> {
   let info: Stats;
 
   try {
@@ -114,7 +115,7 @@ function toAbsolute(root: string, relPath: string): string {
 }
 
 async function readSourceNote(
-  vault: SyncVaultConfig,
+  vault: VaultSourceConfig,
   relPath: string,
 ): Promise<Uint8Array> {
   try {
@@ -130,7 +131,10 @@ async function readSourceNote(
 }
 
 /** Remove now-empty parent directories of a deleted projection. */
-async function pruneEmptyDirs(dir: string, stopAt: string): Promise<void> {
+export async function pruneEmptyDirs(
+  dir: string,
+  stopAt: string,
+): Promise<void> {
   let current = dir;
 
   while (current.startsWith(stopAt) && current !== stopAt) {
@@ -175,12 +179,33 @@ async function listNamespaceDirs(notesRoot: string): Promise<string[]> {
 /** Heartbeat interval for the read loop: one line per files read. */
 export const PROGRESS_EVERY = 500;
 
+/** Wrong-pairing guard (issue #74): sync-vault syncs vault sources
+ *  only; a repo source in the config fails loudly, pointing at
+ *  sync-repo, instead of silently skipping or mis-projecting it. */
+export function vaultSourcesOnly(
+  sources: readonly SourceConfig[],
+): readonly VaultSourceConfig[] {
+  const vaults: VaultSourceConfig[] = [];
+
+  for (const source of sources) {
+    if (source.kind === "repo") {
+      throw new Error(
+        `source "${source.name}" is a repo source; this config belongs to sync-repo`,
+      );
+    }
+
+    vaults.push(source);
+  }
+
+  return vaults;
+}
+
 /** Heartbeat interval for the directory walk: one line per dirs. */
 export const SCAN_HEARTBEAT_EVERY = 1000;
 
 /** Read and select the candidates of one vault, hashing every match. */
 async function selectNotes(
-  vault: SyncVaultConfig,
+  vault: VaultSourceConfig,
   candidates: readonly string[],
   progressEvery: number,
   onProgress: (message: string) => void,
@@ -207,7 +232,7 @@ async function selectNotes(
 
 /** Verify the vault root, scan it, and select its notes. */
 async function scanAndSelect(
-  vault: SyncVaultConfig,
+  vault: VaultSourceConfig,
   progressEvery: number,
   onProgress: (message: string) => void,
 ): Promise<{
@@ -242,7 +267,7 @@ async function scanAndSelect(
 }
 
 async function syncVault(
-  vault: SyncVaultConfig,
+  vault: VaultSourceConfig,
   rawDir: string,
   now: () => Date,
   previous: VaultNotes,
@@ -328,6 +353,7 @@ export async function runSync(options: SyncOptions): Promise<SyncReport> {
   onProgress(`sync-vault: raw dir ${options.rawDir}`);
 
   const config = await loadSyncConfig(options.configPath, home);
+  const vaults = vaultSourcesOnly(config.vaults);
   const manifestPath = join(options.rawDir, "manifest.json");
   const previousText = await readManifestText(manifestPath);
   const manifest =
@@ -337,7 +363,7 @@ export async function runSync(options: SyncOptions): Promise<SyncReport> {
   const reports: VaultSyncReport[] = [];
   const nextManifest: Manifest = { vaults: { ...manifest.vaults } };
   const notesRoot = join(options.rawDir, "notes");
-  const configuredNames = new Set(config.vaults.map((vault) => vault.name));
+  const configuredNames = new Set(vaults.map((vault) => vault.name));
   const staleNames = [
     ...new Set([
       ...Object.keys(manifest.vaults),
@@ -349,7 +375,7 @@ export async function runSync(options: SyncOptions): Promise<SyncReport> {
 
   // An empty vault list is a misconfigured run (truncated sync.json);
   // it must never be read as "prune everything".
-  if (config.vaults.length > 0) {
+  if (vaults.length > 0) {
     for (const name of staleNames) {
       delete nextManifest.vaults[name];
       await rm(join(notesRoot, name), { recursive: true, force: true });
@@ -358,7 +384,7 @@ export async function runSync(options: SyncOptions): Promise<SyncReport> {
     }
   }
 
-  for (const vault of config.vaults) {
+  for (const vault of vaults) {
     const { notes, report } = await syncVault(
       vault,
       options.rawDir,
@@ -396,7 +422,7 @@ export async function runDryRun(
   const config = await loadSyncConfig(options.configPath, home);
   const reports: VaultDryRunReport[] = [];
 
-  for (const vault of config.vaults) {
+  for (const vault of vaultSourcesOnly(config.vaults)) {
     const { candidates, selected } = await scanAndSelect(
       vault,
       options.progressEvery ?? PROGRESS_EVERY,

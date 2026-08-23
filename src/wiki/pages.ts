@@ -131,10 +131,15 @@ async function listFiles(
   return files;
 }
 
+/** Operating-contract files: never wiki pages (issue #74 adds the
+ *  meta contract template that lives in the code repo's skeleton). */
+const CONTRACT_FILES = new Set(["AGENTS.md", "AGENTS.meta.md"]);
+
 /**
  * List every wiki page under `dir`: markdown files, excluding the
- * operating contract (AGENTS.md), sorted, POSIX-style relative paths.
- * Throws naming the directory when it does not exist.
+ * operating contracts (AGENTS.md and its meta template), sorted,
+ * POSIX-style relative paths. Throws naming the directory when it
+ * does not exist.
  */
 export async function listWikiPages(dir: string): Promise<string[]> {
   let isDirectory: boolean;
@@ -150,7 +155,9 @@ export async function listWikiPages(dir: string): Promise<string[]> {
   }
 
   return (await listFiles(dir))
-    .filter((file) => file.endsWith(".md") && basename(file) !== "AGENTS.md")
+    .filter(
+      (file) => file.endsWith(".md") && !CONTRACT_FILES.has(basename(file)),
+    )
     .sort();
 }
 

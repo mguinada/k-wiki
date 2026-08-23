@@ -366,6 +366,30 @@ Hardened during the first full build (issue #61):
   every run: `npm run sync-vault -- sync.local.json` and
   `npm run wiki-ingest -- --settings settings.local.yml <raw-dir>`.
 
+### 9. The meta-wiki (a repository as source)
+
+k-wiki documenting itself: the source is the k-wiki repository, not a
+vault. A second pipeline instance with its own data repo
+(`k-wiki-meta-data`), its own configs (`sync-meta.json`,
+`settings-meta.yml`), and a different contract — describe, don't
+prescribe; code is truth; pages for mechanisms, not per-file résumés
+([guide §25 Scenario E](docs/karpathy_wiki_implementation_guide.md)).
+Selection is an allowlist in `sync-meta.json`: anything not listed is
+excluded by construction, so the projection can never ingest itself.
+
+```sh
+npm run data:init -- --meta sync-meta.json       # once
+npm run sync-repo -- sync-meta.json               # project a committed tree
+node src/ingest/wiki-ingest.ts --settings settings-meta.yml \
+  ~/Lab/k-wiki-meta-data/raw                       # build the meta-wiki
+npm run health -- ~/Lab/k-wiki-meta-data/raw       # coherence + freshness
+```
+
+The projection records the source commit it was made from; `health`
+warns when the source has moved on (`--fail-on-stale` to make it
+blocking). Review every regeneration in the data repo with the usual
+git-diff flow.
+
 ### Arriving with open issues
 
 These modes are documented when their issue lands, not before:

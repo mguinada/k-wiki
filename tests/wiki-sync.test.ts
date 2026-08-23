@@ -449,7 +449,7 @@ describe("createAgentProgressSink with lint heartbeats", () => {
       (text) => written.push(text),
       () => {},
       true,
-      { dim: (text) => text, yellow: (text) => text },
+      (text) => text,
       [LINT_HEARTBEAT_PREFIX],
     );
 
@@ -653,10 +653,9 @@ describe("runWikiSync crosslinks stage", () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
     const domainWiki = await makeDomainWiki(h);
 
-    // Inject the domain wiki's grandparent so `~/domain/wiki` names
-    // the same dir the harness built. Injected, not env-mutated:
-    // `os.homedir()` reads the process's C environ, which worker
-    // threads (Stryker's vitest pool) do not share with `process.env`.
+    // `~/domain/wiki` against the domain wiki's grandparent as home
+    // names the same dir the harness built; home is injected —
+    // mutating process.env.HOME is fragile under Stryker's sandbox.
     const result = await runCrosslinksStage({
       rawDir: join(h.dataRoot, "raw"),
       domains: ["~/domain/wiki"],

@@ -1784,3 +1784,77 @@ describe("sync-vault CLI", () => {
     });
   });
 });
+
+describe("runSync repo-source rejection", () => {
+  it("rejects a config whose source is a repo with a pointer to sync-repo", async () => {
+    const ws = await makeWorkspace();
+    const configPath = join(ws.dir, "sync-meta.json");
+
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        vaults: [
+          {
+            source: "repo",
+            name: "k-wiki",
+            root: ws.dir,
+            include: ["README.md"],
+          },
+        ],
+      }),
+      "utf8",
+    );
+
+    await expect(
+      runSync({ configPath, rawDir: join(ws.dir, "raw-meta") }),
+    ).rejects.toThrow(/repo source.*sync-repo/);
+  });
+
+  it("rejects a repo source before writing anything to the raw dir", async () => {
+    const ws = await makeWorkspace();
+    const configPath = join(ws.dir, "sync-meta.json");
+    const rawDir = join(ws.dir, "raw-meta");
+
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        vaults: [
+          {
+            source: "repo",
+            name: "k-wiki",
+            root: ws.dir,
+            include: ["README.md"],
+          },
+        ],
+      }),
+      "utf8",
+    );
+
+    await expect(runSync({ configPath, rawDir })).rejects.toThrow();
+    await expect(stat(rawDir)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("rejects a repo source in a dry run as well", async () => {
+    const ws = await makeWorkspace();
+    const configPath = join(ws.dir, "sync-meta.json");
+
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        vaults: [
+          {
+            source: "repo",
+            name: "k-wiki",
+            root: ws.dir,
+            include: ["README.md"],
+          },
+        ],
+      }),
+      "utf8",
+    );
+
+    await expect(runDryRun({ configPath, rawDir: ws.rawDir })).rejects.toThrow(
+      /repo source.*sync-repo/,
+    );
+  });
+});

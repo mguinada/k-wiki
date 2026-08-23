@@ -48,6 +48,9 @@ export interface SeedOptions {
   /** Write the operator-owned second-brain identity marker
    *  (issue #94) at the data root and commit it with the skeleton. */
   readonly secondBrain?: boolean;
+  /** Seed the meta contract (issue #74) as the data repo's
+   *  wiki/AGENTS.md instead of the canonical wiki contract. */
+  readonly meta?: boolean;
 }
 
 const DATA_README = `# k-wiki data
@@ -68,7 +71,12 @@ function isSeeded(dataRoot: string): boolean {
   return existsSync(join(dataRoot, "wiki", "index.md"));
 }
 
-/** List the skeleton paths the code repo versions under raw/ and wiki/. */
+/** The canonical meta contract (issue #74): copied into a meta data
+ *  repo as its wiki/AGENTS.md, never shipped as itself. */
+const META_CONTRACT = "wiki/AGENTS.meta.md";
+
+/** List the skeleton paths the code repo versions under raw/ and wiki/,
+ *  minus the meta contract template. */
 async function listSkeletonPaths(
   repoRoot: string,
   env: NodeJS.ProcessEnv,
@@ -79,7 +87,11 @@ async function listSkeletonPaths(
     env,
   );
 
-  return stdout.split("\n").filter(Boolean).sort();
+  return stdout
+    .split("\n")
+    .filter(Boolean)
+    .filter((relPath) => relPath !== META_CONTRACT)
+    .sort();
 }
 
 /** Copy the skeleton and commit it as the data repo's first commit. */
@@ -88,6 +100,7 @@ async function seed(
   repoRoot: string,
   env: NodeJS.ProcessEnv,
   secondBrain: boolean,
+  meta: boolean,
 ): Promise<void> {
   await mkdir(dataRoot, { recursive: true });
   await runGit(dataRoot, ["init", "--quiet"], env);
@@ -103,6 +116,13 @@ async function seed(
 
   if (secondBrain) {
     await writeFile(join(dataRoot, ".second-brain"), "");
+  }
+
+  if (meta) {
+    await copyFile(
+      join(repoRoot, META_CONTRACT),
+      join(dataRoot, "wiki", "AGENTS.md"),
+    );
   }
 
   const message = "Seed data repo from k-wiki skeleton";
@@ -139,7 +159,13 @@ export async function seedDataRepo(
     }
   }
 
-  await seed(config.dataRoot, repoRoot, env, options.secondBrain === true);
+  await seed(
+    config.dataRoot,
+    repoRoot,
+    env,
+    options.secondBrain === true,
+    options.meta === true,
+  );
 
   return "seeded";
 }
@@ -150,7 +176,7 @@ const defaultRepoRoot = resolve(
 );
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
-const HELP = `Usage: init-data-repo [-h | --help] [--second-brain] [<config>]
+const HELP = `Usage: init-data-repo [-h | --help] [--second-brain] [--meta] [<config>]
 
 Create and seed the data repo at the config's dataRoot: git init, copy
 the raw/ and wiki/ skeleton from the code repo, first commit.
@@ -164,6 +190,10 @@ Idempotent — an already-seeded data repo is left untouched.
                   identity (issue #94). Mark an already-seeded repo
                   by hand: create and commit .second-brain at its
                   root.
+  --meta          Seed the meta contract (issue #74) as the data
+                  repo's wiki/AGENTS.md instead of the canonical
+                  wiki contract: the repo-as-source wiki that
+                  documents k-wiki itself, describe-don't-prescribe.
   -h, --help      Print this help and exit; no side effects.
   <config>        Path to sync.json.
                   Default: the repo's own sync.json.`;
@@ -179,12 +209,15 @@ export async function main(): Promise<void> {
   }
 
   const secondBrain = args.includes("--second-brain");
-  const configArg = args.find((arg) => arg !== "--second-brain");
+  const meta = args.includes("--meta");
+  const configArg = args.find(
+    (arg) => arg !== "--second-brain" && arg !== "--meta",
+  );
   const configPath = configArg ?? join(defaultRepoRoot, "sync.json");
 
   try {
     const config = await loadSyncConfig(configPath);
-    const result = await seedDataRepo({ configPath, secondBrain });
+    const result = await seedDataRepo({ configPath, secondBrain, meta });
 
     console.log(
       result === "seeded"

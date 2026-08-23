@@ -201,10 +201,12 @@ export interface CrosslinksOptions {
   /** Domain wiki dirs from the settings' `secondBrain.domains`;
    *  undefined or absent (the key missing) skips the stage entirely. */
   readonly domains?: readonly string[] | undefined;
+  /** Home directory for `~` expansion in domain dirs; defaults to
+   *  the real home. Injection keeps the stage testable without
+   *  mutating process.env.HOME (fragile under Stryker's sandbox). */
+  readonly home?: string;
   /** Progress sink (uncolored messages); default: silent. */
   readonly onProgress?: (message: string) => void;
-  /** Home dir for `~` expansion in domains; default: `os.homedir()`. */
-  readonly home?: string;
 }
 
 /**
@@ -225,7 +227,8 @@ export async function runCrosslinksStage(
   }
 
   const onProgress = options.onProgress ?? (() => {});
-  const domains = options.domains.map((dir) => expandHome(dir, options.home));
+  const home = options.home ?? homedir();
+  const domains = options.domains.map((dir) => expandHome(dir, home));
 
   onProgress(
     `wiki-sync: crosslinks — auditing against ${pluralized(domains.length, "domain wiki")}`,
@@ -786,7 +789,7 @@ export async function main(): Promise<void> {
     (text) => process.stderr.write(text),
     (text) => console.error(text),
     animated,
-    colors(),
+    (text) => colors().dim(text),
     [...AGENT_HEARTBEAT_PREFIX, LINT_HEARTBEAT_PREFIX],
   );
 

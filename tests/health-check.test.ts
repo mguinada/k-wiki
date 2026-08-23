@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createColors } from "picocolors";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { runGit } from "../src/data/init-data-repo.ts";
 import { checkRaw, displayPath, main } from "../src/health/check-raw.ts";
 import {
   type Manifest,
@@ -522,7 +523,9 @@ describe("health CLI", () => {
   it("prints the usage line for --help", async () => {
     const { out } = await runHealth(["--help"]);
 
-    expect(out).toContain("check-raw [-h | --help] [<raw-dir>]");
+    expect(out).toContain(
+      "check-raw [-h | --help] [--fail-on-stale] [<raw-dir>]",
+    );
   });
 
   it("prints the same help for -h as for --help", async () => {
@@ -724,5 +727,194 @@ describe("check-raw import guard", () => {
     );
 
     expect(`${out}${err}`).toBe("");
+  });
+});
+
+describe("checkRaw freshness (repo-as-source)", () => {
+  const GIT_ENV = {
+    PATH: process.env.PATH,
+    GIT_AUTHOR_NAME: "k-wiki test",
+    GIT_AUTHOR_EMAIL: "test@example.com",
+    GIT_COMMITTER_NAME: "k-wiki test",
+    GIT_COMMITTER_EMAIL: "test@example.com",
+    HOME: process.env.HOME,
+  };
+
+  /** A committed source repo plus a coherent raw projection stamped
+   *  with its HEAD commit and root. */
+  async function makeStaleWorkspace(): Promise<{
+    rawDir: string;
+    sourceRoot: string;
+  }> {
+    const rawDir = await makeRawDir();
+    const sourceRoot = join(rawDir, "source");
+
+    await mkdir(sourceRoot, { recursive: true });
+    await writeFile(join(sourceRoot, "note.md"), "body\n");
+    await runGit(sourceRoot, ["init", "--quiet"], GIT_ENV);
+    await runGit(sourceRoot, ["add", "-A"], GIT_ENV);
+    await runGit(sourceRoot, ["commit", "--quiet", "-m", "one"], GIT_ENV);
+    const { stdout } = await runGit(sourceRoot, ["rev-parse", "HEAD"], GIT_ENV);
+    const commit = stdout.trim();
+
+    const notes: VaultNotes = {
+      "note.md": { hash: hashOf(NOTE), last_synced: "2026-08-20T00:00:00Z" },
+    };
+
+    await mkdir(join(rawDir, "notes", "k-wiki"), { recursive: true });
+    await writeFile(join(rawDir, "notes", "k-wiki", "note.md"), NOTE);
+    await writeFile(
+      join(rawDir, "manifest.json"),
+      serializeManifest(
+        { vaults: { "k-wiki": notes } },
+        { source_commit: commit, source_root: sourceRoot },
+      ),
+    );
+
+    return { rawDir, sourceRoot };
+  }
+
+  it("warns when the recorded commit is behind the source HEAD", async () => {
+    const { rawDir, sourceRoot } = await makeStaleWorkspace();
+
+    await writeFile(join(sourceRoot, "note.md"), "body v2\n");
+    await runGit(sourceRoot, ["add", "-A"], GIT_ENV);
+    await runGit(sourceRoot, ["commit", "--quiet", "-m", "two"], GIT_ENV);
+
+    const report = await checkRaw(rawDir, { env: GIT_ENV });
+
+    expect(report.healthy).toBe(true);
+    expect(report.warnings.length).toBe(1);
+    expect(report.warnings[0]).toMatch(/stale projection.*behind source HEAD/);
+  });
+
+  it("stays silent when the recorded commit equals the source HEAD", async () => {
+    const { rawDir } = await makeStaleWorkspace();
+
+    const report = await checkRaw(rawDir, { env: GIT_ENV });
+
+    expect(report.healthy).toBe(true);
+    expect(report.warnings).toEqual([]);
+  });
+
+  it("skips the freshness check when the manifest records no commit", async () => {
+    const rawDir = await makeRawDir();
+    const notes: VaultNotes = {
+      "note.md": { hash: hashOf(NOTE), last_synced: "2026-08-20T00:00:00Z" },
+    };
+
+    await mkdir(join(rawDir, "notes", "k-wiki"), { recursive: true });
+    await writeFile(join(rawDir, "notes", "k-wiki", "note.md"), NOTE);
+    await writeFile(
+      join(rawDir, "manifest.json"),
+      serializeManifest({ vaults: { "k-wiki": notes } }),
+    );
+
+    const report = await checkRaw(rawDir, { env: GIT_ENV });
+
+    expect(report.warnings).toEqual([]);
+  });
+
+  it("warns when the source repo can no longer be read", async () => {
+    const { rawDir } = await makeStaleWorkspace();
+
+    await rm(join(rawDir, "source"), { recursive: true, force: true });
+
+    const report = await checkRaw(rawDir, { env: GIT_ENV });
+
+    expect(report.healthy).toBe(true);
+    expect(report.warnings.length).toBe(1);
+    expect(report.warnings[0]).toMatch(/cannot verify freshness/);
+  });
+
+  it("prints a stale warning on stderr while staying exit 0", async () => {
+    const { rawDir, sourceRoot } = await makeStaleWorkspace();
+
+    await writeFile(join(sourceRoot, "note.md"), "body v2\n");
+    await runGit(sourceRoot, ["add", "-A"], GIT_ENV);
+    await runGit(sourceRoot, ["commit", "--quiet", "-m", "two"], GIT_ENV);
+
+    const argv = process.argv;
+    const out: string[] = [];
+    const err: string[] = [];
+
+    process.argv = [...argv.slice(0, 2), rawDir];
+
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) => err.push(parts.join(" ")));
+
+    try {
+      await main();
+    } finally {
+      process.argv = argv;
+      logSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
+
+    expect(err.join("\n")).toContain("check-raw: stale projection");
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("exits 1 on a stale projection under --fail-on-stale", async () => {
+    const { rawDir, sourceRoot } = await makeStaleWorkspace();
+
+    await writeFile(join(sourceRoot, "note.md"), "body v2\n");
+    await runGit(sourceRoot, ["add", "-A"], GIT_ENV);
+    await runGit(sourceRoot, ["commit", "--quiet", "-m", "two"], GIT_ENV);
+
+    const argv = process.argv;
+    const out: string[] = [];
+    const err: string[] = [];
+
+    process.argv = [...argv.slice(0, 2), "--fail-on-stale", rawDir];
+
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) => err.push(parts.join(" ")));
+
+    try {
+      await main();
+    } finally {
+      process.argv = argv;
+      logSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
+
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("stays exit 0 under --fail-on-stale when the projection is current", async () => {
+    const { rawDir } = await makeStaleWorkspace();
+
+    const argv = process.argv;
+    const out: string[] = [];
+    const err: string[] = [];
+
+    process.argv = [...argv.slice(0, 2), "--fail-on-stale", rawDir];
+
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) => err.push(parts.join(" ")));
+
+    try {
+      await main();
+    } finally {
+      process.argv = argv;
+      logSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
+
+    expect(out.join("\n")).toContain("healthy:");
+    expect(process.exitCode).toBeUndefined();
   });
 });
