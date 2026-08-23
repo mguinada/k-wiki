@@ -114,6 +114,12 @@ function unquote(value: string): string {
   return quote === '"' || quote === "'" ? value.slice(1, -1) : value;
 }
 
+/** Index of the closing frontmatter fence — trim-tolerant, matching
+ *  the shared parser in src/wiki/pages.ts — or -1. */
+function closingFence(lines: readonly string[]): number {
+  return lines.findIndex((line, index) => index > 0 && line.trim() === "---");
+}
+
 /** Parse a closed frontmatter block; undefined when there is none. */
 function frontmatterLines(text: string): string[] | undefined {
   const lines = text.split("\n");
@@ -122,18 +128,25 @@ function frontmatterLines(text: string): string[] | undefined {
     return undefined;
   }
 
-  const closing = lines.indexOf("---", 1);
+  const closing = closingFence(lines);
 
   return closing === -1 ? undefined : lines.slice(1, closing);
 }
 
-/** The scalar value of one frontmatter key, unquoted; undefined when absent. */
+/** The scalar value of one frontmatter key, unquoted; undefined when
+ *  absent — or bare, like `origin:` with nothing after the colon — so
+ *  an empty-value line counts as lacking the field, matching the
+ *  shared parser in src/wiki/pages.ts. */
 function scalarValue(fm: readonly string[], key: string): string | undefined {
   const line = fm.find((l) => l.startsWith(`${key}:`));
 
-  return line === undefined
-    ? undefined
-    : unquote(line.slice(key.length + 1).trim());
+  if (line === undefined) {
+    return undefined;
+  }
+
+  const raw = line.slice(key.length + 1).trim();
+
+  return raw === "" ? undefined : unquote(raw);
 }
 
 /** Path-style `sources` entries (wikilinks excluded), unquoted, in order. */
@@ -167,13 +180,22 @@ function sourcePaths(fm: readonly string[]): string[] {
 /**
  * Insert `origin` as the last frontmatter line and bump `updated` —
  * only within the frontmatter block; a body line starting with
- * `updated:` is left alone.
+ * `updated:` is left alone. An existing empty-value `origin:` line is
+ * replaced in place, so a re-run sees exactly one origin line and
+ * stays idempotent.
  */
 function rewrite(text: string, rawPath: string, date: string): string {
   const lines = text.split("\n");
-  const closing = lines.indexOf("---", 1);
+  const closing = closingFence(lines);
+  const emptyOrigin = lines.findIndex(
+    (line, index) => index >= 1 && index < closing && /^origin:\s*$/.test(line),
+  );
 
-  lines.splice(closing, 0, `origin: raw/${rawPath}`);
+  if (emptyOrigin === -1) {
+    lines.splice(closing, 0, `origin: raw/${rawPath}`);
+  } else {
+    lines[emptyOrigin] = `origin: raw/${rawPath}`;
+  }
 
   const updated = lines.findIndex(
     (line, index) =>

@@ -55,7 +55,7 @@ function printBackfillWarning(
 ): void {
   const noun = missing === 1 ? "page lacks" : "pages lack";
   const date = new Date().toISOString().slice(0, 10);
-  const targets = `${wikiDir} ${rawDir}`;
+  const targets = `"${wikiDir}" "${rawDir}"`;
 
   console.log(
     colors().yellow(

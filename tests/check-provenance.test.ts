@@ -56,7 +56,10 @@ interface RunResult {
   readonly err: string;
 }
 
-function runNode(args: readonly string[]): Promise<RunResult> {
+function runNode(
+  args: readonly string[],
+  extraEnv: Record<string, string> = {},
+): Promise<RunResult> {
   // argv[1] must be the real path: import.meta.url is realpath'd by
   // Node, and a symlinked spawn path (macOS tmp) would make the CLI
   // import guard compare unequal and skip main().
@@ -64,6 +67,7 @@ function runNode(args: readonly string[]): Promise<RunResult> {
   const env = { ...process.env };
 
   delete env.NO_COLOR;
+  Object.assign(env, extraEnv);
 
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, realArgs, { stdio: "pipe", env });
@@ -342,7 +346,20 @@ describe("check-provenance CLI", () => {
     expect(
       `${/^\d{4}-\d{2}-\d{2}$/.test(date)}: ${result.code}: ${result.out}`,
     ).toBe(
-      `true: 0: ${paint.green("ok: 1 source link resolves, 0 origins exist across 1 page")}\n${paint.yellow("warning: 1 type: source page lacks origin — run a backfill:")}\n  first preview:  npm run backfill-origin -- --dry-run --date ${date} ${wikiDir} ${rawDir}\n  then write:     npm run backfill-origin -- --date ${date} ${wikiDir} ${rawDir}\n`,
+      `true: 0: ${paint.green("ok: 1 source link resolves, 0 origins exist across 1 page")}\n${paint.yellow("warning: 1 type: source page lacks origin — run a backfill:")}\n  first preview:  npm run backfill-origin -- --dry-run --date ${date} "${wikiDir}" "${rawDir}"\n  then write:     npm run backfill-origin -- --date ${date} "${wikiDir}" "${rawDir}"\n`,
+    );
+  });
+
+  it("prints no warning when dead provenance exits 1 alongside missing origins", async () => {
+    const { wikiDir, rawDir } = await makeFixture({
+      "sources/lacks.md":
+        "---\ntype: source\nsources:\n  - notes/V/gone.md\n---\nbody",
+    });
+
+    const result = await runNode([wikiDir, rawDir]);
+
+    expect(`${result.code}: ${result.out.includes("warning:")}`).toBe(
+      "1: false",
     );
   });
 
@@ -357,10 +374,24 @@ describe("check-provenance CLI", () => {
 
     const result = await runNode([wikiDir, rawDir]);
 
-    expect(result.code).toBe(0);
-    expect(result.out).toContain(
-      "warning: 2 type: source pages lack origin — run a backfill:",
+    expect(
+      `${result.code}: ${result.out.includes("warning: 2 type: source pages lack origin — run a backfill:")}`,
+    ).toBe("0: true");
+  });
+
+  it("prints the warning without color codes when NO_COLOR is set", async () => {
+    const { wikiDir, rawDir } = await makeFixture(
+      {
+        "sources/lacks.md": "---\ntype: source\n---\nbody",
+      },
+      { "notes/V/a.md": "a" },
     );
+
+    const result = await runNode([wikiDir, rawDir], { NO_COLOR: "1" });
+
+    expect(
+      `${result.out.includes("warning: 1 type: source page lacks origin")}:${result.out.includes("\u001b[")}`,
+    ).toBe("true:false");
   });
 
   it("prints the usage line for --help with exit 0", async () => {
