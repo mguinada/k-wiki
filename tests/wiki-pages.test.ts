@@ -34,6 +34,12 @@ describe("parsePageFields", () => {
     ).toMatchObject({ origin: "raw/notes/V/a.md" });
   });
 
+  it("reads the page type scalar like origin", () => {
+    expect(parsePageFields('---\ntype: "source"\n---\n')).toMatchObject({
+      type: "source",
+    });
+  });
+
   it("collects sources entries as written", () => {
     const fields = parsePageFields(
       '---\nsources:\n  - "[[Temp research]]"\n  - "notes/V/RAG.md"\n  - https://example.com\n---\n',
