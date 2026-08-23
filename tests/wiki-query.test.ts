@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -481,6 +481,50 @@ interface Harness {
 }
 
 /**
+ * The committed wiki/ tree (git-tracked index, log, one concept page;
+ * empty raw/), built once per test file and copied per harness: the
+ * same tree and init commit every makeHarness used to build with three
+ * git spawns of its own. Prompts and settings stay per-harness writes
+ * (untracked, exactly as before — the template commits only the wiki).
+ */
+let dataRepoTemplate: Promise<string> | undefined;
+
+function committedDataRepoTemplate(): Promise<string> {
+  dataRepoTemplate ??= (async () => {
+    const template = await mkdtemp(join(tmpdir(), "k-wiki-query-tpl-"));
+
+    tempDirs.push(template);
+
+    await mkdir(join(template, "raw"), { recursive: true });
+    await mkdir(join(template, "wiki", "concepts"), { recursive: true });
+    await writeFile(join(template, "wiki", "index.md"), "# Index\n");
+    await writeFile(join(template, "wiki", "log.md"), "# Log\n");
+    await writeFile(join(template, "wiki", "concepts", "rag.md"), "RAG\n");
+
+    await run("git", ["init", "--quiet"], { cwd: template });
+    await run("git", ["add", "-A"], { cwd: template });
+    await run(
+      "git",
+      [
+        "-c",
+        "user.email=t@t",
+        "-c",
+        "user.name=t",
+        "commit",
+        "--quiet",
+        "-m",
+        "init",
+      ],
+      { cwd: template },
+    );
+
+    return template;
+  })();
+
+  return dataRepoTemplate;
+}
+
+/**
  * A data repo (git-tracked wiki/, empty raw/) with a query prompt and
  * a recording agent runner. The default runner files a query page and
  * reports it; tests override it per case.
@@ -490,29 +534,7 @@ async function makeHarness(): Promise<Harness> {
 
   tempDirs.push(dataRoot);
 
-  await mkdir(join(dataRoot, "raw"), { recursive: true });
-  await mkdir(join(dataRoot, "wiki"), { recursive: true });
-  await mkdir(join(dataRoot, "wiki", "concepts"), { recursive: true });
-  await writeFile(join(dataRoot, "wiki", "index.md"), "# Index\n");
-  await writeFile(join(dataRoot, "wiki", "log.md"), "# Log\n");
-  await writeFile(join(dataRoot, "wiki", "concepts", "rag.md"), "RAG\n");
-
-  await run("git", ["init", "--quiet"], { cwd: dataRoot });
-  await run("git", ["add", "-A"], { cwd: dataRoot });
-  await run(
-    "git",
-    [
-      "-c",
-      "user.email=t@t",
-      "-c",
-      "user.name=t",
-      "commit",
-      "--quiet",
-      "-m",
-      "init",
-    ],
-    { cwd: dataRoot },
-  );
+  await cp(await committedDataRepoTemplate(), dataRoot, { recursive: true });
 
   const promptsDir = join(dataRoot, "prompts");
 

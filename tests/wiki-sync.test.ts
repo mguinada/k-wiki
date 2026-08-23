@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -101,6 +101,41 @@ const lintStub: AgentRunner = async (_command, args, options) => {
   return { stdout: "lint: 149 pages audited, 0 problems", stderr: "" };
 };
 
+/**
+ * The committed data-repo skeleton, built once per test file and copied
+ * per harness: identical tree and git history to the per-test init it
+ * replaced (one `init` commit, user t/t), minus the five git spawns
+ * every makeHarness call used to pay.
+ */
+let dataRepoTemplate: Promise<string> | undefined;
+
+function committedDataRepoTemplate(): Promise<string> {
+  dataRepoTemplate ??= (async () => {
+    const template = await mkdtemp(join(tmpdir(), "k-wiki-sync-tpl-"));
+
+    tempDirs.push(template);
+
+    await mkdir(join(template, "raw"), { recursive: true });
+    await mkdir(join(template, "wiki"), { recursive: true });
+    await writeFile(
+      join(template, "raw", "manifest.json"),
+      serializeManifest({ vaults: {} }),
+    );
+    await writeFile(join(template, "wiki", "index.md"), "# Index\n");
+    await run("git", ["init", "--quiet"], { cwd: template });
+    await run("git", ["config", "user.email", "t@t"], { cwd: template });
+    await run("git", ["config", "user.name", "t"], { cwd: template });
+    await run("git", ["add", "-A"], { cwd: template });
+    await run("git", ["commit", "--quiet", "-m", "init"], {
+      cwd: template,
+    });
+
+    return template;
+  })();
+
+  return dataRepoTemplate;
+}
+
 async function makeHarness(
   vaultNotes: Record<string, string>,
 ): Promise<Harness> {
@@ -139,18 +174,7 @@ async function makeHarness(
     "AUDIT THE WIKI PROMPT\n\nSave the report to `outputs/lint-<YYYY-MM-DD>.md`.\n",
   );
 
-  await mkdir(join(dataRoot, "raw"), { recursive: true });
-  await mkdir(join(dataRoot, "wiki"), { recursive: true });
-  await writeFile(
-    join(dataRoot, "raw", "manifest.json"),
-    serializeManifest({ vaults: {} }),
-  );
-  await writeFile(join(dataRoot, "wiki", "index.md"), "# Index\n");
-  await run("git", ["init", "--quiet"], { cwd: dataRoot });
-  await run("git", ["config", "user.email", "t@t"], { cwd: dataRoot });
-  await run("git", ["config", "user.name", "t"], { cwd: dataRoot });
-  await run("git", ["add", "-A"], { cwd: dataRoot });
-  await run("git", ["commit", "--quiet", "-m", "init"], { cwd: dataRoot });
+  await cp(await committedDataRepoTemplate(), dataRoot, { recursive: true });
 
   const invocations: string[] = [];
   const argRecords: string[][] = [];
