@@ -242,11 +242,15 @@ the settings, **and a per-instance outputs dir** so the manifest
 snapshot never crosses instances:
 
 ```sh
-npm run data:init -- sync-second-brain.json
+npm run data:init -- --second-brain sync-second-brain.json
 npm run wiki-sync -- --settings settings-second-brain.yml --outputs outputs-second-brain sync-second-brain.json
 ```
 
-The first ingest creates `wiki/second-brain/profile.md` — the agent's
+`data:init --second-brain` writes `.second-brain` at the data root —
+the operator-owned identity marker the ingest guardrails read (only
+a marked repo may carry cross-wiki links; the agent-writable profile
+never grants identity). The first ingest creates
+`wiki/second-brain/profile.md` — the agent's
 evolving memory of the wiki's subject: current projects, goals,
 communication style, standing preferences. Later runs read it first and update it
 when the sources reveal changes; queries shape their answers with it

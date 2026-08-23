@@ -27,7 +27,9 @@ import {
  *  3. wikilinks — every `[[wikilink]]` in a changed page resolves to
  *     an existing wiki file, and no remaining page keeps a link to a
  *     page the run deleted; cross-wiki `[[<vault>/<page>]]` targets
- *     (issue #81) are external only in a second brain — in every
+ *     (issue #81) are external only in a second brain — identified by
+ *     the operator-owned `.second-brain` marker at the data root
+ *     (issue #94), never by the agent-writable profile — and in every
  *     other wiki they are unresolvable and trip the check.
  */
 
@@ -582,14 +584,23 @@ async function deletedWikiPageNames(
   return deleted;
 }
 
+/** The operator-owned second-brain identity marker (issue #94):
+ *  presence at the data root — not the agent-writable profile —
+ *  makes the wiki a second brain. It sits outside the run's
+ *  writable whitelist, so guardrail 1 reverts any run that tries to
+ *  create, edit, or remove it: identity cannot be self-granted. */
+const SECOND_BRAIN_MARKER = ".second-brain";
+
 /** True when the wiki is a second brain — identified by the
- *  accreted profile layer (guide §25, Scenario D). Only a second
+ *  operator-owned `.second-brain` marker at the data root (guide
+ *  §25, Scenario D; issue #94), written by `data:init
+ *  --second-brain` or by hand, never by the agent. Only a second
  *  brain may use cross-wiki links; in every other wiki a slashed
  *  target is simply unresolvable, so the privacy direction (domain
  *  wikis never reference second-brain material) is enforced per-run. */
 async function isSecondBrain(dataRoot: string): Promise<boolean> {
   try {
-    await readFile(join(dataRoot, "wiki", "second-brain", "profile.md"));
+    await readFile(join(dataRoot, SECOND_BRAIN_MARKER));
 
     return true;
   } catch {

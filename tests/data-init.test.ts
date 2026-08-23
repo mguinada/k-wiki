@@ -75,7 +75,7 @@ describe("data:init CLI help", () => {
 
   it("prints the usage line for --help", async () => {
     expect((await runInitCli(["--help"])).out).toContain(
-      "init-data-repo [-h | --help] [<config>]",
+      "init-data-repo [-h | --help] [--second-brain] [<config>]",
     );
   });
 
@@ -318,6 +318,46 @@ describe("seedDataRepo", () => {
     );
   });
 
+  it("writes no second-brain marker without the secondBrain option", async () => {
+    const dataRoot = await makeTempDir();
+
+    await seedDataRepo({
+      configPath: await writeConfig(dataRoot),
+      repoRoot: await makeCodeRepoFixture(),
+      env: GIT_ENV,
+    });
+
+    expect(existsSync(join(dataRoot, ".second-brain"))).toBe(false);
+  });
+
+  it("writes the second-brain marker into the seed commit when asked", async () => {
+    const dataRoot = await makeTempDir();
+
+    await seedDataRepo({
+      configPath: await writeConfig(dataRoot),
+      repoRoot: await makeCodeRepoFixture(),
+      env: GIT_ENV,
+      secondBrain: true,
+    });
+
+    const { stdout } = await git(dataRoot, "ls-files", "--", ".second-brain");
+
+    expect(stdout.trim()).toBe(".second-brain");
+  }, 20000);
+
+  it("writes an empty second-brain marker", async () => {
+    const dataRoot = await makeTempDir();
+
+    await seedDataRepo({
+      configPath: await writeConfig(dataRoot),
+      repoRoot: await makeCodeRepoFixture(),
+      env: GIT_ENV,
+      secondBrain: true,
+    });
+
+    expect(await readFile(join(dataRoot, ".second-brain"), "utf8")).toBe("");
+  }, 20000);
+
   it("rejects a config without a data root", async () => {
     const dir = await makeTempDir();
     const configPath = join(dir, "sync.json");
@@ -494,5 +534,15 @@ describe("data:init import guard", () => {
     const { out } = await importWithArgv(modulePath, [configPath]);
 
     expect(out).toBe(`data:init: seeded ${argDataRoot}`);
+  });
+
+  it("seeds the second-brain marker when --second-brain is passed", async () => {
+    const repo = await stageRepo();
+    const modulePath = join(repo, "src", "data", "init-data-repo.ts");
+
+    const { out } = await importWithArgv(modulePath, ["--second-brain"]);
+
+    expect(out).toBe(`data:init: seeded ${join(repo, "data")}`);
+    expect(existsSync(join(repo, "data", ".second-brain"))).toBe(true);
   });
 });
