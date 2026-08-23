@@ -42,7 +42,6 @@ export interface CrossLinkReport {
  *  and the vault names its manifest declares (lowercased). */
 interface DomainWiki {
   readonly dir: string;
-  readonly dirInput: string;
   readonly files: readonly string[];
   readonly vaults: ReadonlySet<string>;
   readonly pages: ReadonlyMap<string, string>;
@@ -81,7 +80,7 @@ async function loadDomainWiki(dirInput: string): Promise<DomainWiki> {
     );
   }
 
-  return { dir, dirInput, files, vaults, pages: buildPageIndex(files) };
+  return { dir, files, vaults, pages: buildPageIndex(files) };
 }
 
 /**
@@ -95,6 +94,7 @@ export async function checkCrossWikiLinks(
   ...domainDirInputs: string[]
 ): Promise<CrossLinkReport> {
   const wikiDir = resolve(wikiDirInput);
+  const displayRoot = resolve(wikiDir, "..");
   const files = await listWikiPages(wikiDirInput);
   const domains = [];
 
@@ -117,7 +117,7 @@ export async function checkCrossWikiLinks(
 
       external++;
 
-      const where = `${relative(resolve(wikiDir, ".."), join(wikiDir, file))}:${link.line} -> ${link.raw}`;
+      const where = `${relative(displayRoot, join(wikiDir, file))}:${link.line} -> ${link.raw}`;
       const domain = domains.find((wiki) =>
         wiki.vaults.has(target.vault.toLowerCase()),
       );
@@ -134,6 +134,7 @@ export async function checkCrossWikiLinks(
 
   for (const domain of domains) {
     domainPages += domain.files.length;
+    const domainDisplayRoot = resolve(domain.dir, "..");
 
     for (const file of domain.files) {
       const text = await readFile(join(domain.dir, file), "utf8");
@@ -141,7 +142,7 @@ export async function checkCrossWikiLinks(
       for (const link of extractWikilinks(text)) {
         if (crossWikiTarget(link.target) !== undefined) {
           problems.push(
-            `${relative(resolve(domain.dir, ".."), join(domain.dir, file))}:${link.line} -> ${link.raw} (domain wikis must not use cross-wiki links)`,
+            `${relative(domainDisplayRoot, join(domain.dir, file))}:${link.line} -> ${link.raw} (domain wikis must not use cross-wiki links)`,
           );
         }
       }
@@ -200,7 +201,7 @@ export async function main(): Promise<void> {
   try {
     const report = await checkCrossWikiLinks(
       wikiDir ?? "",
-      ...(domainDirs as string[]),
+      ...domainDirs,
     );
 
     if (report.problems.length === 0) {
