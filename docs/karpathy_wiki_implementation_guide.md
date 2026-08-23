@@ -96,6 +96,7 @@ The default path through this guide is the simplest topology: **one vault → on
 | Several vaults, overlapping domains, cross-vault synthesis is the point | N vaults → 1 wiki | Simple path + Scenario A deltas (Section 25) |
 | Several vaults, disjoint domains, different audiences or privacy levels | N vaults → N wikis | One independent instance of the simple path each (Scenario B, Section 25) |
 | One vault, mixed public/private material | 1 vault → N wikis | Same opt-out mechanism, different exclusion keys (Scenario C, Section 25) |
+| One subject's own material — a person, career, or venture | 1 vault → 1 wiki (second brain) | Simple path + Scenario D deltas (Section 25) |
 
 Rules of thumb:
 
@@ -1332,7 +1333,7 @@ WorkVault      →  k-wiki-work/      (complete pipeline instance)
 PersonalVault  →  k-wiki-personal/  (complete pipeline instance)
 ```
 
-Folder names are illustrative; each instance is simply its own `k-wiki` root, and the process is root-relative. Each instance's manifest declares exactly one vault. You get physical isolation of privacy, audience, taxonomy, and history; you give up cross-wiki linking and synthesis.
+Folder names are illustrative; each instance is simply its own `k-wiki` root, and the process is root-relative. Each instance's manifest declares exactly one vault. You get physical isolation of privacy, audience, taxonomy, and history; you give up cross-wiki linking and synthesis — Scenario D's one-way second-brain links are the deliberate exception.
 
 ### Scenario C: One Vault → Multiple Wikis
 

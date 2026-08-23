@@ -66,9 +66,10 @@ until all three pass. Run them before every handoff.
 - `npm run e2e` — end-to-end suite (`vitest.e2e.config.ts`): real CLI
   child processes — sync-vault through a full vault lifecycle against
   the synthetic fixture vault in temp workspaces under `.e2e-tmp/`
-  (gitignored), wiki-ingest against a stub agent in temp data repos,
-  and wiki-sync through full-cycle, no-change, failure, and
-  guardrail-revert runs.
+  (gitignored), wiki-ingest against a stub agent in temp data repos
+  (second-brain runs included: profile ingest, cross-wiki validation,
+  and the reverted domain→second-brain leak), and wiki-sync through
+  full-cycle, no-change, failure, and guardrail-revert runs.
 - `npm run health [-- <raw-dir>]` — coherence check of a `raw/`
   projection (default: the repo's `raw/`); read-only, no vault access.
 
