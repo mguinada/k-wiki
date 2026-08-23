@@ -1503,7 +1503,7 @@ describe("sync-vault CLI", () => {
     );
     expect(out).toContain("  - Scratch/temp-research.md");
     expect(out.split("\n").at(-1)).toMatch(
-      /^sync complete: 0 copied, 1 removed \([\dms]+\)$/,
+      /^sync complete: 0 copied, 1 removed \(\d+(?:h\d{2}m\d{2}|m\d{2})?s\)$/,
     );
   });
 
@@ -1632,7 +1632,7 @@ describe("sync-vault CLI", () => {
     );
     expect(out).toContain("  - Retired/ (stale namespace, not configured)");
     expect(out.split("\n").at(-1)).toMatch(
-      /^sync complete: 0 copied, 0 removed, 1 namespace pruned \([\dms]+\)$/,
+      /^sync complete: 0 copied, 0 removed, 1 namespace pruned \(\d+(?:h\d{2}m\d{2}|m\d{2})?s\)$/,
     );
   });
 
@@ -1650,7 +1650,7 @@ describe("sync-vault CLI", () => {
     }
 
     expect(out.split("\n").at(-1)).toMatch(
-      /^dry-run complete: nothing written \([\dms]+\)$/,
+      /^dry-run complete: nothing written \(\d+(?:h\d{2}m\d{2}|m\d{2})?s\)$/,
     );
   });
 

@@ -93,7 +93,7 @@ describe("sync-vault CLI lifecycle: one vault, one story", () => {
     }
 
     expect(lastRun.out.split("\n").at(-2)).toMatch(
-      /^sync complete: 7 copied, 0 removed \([\dms]+\)$/,
+      /^sync complete: 7 copied, 0 removed \(\d+(?:h\d{2}m\d{2}|m\d{2})?s\)$/,
     );
   });
 
@@ -206,7 +206,7 @@ describe("sync-vault CLI lifecycle: one vault, one story", () => {
     );
     expect(lastRun.out).toContain("  - AI/llms/attention-is-all-you-need.md");
     expect(lastRun.out.split("\n").at(-2)).toMatch(
-      /^sync complete: 0 copied, 1 removed \([\dms]+\)$/,
+      /^sync complete: 0 copied, 1 removed \(\d+(?:h\d{2}m\d{2}|m\d{2})?s\)$/,
     );
   });
 });
@@ -423,7 +423,7 @@ describe("sync-vault CLI scenarios: isolated workspaces", () => {
     }
 
     expect(result.out.split("\n").at(-2)).toMatch(
-      /^dry-run complete: nothing written \([\dms]+\)$/,
+      /^dry-run complete: nothing written \(\d+(?:h\d{2}m\d{2}|m\d{2})?s\)$/,
     );
   });
 
