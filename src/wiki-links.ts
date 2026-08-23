@@ -67,7 +67,7 @@ export function extractWikilinks(text: string): Wikilink[] {
  *  (issue #81). Such links never resolve internally — by design — so
  *  the internal checkers skip them and `scripts/check-crosslinks.ts`
  *  validates them against the engineering wiki itself. */
-export const CROSS_WIKI_PREFIX = "engineering/";
+const CROSS_WIKI_PREFIX = "engineering/";
 
 /** The engineering page name of a cross-wiki target, or undefined when
  *  the target is internal. A target that is only the prefix carries no

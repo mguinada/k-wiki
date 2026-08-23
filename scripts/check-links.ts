@@ -1,13 +1,13 @@
-import { readFile, stat } from "node:fs/promises";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { readFile } from "node:fs/promises";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
 import { isMainModule } from "../src/cli/is-main.ts";
+import { listWikiPages } from "../src/wiki/pages.ts";
 import {
   buildPageIndex,
   crossWikiTarget,
   extractWikilinks,
-  listFiles,
 } from "../src/wiki-links.ts";
 
 /**
@@ -49,13 +49,11 @@ export async function checkWikiLinks(
   wikiDirInput: string,
 ): Promise<LinkReport> {
   const wikiDir = resolve(wikiDirInput);
-
-  await assertWikiDir(wikiDir, wikiDirInput);
-
   const displayRoot = resolve(wikiDir, "..");
-  const files = (await listFiles(wikiDir)).filter(
-    (file) => file.endsWith(".md") && basename(file) !== "AGENTS.md",
-  );
+  // listWikiPages asserts the directory; the input path (not the
+  // resolved one) lands in the error message, matching every other
+  // checker that reports what the operator typed.
+  const files = await listWikiPages(wikiDirInput);
   const index = buildPageIndex(files);
   const broken: string[] = [];
   let links = 0;
@@ -82,23 +80,6 @@ export async function checkWikiLinks(
   }
 
   return { broken, links, external, pages: files.length };
-}
-
-async function assertWikiDir(
-  wikiDir: string,
-  wikiDirInput: string,
-): Promise<void> {
-  let isDirectory: boolean;
-
-  try {
-    isDirectory = (await stat(wikiDir)).isDirectory();
-  } catch {
-    throw new Error(`wiki directory does not exist: ${wikiDirInput}`);
-  }
-
-  if (!isDirectory) {
-    throw new Error(`wiki directory is not a directory: ${wikiDirInput}`);
-  }
 }
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */

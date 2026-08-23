@@ -2,11 +2,11 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { runGit } from "../data/init-data-repo.ts";
 import { sha256 } from "../sync/hash.ts";
+import { listWikiPages } from "../wiki/pages.ts";
 import {
   buildPageIndex,
   crossWikiTarget,
   extractWikilinks,
-  listFiles,
 } from "../wiki-links.ts";
 
 /**
@@ -590,9 +590,7 @@ async function checkChangedWikilinks(
   let files: string[] = [];
 
   try {
-    files = (await listFiles(join(dataRoot, "wiki"))).filter(
-      (file) => file.endsWith(".md") && basename(file) !== "AGENTS.md",
-    );
+    files = await listWikiPages(join(dataRoot, "wiki"));
   } catch {
     // A run that deleted every wiki page has no links left to check.
   }

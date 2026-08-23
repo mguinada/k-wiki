@@ -1,12 +1,12 @@
-import { readFile, stat } from "node:fs/promises";
-import { basename, join, relative, resolve } from "node:path";
+import { readFile } from "node:fs/promises";
+import { join, relative, resolve } from "node:path";
 import { createColors } from "picocolors";
 import { isMainModule } from "../src/cli/is-main.ts";
+import { listWikiPages } from "../src/wiki/pages.ts";
 import {
   buildPageIndex,
   crossWikiTarget,
   extractWikilinks,
-  listFiles,
 } from "../src/wiki-links.ts";
 
 /**
@@ -31,43 +31,15 @@ export interface CrossLinkReport {
   /** Cross-wiki links found in the audited wiki. */
   readonly external: number;
   /** Markdown pages scanned in the audited wiki. */
-  readonly pages: number;
+  readonly auditedPages: number;
   /** Markdown pages scanned in the engineering wiki. */
   readonly engineeringPages: number;
 }
 
 /** Colors at the render boundary: green = ok, red = broken/error;
  *  NO_COLOR yields plain text. */
-
-/** Colors at the render boundary: green = ok, red = broken/error;
- *  NO_COLOR yields plain text. */
 function colors() {
   return createColors(!process.env.NO_COLOR);
-}
-
-async function assertWikiDir(
-  dir: string,
-  dirInput: string,
-  label: string,
-): Promise<void> {
-  let isDirectory: boolean;
-
-  try {
-    isDirectory = (await stat(dir)).isDirectory();
-  } catch {
-    throw new Error(`${label} directory does not exist: ${dirInput}`);
-  }
-
-  if (!isDirectory) {
-    throw new Error(`${label} directory is not a directory: ${dirInput}`);
-  }
-}
-
-/** Markdown pages of one wiki tree, skipping the AGENTS.md contract. */
-async function wikiPages(dir: string): Promise<string[]> {
-  return (await listFiles(dir)).filter(
-    (file) => file.endsWith(".md") && basename(file) !== "AGENTS.md",
-  );
 }
 
 /**
@@ -82,12 +54,8 @@ export async function checkCrossWikiLinks(
 ): Promise<CrossLinkReport> {
   const wikiDir = resolve(wikiDirInput);
   const engineeringDir = resolve(engineeringDirInput);
-
-  await assertWikiDir(wikiDir, wikiDirInput, "wiki");
-  await assertWikiDir(engineeringDir, engineeringDirInput, "engineering wiki");
-
-  const files = await wikiPages(wikiDir);
-  const engineeringFiles = await wikiPages(engineeringDir);
+  const files = await listWikiPages(wikiDir);
+  const engineeringFiles = await listWikiPages(engineeringDir);
   const index = buildPageIndex(engineeringFiles);
   const problems: string[] = [];
   let external = 0;
@@ -127,7 +95,7 @@ export async function checkCrossWikiLinks(
   return {
     problems,
     external,
-    pages: files.length,
+    auditedPages: files.length,
     engineeringPages: engineeringFiles.length,
   };
 }

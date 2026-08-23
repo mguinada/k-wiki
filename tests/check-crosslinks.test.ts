@@ -29,12 +29,21 @@ async function makeWiki(
 
   tempDirs.push(root);
 
+  await writeWiki(root, name, files);
+
+  return root;
+}
+
+/** Write one wiki tree (`<name>/` with files) under `root`. */
+async function writeWiki(
+  root: string,
+  name: string,
+  files: Record<string, string>,
+): Promise<void> {
   for (const [file, content] of Object.entries(files)) {
     await mkdir(join(root, name, dirname(file)), { recursive: true });
     await writeFile(join(root, name, file), content);
   }
-
-  return root;
 }
 
 /** A personal wiki plus an engineering wiki under one temp root. */
@@ -50,15 +59,8 @@ async function makePair(
 
   tempDirs.push(root);
 
-  for (const [name, files] of [
-    ["personal", personal],
-    ["engineering", engineering],
-  ] as const) {
-    for (const [file, content] of Object.entries(files)) {
-      await mkdir(join(root, name, dirname(file)), { recursive: true });
-      await writeFile(join(root, name, file), content);
-    }
-  }
+  await writeWiki(root, "personal", personal);
+  await writeWiki(root, "engineering", engineering);
 
   return {
     root,
@@ -73,7 +75,10 @@ interface RunResult {
   readonly err: string;
 }
 
-function runNode(args: readonly string[]): Promise<RunResult> {
+function runNode(
+  args: readonly string[],
+  options: { env?: NodeJS.ProcessEnv } = {},
+): Promise<RunResult> {
   // argv[1] must be the real path: import.meta.url is realpath'd by
   // Node, and a symlinked spawn path (macOS tmp) would make the CLI
   // import guard compare unequal and skip main().
@@ -84,6 +89,7 @@ function runNode(args: readonly string[]): Promise<RunResult> {
   const env = { ...process.env };
 
   delete env.NO_COLOR;
+  Object.assign(env, options.env);
 
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, realArgs, { stdio: "pipe", env });
@@ -171,7 +177,7 @@ describe("checkCrossWikiLinks", () => {
 
     expect(report.problems).toEqual([]);
     expect(report.external).toBe(0);
-    expect(report.pages).toBe(2);
+    expect(report.auditedPages).toBe(2);
   });
 
   it("skips AGENTS.md in both trees", async () => {
@@ -202,7 +208,7 @@ describe("checkCrossWikiLinks", () => {
     await expect(
       checkCrossWikiLinks(join(root, "personal"), join(root, "missing")),
     ).rejects.toThrow(
-      `engineering wiki directory does not exist: ${join(root, "missing")}`,
+      `wiki directory does not exist: ${join(root, "missing")}`,
     );
   });
 });
@@ -249,7 +255,7 @@ describe("check-crosslinks CLI", () => {
     const result = await runNode([join(root, "personal"), join(root, "nope")]);
 
     expect(result.code).toBe(1);
-    expect(result.err).toContain("engineering wiki directory does not exist");
+    expect(result.err).toContain("wiki directory does not exist");
   });
 
   it("exits 1 when a positional argument is missing", async () => {
@@ -296,25 +302,8 @@ describe("check-crosslinks CLI", () => {
       { "personal/decision.md": "Points at [[engineering/missing]].\n" },
       { "concepts/stub.md": "# Stub\n" },
     );
-    const env = { ...process.env, NO_COLOR: "1" };
-    const realScript = realpathSync(script);
-    const result = await new Promise<RunResult>((resolve, reject) => {
-      const child = spawn(
-        process.execPath,
-        [realScript, pair.personal, pair.engineering],
-        { stdio: "pipe", env },
-      );
-      let out = "";
-      let err = "";
-
-      child.stdout.on("data", (chunk: Buffer) => {
-        out += chunk;
-      });
-      child.stderr.on("data", (chunk: Buffer) => {
-        err += chunk;
-      });
-      child.on("error", reject);
-      child.on("close", (code) => resolve({ code, out, err }));
+    const result = await runNode([pair.personal, pair.engineering], {
+      env: { NO_COLOR: "1" },
     });
 
     expect(result.err).not.toContain("\x1b[");

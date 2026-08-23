@@ -552,6 +552,15 @@ describe("runGuardrails — check 3, wikilinks", () => {
     expect(post.failure).toBeUndefined();
   });
 
+  it("passes the wikilinks check when the run deletes every wiki page", async () => {
+    const dataRoot = await makeRepo();
+    const post = await guardedRun(dataRoot, async (root) => {
+      await rm(join(root, "wiki"), { recursive: true });
+    });
+
+    expect(post.failure).toBeUndefined();
+  });
+
   it("trips on a dangling wikilink naming the file and line", async () => {
     const dataRoot = await makeRepo();
     const post = await guardedRun(dataRoot, async (root) => {

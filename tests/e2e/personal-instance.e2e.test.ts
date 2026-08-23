@@ -359,11 +359,6 @@ console.log("rogue report");
 
   it("composes the query prompt with the profile instruction", async () => {
     const repo = await makeRepo("Personal", QUERY_STUB);
-
-    await writeFile(join(repo.dataRoot, "stub-agent.mjs"), QUERY_STUB, {
-      mode: 0o755,
-    });
-
     const result = await runCli(QUERY_SCRIPT, [
       "--settings",
       repo.settingsPath,
