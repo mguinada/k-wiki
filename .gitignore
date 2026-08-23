@@ -51,3 +51,12 @@ tests/.data-init-import-staging/
 # outputs/ stay tracked.
 outputs/runs/
 outputs/last-ingested-manifest.json
+
+# Second-brain instance state (guide 25, Scenario D): per-machine
+# outputs, config, and snapshot for additional wiki instances are
+# untracked by design (operator rule 8), and may hold personal
+# material — digest text quotes personal note titles. Ignored so a
+careless `git add .` can never publish them (PR #85 review, Major 2).
+outputs-*/
+sync-*.json
+settings-*.yml
