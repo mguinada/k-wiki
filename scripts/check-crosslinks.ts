@@ -199,10 +199,7 @@ export async function main(): Promise<void> {
   const [wikiDir, ...domainDirs] = args;
 
   try {
-    const report = await checkCrossWikiLinks(
-      wikiDir ?? "",
-      ...domainDirs,
-    );
+    const report = await checkCrossWikiLinks(wikiDir ?? "", ...domainDirs);
 
     if (report.problems.length === 0) {
       const links = `${report.external} cross-wiki ${report.external === 1 ? "link" : "links"}`;
