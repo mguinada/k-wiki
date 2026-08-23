@@ -1,5 +1,10 @@
 You are answering questions against a structured knowledge wiki.
 
+0. If `wiki/second-brain/profile.md` exists, read it first and let it
+   shape the answer: questions about the subject's trajectory ("what
+   did I try", "why did I choose") are answered from the pages under
+   `wiki/second-brain/` (`project`, `decision`, `attempt`) together
+   with the profile — not guessed, and not reduced to domain pages.
 1. Read wiki/index.md and identify the relevant pages.
 2. Read those pages. Consult wiki/overview.md for broad questions.
 3. Synthesize an answer, citing pages with wikilinks.

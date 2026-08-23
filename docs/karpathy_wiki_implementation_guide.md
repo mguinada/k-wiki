@@ -96,6 +96,7 @@ The default path through this guide is the simplest topology: **one vault → on
 | Several vaults, overlapping domains, cross-vault synthesis is the point | N vaults → 1 wiki | Simple path + Scenario A deltas (Section 25) |
 | Several vaults, disjoint domains, different audiences or privacy levels | N vaults → N wikis | One independent instance of the simple path each (Scenario B, Section 25) |
 | One vault, mixed public/private material | 1 vault → N wikis | Same opt-out mechanism, different exclusion keys (Scenario C, Section 25) |
+| One subject's own material — a person, career, or venture | 1 vault → 1 wiki (second brain) | Simple path + Scenario D deltas (Section 25) |
 
 Rules of thumb:
 
@@ -1341,7 +1342,7 @@ WorkVault      →  k-wiki-work/      (complete pipeline instance)
 PersonalVault  →  k-wiki-personal/  (complete pipeline instance)
 ```
 
-Folder names are illustrative; each instance is simply its own `k-wiki` root, and the process is root-relative. Each instance's manifest declares exactly one vault. You get physical isolation of privacy, audience, taxonomy, and history; you give up cross-wiki linking and synthesis.
+Folder names are illustrative; each instance is simply its own `k-wiki` root, and the process is root-relative. Each instance's manifest declares exactly one vault. You get physical isolation of privacy, audience, taxonomy, and history; you give up cross-wiki linking and synthesis — Scenario D's one-way second-brain links are the deliberate exception.
 
 ### Scenario C: One Vault → Multiple Wikis
 
@@ -1355,6 +1356,49 @@ a note that opts out of every wiki carries both `wiki: false` and
 `public: false`; `wiki: false` alone keeps it out of the private wiki
 only. A positive per-wiki partition (`wiki: public`) would need the
 select-style grammar back as a deliberate design change.
+
+### Scenario D: The Second Brain
+
+A second brain is Scenario B applied to one subject's own vault — a
+person, a career, a venture — plus three additions that make it a
+compiled second brain rather than another knowledge repo. Several
+second brains are ordinary Scenario B instances: each its own vault,
+data repo, and config, each free to link into the same domain wikis:
+
+1. **A profile layer.** `wiki/second-brain/profile.md` is the agent's
+   evolving memory of the wiki's subject — current projects, goals,
+   communication style, standing preferences. It is an accreted layer
+   (like `queries/`), not derived from `raw/`, and rebuilds preserve
+   it. The agent reads it before every run and every query, and
+   answers trajectory questions ("what did I try that failed?",
+   "why did I choose X?") from it together with the second-brain
+   pages.
+2. **Second-brain page types.** Second-brain material files under
+   `wiki/second-brain/` as `project`, `decision`, or `attempt` pages —
+   derived pages with full provenance (`sources`, `origin`),
+   expunged like any other when their notes are deleted.
+3. **One-way cross-wiki links.** A wikilink target containing a `/`
+   is a cross-wiki link — `[[<vault>/<page>]]` — referencing a page
+   of a **domain wiki** (any wiki compiled from domain material;
+   several may be linked from the same second brain). The vault
+   segment is the domain wiki's vault name, matched
+   case-insensitively against that wiki's `raw/manifest.json`; the
+   page segment must resolve in that wiki. Such links never resolve
+   inside the second brain — the internal checkers skip slashed
+   targets — and `check-crosslinks <wiki-dir> <domain-wiki-dir>…`
+   enforces the discipline: unknown vaults, dead pages, and any
+   cross-wiki link inside a domain wiki are problems. The direction
+   is deliberate: domain wikis are link sinks — they may be pointed
+   at, never point out — so second-brain material can never leak
+   into a publishable wiki. Only a second brain may use cross-wiki
+   links at all; in any other wiki a slashed target is unresolvable
+   and trips the ingest guardrails.
+
+The plumbing is ordinary Scenario B: its own vault, its own data repo,
+its own sync config and settings file, drivable from a single checkout
+by naming every argument (README usage models). The privacy caution of
+Scenario A applies in full: never merge a second brain's vault into
+a domain instance — un-mixing later requires history rewriting.
 
 ### Changing Your Mind Later
 

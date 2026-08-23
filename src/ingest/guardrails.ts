@@ -2,7 +2,12 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { runGit } from "../data/init-data-repo.ts";
 import { sha256 } from "../sync/hash.ts";
-import { buildPageIndex, extractWikilinks, listFiles } from "../wiki-links.ts";
+import { listWikiPages } from "../wiki/pages.ts";
+import {
+  buildPageIndex,
+  crossWikiTarget,
+  extractWikilinks,
+} from "../wiki-links.ts";
 
 /**
  * Post-run guardrails (guide §1, §7, §9; issue #12): three mechanical
@@ -21,7 +26,9 @@ import { buildPageIndex, extractWikilinks, listFiles } from "../wiki-links.ts";
  *     `wiki/log.md`, the append-only log, which has none by design;
  *  3. wikilinks — every `[[wikilink]]` in a changed page resolves to
  *     an existing wiki file, and no remaining page keeps a link to a
- *     page the run deleted.
+ *     page the run deleted; cross-wiki `[[<vault>/<page>]]` targets
+ *     (issue #81) are external only in a second brain — in every
+ *     other wiki they are unresolvable and trip the check.
  */
 
 /** Paths only these guardrails may see changed after a run. */
@@ -40,7 +47,14 @@ const FRONTMATTER_EXEMPT = "wiki/log.md";
 
 /** Structural meta pages (guide §9): they carry frontmatter but are
  *  not derived from source material, so the `sources` field is optional. */
-const SOURCES_EXEMPT = new Set(["wiki/index.md", "wiki/overview.md"]);
+const SOURCES_EXEMPT = new Set([
+  "wiki/index.md",
+  "wiki/overview.md",
+  // The second brain's accreted profile layer (issue #81):
+  // evolving context about the wiki's subject, not claims from one
+  // source.
+  "wiki/second-brain/profile.md",
+]);
 
 /** Frontmatter fields every wiki page must carry (§9). */
 const REQUIRED_FIELDS = [
@@ -568,6 +582,21 @@ async function deletedWikiPageNames(
   return deleted;
 }
 
+/** True when the wiki is a second brain — identified by the
+ *  accreted profile layer (guide §25, Scenario D). Only a second
+ *  brain may use cross-wiki links; in every other wiki a slashed
+ *  target is simply unresolvable, so the privacy direction (domain
+ *  wikis never reference second-brain material) is enforced per-run. */
+async function isSecondBrain(dataRoot: string): Promise<boolean> {
+  try {
+    await readFile(join(dataRoot, "wiki", "second-brain", "profile.md"));
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Guardrail 3: every wikilink in every changed page resolves, and no
  *  remaining page keeps a link to a page the run deleted. */
 async function checkChangedWikilinks(
@@ -578,18 +607,23 @@ async function checkChangedWikilinks(
   let files: string[] = [];
 
   try {
-    files = (await listFiles(join(dataRoot, "wiki"))).filter(
-      (file) => file.endsWith(".md") && basename(file) !== "AGENTS.md",
-    );
+    files = await listWikiPages(join(dataRoot, "wiki"));
   } catch {
     // A run that deleted every wiki page has no links left to check.
   }
 
   const index = buildPageIndex(files);
   const problems: string[] = [];
+  const secondBrain = await isSecondBrain(dataRoot);
 
   for (const [path, text] of texts) {
     for (const link of extractWikilinks(text)) {
+      // Cross-wiki links (issue #81) are external by design — but
+      // only in a second brain; elsewhere they never resolve.
+      if (secondBrain && crossWikiTarget(link.target) !== undefined) {
+        continue;
+      }
+
       if (!index.has(link.target)) {
         problems.push(`${path}:${link.line} -> ${link.raw}`);
       }

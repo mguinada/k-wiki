@@ -111,7 +111,7 @@ git clone git@github.com:mguinada/k-wiki.git ~/Lab/k-wiki-private
 cd ~/Lab/k-wiki-private && npm install
 ```
 
-`sync.local.json` — uncommitted (see [operator rules](#7-operator-rules-that-keep-instances-safe));
+`sync.local.json` — uncommitted (see [operator rules](#8-operator-rules-that-keep-instances-safe));
 the vault lives on local disk and never syncs anywhere:
 
 ```json
@@ -142,7 +142,7 @@ npm run wiki-ingest -- --settings settings.local.yml ~/Lab/k-wiki-private-data/r
 
 The data repo is seeded by `data:init` as a local git repository with
 no remote — **add none ever**: history, rollback, and audit all work
-without one ([model 6](#6-data-repo-location-and-privacy-posture)).
+without one ([model 7](#7-data-repo-location-and-privacy-posture)).
 Each instance encodes its own privacy posture in its own config and
 data location; the default instance's iCloud vault and optional
 remote never touch this one.
@@ -202,7 +202,94 @@ reserves multi-vault rules for a human-approved addendum that has not
 landed — the wiki contract today covers a single source vault. Treat
 this as a supported sync configuration, not a working wiki mode.
 
-### 5. Topology changes by rebuild
+### 5. The second brain
+
+One subject's own vault compiled into its own instance
+([guide §25, Scenario D](docs/karpathy_wiki_implementation_guide.md#scenario-d-the-second-brain)):
+a profile layer the agent reads before every run and every query,
+`project`/`decision`/`attempt` pages under `wiki/second-brain/`, and
+one-way cross-wiki links into domain wikis. The subject can be a
+person, a career, or a venture — the compiled memory is what defines
+the class, not privacy. Several second brains are ordinary model-2
+instances, each free to link into the same domain wikis. The setup is
+model 2's — own vault, own data repo, own config — with the files
+below (uncommitted per
+[operator rule 8](#8-operator-rules-that-keep-instances-safe); vault
+paths and model choice are private):
+
+`sync-second-brain.json`:
+
+```json
+{
+  "dataRoot": "~/Lab/k-wiki-second-brain-data",
+  "vaults": [
+    { "name": "Brain", "root": "~/Vaults/Brain", "exclude": "wiki:false" }
+  ]
+}
+```
+
+`settings-second-brain.yml`:
+
+```yaml
+command: pi
+provider: openrouter
+model: moonshotai/kimi-k2.6
+reasoning: high
+```
+
+Seed once, then run the same cycle as model 1 — naming the config,
+the settings, **and a per-instance outputs dir** so the manifest
+snapshot never crosses instances:
+
+```sh
+npm run data:init -- sync-second-brain.json
+npm run wiki-sync -- --settings settings-second-brain.yml --outputs outputs-second-brain sync-second-brain.json
+```
+
+The first ingest creates `wiki/second-brain/profile.md` — the agent's
+evolving memory of the wiki's subject: current projects, goals,
+communication style, standing preferences. Later runs read it first and update it
+when the sources reveal changes; queries shape their answers with it
+("What did I try for fast tests?" is answered from the `attempt` and
+`decision` pages together with the profile). The profile is an
+accreted layer, like `queries/`: rebuilds preserve it, and — like
+`index.md` and `overview.md` — it needs no `sources` field.
+
+Second-brain pages may reference domain wikis — never the reverse —
+with a slashed wikilink target, `[[<vault>/<page>]]`:
+
+```markdown
+Chose vitest over jest for the macOS suite; domain background in
+[[engineering/retrieval-augmented-generation]] and
+[[anthropology/decision-making]].
+```
+
+The vault segment names a domain wiki (matched case-insensitively
+against that wiki's `raw/manifest.json` — the sibling of the wiki
+dir passed to the checker) and the page segment must exist in that
+wiki; several domain wikis may be linked from the same second
+brain. Such links never resolve inside the second brain;
+`check-crosslinks` validates them, and domain wikis themselves may
+carry no cross-wiki links — only a second brain may use them, so a
+domain wiki writing one fails the ingest guardrails. Standing
+checks (one `<domain-wiki-dir>` per linked domain wiki):
+
+```sh
+npm run check-links -- ~/Lab/k-wiki-second-brain-data/wiki
+npm run check-provenance -- ~/Lab/k-wiki-second-brain-data/wiki ~/Lab/k-wiki-second-brain-data/raw
+npm run check-crosslinks -- ~/Lab/k-wiki-second-brain-data/wiki ~/Lab/k-wiki-data/wiki
+npm run health -- ~/Lab/k-wiki-second-brain-data/raw
+```
+
+The default instance audits its own side of the discipline the same
+way — self-referenced, it asserts the default instance (a domain
+wiki) contains no cross-wiki links:
+
+```sh
+npm run check-crosslinks -- ~/Lab/k-wiki-data/wiki ~/Lab/k-wiki-data/wiki
+```
+
+### 6. Topology changes by rebuild
 
 `wiki/` is derived from `raw/` alone, so topology changes are
 re-ingestion, never information loss:
@@ -217,7 +304,7 @@ in a fresh data repo, or after clearing `wiki/`. Split first, merge
 later: once sensitive notes are merged into a wiki and its git
 history, privacy cannot be un-mixed without rewriting that history.
 
-### 6. Data repo location and privacy posture
+### 7. Data repo location and privacy posture
 
 The data repo is a plain git repository — provider-agnostic. Every
 feature works with no remote at all: history, rollback, audit
@@ -236,7 +323,7 @@ The data repo holds personal material: push it only to a private
 remote you explicitly control. It must live in a plain local folder,
 never inside a cloud-synced one (guide §26).
 
-### 7. Operator rules that keep instances safe
+### 8. Operator rules that keep instances safe
 
 Hardened during the first full build (issue #61):
 
@@ -278,9 +365,10 @@ sources directly, so there is no build step — install dependencies with
 | `npm run format` | Biome | Rewrite files to the canonical format — the fix command for lint findings, not a gate |
 | `npm test` | vitest | Run the unit test suite |
 | `npm run test:coverage` | vitest | Run the unit tests and fail below the 90% coverage thresholds — what CI runs |
-| `npm run e2e` | vitest | Run the end-to-end suite (`tests/e2e/`): real CLI child processes — sync-vault through a full vault lifecycle (first run, no-op re-run, edit, delete, block flip, multi-vault) against the synthetic fixture vault in temp workspaces under `.e2e-tmp/` (gitignored), wiki-ingest through first-run, incremental, expunge, rename, skip, failure, timeout, and guardrail auto-revert runs against a stub agent in temp data repos, and wiki-sync through full-cycle, no-change rerun, failure, and guardrail-revert runs |
+| `npm run e2e` | vitest | Run the end-to-end suite (`tests/e2e/`): real CLI child processes — sync-vault through a full vault lifecycle (first run, no-op re-run, edit, delete, block flip, multi-vault) against the synthetic fixture vault in temp workspaces under `.e2e-tmp/` (gitignored), wiki-ingest through first-run, incremental, expunge, rename, skip, failure, timeout, and guardrail auto-revert runs against a stub agent in temp data repos, the second brain through profile-layer ingest, cross-wiki link validation, the reverted domain→second-brain leak, and a health-checked second-brain sync, and wiki-sync through full-cycle, no-change rerun, failure, and guardrail-revert runs |
 | `npm run health [-- <raw-dir>]` | health CLI | Check the coherence of a `raw/` projection (default: the repo's `raw/`): every `raw/notes/<vault>/` file matches its `manifest.json` sha-256, with no orphans and no missing entries; read-only, no vault access; exit 0 = coherent (including healthy-empty), exit 1 = one line per problem |
-| `npm run check-links [-- <wiki-dir>]` | wikilink checker | Check that every `[[wikilink]]` under `wiki/` (default) resolves to an existing page by file name; exit 0 = all links resolve, exit 1 = one `file:line -> [[link]]` line per broken link |
+| `npm run check-links [-- <wiki-dir>]` | wikilink checker | Check that every `[[wikilink]]` under `wiki/` (default) resolves to an existing page by file name, skipping external slashed `[[<vault>/<page>]]` cross-wiki targets; exit 0 = all links resolve, exit 1 = one `file:line -> [[link]]` line per broken link |
+| `npm run check-crosslinks <wiki-dir> <domain-wiki-dir> [<domain-wiki-dir>…]` | cross-wiki link checker | Check the one-way link discipline between a wiki and its domain wikis: every slashed `[[<vault>/<page>]]` link names a vault of a passed domain wiki (validated against its `raw/manifest.json`, case-insensitive) and resolves to an existing page there, and the domain wikis carry no cross-wiki links; exit 0 = discipline holds, exit 1 = one `file:line -> [[link]]` line per problem |
 | `npm run backfill-origin [-- <wiki-dir> [<raw-dir>]]` | origin backfill | Deterministically write `origin` (guide §14a) on every `type: source` page lacking it whose `sources` cites exactly one existing `raw/` path **and** whose title corroborates that note's name, bumping `updated` (default: the repo's `wiki/` and sibling `raw/`; `--date YYYY-MM-DD` overrides the bump date, `--dry-run` previews every pairing without writing); zero/several-path and title-mismatch pages are reported for judgment, never guessed; refuses a dirty wiki tree, appends an audit entry to `wiki/log.md`, idempotent — `git diff` is the review surface |
 | `npm run check-provenance [-- <wiki-dir> [<raw-dir>]]` | dead-provenance checker | Check that every `sources` entry under `wiki/` resolves (wikilink → an existing page, path → an existing `raw/` file) and every source page's `origin` exists under `raw/` (default: the repo's `wiki/` and its sibling `raw/`); exit 0 = coherent, exit 1 = one `wiki/<page> -> …` line per problem — the deterministic backstop that catches any purge miss |
 | `npm run fixtures -- <dir>` | fixture generator | Write the synthetic Obsidian test vault to `<dir>/Documents` |

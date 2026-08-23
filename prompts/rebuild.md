@@ -13,7 +13,16 @@ Build:
 - index.md;
 - log.md.
 
+Second brain: restore `wiki/second-brain/profile.md` from git before
+building, read it first, and rebuild the pages under
+`wiki/second-brain/` with types `project`, `decision`, and `attempt`.
+
 Avoid duplicate pages.
+
+Every page you build must carry the required frontmatter fields
+(`title`, `type`, `created`, `updated`, `tags`) — including `index.md`
+and `overview.md`, which the skeleton ships bare; a run that writes
+either without frontmatter is auto-reverted.
 
 Every substantive claim must be traceable to source material.
 

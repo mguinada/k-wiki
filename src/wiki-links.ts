@@ -62,6 +62,43 @@ export function extractWikilinks(text: string): Wikilink[] {
   return links;
 }
 
+/** A wikilink target naming a page of another wiki instance (issue
+ *  #81): any target containing a `/` is cross-wiki — `[[<vault>/<page>]]`,
+ *  where `<vault>` is a domain wiki's vault name. Bare targets are
+ *  internal: page names come from file names, which cannot contain a
+ *  slash. A vault segment carrying a protocol (`http:`, `file:`, …) is
+ *  a URL, not a vault name. The internal checkers skip cross-wiki
+ *  targets and `scripts/check-crosslinks.ts` validates them against
+ *  the named domain wiki. */
+export interface CrossWikiTarget {
+  /** The vault segment before the first slash, case as written. */
+  readonly vault: string;
+  /** The page segment after the first slash, as written. */
+  readonly page: string;
+}
+
+const PROTOCOL_PREFIX = /^[A-Za-z][A-Za-z0-9+.-]*:/;
+
+/** The vault and page of a cross-wiki target, or undefined when the
+ *  target is internal (no slash), a bare prefix with no page, or a
+ *  protocol URL. */
+export function crossWikiTarget(target: string): CrossWikiTarget | undefined {
+  const separator = target.indexOf("/");
+
+  if (separator === -1) {
+    return undefined;
+  }
+
+  const vault = target.slice(0, separator);
+  const page = target.slice(separator + 1);
+
+  if (vault === "" || page === "" || PROTOCOL_PREFIX.test(vault)) {
+    return undefined;
+  }
+
+  return { vault, page };
+}
+
 /**
  * Map page names to their wiki-relative paths by file name (kebab-case
  * naming per wiki/AGENTS.md); later files win on duplicate names.

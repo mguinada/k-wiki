@@ -1,20 +1,23 @@
-import { readFile, stat } from "node:fs/promises";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { readFile } from "node:fs/promises";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
 import { isMainModule } from "../src/cli/is-main.ts";
+import { listWikiPages } from "../src/wiki/pages.ts";
 import {
   buildPageIndex,
+  crossWikiTarget,
   extractWikilinks,
-  listFiles,
 } from "../src/wiki-links.ts";
 
 /**
  * Wikilink checker: scans every Markdown page under wiki/, extracts
  * each `[[wikilink]]` (bare, aliased, or with a heading anchor), and
- * resolves it by page file name against the scanned tree. Prints one
- * `file:line -> [[link]]` line per broken link and exits 1; exits 0
- * when every link resolves.
+ * resolves it by page file name against the scanned tree. Cross-wiki
+ * `[[<vault>/<page>]]` links are external to this wiki and are
+ * skipped (issue #81); `check-crosslinks` validates them against
+ * the domain wikis themselves. Prints one `file:line -> [[link]]` line
+ * per broken link and exits 1; exits 0 when every link resolves.
  */
 
 export interface LinkReport {
@@ -22,6 +25,8 @@ export interface LinkReport {
   readonly broken: readonly string[];
   /** Total wikilinks found across all scanned pages. */
   readonly links: number;
+  /** Cross-wiki `[[<vault>/<page>]]` links, skipped as external. */
+  readonly external: number;
   /** Markdown pages scanned under the wiki root. */
   readonly pages: number;
 }
@@ -44,22 +49,27 @@ export async function checkWikiLinks(
   wikiDirInput: string,
 ): Promise<LinkReport> {
   const wikiDir = resolve(wikiDirInput);
-
-  await assertWikiDir(wikiDir, wikiDirInput);
-
   const displayRoot = resolve(wikiDir, "..");
-  const files = (await listFiles(wikiDir)).filter(
-    (file) => file.endsWith(".md") && basename(file) !== "AGENTS.md",
-  );
+  // listWikiPages asserts the directory; the input path (not the
+  // resolved one) lands in the error message, matching every other
+  // checker that reports what the operator typed.
+  const files = await listWikiPages(wikiDirInput);
   const index = buildPageIndex(files);
   const broken: string[] = [];
   let links = 0;
+  let external = 0;
 
   for (const file of files) {
     const text = await readFile(join(wikiDir, file), "utf8");
 
     for (const link of extractWikilinks(text)) {
       links++;
+
+      if (crossWikiTarget(link.target) !== undefined) {
+        external++;
+
+        continue;
+      }
 
       if (!index.has(link.target)) {
         broken.push(
@@ -69,24 +79,7 @@ export async function checkWikiLinks(
     }
   }
 
-  return { broken, links, pages: files.length };
-}
-
-async function assertWikiDir(
-  wikiDir: string,
-  wikiDirInput: string,
-): Promise<void> {
-  let isDirectory: boolean;
-
-  try {
-    isDirectory = (await stat(wikiDir)).isDirectory();
-  } catch {
-    throw new Error(`wiki directory does not exist: ${wikiDirInput}`);
-  }
-
-  if (!isDirectory) {
-    throw new Error(`wiki directory is not a directory: ${wikiDirInput}`);
-  }
+  return { broken, links, external, pages: files.length };
 }
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
@@ -94,6 +87,8 @@ const HELP = `Usage: check-links [-h | --help] [<wiki-dir>]
 
 Check that every [[wikilink]] under a wiki resolves to an existing
 page by file name (bare, aliased, and heading-anchor links).
+Cross-wiki [[<vault>/<page>]] links are external and skipped;
+check-crosslinks validates them against the domain wikis.
 
   <wiki-dir>    Wiki root to scan. Default: the repo's own wiki/.
   -h, --help    Print this help and exit; no side effects.
@@ -121,10 +116,14 @@ export async function main(): Promise<void> {
     if (report.broken.length === 0) {
       const links = `${report.links} ${report.links === 1 ? "wikilink" : "wikilinks"}`;
       const pages = `${report.pages} ${report.pages === 1 ? "page" : "pages"}`;
+      const external =
+        report.external > 0
+          ? ` (${report.external} external ${report.external === 1 ? "cross-wiki link" : "cross-wiki links"})`
+          : "";
 
       console.log(
         colors().green(
-          `ok: ${links} ${report.links === 1 ? "resolves" : "resolve"} across ${pages}`,
+          `ok: ${links} ${report.links === 1 ? "resolves" : "resolve"} across ${pages}${external}`,
         ),
       );
 

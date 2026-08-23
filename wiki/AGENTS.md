@@ -66,7 +66,9 @@ For every new or changed source:
     a `CONTRADICTION` callout; unrelated → leave flagged.
 13. Run `npm run check-links -- <wiki-dir>` from the code-repo checkout
     (the data repo does not ship the tool) and fix every broken
-    `[[wikilink]]` it reports.
+    `[[wikilink]]` it reports. In a second brain, also run
+    `npm run check-crosslinks -- <wiki-dir> <domain-wiki-dir>
+    [<domain-wiki-dir>…]` and fix every cross-wiki link it reports.
 
 Create a new concept or entity page only when the term appears in more than
 one source or is clearly central; avoid stub pages.
@@ -203,6 +205,12 @@ Answer questions against the wiki, not against `raw/` directly:
    borderline, offer and let the human decide — never silently skip;
    a declined filing states its reason.
 
+In a second brain, read `wiki/second-brain/profile.md` before
+answering and let it shape the answer: questions about the subject's
+trajectory ("what did I try", "why did I choose") are answered from
+the second-brain pages and the profile together, not from domain
+pages alone.
+
 If the wiki cannot answer a question, say so and suggest sources to ingest.
 
 ## Contradictions
@@ -230,19 +238,22 @@ unless that information is explicitly treated as a derived conclusion.
 
 Exception: filed queries and human corrections form an accreted layer that
 exists only in the wiki. Deleting `wiki/` loses that layer; git history is
-its record.
+its record. In a second brain the profile joins that layer.
 
 Two files in `wiki/` are not derivable from `raw/`: this contract
-(`wiki/AGENTS.md`) and `wiki/queries/`. A rebuild removes the wiki content
-pages and preserves both.
+(`wiki/AGENTS.md`) and `wiki/queries/`; a second brain adds a third,
+`wiki/second-brain/profile.md`. A rebuild removes the wiki content
+pages and preserves all of them.
 
 Rebuild procedure:
 
 1. Remove the wiki content pages: `index.md`, `overview.md`, `log.md`, and
    everything under `concepts/`, `entities/`, `sources/`, `comparisons/`,
-   and `queries/`. Keep `wiki/AGENTS.md`.
+   `queries/`, and — in a second brain — `second-brain/`. Keep
+   `wiki/AGENTS.md`.
 2. Run the rebuild prompt against `raw/`, following this contract.
-3. Restore the accreted layer from git: `git restore wiki/queries/`.
+3. Restore the accreted layer from git: `git restore wiki/queries/`, plus
+   `wiki/second-brain/profile.md` in a second brain.
 4. Spot-check the rebuilt pages against the pre-deletion versions
    (`git show HEAD:wiki/<path>`): same concepts covered, sources
    attributed, contradictions preserved. Wording may differ; LLM output
@@ -333,3 +344,64 @@ derived.
 This wiki currently has a single source vault. When multiple source
 vaults are adopted, a human-approved change to this contract adds the
 multi-vault rules here.
+
+## Second Brains
+
+A wiki whose source vault holds one subject's own material — project
+notes, decisions, attempts, lessons, about a person, a career, or a
+venture — is a **second brain**. It is a separate data repo with this
+same contract; it is identified by the presence of
+`wiki/second-brain/profile.md`.
+
+### Profile layer
+
+`wiki/second-brain/profile.md` is the memory of the subject the wiki
+is about — a person, a career, a venture: current projects, goals,
+communication style, standing preferences. It is the first file read
+on every operation and the last considered when answering a question.
+
+- Read it at the start of every ingestion and query.
+- Update it when sources reveal a change: a new goal, a finished
+  project, a revised preference. Keep the update small and dated.
+- It is an accreted layer, not a derived page: it carries no `sources`
+  and no `origin`, its frontmatter uses `type: profile`, and rebuilds
+  preserve it.
+- It states context, not certainty: mark stale entries as stale
+  instead of deleting the history silently when the log already
+  records the change.
+
+### Second-brain page types
+
+Second-brain material files under `wiki/second-brain/` with the same
+rules as any derived page (`sources`, `origin`, confidence) and three
+types:
+
+- `project` — an ongoing effort: its goal, status, and the decisions
+  and attempts that shaped it;
+- `decision` — a choice made: the options considered, the rationale,
+  and what later material says about the outcome;
+- `attempt` — something tried: what was attempted, whether it worked,
+  and the lesson to carry forward.
+
+Use lowercase kebab-case names; anchor a page to its day when the day
+matters (`attempt-fast-tests-2026-08-17.md`). A question such as "what
+did I try that failed" is answered from these pages, not guessed.
+
+### Cross-wiki links
+
+A second brain may reference domain wikis, never the reverse:
+
+- A wikilink target containing a `/` is a cross-wiki link —
+  `[[<vault>/<page>]]` — where `<vault>` is a domain wiki's vault name
+  (matched case-insensitively against that wiki's `raw/manifest.json`)
+  and `<page>` a page of that wiki. Bare targets are internal;
+  internal links never contain a slash. Several domain wikis may be
+  linked from the same second brain.
+- The link never resolves in this wiki; `check-crosslinks` validates
+  it against the named domain wiki after every run.
+- Domain wikis never reference second-brain material: they are link
+  sinks — other wikis may point at them; they point at nothing. No
+  page of any other wiki may link here, and this wiki's material
+  never leaves this data repo.
+- Only a second brain may use cross-wiki links; in any other wiki a
+  slashed target is unresolvable and trips the ingest guardrails.
