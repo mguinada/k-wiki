@@ -102,8 +102,15 @@ export function parseManifest(text: string, origin: string): Manifest {
   return { vaults };
 }
 
-/** Canonical text: sorted keys, two-space indent, trailing newline. */
-export function serializeManifest(manifest: Manifest): string {
+/**
+ * Canonical text: sorted keys, two-space indent, trailing newline.
+ * `extra` adds top-level string fields beside `vaults` (the ingest
+ * snapshot's instance stamp, issue #95); the raw manifest omits it.
+ */
+export function serializeManifest(
+  manifest: Manifest,
+  extra?: Record<string, string>,
+): string {
   const sorted: Record<string, VaultNotes> = {};
 
   for (const [vaultName, vault] of sortedEntries(manifest.vaults)) {
@@ -116,7 +123,7 @@ export function serializeManifest(manifest: Manifest): string {
     sorted[vaultName] = notes;
   }
 
-  return `${JSON.stringify({ vaults: sorted }, null, 2)}\n`;
+  return `${JSON.stringify({ ...extra, vaults: sorted }, null, 2)}\n`;
 }
 
 /** A record's entries sorted by key, in default string order. */
@@ -126,13 +133,14 @@ function sortedEntries<T>(record: Record<string, T>): [string, T][] {
   );
 }
 
-/** Write the manifest in canonical form. */
+/** Write the manifest in canonical form, with optional `extra` fields. */
 export async function writeManifest(
   path: string,
   manifest: Manifest,
+  extra?: Record<string, string>,
 ): Promise<void> {
   const tempPath = `${path}.tmp`;
 
-  await writeFile(tempPath, serializeManifest(manifest), "utf8");
+  await writeFile(tempPath, serializeManifest(manifest, extra), "utf8");
   await rename(tempPath, path);
 }

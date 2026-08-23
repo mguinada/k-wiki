@@ -7,7 +7,11 @@ import { createColors } from "picocolors";
 import { isMainModule } from "../cli/is-main.ts";
 import { createProgressRenderer, formatDuration } from "../cli/progress.ts";
 import { runGit } from "../data/init-data-repo.ts";
-import { loadSyncConfig, resolveRawDir } from "../sync/config.ts";
+import {
+  isPlainObject,
+  loadSyncConfig,
+  resolveRawDir,
+} from "../sync/config.ts";
 import {
   emptyManifest,
   type Manifest,
@@ -966,6 +970,57 @@ async function collectRemovedNotes(
 }
 
 /**
+ * Read the last-ingested snapshot when it belongs to this data repo.
+ * The snapshot is stamped with its data root at write time (issue #95):
+ * a stamp that names another instance — or an unstamped legacy
+ * snapshot, whose origin is unknowable — is foreign state. Diffing
+ * against it would silently mis-shape the change set (worst case a
+ * spurious expunge), so warn loudly and return undefined; the caller
+ * falls back to the full mode. Missing file: first run, no warning.
+ */
+async function readSnapshot(
+  snapshotPath: string,
+  dataRoot: string,
+  onProgress: (message: string) => void,
+): Promise<Manifest | undefined> {
+  const text = await readManifestText(snapshotPath);
+
+  if (text === undefined) {
+    return undefined;
+  }
+
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(text);
+  } catch (cause) {
+    throw new Error(`invalid manifest at ${snapshotPath}: not valid JSON`, {
+      cause,
+    });
+  }
+
+  const snapshotFor =
+    isPlainObject(parsed) && typeof parsed.snapshotFor === "string"
+      ? parsed.snapshotFor
+      : undefined;
+
+  if (snapshotFor !== dataRoot) {
+    const origin =
+      snapshotFor === undefined
+        ? "has no instance stamp"
+        : `is stamped for ${snapshotFor}`;
+
+    onProgress(
+      `wiki-ingest: WARNING — snapshot ${snapshotPath} ${origin}, not this instance (${dataRoot}); ignoring it and falling back to a full run`,
+    );
+
+    return undefined;
+  }
+
+  return parseManifest(text, snapshotPath);
+}
+
+/**
  * One headless ingest run. The snapshot is written only after a
  * successful agent run, so a failure retries the same sources next
  * time instead of silently skipping them. A manifest diff with removed
@@ -989,13 +1044,10 @@ export async function runWikiIngest(
     throw new Error(`no manifest at ${manifestPath}: run sync-vault first`);
   }
 
+  const dataRoot = dirname(options.rawDir);
   const current = parseManifest(manifestText, manifestPath);
   const snapshotPath = join(options.outputsDir, "last-ingested-manifest.json");
-  const snapshotText = await readManifestText(snapshotPath);
-  const previous =
-    snapshotText === undefined
-      ? undefined
-      : parseManifest(snapshotText, snapshotPath);
+  const previous = await readSnapshot(snapshotPath, dataRoot, onProgress);
   const diff = diffManifests(previous ?? emptyManifest(), current);
 
   if (diff.empty) {
@@ -1006,7 +1058,6 @@ export async function runWikiIngest(
     return { status: "skipped", reason };
   }
 
-  const dataRoot = dirname(options.rawDir);
   const removedCount = sourceCount(diff, "removed");
   const mode =
     previous === undefined
@@ -1175,7 +1226,7 @@ export async function runWikiIngest(
   const digest = formatDigest(run);
 
   await writeFile(digestPath, digest, "utf8");
-  await writeManifest(snapshotPath, current);
+  await writeManifest(snapshotPath, current, { snapshotFor: dataRoot });
 
   return { status: "ran", mode, digestPath, digest, pages, diff };
 }
@@ -1220,7 +1271,10 @@ Switches and arguments:
 What it writes:
   - wiki pages, by the agent, in the data repo (never raw/);
   - outputs/last-ingested-manifest.json — the manifest snapshot the
-    next run diffs against (only after a successful agent run);
+    next run diffs against (only after a successful agent run),
+    stamped with its data repo root: a snapshot stamped for another
+    instance — or an unstamped legacy one — is ignored with a loud
+    warning and the run falls back to full mode (issue #95);
   - outputs/runs/<timestamp>.md — the digest, also printed to stdout.
 
 After every agent run three guardrails check the data repo (guide

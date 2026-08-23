@@ -1280,6 +1280,102 @@ describe("runWikiIngest", () => {
     expect(snapshot.vaults.Engineering?.["a.md"]?.hash).toBe(hashOf("a"));
   });
 
+  it("stamps the written snapshot with the data repo root", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    await runWikiIngest(optionsFor(h));
+
+    const snapshot = JSON.parse(
+      await readFile(join(h.outputsDir, "last-ingested-manifest.json"), "utf8"),
+    );
+
+    expect(snapshot.snapshotFor).toBe(h.dataRoot);
+  });
+
+  it("ignores a foreign snapshot with a loud warning and a full run instead of expunging", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const messages: string[] = [];
+
+    await mkdir(h.outputsDir, { recursive: true });
+    await writeFile(
+      join(h.outputsDir, "last-ingested-manifest.json"),
+      serializeManifest(
+        manifestWith("Engineering", { "gone.md": entry("gone") }),
+        { snapshotFor: "/foreign/data-root" },
+      ),
+    );
+
+    const result = await runWikiIngest({
+      ...optionsFor(h),
+      onProgress: (message) => messages.push(message),
+    });
+
+    expect(result).toMatchObject({ status: "ran", mode: "full" });
+    expect(
+      messages.some(
+        (message) =>
+          message.includes("WARNING") &&
+          message.includes("is stamped for /foreign/data-root"),
+      ),
+    ).toBe(true);
+  });
+
+  it("treats an unstamped legacy snapshot as foreign: warning plus full run", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const messages: string[] = [];
+
+    await mkdir(h.outputsDir, { recursive: true });
+    await writeFile(
+      join(h.outputsDir, "last-ingested-manifest.json"),
+      serializeManifest(
+        manifestWith("Engineering", { "gone.md": entry("gone") }),
+      ),
+    );
+
+    const result = await runWikiIngest({
+      ...optionsFor(h),
+      onProgress: (message) => messages.push(message),
+    });
+
+    expect(result).toMatchObject({ status: "ran", mode: "full" });
+    expect(
+      messages.some(
+        (message) =>
+          message.includes("WARNING") &&
+          message.includes("has no instance stamp"),
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects a snapshot that is not valid JSON", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    await mkdir(h.outputsDir, { recursive: true });
+    await writeFile(
+      join(h.outputsDir, "last-ingested-manifest.json"),
+      "not json",
+    );
+
+    await expect(runWikiIngest(optionsFor(h))).rejects.toThrow(
+      /not valid JSON/,
+    );
+  });
+
+  it("names the JSON parse failure as the cause of the rejection", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    await mkdir(h.outputsDir, { recursive: true });
+    await writeFile(
+      join(h.outputsDir, "last-ingested-manifest.json"),
+      "not json",
+    );
+
+    await expect(runWikiIngest(optionsFor(h))).rejects.toHaveProperty(
+      "cause",
+      expect.any(SyntaxError),
+    );
+  });
+
   it("skips the agent when nothing changed since the snapshot", async () => {
     const h = await makeHarness({ "a.md": "a" });
     const messages: string[] = [];
