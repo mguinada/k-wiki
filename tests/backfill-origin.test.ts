@@ -480,4 +480,50 @@ describe("backfill-origin CLI", () => {
       await readFile(join(f.wikiDir, "sources/gpu-memory-math.md"), "utf8"),
     ).not.toContain("origin:");
   });
+
+  it("refuses to write when the wiki dir is a subdir of a dirty repo (real data-repo layout)", async () => {
+    const root = await mkdtemp(join(tmpdir(), "k-wiki-backfill-sub-"));
+
+    tempDirs.push(root);
+
+    await mkdir(join(root, "wiki", "sources"), { recursive: true });
+    await mkdir(join(root, "raw", "notes/V"), { recursive: true });
+    await writeFile(
+      join(root, "wiki", "sources/gpu-memory-math.md"),
+      sourcePage([NOTE]),
+    );
+    await writeFile(join(root, "raw", NOTE), "note body");
+
+    await run("git", ["-C", root, "init", "--quiet"]);
+    await run("git", ["-C", root, "add", "-A"]);
+    await run("git", [
+      "-C",
+      root,
+      "-c",
+      "user.email=t@t",
+      "-c",
+      "user.name=t",
+      "commit",
+      "--quiet",
+      "-m",
+      "init",
+    ]);
+    await writeFile(
+      join(root, "wiki", "sources/gpu-memory-math.md"),
+      sourcePage([NOTE]).replace("body", "edited body"),
+    );
+
+    const result = await runCli([
+      "--date",
+      "2026-08-23",
+      join(root, "wiki"),
+      join(root, "raw"),
+    ]);
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("uncommitted");
+    expect(
+      await readFile(join(root, "wiki", "sources/gpu-memory-math.md"), "utf8"),
+    ).not.toContain("origin:");
+  });
 });
