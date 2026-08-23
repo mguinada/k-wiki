@@ -287,7 +287,7 @@ The wiki should **understand your source vault rather than require your source v
 k-wiki/                  ← code repo (this repository)
 ├── outputs/
 ├── sync.json            ← vault roots + dataRoot + publish target (Section 26)
-├── making-of/           ← this guide
+├── docs/                ← this guide
 ├── AGENTS.md
 └── .git/
 
