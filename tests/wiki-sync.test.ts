@@ -464,11 +464,6 @@ describe("runWikiSync crosslinks stage", () => {
         { flag: "wx" },
       ).catch(() => {});
       await writeFile(
-        join(options.cwd, "wiki", "decision.md"),
-        wikiPage(`Domain background in ${link}.`),
-        { flag: "wx" },
-      ).catch(() => {});
-      await writeFile(
         join(options.cwd, "wiki", "index.md"),
         wikiPage("# Index v2"),
       );
