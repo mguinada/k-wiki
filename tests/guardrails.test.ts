@@ -253,6 +253,32 @@ describe("runGuardrails — check 1, immutability", () => {
     expect(post.failure?.problems[0]).toContain("settings.yml.bak");
   });
 
+  it("trips when the run creates the second-brain identity marker", async () => {
+    const dataRoot = await makeRepo();
+    const post = await guardedRun(dataRoot, async (root) => {
+      await writeFile(join(root, ".second-brain"), "");
+    });
+
+    expect(post.failure?.check).toBe(1);
+    expect(post.failure?.problems[0]).toContain(".second-brain");
+  });
+
+  it("trips when the run creates a second-brain identity marker hidden from git status", async () => {
+    const dataRoot = await makeRepo();
+    const post = await guardedRun(dataRoot, async (root) => {
+      await mkdir(join(root, ".git", "info"), { recursive: true });
+      await writeFile(join(root, ".git", "info", "exclude"), ".second-brain\n");
+      await writeFile(join(root, ".second-brain"), "");
+      await writeFile(
+        join(root, "wiki", "new.md"),
+        page("Leak: [[brain/decision-fast-tests]]."),
+      );
+    });
+
+    expect(post.failure?.check).toBe(1);
+    expect(post.failure?.problems.join("\n")).toContain(".second-brain");
+  });
+
   it("trips when the run edits an already-dirty raw note", async () => {
     const dataRoot = await makeRepo();
 
@@ -543,12 +569,8 @@ describe("runGuardrails — check 3, wikilinks", () => {
   it("accepts a cross-wiki link in a changed page of a second brain", async () => {
     const dataRoot = await makeRepo();
 
-    await mkdir(join(dataRoot, "wiki", "second-brain"), { recursive: true });
-    await writeFile(
-      join(dataRoot, "wiki", "second-brain", "profile.md"),
-      "---\ntitle: Profile\ntype: profile\ncreated: 2026-08-22\nupdated: 2026-08-22\ntags:\n  - brain\n---\n\n# Profile\n",
-    );
-    await commit(dataRoot, "seed second-brain profile");
+    await writeFile(join(dataRoot, ".second-brain"), "");
+    await commit(dataRoot, "mark second brain");
 
     const post = await guardedRun(dataRoot, async (root) => {
       await writeFile(
@@ -563,12 +585,8 @@ describe("runGuardrails — check 3, wikilinks", () => {
   it("still trips on a dangling internal link inside a second brain", async () => {
     const dataRoot = await makeRepo();
 
-    await mkdir(join(dataRoot, "wiki", "second-brain"), { recursive: true });
-    await writeFile(
-      join(dataRoot, "wiki", "second-brain", "profile.md"),
-      "---\ntitle: Profile\ntype: profile\ncreated: 2026-08-22\nupdated: 2026-08-22\ntags:\n  - brain\n---\n\n# Profile\n",
-    );
-    await commit(dataRoot, "seed second-brain profile");
+    await writeFile(join(dataRoot, ".second-brain"), "");
+    await commit(dataRoot, "mark second brain");
 
     const post = await guardedRun(dataRoot, async (root) => {
       await writeFile(
@@ -588,6 +606,39 @@ describe("runGuardrails — check 3, wikilinks", () => {
         page(
           "References second-brain material: [[brain/decision-fast-tests]].",
         ),
+      );
+    });
+
+    expect(post.failure?.check).toBe(3);
+    expect(post.failure?.name).toBe("wikilinks");
+  });
+
+  it("accepts a cross-wiki link in a second brain marked by an uncommitted marker", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(join(dataRoot, ".second-brain"), "");
+
+    const post = await guardedRun(dataRoot, async (root) => {
+      await writeFile(
+        join(root, "wiki", "new.md"),
+        page("Backed by [[engineering/retrieval-augmented-generation]]."),
+      );
+    });
+
+    expect(post.failure).toBeUndefined();
+  });
+
+  it("trips on a cross-wiki link when the run itself creates the profile", async () => {
+    const dataRoot = await makeRepo();
+    const post = await guardedRun(dataRoot, async (root) => {
+      await mkdir(join(root, "wiki", "second-brain"), { recursive: true });
+      await writeFile(
+        join(root, "wiki", "second-brain", "profile.md"),
+        "---\ntitle: Profile\ntype: profile\ncreated: 2026-08-22\nupdated: 2026-08-22\ntags:\n  - brain\n---\n\n# Profile\n",
+      );
+      await writeFile(
+        join(root, "wiki", "new.md"),
+        page("Self-granted identity: [[brain/decision-fast-tests]]."),
       );
     });
 
@@ -801,6 +852,22 @@ describe("revertToPreRun", () => {
     expect(await readFile(join(dataRoot, "settings.yml"), "utf8")).toBe(
       "command: pi\n",
     );
+  });
+
+  it("removes an ignored marker the run created when reverting", async () => {
+    const dataRoot = await makeRepo();
+    const pre = await capturePreRunState(dataRoot, process.env);
+
+    await writeFile(join(dataRoot, ".gitignore"), ".second-brain\n");
+    await writeFile(join(dataRoot, ".second-brain"), "");
+
+    const post = await runGuardrails(dataRoot, process.env, pre);
+
+    await revertToPreRun(dataRoot, process.env, pre, post.entries);
+
+    await expect(
+      readFile(join(dataRoot, ".second-brain"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("restores a rogue commit the run made", async () => {

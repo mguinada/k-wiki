@@ -350,8 +350,13 @@ multi-vault rules here.
 A wiki whose source vault holds one subject's own material — project
 notes, decisions, attempts, lessons, about a person, a career, or a
 venture — is a **second brain**. It is a separate data repo with this
-same contract; it is identified by the presence of
-`wiki/second-brain/profile.md`.
+same contract; it is identified by the `.second-brain` marker at the
+data repo root — an operator-owned file written by
+`data:init --second-brain` (or by hand for an existing repo), never
+by the agent. The marker sits outside the agent-writable whitelist,
+so a run that creates, edits, or removes it trips guardrail 1 and is
+auto-reverted; `wiki/second-brain/profile.md` is content, not
+identity, and never grants second-brain status.
 
 ### Profile layer
 

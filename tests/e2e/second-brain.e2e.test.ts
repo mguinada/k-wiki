@@ -149,8 +149,15 @@ interface Repo {
   readonly settingsPath: string;
 }
 
-/** A temp data repo: git-tracked wiki/, manifest, and a stub agent. */
-async function makeRepo(vault: string, stub: string): Promise<Repo> {
+/** A temp data repo: git-tracked wiki/, manifest, and a stub agent.
+ *  A second-brain repo also carries the operator-owned `.second-brain`
+ *  identity marker (issue #94) — committed before the run, never
+ *  written by the agent. */
+async function makeRepo(
+  vault: string,
+  stub: string,
+  secondBrain = false,
+): Promise<Repo> {
   const dataRoot = await mkdtemp(
     join(tmpdir(), `k-wiki-${vault.toLowerCase()}-e2e-`),
   );
@@ -176,6 +183,11 @@ async function makeRepo(vault: string, stub: string): Promise<Repo> {
     `${JSON.stringify(manifest, null, 2)}\n`,
   );
   await writeFile(join(dataRoot, "wiki", "index.md"), "# Index\n");
+
+  if (secondBrain) {
+    await writeFile(join(dataRoot, ".second-brain"), "");
+  }
+
   await run("git", ["init", "--quiet"], { cwd: dataRoot });
   await run("git", ["add", "-A"], { cwd: dataRoot });
   await run(
@@ -242,7 +254,7 @@ describe("second brain e2e", () => {
     "check-crosslinks.ts",
   );
   it("ingests a second-brain run whose profile and cross-wiki link pass the guardrails", async () => {
-    const repo = await makeRepo("Brain", SB_STUB);
+    const repo = await makeRepo("Brain", SB_STUB, true);
     const result = await ingest(repo);
 
     expect(result.code).toBe(0);
@@ -267,7 +279,7 @@ describe("second brain e2e", () => {
   });
 
   it("composes the ingest prompt with the profile instruction", async () => {
-    const repo = await makeRepo("Brain", SB_STUB);
+    const repo = await makeRepo("Brain", SB_STUB, true);
     await ingest(repo);
 
     const prompt = await readFile(
@@ -280,7 +292,7 @@ describe("second brain e2e", () => {
   });
 
   it("validates the cross-wiki discipline with check-crosslinks", async () => {
-    const repo = await makeRepo("Brain", SB_STUB);
+    const repo = await makeRepo("Brain", SB_STUB, true);
     const engineering = await makeEngineeringWiki();
 
     await ingest(repo);
@@ -365,8 +377,80 @@ console.log("rogue report");
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("auto-reverts a domain run that self-grants with the profile and cross-wiki links", async () => {
+    const repo = await makeRepo(
+      "Engineering",
+      `#!/usr/bin/env node
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+
+const index = process.argv.indexOf("--print");
+const prompt = index === -1 ? undefined : process.argv[index + 1];
+
+if (prompt === undefined || prompt === "") {
+  process.exit(3);
+}
+
+await mkdir(join(process.cwd(), "wiki", "concepts"), { recursive: true });
+await mkdir(join(process.cwd(), "wiki", "second-brain"), { recursive: true });
+await writeFile(
+  join(process.cwd(), "wiki", "second-brain", "profile.md"),
+  [
+    "---",
+    'title: "Profile"',
+    "type: profile",
+    "created: 2026-08-23",
+    "updated: 2026-08-23",
+    "tags:",
+    "  - brain",
+    "---",
+    "",
+    "# Profile",
+    "",
+    "Rogue self-granted identity.",
+    "",
+  ].join("\\n"),
+);
+await writeFile(
+  join(process.cwd(), "wiki", "concepts", "leaky.md"),
+  [
+    "---",
+    'title: "Leaky"',
+    "type: concept",
+    "created: 2026-08-23",
+    "updated: 2026-08-23",
+    "tags:",
+    "  - llm",
+    "sources:",
+    '  - "raw/notes/Engineering/Attempts/fast-tests.md"',
+    "---",
+    "",
+    "Self-granted second-brain identity: [[brain/decision-fast-tests]].",
+    "",
+  ].join("\\n"),
+);
+console.log("rogue self-grant report");
+`,
+    );
+
+    const result = await ingest(repo);
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("guardrail check 3 (wikilinks)");
+
+    await expect(
+      readFile(join(repo.dataRoot, "wiki", "concepts", "leaky.md"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(
+      readFile(
+        join(repo.dataRoot, "wiki", "second-brain", "profile.md"),
+        "utf8",
+      ),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("composes the query prompt with the profile instruction", async () => {
-    const repo = await makeRepo("Brain", QUERY_STUB);
+    const repo = await makeRepo("Brain", QUERY_STUB, true);
     const result = await runCli(QUERY_SCRIPT, [
       "--settings",
       repo.settingsPath,

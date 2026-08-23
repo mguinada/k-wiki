@@ -45,6 +45,9 @@ export interface SeedOptions {
   readonly repoRoot?: string;
   /** Environment for git child processes; defaults to `process.env`. */
   readonly env?: NodeJS.ProcessEnv;
+  /** Write the operator-owned second-brain identity marker
+   *  (issue #94) at the data root and commit it with the skeleton. */
+  readonly secondBrain?: boolean;
 }
 
 const DATA_README = `# k-wiki data
@@ -84,6 +87,7 @@ async function seed(
   dataRoot: string,
   repoRoot: string,
   env: NodeJS.ProcessEnv,
+  secondBrain: boolean,
 ): Promise<void> {
   await mkdir(dataRoot, { recursive: true });
   await runGit(dataRoot, ["init", "--quiet"], env);
@@ -96,6 +100,10 @@ async function seed(
   }
 
   await writeFile(join(dataRoot, "README.md"), DATA_README);
+
+  if (secondBrain) {
+    await writeFile(join(dataRoot, ".second-brain"), "");
+  }
 
   const message = "Seed data repo from k-wiki skeleton";
 
@@ -131,7 +139,7 @@ export async function seedDataRepo(
     }
   }
 
-  await seed(config.dataRoot, repoRoot, env);
+  await seed(config.dataRoot, repoRoot, env, options.secondBrain === true);
 
   return "seeded";
 }
@@ -142,17 +150,25 @@ const defaultRepoRoot = resolve(
 );
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
-const HELP = `Usage: init-data-repo [-h | --help] [<config>]
+const HELP = `Usage: init-data-repo [-h | --help] [--second-brain] [<config>]
 
 Create and seed the data repo at the config's dataRoot: git init, copy
 the raw/ and wiki/ skeleton from the code repo, first commit.
 Idempotent — an already-seeded data repo is left untouched.
 
-  -h, --help    Print this help and exit; no side effects.
-  <config>      Path to sync.json.
-                Default: the repo's own sync.json.`;
+  --second-brain  Also write .second-brain, the operator-owned
+                  second-brain identity marker, at the data root and
+                  commit it with the seed. The marker — not the
+                  agent-writable wiki/second-brain/profile.md — is
+                  what the ingest guardrails read as second-brain
+                  identity (issue #94). Mark an already-seeded repo
+                  by hand: create and commit .second-brain at its
+                  root.
+  -h, --help      Print this help and exit; no side effects.
+  <config>        Path to sync.json.
+                  Default: the repo's own sync.json.`;
 
-/** data:init entry point: `init-data-repo [-h | --help] [config]`. */
+/** data:init entry point: `init-data-repo [-h | --help] [--second-brain] [<config>]`. */
 export async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
@@ -162,12 +178,13 @@ export async function main(): Promise<void> {
     return;
   }
 
-  const configArg = args[0];
+  const secondBrain = args.includes("--second-brain");
+  const configArg = args.find((arg) => arg !== "--second-brain");
   const configPath = configArg ?? join(defaultRepoRoot, "sync.json");
 
   try {
     const config = await loadSyncConfig(configPath);
-    const result = await seedDataRepo({ configPath });
+    const result = await seedDataRepo({ configPath, secondBrain });
 
     console.log(
       result === "seeded"

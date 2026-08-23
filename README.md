@@ -242,11 +242,15 @@ the settings, **and a per-instance outputs dir** so the manifest
 snapshot never crosses instances:
 
 ```sh
-npm run data:init -- sync-second-brain.json
+npm run data:init -- --second-brain sync-second-brain.json
 npm run wiki-sync -- --settings settings-second-brain.yml --outputs outputs-second-brain sync-second-brain.json
 ```
 
-The first ingest creates `wiki/second-brain/profile.md` — the agent's
+`data:init --second-brain` writes `.second-brain` at the data root —
+the operator-owned identity marker the ingest guardrails read (only
+a marked repo may carry cross-wiki links; the agent-writable profile
+never grants identity). The first ingest creates
+`wiki/second-brain/profile.md` — the agent's
 evolving memory of the wiki's subject: current projects, goals,
 communication style, standing preferences. Later runs read it first and update it
 when the sources reveal changes; queries shape their answers with it
@@ -380,7 +384,7 @@ sources directly, so there is no build step — install dependencies with
 | `npm run wiki-ingest -- [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<raw-dir>]` | ingest wrapper | Run the wiki agent headless over the sources that changed since the last ingest and write the per-run digest (reads `settings.yml`; [details below](#running-the-wiki-agent-wiki-ingest)) |
 | `npm run wiki-sync -- [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<sync.json>] [<raw-dir>]` | cycle orchestrator | Run the whole cycle — sync → ingest → lint → one data-repo commit — and print the digest (reads `settings.yml`; [details below](#running-the-full-cycle-wiki-sync)) |
 | `npm run wiki-query -- [-h \| --help] [--no-filing] [--settings <path>] [--raw-dir <dir>] [--timeout <secs>] <question>` | query wrapper | Ask the built wiki one question headless: print the answer and, unless `--no-filing`, report the query pages the agent filed (reads `settings.yml`; [details below](#running-queries-wiki-query)) |
-| `npm run data:init -- [<sync.json>]` | data repo seeder | Create and seed the data repo at `sync.json`'s `dataRoot`: git init, copy the `raw/`+`wiki/` skeleton from the code repo, first commit; idempotent |
+| `npm run data:init -- [--second-brain] [<sync.json>]` | data repo seeder | Create and seed the data repo at `sync.json`'s `dataRoot`: git init, copy the `raw/`+`wiki/` skeleton from the code repo, first commit; idempotent; `--second-brain` also writes the `.second-brain` identity marker ([§5](#5-the-second-brain)) |
 | `npm run mutation:changed` | StrykerJS | Advisory mutation run scoped to `src/` files changed vs `main` (uncommitted included); exits 0 without running when none changed, and ends by printing the actionable mutants — the default pre-handoff step |
 | `npm run mutation:changed -- --full` | StrykerJS | Advisory mutation run over all of `src/`, not just changed files; same printed summary |
 | `npm run mutation:survivors` | triage helper | Re-list the actionable mutants from the last report — no run, instant |

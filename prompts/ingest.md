@@ -4,13 +4,17 @@ Read the changed source files under raw/ and update wiki/ accordingly.
 
 Follow wiki/AGENTS.md exactly.
 
-Second brain: read `wiki/second-brain/profile.md` before processing
-sources when it exists — it is your memory of the wiki's subject (a
-person, a career, a venture). Create it on the first run when the
-sources are one subject's own material (project notes, decisions,
-attempts), and update it when sources reveal changes to goals,
-projects, or preferences. File second-brain pages under
-`wiki/second-brain/` with types `project`, `decision`, or `attempt`.
+Second brain: when the data repo root holds the `.second-brain`
+marker, this wiki is a second brain. Read
+`wiki/second-brain/profile.md` before processing sources — it is
+your memory of the wiki's subject (a person, a career, a venture);
+create it on the first run of a marked repo, and update it when
+sources reveal changes to goals, projects, or preferences. File
+second-brain pages under `wiki/second-brain/` with types `project`,
+`decision`, or `attempt`. The marker is operator-owned: never
+create, edit, or remove it. Without the marker this wiki is a
+domain wiki: create no profile and no second-brain pages, and use
+no `[[<vault>/<page>]]` cross-wiki links.
 
 For each changed source:
 

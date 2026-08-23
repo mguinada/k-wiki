@@ -1400,6 +1400,16 @@ by naming every argument (README usage models). The privacy caution of
 Scenario A applies in full: never merge a second brain's vault into
 a domain instance — un-mixing later requires history rewriting.
 
+**Identity.** A data repo is a second brain exactly when its root
+holds the `.second-brain` marker — an operator-owned file written at
+seed time (`data:init --second-brain`) or by hand for an existing
+repo, sitting outside the agent's writable whitelist so guardrail 1
+protects it (issue #94). The agent-writable profile never grants
+identity: a domain-repo run that creates the profile and cross-wiki
+links in one run still trips the wikilink guardrail and is reverted.
+Marking an existing second-brain data repo is one operator action:
+create `.second-brain` at its root and commit it.
+
 ### Changing Your Mind Later
 
 Topology is reversible because `wiki/` is derived from `raw/` alone:

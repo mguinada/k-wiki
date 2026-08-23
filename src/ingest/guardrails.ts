@@ -27,7 +27,9 @@ import {
  *  3. wikilinks — every `[[wikilink]]` in a changed page resolves to
  *     an existing wiki file, and no remaining page keeps a link to a
  *     page the run deleted; cross-wiki `[[<vault>/<page>]]` targets
- *     (issue #81) are external only in a second brain — in every
+ *     (issue #81) are external only in a second brain — identified by
+ *     the operator-owned `.second-brain` marker at the data root
+ *     (issue #94), never by the agent-writable profile — and in every
  *     other wiki they are unresolvable and trip the check.
  */
 
@@ -39,6 +41,14 @@ const ALLOWED_EXACT = "raw/manifest.json";
 
 /** The wiki contract file: no run may write it (guide §10). */
 const FORBIDDEN_EXACT = "wiki/AGENTS.md";
+
+/** The operator-owned second-brain identity marker (issue #94):
+ *  presence at the data root — not the agent-writable profile —
+ *  makes the wiki a second brain. It is captured in the pre-run
+ *  state regardless of git ignore rules, so guardrail 1 reverts any
+ *  run that creates, edits, or removes it: identity cannot be
+ *  self-granted. */
+const SECOND_BRAIN_MARKER = ".second-brain";
 
 /** The contract's append-only log (guide §10): no §9 frontmatter by
  *  design — the agent appends to it on every meaningful run, so
@@ -266,15 +276,16 @@ export interface PreRunState {
   readonly commit: string;
   /** The full pre-run git status. */
   readonly status: readonly StatusEntry[];
-  /** Content hashes of every dirty path and every rename origin
-   *  ("absent" when the file is gone) — clean-tree status codes
-   *  alone cannot tell an agent re-edit of an already-dirty page
-   *  (the normal case: nothing commits the wiki between runs) from
-   *  an untouched one, nor a file restored onto a rename origin. */
+  /** Content hashes of every dirty path, every rename origin, and
+   *  the second-brain marker ("absent" when the file is gone) —
+   *  clean-tree status codes alone cannot tell an agent re-edit of
+   *  an already-dirty page (the normal case: nothing commits the
+   *  wiki between runs) from an untouched one, nor a file restored
+   *  onto a rename origin. */
   readonly hashes: ReadonlyMap<string, string>;
-  /** The bytes of every dirty path and rename origin (null: absent),
-   *  so the revert can restore uncommitted pre-run work a reset
-   *  alone would destroy. */
+  /** The bytes of every dirty path, rename origin, and the
+   *  second-brain marker (null: absent), so the revert can restore
+   *  uncommitted pre-run work a reset alone would destroy. */
   readonly contents: ReadonlyMap<string, Buffer | null>;
 }
 
@@ -325,6 +336,8 @@ export async function capturePreRunState(
       await capture(entry.origin);
     }
   }
+
+  await capture(SECOND_BRAIN_MARKER);
 
   return { commit, status, contents, hashes };
 }
@@ -583,13 +596,15 @@ async function deletedWikiPageNames(
 }
 
 /** True when the wiki is a second brain — identified by the
- *  accreted profile layer (guide §25, Scenario D). Only a second
+ *  operator-owned `.second-brain` marker at the data root (guide
+ *  §25, Scenario D; issue #94), written by `data:init
+ *  --second-brain` or by hand, never by the agent. Only a second
  *  brain may use cross-wiki links; in every other wiki a slashed
  *  target is simply unresolvable, so the privacy direction (domain
  *  wikis never reference second-brain material) is enforced per-run. */
 async function isSecondBrain(dataRoot: string): Promise<boolean> {
   try {
-    await readFile(join(dataRoot, "wiki", "second-brain", "profile.md"));
+    await readFile(join(dataRoot, SECOND_BRAIN_MARKER));
 
     return true;
   } catch {

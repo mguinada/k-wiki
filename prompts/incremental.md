@@ -4,9 +4,14 @@ Process only the source files changed since the previous ingestion.
 
 Follow wiki/AGENTS.md exactly.
 
-Second brain: read `wiki/second-brain/profile.md` first when it
-exists, and update it when the changed sources reveal changes to
-goals, projects, or preferences.
+Second brain: when the data repo root holds the `.second-brain`
+marker, this wiki is a second brain. Read
+`wiki/second-brain/profile.md` before processing the changed
+sources, and update it when they reveal changes to goals, projects,
+or preferences. Without the marker this wiki is a domain wiki:
+create no profile and no second-brain pages, and use no
+`[[<vault>/<page>]]` cross-wiki links. The marker is operator-owned:
+never create, edit, or remove it.
 
 First inspect the existing wiki pages related to those sources.
 

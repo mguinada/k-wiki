@@ -13,9 +13,12 @@ Build:
 - index.md;
 - log.md.
 
-Second brain: restore `wiki/second-brain/profile.md` from git before
+Second brain: when the data repo root holds the `.second-brain`
+marker, restore `wiki/second-brain/profile.md` from git before
 building, read it first, and rebuild the pages under
-`wiki/second-brain/` with types `project`, `decision`, and `attempt`.
+`wiki/second-brain/` with types `project`, `decision`, and
+`attempt`. Without the marker this wiki is a domain wiki: build no
+second-brain pages.
 
 Avoid duplicate pages.
 
