@@ -742,11 +742,29 @@ transmitted, while `push.pushOption` and explicit `-o` are. git has
 never read that key — upstream parses only `push.pushOption` — so no
 upgrade will make it work.
 
-**Trap: `axi run --intent` suppresses the config option.** git sends
-`push.pushOption` only when no `-o` flag is given, and `axi run
+**Trap: `axi run --intent` suppresses the config option.** git sends `push.pushOption` only when no `-o` flag is given, and `axi run
 --intent …` pushes with its own `-o no-mistakes.intent=…`. So agents
 passing intent must pass `--skip pr` explicitly — the flag forwards
 the skip on both the push path and the IPC fallback.
+
+**CLI shim — the machine-level backstop.** The flag and push option
+above ride on the caller's discipline: an `axi run` without `--skip pr`,
+or any `rerun`, still runs the `pr` step (the IPC rerun path carries no
+skip at all). On this machine `~/.local/bin/no-mistakes` is therefore a
+wrapper script, not the installer's symlink. It appends `--skip pr` to
+every run-starting invocation (`axi run` and the bare TUI/wizard),
+merges `pr` into an existing `--skip` value instead of duplicating it,
+refuses `no-mistakes rerun` with the safe alternative printed, and passes
+every other subcommand through untouched. Every invocation prints a
+one-line shim notice to stderr (never stdout, where agents parse TOON
+output), so the shim cannot act invisibly. Self-updates replace only
+`~/.no-mistakes/bin/no-mistakes`, so the shim survives them; a full
+reinstall fails loudly when its plain `ln -s` hits the existing wrapper
+file. Remove the shim — restore the stock CLI — with:
+
+```sh
+ln -sf ~/.no-mistakes/bin/no-mistakes ~/.local/bin/no-mistakes
+```
 
 Consequences:
 
