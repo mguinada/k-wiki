@@ -1821,7 +1821,10 @@ describe("runWikiIngest", () => {
 
     await writeFile(join(h.dataRoot, "wiki", "A-page.md"), "# A page dirty\n");
 
-    const result = await runWikiIngest({ ...optionsFor(h), runAgent: deleting });
+    const result = await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: deleting,
+    });
 
     expect(result.status).toBe("ran");
     if (result.status !== "ran") {
@@ -2871,8 +2874,14 @@ describe("runWikiIngest failure reporting detail", () => {
   it("joins multiple guardrail problems with a semicolon in the error", async () => {
     const h = await makeHarness({ "a.md": "a" });
     const saboteur: AgentRunner = async (_command, _args, options) => {
-      await writeFile(join(options.cwd, "wiki", "bad-1.md"), "no frontmatter\n");
-      await writeFile(join(options.cwd, "wiki", "bad-2.md"), "no frontmatter\n");
+      await writeFile(
+        join(options.cwd, "wiki", "bad-1.md"),
+        "no frontmatter\n",
+      );
+      await writeFile(
+        join(options.cwd, "wiki", "bad-2.md"),
+        "no frontmatter\n",
+      );
 
       return { stdout: "rogue report", stderr: "" };
     };
