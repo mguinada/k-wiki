@@ -436,6 +436,11 @@ export function reportColors(): ReportColors {
   };
 }
 
+/** The `(1m05s)` summary suffix; empty when the run was unmeasured. */
+function durationClause(elapsedMs: number | undefined): string {
+  return elapsedMs === undefined ? "" : ` (${formatDuration(elapsedMs)})`;
+}
+
 /** Render the run summary; `+` marks copies and `-` marks removals. */
 export function formatReport(
   report: SyncReport,
@@ -476,10 +481,7 @@ export function formatReport(
     0,
   );
   const pruned = report.prunedNamespaces.length;
-  const duration =
-    report.elapsedMs !== undefined
-      ? ` (${formatDuration(report.elapsedMs)})`
-      : "";
+  const duration = durationClause(report.elapsedMs);
 
   if (copied === 0 && removed === 0 && pruned === 0) {
     lines.push(colors.dim(`sync complete: no changes${duration}`));
@@ -519,10 +521,7 @@ export function formatDryRunReport(
     }
   }
 
-  const duration =
-    elapsedMs !== undefined ? ` (${formatDuration(elapsedMs)})` : "";
-
-  lines.push(`dry-run complete: nothing written${duration}`);
+  lines.push(`dry-run complete: nothing written${durationClause(elapsedMs)}`);
 
   return lines.join("\n");
 }
