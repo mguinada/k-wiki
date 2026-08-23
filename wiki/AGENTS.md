@@ -66,7 +66,9 @@ For every new or changed source:
     a `CONTRADICTION` callout; unrelated → leave flagged.
 13. Run `npm run check-links -- <wiki-dir>` from the code-repo checkout
     (the data repo does not ship the tool) and fix every broken
-    `[[wikilink]]` it reports.
+    `[[wikilink]]` it reports. In a personal instance, also run
+    `npm run check-crosslinks -- <wiki-dir> <engineering-wiki-dir>`
+    and fix every cross-wiki link it reports.
 
 Create a new concept or entity page only when the term appears in more than
 one source or is clearly central; avoid stub pages.
@@ -203,6 +205,12 @@ Answer questions against the wiki, not against `raw/` directly:
    borderline, offer and let the human decide — never silently skip;
    a declined filing states its reason.
 
+In a personal instance, read `wiki/personal/profile.md` before
+answering and let it shape the answer: questions about the person's
+trajectory ("what did I try", "why did I choose") are answered from
+the personal pages and the profile together, not from domain pages
+alone.
+
 If the wiki cannot answer a question, say so and suggest sources to ingest.
 
 ## Contradictions
@@ -230,19 +238,22 @@ unless that information is explicitly treated as a derived conclusion.
 
 Exception: filed queries and human corrections form an accreted layer that
 exists only in the wiki. Deleting `wiki/` loses that layer; git history is
-its record.
+its record. In a personal instance the profile joins that layer.
 
 Two files in `wiki/` are not derivable from `raw/`: this contract
-(`wiki/AGENTS.md`) and `wiki/queries/`. A rebuild removes the wiki content
-pages and preserves both.
+(`wiki/AGENTS.md`) and `wiki/queries/`; a personal instance adds a third,
+`wiki/personal/profile.md`. A rebuild removes the wiki content pages and
+preserves all of them.
 
 Rebuild procedure:
 
 1. Remove the wiki content pages: `index.md`, `overview.md`, `log.md`, and
    everything under `concepts/`, `entities/`, `sources/`, `comparisons/`,
-   and `queries/`. Keep `wiki/AGENTS.md`.
+   `queries/`, and — in a personal instance — `personal/`. Keep
+   `wiki/AGENTS.md`.
 2. Run the rebuild prompt against `raw/`, following this contract.
-3. Restore the accreted layer from git: `git restore wiki/queries/`.
+3. Restore the accreted layer from git: `git restore wiki/queries/`, plus
+   `wiki/personal/profile.md` in a personal instance.
 4. Spot-check the rebuilt pages against the pre-deletion versions
    (`git show HEAD:wiki/<path>`): same concepts covered, sources
    attributed, contradictions preserved. Wording may differ; LLM output
@@ -333,3 +344,57 @@ derived.
 This wiki currently has a single source vault. When multiple source
 vaults are adopted, a human-approved change to this contract adds the
 multi-vault rules here.
+
+## Personal Instances
+
+A wiki whose source vault holds one person's own material — project
+notes, decisions, attempts, lessons — is a **personal instance**. It is
+a separate data repo with this same contract; it is identified by the
+presence of `wiki/personal/profile.md`.
+
+### Profile layer
+
+`wiki/personal/profile.md` is the memory of the person the wiki is
+about: current projects, goals, communication style, standing
+preferences. It is the first file read on every operation and the last
+considered when answering a question.
+
+- Read it at the start of every ingestion and query.
+- Update it when sources reveal a change: a new goal, a finished
+  project, a revised preference. Keep the update small and dated.
+- It is an accreted layer, not a derived page: it carries no `sources`
+  and no `origin`, its frontmatter uses `type: profile`, and rebuilds
+  preserve it.
+- It states context, not certainty: mark stale entries as stale
+  instead of deleting the history silently when the log already
+  records the change.
+
+### Personal page types
+
+Personal material files under `wiki/personal/` with the same rules as
+any derived page (`sources`, `origin`, confidence) and three types:
+
+- `project` — an ongoing effort: its goal, status, and the decisions
+  and attempts that shaped it;
+- `decision` — a choice made: the options considered, the rationale,
+  and what later material says about the outcome;
+- `attempt` — something tried: what was attempted, whether it worked,
+  and the lesson to carry forward.
+
+Use lowercase kebab-case names; anchor a page to its day when the day
+matters (`attempt-fast-tests-2026-08-17.md`). A question such as "what
+did I try that failed" is answered from these pages, not guessed.
+
+### Cross-wiki links
+
+A personal wiki may reference the engineering wiki, never the
+reverse:
+
+- `[[engineering/<page>]]` links to the engineering wiki's page
+  `<page>`; the link never resolves in this wiki — `check-crosslinks`
+  validates it against the engineering wiki after every run.
+- The engineering wiki never references personal material: no page of
+  any other wiki may link here, and this wiki's material never leaves
+  this data repo.
+- The `engineering/` prefix is reserved: no wiki keeps a page or
+  folder under a path named `engineering/`.

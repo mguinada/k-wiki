@@ -1347,6 +1347,41 @@ a note that opts out of every wiki carries both `wiki: false` and
 only. A positive per-wiki partition (`wiki: public`) would need the
 select-style grammar back as a deliberate design change.
 
+### Scenario D: The Personal Wiki (a Second Brain)
+
+A personal wiki is Scenario B applied to one person's own vault, plus
+three additions that make it a second brain rather than another
+knowledge repo:
+
+1. **A profile layer.** `wiki/personal/profile.md` is the agent's
+   evolving memory of the person — current projects, goals,
+   communication style, standing preferences. It is an accreted layer
+   (like `queries/`), not derived from `raw/`, and rebuilds preserve
+   it. The agent reads it before every run and every query, and
+   answers trajectory questions ("what did I try that failed?",
+   "why did I choose X?") from it together with the personal pages.
+2. **Personal page types.** Personal material files under
+   `wiki/personal/` as `project`, `decision`, or `attempt` pages —
+   derived pages with full provenance (`sources`, `origin`),
+   expunged like any other when their notes are deleted.
+3. **One-way cross-wiki links.** Personal pages may reference the
+   engineering wiki with `[[engineering/<page>]]`, where `<page>` is
+   the engineering page name. The link never resolves inside the
+   personal wiki — the internal checkers skip the reserved prefix —
+   and `check-crosslinks <wiki-dir> <engineering-wiki-dir>` validates
+   every such link against the engineering wiki, while rejecting any
+   cross-wiki link inside the engineering wiki itself. The direction
+   is deliberate: domain knowledge may inform personal conclusions,
+   but personal material must never leak into a publishable wiki —
+   and an engineering page linking at `[[personal/…]]` simply dangles
+   and fails the ingest guardrails.
+
+The plumbing is ordinary Scenario B: its own vault, its own data repo,
+its own sync config and settings file, drivable from a single checkout
+by naming every argument (README usage models). The privacy caution of
+Scenario A applies in full: never merge the personal vault into the
+engineering instance — un-mixing later requires history rewriting.
+
 ### Changing Your Mind Later
 
 Topology is reversible because `wiki/` is derived from `raw/` alone:

@@ -5,6 +5,7 @@ import { createColors } from "picocolors";
 import { isMainModule } from "../src/cli/is-main.ts";
 import {
   buildPageIndex,
+  crossWikiTarget,
   extractWikilinks,
   listFiles,
 } from "../src/wiki-links.ts";
@@ -12,9 +13,11 @@ import {
 /**
  * Wikilink checker: scans every Markdown page under wiki/, extracts
  * each `[[wikilink]]` (bare, aliased, or with a heading anchor), and
- * resolves it by page file name against the scanned tree. Prints one
- * `file:line -> [[link]]` line per broken link and exits 1; exits 0
- * when every link resolves.
+ * resolves it by page file name against the scanned tree. Cross-wiki
+ * `[[engineering/<page>]]` links are external to this wiki and are
+ * skipped (issue #81); `check-crosslinks` validates them against the
+ * engineering wiki itself. Prints one `file:line -> [[link]]` line
+ * per broken link and exits 1; exits 0 when every link resolves.
  */
 
 export interface LinkReport {
@@ -22,6 +25,8 @@ export interface LinkReport {
   readonly broken: readonly string[];
   /** Total wikilinks found across all scanned pages. */
   readonly links: number;
+  /** Cross-wiki `[[engineering/<page>]]` links, skipped as external. */
+  readonly external: number;
   /** Markdown pages scanned under the wiki root. */
   readonly pages: number;
 }
@@ -54,12 +59,19 @@ export async function checkWikiLinks(
   const index = buildPageIndex(files);
   const broken: string[] = [];
   let links = 0;
+  let external = 0;
 
   for (const file of files) {
     const text = await readFile(join(wikiDir, file), "utf8");
 
     for (const link of extractWikilinks(text)) {
       links++;
+
+      if (crossWikiTarget(link.target) !== undefined) {
+        external++;
+
+        continue;
+      }
 
       if (!index.has(link.target)) {
         broken.push(
@@ -69,7 +81,7 @@ export async function checkWikiLinks(
     }
   }
 
-  return { broken, links, pages: files.length };
+  return { broken, links, external, pages: files.length };
 }
 
 async function assertWikiDir(
@@ -94,6 +106,8 @@ const HELP = `Usage: check-links [-h | --help] [<wiki-dir>]
 
 Check that every [[wikilink]] under a wiki resolves to an existing
 page by file name (bare, aliased, and heading-anchor links).
+Cross-wiki [[engineering/<page>]] links are external and skipped;
+check-crosslinks validates them against the engineering wiki.
 
   <wiki-dir>    Wiki root to scan. Default: the repo's own wiki/.
   -h, --help    Print this help and exit; no side effects.
@@ -121,10 +135,14 @@ export async function main(): Promise<void> {
     if (report.broken.length === 0) {
       const links = `${report.links} ${report.links === 1 ? "wikilink" : "wikilinks"}`;
       const pages = `${report.pages} ${report.pages === 1 ? "page" : "pages"}`;
+      const external =
+        report.external > 0
+          ? ` (${report.external} external ${report.external === 1 ? "cross-wiki link" : "cross-wiki links"})`
+          : "";
 
       console.log(
         colors().green(
-          `ok: ${links} ${report.links === 1 ? "resolves" : "resolve"} across ${pages}`,
+          `ok: ${links} ${report.links === 1 ? "resolves" : "resolve"} across ${pages}${external}`,
         ),
       );
 

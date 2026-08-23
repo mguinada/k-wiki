@@ -13,6 +13,10 @@ Build:
 - index.md;
 - log.md.
 
+Personal instance: restore `wiki/personal/profile.md` from git before
+building, read it first, and rebuild the pages under `wiki/personal/`
+with types `project`, `decision`, and `attempt`.
+
 Avoid duplicate pages.
 
 Every substantive claim must be traceable to source material.

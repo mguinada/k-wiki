@@ -1,9 +1,9 @@
 You are maintaining a structured knowledge wiki.
 
 One or more synced source notes were deleted from the vault. Expunge
-their influence: no claim, concept, entity, comparison, or filed query
-may rest on material whose only support was a removed note, directly or
-indirectly.
+their influence: no claim, concept, entity, comparison, personal page,
+or filed query may rest on material whose only support was a removed
+note, directly or indirectly.
 
 Follow wiki/AGENTS.md exactly, including its Expungement section.
 

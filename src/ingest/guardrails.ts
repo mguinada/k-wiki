@@ -2,7 +2,12 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { runGit } from "../data/init-data-repo.ts";
 import { sha256 } from "../sync/hash.ts";
-import { buildPageIndex, extractWikilinks, listFiles } from "../wiki-links.ts";
+import {
+  buildPageIndex,
+  crossWikiTarget,
+  extractWikilinks,
+  listFiles,
+} from "../wiki-links.ts";
 
 /**
  * Post-run guardrails (guide §1, §7, §9; issue #12): three mechanical
@@ -21,7 +26,8 @@ import { buildPageIndex, extractWikilinks, listFiles } from "../wiki-links.ts";
  *     `wiki/log.md`, the append-only log, which has none by design;
  *  3. wikilinks — every `[[wikilink]]` in a changed page resolves to
  *     an existing wiki file, and no remaining page keeps a link to a
- *     page the run deleted.
+ *     page the run deleted; cross-wiki `[[engineering/<page>]]` links
+ *     are external (issue #81) and skip internal resolution.
  */
 
 /** Paths only these guardrails may see changed after a run. */
@@ -40,7 +46,13 @@ const FRONTMATTER_EXEMPT = "wiki/log.md";
 
 /** Structural meta pages (guide §9): they carry frontmatter but are
  *  not derived from source material, so the `sources` field is optional. */
-const SOURCES_EXEMPT = new Set(["wiki/index.md", "wiki/overview.md"]);
+const SOURCES_EXEMPT = new Set([
+  "wiki/index.md",
+  "wiki/overview.md",
+  // The personal instance's accreted profile layer (issue #81):
+  // evolving context about the person, not claims from one source.
+  "wiki/personal/profile.md",
+]);
 
 /** Frontmatter fields every wiki page must carry (§9). */
 const REQUIRED_FIELDS = [
@@ -590,6 +602,13 @@ async function checkChangedWikilinks(
 
   for (const [path, text] of texts) {
     for (const link of extractWikilinks(text)) {
+      // Cross-wiki links (issue #81) are external by design: they
+      // never resolve in this wiki; check-crosslinks validates them
+      // against the engineering wiki instead.
+      if (crossWikiTarget(link.target) !== undefined) {
+        continue;
+      }
+
       if (!index.has(link.target)) {
         problems.push(`${path}:${link.line} -> ${link.raw}`);
       }

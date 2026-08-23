@@ -16,6 +16,7 @@
     "e2e": "vitest run --config vitest.e2e.config.ts",
     "health": "node src/health/check-raw.ts",
     "check-links": "node scripts/check-links.ts",
+    "check-crosslinks": "node scripts/check-crosslinks.ts",
     "check-provenance": "node scripts/check-provenance.ts",
     "fixtures": "node src/fixtures/generate.ts",
     "sync-vault": "node src/sync/sync-vault.ts",

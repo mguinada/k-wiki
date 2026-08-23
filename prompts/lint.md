@@ -23,6 +23,8 @@ Check for:
     — each is an error.
 18. Pages that should carry `status: needs-review` under the corroboration
     lifecycle but do not.
+19. Cross-wiki links: a slashed `[[<vault>/<page>]]` target no available
+    domain wiki has, or any cross-wiki link inside a domain wiki.
 
 Do not make speculative corrections.
 Never modify wiki/AGENTS.md.

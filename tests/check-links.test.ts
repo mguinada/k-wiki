@@ -9,6 +9,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { checkWikiLinks } from "../scripts/check-links.ts";
 import {
   buildPageIndex,
+  crossWikiTarget,
   extractWikilinks,
   wikilinkBodyTarget,
 } from "../src/wiki-links.ts";
@@ -136,6 +137,24 @@ describe("extractWikilinks", () => {
     ]);
   });
 
+  it("does not open a fence at a backtick run inside a line", () => {
+    expect(extractWikilinks("text with ``` inside\n[[kept]]\n")).toEqual([
+      { target: "kept", line: 2, raw: "[[kept]]" },
+    ]);
+  });
+
+  it("does not treat a single leading backtick as a code fence", () => {
+    expect(extractWikilinks("`tick` then text\n[[kept]]\n")).toEqual([
+      { target: "kept", line: 2, raw: "[[kept]]" },
+    ]);
+  });
+
+  it("does not treat a single leading tilde as a code fence", () => {
+    expect(extractWikilinks("~ note\n[[kept]]\n")).toEqual([
+      { target: "kept", line: 2, raw: "[[kept]]" },
+    ]);
+  });
+
   it("does not end a backtick fence at a tilde delimiter", () => {
     const text = [
       "```text",
@@ -172,6 +191,30 @@ describe("wikilinkBodyTarget", () => {
 
   it("returns the body unchanged when it has no alias or anchor", () => {
     expect(wikilinkBodyTarget("Temp research")).toBe("Temp research");
+  });
+});
+
+describe("crossWikiTarget", () => {
+  it("returns the page name of an engineering-prefixed target", () => {
+    expect(crossWikiTarget("engineering/rag-evaluation-notes")).toBe(
+      "rag-evaluation-notes",
+    );
+  });
+
+  it("keeps an alias-free anchor in the returned page name", () => {
+    expect(crossWikiTarget("engineering/foo#section")).toBe("foo#section");
+  });
+
+  it("returns undefined for a target without the prefix", () => {
+    expect(crossWikiTarget("retrieval-augmented-generation")).toBeUndefined();
+  });
+
+  it("returns undefined for a target that only contains the prefix", () => {
+    expect(crossWikiTarget("engineering/")).toBeUndefined();
+  });
+
+  it("does not treat a folder-local path as a cross-wiki target", () => {
+    expect(crossWikiTarget("notes/engineering/rag")).toBeUndefined();
   });
 });
 
@@ -232,6 +275,37 @@ describe("checkWikiLinks", () => {
     expect(report.broken).toEqual([
       "wiki/index.md:1 -> [[missing-page|alias]]",
     ]);
+  });
+
+  it("does not report a cross-wiki engineering link as broken", async () => {
+    const root = await makeWiki({
+      "personal/decision-fast-tests.md": "Backed by [[engineering/stub]].\n",
+    });
+
+    const report = await checkWikiLinks(join(root, "wiki"));
+
+    expect(report.broken).toEqual([]);
+  });
+
+  it("counts cross-wiki links separately as external", async () => {
+    const root = await makeWiki({
+      "index.md": "One [[engineering/stub]], one [[local-page]].\n",
+      "concepts/local-page.md": "# Local\n",
+    });
+
+    const report = await checkWikiLinks(join(root, "wiki"));
+
+    expect(`${report.external}/${report.links}`).toBe("1/2");
+  });
+
+  it("reports a bare engineering prefix as a broken internal link", async () => {
+    const root = await makeWiki({
+      "index.md": "Empty target [[engineering/]].\n",
+    });
+
+    const report = await checkWikiLinks(join(root, "wiki"));
+
+    expect(report.broken).toEqual(["wiki/index.md:1 -> [[engineering/]]"]);
   });
 
   it("does not report wikilinks inside AGENTS.md", async () => {

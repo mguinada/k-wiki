@@ -503,9 +503,55 @@ describe("runGuardrails — check 2, frontmatter", () => {
 
     expect(post.failure).toBeUndefined();
   });
+
+  it("exempts a changed wiki/log.md from frontmatter entirely", async () => {
+    const dataRoot = await makeRepo();
+    const post = await guardedRun(dataRoot, async (root) => {
+      await writeFile(join(root, "wiki", "log.md"), "- no frontmatter entry\n");
+    });
+
+    expect(post.failure).toBeUndefined();
+  });
+
+  it("exempts a run-changed wiki/overview.md from the sources field", async () => {
+    const dataRoot = await makeRepo();
+    const post = await guardedRun(dataRoot, async (root) => {
+      await writeFile(
+        join(root, "wiki", "overview.md"),
+        "---\ntitle: Overview\ntype: topic\ncreated: 2026-08-22\nupdated: 2026-08-22\ntags:\n  - wiki\n---\n\n# Overview v2\n",
+      );
+    });
+
+    expect(post.failure).toBeUndefined();
+  });
+
+  it("exempts wiki/personal/profile.md from the sources field", async () => {
+    const dataRoot = await makeRepo();
+    const post = await guardedRun(dataRoot, async (root) => {
+      await mkdir(join(root, "wiki", "personal"), { recursive: true });
+      await writeFile(
+        join(root, "wiki", "personal", "profile.md"),
+        "---\ntitle: Profile\ntype: profile\ncreated: 2026-08-22\nupdated: 2026-08-22\ntags:\n  - personal\n---\n\n# Profile\n",
+      );
+    });
+
+    expect(post.failure).toBeUndefined();
+  });
 });
 
 describe("runGuardrails — check 3, wikilinks", () => {
+  it("accepts a cross-wiki engineering link in a changed page", async () => {
+    const dataRoot = await makeRepo();
+    const post = await guardedRun(dataRoot, async (root) => {
+      await writeFile(
+        join(root, "wiki", "new.md"),
+        page("Backed by [[engineering/retrieval-augmented-generation]]."),
+      );
+    });
+
+    expect(post.failure).toBeUndefined();
+  });
+
   it("trips on a dangling wikilink naming the file and line", async () => {
     const dataRoot = await makeRepo();
     const post = await guardedRun(dataRoot, async (root) => {

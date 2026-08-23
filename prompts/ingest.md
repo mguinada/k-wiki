@@ -4,6 +4,14 @@ Read the changed source files under raw/ and update wiki/ accordingly.
 
 Follow wiki/AGENTS.md exactly.
 
+Second brain: read `wiki/second-brain/profile.md` before processing
+sources when it exists — it is your memory of the wiki's subject (a
+person, a career, a venture). Create it on the first run when the
+sources are one subject's own material (project notes, decisions,
+attempts), and update it when sources reveal changes to goals,
+projects, or preferences. File second-brain pages under
+`wiki/second-brain/` with types `project`, `decision`, or `attempt`.
+
 For each changed source:
 
 1. Understand the complete source.
@@ -36,5 +44,6 @@ At the end, report:
 - pages created;
 - pages updated;
 - new load-bearing claims with no second source (claim + page + source);
+- profile updates (second brains);
 - contradictions detected;
 - unresolved questions.

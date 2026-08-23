@@ -62,6 +62,26 @@ export function extractWikilinks(text: string): Wikilink[] {
   return links;
 }
 
+/** The reserved external link prefix: `[[engineering/<page>]]` in any
+ *  non-engineering wiki refers to the engineering wiki instance's page
+ *  (issue #81). Such links never resolve internally — by design — so
+ *  the internal checkers skip them and `scripts/check-crosslinks.ts`
+ *  validates them against the engineering wiki itself. */
+export const CROSS_WIKI_PREFIX = "engineering/";
+
+/** The engineering page name of a cross-wiki target, or undefined when
+ *  the target is internal. A target that is only the prefix carries no
+ *  page name and stays internal (it dangles like any broken link). */
+export function crossWikiTarget(target: string): string | undefined {
+  if (!target.startsWith(CROSS_WIKI_PREFIX)) {
+    return undefined;
+  }
+
+  const page = target.slice(CROSS_WIKI_PREFIX.length);
+
+  return page === "" ? undefined : page;
+}
+
 /**
  * Map page names to their wiki-relative paths by file name (kebab-case
  * naming per wiki/AGENTS.md); later files win on duplicate names.
