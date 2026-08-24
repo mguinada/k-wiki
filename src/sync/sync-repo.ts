@@ -300,7 +300,10 @@ async function projectRepo(
   previous: VaultNotes,
   commit: string,
   onProgress: (message: string) => void,
-): Promise<{ notes: VaultNotes; report: RepoSyncReport }> {
+): Promise<{
+  notes: VaultNotes;
+  report: Omit<RepoSyncReport, "prunedNamespaces">;
+}> {
   const { candidates, selected } = await selectRepoFiles(
     source.root,
     source.include,
