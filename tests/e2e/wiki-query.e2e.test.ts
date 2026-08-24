@@ -8,13 +8,13 @@ import { QUERY_SCRIPT, runCli } from "./helpers.ts";
 
 /**
  * wiki-query e2e: the real CLI as a child process, driving a stub
- * agent through both modes. The stub receives the exact argv the real
- * agent would (pi flags from settings.yml), inspects the composed
- * prompt to learn the mode, files a query page like the real agent in
- * file mode, writes nothing in answer-only mode, and ends its output
- * with the QUERY status line the wrapper parses. A real LLM run stays
- * a human check (issue #67 acceptance): it costs money and is not
- * deterministic.
+ * agent through both stages. The stub receives the exact argv the
+ * real agent would (pi flags from settings.yml), records the
+ * composed prompt, and answers plainly — no filing protocol: stage 1
+ * is answer-only by default and mechanically enforced, stage 2
+ * (--file-last) is deterministic templating with no agent at all. A
+ * real LLM run stays a human check (issue #67 acceptance): it costs
+ * money and is not deterministic.
  */
 
 const run = promisify(execFile);
@@ -29,13 +29,13 @@ afterAll(async () => {
 
 /**
  * The stub agent: an executable script (shebang) so settings.yml can
- * name it as the command. It records the --print payload, then files
- * a query page (file mode) or writes nothing (answer-only mode), and
- * answers with the trailing QUERY status line. Exits 3 when the
- * payload is missing — the wrapper must pass the prompt.
+ * name it as the command. It records the --print payload and answers
+ * plainly. ROGUE_STUB also writes a wiki page — the stage-1 guardrail
+ * must catch, revert, and fail the run. Exits 3 when the payload is
+ * missing — the wrapper must pass the prompt.
  */
 const STUB_AGENT = `#!/usr/bin/env node
-import { appendFile, mkdir, writeFile } from "node:fs/promises";
+import { appendFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const index = process.argv.indexOf("--print");
@@ -46,24 +46,21 @@ if (prompt === undefined || prompt === "") {
 }
 
 await writeFile(join(process.cwd(), "stub-prompt.txt"), prompt);
+console.log("Prefer RAG when the knowledge base changes often. See [[retrieval-augmented-generation]].");
+`;
 
-if (prompt.includes("answer-only")) {
-  console.log("Graph engineering is the discipline of…\\n\\nQUERY: meets-bar — synthesizes 3 pages");
-} else {
-  await mkdir(join(process.cwd(), "wiki", "queries"), { recursive: true });
-  await writeFile(
-    join(process.cwd(), "wiki", "queries", "rag-vs-finetuning.md"),
-    "---\\ntype: query\\n---\\nPrefer RAG when…\\n",
-  );
-  await writeFile(join(process.cwd(), "wiki", "index.md"), "# Index v2\\n");
-  await appendFile(join(process.cwd(), "wiki", "log.md"), "- filed rag-vs-finetuning\\n");
-  console.log("Prefer RAG when the knowledge base changes often.\\n\\nQUERY: filed — wiki/queries/rag-vs-finetuning.md");
-}
+const ROGUE_STUB = `#!/usr/bin/env node
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+await mkdir(join(process.cwd(), "wiki", "queries"), { recursive: true });
+await writeFile(join(process.cwd(), "wiki", "queries", "rogue.md"), "rogue");
+console.log("An answer.");
 `;
 
 interface Repo {
   readonly dataRoot: string;
   readonly settingsPath: string;
+  readonly outputsDir: string;
 }
 
 /** A temp data repo: git-tracked wiki/, empty raw/, stub agent. */
@@ -74,9 +71,32 @@ async function makeRepo(): Promise<Repo> {
 
   await mkdir(join(dataRoot, "raw"), { recursive: true });
   await mkdir(join(dataRoot, "wiki", "concepts"), { recursive: true });
-  await writeFile(join(dataRoot, "wiki", "index.md"), "# Index\n");
-  await writeFile(join(dataRoot, "wiki", "log.md"), "# Log\n");
-  await writeFile(join(dataRoot, "wiki", "concepts", "rag.md"), "RAG\n");
+  await mkdir(join(dataRoot, "wiki", "sources"), { recursive: true });
+  await mkdir(join(dataRoot, "outputs"), { recursive: true });
+  await writeFile(
+    join(dataRoot, "wiki", "index.md"),
+    [
+      "# Wiki Index",
+      "",
+      "## Concepts",
+      "",
+      "<!-- concepts here -->",
+      "",
+      "## Queries",
+      "",
+      "<!-- Add filed query answers here -->",
+      "",
+    ].join("\n"),
+  );
+  await writeFile(join(dataRoot, "wiki", "log.md"), "# Wiki Log\n");
+  await writeFile(
+    join(dataRoot, "wiki", "concepts", "rag.md"),
+    "---\ntype: concept\n---\nRAG\n",
+  );
+  await writeFile(
+    join(dataRoot, "wiki", "sources", "retrieval-augmented-generation.md"),
+    "---\ntype: source\n---\nRAG source\n",
+  );
 
   await run("git", ["init", "--quiet"], { cwd: dataRoot });
   await run("git", ["add", "-A"], { cwd: dataRoot });
@@ -106,18 +126,41 @@ async function makeRepo(): Promise<Repo> {
     `command: ${join(dataRoot, "stub-agent.mjs")}\nmodel: E2E-MODEL\nreasoning: low\n`,
   );
 
-  return { dataRoot, settingsPath };
+  return { dataRoot, settingsPath, outputsDir: join(dataRoot, "outputs") };
 }
 
-function query(repo: Repo, extra: string[] = []) {
+function stage1(repo: Repo, extra: string[] = []) {
   return runCli(QUERY_SCRIPT, [
     "--settings",
     repo.settingsPath,
     "--raw-dir",
     join(repo.dataRoot, "raw"),
+    "--outputs",
+    repo.outputsDir,
     ...extra,
     "When should I prefer RAG over fine-tuning?",
   ]);
+}
+
+function stage2(repo: Repo, extra: string[] = []) {
+  return runCli(QUERY_SCRIPT, [
+    "--file-last",
+    "--raw-dir",
+    join(repo.dataRoot, "raw"),
+    "--outputs",
+    repo.outputsDir,
+    ...extra,
+  ]);
+}
+
+async function wikiStatus(repo: Repo): Promise<string> {
+  const { stdout } = await run(
+    "git",
+    ["-C", repo.dataRoot, "status", "--porcelain", "-uall", "--", "wiki"],
+    { env: process.env },
+  );
+
+  return stdout.trim();
 }
 
 describe("wiki-query e2e", () => {
@@ -125,26 +168,34 @@ describe("wiki-query e2e", () => {
     const result = await runCli(QUERY_SCRIPT, ["--help"]);
 
     expect(`${result.code}|${result.out}`).toMatch(/0\|Usage: wiki-query/);
+    expect(result.out).toContain("--file-last");
+    expect(result.out).not.toContain("--no-filing");
   });
 
-  it("files the query page and prints the answer with the Filed verdict", async () => {
+  it("stage 1 answers, writes nothing under wiki/, and saves the artifact", async () => {
     const repo = await makeRepo();
-    const result = await query(repo);
+    const result = await stage1(repo);
 
     expect(result.code).toBe(0);
     expect(result.out).toContain(
       "Prefer RAG when the knowledge base changes often.",
     );
-    expect(result.out).toContain("Filed: wiki/queries/rag-vs-finetuning.md");
-    expect(result.out).not.toContain("Not filed");
     expect(result.err).toContain("wiki-query: invoking agent");
+    expect(result.err).toContain("wiki-query --file-last");
 
-    const page = await readFile(
-      join(repo.dataRoot, "wiki", "queries", "rag-vs-finetuning.md"),
+    expect(await wikiStatus(repo)).toBe("");
+
+    const artifact = await readFile(
+      join(repo.outputsDir, "last-query.md"),
       "utf8",
     );
 
-    expect(page).toContain("type: query");
+    expect(artifact).toContain(
+      'question: "When should I prefer RAG over fine-tuning?"',
+    );
+    expect(artifact).toContain(
+      "Prefer RAG when the knowledge base changes often.",
+    );
 
     const prompt = await readFile(
       join(repo.dataRoot, "stub-prompt.txt"),
@@ -155,33 +206,145 @@ describe("wiki-query e2e", () => {
     expect(prompt).toContain(
       "Question: When should I prefer RAG over fine-tuning?",
     );
-    expect(prompt).toContain("Mode: file");
+    expect(prompt).toContain("Mode: answer-only");
+    expect(prompt).not.toContain("QUERY:");
   });
 
-  it("answers without writing when --no-filing is passed", async () => {
+  it("stage 1 reverts and exits 1 when the agent writes under wiki/", async () => {
     const repo = await makeRepo();
-    const result = await query(repo, ["--no-filing"]);
+
+    await writeFile(join(repo.dataRoot, "stub-agent.mjs"), ROGUE_STUB, {
+      mode: 0o755,
+    });
+
+    const result = await stage1(repo);
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("reverted");
+
+    expect(await wikiStatus(repo)).toBe("");
+
+    await expect(
+      readFile(join(repo.dataRoot, "wiki", "queries", "rogue.md")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+
+    await expect(
+      readFile(join(repo.outputsDir, "last-query.md")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("rejects the removed --no-filing switch", async () => {
+    const repo = await makeRepo();
+    const result = await stage1(repo, ["--no-filing"]);
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain('unknown option "--no-filing"');
+  });
+
+  it("exits 1 with the remedy when --file-last finds no saved answer", async () => {
+    const repo = await makeRepo();
+    const result = await stage2(repo);
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("no saved answer");
+  });
+
+  it("stage 2 files the saved answer byte-exactly with index and log entries", async () => {
+    const repo = await makeRepo();
+    await stage1(repo);
+
+    const result = await stage2(repo);
 
     expect(result.code).toBe(0);
-    expect(result.out).toContain("Graph engineering is the discipline of…");
     expect(result.out).toContain(
-      "Meets the filing bar (synthesizes 3 pages); rerun without --no-filing to file it.",
+      "Filed: wiki/queries/when-should-i-prefer-rag-over-fine-tuning.md",
     );
 
-    const { stdout } = await run(
-      "git",
-      ["-C", repo.dataRoot, "status", "--porcelain", "-uall", "--", "wiki"],
-      { env: process.env },
-    );
-
-    expect(stdout.trim()).toBe("");
-
-    const prompt = await readFile(
-      join(repo.dataRoot, "stub-prompt.txt"),
+    const page = await readFile(
+      join(
+        repo.dataRoot,
+        "wiki",
+        "queries",
+        "when-should-i-prefer-rag-over-fine-tuning.md",
+      ),
       "utf8",
     );
 
-    expect(prompt).toContain("Mode: answer-only");
+    expect(page).toContain("type: query");
+    expect(page).toContain(
+      "Prefer RAG when the knowledge base changes often. See [[retrieval-augmented-generation]].",
+    );
+
+    const index = await readFile(
+      join(repo.dataRoot, "wiki", "index.md"),
+      "utf8",
+    );
+
+    expect(index).toContain(
+      "- [[when-should-i-prefer-rag-over-fine-tuning]] — When should I prefer RAG over fine-tuning?",
+    );
+
+    const log = await readFile(join(repo.dataRoot, "wiki", "log.md"), "utf8");
+
+    expect(log).toMatch(
+      /## \[\d{4}-\d{2}-\d{2}\] query \| When should I prefer RAG over fine-tuning\?/,
+    );
+  });
+
+  it("stage 2 prints nothing to stderr when nothing drifted", async () => {
+    const repo = await makeRepo();
+    await stage1(repo);
+
+    const result = await stage2(repo);
+
+    expect(result.err).toBe("");
+  });
+
+  it("stage 2 warns on drift but still files", async () => {
+    const repo = await makeRepo();
+    await stage1(repo);
+
+    const artifact = await readFile(
+      join(repo.outputsDir, "last-query.md"),
+      "utf8",
+    );
+    const timestamp = /timestamp: "(.+?)"/.exec(artifact)?.[1];
+
+    expect(timestamp).toBeDefined();
+
+    await writeFile(
+      join(repo.dataRoot, "wiki", "concepts", "rag.md"),
+      "---\ntype: concept\n---\nRAG v2\n",
+    );
+    await run("git", ["-C", repo.dataRoot, "add", "-A"]);
+    const driftDate = new Date(
+      Date.parse(timestamp ?? "") + 60_000,
+    ).toISOString();
+
+    await run(
+      "git",
+      [
+        "-C",
+        repo.dataRoot,
+        "-c",
+        "user.email=t@t",
+        "-c",
+        "user.name=t",
+        "commit",
+        "--quiet",
+        "-m",
+        "wiki moved",
+      ],
+      { env: { ...process.env, GIT_COMMITTER_DATE: driftDate } },
+    );
+
+    const result = await stage2(repo);
+
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("Filed:");
+    expect(result.err).toContain(
+      "warning: the data repo changed after the saved answer",
+    );
   });
 
   it("exits 1 with the agent error when the agent fails", async () => {
@@ -193,7 +356,7 @@ describe("wiki-query e2e", () => {
       { mode: 0o755 },
     );
 
-    const result = await query(repo);
+    const result = await stage1(repo);
 
     expect(result.code).toBe(1);
     expect(result.err).toContain("code 4");

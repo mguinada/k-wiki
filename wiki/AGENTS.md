@@ -193,25 +193,31 @@ parseable with standard tools.
 
 ## Queries
 
+Queries are two-stage (issue #72): the wiki agent answers; the human
+alone files.
+
 Answer questions against the wiki, not against `raw/` directly:
 
 1. Read `index.md` to find relevant pages.
 2. Read those pages; consult `overview.md` for broad questions.
 3. Synthesize the answer with wikilink citations.
-4. If the question is likely to recur and the answer synthesizes or
-   reframes more than one page, offer to file it under `queries/` with
-   `type: query` frontmatter, then update `index.md` and `log.md`.
-   A verbatim restatement of a single page needs no filing. When
-   borderline, offer and let the human decide — never silently skip;
-   a declined filing states its reason.
+4. If the wiki cannot answer a question, say so and suggest sources
+   to ingest.
+
+A query run is answer-only: write nothing — no query page, no
+`index.md` or `log.md` change, nothing anywhere under `wiki/`. The
+wrapper saves the reply (`outputs/last-query.md`) and mechanically
+reverts any wiki write; the human reviews the answer and files it
+with `wiki-query --file-last`, which templates the saved answer
+byte-exactly into `queries/<slug>.md` (`type: query` frontmatter) and
+updates `index.md` and `log.md` — deterministic code, no agent
+involved. Never file a query yourself.
 
 In a second brain, read `wiki/second-brain/profile.md` before
 answering and let it shape the answer: questions about the subject's
 trajectory ("what did I try", "why did I choose") are answered from
 the second-brain pages and the profile together, not from domain
 pages alone.
-
-If the wiki cannot answer a question, say so and suggest sources to ingest.
 
 ## Contradictions
 

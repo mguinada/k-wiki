@@ -755,3 +755,53 @@ export async function revertToPreRun(
     await writeFile(target, content);
   }
 }
+
+/**
+ * Post-run comparison under one path prefix (issue #72, wiki-query
+ * stage 1): the full post-run status entries plus every path under
+ * `prefix` whose git state differs from the pre-run snapshot — a new
+ * entry, a changed status code or rename origin, a re-edit of an
+ * already-dirty file (content hash moved), or a fresh deletion. A
+ * path that was already dirty before the run and still carries the
+ * same bytes is untouched. The caller decides what a change means
+ * and whether to revert with `revertToPreRun` (which wants the full
+ * entries, not only the prefix's).
+ */
+export async function statusSince(
+  dataRoot: string,
+  env: NodeJS.ProcessEnv,
+  pre: PreRunState,
+  prefix: string,
+): Promise<{
+  readonly entries: readonly StatusEntry[];
+  readonly changed: readonly string[];
+}> {
+  const entries = parseStatus(
+    (
+      await runGit(
+        dataRoot,
+        ["-c", "core.quotePath=false", "status", "--porcelain", "-uall"],
+        env,
+      )
+    ).stdout,
+  );
+  const before = statusIndex(pre.status);
+  const changed: string[] = [];
+
+  for (const entry of entries) {
+    if (!entry.path.startsWith(`${prefix}/`)) {
+      continue;
+    }
+
+    const untouched =
+      isPreExisting(before.get(entry.path), entry) &&
+      (await hashPath(join(dataRoot, entry.path))) ===
+        pre.hashes.get(entry.path);
+
+    if (!untouched) {
+      changed.push(entry.path);
+    }
+  }
+
+  return { entries, changed: changed.sort() };
+}

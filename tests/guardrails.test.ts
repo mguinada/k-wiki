@@ -10,6 +10,7 @@ import {
   parseStatus,
   revertToPreRun,
   runGuardrails,
+  statusSince,
 } from "../src/ingest/guardrails.ts";
 
 const run = promisify(execFile);
@@ -970,5 +971,109 @@ describe("revertToPreRun", () => {
     await expect(
       readFile(join(dataRoot, "raw", "notes", "src.md"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+});
+
+describe("statusSince", () => {
+  it("reports no change for an untouched tree", async () => {
+    const dataRoot = await makeRepo();
+    const pre = await capturePreRunState(dataRoot, process.env);
+
+    expect(await statusSince(dataRoot, process.env, pre, "wiki")).toEqual({
+      entries: [],
+      changed: [],
+    });
+  });
+
+  it("reports a wiki file created during the run", async () => {
+    const dataRoot = await makeRepo();
+    const pre = await capturePreRunState(dataRoot, process.env);
+
+    await mkdir(join(dataRoot, "wiki", "queries"), { recursive: true });
+    await writeFile(join(dataRoot, "wiki", "queries", "q.md"), "Q\n");
+
+    const { entries, changed } = await statusSince(
+      dataRoot,
+      process.env,
+      pre,
+      "wiki",
+    );
+
+    expect(changed).toEqual(["wiki/queries/q.md"]);
+    expect(entries).toEqual([{ code: "??", path: "wiki/queries/q.md" }]);
+  });
+
+  it("reports a committed wiki file modified during the run", async () => {
+    const dataRoot = await makeRepo();
+    const pre = await capturePreRunState(dataRoot, process.env);
+
+    await writeFile(join(dataRoot, "wiki", "index.md"), page("# Index v2\n"));
+
+    expect(
+      (await statusSince(dataRoot, process.env, pre, "wiki")).changed,
+    ).toEqual(["wiki/index.md"]);
+  });
+
+  it("reports a wiki file deleted during the run", async () => {
+    const dataRoot = await makeRepo();
+    const pre = await capturePreRunState(dataRoot, process.env);
+
+    await rm(join(dataRoot, "wiki", "index.md"));
+
+    expect(
+      (await statusSince(dataRoot, process.env, pre, "wiki")).changed,
+    ).toEqual(["wiki/index.md"]);
+  });
+
+  it("ignores a wiki page that was already dirty before the run", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(join(dataRoot, "wiki", "index.md"), page("# dirty\n"));
+
+    const pre = await capturePreRunState(dataRoot, process.env);
+
+    expect(
+      (await statusSince(dataRoot, process.env, pre, "wiki")).changed,
+    ).toEqual([]);
+  });
+
+  it("reports an agent re-edit of an already-dirty page", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(join(dataRoot, "wiki", "index.md"), page("# dirty\n"));
+
+    const pre = await capturePreRunState(dataRoot, process.env);
+
+    await writeFile(join(dataRoot, "wiki", "index.md"), page("# dirtier\n"));
+
+    expect(
+      (await statusSince(dataRoot, process.env, pre, "wiki")).changed,
+    ).toEqual(["wiki/index.md"]);
+  });
+
+  it("ignores changes outside the prefix", async () => {
+    const dataRoot = await makeRepo();
+    const pre = await capturePreRunState(dataRoot, process.env);
+
+    await writeFile(join(dataRoot, "raw", "notes", "new.md"), "# new\n");
+
+    expect(
+      (await statusSince(dataRoot, process.env, pre, "wiki")).changed,
+    ).toEqual([]);
+  });
+
+  it("returns the full post-run entries, not only the prefix", async () => {
+    const dataRoot = await makeRepo();
+    const pre = await capturePreRunState(dataRoot, process.env);
+
+    await writeFile(join(dataRoot, "raw", "notes", "new.md"), "# new\n");
+    await mkdir(join(dataRoot, "wiki", "queries"), { recursive: true });
+    await writeFile(join(dataRoot, "wiki", "queries", "q.md"), "Q\n");
+
+    const { entries } = await statusSince(dataRoot, process.env, pre, "wiki");
+
+    expect(entries.map((entry) => entry.path)).toEqual(
+      expect.arrayContaining(["wiki/queries/q.md", "raw/notes/new.md"]),
+    );
   });
 });

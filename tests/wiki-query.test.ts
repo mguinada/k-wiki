@@ -1,18 +1,16 @@
 import { execFile } from "node:child_process";
-import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentRunner } from "../src/ingest/wiki-ingest.ts";
+import { readQueryArtifact } from "../src/query/file-last.ts";
 import {
   canAnimate,
-  classifyVerdict,
   composeQueryPrompt,
   main,
-  parseAgentReply,
   QUERY_HEARTBEAT_PREFIX,
-  renderVerdict,
   runWikiQuery,
   terminalColors,
 } from "../src/query/wiki-query.ts";
@@ -37,414 +35,22 @@ afterEach(() => {
 
 describe("composeQueryPrompt", () => {
   it("appends the question after the prompt text", () => {
-    const composed = composeQueryPrompt("QUERY PROMPT", "What is X?", false);
+    const composed = composeQueryPrompt("QUERY PROMPT", "What is X?");
 
     expect(composed).toContain("QUERY PROMPT");
     expect(composed).toContain("Question: What is X?");
   });
 
-  it("states the file mode as filing allowed", () => {
-    const composed = composeQueryPrompt("QUERY PROMPT", "q", false);
-
-    expect(composed).toContain("Mode: file");
-  });
-
-  it("states the answer-only mode as write nothing", () => {
-    const composed = composeQueryPrompt("QUERY PROMPT", "q", true);
-
-    expect(composed).toContain("Mode: answer-only (--no-filing)");
-    expect(composed).toContain("write nothing");
-  });
-
-  it("instructs the agent to end with one QUERY status line", () => {
-    const composed = composeQueryPrompt("QUERY PROMPT", "q", false);
-
-    expect(composed).toContain("QUERY: filed —");
-    expect(composed).toContain("QUERY: meets-bar —");
-    expect(composed).toContain("QUERY: not-filed —");
-    expect(composed).toContain("QUERY: not-answerable —");
-  });
-
-  it("renders the exact file-mode format", () => {
-    expect(composeQueryPrompt("QUERY PROMPT", "What is X?", false)).toBe(
-      [
-        "QUERY PROMPT",
-        "",
-        "Question: What is X?",
-        "",
-        "Mode: file — filing is allowed: when the answer meets the bar, create the query page and update index.md and log.md per the rules above.",
-        "",
-        "End your reply with exactly one status line, nothing after it, the first that applies:",
-        "QUERY: filed — <the wiki/queries/ pages you created or updated>",
-        "QUERY: meets-bar — <why the answer deserves filing>",
-        "QUERY: not-filed — <why the filing bar is not met>",
-        "QUERY: not-answerable — <which sources to ingest next>",
-      ].join("\n"),
-    );
-  });
-
   it("renders the exact answer-only format", () => {
-    expect(composeQueryPrompt("QUERY PROMPT", "What is X?", true)).toBe(
+    expect(composeQueryPrompt("QUERY PROMPT", "What is X?")).toBe(
       [
         "QUERY PROMPT",
         "",
         "Question: What is X?",
         "",
-        "Mode: answer-only (--no-filing) — write nothing: no query page, no index.md or log.md change; the reply is the only output.",
-        "",
-        "End your reply with exactly one status line, nothing after it, the first that applies:",
-        "QUERY: filed — <the wiki/queries/ pages you created or updated>",
-        "QUERY: meets-bar — <why the answer deserves filing>",
-        "QUERY: not-filed — <why the filing bar is not met>",
-        "QUERY: not-answerable — <which sources to ingest next>",
+        "Mode: answer-only — write nothing: no query page, no index.md or log.md change, no edit anywhere under wiki/; the reply is the only output. The wrapper saves it; the human alone decides later whether to file it.",
       ].join("\n"),
     );
-  });
-});
-
-describe("parseAgentReply", () => {
-  it("splits a trailing not-filed status line from the answer", () => {
-    const reply = parseAgentReply(
-      "Prefer RAG when…\n\nQUERY: not-filed — verbatim restatement of a single page",
-    );
-
-    expect(reply).toEqual({
-      answer: "Prefer RAG when…",
-      kind: "not-filed",
-      detail: "verbatim restatement of a single page",
-    });
-  });
-
-  it("parses a trailing filed status line", () => {
-    const reply = parseAgentReply(
-      "A.\n\nQUERY: filed — wiki/queries/rag-vs-finetuning.md",
-    );
-
-    expect(reply.kind).toBe("filed");
-    expect(reply.detail).toBe("wiki/queries/rag-vs-finetuning.md");
-  });
-
-  it("parses a trailing meets-bar status line", () => {
-    expect(
-      parseAgentReply("A.\nQUERY: meets-bar — synthesizes 3 pages"),
-    ).toMatchObject({
-      kind: "meets-bar",
-      detail: "synthesizes 3 pages",
-    });
-  });
-
-  it("parses a trailing not-answerable status line", () => {
-    expect(
-      parseAgentReply("A.\nQUERY: not-answerable — ingest the RAG notes first"),
-    ).toMatchObject({
-      kind: "not-answerable",
-      detail: "ingest the RAG notes first",
-    });
-  });
-
-  it("reports unknown when no status line is present", () => {
-    expect(parseAgentReply("Just an answer.")).toEqual({
-      answer: "Just an answer.",
-      kind: "unknown",
-      detail: undefined,
-    });
-  });
-
-  it("treats a status line that is not the last line as answer text", () => {
-    const reply = parseAgentReply(
-      "QUERY: not-filed — too early\nbut the answer goes on.",
-    );
-
-    expect(reply.kind).toBe("unknown");
-    expect(reply.answer).toContain("too early");
-  });
-
-  it("reports unknown for a status line without detail", () => {
-    expect(parseAgentReply("A.\nQUERY: not-filed").kind).toBe("unknown");
-  });
-
-  it("reports an empty answer when the output is only the status line", () => {
-    expect(parseAgentReply("\nQUERY: not-filed — r\n\n").answer).toBe("");
-  });
-
-  it("trims whitespace around the answer", () => {
-    expect(
-      parseAgentReply("\n\n  Answer.  \n\nQUERY: not-filed — r\n"),
-    ).toEqual({
-      answer: "Answer.",
-      kind: "not-filed",
-      detail: "r",
-    });
-  });
-
-  it("parses a reply that is only a single-line status", () => {
-    expect(parseAgentReply("QUERY: not-filed — r")).toEqual({
-      answer: "",
-      kind: "not-filed",
-      detail: "r",
-    });
-  });
-
-  it("takes the status line after a one-character first line", () => {
-    expect(parseAgentReply("x\nQUERY: not-filed — r")).toEqual({
-      answer: "x",
-      kind: "not-filed",
-      detail: "r",
-    });
-  });
-
-  it("trims the answer of an unrecognized reply", () => {
-    expect(parseAgentReply("  Just an answer.  ").answer).toBe(
-      "Just an answer.",
-    );
-  });
-});
-
-const NO_PAGES = {
-  created: [],
-  updated: [],
-  deleted: [],
-  unavailable: undefined,
-};
-
-describe("classifyVerdict", () => {
-  it("reports the filed pages in file mode", () => {
-    const verdict = classifyVerdict(
-      {
-        created: ["wiki/queries/rag.md"],
-        updated: ["wiki/queries/other.md"],
-        deleted: [],
-        unavailable: undefined,
-      },
-      parseAgentReply("A.\nQUERY: filed — wiki/queries/rag.md"),
-      false,
-    );
-
-    expect(verdict).toEqual({
-      kind: "filed",
-      pages: ["wiki/queries/rag.md", "wiki/queries/other.md"],
-    });
-  });
-
-  it("reports the agent's reason when nothing was filed in file mode", () => {
-    const verdict = classifyVerdict(
-      NO_PAGES,
-      parseAgentReply(
-        "A.\nQUERY: not-filed — verbatim restatement of a single page",
-      ),
-      false,
-    );
-
-    expect(verdict).toEqual({
-      kind: "not-filed",
-      reason: "verbatim restatement of a single page",
-    });
-  });
-
-  it("reports the suggested sources when the wiki cannot answer", () => {
-    const verdict = classifyVerdict(
-      NO_PAGES,
-      parseAgentReply("A.\nQUERY: not-answerable — ingest the RAG notes first"),
-      false,
-    );
-
-    expect(verdict).toEqual({
-      kind: "not-answerable",
-      suggestion: "ingest the RAG notes first",
-    });
-  });
-
-  it("flags an agent that reported filing but changed no wiki/queries page", () => {
-    const verdict = classifyVerdict(
-      NO_PAGES,
-      parseAgentReply("A.\nQUERY: filed — wiki/queries/rag.md"),
-      false,
-    );
-
-    expect(verdict.kind).toBe("not-filed");
-
-    if (verdict.kind === "not-filed") {
-      expect(verdict.reason).toContain("no wiki/queries change");
-      expect(verdict.reason).toContain("wiki/queries/rag.md");
-    }
-  });
-
-  it("keeps the no-detail marker for a detail-less filed claim", () => {
-    expect(
-      classifyVerdict(
-        NO_PAGES,
-        { answer: "A.", kind: "filed", detail: undefined },
-        false,
-      ),
-    ).toEqual({
-      kind: "not-filed",
-      reason: expect.stringContaining("no detail"),
-    });
-  });
-
-  it("keeps the no-detail marker for a detail-less meets-bar claim in file mode", () => {
-    expect(
-      classifyVerdict(
-        NO_PAGES,
-        { answer: "A.", kind: "meets-bar", detail: undefined },
-        false,
-      ),
-    ).toEqual({
-      kind: "not-filed",
-      reason: expect.stringContaining("no detail"),
-    });
-  });
-
-  it("falls back to an empty offer reason when detail is absent", () => {
-    expect(
-      classifyVerdict(
-        NO_PAGES,
-        { answer: "A", kind: "meets-bar", detail: undefined },
-        true,
-      ),
-    ).toEqual({ kind: "offer", reason: "" });
-  });
-
-  it("falls back to an empty not-filed reason when detail is absent", () => {
-    expect(
-      classifyVerdict(
-        NO_PAGES,
-        { answer: "A", kind: "not-filed", detail: undefined },
-        true,
-      ),
-    ).toEqual({ kind: "not-filed", reason: "" });
-  });
-
-  it("falls back to an empty suggestion when detail is absent", () => {
-    expect(
-      classifyVerdict(
-        NO_PAGES,
-        { answer: "A", kind: "not-answerable", detail: undefined },
-        true,
-      ),
-    ).toEqual({ kind: "not-answerable", suggestion: "" });
-  });
-
-  it("reports the filing status as unavailable when git failed and the agent claims filing", () => {
-    const verdict = classifyVerdict(
-      { created: [], updated: [], deleted: [], unavailable: "no git" },
-      parseAgentReply("A.\nQUERY: filed — wiki/queries/rag.md"),
-      false,
-    );
-
-    expect(verdict).toEqual({ kind: "unavailable", reason: "no git" });
-  });
-
-  it("flags an agent that met the bar in file mode but filed nothing", () => {
-    const verdict = classifyVerdict(
-      NO_PAGES,
-      parseAgentReply("A.\nQUERY: meets-bar — synthesizes 3 pages"),
-      false,
-    );
-
-    expect(verdict.kind).toBe("not-filed");
-
-    if (verdict.kind === "not-filed") {
-      expect(verdict.reason).toContain("synthesizes 3 pages");
-    }
-  });
-
-  it("offers the rerun hint for a meets-bar answer in answer-only mode", () => {
-    const verdict = classifyVerdict(
-      NO_PAGES,
-      parseAgentReply("A.\nQUERY: meets-bar — synthesizes 3 pages"),
-      true,
-    );
-
-    expect(verdict).toEqual({
-      kind: "offer",
-      reason: "synthesizes 3 pages",
-    });
-  });
-
-  it("reports the not-filed reason in answer-only mode too", () => {
-    const verdict = classifyVerdict(
-      NO_PAGES,
-      parseAgentReply(
-        "A.\nQUERY: not-filed — verbatim restatement of a single page",
-      ),
-      true,
-    );
-
-    expect(verdict.kind).toBe("not-filed");
-  });
-
-  it("reports not-answerable in answer-only mode", () => {
-    const verdict = classifyVerdict(
-      NO_PAGES,
-      parseAgentReply("A.\nQUERY: not-answerable — ingest X first"),
-      true,
-    );
-
-    expect(verdict.kind).toBe("not-answerable");
-  });
-
-  it("stays silent when the agent gave no usable status", () => {
-    expect(
-      classifyVerdict(NO_PAGES, parseAgentReply("Just an answer."), false),
-    ).toEqual({ kind: "none" });
-  });
-
-  it("stays silent when the agent claims filing in answer-only mode", () => {
-    expect(
-      classifyVerdict(
-        NO_PAGES,
-        parseAgentReply("A.\nQUERY: filed — wiki/queries/rag.md"),
-        true,
-      ).kind,
-    ).toBe("none");
-  });
-});
-
-describe("renderVerdict", () => {
-  it("renders one bold line per filed page", () => {
-    expect(
-      renderVerdict({
-        kind: "filed",
-        pages: ["wiki/queries/a.md", "wiki/queries/b.md"],
-      }),
-    ).toEqual([
-      { text: "Filed: wiki/queries/a.md", bold: true },
-      { text: "Filed: wiki/queries/b.md", bold: true },
-    ]);
-  });
-
-  it("renders the not-filed reason bold", () => {
-    expect(renderVerdict({ kind: "not-filed", reason: "single page" })).toEqual(
-      [{ text: "Not filed: single page", bold: true }],
-    );
-  });
-
-  it("renders the rerun offer bold", () => {
-    expect(
-      renderVerdict({ kind: "offer", reason: "synthesizes 3 pages" }),
-    ).toEqual([
-      {
-        text: "Meets the filing bar (synthesizes 3 pages); rerun without --no-filing to file it.",
-        bold: true,
-      },
-    ]);
-  });
-
-  it("renders the not-answerable line plain", () => {
-    expect(
-      renderVerdict({ kind: "not-answerable", suggestion: "ingest X first" }),
-    ).toEqual([{ text: "Not answerable: ingest X first", bold: false }]);
-  });
-
-  it("renders the unavailable filing status plain", () => {
-    expect(renderVerdict({ kind: "unavailable", reason: "no git" })).toEqual([
-      { text: "Filing status unavailable: no git", bold: false },
-    ]);
-  });
-
-  it("renders nothing for the silent verdict", () => {
-    expect(renderVerdict({ kind: "none" })).toEqual([]);
   });
 });
 
@@ -471,6 +77,7 @@ const run = promisify(execFile);
 interface Harness {
   readonly dataRoot: string;
   readonly promptsDir: string;
+  readonly outputsDir: string;
   readonly settingsPath: string;
   readonly invocations: {
     command: string;
@@ -525,9 +132,9 @@ function committedDataRepoTemplate(): Promise<string> {
 }
 
 /**
- * A data repo (git-tracked wiki/, empty raw/) with a query prompt and
- * a recording agent runner. The default runner files a query page and
- * reports it; tests override it per case.
+ * A data repo (git-tracked wiki/, empty raw/) with a query prompt, an
+ * outputs dir, settings, and a recording agent runner. The default
+ * runner is a clean answer-only agent: it writes nothing.
  */
 async function makeHarness(): Promise<Harness> {
   const dataRoot = await mkdtemp(join(tmpdir(), "k-wiki-query-"));
@@ -541,6 +148,10 @@ async function makeHarness(): Promise<Harness> {
   await mkdir(promptsDir, { recursive: true });
   await writeFile(join(promptsDir, "query.md"), "QUERY PROMPT");
 
+  const outputsDir = join(dataRoot, "outputs");
+
+  await mkdir(outputsDir, { recursive: true });
+
   const settingsPath = join(dataRoot, "settings.yml");
 
   await writeFile(settingsPath, SETTINGS_YML);
@@ -549,25 +160,21 @@ async function makeHarness(): Promise<Harness> {
   const runAgent: AgentRunner = async (command, args, options) => {
     invocations.push({ command, args, cwd: options.cwd });
 
-    if (options.cwd === undefined) {
-      throw new Error("unreachable");
-    }
-
-    await mkdir(join(options.cwd, "wiki", "queries"), { recursive: true });
-    await writeFile(
-      join(options.cwd, "wiki", "queries", "rag-vs-finetuning.md"),
-      "---\ntype: query\n---\n",
-    );
-    await writeFile(join(options.cwd, "wiki", "index.md"), "# Index v2\n");
-
     return {
       stdout:
-        "Prefer RAG when the knowledge base changes often.\n\nQUERY: filed — wiki/queries/rag-vs-finetuning.md",
+        "Prefer RAG when the knowledge base changes often. See [[retrieval-augmented-generation]].",
       stderr: "",
     };
   };
 
-  return { dataRoot, promptsDir, settingsPath, invocations, runAgent };
+  return {
+    dataRoot,
+    promptsDir,
+    outputsDir,
+    settingsPath,
+    invocations,
+    runAgent,
+  };
 }
 
 function optionsFor(h: Harness, overrides: Record<string, unknown> = {}) {
@@ -575,6 +182,7 @@ function optionsFor(h: Harness, overrides: Record<string, unknown> = {}) {
     settingsPath: h.settingsPath,
     rawDir: join(h.dataRoot, "raw"),
     promptsDir: h.promptsDir,
+    outputsDir: h.outputsDir,
     question: "When should I prefer RAG over fine-tuning?",
     runAgent: h.runAgent,
     ...overrides,
@@ -593,7 +201,7 @@ function invocation(h: Harness, index: number) {
 }
 
 describe("runWikiQuery", () => {
-  it("sends the prompt, the question, and the mode to the agent", async () => {
+  it("sends the prompt, the question, and the answer-only mode to the agent", async () => {
     const h = await makeHarness();
 
     await runWikiQuery(optionsFor(h));
@@ -604,15 +212,8 @@ describe("runWikiQuery", () => {
     expect(payload).toContain(
       "Question: When should I prefer RAG over fine-tuning?",
     );
-    expect(payload).toContain("Mode: file");
-  });
-
-  it("states the answer-only mode in the payload", async () => {
-    const h = await makeHarness();
-
-    await runWikiQuery({ ...optionsFor(h), noFiling: true });
-
-    expect(invocation(h, 0).args.at(-1)).toContain("Mode: answer-only");
+    expect(payload).toContain("Mode: answer-only");
+    expect(payload).toContain("write nothing");
   });
 
   it("invokes the agent in the data repo root", async () => {
@@ -652,85 +253,125 @@ describe("runWikiQuery", () => {
     expect(args).toContain("--print");
   });
 
-  it("reports the answer parsed from the agent output", async () => {
+  it("reports the trimmed agent stdout as the answer", async () => {
     const h = await makeHarness();
     const result = await runWikiQuery(optionsFor(h));
 
-    expect(result.reply.answer).toBe(
-      "Prefer RAG when the knowledge base changes often.",
+    expect(result.answer).toBe(
+      "Prefer RAG when the knowledge base changes often. See [[retrieval-augmented-generation]].",
     );
-    expect(result.reply.kind).toBe("filed");
   });
 
-  it("derives the filed pages from the wiki/queries git status", async () => {
+  it("persists the run to outputs/last-query.md", async () => {
     const h = await makeHarness();
-    const result = await runWikiQuery(optionsFor(h));
-
-    expect(result.pages).toEqual({
-      created: ["wiki/queries/rag-vs-finetuning.md"],
-      updated: [],
-      deleted: [],
-      unavailable: undefined,
+    const result = await runWikiQuery({
+      ...optionsFor(h),
+      now: () => new Date("2026-08-21T09:00:00Z"),
     });
+
+    expect(result.artifactPath).toBe(join(h.outputsDir, "last-query.md"));
+
+    const artifact = await readQueryArtifact(result.artifactPath);
+
+    expect(artifact.question).toBe(
+      "When should I prefer RAG over fine-tuning?",
+    );
+    expect(artifact.answer).toBe(result.answer);
+    expect(artifact.timestamp).toBe("2026-08-21T09:00:00.000Z");
+    expect(artifact.pages).toEqual(["retrieval-augmented-generation"]);
   });
 
-  it("lists only wiki/queries pages, not other wiki edits", async () => {
+  it("fails, reverts, and saves nothing when the agent writes under wiki/", async () => {
     const h = await makeHarness();
-    const noisy: AgentRunner = async (command, args, options) => {
-      await writeFile(
-        join(options.cwd, "wiki", "concepts", "rag.md"),
-        "RAG v2\n",
-      );
-
-      return h.runAgent(command, args, options);
-    };
-
-    const result = await runWikiQuery({ ...optionsFor(h), runAgent: noisy });
-
-    expect(result.pages.created).toEqual(["wiki/queries/rag-vs-finetuning.md"]);
-    expect(result.pages.updated).toEqual([]);
-  });
-
-  it("does not run git for pages in answer-only mode", async () => {
-    const h = await makeHarness();
-
-    await run("git", ["-C", h.dataRoot, "checkout", "--quiet", "."]);
-
-    const writing: AgentRunner = async (_command, _args, options) => {
+    const rogue: AgentRunner = async (_command, _args, options) => {
       await mkdir(join(options.cwd, "wiki", "queries"), { recursive: true });
       await writeFile(
         join(options.cwd, "wiki", "queries", "rogue.md"),
         "rogue\n",
       );
+      await writeFile(join(options.cwd, "wiki", "index.md"), "# Index v2\n");
 
-      return {
-        stdout: "A.\n\nQUERY: meets-bar — synthesizes 3 pages",
-        stderr: "",
-      };
+      return { stdout: "An answer.", stderr: "" };
     };
 
-    const result = await runWikiQuery({
-      ...optionsFor(h),
-      noFiling: true,
-      runAgent: writing,
-    });
+    let message = "";
 
-    expect(result.pages).toEqual(NO_PAGES);
+    try {
+      await runWikiQuery({ ...optionsFor(h), runAgent: rogue });
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(message).toContain("wiki/");
+    expect(message).toContain("reverted");
+
+    await expect(
+      readFile(join(h.dataRoot, "wiki", "queries", "rogue.md")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+
+    expect(await readFile(join(h.dataRoot, "wiki", "index.md"), "utf8")).toBe(
+      "# Index\n",
+    );
+
+    await expect(
+      readFile(join(h.outputsDir, "last-query.md")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("keeps the unanswerable run successful with its suggestion", async () => {
+  it("ignores wiki pages that were already dirty before the run", async () => {
     const h = await makeHarness();
-    const plain: AgentRunner = async () => ({
-      stdout: "No page covers this.\n\nQUERY: not-answerable — ingest X first",
-      stderr: "",
-    });
 
-    const result = await runWikiQuery({
-      ...optionsFor(h),
-      runAgent: plain,
-    });
+    await writeFile(join(h.dataRoot, "wiki", "index.md"), "# Index dirty\n");
 
-    expect(result.reply.kind).toBe("not-answerable");
+    const result = await runWikiQuery(optionsFor(h));
+
+    expect(result.answer).toContain("Prefer RAG");
+  });
+
+  it("flags an agent re-edit of an already-dirty page", async () => {
+    const h = await makeHarness();
+
+    await writeFile(join(h.dataRoot, "wiki", "index.md"), "# Index dirty\n");
+
+    const rogue: AgentRunner = async (_command, _args, options) => {
+      await writeFile(join(options.cwd, "wiki", "index.md"), "# Index v2\n");
+
+      return { stdout: "An answer.", stderr: "" };
+    };
+
+    await expect(
+      runWikiQuery({ ...optionsFor(h), runAgent: rogue }),
+    ).rejects.toThrow("reverted");
+
+    expect(await readFile(join(h.dataRoot, "wiki", "index.md"), "utf8")).toBe(
+      "# Index dirty\n",
+    );
+  });
+
+  it("fails cleanly when the data repo has no commit", async () => {
+    const h = await makeHarness();
+
+    await rm(join(h.dataRoot, ".git"), { recursive: true });
+    await run("git", ["init", "--quiet"], { cwd: h.dataRoot });
+
+    await expect(runWikiQuery(optionsFor(h))).rejects.toThrow(
+      "no commit to revert to",
+    );
+
+    expect(h.invocations).toEqual([]);
+  });
+
+  it("fails when the agent produces no answer", async () => {
+    const h = await makeHarness();
+    const silent: AgentRunner = async () => ({ stdout: "  \n", stderr: "" });
+
+    await expect(
+      runWikiQuery({ ...optionsFor(h), runAgent: silent }),
+    ).rejects.toThrow("no answer");
+
+    await expect(
+      readFile(join(h.outputsDir, "last-query.md")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("reports each pipeline step on the progress sink", async () => {
@@ -748,6 +389,7 @@ describe("runWikiQuery", () => {
         "wiki-query: invoking agent: pi --model GLM-5.2 --thinking high",
       ),
       "wiki-query: agent finished",
+      expect.stringContaining("wiki-query: answer saved"),
     ]);
   });
 
@@ -757,7 +399,7 @@ describe("runWikiQuery", () => {
     const slow: AgentRunner = async () => {
       await new Promise((resolve) => setTimeout(resolve, 150));
 
-      return { stdout: "A.\nQUERY: not-filed — r", stderr: "" };
+      return { stdout: "A.", stderr: "" };
     };
 
     await runWikiQuery({
@@ -775,10 +417,7 @@ describe("runWikiQuery", () => {
   it("stops the heartbeat when the agent run ends", async () => {
     const h = await makeHarness();
     const messages: string[] = [];
-    const fast: AgentRunner = async () => ({
-      stdout: "A.\nQUERY: not-filed — r",
-      stderr: "",
-    });
+    const fast: AgentRunner = async () => ({ stdout: "A.", stderr: "" });
 
     await runWikiQuery({
       ...optionsFor(h),
@@ -815,6 +454,7 @@ describe("runWikiQuery", () => {
         settingsPath: h.settingsPath,
         rawDir: join(h.dataRoot, "raw"),
         promptsDir: h.promptsDir,
+        outputsDir: h.outputsDir,
         question: "q",
         timeoutMs: 200,
       });
@@ -853,27 +493,12 @@ describe("runWikiQuery", () => {
       runWikiQuery({ ...optionsFor(h), runAgent: failing }),
     ).rejects.toThrow("code 1");
   });
-
-  it("reports unavailable pages when the data repo has no git", async () => {
-    const h = await makeHarness();
-
-    await rm(join(h.dataRoot, ".git"), { recursive: true });
-
-    const result = await runWikiQuery(optionsFor(h));
-
-    expect(result.pages).toEqual({
-      created: [],
-      updated: [],
-      deleted: [],
-      unavailable: expect.any(String),
-    });
-  });
 });
 
 describe("wiki-query CLI", () => {
   const STUB = `#!/usr/bin/env node
 import { existsSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 // Guard: a mutated wrapper may redirect this stub into the real data
 // repo; refuse to write anywhere but this harness's data root.
@@ -886,14 +511,7 @@ if (prompt === undefined || prompt === "") {
 }
 
 await writeFile(join(process.cwd(), "stub-prompt.txt"), prompt);
-
-if (prompt.includes("answer-only")) {
-  console.log("Graph engineering is…\\n\\nQUERY: meets-bar — synthesizes 3 pages");
-} else {
-  await mkdir(join(process.cwd(), "wiki", "queries"), { recursive: true });
-  await writeFile(join(process.cwd(), "wiki", "queries", "stub-q.md"), "stub");
-  console.log("Prefer RAG when…\\n\\nQUERY: filed — wiki/queries/stub-q.md");
-}
+console.log("Prefer RAG when the knowledge base changes often. See [[retrieval-augmented-generation]].");
 `;
 
   /** A harness whose settings point at an executable stub agent. */
@@ -943,14 +561,27 @@ if (prompt.includes("answer-only")) {
       h.settingsPath,
       "--raw-dir",
       join(h.dataRoot, "raw"),
+      "--outputs",
+      h.outputsDir,
       ...extra,
       "When should I prefer RAG over fine-tuning?",
     ];
   }
 
+  function fileLastArgs(h: Harness, extra: string[] = []) {
+    return [
+      "--file-last",
+      "--raw-dir",
+      join(h.dataRoot, "raw"),
+      "--outputs",
+      h.outputsDir,
+      ...extra,
+    ];
+  }
+
   it("prints the usage line for --help", async () => {
     expect((await runCli(["--help"])).out).toContain(
-      "wiki-query [-h | --help] [--no-filing] [--settings <path>] [--raw-dir <dir>] [--timeout <secs>] <question>",
+      "wiki-query [-h | --help] [--file-last] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>",
     );
   });
 
@@ -958,14 +589,21 @@ if (prompt.includes("answer-only")) {
     expect((await runCli(["-h"])).out).toBe((await runCli(["--help"])).out);
   });
 
-  it("documents the switches and defaults in the help text", async () => {
+  it("documents both stages and every switch with defaults", async () => {
     const out = (await runCli(["--help"])).out;
 
-    expect(out).toContain("--no-filing");
+    expect(out).toContain("--file-last");
     expect(out).toContain("--settings");
+    expect(out).toContain("--outputs");
     expect(out).toContain("--raw-dir");
     expect(out).toContain("--timeout <secs>");
     expect(out).toContain("Default");
+    expect(out).toContain("Stage 1");
+    expect(out).toContain("Stage 2");
+  });
+
+  it("no longer documents --no-filing", async () => {
+    expect((await runCli(["--help"])).out).not.toContain("--no-filing");
   });
 
   it("prints help before validating any argument or reading any file", async () => {
@@ -987,6 +625,8 @@ if (prompt.includes("answer-only")) {
       h.settingsPath,
       "--raw-dir",
       join(h.dataRoot, "raw"),
+      "--outputs",
+      h.outputsDir,
     ]);
 
     expect(err).toContain("a question is required");
@@ -995,13 +635,7 @@ if (prompt.includes("answer-only")) {
 
   it("exits 1 when the question is an empty string", async () => {
     const h = await makeCliHarness();
-    const { err } = await runCli([
-      "--settings",
-      h.settingsPath,
-      "--raw-dir",
-      join(h.dataRoot, "raw"),
-      "",
-    ]);
+    const { err } = await runCli(queryArgs(h).slice(0, -1).concat(""));
 
     expect(err).toContain("a question is required");
     expect(process.exitCode).toBe(1);
@@ -1009,13 +643,7 @@ if (prompt.includes("answer-only")) {
 
   it("exits 1 when the question is only whitespace", async () => {
     const h = await makeCliHarness();
-    const { err } = await runCli([
-      "--settings",
-      h.settingsPath,
-      "--raw-dir",
-      join(h.dataRoot, "raw"),
-      "   ",
-    ]);
+    const { err } = await runCli(queryArgs(h).slice(0, -1).concat("   "));
 
     expect(err).toContain("a question is required");
     expect(process.exitCode).toBe(1);
@@ -1023,14 +651,7 @@ if (prompt.includes("answer-only")) {
 
   it("exits 1 for more than one positional argument", async () => {
     const h = await makeCliHarness();
-    const { err } = await runCli([
-      "--settings",
-      h.settingsPath,
-      "--raw-dir",
-      join(h.dataRoot, "raw"),
-      "one",
-      "two",
-    ]);
+    const { err } = await runCli([...queryArgs(h), "two"]);
 
     expect(err).toContain("expected exactly one <question>");
     expect(process.exitCode).toBe(1);
@@ -1041,6 +662,14 @@ if (prompt.includes("answer-only")) {
     const { err } = await runCli([...queryArgs(h), "--bogus"]);
 
     expect(err).toContain("unknown option");
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("exits 1 for the removed --no-filing switch", async () => {
+    const h = await makeCliHarness();
+    const { err } = await runCli([...queryArgs(h), "--no-filing"]);
+
+    expect(err).toContain('unknown option "--no-filing"');
     expect(process.exitCode).toBe(1);
   });
 
@@ -1061,6 +690,14 @@ if (prompt.includes("answer-only")) {
     const { err } = await runCli(["--settings", h.settingsPath, "--raw-dir"]);
 
     expect(err).toContain("--raw-dir needs a path value");
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("exits 1 when --outputs has no value", async () => {
+    const h = await makeCliHarness();
+    const { err } = await runCli([...queryArgs(h).slice(0, -1), "--outputs"]);
+
+    expect(err).toContain("--outputs needs a path value");
     expect(process.exitCode).toBe(1);
   });
 
@@ -1121,6 +758,8 @@ if (prompt.includes("answer-only")) {
       "/no/such/settings.yml",
       "--raw-dir",
       join(h.dataRoot, "raw"),
+      "--outputs",
+      h.outputsDir,
       "q",
     ]);
 
@@ -1130,13 +769,30 @@ if (prompt.includes("answer-only")) {
     expect(process.exitCode).toBe(1);
   });
 
-  it("prints the answer and the bold Filed verdict in default mode", async () => {
+  it("prints the answer, saves the artifact, and writes nothing under wiki/", async () => {
     const h = await makeCliHarness();
     const { out, err } = await runCli(queryArgs(h));
 
-    expect(out).toContain("Prefer RAG when…");
-    expect(out).toContain("Filed: wiki/queries/stub-q.md");
+    expect(out).toContain("Prefer RAG when the knowledge base changes often.");
+    expect(out).not.toContain("Filed:");
     expect(err).toContain("wiki-query: invoking agent");
+    expect(err).toContain("wiki-query --file-last");
+
+    const artifact = await readQueryArtifact(
+      join(h.outputsDir, "last-query.md"),
+    );
+
+    expect(artifact.question).toBe(
+      "When should I prefer RAG over fine-tuning?",
+    );
+
+    const { stdout } = await run(
+      "git",
+      ["-C", h.dataRoot, "status", "--porcelain", "-uall", "--", "wiki"],
+      { env: process.env },
+    );
+
+    expect(stdout.trim()).toBe("");
     expect(process.exitCode).toBeUndefined();
   });
 
@@ -1145,104 +801,124 @@ if (prompt.includes("answer-only")) {
 
     await runCli(queryArgs(h));
 
-    const prompt = await (await import("node:fs/promises")).readFile(
-      join(h.dataRoot, "stub-prompt.txt"),
-      "utf8",
-    );
+    const prompt = await readFile(join(h.dataRoot, "stub-prompt.txt"), "utf8");
 
     expect(prompt).toContain(
       "Question: When should I prefer RAG over fine-tuning?",
     );
   });
 
-  it("prints the offer and writes nothing under wiki/ in --no-filing mode", async () => {
-    const h = await makeCliHarness();
-    const { out } = await runCli(queryArgs(h, ["--no-filing"]));
-
-    expect(out).toContain("Graph engineering is…");
-    expect(out).toContain(
-      "Meets the filing bar (synthesizes 3 pages); rerun without --no-filing to file it.",
-    );
-
-    const { stat } = await import("node:fs/promises");
-
-    await expect(
-      stat(join(h.dataRoot, "wiki", "queries")),
-    ).rejects.toMatchObject({ code: "ENOENT" });
-
-    expect(process.exitCode).toBeUndefined();
-  });
-
-  it("prints the not-answerable line plainly and exits 0", async () => {
-    const h = await makeCliHarness();
-
-    await (await import("node:fs/promises")).writeFile(
-      join(h.dataRoot, "stub-agent.mjs"),
-      `#!/usr/bin/env node
-const index = process.argv.indexOf("--print");
-if (index === -1) process.exit(3);
-console.log("No page covers this.\\n\\nQUERY: not-answerable — ingest X first");
-`,
-      { mode: 0o755 },
-    );
-
-    const { out } = await runCli(queryArgs(h));
-
-    expect(out).toContain("Not answerable: ingest X first");
-    expect(process.exitCode).toBeUndefined();
-  });
-
   it("accepts a valid --timeout and runs the agent under it", async () => {
     const h = await makeCliHarness();
     const { out } = await runCli(queryArgs(h, ["--timeout", "1800"]));
 
-    expect(out).toContain("Filed: wiki/queries/stub-q.md");
+    expect(out).toContain("Prefer RAG when");
     expect(process.exitCode).toBeUndefined();
   });
 
-  it("bolds the Filed verdict but not the answer", async () => {
-    const h = await makeCliHarness();
-    const prior = process.env.NO_COLOR;
-
-    delete process.env.NO_COLOR;
-
-    try {
-      const { out } = await runCli(queryArgs(h));
-      const filed = out.split("\n").find((line) => line.includes("Filed:"));
-
-      expect(filed).toContain("\u001b[1m");
-      expect(out.split("\n")[0]).not.toContain("\u001b");
-    } finally {
-      if (prior === undefined) {
-        delete process.env.NO_COLOR;
-      } else {
-        process.env.NO_COLOR = prior;
-      }
-    }
-  });
-
-  it("prints the not-answerable line without bold codes", async () => {
+  it("exits 1 and reverts when the agent writes under wiki/", async () => {
     const h = await makeCliHarness();
 
-    await (await import("node:fs/promises")).writeFile(
+    await writeFile(
       join(h.dataRoot, "stub-agent.mjs"),
       `#!/usr/bin/env node
-const index = process.argv.indexOf("--print");
-if (index === -1) process.exit(3);
-console.log("No page covers this.\\n\\nQUERY: not-answerable — ingest X first");
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+await mkdir(join(process.cwd(), "wiki", "queries"), { recursive: true });
+await writeFile(join(process.cwd(), "wiki", "queries", "rogue.md"), "rogue");
+console.log("An answer.");
 `,
       { mode: 0o755 },
     );
 
+    const { err } = await runCli(queryArgs(h));
+
+    expect(err).toContain("reverted");
+    expect(process.exitCode).toBe(1);
+
+    const { stdout } = await run(
+      "git",
+      ["-C", h.dataRoot, "status", "--porcelain", "-uall", "--", "wiki"],
+      { env: process.env },
+    );
+
+    expect(stdout.trim()).toBe("");
+
+    await expect(
+      readFile(join(h.outputsDir, "last-query.md")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("exits 1 when --file-last is given a question", async () => {
+    const h = await makeCliHarness();
+    const { err } = await runCli([...fileLastArgs(h), "a question?"]);
+
+    expect(err).toContain("--file-last takes no <question>");
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("exits 1 with the remedy when --file-last finds no saved answer", async () => {
+    const h = await makeCliHarness();
+    const { err } = await runCli(fileLastArgs(h));
+
+    expect(err).toContain("no saved answer");
+    expect(err).toContain("wiki-query");
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("files the saved answer with --file-last, no settings file needed", async () => {
+    const h = await makeCliHarness();
+
+    await runCli(queryArgs(h));
+    await rm(h.settingsPath);
+
+    const { out, err } = await runCli(fileLastArgs(h));
+
+    expect(out).toContain(
+      "Filed: wiki/queries/when-should-i-prefer-rag-over-fine-tuning.md",
+    );
+    expect(err).toBe("");
+    expect(process.exitCode).toBeUndefined();
+
+    const page = await readFile(
+      join(
+        h.dataRoot,
+        "wiki",
+        "queries",
+        "when-should-i-prefer-rag-over-fine-tuning.md",
+      ),
+      "utf8",
+    );
+
+    expect(page).toContain("Prefer RAG when the knowledge base changes often.");
+
+    const index = await readFile(join(h.dataRoot, "wiki", "index.md"), "utf8");
+
+    expect(index).toContain(
+      "- [[when-should-i-prefer-rag-over-fine-tuning]] — When should I prefer RAG over fine-tuning?",
+    );
+
+    const log = await readFile(join(h.dataRoot, "wiki", "log.md"), "utf8");
+
+    expect(log).toMatch(
+      /## \[\d{4}-\d{2}-\d{2}\] query \| When should I prefer RAG over fine-tuning\?/,
+    );
+  });
+
+  it("bolds the Filed line", async () => {
+    const h = await makeCliHarness();
+
+    await runCli(queryArgs(h));
+
     const prior = process.env.NO_COLOR;
 
     delete process.env.NO_COLOR;
 
     try {
-      const { out } = await runCli(queryArgs(h));
-      const line = out.split("\n").find((l) => l.includes("Not answerable"));
+      const { out } = await runCli(fileLastArgs(h));
+      const filed = out.split("\n").find((line) => line.includes("Filed:"));
 
-      expect(line).not.toContain("\u001b");
+      expect(filed).toContain("\u001b[1m");
     } finally {
       if (prior === undefined) {
         delete process.env.NO_COLOR;
@@ -1252,62 +928,53 @@ console.log("No page covers this.\\n\\nQUERY: not-answerable — ingest X first"
     }
   });
 
-  it("prints no empty answer line when the agent replies with only a status line", async () => {
+  it("prints the drift warning on stderr and still files", async () => {
     const h = await makeCliHarness();
 
-    await (await import("node:fs/promises")).writeFile(
-      join(h.dataRoot, "stub-agent.mjs"),
-      "#!/usr/bin/env node\nconsole.log('\\nQUERY: not-filed — single page restatement\\n');\n",
-      { mode: 0o755 },
+    await runCli(queryArgs(h));
+
+    const artifactPath = join(h.outputsDir, "last-query.md");
+    const artifact = await readQueryArtifact(artifactPath);
+
+    await writeFile(
+      join(h.dataRoot, "wiki", "index.md"),
+      "# Index\n\n<!-- later -->\n",
+    );
+    await run("git", ["-C", h.dataRoot, "add", "-A"]);
+    const driftDate = new Date(
+      Date.parse(artifact.timestamp) + 60_000,
+    ).toISOString();
+
+    await run(
+      "git",
+      [
+        "-C",
+        h.dataRoot,
+        "-c",
+        "user.email=t@t",
+        "-c",
+        "user.name=t",
+        "commit",
+        "--quiet",
+        "-m",
+        "wiki moved",
+      ],
+      { env: { ...process.env, GIT_COMMITTER_DATE: driftDate } },
     );
 
-    const prior = process.env.NO_COLOR;
+    const { out, err } = await runCli(fileLastArgs(h));
 
-    process.env.NO_COLOR = "1";
-
-    try {
-      const { out } = await runCli(queryArgs(h));
-
-      expect(out).toBe("\nNot filed: single page restatement");
-    } finally {
-      if (prior === undefined) {
-        delete process.env.NO_COLOR;
-      } else {
-        process.env.NO_COLOR = prior;
-      }
-    }
-  });
-
-  it("prints only the answer when the agent sends no status line", async () => {
-    const h = await makeCliHarness();
-
-    await (await import("node:fs/promises")).writeFile(
-      join(h.dataRoot, "stub-agent.mjs"),
-      "#!/usr/bin/env node\nconsole.log('Just an answer.');\n",
-      { mode: 0o755 },
+    expect(out).toContain("Filed:");
+    expect(err).toContain(
+      "warning: the data repo changed after the saved answer",
     );
-
-    const prior = process.env.NO_COLOR;
-
-    process.env.NO_COLOR = "1";
-
-    try {
-      const { out } = await runCli(queryArgs(h));
-
-      expect(out).toBe("Just an answer.");
-    } finally {
-      if (prior === undefined) {
-        delete process.env.NO_COLOR;
-      } else {
-        process.env.NO_COLOR = prior;
-      }
-    }
+    expect(process.exitCode).toBeUndefined();
   });
 
   it("kills a stalled agent at the --timeout deadline", async () => {
     const h = await makeCliHarness();
 
-    await (await import("node:fs/promises")).writeFile(
+    await writeFile(
       join(h.dataRoot, "stub-agent.mjs"),
       "#!/usr/bin/env node\nsetTimeout(() => {}, 60000);\n",
       { mode: 0o755 },
@@ -1317,5 +984,149 @@ console.log("No page covers this.\\n\\nQUERY: not-answerable — ingest X first"
 
     expect(err).toMatch(/timed out after 1 second/);
     expect(process.exitCode).toBe(1);
+  });
+
+  it("makes no console.error call in stage 2 when nothing drifted", async () => {
+    const h = await makeCliHarness();
+
+    await runCli(queryArgs(h));
+
+    const argv = process.argv;
+    let calls = 0;
+
+    process.argv = [...argv.slice(0, 2), ...fileLastArgs(h)];
+
+    const spy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {
+        calls += 1;
+      });
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      await main();
+    } finally {
+      process.argv = argv;
+      spy.mockRestore();
+      logSpy.mockRestore();
+    }
+
+    expect(calls).toBe(0);
+  });
+});
+
+describe("runWikiQuery violation reporting", () => {
+  it("names the violating paths and the revert target exactly", async () => {
+    const h = await makeHarness();
+    const { stdout: sha } = await run("git", [
+      "-C",
+      h.dataRoot,
+      "rev-parse",
+      "HEAD",
+    ]);
+    const rogue: AgentRunner = async (_command, _args, options) => {
+      await mkdir(join(options.cwd, "wiki", "queries"), { recursive: true });
+      await writeFile(
+        join(options.cwd, "wiki", "queries", "rogue.md"),
+        "rogue\n",
+      );
+      await writeFile(join(options.cwd, "wiki", "index.md"), "# Index v2\n");
+
+      return { stdout: "An answer.", stderr: "" };
+    };
+
+    await expect(
+      runWikiQuery({ ...optionsFor(h), runAgent: rogue }),
+    ).rejects.toThrow(
+      `answer-only run wrote to wiki/ (wiki/index.md, wiki/queries/rogue.md); reverted to ${sha.trim().slice(0, 8)} — the answer was saved nowhere; rerun the question`,
+    );
+  });
+
+  it("reports the revert on the progress sink with the short target", async () => {
+    const h = await makeHarness();
+    const { stdout: sha } = await run("git", [
+      "-C",
+      h.dataRoot,
+      "rev-parse",
+      "HEAD",
+    ]);
+    const messages: string[] = [];
+    const rogue: AgentRunner = async (_command, _args, options) => {
+      await writeFile(join(options.cwd, "wiki", "index.md"), "# Index v2\n");
+
+      return { stdout: "An answer.", stderr: "" };
+    };
+
+    try {
+      await runWikiQuery({
+        ...optionsFor(h),
+        runAgent: rogue,
+        onProgress: (message) => messages.push(message),
+      });
+    } catch {
+      // expected: the violation throws after the progress line
+    }
+
+    expect(messages).toContain(
+      `wiki-query: wiki changed during the answer-only run — reverting to ${sha.trim().slice(0, 8)}`,
+    );
+  });
+});
+
+describe("wiki-query CLI stderr surface", () => {
+  it("prints the filing hint after a blank stderr line", async () => {
+    const h = await makeHarness();
+    const stub = join(h.dataRoot, "stub-agent.mjs");
+
+    await writeFile(join(h.dataRoot, ".cli-test-repo"), "");
+    await writeFile(stub, '#!/usr/bin/env node\nconsole.log("A.");\n', {
+      mode: 0o755,
+    });
+    await writeFile(
+      h.settingsPath,
+      `command: ${stub}\nmodel: M\nreasoning: low\n`,
+    );
+
+    const argv = process.argv;
+    const err: string[] = [];
+
+    process.argv = [
+      ...argv.slice(0, 2),
+      "--settings",
+      h.settingsPath,
+      "--raw-dir",
+      join(h.dataRoot, "raw"),
+      "--outputs",
+      h.outputsDir,
+      "q",
+    ];
+
+    const spy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) => err.push(parts.join(" ")));
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const prior = process.env.NO_COLOR;
+
+    process.env.NO_COLOR = "1";
+
+    try {
+      await main();
+    } finally {
+      process.argv = argv;
+      spy.mockRestore();
+      logSpy.mockRestore();
+
+      if (prior === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = prior;
+      }
+    }
+
+    expect(
+      err
+        .join("\n")
+        .endsWith("\n\nTo file this answer: wiki-query --file-last"),
+    ).toBe(true);
   });
 });

@@ -690,7 +690,7 @@ prompt text. Index of the seven operational prompts:
 | `prompts/incremental.md` | Later runs where one or more notes changed | Process only the changed sources; smallest necessary wiki updates |
 | `prompts/expunge.md` | A sync removes notes (manifest diff has `removed` entries; §14a) | Re-derive affected pages from their remaining sources |
 | `prompts/rebuild.md` | Rebuilding the wiki from scratch (§15); the expunge threshold (§14a) | Rebuild the whole wiki from `raw/` |
-| `prompts/query.md` | Asking questions against the built wiki (§16) | Synthesize a cited answer; offer to file recurring questions |
+| `prompts/query.md` | Asking questions against the built wiki (§16) | Synthesize a cited answer; the wrapper saves it for human-gated filing |
 | `prompts/lint.md` | After every ingestion (§17; step 4 of `wiki-sync`) | Audit wiki quality; fix mechanical problems, report the rest |
 | `prompts/comparison-harvest.md` | One-shot harvest run manually (trial) | File comparisons where two or more sources explicitly contrast named approaches |
 
@@ -841,14 +841,31 @@ derivable from `raw/`.
 
 ## 16. Query Prompt
 
-Use this when asking questions against the wiki.
+Use this when asking questions against the wiki. Asking is two-stage
+(issue #72):
+
+- **Stage 1 — answer (default):** `wiki-query <question>` composes
+  `prompts/query.md` with the question, runs the agent headless, and
+  prints the answer. The run is answer-only by construction: the
+  prompt tells the agent to write nothing, and the wrapper enforces
+  it mechanically — any change under `wiki/` during the run reverts
+  the data repo to its pre-run state and fails the run. The wrapper
+  saves the run (question, answer, pages cited, timestamp) to
+  `outputs/last-query.md`.
+- **Stage 2 — file (human-only):** after reviewing the printed
+  answer, the human runs `wiki-query --file-last`. Deterministic
+  code, no LLM: the saved answer is templated byte-exactly into
+  `wiki/queries/<slug>.md`, and `index.md` and `log.md` get their
+  entries. A drift warning fires when `raw/` or `wiki/` changed
+  after the saved timestamp.
 
 Full text: `prompts/query.md`.
 
 Intent: find the relevant pages via `index.md`, synthesize an answer
-citing them with wikilinks, say so when the wiki cannot answer, and
-offer to file recurring synthesized answers under `queries/` — never
-inventing facts beyond what `wiki/` and `raw/` support.
+citing them with wikilinks, and say so when the wiki cannot answer —
+never inventing facts beyond what `wiki/` and `raw/` support. The
+agent never files: an omitted flag can never produce wiki writes,
+which is what agent-facing use requires.
 
 Filed answers are how questions compound into knowledge: the next time the question arises, the wiki already contains the answer.
 
