@@ -352,7 +352,10 @@ describe("checkWikiFidelity", () => {
           "The shim lives at ~/Lab/k-wiki/bin/shim.",
         ),
       },
-      { "notes/V/s.md": "The shim lives at ~/Lab/k-wiki/bin/shim, never elsewhere." },
+      {
+        "notes/V/s.md":
+          "The shim lives at ~/Lab/k-wiki/bin/shim, never elsewhere.",
+      },
     );
 
     expect((await checkWikiFidelity(wikiDir, rawDir)).problems).toEqual([]);
