@@ -18,8 +18,8 @@ import {
   type AgentRunner,
   agentArgs,
   createAgentProgressSink,
+  formatAgentInvocation,
   type IngestResult,
-  isolationLabel,
   loadAgentSettings,
   readPrompt,
   runWikiIngest,
@@ -122,12 +122,8 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
   const runAgent = options.runAgent ?? spawnAgent;
   const pre = await capturePreRunState(dataRoot, env);
 
-  const providerFlag = settings.provider
-    ? ` --provider ${settings.provider}`
-    : "";
-
   onProgress(
-    `wiki-sync: lint — invoking agent: ${settings.command}${providerFlag} --model ${settings.model} --thinking ${settings.reasoning} (${isolationLabel(settings)})`,
+    `wiki-sync: lint — invoking agent: ${formatAgentInvocation(settings)}`,
   );
 
   const startedAt = now().getTime();

@@ -16,6 +16,7 @@ import {
   createAgentProgressSink,
   diffManifests,
   directSetForRemovals,
+  formatAgentInvocation,
   formatDigest,
   type IngestRun,
   loadAgentSettings,
@@ -293,6 +294,19 @@ describe("agentArgs", () => {
     ]);
   });
 
+  it("prepends the pi isolation flags on an explicit isolate: true", () => {
+    const args = agentArgs(
+      { command: "pi", model: "GLM-5.2", reasoning: "high", isolate: true },
+      "PROMPT",
+    );
+
+    expect(args.slice(0, 3)).toEqual([
+      "--no-context-files",
+      "--no-extensions",
+      "--no-skills",
+    ]);
+  });
+
   it("keeps the isolation flags ahead of the provider flag", () => {
     const args = agentArgs(
       { command: "pi", model: "m", reasoning: "h", provider: "zai" },
@@ -331,6 +345,19 @@ describe("agentArgs", () => {
     );
 
     expect(args[args.indexOf("--print") + 1]).toBe("THE PROMPT");
+  });
+});
+
+describe("formatAgentInvocation", () => {
+  it("renders the command, provider, model, reasoning, and isolation state", () => {
+    expect(
+      formatAgentInvocation({
+        command: "pi",
+        model: "GLM-5.2",
+        reasoning: "high",
+        provider: "zai",
+      }),
+    ).toBe("pi --provider zai --model GLM-5.2 --thinking high (isolated)");
   });
 });
 

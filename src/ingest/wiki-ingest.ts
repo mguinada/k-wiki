@@ -244,8 +244,19 @@ export function agentArgs(settings: AgentSettings, prompt: string): string[] {
 
 /** The isolation state of a spawned run, for progress and digest
  *  lines (issue #118): `isolated` unless the operator opted out. */
-export function isolationLabel(settings: AgentSettings): string {
+function isolationLabel(settings: AgentSettings): string {
   return settings.isolate === false ? "not isolated" : "isolated";
+}
+
+/** The `command [--provider P] --model M --thinking T (state)` tail
+ *  the spawn sites print when invoking the agent (issue #118) — the
+ *  auditable counterpart of agentArgs, one source for both. */
+export function formatAgentInvocation(settings: AgentSettings): string {
+  const providerFlag = settings.provider
+    ? ` --provider ${settings.provider}`
+    : "";
+
+  return `${settings.command}${providerFlag} --model ${settings.model} --thinking ${settings.reasoning} (${isolationLabel(settings)})`;
 }
 
 /** Read and parse the agent settings file; missing values are errors. */
@@ -1201,12 +1212,8 @@ export async function runWikiIngest(
   const runAgent = options.runAgent ?? spawnAgent;
   const pre = await capturePreRunState(dataRoot, env);
 
-  const providerFlag = settings.provider
-    ? ` --provider ${settings.provider}`
-    : "";
-
   onProgress(
-    `wiki-ingest: mode ${mode}, invoking agent: ${settings.command}${providerFlag} --model ${settings.model} --thinking ${settings.reasoning} (${isolationLabel(settings)})`,
+    `wiki-ingest: mode ${mode}, invoking agent: ${formatAgentInvocation(settings)}`,
   );
 
   const agentStartedAt = now().getTime();
