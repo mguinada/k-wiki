@@ -85,7 +85,9 @@ export interface SyncReport {
   readonly elapsedMs?: number;
 }
 
-interface SelectedNote {
+/** One selected source file: its path relative to the source root,
+ *  its bytes, and its content hash. */
+export interface ProjectedNote {
   readonly relPath: string;
   readonly bytes: Uint8Array;
   readonly hash: string;
@@ -209,8 +211,8 @@ async function selectNotes(
   candidates: readonly string[],
   progressEvery: number,
   onProgress: (message: string) => void,
-): Promise<SelectedNote[]> {
-  const selected: SelectedNote[] = [];
+): Promise<ProjectedNote[]> {
+  const selected: ProjectedNote[] = [];
   const decoder = new TextDecoder();
 
   for (const [index, relPath] of candidates.entries()) {
@@ -237,7 +239,7 @@ async function scanAndSelect(
   onProgress: (message: string) => void,
 ): Promise<{
   candidates: readonly string[];
-  selected: readonly SelectedNote[];
+  selected: readonly ProjectedNote[];
 }> {
   await assertDirectory(vault);
 
@@ -281,7 +283,48 @@ async function syncVault(
   );
 
   const namespaceRoot = join(rawDir, "notes", vault.name);
+  const { notes, copied, unchanged, removed } = await projectNotes(
+    selected,
+    namespaceRoot,
+    previous,
+    now,
+  );
 
+  return {
+    notes,
+    report: {
+      vault: vault.name,
+      candidates: candidates.length,
+      selected: selected.length,
+      copied,
+      unchanged,
+      removed,
+    },
+  };
+}
+
+/** What one projection pass did to a namespace: the manifest entries
+ *  after the pass, and the per-file change lists the reports print. */
+export interface ProjectionResult {
+  readonly notes: VaultNotes;
+  readonly copied: readonly string[];
+  readonly unchanged: readonly string[];
+  readonly removed: readonly string[];
+}
+
+/**
+ * The shared projection loop (guide §8), the one invariant every
+ * source adapter funnels into: copy each selected file whose hash
+ * changed into the namespace, carry unchanged files' manifest entries
+ * forward (their `last_synced` survives), remove projections whose
+ * source disappeared, and prune now-empty parent directories.
+ */
+export async function projectNotes(
+  selected: readonly ProjectedNote[],
+  namespaceRoot: string,
+  previous: VaultNotes,
+  now: () => Date,
+): Promise<ProjectionResult> {
   const copied: string[] = [];
   const unchanged: string[] = [];
   const notes: VaultNotes = {};
@@ -324,17 +367,7 @@ async function syncVault(
     removed.push(relPath);
   }
 
-  return {
-    notes,
-    report: {
-      vault: vault.name,
-      candidates: candidates.length,
-      selected: selected.length,
-      copied,
-      unchanged,
-      removed,
-    },
-  };
+  return { notes, copied, unchanged, removed };
 }
 
 /** One vault's would-ingest listing; produced by a dry run. */

@@ -1,12 +1,5 @@
 import type { Stats } from "node:fs";
-import {
-  mkdir,
-  readdir,
-  readFile,
-  rm,
-  stat,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,14 +14,18 @@ import {
 import { sha256 } from "./hash.ts";
 import {
   type Manifest,
-  type ManifestEntry,
   parseManifest,
   readManifestText,
   serializeManifest,
   type VaultNotes,
   writeManifest,
 } from "./manifest.ts";
-import { formatReport, pruneEmptyDirs, reportColors } from "./sync-vault.ts";
+import {
+  formatReport,
+  projectNotes,
+  reportColors,
+  type ProjectedNote,
+} from "./sync-vault.ts";
 
 /**
  * sync-repo: the repo-as-source sync adapter (issue #74). Projects the
@@ -124,8 +121,8 @@ function literalPrefix(pattern: string): string[] {
   return prefix;
 }
 
-/** Directories never walked, whatever the allowlist says: `.git`
- *  everywhere, `node_modules` at the repository root. */
+/** Directories never walked at the root of a walk, whatever the
+ *  allowlist says: `.git` and `node_modules`. */
 const SKIPPED_ROOT_DIRS = new Set([".git", "node_modules"]);
 
 /** Whether the path exists and is a file. */
@@ -276,8 +273,9 @@ async function theRepoSource(
   const repos = config.vaults.filter(
     (source): source is RepoSourceConfig => source.kind === "repo",
   );
+  const [repo] = repos;
 
-  if (repos.length === 0) {
+  if (repo === undefined) {
     throw new Error(`no repo source in ${configPath}; nothing to project`);
   }
 
@@ -287,13 +285,11 @@ async function theRepoSource(
     );
   }
 
-  // Length checks above guarantee exactly one; the cast satisfies
-  // noUncheckedIndexedAccess without an unreachable dead branch.
-  return repos[0] as RepoSourceConfig;
+  return repo;
 }
 
-/** Read, hash, copy, and prune one repo namespace; mirrors sync-vault's
- *  projection loop without the frontmatter selection. */
+/** Read, hash, and project one repo namespace through the shared
+ *  projection loop; only the allowlist selection is repo-specific. */
 async function projectRepo(
   source: RepoSourceConfig,
   rawDir: string,
@@ -311,50 +307,21 @@ async function projectRepo(
     `repo "${source.name}": ${selected.length} of ${candidates} examined files selected at commit ${commit.slice(0, 8)}`,
   );
 
-  const namespaceRoot = join(rawDir, "notes", source.name);
-  const copied: string[] = [];
-  const unchanged: string[] = [];
-  const notes: VaultNotes = {};
+  const selectedNotes: ProjectedNote[] = [];
 
   for (const relPath of selected) {
     const bytes = await readFile(join(source.root, ...relPath.split("/")));
-    const hash = sha256(bytes);
-    const known = previous[relPath];
 
-    if (known !== undefined && known.hash === hash) {
-      unchanged.push(relPath);
-      notes[relPath] = known;
-
-      continue;
-    }
-
-    const destination = join(namespaceRoot, ...relPath.split("/"));
-
-    await mkdir(dirname(destination), { recursive: true });
-    await writeFile(destination, bytes);
-
-    const entry: ManifestEntry = {
-      hash,
-      last_synced: now().toISOString(),
-    };
-
-    notes[relPath] = entry;
-    copied.push(relPath);
+    selectedNotes.push({ relPath, bytes, hash: sha256(bytes) });
   }
 
-  const removed: string[] = [];
-
-  for (const relPath of Object.keys(previous).sort()) {
-    if (Object.hasOwn(notes, relPath)) {
-      continue;
-    }
-
-    const destination = join(namespaceRoot, ...relPath.split("/"));
-
-    await rm(destination, { force: true });
-    await pruneEmptyDirs(dirname(destination), namespaceRoot);
-    removed.push(relPath);
-  }
+  const namespaceRoot = join(rawDir, "notes", source.name);
+  const { notes, copied, unchanged, removed } = await projectNotes(
+    selectedNotes,
+    namespaceRoot,
+    previous,
+    now,
+  );
 
   return {
     notes,

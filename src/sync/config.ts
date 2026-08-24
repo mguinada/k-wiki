@@ -15,12 +15,6 @@ export interface ExcludeExpression {
   readonly value: string;
 }
 
-/** An exclusion expression; only `<key>:false` is supported. */
-export interface ExcludeExpression {
-  readonly key: string;
-  readonly value: string;
-}
-
 /** A source vault projected under `raw/notes/<name>/` (guide §25):
  *  selection is a frontmatter exclusion rule. */
 export interface VaultSourceConfig {

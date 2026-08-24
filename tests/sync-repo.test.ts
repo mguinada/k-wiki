@@ -806,6 +806,35 @@ describe("sync-repo CLI main", () => {
     return { out: out.join("\n"), err: err.join("\n") };
   }
 
+  it("resolves the raw dir from the config dataRoot when the arg is absent", async () => {
+    const ws = await makeWorkspace();
+    const dataRoot = join(ws.dir, "meta-data");
+    const configPath = join(ws.dir, "sync-dataroot.json");
+
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        dataRoot,
+        vaults: [
+          {
+            source: "repo",
+            name: NAME,
+            root: ws.sourceRoot,
+            include: ALLOWLIST,
+          },
+        ],
+      }),
+      "utf8",
+    );
+
+    const result = await runMainCli([configPath]);
+
+    expect(result.out).toContain("sync complete");
+    expect(
+      await readFile(join(dataRoot, "raw", "manifest.json"), "utf8"),
+    ).toContain("source_commit");
+  });
+
   it("prints the projection report with the source commit on success", async () => {
     const ws = await makeWorkspace();
     const result = await runMainCli([ws.configPath, ws.rawDir]);
@@ -898,5 +927,41 @@ describe("runRepoSync inaccessible roots", () => {
     await expect(
       runRepoSync({ configPath, rawDir: join(dir, "raw"), env: GIT_ENV }),
     ).rejects.toThrow(/is not accessible/);
+  });
+});
+
+describe("runRepoSync manifest entry carry-forward", () => {
+  const T1 = "2026-08-23T10:00:00.000Z";
+  const T2 = "2026-08-23T12:00:00.000Z";
+
+  it("advances last_synced only for the changed file, keeping it for untouched ones", async () => {
+    const ws = await makeWorkspace();
+
+    await runRepoSync({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+      env: GIT_ENV,
+      now: () => new Date(T1),
+    });
+
+    await put(ws.sourceRoot, "src/a.ts", "export const a = 2;\n");
+    await runGit(ws.sourceRoot, ["add", "-A"], GIT_ENV);
+    await runGit(ws.sourceRoot, ["commit", "--quiet", "-m", "edit"], GIT_ENV);
+
+    await runRepoSync({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+      env: GIT_ENV,
+      now: () => new Date(T2),
+    });
+
+    const manifestPath = join(ws.rawDir, "manifest.json");
+    const notes = parseManifest(
+      await readFile(manifestPath, "utf8"),
+      manifestPath,
+    ).vaults[NAME];
+
+    expect(notes?.["src/a.ts"]?.last_synced).toBe(T2);
+    expect(notes?.["src/deep/b.ts"]?.last_synced).toBe(T1);
   });
 });

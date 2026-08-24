@@ -132,11 +132,6 @@ async function walkFiles(
   }
 }
 
-/**
- * Check the coherence of the projection at `rawDirInput`. Throws when
- * the raw directory itself is missing or not a directory; a projection
- * with no manifest entries and no projected notes is healthy-empty.
- */
 /** The freshness verdict of a repo-stamped manifest (issue #74):
  *  sync-repo records `source_commit` and `source_root` beside the
  *  per-file hashes; a projection whose commit no longer matches the
@@ -194,6 +189,11 @@ async function checkFreshness(
   };
 }
 
+/**
+ * Check the coherence of the projection at `rawDirInput`. Throws when
+ * the raw directory itself is missing or not a directory; a projection
+ * with no manifest entries and no projected notes is healthy-empty.
+ */
 export async function checkRaw(
   rawDirInput: string,
   options: { env?: NodeJS.ProcessEnv } = {},
@@ -271,47 +271,38 @@ export async function checkRaw(
     }
   }
 
-  if (problems.length > 0) {
-    const freshness = await checkFreshness(
-      manifestText,
-      options.env ?? process.env,
-    );
+  const freshness = await checkFreshness(
+    manifestText,
+    options.env ?? process.env,
+  );
+  const warnings = freshness.warning === undefined ? [] : [freshness.warning];
 
+  if (problems.length > 0) {
     return {
       healthy: false,
       problems,
       summary: "",
-      warnings: freshness.warning === undefined ? [] : [freshness.warning],
+      warnings,
       stale: freshness.stale,
     };
   }
 
   if (matched === 0) {
-    const freshness = await checkFreshness(
-      manifestText,
-      options.env ?? process.env,
-    );
-
     return {
       healthy: true,
       problems: [],
       summary:
         "healthy: empty projection (no manifest entries, no projected notes)",
-      warnings: freshness.warning === undefined ? [] : [freshness.warning],
+      warnings,
       stale: freshness.stale,
     };
   }
-
-  const freshness = await checkFreshness(
-    manifestText,
-    options.env ?? process.env,
-  );
 
   return {
     healthy: true,
     problems: [],
     summary: `healthy: manifest and projection agree (${matched} ${matched === 1 ? "note" : "notes"}, ${activeVaults} ${activeVaults === 1 ? "vault" : "vaults"})`,
-    warnings: freshness.warning === undefined ? [] : [freshness.warning],
+    warnings,
     stale: freshness.stale,
   };
 }
