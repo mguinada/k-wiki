@@ -152,6 +152,11 @@ argument is validated or any file is read, so `--help` never fails.
 A new switch lands together with its help entry and its tests in the
 same change.
 
+The first statement of every `main()` is `refuseTestWorker("<cli>")`
+from `src/cli/is-main.ts`: it throws inside a test worker (vitest,
+Stryker mutation runs included), so a mutated import guard can never
+run a CLI against live state (issue #123).
+
 ### CLI colors
 
 One color per feedback kind, applied at the render boundary (the
