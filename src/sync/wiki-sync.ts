@@ -290,9 +290,15 @@ export type CommitResult =
     }
   | { readonly status: "nothing-to-commit" };
 
-/** Commit paths in the data repo; outputs/ only when it exists (a
- *  fresh data repo has none until the lint agent creates it). */
-async function commitPathspecs(dataRoot: string): Promise<readonly string[]> {
+/** Commit paths in the data repo; outputs/ only when it holds
+ *  something git can act on. Since the manifest snapshot moved there
+ *  (issue #112) the directory always exists — but it is ignored, and
+ *  `git commit -- outputs` fails on a pathspec nothing known to git
+ *  matches. */
+async function commitPathspecs(
+  dataRoot: string,
+  env: NodeJS.ProcessEnv,
+): Promise<readonly string[]> {
   const pathspecs = ["wiki", "raw"];
 
   if (
@@ -301,7 +307,23 @@ async function commitPathspecs(dataRoot: string): Promise<readonly string[]> {
       () => false,
     )
   ) {
-    pathspecs.push("outputs");
+    const { stdout } = await runGit(
+      dataRoot,
+      [
+        "-c",
+        "core.quotePath=false",
+        "status",
+        "--porcelain",
+        "-uall",
+        "--",
+        "outputs",
+      ],
+      env,
+    );
+
+    if (parseStatus(stdout).length > 0) {
+      pathspecs.push("outputs");
+    }
   }
 
   return pathspecs;
@@ -313,7 +335,7 @@ async function commitDataRepo(
   env: NodeJS.ProcessEnv,
   message: string,
 ): Promise<CommitResult> {
-  const pathspecs = await commitPathspecs(dataRoot);
+  const pathspecs = await commitPathspecs(dataRoot, env);
   const { stdout } = await runGit(
     dataRoot,
     [
@@ -362,7 +384,8 @@ export interface WikiSyncOptions {
   readonly rawDir: string;
   /** Path to the agent settings file (settings.yml). */
   readonly settingsPath: string;
-  /** Digest and snapshot destination (the code repo's outputs/). */
+  /** Digest destination (the code repo's outputs/); the manifest
+   *  snapshot lives in the data repo's outputs/ (issue #112). */
   readonly outputsDir: string;
   /** Directory holding ingest.md, incremental.md, and lint.md. */
   readonly promptsDir: string;
@@ -629,9 +652,10 @@ command only chains them.
                      so global agent config cannot leak in (issue
                      #118).
                      Default: the repo's settings.yml.
-  --outputs <dir>    Where the ingest digest (runs/<timestamp>.md) and
-                     the manifest snapshot go — the code repo's
-                     per-checkout state. Default: the repo's outputs/.
+  --outputs <dir>    Where the ingest digest (runs/<timestamp>.md) goes.
+                     Default: the repo's outputs/. The manifest snapshot
+                     always lives in the data repo's outputs/ and is not
+                     moved by this switch (issue #112).
   --timeout <secs>   Kill either agent run after this many seconds
                      and fail the cycle. Default: 1800 (30 minutes).
   -h, --help         Print this help and exit; no side effects.

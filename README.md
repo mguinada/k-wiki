@@ -247,8 +247,9 @@ contract is enforced automatically. Omit the key and the cycle skips
 the audit (the manual command below still works).
 
 Seed once, then run the same cycle as model 1 — naming the config,
-the settings, **and a per-instance outputs dir** so the manifest
-snapshot never crosses instances:
+the settings, **and a per-instance outputs dir** so the run digests
+stay separate (the manifest snapshot lives in each data repo's own
+`outputs/`, so it never crosses instances; issue #112):
 
 ```sh
 npm run data:init -- --second-brain sync-second-brain.json
@@ -345,9 +346,12 @@ Hardened during the first full build (issue #61):
 
 - **Run every `sync-vault` / `wiki-ingest` from its own checkout
   root.** The manifest snapshot
-  (`outputs/last-ingested-manifest.json`) is gitignored per-checkout
-  state: the wrapper resolves `sync.json`, `settings.yml`, and
-  `outputs/` relative to the checkout you are standing in. A foreign
+  (`<dataRoot>/outputs/last-ingested-manifest.json`) is per-data-repo
+  state kept in the data repo's `outputs/` (gitignored there); a
+  legacy snapshot in a checkout's `outputs/` is adopted into the data
+  repo on the next run (issue #112). The wrapper resolves
+  `sync.json`, `settings.yml`, and its own `outputs/` relative to the
+  checkout you are standing in. A foreign
   snapshot is caught mechanically (issue #95): the snapshot is
   stamped with its data repo root at write time, and a read whose
   stamp does not match — foreign or unstamped — warns loudly and
@@ -601,7 +605,7 @@ npm run wiki-ingest  # 2. run the agent headless, digest the run
 
 `wiki-ingest` is the unattended ingest step (guide §18, issue #11). It
 reads `raw/manifest.json`, diffs it against the snapshot from the
-previous successful run (`outputs/last-ingested-manifest.json`), and
+previous successful run (`<dataRoot>/outputs/last-ingested-manifest.json`), and
 runs the agent non-interactively **in the data repo root** — `prompts/ingest.md`
 for the first run, `prompts/incremental.md` with the changed sources
 (`+` added, `~` changed, `→` renamed, `-` removed) appended for every
@@ -610,8 +614,9 @@ later one, except that removals route to `prompts/expunge.md` (see
 snapshot is stamped with the data repo it belongs to (issue #95): one
 stamped for another instance — or an unstamped legacy one — is ignored
 with a loud warning and the run falls back to the full prompt, so a
-forgotten `--outputs` can never silently diff, or expunge, against a
-foreign instance's state. The
+foreign snapshot in the data repo — a clone or copy from another
+machine, say — can never silently diff, or expunge, against this
+instance's state. The
 agent itself follows `wiki/AGENTS.md`, never touches `raw/`, and gets
 30 minutes (override with `--timeout <seconds>`); while it runs, one
 animated status line — a braille spinner plus the elapsed time — is
@@ -781,8 +786,9 @@ only in a cycle whose ingest ran, so after a failed lint the report
 waits for the next cycle with changed sources (or a manual lint run).
 A failure at any stage stops the chain and exits 1; a tripped
 guardrail has already reverted its agent run. Switches:
-`--settings <path>`, `--outputs <dir>` (the ingest
-snapshot and digest location; default the repo's `outputs/`),
+`--settings <path>`, `--outputs <dir>` (the run digest location;
+default the repo's `outputs/`; the ingest snapshot always lives in the
+data repo's `outputs/`, issue #112),
 `--timeout <secs>` (default 1800, applies to both agent stages), plus
 the `<sync.json>` and `<raw-dir>` positionals — `-h` documents them
 all. Scheduling is #14; the publish step joins with #15.

@@ -274,6 +274,19 @@ describe("runWikiSync", () => {
     ).resolves.toContain("Lint report");
   });
 
+  it("commits a cycle whose data-repo outputs holds only the ignored snapshot", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    h.lintAgent = async () => ({
+      stdout: "lint: 149 pages audited, 0 problems",
+      stderr: "",
+    });
+
+    const result = await runWikiSync(optionsFor(h));
+
+    expect(result.commit.status).toBe("committed");
+  });
+
   it("runs no agent and commits nothing when nothing changed", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 
