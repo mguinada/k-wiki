@@ -597,6 +597,8 @@ describe("sync-repo CLI help", () => {
 
     process.argv = [...argv.slice(0, 2), "--help"];
 
+    vi.stubGlobal("__kWikiTestWorker__", undefined);
+
     const logSpy = vi
       .spyOn(console, "log")
       .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
@@ -605,6 +607,7 @@ describe("sync-repo CLI help", () => {
       await main();
     } finally {
       process.argv = argv;
+      vi.unstubAllGlobals();
       logSpy.mockRestore();
     }
 
@@ -781,6 +784,8 @@ describe("sync-repo CLI main", () => {
     process.env.NO_COLOR = "1";
     process.argv = [...argv.slice(0, 2), ...args];
 
+    vi.stubGlobal("__kWikiTestWorker__", undefined);
+
     const logSpy = vi
       .spyOn(console, "log")
       .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
@@ -792,6 +797,7 @@ describe("sync-repo CLI main", () => {
       await main();
     } finally {
       process.argv = argv;
+      vi.unstubAllGlobals();
 
       if (hadNoColor === undefined) {
         delete process.env.NO_COLOR;
@@ -878,6 +884,8 @@ describe("sync-repo CLI main", () => {
 
     process.argv = [...argv.slice(0, 2), ws.configPath, ws.rawDir];
 
+    vi.stubGlobal("__kWikiTestWorker__", undefined);
+
     const { main } = await import("../src/sync/sync-repo.ts");
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     const errorSpy = vi
@@ -888,6 +896,7 @@ describe("sync-repo CLI main", () => {
       await main();
     } finally {
       process.argv = argv;
+      vi.unstubAllGlobals();
       logSpy.mockRestore();
       errorSpy.mockRestore();
 

@@ -4,7 +4,7 @@ import { copyFile, mkdir, readdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { isMainModule } from "../cli/is-main.ts";
+import { isMainModule, refuseTestWorker } from "../cli/is-main.ts";
 import { loadSyncConfig } from "../sync/config.ts";
 
 const run = promisify(execFile);
@@ -200,6 +200,8 @@ Idempotent — an already-seeded data repo is left untouched.
 
 /** data:init entry point: `init-data-repo [-h | --help] [--second-brain] [<config>]`. */
 export async function main(): Promise<void> {
+  refuseTestWorker("data:init");
+
   const args = process.argv.slice(2);
 
   if (args.includes("-h") || args.includes("--help")) {

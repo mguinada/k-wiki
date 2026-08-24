@@ -635,6 +635,8 @@ console.log("Prefer RAG when the knowledge base changes often. See [[retrieval-a
     process.argv = [...argv.slice(0, 2), ...args];
     process.exitCode = undefined;
 
+    vi.stubGlobal("__kWikiTestWorker__", undefined);
+
     const logSpy = vi
       .spyOn(console, "log")
       .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
@@ -646,6 +648,7 @@ console.log("Prefer RAG when the knowledge base changes often. See [[retrieval-a
       await main();
     } finally {
       process.argv = argv;
+      vi.unstubAllGlobals();
       logSpy.mockRestore();
       errorSpy.mockRestore();
     }
@@ -1094,6 +1097,8 @@ console.log("An answer.");
 
     process.argv = [...argv.slice(0, 2), ...fileLastArgs(h)];
 
+    vi.stubGlobal("__kWikiTestWorker__", undefined);
+
     const spy = vi.spyOn(console, "error").mockImplementation(() => {
       calls += 1;
     });
@@ -1103,6 +1108,7 @@ console.log("An answer.");
       await main();
     } finally {
       process.argv = argv;
+      vi.unstubAllGlobals();
       spy.mockRestore();
       logSpy.mockRestore();
     }
@@ -1197,6 +1203,8 @@ describe("wiki-query CLI stderr surface", () => {
       "q",
     ];
 
+    vi.stubGlobal("__kWikiTestWorker__", undefined);
+
     const spy = vi
       .spyOn(console, "error")
       .mockImplementation((...parts: unknown[]) => err.push(parts.join(" ")));
@@ -1209,6 +1217,7 @@ describe("wiki-query CLI stderr surface", () => {
       await main();
     } finally {
       process.argv = argv;
+      vi.unstubAllGlobals();
       spy.mockRestore();
       logSpy.mockRestore();
 

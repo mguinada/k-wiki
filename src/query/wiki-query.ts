@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
-import { isMainModule } from "../cli/is-main.ts";
+import { isMainModule, refuseTestWorker } from "../cli/is-main.ts";
 import { formatDuration } from "../cli/progress.ts";
 import {
   capturePreRunState,
@@ -280,6 +280,8 @@ function fail(message: string): void {
 
 /** wiki-query entry point: `wiki-query [-h | --help] [--file-last] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>`. */
 export async function main(): Promise<void> {
+  refuseTestWorker("wiki-query");
+
   const args = process.argv.slice(2);
 
   if (args.includes("-h") || args.includes("--help")) {

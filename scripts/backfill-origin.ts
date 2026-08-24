@@ -4,7 +4,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { createColors } from "picocolors";
-import { isMainModule } from "../src/cli/is-main.ts";
+import { isMainModule, refuseTestWorker } from "../src/cli/is-main.ts";
 import { runGit } from "../src/data/init-data-repo.ts";
 import {
   isWikilinkEntry,
@@ -447,6 +447,8 @@ color.`;
 
 /** backfill-origin entry point: `backfill-origin [-h | --help] [--dry-run] [--date <YYYY-MM-DD>] [<wiki-dir> [<raw-dir>]]`. */
 export async function main(): Promise<void> {
+  refuseTestWorker("backfill-origin");
+
   const args = process.argv.slice(2);
 
   if (args.includes("-h") || args.includes("--help")) {

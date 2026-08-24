@@ -46,6 +46,8 @@ async function runCli(argv2: string | undefined): Promise<string> {
   process.exitCode = undefined;
   process.argv = [...argv.slice(0, 2), ...(argv2 === undefined ? [] : [argv2])];
 
+  vi.stubGlobal("__kWikiTestWorker__", undefined);
+
   const logSpy = vi
     .spyOn(console, "log")
     .mockImplementation((...args) => output.push(args.join(" ")));
@@ -57,6 +59,7 @@ async function runCli(argv2: string | undefined): Promise<string> {
     await main();
   } finally {
     process.argv = argv;
+    vi.unstubAllGlobals();
     logSpy.mockRestore();
     errorSpy.mockRestore();
   }

@@ -12,7 +12,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
-import { isMainModule } from "../cli/is-main.ts";
+import { isMainModule, refuseTestWorker } from "../cli/is-main.ts";
 import {
   createProgressRenderer,
   formatDuration,
@@ -684,6 +684,8 @@ export function createSyncProgressSink(
 }
 
 export async function main(): Promise<void> {
+  refuseTestWorker("sync-vault");
+
   const args = process.argv.slice(2);
 
   if (args.includes("-h") || args.includes("--help")) {

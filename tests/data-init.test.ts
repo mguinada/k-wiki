@@ -46,6 +46,8 @@ describe("data:init CLI help", () => {
     process.argv = [...argv.slice(0, 2), ...args];
     Object.assign(process.env, GIT_ENV);
 
+    vi.stubGlobal("__kWikiTestWorker__", undefined);
+
     const logSpy = vi
       .spyOn(console, "log")
       .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
@@ -57,6 +59,7 @@ describe("data:init CLI help", () => {
       await main();
     } finally {
       process.argv = argv;
+      vi.unstubAllGlobals();
 
       for (const [key, value] of savedEnv) {
         if (value === undefined) {

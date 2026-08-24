@@ -762,6 +762,8 @@ describe("wiki-sync CLI", () => {
     process.argv = [...argv.slice(0, 2), ...args];
     process.exitCode = undefined;
 
+    vi.stubGlobal("__kWikiTestWorker__", undefined);
+
     const logSpy = vi
       .spyOn(console, "log")
       .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
@@ -773,6 +775,7 @@ describe("wiki-sync CLI", () => {
       await main();
     } finally {
       process.argv = argv;
+      vi.unstubAllGlobals();
       logSpy.mockRestore();
       errorSpy.mockRestore();
     }

@@ -22,3 +22,20 @@ export function isMainModule(moduleUrl: string): boolean {
     moduleUrl === pathToFileURL(process.argv[1]).href
   );
 }
+
+/**
+ * Throws when called inside a test worker (vitest, including Stryker
+ * mutation runs). Call it as the first statement of every CLI `main()`:
+ * a mutated import guard can still invoke `main()` as an import side
+ * effect, and the worker's empty `argv` then resolves every default to
+ * live state, so the refusal must fire before any default is resolved
+ * (issue #123). Real `node` runs and spawned CLI children never see the
+ * flag and are unaffected.
+ */
+export function refuseTestWorker(cli: string): void {
+  if ((globalThis as { __kWikiTestWorker__?: boolean }).__kWikiTestWorker__) {
+    throw new Error(
+      `${cli}: refusing to run inside a test worker (issue #123)`,
+    );
+  }
+}

@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { isMainModule } from "../cli/is-main.ts";
+import { isMainModule, refuseTestWorker } from "../cli/is-main.ts";
 
 /**
  * Synthetic Obsidian vault fixture generator.
@@ -208,6 +208,8 @@ tests/fixtures/Documents.
   <target-dir>    Destination directory for the Documents/ vault.`;
 
 export async function main(): Promise<void> {
+  refuseTestWorker("generate");
+
   const args = process.argv.slice(2);
 
   if (args.includes("-h") || args.includes("--help")) {
