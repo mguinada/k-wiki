@@ -3,6 +3,8 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
 import { isMainModule } from "../cli/is-main.ts";
+import { runGit } from "../data/init-data-repo.ts";
+import { isPlainObject } from "../sync/config.ts";
 import { sha256 } from "../sync/hash.ts";
 import {
   parseManifest,
@@ -24,6 +26,11 @@ export interface HealthReport {
   readonly problems: readonly string[];
   /** The single healthy summary line; empty when unhealthy. */
   readonly summary: string;
+  /** Non-fatal warnings (issue #74): a repo-stamped projection whose
+   *  recorded source commit is behind the source repo's HEAD. */
+  readonly warnings: readonly string[];
+  /** True when the projection is stale (drove a warning). */
+  readonly stale: boolean;
 }
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -125,12 +132,72 @@ async function walkFiles(
   }
 }
 
+/** The freshness verdict of a repo-stamped manifest (issue #74):
+ *  sync-repo records `source_commit` and `source_root` beside the
+ *  per-file hashes; a projection whose commit no longer matches the
+ *  source repo's HEAD announces itself. Untouched when the manifest
+ *  carries no stamp (ordinary vault projections). */
+async function checkFreshness(
+  manifestText: string | undefined,
+  env: NodeJS.ProcessEnv,
+): Promise<{ warning: string | undefined; stale: boolean }> {
+  if (manifestText === undefined) {
+    return { warning: undefined, stale: false };
+  }
+
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(manifestText);
+  } catch {
+    return { warning: undefined, stale: false };
+  }
+
+  if (!isPlainObject(parsed)) {
+    return { warning: undefined, stale: false };
+  }
+
+  const commit = parsed.source_commit;
+  const root = parsed.source_root;
+
+  if (typeof commit !== "string" || typeof root !== "string") {
+    return { warning: undefined, stale: false };
+  }
+
+  let head: string;
+
+  try {
+    const { stdout } = await runGit(root, ["rev-parse", "HEAD"], env);
+
+    head = stdout.trim();
+  } catch (cause) {
+    const reason = cause instanceof Error ? cause.message : String(cause);
+
+    return {
+      warning: `cannot verify freshness of source repo ${root}: ${reason}`,
+      stale: false,
+    };
+  }
+
+  if (head === commit) {
+    return { warning: undefined, stale: false };
+  }
+
+  return {
+    warning: `stale projection: recorded commit ${commit.slice(0, 8)} is behind source HEAD ${head.slice(0, 8)} — re-run sync-repo`,
+    stale: true,
+  };
+}
+
 /**
  * Check the coherence of the projection at `rawDirInput`. Throws when
  * the raw directory itself is missing or not a directory; a projection
  * with no manifest entries and no projected notes is healthy-empty.
  */
-export async function checkRaw(rawDirInput: string): Promise<HealthReport> {
+export async function checkRaw(
+  rawDirInput: string,
+  options: { env?: NodeJS.ProcessEnv } = {},
+): Promise<HealthReport> {
   const rawDir = resolve(rawDirInput);
 
   await assertRawDir(rawDir, rawDirInput);
@@ -204,8 +271,20 @@ export async function checkRaw(rawDirInput: string): Promise<HealthReport> {
     }
   }
 
+  const freshness = await checkFreshness(
+    manifestText,
+    options.env ?? process.env,
+  );
+  const warnings = freshness.warning === undefined ? [] : [freshness.warning];
+
   if (problems.length > 0) {
-    return { healthy: false, problems, summary: "" };
+    return {
+      healthy: false,
+      problems,
+      summary: "",
+      warnings,
+      stale: freshness.stale,
+    };
   }
 
   if (matched === 0) {
@@ -214,6 +293,8 @@ export async function checkRaw(rawDirInput: string): Promise<HealthReport> {
       problems: [],
       summary:
         "healthy: empty projection (no manifest entries, no projected notes)",
+      warnings,
+      stale: freshness.stale,
     };
   }
 
@@ -221,6 +302,8 @@ export async function checkRaw(rawDirInput: string): Promise<HealthReport> {
     healthy: true,
     problems: [],
     summary: `healthy: manifest and projection agree (${matched} ${matched === 1 ? "note" : "notes"}, ${activeVaults} ${activeVaults === 1 ? "vault" : "vaults"})`,
+    warnings,
+    stale: freshness.stale,
   };
 }
 
@@ -242,20 +325,28 @@ async function assertRawDir(
 }
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
-const HELP = `Usage: check-raw [-h | --help] [<raw-dir>]
+const HELP = `Usage: check-raw [-h | --help] [--fail-on-stale] [<raw-dir>]
 
 Check a raw/ projection for coherence: every raw/notes/<vault>/ file
 matches its manifest.json sha-256, with no orphan files and no missing
 entries. Read-only; never touches the source vault.
 
-  -h, --help    Print this help and exit; no side effects.
-  <raw-dir>     The raw/ directory to check.
-                Default: the repo's own raw/.
+When the manifest records a source repo commit and root (a
+repo-as-source projection, sync-repo), the source repo's HEAD is
+compared against the recorded commit: a projection left behind is
+reported as a warning.
 
-Exit status: 0 = coherent (healthy-empty counts), 1 = one line per
-problem.`;
+  -h, --help      Print this help and exit; no side effects.
+  --fail-on-stale Exit 1 when the projection is stale (the warning
+                  becomes blocking); freshness problems that cannot be
+                  verified never fail the run.
+  <raw-dir>       The raw/ directory to check.
+                  Default: the repo's own raw/.
 
-/** check-raw entry point: `check-raw [-h | --help] [<raw-dir>]` (default: repo raw/). */
+Exit status: 0 = coherent (healthy-empty counts; a stale warning
+alone stays exit 0), 1 = one line per problem.`;
+
+/** check-raw entry point: `check-raw [-h | --help] [--fail-on-stale] [<raw-dir>]` (default: repo raw/). */
 export async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
@@ -265,13 +356,24 @@ export async function main(): Promise<void> {
     return;
   }
 
-  const rawDir = args[0] ?? join(repoRoot, "raw");
+  const failOnStale = args.includes("--fail-on-stale");
+  const positional = args.filter((arg) => arg !== "--fail-on-stale");
+  const rawDir = positional[0] ?? join(repoRoot, "raw");
 
   try {
     const report = await checkRaw(rawDir);
 
+    for (const warning of report.warnings) {
+      console.error(colors().yellow(`check-raw: ${warning}`));
+    }
+
     if (report.healthy) {
       console.log(colors().green(report.summary));
+
+      if (failOnStale && report.stale) {
+        process.exitCode = 1;
+      }
+
       return;
     }
 

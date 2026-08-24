@@ -5,9 +5,14 @@ import { describe, expect, it } from "vitest";
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 
 const contract = readFileSync(`${repoRoot}wiki/AGENTS.md`, "utf8");
+const metaContract = readFileSync(`${repoRoot}wiki/AGENTS.meta.md`, "utf8");
 
 describe("wiki contract self-containment", () => {
   it("canonical wiki/AGENTS.md does not reference the implementation guide", () => {
     expect(contract).not.toMatch(/guide §|implementation guide/);
+  });
+
+  it("canonical wiki/AGENTS.meta.md does not reference the implementation guide", () => {
+    expect(metaContract).not.toMatch(/guide §|implementation guide/);
   });
 });

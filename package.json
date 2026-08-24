@@ -21,6 +21,7 @@
     "backfill-origin": "node scripts/backfill-origin.ts",
     "fixtures": "node src/fixtures/generate.ts",
     "sync-vault": "node src/sync/sync-vault.ts",
+    "sync-repo": "node src/sync/sync-repo.ts",
     "wiki-ingest": "node src/ingest/wiki-ingest.ts",
     "wiki-sync": "node src/sync/wiki-sync.ts",
     "wiki-query": "node src/query/wiki-query.ts",

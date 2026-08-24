@@ -72,6 +72,7 @@ Agents sometimes write to `AGENTS.md` files themselves — co-evolving conventio
 |---|---|---|
 | `AGENTS.md` (root) | Dev agent, conventions block only | Router and shared invariants are human-only |
 | `wiki/AGENTS.md` | Nobody during wiki operations | Schema changes are deliberate: proposed in a development/review session, landed as a human-approved commit |
+| `wiki/AGENTS.meta.md` | Nobody during wiki operations | Canonical meta contract; same deliberate, human-approved change path as `wiki/AGENTS.md` |
 
 Two principles govern this:
 
@@ -97,6 +98,7 @@ The default path through this guide is the simplest topology: **one vault → on
 | Several vaults, disjoint domains, different audiences or privacy levels | N vaults → N wikis | One independent instance of the simple path each (Scenario B, Section 25) |
 | One vault, mixed public/private material | 1 vault → N wikis | Same opt-out mechanism, different exclusion keys (Scenario C, Section 25) |
 | One subject's own material — a person, career, or venture | 1 vault → 1 wiki (second brain) | Simple path + Scenario D deltas (Section 25) |
+| A code repository as the source material (the meta-wiki) | 1 repo → 1 wiki | Simple path + Scenario E deltas (Section 25) |
 
 Rules of thumb:
 
@@ -1335,6 +1337,76 @@ identity: a domain-repo run that creates the profile and cross-wiki
 links in one run still trips the wikilink guardrail and is reverted.
 Marking an existing second-brain data repo is one operator action:
 create `.second-brain` at its root and commit it.
+
+### Scenario E: A Repository as Source (the Meta-Wiki)
+
+The source material does not have to be a vault. A git repository can
+be the source: this is how k-wiki documents itself — a wiki *about*
+k-wiki, auto-generated and grounded in the facts of the implementation.
+It is Scenario B (an independent pipeline instance) with a different
+kind of source adapter at the one seam where topology is decided:
+
+```text
+k-wiki (source repo)  →  sync-repo  →  k-wiki-meta-data/raw/notes/k-wiki/
+                                   →  ingest  →  k-wiki-meta-data/wiki/
+```
+
+Three repositories, three roles — the source repository never gains a
+`raw/` or `wiki/` tree of its own:
+
+- **Source** (read-only): the repository whose files become sources.
+- **Personal data repo**: untouched by this instance.
+- **Meta data repo** (`k-wiki-meta-data`): holds the projection and the
+  meta-wiki, with its own contract.
+
+Deltas from the simple path:
+
+1. **Allowlist selection, declared in config.** `sync-repo` projects
+   only the listed patterns (`README.md`, `docs/*.md`, the contract
+   files, `src/**/*.ts`, `prompts/*.md`, `package.json`). Anything not
+   listed is excluded by construction — unlisted subtrees are never
+   walked — so new directories, stray data-repo checkouts inside the
+   source, and any future wiki tree can never leak in. This is the
+   structural self-ingestion recursion guard: the projection cannot
+   contain a projection.
+2. **Verbatim, namespaced copy.** Files enter `raw/notes/<name>/`
+   byte-for-byte, subpaths preserved — code is truth, so the agent
+   reads the real file, never a summary. The manifest machinery
+   (hashes, incremental ingest, expungement) is reused unchanged.
+3. **Commit-SHA grounding.** The projection is made from a committed
+   tree only (a dirty source fails loudly), and the manifest records
+   the source repo's HEAD commit and root beside the per-file hashes.
+   The health check compares the recorded commit against the source
+   repo's current HEAD: a projection left behind announces itself as a
+   stale warning (`--fail-on-stale` makes it blocking).
+4. **Separate config, same machinery.** `sync-meta.json` names the repo
+   source; `settings-meta.yml` names the agent. `sync-vault` rejects a
+   config holding a repo source and `sync-repo` rejects a vault config,
+   so a wrong-pairing run fails loudly instead of mis-projecting.
+5. **The meta contract.** The meta data repo's `wiki/AGENTS.md` is not
+   the canonical contract: it is seeded (by `data:init --meta`) from
+   the code repo's `wiki/AGENTS.meta.md`, which replaces the
+   vault-specific rules with three of its own — describe, don't
+   prescribe (pages state what the code does; they never issue
+   instructions); code is truth (code and tests are authoritative;
+   prose disagreements become recorded contradictions, never silent
+   fixes); page granularity (pages for mechanisms and entry points,
+   never per-file résumés).
+
+Operating the instance (manual for the MVP; scheduling is a later
+config concern):
+
+```bash
+npm run data:init -- --meta sync-meta.json
+npm run sync-repo -- sync-meta.json
+node src/ingest/wiki-ingest.ts --settings settings-meta.yml \
+  ~/Lab/k-wiki-meta-data/raw
+npm run health -- ~/Lab/k-wiki-meta-data/raw
+```
+
+Every regeneration goes through the same git-diff review flow as any
+other wiki (Section 19), and the projection commit SHA lands in the
+meta wiki's log, so the wiki always states its own freshness.
 
 ### Changing Your Mind Later
 

@@ -1,0 +1,19 @@
+{
+  "dataRoot": "~/Lab/k-wiki-meta-data",
+  "vaults": [
+    {
+      "source": "repo",
+      "name": "k-wiki",
+      "root": "~/Lab/k-wiki",
+      "include": [
+        "README.md",
+        "AGENTS.md",
+        "wiki/AGENTS.md",
+        "package.json",
+        "docs/*.md",
+        "prompts/*.md",
+        "src/**/*.ts"
+      ]
+    }
+  ]
+}

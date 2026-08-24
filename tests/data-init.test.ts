@@ -75,7 +75,7 @@ describe("data:init CLI help", () => {
 
   it("prints the usage line for --help", async () => {
     expect((await runInitCli(["--help"])).out).toContain(
-      "init-data-repo [-h | --help] [--second-brain] [<config>]",
+      "init-data-repo [-h | --help] [--second-brain] [--meta] [<config>]",
     );
   });
 
@@ -168,6 +168,7 @@ async function makeCodeRepoFixture(): Promise<string> {
   await writeFile(join(dir, "raw", "notes", ".gitkeep"), "");
   await mkdir(join(dir, "wiki"), { recursive: true });
   await writeFile(join(dir, "wiki", "AGENTS.md"), "# wiki contract\n");
+  await writeFile(join(dir, "wiki", "AGENTS.meta.md"), "# meta contract\n");
   await writeFile(join(dir, "wiki", "index.md"), "# index\n");
   await git(dir, "init", "--quiet");
   await git(dir, "add", "-A");
@@ -545,4 +546,48 @@ describe("data:init import guard", () => {
     expect(out).toBe(`data:init: seeded ${join(repo, "data")}`);
     expect(existsSync(join(repo, "data", ".second-brain"))).toBe(true);
   });
+});
+
+describe("seedDataRepo meta contract (issue #74)", () => {
+  it("seeds the meta contract as wiki/AGENTS.md when meta is set", async () => {
+    const dataRoot = await makeTempDir();
+
+    await seedDataRepo({
+      configPath: await writeConfig(dataRoot),
+      repoRoot: await makeCodeRepoFixture(),
+      env: GIT_ENV,
+      meta: true,
+    });
+
+    expect(await readFile(join(dataRoot, "wiki/AGENTS.md"), "utf8")).toBe(
+      "# meta contract\n",
+    );
+  }, 20000);
+
+  it("never copies the canonical meta contract file into a seeded data repo", async () => {
+    const dataRoot = await makeTempDir();
+
+    await seedDataRepo({
+      configPath: await writeConfig(dataRoot),
+      repoRoot: await makeCodeRepoFixture(),
+      env: GIT_ENV,
+      meta: true,
+    });
+
+    expect(existsSync(join(dataRoot, "wiki/AGENTS.meta.md"))).toBe(false);
+  }, 20000);
+
+  it("keeps the canonical wiki contract and skips the meta template for an ordinary seed", async () => {
+    const dataRoot = await makeTempDir();
+
+    await seedDataRepo({
+      configPath: await writeConfig(dataRoot),
+      repoRoot: await makeCodeRepoFixture(),
+      env: GIT_ENV,
+    });
+
+    expect(await readFile(join(dataRoot, "wiki/AGENTS.md"), "utf8")).toBe(
+      "# wiki contract\n",
+    );
+  }, 20000);
 });

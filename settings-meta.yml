@@ -1,0 +1,10 @@
+# Agent configuration for the meta-wiki instance (issue #74).
+# Same shape as settings.yml; the wiki-ingest wrapper reads these
+# values and passes them to the agent CLI. This instance runs against
+# the meta data repo (k-wiki-meta-data), whose wiki/AGENTS.md is the
+# meta contract seeded by `data:init --meta`.
+
+command: pi        # agent CLI, run non-interactively in the data repo
+provider: zai      # passed as --provider; omit to use pi's default
+model: GLM-5.2     # passed as --model
+reasoning: high    # pi thinking level, passed as --thinking

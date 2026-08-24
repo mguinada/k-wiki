@@ -151,3 +151,4 @@ export async function collectFiles(
 
   return files.sort();
 }
+export const SYNC_REPO_SCRIPT = join(repoRoot, "src", "sync", "sync-repo.ts");
