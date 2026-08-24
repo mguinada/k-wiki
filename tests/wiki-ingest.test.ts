@@ -1399,6 +1399,53 @@ describe("runWikiIngest", () => {
     );
   });
 
+  it("leaves a data-repo .gitignore that already ignores the snapshot untouched", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const before =
+      "scratch/\n# wiki-ingest manifest snapshot: per-instance state, never committed (issue #112)\noutputs/last-ingested-manifest.json\n";
+
+    await writeFile(join(h.dataRoot, ".gitignore"), before);
+
+    await runWikiIngest(optionsFor(h));
+
+    expect(await readFile(join(h.dataRoot, ".gitignore"), "utf8")).toBe(before);
+  });
+
+  it("appends the snapshot ignore entry without adding a blank line after a terminated .gitignore", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    await writeFile(join(h.dataRoot, ".gitignore"), "scratch/\n");
+
+    await runWikiIngest(optionsFor(h));
+
+    expect(await readFile(join(h.dataRoot, ".gitignore"), "utf8")).toBe(
+      "scratch/\n# wiki-ingest manifest snapshot: per-instance state, never committed (issue #112)\noutputs/last-ingested-manifest.json\n",
+    );
+  });
+
+  it("creates the data-repo .gitignore with only the snapshot entry when none exists", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    await runWikiIngest(optionsFor(h));
+
+    expect(await readFile(join(h.dataRoot, ".gitignore"), "utf8")).toBe(
+      "# wiki-ingest manifest snapshot: per-instance state, never committed (issue #112)\noutputs/last-ingested-manifest.json\n",
+    );
+  });
+
+  it("treats a whitespace-padded snapshot entry line as already present", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const before = "scratch/\n  outputs/last-ingested-manifest.json  \n";
+
+    await writeFile(join(h.dataRoot, ".gitignore"), before);
+
+    await runWikiIngest(optionsFor(h));
+
+    expect(await readFile(join(h.dataRoot, ".gitignore"), "utf8")).toBe(
+      before,
+    );
+  });
+
   it("adopts a legacy wrapper snapshot when the data repo has none", async () => {
     const h = await makeHarness({ "a.md": "a2" });
 
