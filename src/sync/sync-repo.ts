@@ -5,7 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
 import { isMainModule, refuseTestWorker } from "../cli/is-main.ts";
-import { runGit } from "../data/init-data-repo.ts";
+import { runGit } from "../data/git.ts";
 import {
   loadSyncConfig,
   type RepoSourceConfig,

@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { createColors } from "picocolors";
 import { isMainModule, refuseTestWorker } from "../src/cli/is-main.ts";
-import { runGit } from "../src/data/init-data-repo.ts";
+import { runGit } from "../src/data/git.ts";
 import {
   isWikilinkEntry,
   listWikiPages,

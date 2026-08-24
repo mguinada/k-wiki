@@ -10,7 +10,7 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { runGit } from "../src/data/init-data-repo.ts";
+import { runGit } from "../src/data/git.ts";
 import { loadSyncConfig } from "../src/sync/config.ts";
 import { parseManifest } from "../src/sync/manifest.ts";
 import {
