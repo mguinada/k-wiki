@@ -213,6 +213,8 @@ export interface CrosslinksOptions {
   readonly domains?: readonly string[] | undefined;
   /** Progress sink (uncolored messages); default: silent. */
   readonly onProgress?: (message: string) => void;
+  /** Home dir for `~` expansion in domains; default: `os.homedir()`. */
+  readonly home?: string;
 }
 
 /**
@@ -233,7 +235,7 @@ export async function runCrosslinksStage(
   }
 
   const onProgress = options.onProgress ?? (() => {});
-  const domains = options.domains.map((dir) => expandHome(dir));
+  const domains = options.domains.map((dir) => expandHome(dir, options.home));
 
   onProgress(
     `wiki-sync: crosslinks — auditing against ${pluralized(domains.length, "domain wiki")}`,
@@ -765,7 +767,7 @@ export async function main(): Promise<void> {
     (text) => process.stderr.write(text),
     (text) => console.error(text),
     animated,
-    (text) => colors().dim(text),
+    colors(),
     [...AGENT_HEARTBEAT_PREFIX, LINT_HEARTBEAT_PREFIX],
   );
 

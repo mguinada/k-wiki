@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
+import { createColors } from "picocolors";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { runGit } from "../src/data/init-data-repo.ts";
 import {
@@ -1406,6 +1407,32 @@ describe("runWikiIngest", () => {
     ).toBe(true);
   });
 
+  it("the legacy-snapshot warning states the self-healing rewrite", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const messages: string[] = [];
+
+    await mkdir(h.outputsDir, { recursive: true });
+    await writeFile(
+      join(h.outputsDir, "last-ingested-manifest.json"),
+      serializeManifest(
+        manifestWith("Engineering", { "gone.md": entry("gone") }),
+      ),
+    );
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      onProgress: (message) => messages.push(message),
+    });
+
+    expect(
+      messages.some((message) =>
+        message.includes(
+          "rewrites the snapshot, so this warning will not repeat",
+        ),
+      ),
+    ).toBe(true);
+  });
+
   it("rejects a snapshot that is not valid JSON", async () => {
     const h = await makeHarness({ "a.md": "a" });
 
@@ -2519,7 +2546,10 @@ describe("spawnAgent", () => {
 });
 
 describe("createAgentProgressSink", () => {
-  const dim = (text: string) => `<${text}>`;
+  const tones = {
+    dim: (text: string) => `<${text}>`,
+    yellow: (text: string) => `[${text}]`,
+  };
 
   function makeSink(animated: boolean) {
     const written: string[] = [];
@@ -2528,7 +2558,7 @@ describe("createAgentProgressSink", () => {
       (text) => written.push(text),
       (text) => lines.push(text),
       animated,
-      dim,
+      tones,
     );
 
     return { sink, written, lines };
@@ -2541,6 +2571,36 @@ describe("createAgentProgressSink", () => {
 
     expect(written).toEqual([]);
     expect(lines).toEqual(["<wiki-ingest: agent finished>"]);
+  });
+
+  it("renders a WARNING-severity message yellow, not dim, when not animated", () => {
+    const { sink, lines } = makeSink(false);
+
+    sink.render("wiki-ingest: WARNING — snapshot is foreign");
+
+    expect(lines).toEqual(["[wiki-ingest: WARNING — snapshot is foreign]"]);
+  });
+
+  it("renders a WARNING-severity message yellow on the animated sink", () => {
+    const { sink, written } = makeSink(true);
+
+    sink.render("wiki-ingest: WARNING — snapshot is foreign");
+
+    expect(written).toEqual(["[wiki-ingest: WARNING — snapshot is foreign]\n"]);
+  });
+
+  it("renders a WARNING-severity message plain under NO_COLOR", () => {
+    const lines: string[] = [];
+    const sink = createAgentProgressSink(
+      () => {},
+      (text) => lines.push(text),
+      false,
+      createColors(false),
+    );
+
+    sink.render("wiki-ingest: WARNING — snapshot is foreign");
+
+    expect(lines).toEqual(["wiki-ingest: WARNING — snapshot is foreign"]);
   });
 
   it("keeps heartbeat messages on the animated line", () => {
@@ -3148,7 +3208,7 @@ describe("error causes and sink prefixes", () => {
       (text) => written.push(text),
       () => {},
       true,
-      (text) => text,
+      { dim: (text) => text, yellow: (text) => text },
       ["first-prefix:", "second-prefix:"],
     );
 
@@ -3163,7 +3223,7 @@ describe("error causes and sink prefixes", () => {
       (text) => written.push(text),
       () => {},
       true,
-      (text) => text,
+      { dim: (text) => text, yellow: (text) => text },
       "pfx:",
     );
 

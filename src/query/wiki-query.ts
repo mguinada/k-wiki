@@ -456,7 +456,7 @@ export async function main(): Promise<void> {
     (text) => process.stderr.write(text),
     (text) => console.error(text),
     animated,
-    (text) => colors.dim(text),
+    colors,
     QUERY_HEARTBEAT_PREFIX,
   );
 

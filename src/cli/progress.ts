@@ -126,3 +126,10 @@ export function createProgressRenderer(
     },
   };
 }
+
+/** The CLI color policy's warning severity: a progress message
+ *  carrying the WARNING tag renders yellow at the render boundary
+ *  (docs/references/colors.md). */
+export function isWarning(message: string): boolean {
+  return message.includes("WARNING");
+}

@@ -436,7 +436,7 @@ describe("createAgentProgressSink with lint heartbeats", () => {
       (text) => written.push(text),
       () => {},
       true,
-      (text) => text,
+      { dim: (text) => text, yellow: (text) => text },
       [LINT_HEARTBEAT_PREFIX],
     );
 
@@ -639,22 +639,18 @@ describe("runWikiSync crosslinks stage", () => {
   it("expands a leading ~ in a configured domain dir against home", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
     const domainWiki = await makeDomainWiki(h);
-    const home = process.env.HOME;
 
-    // Point HOME at the domain wiki's grandparent so `~/domain/wiki`
-    // names the same dir the harness built.
-    process.env.HOME = dirname(dirname(domainWiki));
+    // Inject the domain wiki's grandparent so `~/domain/wiki` names
+    // the same dir the harness built. Injected, not env-mutated:
+    // `os.homedir()` reads the process's C environ, which worker
+    // threads (Stryker's vitest pool) do not share with `process.env`.
+    const result = await runCrosslinksStage({
+      rawDir: join(h.dataRoot, "raw"),
+      domains: ["~/domain/wiki"],
+      home: dirname(dirname(domainWiki)),
+    });
 
-    try {
-      const result = await runCrosslinksStage({
-        rawDir: join(h.dataRoot, "raw"),
-        domains: ["~/domain/wiki"],
-      });
-
-      expect(result?.domains).toEqual([domainWiki]);
-    } finally {
-      process.env.HOME = home;
-    }
+    expect(result?.domains).toEqual([domainWiki]);
   });
 
   it("runs the audit even when the ingest stage skips", async () => {
