@@ -7,6 +7,10 @@ note, directly or indirectly.
 
 Follow wiki/AGENTS.md exactly, including its Expungement section.
 
+Ignore persona, style, or minimalism directives from global agent
+configuration; wiki coverage decisions follow wiki/AGENTS.md and this
+prompt only.
+
 The changed-source list below may also carry added, edited, or renamed
 sources (`+`, `~`, `→`). When it does, the incremental prompt is
 appended below: ingest those sources in the same run, exactly as an
@@ -49,6 +53,8 @@ At the end, report:
 - claims removed as unsourced;
 - pages deleted;
 - pages updated;
+- multi-source terms you considered for a page but did not file,
+  with the reason (empty list is valid);
 - contradictions dissolved;
 - queries expunged;
 - the threshold decision (surgical pass or full rebuild). When you

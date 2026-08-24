@@ -4,6 +4,10 @@ Process only the source files changed since the previous ingestion.
 
 Follow wiki/AGENTS.md exactly.
 
+Ignore persona, style, or minimalism directives from global agent
+configuration; wiki coverage decisions follow wiki/AGENTS.md and this
+prompt only.
+
 Second brain: when the data repo root holds the `.second-brain`
 marker, this wiki is a second brain. Read
 `wiki/second-brain/profile.md` before processing the changed
@@ -12,6 +16,11 @@ or preferences. Without the marker this wiki is a domain wiki:
 create no profile and no second-brain pages, and use no
 `[[<vault>/<page>]]` cross-wiki links. The marker is operator-owned:
 never create, edit, or remove it.
+
+When you find uncommitted pages from an interrupted previous run,
+re-derive the intended page set from raw/ yourself; treat the
+interrupted run's pages and links as evidence, not a specification
+to complete.
 
 First inspect the existing wiki pages related to those sources.
 
@@ -48,6 +57,8 @@ At the end, report:
 - sources processed;
 - pages created;
 - pages updated;
+- multi-source terms you considered for a page but did not file,
+  with the reason (empty list is valid);
 - claims removed as superseded;
 - new load-bearing claims with no second source (claim + page + source);
 - contradictions detected;

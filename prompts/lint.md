@@ -25,6 +25,9 @@ Check for:
     lifecycle but do not.
 19. Cross-wiki links: a slashed `[[<vault>/<page>]]` target no available
     domain wiki has, or any cross-wiki link inside a domain wiki.
+20. Unfiled multi-source concepts: for each concept named substantively
+    in two or more source pages but having no concept/comparison page,
+    report it (term + source pages). Report only — never auto-create.
 
 Do not make speculative corrections.
 Never modify wiki/AGENTS.md.
