@@ -2873,6 +2873,43 @@ describe("runWikiIngest --sources", () => {
     expect(prompt).not.toContain("new.md");
   });
 
+  it("keeps manifest changes pending after a scoped run", async () => {
+    const h = await makeHarness({
+      "a.md": "a",
+      "new.md": "added since snapshot",
+    });
+    await seedSnapshot(h, { "a.md": "a" });
+    const before = await readFile(h.snapshotPath, "utf8");
+
+    const result = await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md"],
+    });
+
+    expect(result.status).toBe("ran");
+    expect(await readFile(h.snapshotPath, "utf8")).toBe(before);
+  });
+
+  it("still ingests manifest changes pending behind a scoped run", async () => {
+    const h = await makeHarness({
+      "a.md": "a",
+      "new.md": "added since snapshot",
+    });
+    await seedSnapshot(h, { "a.md": "a" });
+
+    const scoped = await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md"],
+    });
+
+    expect(scoped.status).toBe("ran");
+
+    const pending = await runWikiIngest(optionsFor(h));
+
+    expect(pending.status).toBe("ran");
+    expect(invocation(h, 1).args.at(-1)).toContain("+ Engineering/new.md");
+  });
+
   it("rejects unknown paths naming every path joined with a comma", async () => {
     const h = await makeHarness({ "a.md": "a" });
     await seedSnapshot(h, { "a.md": "a" });
@@ -2937,7 +2974,7 @@ describe("runWikiIngest --sources", () => {
     ).rejects.toThrow(/run a full ingest first/);
   });
 
-  it("rewrites the snapshot idempotently on a successful scoped run", async () => {
+  it("leaves the snapshot untouched on a successful scoped run", async () => {
     const h = await makeHarness({ "a.md": "a" });
     await seedSnapshot(h, { "a.md": "a" });
     const before = await readFile(h.snapshotPath, "utf8");

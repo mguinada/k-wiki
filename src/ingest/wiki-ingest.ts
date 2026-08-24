@@ -1097,7 +1097,8 @@ export interface IngestOptions {
    *  the no-change skip; mode resolves to incremental (the snapshot
    *  precondition below guarantees a previous manifest, and the
    *  synthetic diff carries no removals). An empty list behaves as
-   *  an absent flag. */
+   *  an absent flag. A scoped run never advances the snapshot: it
+   *  does not claim the manifest diff was processed. */
   readonly sources?: readonly string[] | undefined;
 }
 
@@ -1267,8 +1268,10 @@ async function adoptLegacySnapshot(
 
 /**
  * One headless ingest run. The snapshot is written only after a
- * successful agent run, so a failure retries the same sources next
- * time instead of silently skipping them. A manifest diff with removed
+ * successful agent run without --sources, so a failure retries the
+ * same sources next time instead of silently skipping them; a
+ * scoped run never writes it, so pending manifest changes stay
+ * pending. A manifest diff with removed
  * entries routes to the expunge flow (issue #65); removed entries that
  * pair with equal-hash additions are renames and never route there.
  */
@@ -1483,8 +1486,11 @@ export async function runWikiIngest(
   const digest = formatDigest(run);
 
   await writeFile(digestPath, digest, "utf8");
-  await mkdir(dirname(snapshotPath), { recursive: true });
-  await writeManifest(snapshotPath, current, { snapshotFor: dataRoot });
+
+  if (explicitDiff === undefined) {
+    await mkdir(dirname(snapshotPath), { recursive: true });
+    await writeManifest(snapshotPath, current, { snapshotFor: dataRoot });
+  }
 
   return { status: "ran", mode, digestPath, digest, pages, diff };
 }
@@ -1540,7 +1546,10 @@ Switches and arguments:
                      Duplicates dedupe; the list sorts. The explicit
                      list replaces the manifest diff (every path a \`~\`
                      changed line), forces prompts/incremental.md, and
-                     bypasses the no-change skip. Requires a valid
+                     bypasses the no-change skip. Never advances the
+                     snapshot: the manifest diff stays pending for the
+                     next ordinary run, so the scoped run stays
+                     repeatable. Requires a valid
                      manifest snapshot for this data root; a missing or
                      foreign-stamped snapshot is an error:
                      run a full ingest first. Never touches raw/ or
@@ -1554,7 +1563,7 @@ What it writes:
   - wiki pages, by the agent, in the data repo (never raw/);
   - <dataRoot>/outputs/last-ingested-manifest.json — the manifest
     snapshot the next run diffs against (only after a successful
-    agent run), stamped with its data repo root: a snapshot stamped
+    agent run without --sources), stamped with its data repo root: a snapshot stamped
     for another instance — or an unstamped legacy one — is ignored
     with a loud warning and the run falls back to full mode (issue
     #95). A pre-#112 snapshot in this repo's outputs/ is adopted
