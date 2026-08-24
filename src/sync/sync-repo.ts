@@ -287,13 +287,9 @@ async function theRepoSource(
     );
   }
 
-  const [repo] = repos;
-
-  if (repo === undefined) {
-    throw new Error(`no repo source in ${configPath}; nothing to project`);
-  }
-
-  return repo;
+  // Length checks above guarantee exactly one; the cast satisfies
+  // noUncheckedIndexedAccess without an unreachable dead branch.
+  return repos[0] as RepoSourceConfig;
 }
 
 /** Read, hash, copy, and prune one repo namespace; mirrors sync-vault's

@@ -918,3 +918,191 @@ describe("checkRaw freshness (repo-as-source)", () => {
     expect(process.exitCode).toBeUndefined();
   });
 });
+
+describe("checkRaw freshness edges (issue #74)", () => {
+  const GIT_ENV = {
+    PATH: process.env.PATH,
+    GIT_AUTHOR_NAME: "k-wiki test",
+    GIT_AUTHOR_EMAIL: "test@example.com",
+    GIT_COMMITTER_NAME: "k-wiki test",
+    GIT_COMMITTER_EMAIL: "test@example.com",
+    HOME: process.env.HOME,
+  };
+
+  async function runHealthCli(
+    args: string[],
+  ): Promise<{ out: string; err: string }> {
+    const argv = process.argv;
+    const out: string[] = [];
+    const err: string[] = [];
+    const hadNoColor = process.env.NO_COLOR;
+
+    delete process.env.NO_COLOR;
+    process.argv = [...argv.slice(0, 2), ...args];
+
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) => err.push(parts.join(" ")));
+
+    try {
+      await main();
+    } finally {
+      process.argv = argv;
+
+      if (hadNoColor === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = hadNoColor;
+      }
+
+      logSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
+
+    return { out: out.join("\n"), err: err.join("\n") };
+  }
+
+  it("stays silent when the manifest stamps a commit but no root", async () => {
+    const rawDir = await makeRawDir();
+    const notes: VaultNotes = {
+      "note.md": { hash: hashOf(NOTE), last_synced: "2026-08-20T00:00:00Z" },
+    };
+
+    await mkdir(join(rawDir, "notes", "k-wiki"), { recursive: true });
+    await writeFile(join(rawDir, "notes", "k-wiki", "note.md"), NOTE);
+    await writeFile(
+      join(rawDir, "manifest.json"),
+      serializeManifest(
+        { vaults: { "k-wiki": notes } },
+        { source_commit: "a".repeat(40) },
+      ),
+    );
+
+    const report = await checkRaw(rawDir, { env: GIT_ENV });
+
+    expect(report.warnings).toEqual([]);
+    expect(report.stale).toBe(false);
+  });
+
+  it("stays silent when the manifest stamps a root but no commit", async () => {
+    const rawDir = await makeRawDir();
+    const notes: VaultNotes = {
+      "note.md": { hash: hashOf(NOTE), last_synced: "2026-08-20T00:00:00Z" },
+    };
+
+    await mkdir(join(rawDir, "notes", "k-wiki"), { recursive: true });
+    await writeFile(join(rawDir, "notes", "k-wiki", "note.md"), NOTE);
+    await writeFile(
+      join(rawDir, "manifest.json"),
+      serializeManifest(
+        { vaults: { "k-wiki": notes } },
+        { source_root: "/definitely/not/here" },
+      ),
+    );
+
+    const report = await checkRaw(rawDir, { env: GIT_ENV });
+
+    expect(report.warnings).toEqual([]);
+  });
+
+  it("skips freshness when the manifest is not valid JSON", async () => {
+    const rawDir = await makeRawDir();
+
+    await mkdir(join(rawDir, "notes"), { recursive: true });
+    await writeFile(join(rawDir, "manifest.json"), "{ not json");
+
+    const report = await checkRaw(rawDir, { env: GIT_ENV });
+
+    expect(report.healthy).toBe(false);
+    expect(report.warnings).toEqual([]);
+  });
+
+  it("never fails under --fail-on-stale for a projection without a manifest", async () => {
+    const rawDir = await makeRawDir();
+
+    await mkdir(join(rawDir, "notes"), { recursive: true });
+
+    const { out, err } = await runHealthCli(["--fail-on-stale", rawDir]);
+
+    expect(out).toContain("healthy: empty projection");
+    expect(err).toBe("");
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("never fails under --fail-on-stale for an unstamped vault manifest", async () => {
+    const rawDir = await makeRawDir();
+    const notes: VaultNotes = {
+      "note.md": { hash: hashOf(NOTE), last_synced: "2026-08-20T00:00:00Z" },
+    };
+
+    await mkdir(join(rawDir, "notes", "Engineering"), { recursive: true });
+    await writeFile(join(rawDir, "notes", "Engineering", "note.md"), NOTE);
+    await writeFile(
+      join(rawDir, "manifest.json"),
+      serializeManifest({ vaults: { Engineering: notes } }),
+    );
+
+    const { out, err } = await runHealthCli(["--fail-on-stale", rawDir]);
+
+    expect(out).toContain("healthy:");
+    expect(err).toBe("");
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("stays exit 0 under --fail-on-stale when freshness cannot be verified", async () => {
+    const rawDir = await makeRawDir();
+    const notes: VaultNotes = {
+      "note.md": { hash: hashOf(NOTE), last_synced: "2026-08-20T00:00:00Z" },
+    };
+
+    await mkdir(join(rawDir, "notes", "k-wiki"), { recursive: true });
+    await writeFile(join(rawDir, "notes", "k-wiki", "note.md"), NOTE);
+    await writeFile(
+      join(rawDir, "manifest.json"),
+      serializeManifest(
+        { vaults: { "k-wiki": notes } },
+        { source_commit: "a".repeat(40), source_root: join(rawDir, "gone") },
+      ),
+    );
+
+    const { err } = await runHealthCli(["--fail-on-stale", rawDir]);
+
+    expect(err).toContain("cannot verify freshness");
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("names both commits in the stale warning", async () => {
+    const rawDir = await makeRawDir();
+    const sourceRoot = join(rawDir, "source");
+
+    await mkdir(sourceRoot, { recursive: true });
+    await writeFile(join(sourceRoot, "note.md"), "body\n");
+    await runGit(sourceRoot, ["init", "--quiet"], GIT_ENV);
+    await runGit(sourceRoot, ["add", "-A"], GIT_ENV);
+    await runGit(sourceRoot, ["commit", "--quiet", "-m", "one"], GIT_ENV);
+    const { stdout } = await runGit(sourceRoot, ["rev-parse", "HEAD"], GIT_ENV);
+    const commit = stdout.trim();
+
+    const notes: VaultNotes = {
+      "note.md": { hash: hashOf(NOTE), last_synced: "2026-08-20T00:00:00Z" },
+    };
+
+    await mkdir(join(rawDir, "notes", "k-wiki"), { recursive: true });
+    await writeFile(join(rawDir, "notes", "k-wiki", "note.md"), NOTE);
+    await writeFile(
+      join(rawDir, "manifest.json"),
+      serializeManifest(
+        { vaults: { "k-wiki": notes } },
+        { source_commit: `${commit.slice(0, -1)}0`, source_root: sourceRoot },
+      ),
+    );
+
+    const report = await checkRaw(rawDir, { env: GIT_ENV });
+
+    expect(report.warnings[0]).toContain(commit.slice(0, 8));
+    expect(report.warnings[0]).toContain("re-run sync-repo");
+  });
+});

@@ -265,6 +265,7 @@ describe("listWikiPages", () => {
     await writeFile(join(root, "concepts", "a.md"), "a");
     await writeFile(join(root, "sources", "s.md"), "s");
     await writeFile(join(root, "AGENTS.md"), "# Contract");
+    await writeFile(join(root, "AGENTS.meta.md"), "# Meta contract");
     await writeFile(join(root, "concepts", "notes.txt"), "not markdown");
 
     expect(await listWikiPages(root)).toEqual([

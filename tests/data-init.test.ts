@@ -577,7 +577,7 @@ describe("seedDataRepo meta contract (issue #74)", () => {
     expect(existsSync(join(dataRoot, "wiki/AGENTS.meta.md"))).toBe(false);
   }, 20000);
 
-  it("keeps the canonical wiki contract for an ordinary seed", async () => {
+  it("keeps the canonical wiki contract and skips the meta template for an ordinary seed", async () => {
     const dataRoot = await makeTempDir();
 
     await seedDataRepo({

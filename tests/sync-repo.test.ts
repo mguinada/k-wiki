@@ -13,7 +13,11 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 import { runGit } from "../src/data/init-data-repo.ts";
 import { loadSyncConfig } from "../src/sync/config.ts";
 import { parseManifest } from "../src/sync/manifest.ts";
-import { compileAllowlistPattern, runRepoSync } from "../src/sync/sync-repo.ts";
+import {
+  compileAllowlistPattern,
+  runRepoSync,
+  selectRepoFiles,
+} from "../src/sync/sync-repo.ts";
 
 /**
  * sync-repo unit tests (issue #74): the repo-as-source adapter. A real
@@ -338,6 +342,7 @@ describe("runRepoSync first run", () => {
 
     expect(report.source).toBe(NAME);
     expect(report.commit).toBe(await head(ws.sourceRoot));
+    expect(report.candidates).toBe(8);
     expect(report.selected).toBe(SELECTED.length);
     expect([...report.copied].sort()).toEqual(SELECTED);
     expect(report.removed).toEqual([]);
@@ -646,5 +651,252 @@ describe("shipped sync-meta.json (issue #74)", () => {
     expect(matches("scripts/check-links.ts")).toBe(false);
     expect(matches("node_modules/vitest/index.js")).toBe(false);
     expect(matches("k-wiki-meta-data/wiki/index.md")).toBe(false);
+  });
+});
+
+describe("compileAllowlistPattern multi-segment literals", () => {
+  it("matches a two-segment exact pattern only at that path", () => {
+    const pattern = compileAllowlistPattern("docs/guide.md");
+
+    expect(pattern.test("docs/guide.md")).toBe(true);
+    expect(pattern.test("docsguide.md")).toBe(false);
+    expect(pattern.test("docs/guide.mdx")).toBe(false);
+  });
+});
+
+describe("selectRepoFiles walker gaps", () => {
+  it("selects a mid-path single star at exactly one directory level", async () => {
+    const dir = await makeTempDir();
+    const root = await makeSourceRepo(dir);
+
+    await put(root, "src/pkg/one.ts", "one\n");
+    await put(root, "src/pkg/deeper/two.ts", "two\n");
+    await runGit(root, ["add", "-A"], GIT_ENV);
+    await runGit(root, ["commit", "--quiet", "-m", "more"], GIT_ENV);
+
+    const { selected } = await selectRepoFiles(root, ["src/*/one.ts"]);
+
+    expect(selected).toEqual(["src/pkg/one.ts"]);
+  });
+
+  it("skips a missing allowlisted exact file without failing", async () => {
+    const dir = await makeTempDir();
+    const root = await makeSourceRepo(dir);
+
+    const { selected } = await selectRepoFiles(root, [
+      "README.md",
+      "ABSENT.md",
+    ]);
+
+    expect(selected).toEqual(["README.md"]);
+  });
+
+  it("skips .git and node_modules during a repository-root walk", async () => {
+    const dir = await makeTempDir();
+    const root = await makeSourceRepo(dir);
+
+    await put(root, "node_modules/x/hidden.md", "hidden\n");
+    await put(root, ".git/HEAD.md", "hidden\n");
+    await put(root, "loose.md", "loose\n");
+
+    const { selected } = await selectRepoFiles(root, ["**/*.md"]);
+
+    expect(selected).toContain("README.md");
+    expect(selected).toContain("AGENTS.md");
+    expect(selected).toContain("docs/guide.md");
+    expect(selected).toContain("loose.md");
+    expect(selected.some((path) => path.startsWith("node_modules/"))).toBe(
+      false,
+    );
+    expect(selected.some((path) => path.startsWith(".git/"))).toBe(false);
+  });
+});
+
+describe("runRepoSync mixed-source configs", () => {
+  it("rejects a config mixing vault and repo sources on the vault entry", async () => {
+    const dir = await makeTempDir();
+    const sourceRoot = await makeSourceRepo(dir);
+    const configPath = join(dir, "sync.json");
+
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        vaults: [
+          {
+            source: "repo",
+            name: NAME,
+            root: sourceRoot,
+            include: ["README.md"],
+          },
+          {
+            name: "Engineering",
+            root: join(dir, "vault"),
+            exclude: "wiki:false",
+          },
+        ],
+      }),
+      "utf8",
+    );
+
+    await expect(
+      runRepoSync({ configPath, rawDir: join(dir, "raw"), env: GIT_ENV }),
+    ).rejects.toThrow(/"Engineering" is a vault source/);
+  });
+
+  it("names the count when several repo sources are configured", async () => {
+    const dir = await makeTempDir();
+    const sourceRoot = await makeSourceRepo(dir);
+    const configPath = join(dir, "sync.json");
+
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        vaults: [
+          { source: "repo", name: "one", root: sourceRoot, include: ["*.md"] },
+          { source: "repo", name: "two", root: sourceRoot, include: ["*.ts"] },
+        ],
+      }),
+      "utf8",
+    );
+
+    await expect(
+      runRepoSync({ configPath, rawDir: join(dir, "raw"), env: GIT_ENV }),
+    ).rejects.toThrow(/got 2/);
+  });
+});
+
+describe("sync-repo CLI main", () => {
+  interface Captured {
+    out: string;
+    err: string;
+  }
+
+  async function runMainCli(args: string[]): Promise<Captured> {
+    const { main } = await import("../src/sync/sync-repo.ts");
+    const argv = process.argv;
+    const out: string[] = [];
+    const err: string[] = [];
+    const hadNoColor = process.env.NO_COLOR;
+
+    process.env.NO_COLOR = "1";
+    process.argv = [...argv.slice(0, 2), ...args];
+
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) => err.push(parts.join(" ")));
+
+    try {
+      await main();
+    } finally {
+      process.argv = argv;
+
+      if (hadNoColor === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = hadNoColor;
+      }
+
+      logSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
+
+    return { out: out.join("\n"), err: err.join("\n") };
+  }
+
+  it("prints the projection report with the source commit on success", async () => {
+    const ws = await makeWorkspace();
+    const result = await runMainCli([ws.configPath, ws.rawDir]);
+
+    expect(result.out).toContain("source repo at commit ");
+    expect(result.out).toContain(
+      `vault "k-wiki": 7 selected, 7 copied, 0 unchanged, 0 removed`,
+    );
+    expect(result.out).toContain("sync complete: 7 copied");
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("exits 1 with a red error line when the config holds no repo source", async () => {
+    const dir = await makeTempDir();
+    const configPath = join(dir, "sync.json");
+
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        vaults: [{ name: "Engineering", root: dir, exclude: "wiki:false" }],
+      }),
+      "utf8",
+    );
+
+    const result = await runMainCli([configPath, join(dir, "raw")]);
+
+    expect(result.err).toContain("sync-repo:");
+    expect(result.err).toContain("sync-vault");
+    expect(process.exitCode).toBe(1);
+    process.exitCode = undefined;
+  });
+
+  it("bolds the repo name of progress lines at the render boundary", async () => {
+    const ws = await makeWorkspace();
+    const hadNoColor = process.env.NO_COLOR;
+
+    delete process.env.NO_COLOR;
+
+    const argv = process.argv;
+    const err: string[] = [];
+
+    process.argv = [...argv.slice(0, 2), ws.configPath, ws.rawDir];
+
+    const { main } = await import("../src/sync/sync-repo.ts");
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) => err.push(parts.join(" ")));
+
+    try {
+      await main();
+    } finally {
+      process.argv = argv;
+      logSpy.mockRestore();
+      errorSpy.mockRestore();
+
+      if (hadNoColor !== undefined) {
+        process.env.NO_COLOR = hadNoColor;
+      }
+    }
+
+    const bold = "\u001b[1m";
+    const reset = "\u001b[22m";
+
+    expect(err.join("\n")).toContain(`repo ${bold}"k-wiki"${reset}:`);
+  });
+});
+
+describe("selectRepoFiles error paths", () => {
+  it("rethrows a walk error that is not a missing directory", async () => {
+    const dir = await makeTempDir();
+    const root = await makeSourceRepo(dir);
+
+    await expect(
+      selectRepoFiles(root, ["docs/guide.md/**/*.md"]),
+    ).rejects.toThrow();
+  });
+});
+
+describe("runRepoSync inaccessible roots", () => {
+  it("rejects a source root that does not exist", async () => {
+    const dir = await makeTempDir();
+    const configPath = await writeConfig(dir, {
+      source: "repo",
+      name: NAME,
+      root: join(dir, "missing"),
+      include: ALLOWLIST,
+    });
+
+    await expect(
+      runRepoSync({ configPath, rawDir: join(dir, "raw"), env: GIT_ENV }),
+    ).rejects.toThrow(/is not accessible/);
   });
 });

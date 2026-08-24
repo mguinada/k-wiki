@@ -3,8 +3,11 @@
   "testRunner": "vitest",
   "mutate": ["src/**/*.ts"],
   "incremental": true,
-  "vitest": { "related": false },
+  "vitest": {
+    "related": false
+  },
   "reporters": ["html", "clear-text", "json"],
   "ignorePatterns": ["tsconfig.json", ".claude"],
-  "dryRunTimeoutMinutes": 30
+  "dryRunTimeoutMinutes": 30,
+  "timeoutMS": 30000
 }
