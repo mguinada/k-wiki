@@ -39,6 +39,7 @@ who may write it:
 |---|---|---|
 | `AGENTS.md` (root) | Dev agent, conventions block only | Router and shared invariants are human-only |
 | `wiki/AGENTS.md` | Nobody during wiki operations | Schema changes are deliberate: proposed in a development/review session, landed as a human-approved commit |
+| `wiki/AGENTS.meta.md` | Nobody during wiki operations | Canonical meta contract; same deliberate, human-approved change path as `wiki/AGENTS.md` |
 
 Two principles govern this:
 
