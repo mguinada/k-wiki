@@ -37,7 +37,7 @@ Each subagent sees only its task text, so the task is self-contained. Template (
 
 > You are the kickoff agent for issue #<N> (<url>) in <nameWithOwner>. Check blockers, create the worktree, start a fresh pi main agent in it, hand it the implementation work, confirm pickup, and report back. Steps:
 >
-> 1. Check blockers as do-gh-issue step 3 does: the issue's native `blockedBy` relationships, then "blocked by #M" mentions in its body; resolve each blocker's state. An open blocker → report `#<N> | blocked | blocked by #<M> (open)` and end — create nothing (no worktree, no branch, no pane).
+> 1. Check blockers: the issue's native `blockedBy` relationships, then "blocked by #M" mentions in its body; resolve each blocker's state. An open blocker → report `#<N> | blocked | blocked by #<M> (open)` and end — create nothing (no worktree, no branch, no pane).
 > 2. `herdr worktree create --cwd "$PWD" --branch "issue-<N>-<slug>" --base "origin/<default-branch>" --no-focus` — the worktree directory takes the branch name. Parse the workspace, tab, and pane IDs from the JSON response; never guess them.
 > 3. `herdr agent start "issue-<N>" --kind pi --pane <pane-id>` — this invokes pi in the worktree pane: the fresh main agent.
 > 4. Submit the work without `--wait`:
