@@ -5,7 +5,11 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
 import { isMainModule } from "../cli/is-main.ts";
-import { createProgressRenderer, formatDuration, isWarning } from "../cli/progress.ts";
+import {
+  createProgressRenderer,
+  formatDuration,
+  isWarning,
+} from "../cli/progress.ts";
 import { runGit } from "../data/init-data-repo.ts";
 import {
   isPlainObject,
