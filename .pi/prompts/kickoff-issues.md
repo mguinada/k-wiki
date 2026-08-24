@@ -22,7 +22,7 @@ Criteria: $ARGUMENTS
 
 ## 3. Kick off — all issues, no waiting between launches
 
-If a `subagent` tool is available, launch one `delegate` per issue in a single parallel fan-out (one `subagent` call, `workflowScript` + `async: true`, `isolation: none`, key `issue-<N>`); otherwise run the same three steps yourself, back-to-back. Per issue:
+With two or more issues and a `subagent` tool available, launch one `delegate` per issue in a single parallel fan-out (one `subagent` call, `workflowScript` + `async: true`, `isolation: none`, key `issue-<N>`); with exactly one issue — or no `subagent` tool — run the same three steps yourself, back-to-back (at N=1 the delegate only adds a failure mode: a hung child stalls a ~10s procedure, with no parallelism payoff). Per issue:
 
 1. `herdr worktree create --cwd "$PWD" --branch "issue-<N>-<slug>" --base "origin/<default-branch>" --no-focus` — parse workspace/tab/pane IDs from the JSON, never guess.
 2. `herdr agent start "issue-<N>" --kind pi --pane <pane-id>`
