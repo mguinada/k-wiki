@@ -699,8 +699,9 @@ What you see:
   direct set;
 - the digest carries an **Expunge direct set** section and a **pages
 deleted** category, plus the agent's report: claims removed, pages
-deleted/updated, contradictions dissolved, queries expunged, and the
-threshold decision;
+deleted/updated, multi-source terms considered for a page but not
+filed (with reasons), contradictions dissolved, queries expunged, and
+the threshold decision;
 - when the affected set exceeded roughly ⅓ of the wiki, the agent
   rebuilds instead and the digest carries the bolded line
   **Threshold exceeded — full rebuild executed; expect a large diff
