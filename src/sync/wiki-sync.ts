@@ -16,8 +16,10 @@ import {
 import {
   AGENT_HEARTBEAT_PREFIX,
   type AgentRunner,
+  agentArgs,
   createAgentProgressSink,
   type IngestResult,
+  isolationLabel,
   loadAgentSettings,
   readPrompt,
   runWikiIngest,
@@ -116,15 +118,7 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
   const promptText = (
     await readPrompt(join(options.promptsDir, "lint.md"))
   ).replaceAll("outputs/lint-<YYYY-MM-DD>.md", reportPath);
-  const args = [
-    ...(settings.provider ? ["--provider", settings.provider] : []),
-    "--model",
-    settings.model,
-    "--thinking",
-    settings.reasoning,
-    "--print",
-    promptText,
-  ];
+  const args = agentArgs(settings, promptText);
   const runAgent = options.runAgent ?? spawnAgent;
   const pre = await capturePreRunState(dataRoot, env);
 
@@ -133,7 +127,7 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
     : "";
 
   onProgress(
-    `wiki-sync: lint — invoking agent: ${settings.command}${providerFlag} --model ${settings.model} --thinking ${settings.reasoning}`,
+    `wiki-sync: lint — invoking agent: ${settings.command}${providerFlag} --model ${settings.model} --thinking ${settings.reasoning} (${isolationLabel(settings)})`,
   );
 
   const startedAt = now().getTime();
@@ -633,6 +627,11 @@ command only chains them.
                      reasoning) for both agent stages — ingest and
                      lint — and the optional secondBrain.domains list
                      of the crosslink stage. Provider is optional.
+                     isolate (true by default, false to opt out) adds
+                     the pi isolation flags --no-context-files
+                     --no-extensions --no-skills to both agent runs
+                     so global agent config cannot leak in (issue
+                     #118).
                      Default: the repo's settings.yml.
   --outputs <dir>    Where the ingest digest (runs/<timestamp>.md) and
                      the manifest snapshot go — the code repo's
