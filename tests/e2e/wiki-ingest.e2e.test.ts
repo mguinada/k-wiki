@@ -62,6 +62,10 @@ if (prompt === undefined || prompt === "") {
 
 await mkdir(join(process.cwd(), "outputs"), { recursive: true });
 await writeFile(join(process.cwd(), "outputs", "stub-prompt.txt"), prompt);
+await writeFile(
+  join(process.cwd(), "outputs", "stub-argv.txt"),
+  process.argv.slice(2).join("\\n"),
+);
 await mkdir(join(process.cwd(), "wiki", "concepts"), { recursive: true });
 await writeFile(
   join(process.cwd(), "wiki", "concepts", "stub.md"),
@@ -255,6 +259,22 @@ describe("wiki-ingest e2e", () => {
     expect(prompt).not.toContain(
       "Changed sources since the previous ingestion",
     );
+  });
+
+  it("passes the pi isolation flags on the child argv", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag" });
+
+    await ingest(repo);
+
+    const argv = (
+      await readFile(join(repo.outputsDir, "stub-argv.txt"), "utf8")
+    ).split("\n");
+
+    expect(argv.slice(0, 3)).toEqual([
+      "--no-context-files",
+      "--no-extensions",
+      "--no-skills",
+    ]);
   });
 
   it("persists the digest and the manifest snapshot", async () => {

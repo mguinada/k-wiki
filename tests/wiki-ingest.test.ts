@@ -10,11 +10,13 @@ import { runGit } from "../src/data/init-data-repo.ts";
 import {
   type AgentRunner,
   type AgentSettings,
+  agentArgs,
   composeExpungePrompt,
   composePrompt,
   createAgentProgressSink,
   diffManifests,
   directSetForRemovals,
+  formatAgentInvocation,
   formatDigest,
   type IngestRun,
   loadAgentSettings,
@@ -81,6 +83,42 @@ describe("parseSettings", () => {
     );
 
     expect(settings.provider).toBe("zai");
+  });
+
+  it("parses an explicit isolate: true setting", () => {
+    const settings = parseSettings(
+      "command: pi\nmodel: m\nreasoning: h\nisolate: true\n",
+      "s",
+    );
+
+    expect(settings.isolate).toBe(true);
+  });
+
+  it("parses an explicit isolate: false opt-out", () => {
+    const settings = parseSettings(
+      "command: pi\nmodel: m\nreasoning: h\nisolate: false\n",
+      "s",
+    );
+
+    expect(settings.isolate).toBe(false);
+  });
+
+  it("leaves isolate unset when the key is absent (isolated by default)", () => {
+    const settings = parseSettings(
+      "command: pi\nmodel: m\nreasoning: h\n",
+      "s",
+    );
+
+    expect(settings.isolate).toBeUndefined();
+  });
+
+  it("rejects a non-boolean isolate value", () => {
+    expect(() =>
+      parseSettings(
+        "command: pi\nmodel: m\nreasoning: h\nisolate: maybe\n",
+        "s",
+      ),
+    ).toThrow('setting "isolate" must be true or false');
   });
 
   it("unquotes single-quoted values", () => {
@@ -239,6 +277,87 @@ describe("parseSettings", () => {
     expect(() => parseSettings("command: pi\n", "my-settings.yml")).toThrow(
       "my-settings.yml",
     );
+  });
+});
+
+describe("agentArgs", () => {
+  it("prepends the pi isolation flags by default", () => {
+    const args = agentArgs(
+      { command: "pi", model: "GLM-5.2", reasoning: "high" },
+      "PROMPT",
+    );
+
+    expect(args.slice(0, 3)).toEqual([
+      "--no-context-files",
+      "--no-extensions",
+      "--no-skills",
+    ]);
+  });
+
+  it("prepends the pi isolation flags on an explicit isolate: true", () => {
+    const args = agentArgs(
+      { command: "pi", model: "GLM-5.2", reasoning: "high", isolate: true },
+      "PROMPT",
+    );
+
+    expect(args.slice(0, 3)).toEqual([
+      "--no-context-files",
+      "--no-extensions",
+      "--no-skills",
+    ]);
+  });
+
+  it("keeps the isolation flags ahead of the provider flag", () => {
+    const args = agentArgs(
+      { command: "pi", model: "m", reasoning: "h", provider: "zai" },
+      "PROMPT",
+    );
+
+    expect(args.slice(0, 5)).toEqual([
+      "--no-context-files",
+      "--no-extensions",
+      "--no-skills",
+      "--provider",
+      "zai",
+    ]);
+  });
+
+  it("builds the exact pre-isolation argv on an isolate: false opt-out", () => {
+    const args = agentArgs(
+      { command: "pi", model: "GLM-5.2", reasoning: "high", isolate: false },
+      "PROMPT",
+    );
+
+    expect(args).toEqual([
+      "--model",
+      "GLM-5.2",
+      "--thinking",
+      "high",
+      "--print",
+      "PROMPT",
+    ]);
+  });
+
+  it("carries the prompt as the --print payload in every mode", () => {
+    const args = agentArgs(
+      { command: "pi", model: "m", reasoning: "h", isolate: false },
+      "THE PROMPT",
+    );
+
+    expect(args[args.indexOf("--print") + 1]).toBe("THE PROMPT");
+  });
+});
+
+describe("formatAgentInvocation", () => {
+  it("renders the command, provider, model, reasoning, and isolation state", () => {
+    expect(
+      formatAgentInvocation({
+        command: "pi",
+        model: "GLM-5.2",
+        reasoning: "high",
+        provider: "zai",
+      }),
+    ).toBe("pi --provider zai --model GLM-5.2 --thinking high (isolated)");
   });
 });
 
@@ -691,6 +810,20 @@ describe("formatDigest", () => {
     expect(digest).toContain("provider `zai`");
   });
 
+  it("records the isolation state on the agent line", () => {
+    expect(formatDigest(digestRun())).toContain("· isolated");
+  });
+
+  it("records an isolate: false opt-out on the agent line", () => {
+    const digest = formatDigest(
+      digestRun({
+        settings: { ...digestRun().settings, isolate: false },
+      }),
+    );
+
+    expect(digest).toContain("· not isolated");
+  });
+
   it("opens with the digest heading and run timestamp", () => {
     expect(formatDigest(digestRun())).toContain(
       "# Wiki ingest digest — 2026-08-20T17:30:00.000Z",
@@ -951,7 +1084,7 @@ describe("formatDigest", () => {
       [
         "# Wiki ingest digest — 2026-08-20T17:30:00.000Z",
         "",
-        "- **Agent:** `pi` · model `GLM-5.2` · reasoning `high`",
+        "- **Agent:** `pi` · model `GLM-5.2` · reasoning `high` · isolated",
         "- **Mode:** incremental · prompt `prompts/incremental.md`",
         "- **Sources:** 1 added, 1 changed, 1 removed, 0 renamed",
         "- **Wiki pages:** 1 created, 2 updated, 1 deleted",
@@ -1334,6 +1467,39 @@ describe("runWikiIngest", () => {
     expect(args).toContain("--thinking");
     expect(args[args.indexOf("--thinking") + 1]).toBe("high");
     expect(args).toContain("--print");
+  });
+
+  it("passes the pi isolation flags by default", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    await runWikiIngest(optionsFor(h));
+
+    const args = invocation(h, 0).args;
+
+    expect(
+      ["--no-context-files", "--no-extensions", "--no-skills"].every((flag) =>
+        args.includes(flag),
+      ),
+    ).toBe(true);
+  });
+
+  it("omits the isolation flags on an isolate: false opt-out", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    await writeFile(
+      h.settingsPath,
+      "command: pi\nmodel: GLM-5.2\nreasoning: high\nisolate: false\n",
+    );
+    await runWikiIngest(optionsFor(h));
+
+    expect(invocation(h, 0).args).toEqual([
+      "--model",
+      "GLM-5.2",
+      "--thinking",
+      "high",
+      "--print",
+      "FULL PROMPT",
+    ]);
   });
 
   it("writes the manifest snapshot the next run diffs against", async () => {
@@ -2309,6 +2475,20 @@ describe("runWikiIngest", () => {
       "wiki-ingest: agent finished",
       "wiki-ingest: guardrails passed",
     ]);
+  });
+
+  it("states the isolation state on the invoking-agent progress line", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const messages: string[] = [];
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      onProgress: (message) => messages.push(message),
+    });
+
+    expect(messages.join("\n")).toContain(
+      "invoking agent: pi --model GLM-5.2 --thinking high (isolated)",
+    );
   });
 
   it("emits a heartbeat while a slow agent run is in flight", async () => {

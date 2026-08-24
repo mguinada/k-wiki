@@ -988,6 +988,20 @@ describe("runWikiSync progress and invocation contract", () => {
     }
   });
 
+  it("states the isolation state on the lint invoking-agent progress line", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const progress: string[] = [];
+
+    await runWikiSync({
+      ...optionsFor(h),
+      onProgress: (message) => progress.push(message),
+    });
+
+    expect(progress.join("\n")).toContain(
+      "wiki-sync: lint — invoking agent: pi --model GLM-5.2 --thinking high (isolated)",
+    );
+  });
+
   it("passes --provider to the lint agent when the setting is present", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 
@@ -1014,6 +1028,38 @@ describe("runWikiSync progress and invocation contract", () => {
     expect(lintArgs).toContain("GLM-5.2");
     expect(lintArgs).toContain("--thinking");
     expect(lintArgs).toContain("high");
+  });
+
+  it("passes the pi isolation flags to the lint agent by default", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    await runWikiSync(optionsFor(h));
+
+    const lintArgs = h.argRecords[1] ?? [];
+
+    expect(
+      ["--no-context-files", "--no-extensions", "--no-skills"].every((flag) =>
+        lintArgs.includes(flag),
+      ),
+    ).toBe(true);
+  });
+
+  it("omits the isolation flags on an isolate: false opt-out", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    await writeFile(
+      h.settingsPath,
+      "command: pi\nmodel: GLM-5.2\nreasoning: high\nisolate: false\n",
+    );
+    await runWikiSync(optionsFor(h));
+
+    for (const args of h.argRecords) {
+      expect(
+        ["--no-context-files", "--no-extensions", "--no-skills"].some((flag) =>
+          args.includes(flag),
+        ),
+      ).toBe(false);
+    }
   });
 
   it("stops the heartbeat when the lint agent completes", async () => {
