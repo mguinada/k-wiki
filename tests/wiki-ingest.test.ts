@@ -1441,9 +1441,7 @@ describe("runWikiIngest", () => {
 
     await runWikiIngest(optionsFor(h));
 
-    expect(await readFile(join(h.dataRoot, ".gitignore"), "utf8")).toBe(
-      before,
-    );
+    expect(await readFile(join(h.dataRoot, ".gitignore"), "utf8")).toBe(before);
   });
 
   it("adopts a legacy wrapper snapshot when the data repo has none", async () => {
