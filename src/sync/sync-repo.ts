@@ -23,9 +23,9 @@ import {
 import {
   formatReport,
   listNamespaceDirs,
+  type ProjectedNote,
   projectNotes,
   reportColors,
-  type ProjectedNote,
 } from "./sync-vault.ts";
 
 /**
