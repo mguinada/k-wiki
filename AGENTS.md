@@ -68,10 +68,15 @@ until all three pass. Run them before every handoff.
   the synthetic fixture vault in temp workspaces under `.e2e-tmp/`
   (gitignored), wiki-ingest against a stub agent in temp data repos
   (second-brain runs included: profile ingest, cross-wiki validation,
-  and the reverted domain→second-brain leak), and wiki-sync through
+  and the reverted domain→second-brain leak), sync-repo through
+  repo-as-source projection runs in temp source repos (verbatim copy,
+  commit stamping, dirty-source and wrong-config failures, health
+  freshness), and wiki-sync through
   full-cycle, no-change, failure, and guardrail-revert runs.
-- `npm run health [-- <raw-dir>]` — coherence check of a `raw/`
-  projection (default: the repo's `raw/`); read-only, no vault access.
+- `npm run health [-- <raw-dir>] [--fail-on-stale]` — coherence check
+  of a `raw/` projection (default: the repo's `raw/`); a repo-sourced
+  projection is also freshness-checked (`--fail-on-stale` makes a
+  stale one exit 1); read-only, no vault access.
 
 `npm run format` (`biome format --write .`) is the fix command for
 formatting differences reported by `npm run lint`; it is not a gate.
