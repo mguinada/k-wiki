@@ -94,8 +94,8 @@ story ([details](#running-the-full-cycle-wiki-sync)). The separate
 commands — `npm run sync-vault`, `npm run wiki-ingest` — stay
 available for debugging (guide §8).
 
-Both checks take a directory explicitly: their defaults are this
-repo's skeleton trees, not the data repo at `dataRoot`.
+These checks take their directories explicitly: their defaults are
+this repo's skeleton trees, not the data repo at `dataRoot`.
 
 ### 2. Several vaults → several wikis
 
