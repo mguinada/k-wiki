@@ -67,6 +67,11 @@ export interface AgentSettings {
   readonly reasoning: string;
   /** Passed to the agent as `--provider` when set. */
   readonly provider?: string;
+  /** False opts out of the pi isolation flags (issue #118);
+   *  unset means isolated — the safe default. Agent-agnostic: the
+   *  setting becomes flags at the spawn site (agentArgs), so a
+   *  non-pi agent's settings simply omit it or opt out. */
+  readonly isolate?: boolean;
   /** Domain wiki dirs for the cycle's crosslink audit (wiki-sync,
    *  issue #96); undefined leaves the stage out entirely. Paths are
    *  as written — `~` expands at use, like every settings value. */
@@ -74,7 +79,7 @@ export interface AgentSettings {
 }
 
 const REQUIRED_KEYS = ["command", "model", "reasoning"] as const;
-const OPTIONAL_KEYS = ["provider"] as const;
+const OPTIONAL_KEYS = ["provider", "isolate"] as const;
 const DOMAIN_KEY = "secondBrain.domains";
 const SETTING_KEYS = [...REQUIRED_KEYS, ...OPTIONAL_KEYS] as const;
 
@@ -190,14 +195,68 @@ export function parseSettings(text: string, origin: string): AgentSettings {
   }
 
   const provider = values.get("provider");
+  const isolate = values.get("isolate");
+
+  if (isolate !== undefined && isolate !== "true" && isolate !== "false") {
+    throw new Error(
+      `invalid agent settings at ${origin}: setting ${JSON.stringify("isolate")} must be true or false, got ${JSON.stringify(isolate)}`,
+    );
+  }
 
   return {
     command: values.get("command") ?? "",
     model: values.get("model") ?? "",
     reasoning: values.get("reasoning") ?? "",
     ...(provider !== undefined && { provider }),
+    ...(isolate !== undefined && { isolate: isolate === "true" }),
     ...(domains !== undefined && { secondBrainDomains: domains }),
   };
+}
+
+/** The pi isolation flags (issue #118): mechanically disable every
+ *  ambient configuration source — context files (AGENTS.md/CLAUDE.md
+ *  discovery), extensions, skills — so a spawned run cannot inherit
+ *  globally installed persona, tools, or prompts. Available since
+ *  pi 0.67.4. */
+export const ISOLATION_FLAGS = [
+  "--no-context-files",
+  "--no-extensions",
+  "--no-skills",
+] as const;
+
+/** The non-interactive agent argv (issue #118): the isolation flags
+ *  (unless the operator opted out with `isolate: false`), then the
+ *  settings' provider, model, and reasoning, with the prompt as the
+ *  `--print` payload. With `isolate: false` the argv is
+ *  byte-identical to the pre-isolation one. */
+export function agentArgs(settings: AgentSettings, prompt: string): string[] {
+  return [
+    ...(settings.isolate === false ? [] : ISOLATION_FLAGS),
+    ...(settings.provider ? ["--provider", settings.provider] : []),
+    "--model",
+    settings.model,
+    "--thinking",
+    settings.reasoning,
+    "--print",
+    prompt,
+  ];
+}
+
+/** The isolation state of a spawned run, for progress and digest
+ *  lines (issue #118): `isolated` unless the operator opted out. */
+function isolationLabel(settings: AgentSettings): string {
+  return settings.isolate === false ? "not isolated" : "isolated";
+}
+
+/** The `command [--provider P] --model M --thinking T (state)` tail
+ *  the spawn sites print when invoking the agent (issue #118) — the
+ *  auditable counterpart of agentArgs, one source for both. */
+export function formatAgentInvocation(settings: AgentSettings): string {
+  const providerFlag = settings.provider
+    ? ` --provider ${settings.provider}`
+    : "";
+
+  return `${settings.command}${providerFlag} --model ${settings.model} --thinking ${settings.reasoning} (${isolationLabel(settings)})`;
 }
 
 /** Read and parse the agent settings file; missing values are errors. */
@@ -665,7 +724,7 @@ export function formatDigest(run: IngestRun): string {
   const lines: string[] = [
     `# Wiki ingest digest${label} — ${run.startedAt.toISOString()}`,
     "",
-    `- **Agent:** \`${settings.command}\`${settings.provider ? ` · provider \`${settings.provider}\`` : ""} · model \`${settings.model}\` · reasoning \`${settings.reasoning}\``,
+    `- **Agent:** \`${settings.command}\`${settings.provider ? ` · provider \`${settings.provider}\`` : ""} · model \`${settings.model}\` · reasoning \`${settings.reasoning}\` · ${isolationLabel(settings)}`,
     `- **Mode:** ${run.mode} · prompt \`${run.promptFile}\``,
     `- **Sources:** ${sourceCount(run.diff, "added")} added, ${sourceCount(run.diff, "changed")} changed, ${sourceCount(run.diff, "removed")} removed, ${sourceCount(run.diff, "renamed")} renamed`,
   ];
@@ -1149,24 +1208,12 @@ export async function runWikiIngest(
     );
   }
 
-  const args = [
-    ...(settings.provider ? ["--provider", settings.provider] : []),
-    "--model",
-    settings.model,
-    "--thinking",
-    settings.reasoning,
-    "--print",
-    composed,
-  ];
+  const args = agentArgs(settings, composed);
   const runAgent = options.runAgent ?? spawnAgent;
   const pre = await capturePreRunState(dataRoot, env);
 
-  const providerFlag = settings.provider
-    ? ` --provider ${settings.provider}`
-    : "";
-
   onProgress(
-    `wiki-ingest: mode ${mode}, invoking agent: ${settings.command}${providerFlag} --model ${settings.model} --thinking ${settings.reasoning}`,
+    `wiki-ingest: mode ${mode}, invoking agent: ${formatAgentInvocation(settings)}`,
   );
 
   const agentStartedAt = now().getTime();
@@ -1301,6 +1348,10 @@ Switches and arguments:
                      settings.yml — command, model, provider, and reasoning
                      level, passed to the agent as --model/--thinking;
                      provider is optional and passed as --provider when set.
+                     isolate (true by default, false to opt out) adds the
+                     pi isolation flags --no-context-files --no-extensions
+                     --no-skills so global agent config cannot leak into
+                     spawned runs (issue #118).
   --outputs <dir>    Where the digest (runs/<timestamp>.md) and the
                      manifest snapshot go. Default: the repo's outputs/.
   --timeout <secs>   Kill the agent run after this many seconds and

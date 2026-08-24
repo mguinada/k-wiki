@@ -15,6 +15,13 @@ reasoning: high    # pi thinking level, passed as --thinking
 # domain wiki and never audits.
 # secondBrain.domains: [~/Lab/k-wiki-data/wiki]
 
+# Isolate spawned agent runs from global pi configuration (issue
+# #118): the wrapper passes --no-context-files --no-extensions
+# --no-skills so installed personas, extensions, and skills cannot
+# leak into headless ingest/lint runs. Set false only to debug with
+# the ambient global setup.
+isolate: true
+
 # Example: how to add another model. Keep exactly one active
 # provider/model pair. To switch, comment the two lines above out and
 # uncomment a pair below (Kimi via OpenRouter):
