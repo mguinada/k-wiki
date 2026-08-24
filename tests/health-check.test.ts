@@ -495,6 +495,8 @@ describe("health CLI", () => {
 
     delete process.env.NO_COLOR;
 
+    vi.stubGlobal("__kWikiTestWorker__", undefined);
+
     const logSpy = vi
       .spyOn(console, "log")
       .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
@@ -506,6 +508,7 @@ describe("health CLI", () => {
       await main();
     } finally {
       process.argv = argv;
+      vi.unstubAllGlobals();
 
       if (hadNoColor === undefined) {
         delete process.env.NO_COLOR;
@@ -604,6 +607,8 @@ describe("health CLI", () => {
 
     process.argv = [...argv.slice(0, 2), join(tmpdir(), "no-such-raw-dir")];
 
+    vi.stubGlobal("__kWikiTestWorker__", undefined);
+
     const logSpy = vi
       .spyOn(console, "log")
       .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
@@ -615,6 +620,7 @@ describe("health CLI", () => {
       await main();
     } finally {
       process.argv = argv;
+      vi.unstubAllGlobals();
       logSpy.mockRestore();
       errorSpy.mockRestore();
     }
@@ -665,6 +671,10 @@ describe("check-raw import guard", () => {
 
     process.argv = [argv[0] ?? "node", argv1];
 
+    // Simulate a real `node <cli>` run: no test-worker marker, so the
+    // import guard fires main() (issue #123).
+    vi.stubGlobal("__kWikiTestWorker__", undefined);
+
     const logSpy = vi
       .spyOn(console, "log")
       .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
@@ -676,6 +686,7 @@ describe("check-raw import guard", () => {
       await import(pathToFileURL(modulePath).href);
     } finally {
       process.argv = argv;
+      vi.unstubAllGlobals();
       logSpy.mockRestore();
       errorSpy.mockRestore();
     }
@@ -840,6 +851,8 @@ describe("checkRaw freshness (repo-as-source)", () => {
 
     process.argv = [...argv.slice(0, 2), rawDir];
 
+    vi.stubGlobal("__kWikiTestWorker__", undefined);
+
     const logSpy = vi
       .spyOn(console, "log")
       .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
@@ -851,6 +864,7 @@ describe("checkRaw freshness (repo-as-source)", () => {
       await main();
     } finally {
       process.argv = argv;
+      vi.unstubAllGlobals();
       logSpy.mockRestore();
       errorSpy.mockRestore();
     }
@@ -872,6 +886,8 @@ describe("checkRaw freshness (repo-as-source)", () => {
 
     process.argv = [...argv.slice(0, 2), "--fail-on-stale", rawDir];
 
+    vi.stubGlobal("__kWikiTestWorker__", undefined);
+
     const logSpy = vi
       .spyOn(console, "log")
       .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
@@ -883,6 +899,7 @@ describe("checkRaw freshness (repo-as-source)", () => {
       await main();
     } finally {
       process.argv = argv;
+      vi.unstubAllGlobals();
       logSpy.mockRestore();
       errorSpy.mockRestore();
     }
@@ -899,6 +916,8 @@ describe("checkRaw freshness (repo-as-source)", () => {
 
     process.argv = [...argv.slice(0, 2), "--fail-on-stale", rawDir];
 
+    vi.stubGlobal("__kWikiTestWorker__", undefined);
+
     const logSpy = vi
       .spyOn(console, "log")
       .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
@@ -910,6 +929,7 @@ describe("checkRaw freshness (repo-as-source)", () => {
       await main();
     } finally {
       process.argv = argv;
+      vi.unstubAllGlobals();
       logSpy.mockRestore();
       errorSpy.mockRestore();
     }
@@ -940,6 +960,8 @@ describe("checkRaw freshness edges (issue #74)", () => {
     delete process.env.NO_COLOR;
     process.argv = [...argv.slice(0, 2), ...args];
 
+    vi.stubGlobal("__kWikiTestWorker__", undefined);
+
     const logSpy = vi
       .spyOn(console, "log")
       .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
@@ -951,6 +973,7 @@ describe("checkRaw freshness edges (issue #74)", () => {
       await main();
     } finally {
       process.argv = argv;
+      vi.unstubAllGlobals();
 
       if (hadNoColor === undefined) {
         delete process.env.NO_COLOR;

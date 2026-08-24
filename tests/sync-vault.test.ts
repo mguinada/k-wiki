@@ -1445,6 +1445,8 @@ describe("sync-vault CLI", () => {
     process.exitCode = undefined;
     process.argv = [...argv.slice(0, 2), ...args];
 
+    vi.stubGlobal("__kWikiTestWorker__", undefined);
+
     if (options.color) {
       delete process.env.NO_COLOR;
     } else {
@@ -1462,6 +1464,7 @@ describe("sync-vault CLI", () => {
       await main();
     } finally {
       process.argv = argv;
+      vi.unstubAllGlobals();
 
       if (hadNoColor) {
         process.env.NO_COLOR = prevNoColor;

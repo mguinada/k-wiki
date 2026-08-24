@@ -2,7 +2,7 @@ import { stat } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
-import { isMainModule } from "../src/cli/is-main.ts";
+import { isMainModule, refuseTestWorker } from "../src/cli/is-main.ts";
 import {
   buildPageIndex,
   isWikilinkEntry,
@@ -176,6 +176,8 @@ signal, not a gate; the exit code stays 0. NO_COLOR disables color.`;
 
 /** check-provenance entry point: `check-provenance [-h | --help] [<wiki-dir> [<raw-dir>]]` (defaults: repo wiki/, sibling raw/). */
 export async function main(): Promise<void> {
+  refuseTestWorker("check-provenance");
+
   const args = process.argv.slice(2);
 
   if (args.includes("-h") || args.includes("--help")) {

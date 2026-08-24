@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
-import { isMainModule } from "../cli/is-main.ts";
+import { isMainModule, refuseTestWorker } from "../cli/is-main.ts";
 import { runGit } from "../data/init-data-repo.ts";
 import {
   loadSyncConfig,
@@ -449,6 +449,8 @@ when the source root is not a git repository.`;
 
 /** sync-repo entry point: `sync-repo [-h | --help] [<config>] [<raw-dir>]` (defaults: sync-meta.json). */
 export async function main(): Promise<void> {
+  refuseTestWorker("sync-repo");
+
   const args = process.argv.slice(2);
 
   if (args.includes("-h") || args.includes("--help")) {

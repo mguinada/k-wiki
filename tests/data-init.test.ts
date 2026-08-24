@@ -46,6 +46,8 @@ describe("data:init CLI help", () => {
     process.argv = [...argv.slice(0, 2), ...args];
     Object.assign(process.env, GIT_ENV);
 
+    vi.stubGlobal("__kWikiTestWorker__", undefined);
+
     const logSpy = vi
       .spyOn(console, "log")
       .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
@@ -57,6 +59,7 @@ describe("data:init CLI help", () => {
       await main();
     } finally {
       process.argv = argv;
+      vi.unstubAllGlobals();
 
       for (const [key, value] of savedEnv) {
         if (value === undefined) {
@@ -479,6 +482,10 @@ describe("data:init import guard", () => {
 
     process.argv = [argv[0] ?? "node", modulePath, ...args];
 
+    // Simulate a real `node <cli>` run: no test-worker marker, so the
+    // import guard fires main() (issue #123).
+    vi.stubGlobal("__kWikiTestWorker__", undefined);
+
     const savedEnv = new Map(
       Object.keys(GIT_ENV).map((key) => [key, process.env[key]]),
     );
@@ -496,6 +503,7 @@ describe("data:init import guard", () => {
       await import(pathToFileURL(modulePath).href);
     } finally {
       process.argv = argv;
+      vi.unstubAllGlobals();
 
       for (const [key, value] of savedEnv) {
         if (value === undefined) {

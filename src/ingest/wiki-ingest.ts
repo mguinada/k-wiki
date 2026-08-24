@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
-import { isMainModule } from "../cli/is-main.ts";
+import { isMainModule, refuseTestWorker } from "../cli/is-main.ts";
 import {
   createProgressRenderer,
   formatDuration,
@@ -1535,6 +1535,8 @@ export function createAgentProgressSink(
 
 /** wiki-ingest entry point: `wiki-ingest [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<raw-dir>]`. */
 export async function main(): Promise<void> {
+  refuseTestWorker("wiki-ingest");
+
   const args = process.argv.slice(2);
 
   if (args.includes("-h") || args.includes("--help")) {
