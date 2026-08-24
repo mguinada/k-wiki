@@ -5,6 +5,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import {
   buildPageIndex,
   isWikilinkEntry,
+  kebab,
   listWikiPages,
   normalizeRawPath,
   parsePageFields,
@@ -18,6 +19,24 @@ afterAll(async () => {
   await Promise.all(
     tempDirs.map((dir) => rm(dir, { recursive: true, force: true })),
   );
+});
+
+describe("kebab", () => {
+  it("lowercases and hyphenates non-alphanumerics", () => {
+    expect(kebab("Wiki parsing primitives")).toBe("wiki-parsing-primitives");
+  });
+
+  it("collapses runs and trims leading and trailing hyphens", () => {
+    expect(kebab("  The $10M path! ")).toBe("the-10m-path");
+  });
+
+  it("hyphenates dots so dotted titles kebab to file names", () => {
+    expect(kebab("settings.yml")).toBe("settings-yml");
+  });
+
+  it("drops a leading dot instead of keeping a leading hyphen", () => {
+    expect(kebab(".second-brain marker")).toBe("second-brain-marker");
+  });
 });
 
 describe("parsePageFields", () => {
@@ -38,6 +57,20 @@ describe("parsePageFields", () => {
   it("reads the page type scalar like origin", () => {
     expect(parsePageFields('---\ntype: "source"\n---\n')).toMatchObject({
       type: "source",
+    });
+  });
+
+  it("reads the title scalar like origin", () => {
+    expect(
+      parsePageFields('---\ntitle: "Wiki page primitives"\n---\n'),
+    ).toMatchObject({ title: "Wiki page primitives" });
+  });
+
+  it("treats a missing title as absent", () => {
+    expect(
+      parsePageFields("---\norigin: raw/notes/V/a.md\n---\n"),
+    ).toMatchObject({
+      title: undefined,
     });
   });
 
@@ -162,7 +195,7 @@ describe("parsePageFields", () => {
       parsePageFields(
         "---\ntitle: T\njust prose\norigin: raw/notes/V/a.md\n---\n",
       ),
-    ).toEqual({ origin: "raw/notes/V/a.md", sources: [] });
+    ).toEqual({ title: "T", origin: "raw/notes/V/a.md", sources: [] });
   });
 
   it("leaves origin unset for an empty value", () => {

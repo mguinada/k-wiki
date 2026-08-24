@@ -2,7 +2,7 @@ import { access, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { runGit } from "../data/git.ts";
 import { parseStatus } from "../ingest/guardrails.ts";
-import { listWikiPages, readPageFields } from "../wiki/pages.ts";
+import { kebab, listWikiPages, readPageFields } from "../wiki/pages.ts";
 import { buildPageIndex, extractWikilinks } from "../wiki-links.ts";
 
 /**
@@ -185,12 +185,7 @@ const MAX_SLUG = 80;
 
 /** Kebab-case slug from the question; `query` when nothing survives. */
 export function slugForQuestion(question: string): string {
-  const slug = question
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+/, "")
-    .slice(0, MAX_SLUG)
-    .replace(/-+$/, "");
+  const slug = kebab(question).slice(0, MAX_SLUG).replace(/-+$/, "");
 
   return slug === "" ? "query" : slug;
 }

@@ -16,6 +16,8 @@ export { buildPageIndex };
 
 /** The frontmatter fields the pipeline reads from a wiki page. */
 export interface PageFields {
+  /** The page title scalar, as written. */
+  readonly title: string | undefined;
   /** The page type scalar (e.g. `source`), as written. */
   readonly type: string | undefined;
   /** The raw projection path backing a source page, as written. */
@@ -24,7 +26,24 @@ export interface PageFields {
   readonly sources: readonly string[];
 }
 
+/** Kebab-case slug: lowercased, every non-alphanumeric run collapsed
+ *  to one hyphen, leading and trailing hyphens trimmed. */
+export function kebab(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+/, "")
+    .replace(/-+$/, "");
+}
+
 const FRONTMATTER_FENCE = "---";
+
+const EMPTY_FIELDS: PageFields = {
+  title: undefined,
+  type: undefined,
+  origin: undefined,
+  sources: [],
+};
 
 function unquote(value: string): string {
   const quote = value[0];
@@ -55,19 +74,18 @@ function scalar(value: string | undefined): string | undefined {
     : undefined;
 }
 
-/**
- * Parse `type`, `origin`, and `sources` from a wiki page's YAML
- * frontmatter: top-level scalars and one list of single-line items,
- * nothing more. Returns empty fields when there is no closed
- * frontmatter block.
- */
+/** Parse `title`, `type`, `origin`, and `sources` from a wiki page's
+ *  YAML frontmatter: top-level scalars and one list of single-line
+ *  items, nothing more. Returns empty fields when there is no closed
+ *  frontmatter block. */
 export function parsePageFields(text: string): PageFields {
   const lines = text.split("\n");
 
   if (lines[0] !== FRONTMATTER_FENCE) {
-    return { type: undefined, origin: undefined, sources: [] };
+    return EMPTY_FIELDS;
   }
 
+  let title: string | undefined;
   let type: string | undefined;
   let origin: string | undefined;
   const sources: string[] = [];
@@ -75,13 +93,17 @@ export function parsePageFields(text: string): PageFields {
 
   for (const line of lines.slice(1)) {
     if (line.trim() === FRONTMATTER_FENCE) {
-      return { type, origin, sources };
+      return { title, type, origin, sources };
     }
 
     const key = /^([A-Za-z][\w-]*):\s*(.*)$/.exec(line);
 
     if (key !== null && key[1] !== undefined) {
       inSources = key[1] === "sources";
+
+      if (key[1] === "title") {
+        title = scalar(key[2]);
+      }
 
       if (key[1] === "type") {
         type = scalar(key[2]);
@@ -107,7 +129,7 @@ export function parsePageFields(text: string): PageFields {
     sources.push(unquote(item.trim()));
   }
 
-  return { type: undefined, origin: undefined, sources: [] };
+  return EMPTY_FIELDS;
 }
 
 /** Recursively list every wiki-relative markdown path under `dir`. */
@@ -166,6 +188,6 @@ export async function readPageFields(path: string): Promise<PageFields> {
   try {
     return parsePageFields(await readFile(path, "utf8"));
   } catch {
-    return { type: undefined, origin: undefined, sources: [] };
+    return EMPTY_FIELDS;
   }
 }

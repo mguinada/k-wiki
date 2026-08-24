@@ -180,6 +180,10 @@ describe("slugForQuestion", () => {
   it("caps the slug at 80 characters", () => {
     expect(slugForQuestion("a".repeat(200))).toHaveLength(80);
   });
+
+  it("drops a trailing hyphen left by the 80-character cut", () => {
+    expect(slugForQuestion(`${"a".repeat(79)}-tail`)).toBe("a".repeat(79));
+  });
 });
 
 describe("citedPages", () => {

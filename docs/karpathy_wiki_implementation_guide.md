@@ -816,7 +816,13 @@ missing `origin` automatically (Sections 13–14).
 Frontmatter tracing cannot *prove* the absence of uncited influence.
 Mitigations: phase-1 full-text search, the permanent dead-provenance
 check (`npm run check-provenance`: every `sources` entry resolves, every
-`origin` exists under `raw/`), recurring lint, periodic rebuild. A
+`origin` exists under `raw/`), the quote-fidelity check
+(`npm run check-fidelity`: every machine-checkable token a source
+page quotes — tilde paths, config keys, CLI flags, `npm run`
+commands — appears in its `origin`, and every page title kebab-cases
+to its file name), the fidelity item in the lint prompt (relational
+misquotes — right tokens, wrong containment — are detected there,
+not deterministically), recurring lint, periodic rebuild. A
 surgical pass is not a proof — do not pretend it is.
 
 ---

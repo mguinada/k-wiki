@@ -28,6 +28,11 @@ Check for:
 20. Unfiled multi-source concepts: for each concept named substantively
     in two or more source pages but having no concept/comparison page,
     report it (term + source pages). Report only — never auto-create.
+21. Citation fidelity: for every source page, re-verify its relational
+    statements against the page's `origin` file under `raw/` — which
+    file, container, flag, or command owns which behavior. A token can
+    exist in the origin while the containment is wrong. Fix clear
+    misquotes; report ambiguous ones instead of guessing.
 
 Do not make speculative corrections.
 Never modify wiki/AGENTS.md.
