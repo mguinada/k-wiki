@@ -2853,6 +2853,26 @@ describe("runWikiIngest --sources", () => {
     expect(digest).not.toContain("sources selected explicitly");
   });
 
+  it("hides manifest changes the explicit list does not name", async () => {
+    const h = await makeHarness({
+      "a.md": "a",
+      "new.md": "added since snapshot",
+    });
+    await seedSnapshot(h, { "a.md": "a" });
+
+    const result = await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md"],
+    });
+
+    expect(result.status).toBe("ran");
+
+    const prompt = invocation(h, 0).args.at(-1) ?? "";
+
+    expect(prompt).toContain("~ Engineering/a.md");
+    expect(prompt).not.toContain("new.md");
+  });
+
   it("rejects unknown paths naming every path joined with a comma", async () => {
     const h = await makeHarness({ "a.md": "a" });
     await seedSnapshot(h, { "a.md": "a" });
