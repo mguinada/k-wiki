@@ -473,6 +473,150 @@ describe("wiki-ingest e2e", () => {
   });
 });
 
+describe("wiki-ingest --sources e2e", () => {
+  function ingestSources(repo: Repo, ...sources: readonly string[]) {
+    const flags = sources.flatMap((source) => ["--sources", source]);
+
+    return runCli(INGEST_SCRIPT, [
+      "--settings",
+      repo.settingsPath,
+      "--outputs",
+      repo.outputsDir,
+      ...flags,
+      join(repo.dataRoot, "raw"),
+    ]);
+  }
+
+  it("re-ingests explicit sources over an unchanged manifest", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag", "Notes/DSC.md": "dsc" });
+    const first = await ingest(repo);
+
+    expect(first.code).toBe(0);
+
+    const snapshotAfterFirst = await readFile(
+      snapshotAt(repo.dataRoot),
+      "utf8",
+    );
+
+    const result = await ingestSources(
+      repo,
+      "Engineering/Notes/DSC.md",
+      "Engineering/AI/RAG.md",
+    );
+
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("**Mode:** incremental");
+    expect(result.out).toContain("sources selected explicitly");
+    expect(result.out).toContain("~ Engineering/AI/RAG.md");
+
+    const prompt = await readFile(
+      join(repo.dataRoot, "outputs", "stub-prompt.txt"),
+      "utf8",
+    );
+
+    expect(prompt).toContain("Changed sources since the previous ingestion:");
+    expect(prompt.split("~ Engineering/AI/RAG.md").length - 1).toBe(1);
+    expect(prompt.split("~ Engineering/Notes/DSC.md").length - 1).toBe(1);
+    expect(prompt.indexOf("~ Engineering/AI/RAG.md")).toBeLessThan(
+      prompt.indexOf("~ Engineering/Notes/DSC.md"),
+    );
+
+    const snapshotAfterScoped = await readFile(
+      snapshotAt(repo.dataRoot),
+      "utf8",
+    );
+
+    expect(snapshotAfterScoped).toBe(snapshotAfterFirst);
+  });
+
+  it("exits 1 on an unknown --sources path and writes nothing", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag" });
+    const first = await ingest(repo);
+
+    expect(first.code).toBe(0);
+
+    const snapshotAfterFirst = await readFile(
+      snapshotAt(repo.dataRoot),
+      "utf8",
+    );
+    const { readdir } = await import("node:fs/promises");
+    const runsDir = join(repo.outputsDir, "runs");
+
+    await rm(join(repo.dataRoot, "outputs", "stub-prompt.txt"));
+
+    const result = await ingestSources(repo, "Engineering/Nope.md");
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain(
+      "unknown --sources path(s): Engineering/Nope.md",
+    );
+
+    await expect(
+      readFile(join(repo.dataRoot, "outputs", "stub-prompt.txt"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+
+    const digests = (await readdir(runsDir)).filter((name) =>
+      name.endsWith(".md"),
+    );
+
+    expect(digests).toHaveLength(1);
+    expect(await readFile(snapshotAt(repo.dataRoot), "utf8")).toBe(
+      snapshotAfterFirst,
+    );
+  });
+
+  it("exits 1 on --sources with no snapshot and writes nothing", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag" });
+
+    const result = await ingestSources(repo, "Engineering/AI/RAG.md");
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("run a full ingest first");
+
+    await expect(
+      readFile(snapshotAt(repo.dataRoot), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("auto-reverts a scoped run whose changed page has broken frontmatter", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag" });
+    const first = await ingest(repo);
+
+    expect(first.code).toBe(0);
+
+    const snapshotAfterFirst = await readFile(
+      snapshotAt(repo.dataRoot),
+      "utf8",
+    );
+
+    await writeFile(
+      join(repo.dataRoot, "stub-agent.mjs"),
+      [
+        "#!/usr/bin/env node",
+        'import { mkdir, writeFile } from "node:fs/promises";',
+        'import { join } from "node:path";',
+        'await mkdir(join(process.cwd(), "wiki", "concepts"), { recursive: true });',
+        'await writeFile(join(process.cwd(), "wiki", "concepts", "broken.md"), "no frontmatter\\n");',
+        'console.log("rogue report");',
+        "",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+
+    const result = await ingestSources(repo, "Engineering/AI/RAG.md");
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("guardrail check 2 (frontmatter)");
+
+    await expect(
+      readFile(join(repo.dataRoot, "wiki", "concepts", "broken.md"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readFile(snapshotAt(repo.dataRoot), "utf8")).toBe(
+      snapshotAfterFirst,
+    );
+  });
+});
+
 /** The seeded wiki state a previous agent run would have left behind. */
 const SEEDED_SOURCE_PAGE = `---
 title: Temp research

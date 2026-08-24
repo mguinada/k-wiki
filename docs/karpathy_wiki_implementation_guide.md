@@ -689,7 +689,7 @@ prompt text. Index of the seven operational prompts:
 | Prompt file | Trigger | Purpose |
 |---|---|---|
 | `prompts/ingest.md` | First run or full re-run of `wiki-ingest` | Read the synced sources under `raw/` and build/update the wiki in one pass |
-| `prompts/incremental.md` | Later runs where one or more notes changed | Process only the changed sources; smallest necessary wiki updates |
+| `prompts/incremental.md` | Later runs where one or more notes changed; `--sources` scoped re-ingests (issue #133) | Process only the changed sources; smallest necessary wiki updates |
 | `prompts/expunge.md` | A sync removes notes (manifest diff has `removed` entries; §14a) | Re-derive affected pages from their remaining sources |
 | `prompts/rebuild.md` | Rebuilding the wiki from scratch (§15); the expunge threshold (§14a) | Rebuild the whole wiki from `raw/` |
 | `prompts/query.md` | Asking questions against the built wiki (§16) | Synthesize a cited answer; the wrapper saves it for human-gated filing |
@@ -710,7 +710,8 @@ unrelated wiki pages.
 
 ## 14. Incremental Update Prompt
 
-For an existing wiki when one or more notes changed.
+For an existing wiki when one or more notes changed, or when
+`--sources` names explicit sources for scoped re-ingest (issue #133).
 
 Full text: `prompts/incremental.md`.
 
