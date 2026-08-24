@@ -5,7 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
 import { isMainModule } from "../cli/is-main.ts";
-import { createProgressRenderer, formatDuration } from "../cli/progress.ts";
+import { createProgressRenderer, formatDuration, isWarning } from "../cli/progress.ts";
 import { runGit } from "../data/init-data-repo.ts";
 import {
   isPlainObject,
@@ -1355,6 +1355,13 @@ export interface ProgressSink {
   end(): void;
 }
 
+export interface ProgressTones {
+  /** Routine progress lines. */
+  readonly dim: (text: string) => string;
+  /** WARNING-severity lines. */
+  readonly yellow: (text: string) => string;
+}
+
 /**
  * The stderr presentation for one wiki-ingest run: agent heartbeats
  * keep one animated line (spinner + clock) on a TTY; every other
@@ -1366,13 +1373,13 @@ export function createAgentProgressSink(
   write: (text: string) => void,
   writeLine: (text: string) => void,
   animated: boolean,
-  tones: { dim: (text: string) => string; yellow: (text: string) => string },
+  tones: ProgressTones,
   heartbeatPrefix: string | readonly string[] = AGENT_HEARTBEAT_PREFIX,
 ): ProgressSink {
   const prefixes =
     typeof heartbeatPrefix === "string" ? [heartbeatPrefix] : heartbeatPrefix;
   const styled = (message: string) =>
-    message.includes("WARNING") ? tones.yellow(message) : tones.dim(message);
+    isWarning(message) ? tones.yellow(message) : tones.dim(message);
 
   if (!animated) {
     return {

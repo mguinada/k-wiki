@@ -13,7 +13,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
 import { isMainModule } from "../cli/is-main.ts";
-import { createProgressRenderer, formatDuration } from "../cli/progress.ts";
+import { createProgressRenderer, formatDuration, isWarning } from "../cli/progress.ts";
 import {
   loadSyncConfig,
   resolveRawDir,
@@ -534,7 +534,7 @@ function colors() {
 /** Color a progress line at the render boundary: WARNING severity
  *  renders yellow, vault names render bold. */
 export function colorizeProgress(message: string): string {
-  if (message.includes("WARNING")) {
+  if (isWarning(message)) {
     return colors().yellow(message);
   }
 

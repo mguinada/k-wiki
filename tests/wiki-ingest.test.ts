@@ -1405,6 +1405,25 @@ describe("runWikiIngest", () => {
           message.includes("has no instance stamp"),
       ),
     ).toBe(true);
+  });
+
+  it("the legacy-snapshot warning states the self-healing rewrite", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const messages: string[] = [];
+
+    await mkdir(h.outputsDir, { recursive: true });
+    await writeFile(
+      join(h.outputsDir, "last-ingested-manifest.json"),
+      serializeManifest(
+        manifestWith("Engineering", { "gone.md": entry("gone") }),
+      ),
+    );
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      onProgress: (message) => messages.push(message),
+    });
+
     expect(
       messages.some((message) =>
         message.includes(

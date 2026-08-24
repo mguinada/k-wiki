@@ -1314,6 +1314,12 @@ describe("colorized output", () => {
     ).toBe(pc.yellow("sync-vault: WARNING — config drift detected"));
   });
 
+  it("colors a WARNING message yellow even when it names a vault", () => {
+    const message = `vault "${VAULT_NAME}": WARNING — drift detected`;
+
+    expect(colorizeProgress(message)).toBe(pc.yellow(message));
+  });
+
   it("leaves progress messages without a vault name plain", () => {
     expect(colorizeProgress("sync-vault: raw dir /tmp/raw")).toBe(
       "sync-vault: raw dir /tmp/raw",
