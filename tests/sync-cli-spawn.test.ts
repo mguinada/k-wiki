@@ -178,6 +178,10 @@ async function importWithArgv(
     (part): part is string => part !== null,
   );
 
+  // Simulate a real `node <cli>` run: no test-worker marker, so the
+  // import guard fires main() (issue #123).
+  vi.stubGlobal("__kWikiTestWorker__", undefined);
+
   const logSpy = vi
     .spyOn(console, "log")
     .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
@@ -189,6 +193,7 @@ async function importWithArgv(
     await import(pathToFileURL(modulePath).href);
   } finally {
     process.argv = argv;
+    vi.unstubAllGlobals();
     logSpy.mockRestore();
     errorSpy.mockRestore();
   }

@@ -479,6 +479,10 @@ describe("data:init import guard", () => {
 
     process.argv = [argv[0] ?? "node", modulePath, ...args];
 
+    // Simulate a real `node <cli>` run: no test-worker marker, so the
+    // import guard fires main() (issue #123).
+    vi.stubGlobal("__kWikiTestWorker__", undefined);
+
     const savedEnv = new Map(
       Object.keys(GIT_ENV).map((key) => [key, process.env[key]]),
     );
@@ -496,6 +500,7 @@ describe("data:init import guard", () => {
       await import(pathToFileURL(modulePath).href);
     } finally {
       process.argv = argv;
+      vi.unstubAllGlobals();
 
       for (const [key, value] of savedEnv) {
         if (value === undefined) {
