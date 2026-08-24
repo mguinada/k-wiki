@@ -247,8 +247,9 @@ contract is enforced automatically. Omit the key and the cycle skips
 the audit (the manual command below still works).
 
 Seed once, then run the same cycle as model 1 — naming the config,
-the settings, **and a per-instance outputs dir** so the manifest
-snapshot never crosses instances:
+the settings, **and a per-instance outputs dir** so the run digests
+stay separate (the manifest snapshot lives in each data repo's own
+`outputs/`, so it never crosses instances; issue #112):
 
 ```sh
 npm run data:init -- --second-brain sync-second-brain.json
@@ -613,8 +614,9 @@ later one, except that removals route to `prompts/expunge.md` (see
 snapshot is stamped with the data repo it belongs to (issue #95): one
 stamped for another instance — or an unstamped legacy one — is ignored
 with a loud warning and the run falls back to the full prompt, so a
-forgotten `--outputs` can never silently diff, or expunge, against a
-foreign instance's state. The
+foreign snapshot in the data repo — a clone or copy from another
+machine, say — can never silently diff, or expunge, against this
+instance's state. The
 agent itself follows `wiki/AGENTS.md`, never touches `raw/`, and gets
 30 minutes (override with `--timeout <seconds>`); while it runs, one
 animated status line — a braille spinner plus the elapsed time — is
