@@ -108,8 +108,9 @@ describe("checkWikiFidelity", () => {
 
     const report = await checkWikiFidelity(wikiDir, rawDir);
 
-    expect(report.problems).toEqual([]);
-    expect(`${report.quotes}/${report.titles}/${report.pages}`).toBe("5/1/1");
+    expect(
+      `${report.problems.length}:${report.quotes}/${report.titles}/${report.pages}`,
+    ).toBe("0:5/1/1");
   });
 
   it("reports a tilde path absent from the origin", async () => {
@@ -298,8 +299,7 @@ describe("checkWikiFidelity", () => {
 
     const report = await checkWikiFidelity(wikiDir, rawDir);
 
-    expect(report.problems).toEqual([]);
-    expect(report.skipped).toBe(1);
+    expect(`${report.problems.length}:${report.skipped}`).toBe("0:1");
   });
 
   it("skips quote checking when the origin file is missing under raw", async () => {
@@ -315,8 +315,7 @@ describe("checkWikiFidelity", () => {
 
     const report = await checkWikiFidelity(wikiDir, rawDir);
 
-    expect(report.problems).toEqual([]);
-    expect(report.quotes).toBe(0);
+    expect(`${report.problems.length}:${report.quotes}`).toBe("0:0");
   });
 
   it("does not quote-check pages that are not type source", async () => {
@@ -342,8 +341,7 @@ describe("checkWikiFidelity", () => {
 
     const report = await checkWikiFidelity(wikiDir, rawDir);
 
-    expect(report.problems).toEqual([]);
-    expect(report.quotes).toBe(0);
+    expect(`${report.problems.length}:${report.quotes}`).toBe("0:0");
   });
 
   it("trims trailing punctuation from a tilde path at sentence end", async () => {
@@ -391,8 +389,7 @@ describe("checkWikiFidelity", () => {
 
     const report = await checkWikiFidelity(wikiDir, rawDir);
 
-    expect(report.problems).toEqual([]);
-    expect(report.titles).toBe(0);
+    expect(`${report.problems.length}:${report.titles}`).toBe("0:0");
   });
 
   it("reports one line per token, pages in sorted order", async () => {
@@ -429,8 +426,7 @@ describe("checkWikiFidelity", () => {
 
     const report = await checkWikiFidelity(wikiDir, rawDir);
 
-    expect(report.problems).toEqual([]);
-    expect(report.pages).toBe(0);
+    expect(`${report.problems.length}:${report.pages}`).toBe("0:0");
   });
 
   it("passes on an empty wiki", async () => {
@@ -438,8 +434,9 @@ describe("checkWikiFidelity", () => {
 
     const report = await checkWikiFidelity(wikiDir, rawDir);
 
-    expect(report.problems).toEqual([]);
-    expect(`${report.quotes}/${report.titles}/${report.skipped}`).toBe("0/0/0");
+    expect(
+      `${report.problems.length}:${report.quotes}/${report.titles}/${report.skipped}`,
+    ).toBe("0:0/0/0");
   });
 
   it("rejects a wiki directory that does not exist", async () => {
@@ -524,16 +521,15 @@ describe("check-fidelity CLI", () => {
       { "notes/V/s.md": "`~/.gitconfig`." },
     );
 
-    const result = await runNode([wikiDir]);
-
-    expect(result.code).toBe(0);
-    expect(result.out).toContain("1 token traces");
+    const passing = await runNode([wikiDir]);
 
     await rm(rawDir, { recursive: true, force: true });
 
     const failing = await runNode([wikiDir]);
 
-    expect(failing.code).toBe(1);
+    expect(
+      `${passing.code}:${passing.out.includes("1 token traces")}:${failing.code}`,
+    ).toBe("0:true:1");
   });
 
   it("prints the backfill warning when a source page lacks origin", async () => {

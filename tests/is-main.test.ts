@@ -2,6 +2,7 @@ import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { main as backfillOriginMain } from "../scripts/backfill-origin.ts";
 import { main as checkCrosslinksMain } from "../scripts/check-crosslinks.ts";
+import { main as checkFidelityMain } from "../scripts/check-fidelity.ts";
 import { main as checkLinksMain } from "../scripts/check-links.ts";
 import { main as checkProvenanceMain } from "../scripts/check-provenance.ts";
 import { isMainModule, refuseTestWorker } from "../src/cli/is-main.ts";
@@ -159,6 +160,12 @@ describe("CLI mains refuse to run inside a test worker", () => {
   it("check-links main() fails loudly before resolving any default", async () => {
     await expect(checkLinksMain()).rejects.toThrow(
       "check-links: refusing to run inside a test worker",
+    );
+  });
+
+  it("check-fidelity main() fails loudly before resolving any default", async () => {
+    await expect(checkFidelityMain()).rejects.toThrow(
+      "check-fidelity: refusing to run inside a test worker",
     );
   });
 
