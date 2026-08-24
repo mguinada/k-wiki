@@ -15,7 +15,7 @@ shared predicate `isWarning` (`src/cli/progress.ts`).
 | yellow | warning severity | any progress message containing `WARNING` — today the foreign-snapshot warning in `readSnapshot` (`src/ingest/wiki-ingest.ts`) |
 | red | error | `fail()` in every entry point, broken crosslinks, removed files, health problems in `src/health/check-raw.ts` |
 | green | ok / healthy / added | `src/health/check-raw.ts`, the ok summary in `scripts/check-crosslinks.ts`, copied files in `src/sync/sync-vault.ts` |
-| bold | emphasis | vault names in `formatReport` and progress lines (`src/sync/sync-vault.ts`), verdict headers in `src/query/wiki-query.ts` |
+| bold | emphasis | vault names in `formatReport` and progress lines (`src/sync/sync-vault.ts`), the `Filed:` line in `src/query/wiki-query.ts` |
 
 Yellow slots between dim (routine progress) and red (failure): a
 warning must be visible against dim heartbeats without claiming the
