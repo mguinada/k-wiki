@@ -42,13 +42,11 @@ function colors() {
   return createColors(!process.env.NO_COLOR);
 }
 
-/**
- * The missing-origin warning (issue #92): a signal, not a gate — the
- * exit code stays 0. Names the exact backfill commands with the paths
- * as resolved for this run, dry run first (it prints every pairing
- * and writes nothing).
- */
-function printBackfillWarning(
+/** The missing-origin warning (issue #92): a signal, not a gate — the
+ *  exit code stays 0. Names the exact backfill commands with the paths
+ *  as resolved for this run, dry run first (it prints every pairing
+ *  and writes nothing). Shared with check-fidelity (issue #125). */
+export function printBackfillWarning(
   missing: number,
   wikiDir: string,
   rawDir: string,
@@ -70,8 +68,9 @@ function printBackfillWarning(
   );
 }
 
-/** The raw projection must be a directory; named on failure. */
-async function assertRawDir(rawDir: string): Promise<void> {
+/** The raw projection must be a directory; named on failure. Shared
+ *  with check-fidelity (issue #125). */
+export async function assertRawDir(rawDir: string): Promise<void> {
   let isDirectory: boolean;
 
   try {

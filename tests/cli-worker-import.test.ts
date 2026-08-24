@@ -28,6 +28,7 @@ const cliModules = [
   "src/sync/wiki-sync.ts",
   "scripts/backfill-origin.ts",
   "scripts/check-crosslinks.ts",
+  "scripts/check-fidelity.ts",
   "scripts/check-links.ts",
   "scripts/check-provenance.ts",
 ] as const;

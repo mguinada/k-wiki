@@ -118,6 +118,9 @@ unrelated → leave flagged.
 
 Use lowercase kebab-case filenames for concepts, comparisons, and queries.
 
+A page's `title` must kebab-case to its file name; `index`, `overview`,
+and `log` are exempt (`check-fidelity` enforces this).
+
 Examples:
 
 - `retrieval-augmented-generation.md`
