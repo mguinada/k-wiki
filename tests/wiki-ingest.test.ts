@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { createColors } from "picocolors";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
-import { runGit } from "../src/data/init-data-repo.ts";
+import { runGit } from "../src/data/git.ts";
 import {
   type AgentRunner,
   type AgentSettings,

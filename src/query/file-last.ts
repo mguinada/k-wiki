@@ -1,6 +1,6 @@
 import { access, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { runGit } from "../data/init-data-repo.ts";
+import { runGit } from "../data/git.ts";
 import { parseStatus } from "../ingest/guardrails.ts";
 import { listWikiPages, readPageFields } from "../wiki/pages.ts";
 import { buildPageIndex, extractWikilinks } from "../wiki-links.ts";

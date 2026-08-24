@@ -10,7 +10,7 @@ import {
   formatDuration,
   isWarning,
 } from "../cli/progress.ts";
-import { runGit } from "../data/init-data-repo.ts";
+import { runGit } from "../data/git.ts";
 import {
   isPlainObject,
   loadSyncConfig,

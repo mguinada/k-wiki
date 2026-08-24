@@ -6,7 +6,7 @@ import { createColors } from "picocolors";
 import { isMainModule, refuseTestWorker } from "../cli/is-main.ts";
 import { formatDuration } from "../cli/progress.ts";
 import { checkCrossWikiLinks } from "../crosslinks.ts";
-import { runGit } from "../data/init-data-repo.ts";
+import { runGit } from "../data/git.ts";
 import {
   capturePreRunState,
   parseStatus,

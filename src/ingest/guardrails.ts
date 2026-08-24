@@ -1,6 +1,6 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { runGit } from "../data/init-data-repo.ts";
+import { runGit } from "../data/git.ts";
 import { sha256 } from "../sync/hash.ts";
 import { listWikiPages } from "../wiki/pages.ts";
 import {

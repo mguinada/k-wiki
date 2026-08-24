@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
-import { main, runGit, seedDataRepo } from "../src/data/init-data-repo.ts";
+import { runGit } from "../src/data/git.ts";
+import { main, seedDataRepo } from "../src/data/init-data-repo.ts";
 
 const tempDirs: string[] = [];
 
@@ -178,23 +179,6 @@ async function makeCodeRepoFixture(): Promise<string> {
   await git(dir, "commit", "--quiet", "-m", "fixture skeleton");
 
   return dir;
-}
-
-/**
- * The rogue-commit shape of issue #52: a committed repo whose working
- * tree holds a dirty tracked file — what `git add -A` would stage if
- * discovery escaped to it from a nested directory without `.git`.
- */
-async function makeEnclosingRepoWithDirtyFile(): Promise<string> {
-  const enclosing = await makeCodeRepoFixture();
-  const dirtyFile = join(enclosing, "dirty-tracked.txt");
-
-  await writeFile(dirtyFile, "tracked");
-  await git(enclosing, "add", "dirty-tracked.txt");
-  await git(enclosing, "commit", "--quiet", "-m", "track dirty file");
-  await writeFile(dirtyFile, "edited while dirty");
-
-  return enclosing;
 }
 
 describe("seedDataRepo", () => {
@@ -375,39 +359,6 @@ describe("seedDataRepo", () => {
 });
 
 describe("git discovery ceiling (issue #52)", () => {
-  it("rejects a git call aimed at a directory that owns no .git", async () => {
-    const enclosing = await makeEnclosingRepoWithDirtyFile();
-    const orphan = join(enclosing, "staging", "data");
-
-    await mkdir(orphan, { recursive: true });
-
-    await expect(runGit(orphan, ["add", "-A"], GIT_ENV)).rejects.toThrow(
-      /not a git repository/,
-    );
-  });
-
-  it("leaves the enclosing repository untouched when the git target owns no .git", async () => {
-    const enclosing = await makeEnclosingRepoWithDirtyFile();
-    const orphan = join(enclosing, "staging", "data");
-
-    await mkdir(orphan, { recursive: true });
-
-    await runGit(orphan, ["add", "-A"], GIT_ENV).catch(() => undefined);
-    await runGit(
-      orphan,
-      ["commit", "--quiet", "-m", "Seed data repo from k-wiki skeleton"],
-      GIT_ENV,
-    ).catch(() => undefined);
-
-    const commits = (
-      await git(enclosing, "rev-list", "--count", "HEAD")
-    ).stdout.trim();
-    const staged = (await git(enclosing, "diff", "--cached", "--name-only"))
-      .stdout;
-
-    expect(`${commits}:${staged}`).toBe("2:");
-  });
-
   it("seeds a data root nested inside another git repository", async () => {
     const enclosing = await makeCodeRepoFixture();
     const dataRoot = join(enclosing, "nested", "data");

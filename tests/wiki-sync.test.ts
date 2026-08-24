@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
-import { runGit } from "../src/data/init-data-repo.ts";
+import { runGit } from "../src/data/git.ts";
 import {
   type AgentRunner,
   createAgentProgressSink,
