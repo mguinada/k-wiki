@@ -1,6 +1,6 @@
 ---
 description: Kick off GitHub issue work in parallel — one fresh pi main agent per issue, in its own Herdr worktree, running the do-gh-issue skill
-argument-hint: "[<issue-number> | <issue-URL> | label:<label> ...]"
+argument-hint: "[<issue-number> | <issue-URL> | label:<label> | top:<N> by <criterion> ...]"
 ---
 
 You (host) only resolve issues and launch agents. Each fresh pi main agent implements its issue alone via the `do-gh-issue` skill — the skill already gates on blockers, so the kickoff never re-checks them.
@@ -16,6 +16,7 @@ You (host) only resolve issues and launch agents. Each fresh pi main agent imple
 Criteria: $ARGUMENTS
 
 - `#N` / number / URL → `gh issue view`; `label:<x>` → `gh issue list --state open --label <x> --json number,title,url`.
+- `top:<N> by <criterion>` (e.g. `top:3 by value`) → `gh issue list --state open --json number,title,labels,body`; score every issue against `<criterion>` — mechanical when the criterion maps to a label signal (e.g. priority labels), judged otherwise; propose the top N in a table (number, title, one-line reason each, plus the cut line — best issue excluded and why); wait for confirmation. Confirmed → those N proceed in ranked order; declined or timeout → stop, launch nothing.
 - Keep OPEN issues only (record non-open as skipped); dedupe; keep the user's order.
 - No criteria → list open issues and ask — never pick yourself. Unresolvable argument → ask. Empty set → report, create nothing. More than 8 → confirm first.
 - Branch `issue-<N>-<slug>` (kebab-case, 3–5 words). Snapshot collisions once (`herdr worktree list` + `git branch --list "issue-<N>-*"`); existing → skip and record, never clobber.
