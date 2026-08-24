@@ -982,6 +982,7 @@ describe("statusSince", () => {
     expect(await statusSince(dataRoot, process.env, pre, "wiki")).toEqual({
       entries: [],
       changed: [],
+      headMoved: false,
     });
   });
 
@@ -1060,6 +1061,62 @@ describe("statusSince", () => {
     expect(
       (await statusSince(dataRoot, process.env, pre, "wiki")).changed,
     ).toEqual([]);
+  });
+
+  it("reports a pre-run untracked wiki page deleted during the run", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(join(dataRoot, "wiki", "draft.md"), "Draft\n");
+
+    const pre = await capturePreRunState(dataRoot, process.env);
+
+    await rm(join(dataRoot, "wiki", "draft.md"));
+
+    expect(
+      (await statusSince(dataRoot, process.env, pre, "wiki")).changed,
+    ).toEqual(["wiki/draft.md"]);
+  });
+
+  it("reports a rename whose origin is under the prefix and target outside", async () => {
+    const dataRoot = await makeRepo();
+    const pre = await capturePreRunState(dataRoot, process.env);
+
+    await mkdir(join(dataRoot, "notes"), { recursive: true });
+    await run("git", ["mv", "wiki/index.md", "notes/index.md"], {
+      cwd: dataRoot,
+    });
+
+    expect(
+      (await statusSince(dataRoot, process.env, pre, "wiki")).changed,
+    ).toEqual(["wiki/index.md"]);
+  });
+
+  it("ignores a rename origin already staged before the run", async () => {
+    const dataRoot = await makeRepo();
+
+    await run("git", ["mv", "wiki/index.md", "wiki/renamed.md"], {
+      cwd: dataRoot,
+    });
+
+    const pre = await capturePreRunState(dataRoot, process.env);
+
+    const result = await statusSince(dataRoot, process.env, pre, "wiki");
+
+    expect(result.changed).toEqual([]);
+    expect(result.headMoved).toBe(false);
+  });
+
+  it("reports headMoved when the run commits", async () => {
+    const dataRoot = await makeRepo();
+    const pre = await capturePreRunState(dataRoot, process.env);
+
+    await writeFile(join(dataRoot, "wiki", "new.md"), "N\n");
+    await commit(dataRoot, "rogue");
+
+    const result = await statusSince(dataRoot, process.env, pre, "wiki");
+
+    expect(result.changed).toEqual([]);
+    expect(result.headMoved).toBe(true);
   });
 
   it("returns the full post-run entries, not only the prefix", async () => {

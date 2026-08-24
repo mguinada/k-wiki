@@ -28,8 +28,9 @@ import { citedPages, fileLastQuery, writeQueryArtifact } from "./file-last.ts";
  *  It composes prompts/query.md with the question, runs the agent CLI
  *  non-interactively in the data repo root, prints the answer, and
  *  persists the run to outputs/last-query.md. The guardrail is
- *  mechanical, not prompt-deep: any change under wiki/ during the run
- *  reverts the data repo to its pre-run state and fails the run.
+ *  mechanical, not prompt-deep: any change under wiki/ during the
+ *  run — a commit the agent makes included — reverts the data repo
+ *  to its pre-run state and fails the run.
  *
  *  Stage 2 (human-only) — `wiki-query --file-last` templates the saved
  *  answer byte-exactly into wiki/queries/<slug>.md and updates
@@ -158,18 +159,30 @@ export async function runWikiQuery(
     throw new Error("the agent produced no answer");
   }
 
-  const { entries, changed } = await statusSince(dataRoot, env, pre, "wiki");
+  const { entries, changed, headMoved } = await statusSince(
+    dataRoot,
+    env,
+    pre,
+    "wiki",
+  );
 
-  if (changed.length > 0) {
+  if (changed.length > 0 || headMoved) {
     const revertTo = pre.commit.slice(0, 8);
+    const reason =
+      changed.length > 0 ? "wiki changed" : "the data repo's HEAD moved";
 
     onProgress(
-      `wiki-query: wiki changed during the answer-only run — reverting to ${revertTo}`,
+      `wiki-query: ${reason} during the answer-only run — reverting to ${revertTo}`,
     );
     await revertToPreRun(dataRoot, env, pre, entries);
 
+    const violations = [
+      ...(changed.length > 0 ? [`wrote to wiki/ (${changed.join(", ")})`] : []),
+      ...(headMoved ? ["moved the data repo's HEAD"] : []),
+    ];
+
     throw new Error(
-      `answer-only run wrote to wiki/ (${changed.join(", ")}); reverted to ${revertTo} — the answer was saved nowhere; rerun the question`,
+      `answer-only run ${violations.join(" and ")}; reverted to ${revertTo} — the answer was saved nowhere; rerun the question`,
     );
   }
 
@@ -201,9 +214,10 @@ Stage 1 (default): wiki-query "<question>"
   the run (question, answer, pages cited, timestamp) to
   outputs/last-query.md. The run is answer-only by construction: the
   wrapper captures the data repo's pre-run git state, and any change
-  under wiki/ during the run — whatever the agent claims — reverts the
-  data repo to that state and exits 1; nothing is saved. A question
-  the wiki cannot answer prints its suggested sources and exits 0.
+  under wiki/ during the run — whatever the agent claims, even one
+  the agent commits — reverts the data repo to that state and exits
+  1; nothing is saved. A question the wiki cannot answer prints its
+  suggested sources and exits 0.
 
 Stage 2 (human-only): wiki-query --file-last
   Deterministic code, no agent, zero tokens: template the saved

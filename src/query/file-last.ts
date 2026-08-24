@@ -1,6 +1,7 @@
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { runGit } from "../data/init-data-repo.ts";
+import { parseStatus } from "../ingest/guardrails.ts";
 import { listWikiPages, readPageFields } from "../wiki/pages.ts";
 import { buildPageIndex, extractWikilinks } from "../wiki-links.ts";
 
@@ -319,14 +320,18 @@ function appendLogEntry(logText: string, entry: string): string {
 
 /**
  * The drift warning for a filing (issue #72): `raw/` or `wiki/` was
- * committed after the answer was saved, so pages it cites may have
- * moved. Undefined when git cannot report or nothing moved.
+ * committed after the answer was saved, or carries uncommitted
+ * changes whose worktree mtime post-dates the save (wiki-ingest
+ * leaves the wiki dirty until wiki-sync commits), so pages the
+ * answer cites may have moved. Undefined when git cannot report or
+ * nothing moved.
  */
 export async function driftWarning(
   dataRoot: string,
   env: NodeJS.ProcessEnv,
   savedTimestamp: string,
 ): Promise<string | undefined> {
+  const savedAt = Date.parse(savedTimestamp);
   let stdout: string;
 
   try {
@@ -341,17 +346,65 @@ export async function driftWarning(
 
   const last = stdout.trim();
 
-  if (last === "") {
+  if (last !== "") {
+    const changedAt = Date.parse(last);
+
+    if (
+      !Number.isNaN(changedAt) &&
+      !Number.isNaN(savedAt) &&
+      changedAt > savedAt
+    ) {
+      return `warning: the data repo changed after the saved answer (${last} touched raw/ or wiki/); pages it cites may have moved`;
+    }
+  }
+
+  if (Number.isNaN(savedAt)) {
     return undefined;
   }
 
-  const changedAt = Date.parse(last);
-
-  if (Number.isNaN(changedAt) || changedAt <= Date.parse(savedTimestamp)) {
+  try {
+    ({ stdout } = await runGit(
+      dataRoot,
+      [
+        "-c",
+        "core.quotePath=false",
+        "status",
+        "--porcelain",
+        "-uall",
+        "--",
+        "raw",
+        "wiki",
+      ],
+      env,
+    ));
+  } catch {
     return undefined;
   }
 
-  return `warning: the data repo changed after the saved answer (${last} touched raw/ or wiki/); pages it cites may have moved`;
+  for (const entry of parseStatus(stdout)) {
+    for (const path of [entry.origin, entry.path]) {
+      if (
+        path === undefined ||
+        !(path.startsWith("raw/") || path.startsWith("wiki/"))
+      ) {
+        continue;
+      }
+
+      let mtimeMs: number;
+
+      try {
+        ({ mtimeMs } = await stat(join(dataRoot, path)));
+      } catch {
+        continue;
+      }
+
+      if (mtimeMs > savedAt) {
+        return `warning: the data repo changed after the saved answer (uncommitted changes under raw/ or wiki/); pages it cites may have moved`;
+      }
+    }
+  }
+
+  return undefined;
 }
 
 export interface FileLastOptions {

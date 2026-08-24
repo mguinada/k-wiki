@@ -1,5 +1,12 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -363,6 +370,48 @@ describe("driftWarning", () => {
 
     expect(
       await driftWarning(dir, process.env, "2026-08-20T10:00:00Z"),
+    ).toBeUndefined();
+  });
+
+  it("warns on uncommitted wiki changes newer than the saved answer", async () => {
+    const dataRoot = await makeCommittedRepo();
+
+    await writeFile(join(dataRoot, "wiki", "index.md"), "# Index v2\n");
+    await utimes(
+      join(dataRoot, "wiki", "index.md"),
+      new Date("2026-08-21T12:00:00Z"),
+      new Date("2026-08-21T12:00:00Z"),
+    );
+
+    expect(
+      await driftWarning(dataRoot, process.env, "2026-08-20T10:00:00Z"),
+    ).toMatch(
+      /^warning: the data repo changed after the saved answer \(uncommitted changes under raw\/ or wiki\/\)/,
+    );
+  });
+
+  it("is undefined for uncommitted wiki changes older than the saved answer", async () => {
+    const dataRoot = await makeCommittedRepo();
+
+    await writeFile(join(dataRoot, "wiki", "index.md"), "# Index v2\n");
+    await utimes(
+      join(dataRoot, "wiki", "index.md"),
+      new Date("2026-08-19T12:00:00Z"),
+      new Date("2026-08-19T12:00:00Z"),
+    );
+
+    expect(
+      await driftWarning(dataRoot, process.env, "2026-08-20T10:00:00Z"),
+    ).toBeUndefined();
+  });
+
+  it("is undefined for an uncommitted wiki deletion", async () => {
+    const dataRoot = await makeCommittedRepo();
+
+    await rm(join(dataRoot, "wiki", "index.md"));
+
+    expect(
+      await driftWarning(dataRoot, process.env, "2026-08-20T10:00:00Z"),
     ).toBeUndefined();
   });
 });

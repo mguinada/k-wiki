@@ -318,6 +318,104 @@ describe("runWikiQuery", () => {
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("fails, reverts, and restores a pre-run untracked page the agent deleted", async () => {
+    const h = await makeHarness();
+
+    await mkdir(join(h.dataRoot, "wiki", "drafts"), { recursive: true });
+    await writeFile(join(h.dataRoot, "wiki", "drafts", "note.md"), "NOTE\n");
+
+    const rogue: AgentRunner = async (_command, _args, options) => {
+      await rm(join(options.cwd, "wiki", "drafts", "note.md"));
+
+      return { stdout: "An answer.", stderr: "" };
+    };
+
+    await expect(
+      runWikiQuery({ ...optionsFor(h), runAgent: rogue }),
+    ).rejects.toThrow("wiki/drafts/note.md");
+
+    expect(
+      await readFile(join(h.dataRoot, "wiki", "drafts", "note.md"), "utf8"),
+    ).toBe("NOTE\n");
+
+    await expect(
+      readFile(join(h.outputsDir, "last-query.md")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("fails and reverts when the agent renames a wiki page outside wiki/", async () => {
+    const h = await makeHarness();
+    const rogue: AgentRunner = async (_command, _args, options) => {
+      await mkdir(join(options.cwd, "notes"), { recursive: true });
+      await run("git", ["mv", "wiki/concepts/rag.md", "notes/rag.md"], {
+        cwd: options.cwd,
+      });
+
+      return { stdout: "An answer.", stderr: "" };
+    };
+
+    await expect(
+      runWikiQuery({ ...optionsFor(h), runAgent: rogue }),
+    ).rejects.toThrow("wiki/concepts/rag.md");
+
+    expect(
+      await readFile(join(h.dataRoot, "wiki", "concepts", "rag.md"), "utf8"),
+    ).toBe("RAG\n");
+    await expect(
+      readFile(join(h.dataRoot, "notes", "rag.md")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("fails and reverts when the agent commits its wiki writes", async () => {
+    const h = await makeHarness();
+    const { stdout: sha } = await run("git", [
+      "-C",
+      h.dataRoot,
+      "rev-parse",
+      "HEAD",
+    ]);
+    const rogue: AgentRunner = async (_command, _args, options) => {
+      await writeFile(join(options.cwd, "wiki", "index.md"), "# Rogue\n");
+      await run("git", ["add", "-A"], { cwd: options.cwd });
+      await run(
+        "git",
+        [
+          "-c",
+          "user.email=t@t",
+          "-c",
+          "user.name=t",
+          "commit",
+          "--quiet",
+          "-m",
+          "rogue",
+        ],
+        { cwd: options.cwd },
+      );
+
+      return { stdout: "An answer.", stderr: "" };
+    };
+
+    await expect(
+      runWikiQuery({ ...optionsFor(h), runAgent: rogue }),
+    ).rejects.toThrow("moved the data repo's HEAD");
+
+    const { stdout: after } = await run("git", [
+      "-C",
+      h.dataRoot,
+      "rev-parse",
+      "HEAD",
+    ]);
+
+    expect(after.trim()).toBe(sha.trim());
+    expect(await readFile(join(h.dataRoot, "wiki", "index.md"), "utf8")).toBe(
+      "# Index\n",
+    );
+
+    await expect(
+      readFile(join(h.outputsDir, "last-query.md")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("ignores wiki pages that were already dirty before the run", async () => {
     const h = await makeHarness();
 
