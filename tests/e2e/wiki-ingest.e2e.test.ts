@@ -267,7 +267,7 @@ describe("wiki-ingest e2e", () => {
     await ingest(repo);
 
     const argv = (
-      await readFile(join(repo.outputsDir, "stub-argv.txt"), "utf8")
+      await readFile(join(repo.dataRoot, "outputs", "stub-argv.txt"), "utf8")
     ).split("\n");
 
     expect(argv.slice(0, 3)).toEqual([
