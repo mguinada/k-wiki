@@ -11,11 +11,11 @@ shared predicate `isWarning` (`src/cli/progress.ts`).
 
 | Color | Feedback kind | Examples |
 |---|---|---|
-| dim | progress and heartbeat lines | `createAgentProgressSink` in `src/ingest/wiki-ingest.ts` (also consumed by `src/sync/wiki-sync.ts`, `src/query/wiki-query.ts`), read/scan heartbeats in `src/sync/sync-vault.ts` |
+| dim | progress and heartbeat lines | `createAgentProgressSink` in `src/ingest/wiki-ingest.ts` (also consumed by `src/sync/wiki-sync.ts`, `src/query/wiki-query.ts`), the no-change summary in `formatReport` (`src/sync/sync-vault.ts`) |
 | yellow | warning severity | any progress message containing `WARNING` — today the foreign-snapshot warning in `readSnapshot` (`src/ingest/wiki-ingest.ts`) |
 | red | error | `fail()` in every entry point, broken crosslinks, removed files, health problems in `src/health/check-raw.ts` |
-| green | ok / healthy / added | `src/health/check-raw.ts`, `src/crosslinks.ts`, copied files in `src/sync/sync-vault.ts` |
-| bold | emphasis | vault names in `formatReport`, verdict headers in `src/sync/sync-vault.ts`, `src/query/wiki-query.ts` |
+| green | ok / healthy / added | `src/health/check-raw.ts`, the ok summary in `scripts/check-crosslinks.ts`, copied files in `src/sync/sync-vault.ts` |
+| bold | emphasis | vault names in `formatReport` and progress lines (`src/sync/sync-vault.ts`), verdict headers in `src/query/wiki-query.ts` |
 
 Yellow slots between dim (routine progress) and red (failure): a
 warning must be visible against dim heartbeats without claiming the
