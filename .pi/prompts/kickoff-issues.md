@@ -35,23 +35,24 @@ Launch every kickoff in a single parallel fan-out — one `subagent` call (`work
 
 Each subagent sees only its task text, so the task is self-contained. Template (fill every placeholder):
 
-> You are the kickoff agent for issue #<N> (<url>) in <nameWithOwner>. Create the worktree, start a fresh pi main agent in it, hand it the implementation work, confirm pickup, and report back. Steps:
+> You are the kickoff agent for issue #<N> (<url>) in <nameWithOwner>. Check blockers, create the worktree, start a fresh pi main agent in it, hand it the implementation work, confirm pickup, and report back. Steps:
 >
-> 1. `herdr worktree create --cwd "$PWD" --branch "issue-<N>-<slug>" --base "origin/<default-branch>" --no-focus` — the worktree directory takes the branch name. Parse the workspace, tab, and pane IDs from the JSON response; never guess them.
-> 2. `herdr agent start "issue-<N>" --kind pi --pane <pane-id>` — this invokes pi in the worktree pane: the fresh main agent.
-> 3. Submit the work without `--wait`:
+> 1. Check blockers as do-gh-issue step 3 does: the issue's native `blockedBy` relationships, then "blocked by #M" mentions in its body; resolve each blocker's state. An open blocker → report `#<N> | blocked | blocked by #<M> (open)` and end — create nothing (no worktree, no branch, no pane).
+> 2. `herdr worktree create --cwd "$PWD" --branch "issue-<N>-<slug>" --base "origin/<default-branch>" --no-focus` — the worktree directory takes the branch name. Parse the workspace, tab, and pane IDs from the JSON response; never guess them.
+> 3. `herdr agent start "issue-<N>" --kind pi --pane <pane-id>` — this invokes pi in the worktree pane: the fresh main agent.
+> 4. Submit the work without `--wait`:
 >
 >    `herdr agent prompt "issue-<N>" "Read .agents/skills/do-gh-issue/SKILL.md and execute it end-to-end for issue #<N>: <url>. Two adjustments: (1) its step 9 is already done — you are in the worktree <worktree-path> on branch issue-<N>-<slug>, based on origin/<default-branch>; do not create another branch or worktree. (2) As your final action, report to the host agent: herdr agent prompt <host-pane-id> \"issue #<N>: <PR URL, or the reason the run stopped>\" — if that fails, print the same line in your own transcript. Report whether you finish, stop on a blocker, or fail."`
 >
-> 4. Confirm pickup: `herdr agent wait "issue-<N>" --until working --timeout 60000`. On timeout or `blocked`, read the pane (`herdr agent read "issue-<N>" --source recent-unwrapped --lines 60`) and record what you see — a prompt awaiting input (trust confirmation, onboarding) is recorded, never answered. Never touch another issue's worktree, pane, or agent.
-> 5. Report exactly one line — `#<N> | launched | <worktree-path> | issue-<N>-<slug> | issue-<N> | <workspace-id>` or `#<N> | failed | <reason>`. Your job ends at confirmed pickup; do not wait for the main agent.
+> 5. Confirm pickup: `herdr agent wait "issue-<N>" --until working --timeout 60000`. On timeout or `blocked`, read the pane (`herdr agent read "issue-<N>" --source recent-unwrapped --lines 60`) and record what you see — a prompt awaiting input (trust confirmation, onboarding) is recorded, never answered. Never touch another issue's worktree, pane, or agent.
+> 6. Report exactly one line — `#<N> | launched | <worktree-path> | issue-<N>-<slug> | issue-<N> | <workspace-id>`, `#<N> | blocked | <reason>`, or `#<N> | failed | <reason>`. Your job ends at confirmed pickup; do not wait for the main agent.
 
 A subagent that fails or times out is failed for its issue only — no fallback kickoff, no effect on the others. When the fan-out returns, merge the lines and go to §4.
 
 ### Path B — host runs each kickoff itself (only without a subagent tool)
 
-For each surviving issue, in the user's order, run the template's steps 1–4 yourself (step 5 becomes your bookkeeping line). Submit the kickoff prompt without `--wait` and move straight to the next issue — no wait, check, or confirmation between kickoffs. Only after the last kickoff, confirm pickups: per issue `herdr agent wait "issue-<N>" --until working --timeout 60000`; on timeout or `blocked`, read the pane and record; never answer prompts for the user. A failure at any step records that issue as failed and the run continues.
+For each surviving issue, in the user's order, run the template's steps 1–5 yourself (step 6 becomes your bookkeeping line). Submit the kickoff prompt without `--wait` and move straight to the next issue — no wait, check, or confirmation between kickoffs. Only after the last kickoff, confirm pickups: per issue `herdr agent wait "issue-<N>" --until working --timeout 60000`; on timeout or `blocked`, read the pane and record; never answer prompts for the user. A failure at any step records that issue as failed and the run continues.
 
 ## 4. Collect and report
 
-Merge the kickoff results into a Markdown table — one row per issue: number, title, result (launched / skipped / failed), worktree path, branch, agent name, workspace ID; include §2's skips. Under it, list every skip or failure with its reason. Close with: live progress is in the Herdr sidebar; each main agent reports its final outcome back to this pane and I relay it to you; ask me any time for a status check.
+Merge the kickoff results into a Markdown table — one row per issue: number, title, result (launched / skipped / blocked / failed), worktree path, branch, agent name, workspace ID; include §2's skips. Under it, list every skip, block, or failure with its reason. Close with: live progress is in the Herdr sidebar; each main agent reports its final outcome back to this pane and I relay it to you; ask me any time for a status check.
