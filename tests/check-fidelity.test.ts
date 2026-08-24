@@ -331,6 +331,35 @@ describe("checkWikiFidelity", () => {
     expect((await checkWikiFidelity(wikiDir, rawDir)).problems).toEqual([]);
   });
 
+  it("excludes frontmatter closed by an indented fence from the body scan", async () => {
+    const { wikiDir, rawDir } = await makeFixture(
+      {
+        "sources/s.md":
+          "---\ntitle: S\ntype: source\norigin: raw/notes/V/s.md\nsources:\n  - ~/.stale-cache\n  ---\nClean body.\n",
+      },
+      { "notes/V/s.md": "clean" },
+    );
+
+    const report = await checkWikiFidelity(wikiDir, rawDir);
+
+    expect(report.problems).toEqual([]);
+    expect(report.quotes).toBe(0);
+  });
+
+  it("trims trailing punctuation from a tilde path at sentence end", async () => {
+    const { wikiDir, rawDir } = await makeFixture(
+      {
+        "sources/s.md": sourcePage(
+          "raw/notes/V/s.md",
+          "The shim lives at ~/Lab/k-wiki/bin/shim.",
+        ),
+      },
+      { "notes/V/s.md": "The shim lives at ~/Lab/k-wiki/bin/shim, never elsewhere." },
+    );
+
+    expect((await checkWikiFidelity(wikiDir, rawDir)).problems).toEqual([]);
+  });
+
   it("reports a title that does not kebab to the file name", async () => {
     const { wikiDir, rawDir } = await makeFixture({
       "concepts/wiki-page-primitives.md":

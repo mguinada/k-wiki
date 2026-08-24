@@ -89,7 +89,8 @@ const TRAILING_STOPWORDS = new Set([
 ]);
 
 /** The body after a closed frontmatter block; the full text when the
- *  page opens with no frontmatter. */
+ *  page opens with no frontmatter. The closing fence matches
+ *  `parsePageFields` (whitespace-trimmed) so one page parses one way. */
 function bodyAfterFrontmatter(text: string): string {
   const lines = text.split("\n");
 
@@ -97,7 +98,9 @@ function bodyAfterFrontmatter(text: string): string {
     return text;
   }
 
-  const end = lines.indexOf("---", 1);
+  const end = lines.findIndex(
+    (line, index) => index > 0 && line.trim() === "---",
+  );
 
   return end === -1 ? text : lines.slice(end + 1).join("\n");
 }
@@ -196,16 +199,14 @@ export async function checkWikiFidelity(
     const page = relative(resolve(wikiDir, ".."), join(wikiDir, file));
     const stem = basename(file, ".md");
 
-    if (
-      fields.title !== undefined &&
-      !STRUCTURAL_PAGES.has(stem) &&
-      kebab(fields.title) !== stem
-    ) {
-      problems.push(
-        `${page} -> title ${JSON.stringify(fields.title)} does not kebab to ${stem}`,
-      );
-    } else if (fields.title !== undefined && !STRUCTURAL_PAGES.has(stem)) {
-      titles++;
+    if (fields.title !== undefined && !STRUCTURAL_PAGES.has(stem)) {
+      if (kebab(fields.title) === stem) {
+        titles++;
+      } else {
+        problems.push(
+          `${page} -> title ${JSON.stringify(fields.title)} does not kebab to ${stem}`,
+        );
+      }
     }
 
     if (fields.type !== "source" || fields.origin === undefined) {
