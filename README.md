@@ -395,7 +395,7 @@ sources directly, so there is no build step — install dependencies with
 | `npm run sync-vault -- [--dry-run] [<sync.json>] [<raw-dir>]` | sync CLI | Ingest every note not blocked by the vault's exclusion rule into `raw/notes/` (deterministic, no LLM; [details below](#running-the-sync)) |
 | `npm run wiki-ingest -- [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<raw-dir>]` | ingest wrapper | Run the wiki agent headless over the sources that changed since the last ingest and write the per-run digest (reads `settings.yml`; [details below](#running-the-wiki-agent-wiki-ingest)) |
 | `npm run wiki-sync -- [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<sync.json>] [<raw-dir>]` | cycle orchestrator | Run the whole cycle — sync → ingest → lint → crosslink audit (configured second brains) → one data-repo commit — and print the digest (reads `settings.yml`, including its optional `secondBrain.domains` list; [details below](#running-the-full-cycle-wiki-sync)) |
-| `npm run wiki-query -- [-h \| --help] [--no-filing] [--settings <path>] [--raw-dir <dir>] [--timeout <secs>] <question>` | query wrapper | Ask the built wiki one question headless: print the answer and, unless `--no-filing`, report the query pages the agent filed (reads `settings.yml`; [details below](#running-queries-wiki-query)) |
+| `npm run wiki-query -- [-h \| --help] [--file-last] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>` | query wrapper | Ask the built wiki one question headless: print the answer, save it for review (stage 1, default); `--file-last` files the reviewed answer deterministically (stage 2; reads `settings.yml` in stage 1; [details below](#running-queries-wiki-query)) |
 | `npm run data:init -- [--second-brain] [<sync.json>]` | data repo seeder | Create and seed the data repo at `sync.json`'s `dataRoot`: git init, copy the `raw/`+`wiki/` skeleton from the code repo, first commit; idempotent; `--second-brain` also writes the `.second-brain` identity marker ([§5](#5-the-second-brain)) |
 | `npm run mutation:changed` | StrykerJS | Advisory mutation run scoped to the changed hunks of the `src/` files that differ from `main` (uncommitted included; new files whole) — `scripts/mutation-scope.ts` builds the `file:start-end` ranges; exits 0 without running when nothing changed, and ends by printing the actionable mutants — the default pre-handoff step |
 | `npm run mutation:changed -- --full` | StrykerJS | Advisory mutation run over all of `src/`, not just changed files; same printed summary |
@@ -783,26 +783,40 @@ all. Scheduling is #14; the publish step joins with #15.
 ## Running queries (`wiki-query`)
 
 ```sh
-npm run wiki-query -- "When should I prefer RAG over fine-tuning?"      # answers and files
-npm run wiki-query -- --no-filing "What is graph engineering?"           # answers only
+npm run wiki-query -- "When should I prefer RAG over fine-tuning?"   # stage 1: answers, saves for review
+npm run wiki-query -- --file-last                                  # stage 2: files the reviewed answer
 ```
 
 `wiki-query` is the terminal front-end for asking the built wiki a
-question (guide §16, issue #67): it composes `prompts/query.md` with
-the question, runs the agent headless in the data repo root — same
-`settings.yml`, spinner, and `--timeout` budget as `wiki-ingest` —
-prints the answer, then the filing verdict. The filing gate comes
-from `wiki/AGENTS.md` (Queries): an answer that synthesizes or
-reframes more than one page gets filed under `wiki/queries/` with
-`type: query` frontmatter; a verbatim restatement of a single page
-does not. The wrapper never writes wiki files itself — it reads the
-data repo's git status to name the filed pages under `Filed:`, or
-prints the agent's reason nothing was filed; if the git status
-itself cannot be read, it prints that the filing status is
-unavailable — the gate is visible every run. A question the wiki
-cannot answer prints plainly with suggested sources and exits 0.
-With `--no-filing` nothing is written
-anywhere under `wiki/`; if the answer would have met the bar, the
-wrapper prints the hint to rerun without the switch. Switches:
-`--settings <path>`, `--raw-dir <dir>`, `--timeout <secs>` (default
-1800) — `-h` documents them all.
+question (guide §16, issues #67 and #72). Filing is two-stage, and an
+omitted flag can never produce wiki writes:
+
+- **Stage 1 (default, `<question>`)** composes `prompts/query.md`
+  with the question and runs the agent headless in the data repo
+  root — same `settings.yml`, spinner, and `--timeout` budget as
+  `wiki-ingest` — then prints the answer and saves the run
+  (question, answer, pages cited, timestamp) to
+  `outputs/last-query.md` (`--outputs <dir>` to relocate it). The run
+  is answer-only by construction: the prompt says write nothing, and
+  the wrapper enforces it mechanically — it captures the data repo's
+  pre-run git state, and any change under `wiki/` during the run,
+  whatever the agent claims, reverts the data repo to that state and
+  exits 1 with nothing saved. A question the wiki cannot answer
+  prints plainly with suggested sources and exits 0.
+- **Stage 2 (`--file-last`, human-only)** is deterministic code, no
+  agent, zero tokens: it templates the saved answer byte-exactly
+  into `wiki/queries/<slug>.md` (kebab-case slug from the question,
+  `-2`/`-3` suffixes on collision; `type: query` frontmatter with
+  `sources` derived from the answer's citations of `type: source`
+  pages), appends the `index.md` entry under `## Queries`, and
+  appends the `log.md` entry (`## [date] query | <question>`). It
+  fails cleanly when no saved answer exists, and warns when the data
+  repo's `raw/` or `wiki/` changed after the saved timestamp — the
+  answer cites pages that may have moved; the warning does not block
+  the filing.
+
+The old `--no-filing` switch is gone (superseded): answer-only is
+the default, and there is exactly one filing path (`--file-last`).
+Stage 1 switches: `--settings <path>`, `--outputs <dir>`,
+`--raw-dir <dir>`, `--timeout <secs>` (default 1800) — `-h`
+documents them all.

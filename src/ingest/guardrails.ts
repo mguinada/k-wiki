@@ -670,6 +670,22 @@ async function checkChangedWikilinks(
   return { check: 3, name: "wikilinks", problems };
 }
 
+/** The full `git status --porcelain -uall` snapshot, parsed. Shared
+ *  by runGuardrails and statusSince; core.quotePath=false so pre-run
+ *  and post-run paths compare equal. */
+async function porcelainStatus(
+  dataRoot: string,
+  env: NodeJS.ProcessEnv,
+): Promise<StatusEntry[]> {
+  const { stdout } = await runGit(
+    dataRoot,
+    ["-c", "core.quotePath=false", "status", "--porcelain", "-uall"],
+    env,
+  );
+
+  return parseStatus(stdout);
+}
+
 /**
  * Run the three guardrails against the data repo and return the first
  * one that tripped. Checks 2 and 3 read every wiki page the run
@@ -680,15 +696,7 @@ export async function runGuardrails(
   env: NodeJS.ProcessEnv,
   pre: PreRunState,
 ): Promise<PostRunState> {
-  const entries = parseStatus(
-    (
-      await runGit(
-        dataRoot,
-        ["-c", "core.quotePath=false", "status", "--porcelain", "-uall"],
-        env,
-      )
-    ).stdout,
-  );
+  const entries = await porcelainStatus(dataRoot, env);
   const immutability = await checkImmutability(dataRoot, env, pre, entries);
 
   if (immutability !== undefined) {
@@ -754,4 +762,83 @@ export async function revertToPreRun(
     await mkdir(dirname(target), { recursive: true });
     await writeFile(target, content);
   }
+}
+
+/**
+ * Post-run comparison under one path prefix (issue #72, wiki-query
+ * stage 1): the full post-run status entries, every path under
+ * `prefix` whose git state differs from the pre-run snapshot, and
+ * whether HEAD moved. A path differs when it gains a status entry
+ * (a new file, or a rename whose origin or target sits under the
+ * prefix), when its status code, rename origin, or content hash
+ * moved — including a re-edit of a file already dirty before the
+ * run — or when a pre-run dirty path under the prefix vanished from
+ * the post-run status entirely (a deleted untracked page is
+ * invisible to git status, so the captured hashes are compared
+ * against the disk). A run that commits its writes leaves a clean
+ * tree: no path reports, `headMoved` carries it. The caller decides
+ * what a change means and whether to revert with `revertToPreRun`
+ * (which wants the full entries, not only the prefix's).
+ */
+export async function statusSince(
+  dataRoot: string,
+  env: NodeJS.ProcessEnv,
+  pre: PreRunState,
+  prefix: string,
+): Promise<{
+  readonly entries: readonly StatusEntry[];
+  readonly changed: readonly string[];
+  readonly headMoved: boolean;
+}> {
+  const entries = await porcelainStatus(dataRoot, env);
+  const before = statusIndex(pre.status);
+  const preRunOrigins = new Set(
+    pre.status.flatMap((entry) =>
+      entry.origin === undefined ? [] : [entry.origin],
+    ),
+  );
+  const under = (path: string): boolean => path.startsWith(`${prefix}/`);
+  const changed = new Set<string>();
+
+  for (const entry of entries) {
+    if (entry.origin !== undefined && under(entry.origin)) {
+      const untouched =
+        preRunOrigins.has(entry.origin) &&
+        (await hashPath(join(dataRoot, entry.origin))) ===
+          pre.hashes.get(entry.origin);
+
+      if (!untouched) {
+        changed.add(entry.origin);
+      }
+    }
+
+    if (!under(entry.path)) {
+      continue;
+    }
+
+    const untouched =
+      isPreExisting(before.get(entry.path), entry) &&
+      (await hashPath(join(dataRoot, entry.path))) ===
+        pre.hashes.get(entry.path);
+
+    if (!untouched) {
+      changed.add(entry.path);
+    }
+  }
+
+  for (const path of pre.hashes.keys()) {
+    if (!under(path)) {
+      continue;
+    }
+
+    if ((await hashPath(join(dataRoot, path))) !== pre.hashes.get(path)) {
+      changed.add(path);
+    }
+  }
+
+  return {
+    entries,
+    changed: [...changed].sort(),
+    headMoved: (await headCommit(dataRoot, env)) !== pre.commit,
+  };
 }

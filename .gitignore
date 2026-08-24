@@ -51,6 +51,7 @@ tests/.data-init-import-staging/
 # outputs/ stay tracked.
 outputs/runs/
 outputs/last-ingested-manifest.json
+outputs/last-query.md
 
 # Second-brain instance state (guide 25, Scenario D): per-machine
 # outputs, config, and snapshot for additional wiki instances are

@@ -139,7 +139,7 @@ if (prompt === undefined || prompt === "") {
 }
 
 await writeFile(join(process.cwd(), "stub-prompt.txt"), prompt);
-console.log("Tried jest first, then vitest; vitest stayed.\\n\\nQUERY: meets-bar — synthesizes the profile and one decision page");
+console.log("Tried jest first, then vitest; vitest stayed.");
 `;
 
 interface Repo {
@@ -456,12 +456,15 @@ console.log("rogue self-grant report");
       repo.settingsPath,
       "--raw-dir",
       repo.rawDir,
-      "--no-filing",
+      "--outputs",
+      repo.outputsDir,
       "What did I try for fast tests?",
     ]);
 
     expect(result.code).toBe(0);
-    expect(result.out).toContain("Tried jest first, then vitest");
+    expect(result.out.trim()).toBe(
+      "Tried jest first, then vitest; vitest stayed.",
+    );
 
     const prompt = await readFile(
       join(repo.dataRoot, "stub-prompt.txt"),

@@ -5,211 +5,62 @@ import { createColors } from "picocolors";
 import { isMainModule } from "../cli/is-main.ts";
 import { formatDuration } from "../cli/progress.ts";
 import {
+  capturePreRunState,
+  revertToPreRun,
+  statusSince,
+} from "../ingest/guardrails.ts";
+import {
   type AgentRunner,
   createAgentProgressSink,
   HEARTBEAT_MS,
   loadAgentSettings,
   readPrompt,
   spawnAgent,
-  type WikiPages,
-  wikiPages,
 } from "../ingest/wiki-ingest.ts";
 import { loadSyncConfig, resolveRawDir } from "../sync/config.ts";
+import { citedPages, fileLastQuery, writeQueryArtifact } from "./file-last.ts";
 
 /**
  * wiki-query: the terminal front-end for asking questions against the
- * built wiki (guide §16, issue #67). It composes prompts/query.md
- * with the question and the mode (file, or --no-filing answer-only),
- * runs the agent CLI non-interactively in the data repo root, prints
- * the answer, and — in file mode — reports the query pages the agent
- * filed, read from the data repo's git status. The script itself
- * writes nothing anywhere; the agent does any filing (wiki/AGENTS.md,
- * Queries). The trailing `QUERY:` status line the composed prompt
- * asks for is how the wrapper learns the filing verdict it prints.
+ * built wiki (guide §16, issues #67 and #72). Filing is two-stage:
+ *
+ *  Stage 1 (default) — `wiki-query <question>` is always answer-only.
+ *  It composes prompts/query.md with the question, runs the agent CLI
+ *  non-interactively in the data repo root, prints the answer, and
+ *  persists the run to outputs/last-query.md. The guardrail is
+ *  mechanical, not prompt-deep: any change under wiki/ during the
+ *  run — a commit the agent makes included — reverts the data repo
+ *  to its pre-run state and fails the run.
+ *
+ *  Stage 2 (human-only) — `wiki-query --file-last` templates the saved
+ *  answer byte-exactly into wiki/queries/<slug>.md and updates
+ *  index.md and log.md. Deterministic code, zero LLM involvement; see
+ *  src/query/file-last.ts.
  */
 
-/** What the agent's trailing `QUERY:` line reports about filing. */
-export type QueryStatusKind =
-  | "filed"
-  | "meets-bar"
-  | "not-filed"
-  | "not-answerable"
-  | "unknown";
-
-export interface AgentReply {
-  /** The agent output minus the trailing status line. */
-  readonly answer: string;
-  readonly kind: QueryStatusKind;
-  /** The reason, pages, or suggested sources the status line carries. */
-  readonly detail: string | undefined;
-}
-
-const STATUS_LINE =
-  /^QUERY: (not-filed|not-answerable|meets-bar|filed) — (.+)$/;
-
-/** Split the agent output into the answer and its trailing status line. */
-export function parseAgentReply(output: string): AgentReply {
-  const text = output.replace(/\s+$/, "");
-  const lastNewline = text.lastIndexOf("\n");
-  const lastLine = lastNewline === -1 ? text : text.slice(lastNewline + 1);
-  const match = STATUS_LINE.exec(lastLine);
-
-  if (match === null) {
-    return { answer: output.trim(), kind: "unknown", detail: undefined };
-  }
-
-  const answer = (lastNewline === -1 ? "" : text.slice(0, lastNewline)).trim();
-
-  return {
-    answer,
-    kind: match[1] as Exclude<QueryStatusKind, "unknown">,
-    detail: match[2],
-  };
-}
-
-/** The wiki/queries filing instruction appended to prompts/query.md. */
-const STATUS_INSTRUCTIONS = [
-  "End your reply with exactly one status line, nothing after it, the first that applies:",
-  "QUERY: filed — <the wiki/queries/ pages you created or updated>",
-  "QUERY: meets-bar — <why the answer deserves filing>",
-  "QUERY: not-filed — <why the filing bar is not met>",
-  "QUERY: not-answerable — <which sources to ingest next>",
-];
-
 /**
- * Compose the agent message: the query prompt, the question, the mode
- * (the agent must know whether filing is allowed), and the status-line
- * protocol the wrapper parses.
+ * Compose the agent message: the query prompt, the question, and the
+ * answer-only mode. There is no filing mode and no status-line
+ * protocol — stage 1 only answers.
  */
 export function composeQueryPrompt(
   promptText: string,
   question: string,
-  noFiling: boolean,
 ): string {
-  const mode = noFiling
-    ? "Mode: answer-only (--no-filing) — write nothing: no query page, no index.md or log.md change; the reply is the only output."
-    : "Mode: file — filing is allowed: when the answer meets the bar, create the query page and update index.md and log.md per the rules above.";
-
   return [
     promptText,
     "",
     `Question: ${question}`,
     "",
-    mode,
-    "",
-    ...STATUS_INSTRUCTIONS,
+    "Mode: answer-only — write nothing: no query page, no index.md or log.md change, no edit anywhere under wiki/; the reply is the only output. The wrapper saves it; the human alone decides later whether to file it.",
   ].join("\n");
-}
-
-/** How the wrapper reports one completed query run. */
-export type Verdict =
-  | { readonly kind: "filed"; readonly pages: readonly string[] }
-  | { readonly kind: "not-filed"; readonly reason: string }
-  | { readonly kind: "not-answerable"; readonly suggestion: string }
-  | { readonly kind: "offer"; readonly reason: string }
-  | { readonly kind: "unavailable"; readonly reason: string }
-  | { readonly kind: "none" };
-
-const EMPTY_PAGES: WikiPages = {
-  created: [],
-  updated: [],
-  deleted: [],
-  unavailable: undefined,
-};
-
-/**
- * The filing verdict to print. In file mode the data repo's git status
- * is the truth: wiki/queries changes mean filed, whatever the agent
- * claims; the agent's status line explains why nothing was filed or
- * reports an unanswerable question. In answer-only mode only the
- * agent's line speaks: meets-bar becomes the rerun offer.
- */
-export function classifyVerdict(
-  pages: WikiPages,
-  reply: AgentReply,
-  noFiling: boolean,
-): Verdict {
-  if (!noFiling) {
-    const filed = [...pages.created, ...pages.updated];
-
-    if (filed.length > 0) {
-      return { kind: "filed", pages: filed };
-    }
-
-    if (reply.kind === "filed" && pages.unavailable === undefined) {
-      return {
-        kind: "not-filed",
-        reason: `agent reported filing, but git shows no wiki/queries change (${reply.detail ?? "no detail"})`,
-      };
-    }
-
-    if (reply.kind === "filed" && pages.unavailable !== undefined) {
-      return { kind: "unavailable", reason: pages.unavailable };
-    }
-
-    if (reply.kind === "meets-bar") {
-      return {
-        kind: "not-filed",
-        reason: `answer meets the filing bar, but nothing was filed (${reply.detail ?? "no detail"})`,
-      };
-    }
-  }
-
-  if (reply.kind === "meets-bar") {
-    return { kind: "offer", reason: reply.detail ?? "" };
-  }
-
-  if (reply.kind === "not-filed") {
-    return { kind: "not-filed", reason: reply.detail ?? "" };
-  }
-
-  if (reply.kind === "not-answerable") {
-    return { kind: "not-answerable", suggestion: reply.detail ?? "" };
-  }
-
-  return { kind: "none" };
-}
-
-/** One printed verdict line: content plus its color weight. */
-export interface VerdictLine {
-  readonly text: string;
-  readonly bold: boolean;
-}
-
-/** Render the verdict as terminal lines: filed/not-filed/offer bold,
- *  the unanswerable statement plain (issue #67 color policy). */
-export function renderVerdict(verdict: Verdict): VerdictLine[] {
-  switch (verdict.kind) {
-    case "filed":
-      return verdict.pages.map((path) => ({
-        text: `Filed: ${path}`,
-        bold: true,
-      }));
-    case "not-filed":
-      return [{ text: `Not filed: ${verdict.reason}`, bold: true }];
-    case "offer":
-      return [
-        {
-          text: `Meets the filing bar (${verdict.reason}); rerun without --no-filing to file it.`,
-          bold: true,
-        },
-      ];
-    case "not-answerable":
-      return [{ text: `Not answerable: ${verdict.suggestion}`, bold: false }];
-    case "unavailable":
-      return [
-        {
-          text: `Filing status unavailable: ${verdict.reason}`,
-          bold: false,
-        },
-      ];
-    default:
-      return [];
-  }
 }
 
 /** Liveness prefix; the animated sink keeps these on one line. */
 export const QUERY_HEARTBEAT_PREFIX = "wiki-query: querying the wiki";
+
+/** Where stage 1 persists the run inside the outputs dir. */
+export const LAST_QUERY_FILE = "last-query.md";
 
 export interface QueryOptions {
   /** Path to the agent settings file (settings.yml). */
@@ -218,13 +69,14 @@ export interface QueryOptions {
   readonly rawDir: string;
   /** Directory holding query.md. */
   readonly promptsDir: string;
+  /** Directory the saved answer is written to. */
+  readonly outputsDir: string;
   /** The question, passed to the agent inside the composed prompt. */
   readonly question: string;
-  /** Answer-only mode: the agent is told to write nothing, and the
-   *  wrapper does not read the git status. */
-  readonly noFiling?: boolean;
   /** Environment for child processes; defaults to process.env. */
   readonly env?: NodeJS.ProcessEnv;
+  /** Clock for the saved timestamp; defaults to the wall clock. */
+  readonly now?: () => Date;
   /** Agent runner; defaults to the real non-interactive invocation. */
   readonly runAgent?: AgentRunner;
   /** Kill the agent run after this many milliseconds. */
@@ -236,26 +88,31 @@ export interface QueryOptions {
 }
 
 export interface QueryResult {
-  readonly reply: AgentReply;
-  /** wiki/queries pages created/updated by the agent (file mode only). */
-  readonly pages: WikiPages;
+  /** The agent's answer, trimmed. */
+  readonly answer: string;
+  /** Where the run was persisted (outputs/last-query.md). */
+  readonly artifactPath: string;
 }
 
-/** One headless query run: compose, invoke, parse, and (in file mode)
- *  read back what the agent filed. */
+/**
+ * One headless answer-only query run: capture the pre-run state,
+ * compose, invoke, then verify mechanically that wiki/ did not move
+ * (git status is the truth — a wiki agent that writes despite the
+ * prompt is caught, reverted, and failed) before persisting the run.
+ */
 export async function runWikiQuery(
   options: QueryOptions,
 ): Promise<QueryResult> {
   const env = options.env ?? process.env;
   const onProgress = options.onProgress ?? (() => {});
-  const noFiling = options.noFiling ?? false;
   const settings = await loadAgentSettings(options.settingsPath);
   const dataRoot = dirname(options.rawDir);
 
   onProgress(`wiki-query: data repo ${dataRoot}`);
 
+  const pre = await capturePreRunState(dataRoot, env);
   const promptText = await readPrompt(join(options.promptsDir, "query.md"));
-  const composed = composeQueryPrompt(promptText, options.question, noFiling);
+  const composed = composeQueryPrompt(promptText, options.question);
   const args = [
     ...(settings.provider ? ["--provider", settings.provider] : []),
     "--model",
@@ -296,55 +153,114 @@ export async function runWikiQuery(
 
   onProgress("wiki-query: agent finished");
 
-  const reply = parseAgentReply(stdout);
-  const pages = noFiling
-    ? EMPTY_PAGES
-    : await wikiPages(dataRoot, env, "wiki/queries");
+  const answer = stdout.trim();
 
-  return { reply, pages };
+  if (answer === "") {
+    throw new Error("the agent produced no answer");
+  }
+
+  const { entries, changed, headMoved } = await statusSince(
+    dataRoot,
+    env,
+    pre,
+    "wiki",
+  );
+
+  if (changed.length > 0 || headMoved) {
+    const revertTo = pre.commit.slice(0, 8);
+    const reason =
+      changed.length > 0 ? "wiki changed" : "the data repo's HEAD moved";
+
+    onProgress(
+      `wiki-query: ${reason} during the answer-only run — reverting to ${revertTo}`,
+    );
+    await revertToPreRun(dataRoot, env, pre, entries);
+
+    const violations = [
+      ...(changed.length > 0 ? [`wrote to wiki/ (${changed.join(", ")})`] : []),
+      ...(headMoved ? ["moved the data repo's HEAD"] : []),
+    ];
+
+    throw new Error(
+      `answer-only run ${violations.join(" and ")}; reverted to ${revertTo} — the answer was saved nowhere; rerun the question`,
+    );
+  }
+
+  const artifactPath = join(options.outputsDir, LAST_QUERY_FILE);
+
+  await writeQueryArtifact(artifactPath, {
+    question: options.question,
+    timestamp: (options.now ?? (() => new Date()))().toISOString(),
+    pages: citedPages(answer),
+    answer,
+  });
+  onProgress(`wiki-query: answer saved to ${artifactPath}`);
+
+  return { answer, artifactPath };
 }
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
-const HELP = `Usage: wiki-query [-h | --help] [--no-filing] [--settings <path>] [--raw-dir <dir>] [--timeout <secs>] <question>
+const HELP = `Usage: wiki-query [-h | --help] [--file-last] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>
 
-Ask the built wiki one question headless (guide §16, issue #67):
-compose prompts/query.md with the question and the mode, run the
-agent CLI non-interactively in the data repo root, print the answer,
-and report the filing verdict.
+Ask the built wiki one question headless (guide §16, issues #67 and
+#72). Filing is two-stage: stage 1 answers and saves; stage 2 files
+what the human approved.
+
+Stage 1 (default): wiki-query "<question>"
+  Compose prompts/query.md with the question, run the agent CLI
+  non-interactively in the data repo root, print the answer, and save
+  the run (question, answer, pages cited, timestamp) to
+  outputs/last-query.md. The run is answer-only by construction: the
+  wrapper captures the data repo's pre-run git state, and any change
+  under wiki/ during the run — whatever the agent claims, even one
+  the agent commits — reverts the data repo to that state and exits
+  1; nothing is saved. A question the wiki cannot answer prints its
+  suggested sources and exits 0.
+
+Stage 2 (human-only): wiki-query --file-last
+  Deterministic code, no agent, zero tokens: template the saved
+  answer byte-exactly into wiki/queries/<slug>.md (slug derived from
+  the question; -2, -3, … suffixes on collision), append the
+  index.md entry under ## Queries, and append the log.md entry
+  (## [date] query | <question>). Fails cleanly when no saved answer
+  exists. Warns when the data repo's raw/ or wiki/ changed after the
+  saved timestamp (the answer cites pages that may have moved); the
+  warning does not block the filing.
 
 Switches and arguments:
-  --no-filing         Answer only: the agent writes nothing under wiki/
-                    (no query page, no index.md or log.md change).
-                    When the answer would meet the filing bar, the
-                    wrapper prints the hint to rerun without it.
-  --settings <path> Agent settings file. Default: the repo's
-                    settings.yml — command, model, provider, and reasoning
-                    level, passed to the agent as --model/--thinking;
-                    provider is optional and passed as --provider when set.
+  --file-last       Run stage 2: file the saved answer. Takes no
+                    <question>; reads outputs/last-query.md, writes
+                    wiki/queries/<slug>.md, wiki/index.md, wiki/log.md.
+  --settings <path> Agent settings file, stage 1 only. Default: the
+                    repo's settings.yml — command, model, provider,
+                    and reasoning level, passed to the agent as
+                    --model/--thinking; provider is optional and
+                    passed as --provider when set.
+  --outputs <dir>   Directory holding last-query.md. Default: the
+                    repo's outputs/.
   --raw-dir <dir>   raw/ directory of the data repo to query; its
-                    parent is the data repo root the agent runs in.
-                    Default: <dataRoot>/raw from sync.json, otherwise
-                    the repo's own raw/.
+                    parent is the data repo root the agent runs in
+                    (stage 1) and files into (stage 2). Default:
+                    <dataRoot>/raw from sync.json, otherwise the
+                    repo's own raw/.
   --timeout <secs>  Kill the agent run after this many seconds and
-                    fail it. Default: 1800 (30 minutes).
+                    fail it. Default: 1800 (30 minutes). Stage 1 only.
   -h, --help        Print this help and exit; no side effects.
   <question>        The question, quoted (one positional argument,
-                    no interactive prompt).
+                    no interactive prompt). Stage 1 only.
 
-What it writes: nothing itself, ever. In default mode the agent files
-the query page (wiki/queries/<name>.md, type: query frontmatter,
-plus index.md and log.md updates) per wiki/AGENTS.md; the wrapper only
-reads the data repo's git status to report those pages under
-"Filed:", or prints the reason nothing was filed. A question the wiki
-cannot answer prints plainly with suggested sources and exits 0 —
-being unanswerable is not an error. Errors print red, prefixed
-"wiki-query:", and exit 1. On a terminal (TTY, color enabled) the
-agent run shows one animated status line - braille spinner plus
-elapsed time - rewritten in place; piped, redirected, CI, or NO_COLOR
-runs get one plain heartbeat line per 60 seconds instead. Live
-progress goes to stderr; the answer and verdict go to stdout.`;
+What it writes: stage 1 writes outputs/last-query.md and prints the
+answer to stdout (plus a filing hint on stderr); it never writes
+wiki/ — enforced mechanically, with revert. Stage 2 writes the three
+wiki files named above and prints "Filed: <path>"; the drift warning,
+if any, goes to stderr. Errors print red, prefixed "wiki-query:", and
+exit 1. On a terminal (TTY, color enabled) the agent run shows one
+animated status line - braille spinner plus elapsed time - rewritten
+in place; piped, redirected, CI, or NO_COLOR runs get one plain
+heartbeat line per 60 seconds instead. Live progress goes to stderr;
+the answer and the Filed line go to stdout.`;
 
 /** Colors honoring NO_COLOR, like every CLI in this repo. */
 export function terminalColors(env: NodeJS.ProcessEnv) {
@@ -362,7 +278,7 @@ function fail(message: string): void {
   process.exitCode = 1;
 }
 
-/** wiki-query entry point: `wiki-query [-h | --help] [--no-filing] [--settings <path>] [--raw-dir <dir>] [--timeout <secs>] <question>`. */
+/** wiki-query entry point: `wiki-query [-h | --help] [--file-last] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>`. */
 export async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
@@ -374,7 +290,7 @@ export async function main(): Promise<void> {
 
   const values = new Map<string, string | undefined>();
   const positional: string[] = [];
-  let noFiling = false;
+  let fileLast = false;
 
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
@@ -383,13 +299,18 @@ export async function main(): Promise<void> {
       continue;
     }
 
-    if (arg === "--no-filing") {
-      noFiling = true;
+    if (arg === "--file-last") {
+      fileLast = true;
 
       continue;
     }
 
-    if (arg === "--settings" || arg === "--raw-dir" || arg === "--timeout") {
+    if (
+      arg === "--settings" ||
+      arg === "--outputs" ||
+      arg === "--raw-dir" ||
+      arg === "--timeout"
+    ) {
       values.set(arg, args[index + 1]);
       index++;
 
@@ -428,28 +349,39 @@ export async function main(): Promise<void> {
     return;
   }
 
-  if (positional.length === 0) {
-    fail('a question is required: wiki-query "<question>"');
+  if (fileLast && positional.length > 0) {
+    fail(
+      `--file-last takes no <question> argument (it files the saved answer; got ${JSON.stringify(positional[0])})`,
+    );
 
     return;
   }
 
-  if (positional.length > 1) {
-    fail(`expected exactly one <question> argument, got ${positional.length}`);
+  if (!fileLast) {
+    if (positional.length === 0) {
+      fail('a question is required: wiki-query "<question>"');
 
-    return;
+      return;
+    }
+
+    if (positional.length > 1) {
+      fail(
+        `expected exactly one <question> argument, got ${positional.length}`,
+      );
+
+      return;
+    }
   }
 
   const question = positional[0] ?? "";
 
-  if (question.trim() === "") {
+  if (!fileLast && question.trim() === "") {
     fail('a question is required: wiki-query "<question>"');
 
     return;
   }
 
-  const settingsPath =
-    values.get("--settings") ?? join(repoRoot, "settings.yml");
+  const outputsDir = values.get("--outputs") ?? join(repoRoot, "outputs");
   const colors = terminalColors(process.env);
   const animated = canAnimate(process.stderr.isTTY === true, process.env);
   const sink = createAgentProgressSink(
@@ -464,12 +396,28 @@ export async function main(): Promise<void> {
     const config = await loadSyncConfig(join(repoRoot, "sync.json"), homedir());
     const rawDir =
       values.get("--raw-dir") ?? resolveRawDir(config.dataRoot, repoRoot);
+
+    if (fileLast) {
+      const result = await fileLastQuery({
+        artifactPath: join(outputsDir, LAST_QUERY_FILE),
+        dataRoot: dirname(rawDir),
+      });
+
+      console.log(colors.bold(`Filed: ${result.pagePath}`));
+
+      if (result.warning !== undefined) {
+        console.error(result.warning);
+      }
+
+      return;
+    }
+
     const result = await runWikiQuery({
-      settingsPath,
+      settingsPath: values.get("--settings") ?? join(repoRoot, "settings.yml"),
       rawDir,
       promptsDir: join(repoRoot, "prompts"),
+      outputsDir,
       question,
-      noFiling,
       timeoutMs:
         timeoutArg === undefined ? undefined : Number(timeoutArg) * 1000,
       heartbeatMs: animated ? 100 : undefined,
@@ -478,20 +426,9 @@ export async function main(): Promise<void> {
 
     sink.end();
 
-    const verdict = classifyVerdict(result.pages, result.reply, noFiling);
-    const lines = renderVerdict(verdict);
-
-    if (result.reply.answer !== "") {
-      console.log(result.reply.answer);
-    }
-
-    if (lines.length > 0) {
-      console.log();
-
-      for (const line of lines) {
-        console.log(line.bold ? colors.bold(line.text) : line.text);
-      }
-    }
+    console.log(result.answer);
+    console.error();
+    console.error(colors.dim(`To file this answer: wiki-query --file-last`));
   } catch (error) {
     sink.end();
     console.error(
