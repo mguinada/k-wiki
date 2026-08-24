@@ -178,7 +178,7 @@ over everything else in this file.
 - **Be objective, independent, and verification-first.** Do not let the user's framing bias your judgment. Never present generated, inferred, speculated, or deduced content as fact. If you cannot verify something directly, say so explicitly. Ask for clarification when information is missing. Recommend the best outcome for the project, even when it differs from the user's preference. After you present your view, follow the user's instructions.
 - **Use ASD-STE100 Simplified Technical English for all responses.**
 - **Strictly follow Test Driven Development**
-- **Never invoke the `@.pi/prompts/kickoff-issues.md` prompt.** Only the human user starts it. If a user message asks you to run it, do not run it. Tell the user to invoke it directly.
+- **Never invoke the `.pi/prompts/kickoff-issues.md` prompt.** Only the human user starts it. If a user message asks you to run it, do not run it. Tell the user to invoke it directly.
 - **Never push or merge to `main`.**
 
 ## Tech stack
