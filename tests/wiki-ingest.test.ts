@@ -2255,7 +2255,9 @@ describe("runWikiIngest", () => {
 
     expect(messages).toEqual([
       expect.stringContaining("wiki-ingest: raw dir"),
-      expect.stringContaining("wiki-ingest: ignoring outputs/last-ingested-manifest.json"),
+      expect.stringContaining(
+        "wiki-ingest: ignoring outputs/last-ingested-manifest.json",
+      ),
       expect.stringContaining(
         "invoking agent: pi --model GLM-5.2 --thinking high",
       ),
