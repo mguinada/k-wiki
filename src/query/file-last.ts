@@ -1,6 +1,5 @@
-import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 import { runGit } from "../data/init-data-repo.ts";
 import { listWikiPages, readPageFields } from "../wiki/pages.ts";
 import { buildPageIndex, extractWikilinks } from "../wiki-links.ts";
@@ -195,14 +194,28 @@ export function slugForQuestion(question: string): string {
   return slug === "" ? "query" : slug;
 }
 
+/** True when the path exists; keeps this module's IO non-blocking. */
+async function exists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** The first free `wiki/queries/<slug>.md` name; -2, -3, … on collision. */
-function queryPagePath(wikiDir: string, question: string): string {
+async function queryPagePath(
+  wikiDir: string,
+  question: string,
+): Promise<string> {
   const slug = slugForQuestion(question);
 
   for (let attempt = 1; attempt <= 999; attempt += 1) {
     const name = `${slug}${attempt === 1 ? "" : `-${attempt}`}.md`;
 
-    if (!existsSync(join(wikiDir, "queries", name))) {
+    if (!(await exists(join(wikiDir, "queries", name)))) {
       return `wiki/queries/${name}`;
     }
   }
@@ -280,6 +293,16 @@ export function appendIndexEntry(indexText: string, entry: string): string {
 /** The log.md entry heading (guide §12 format). */
 export function logEntry(question: string, date: string): string {
   return `## [${date}] query | ${oneLine(question)}`;
+}
+
+/** A file's text, or "" when the path is absent — the caller's
+ *  default for a wiki (index/log) that does not exist yet. */
+async function readTextIfExists(path: string): Promise<string> {
+  try {
+    return await readFile(path, "utf8");
+  } catch {
+    return "";
+  }
 }
 
 /** Append the log entry, creating the log with its heading if absent. */
@@ -369,8 +392,8 @@ export async function fileLastQuery(
   }
 
   const wikiDir = join(options.dataRoot, "wiki");
-  const pagePath = queryPagePath(wikiDir, artifact.question);
-  const slug = pagePath.replace(/^.*\//, "").replace(/\.md$/, "");
+  const pagePath = await queryPagePath(wikiDir, artifact.question);
+  const slug = basename(pagePath, ".md");
   const date = (options.now ?? (() => new Date()))().toISOString().slice(0, 10);
   const sources = await citedSourcePages(wikiDir, artifact.pages);
 
@@ -381,13 +404,7 @@ export async function fileLastQuery(
     "utf8",
   );
 
-  let indexText = "";
-
-  try {
-    indexText = await readFile(join(wikiDir, "index.md"), "utf8");
-  } catch {
-    // No index yet: appendIndexEntry creates the Queries section.
-  }
+  const indexText = await readTextIfExists(join(wikiDir, "index.md"));
 
   await writeFile(
     join(wikiDir, "index.md"),
@@ -395,13 +412,7 @@ export async function fileLastQuery(
     "utf8",
   );
 
-  let logText = "";
-
-  try {
-    logText = await readFile(join(wikiDir, "log.md"), "utf8");
-  } catch {
-    // No log yet: appendLogEntry creates it with its heading.
-  }
+  const logText = await readTextIfExists(join(wikiDir, "log.md"));
 
   await writeFile(
     join(wikiDir, "log.md"),

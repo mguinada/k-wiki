@@ -18,6 +18,7 @@ import {
   renderQueryArtifact,
   slugForQuestion,
   templateQueryPage,
+  writeQueryArtifact,
 } from "../src/query/file-last.ts";
 
 const run = promisify(execFile);
@@ -135,6 +136,20 @@ describe("readQueryArtifact", () => {
     await expect(readQueryArtifact(path)).rejects.toThrow(
       `no saved answer at ${path} — run wiki-query "<question>" first`,
     );
+  });
+});
+
+describe("writeQueryArtifact", () => {
+  it("round-trips the artifact through a fresh outputs directory", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-fl-"));
+
+    tempDirs.push(dir);
+
+    const path = join(dir, "outputs", "last-query.md");
+
+    await writeQueryArtifact(path, ARTIFACT);
+
+    expect(await readQueryArtifact(path)).toEqual(ARTIFACT);
   });
 });
 

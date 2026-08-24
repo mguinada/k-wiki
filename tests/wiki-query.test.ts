@@ -996,11 +996,9 @@ console.log("An answer.");
 
     process.argv = [...argv.slice(0, 2), ...fileLastArgs(h)];
 
-    const spy = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => {
-        calls += 1;
-      });
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {
+      calls += 1;
+    });
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     try {

@@ -670,6 +670,22 @@ async function checkChangedWikilinks(
   return { check: 3, name: "wikilinks", problems };
 }
 
+/** The full `git status --porcelain -uall` snapshot, parsed. Shared
+ *  by runGuardrails and statusSince; core.quotePath=false so pre-run
+ *  and post-run paths compare equal. */
+async function porcelainStatus(
+  dataRoot: string,
+  env: NodeJS.ProcessEnv,
+): Promise<StatusEntry[]> {
+  const { stdout } = await runGit(
+    dataRoot,
+    ["-c", "core.quotePath=false", "status", "--porcelain", "-uall"],
+    env,
+  );
+
+  return parseStatus(stdout);
+}
+
 /**
  * Run the three guardrails against the data repo and return the first
  * one that tripped. Checks 2 and 3 read every wiki page the run
@@ -680,15 +696,7 @@ export async function runGuardrails(
   env: NodeJS.ProcessEnv,
   pre: PreRunState,
 ): Promise<PostRunState> {
-  const entries = parseStatus(
-    (
-      await runGit(
-        dataRoot,
-        ["-c", "core.quotePath=false", "status", "--porcelain", "-uall"],
-        env,
-      )
-    ).stdout,
-  );
+  const entries = await porcelainStatus(dataRoot, env);
   const immutability = await checkImmutability(dataRoot, env, pre, entries);
 
   if (immutability !== undefined) {
@@ -776,15 +784,7 @@ export async function statusSince(
   readonly entries: readonly StatusEntry[];
   readonly changed: readonly string[];
 }> {
-  const entries = parseStatus(
-    (
-      await runGit(
-        dataRoot,
-        ["-c", "core.quotePath=false", "status", "--porcelain", "-uall"],
-        env,
-      )
-    ).stdout,
-  );
+  const entries = await porcelainStatus(dataRoot, env);
   const before = statusIndex(pre.status);
   const changed: string[] = [];
 
