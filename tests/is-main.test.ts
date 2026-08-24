@@ -67,4 +67,8 @@ describe("isMainModule", () => {
 
     expect(isMainModule(pathToFileURL("/tmp/some-entry.ts").href)).toBe(false);
   });
+
+  it("the vitest setup file marks this worker as a test worker", () => {
+    expect(originalMarker).toBe(true);
+  });
 });
