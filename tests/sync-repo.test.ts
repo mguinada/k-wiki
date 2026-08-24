@@ -965,3 +965,102 @@ describe("runRepoSync manifest entry carry-forward", () => {
     expect(notes?.["src/deep/b.ts"]?.last_synced).toBe(T1);
   });
 });
+
+describe("runRepoSync stale namespace pruning", () => {
+  /** The workspace after a first sync, reconfigured to a new name. */
+  async function renamedWorkspace(): Promise<{
+    ws: RepoWorkspace;
+    renamedConfig: string;
+  }> {
+    const ws = await makeWorkspace();
+
+    await runRepoSync({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+      env: GIT_ENV,
+    });
+
+    const renamedConfig = await writeConfig(ws.dir, {
+      source: "repo",
+      name: "kw",
+      root: ws.sourceRoot,
+      include: ALLOWLIST,
+    });
+
+    return { ws, renamedConfig };
+  }
+
+  it("drops the manifest section of a renamed source", async () => {
+    const { ws, renamedConfig } = await renamedWorkspace();
+
+    await runRepoSync({
+      configPath: renamedConfig,
+      rawDir: ws.rawDir,
+      env: GIT_ENV,
+    });
+
+    const manifestPath = join(ws.rawDir, "manifest.json");
+    const manifest = parseManifest(
+      await readFile(manifestPath, "utf8"),
+      manifestPath,
+    );
+
+    expect(Object.keys(manifest.vaults)).toEqual(["kw"]);
+  });
+
+  it("deletes the projected tree of a renamed source", async () => {
+    const { ws, renamedConfig } = await renamedWorkspace();
+
+    await runRepoSync({
+      configPath: renamedConfig,
+      rawDir: ws.rawDir,
+      env: GIT_ENV,
+    });
+
+    expect(await collectFiles(join(ws.rawDir, "notes"))).toEqual(
+      SELECTED.map((rel) => `kw/${rel}`),
+    );
+  });
+
+  it("deletes an orphan namespace directory without a manifest entry", async () => {
+    const ws = await makeWorkspace();
+
+    await mkdir(join(ws.rawDir, "notes", "Retired"), { recursive: true });
+    await writeFile(join(ws.rawDir, "notes", "Retired", "Old.md"), "# old\n");
+    await runRepoSync({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+      env: GIT_ENV,
+    });
+
+    expect(await readdir(join(ws.rawDir, "notes"))).toEqual([NAME]);
+  });
+
+  it("lists pruned namespaces in the run report", async () => {
+    const { ws, renamedConfig } = await renamedWorkspace();
+
+    const second = await runRepoSync({
+      configPath: renamedConfig,
+      rawDir: ws.rawDir,
+      env: GIT_ENV,
+    });
+
+    expect(second.prunedNamespaces).toEqual([NAME]);
+  });
+
+  it("announces each removed namespace as progress", async () => {
+    const { ws, renamedConfig } = await renamedWorkspace();
+    const messages: string[] = [];
+
+    await runRepoSync({
+      configPath: renamedConfig,
+      rawDir: ws.rawDir,
+      env: GIT_ENV,
+      onProgress: (message) => messages.push(message),
+    });
+
+    expect(messages).toContain(
+      `repo "${NAME}": removed stale namespace (not configured)`,
+    );
+  });
+});

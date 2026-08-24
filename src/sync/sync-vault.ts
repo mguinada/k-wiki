@@ -162,7 +162,7 @@ function isPruneStop(cause: unknown): boolean {
 }
 
 /** Namespace directories under the notes root; empty when it is absent. */
-async function listNamespaceDirs(notesRoot: string): Promise<string[]> {
+export async function listNamespaceDirs(notesRoot: string): Promise<string[]> {
   try {
     const entries = await readdir(notesRoot, { withFileTypes: true });
 

@@ -132,6 +132,14 @@ function parseInclude(value: unknown): readonly string[] {
     throw new Error('"include" must be an array of non-empty strings');
   }
 
+  for (const pattern of value) {
+    if (pattern.split("/").includes("")) {
+      throw new Error(
+        `include pattern ${JSON.stringify(pattern)} has an empty path segment; patterns are relative slash-separated paths`,
+      );
+    }
+  }
+
   return value;
 }
 

@@ -1,5 +1,5 @@
 import type { Stats } from "node:fs";
-import { mkdir, readdir, readFile, stat } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,6 +22,7 @@ import {
 } from "./manifest.ts";
 import {
   formatReport,
+  listNamespaceDirs,
   projectNotes,
   reportColors,
   type ProjectedNote,
@@ -66,6 +67,8 @@ export interface RepoSyncReport {
   readonly copied: readonly string[];
   readonly unchanged: readonly string[];
   readonly removed: readonly string[];
+  /** Namespaces removed because they are absent from the config. */
+  readonly prunedNamespaces: readonly string[];
 }
 
 /** Compile one allowlist pattern: `*` matches within a path segment,
@@ -376,6 +379,24 @@ export async function runRepoSync(
     previousText === undefined
       ? { vaults: {} }
       : parseManifest(previousText, manifestPath);
+  const notesRoot = join(options.rawDir, "notes");
+  const staleNames = [
+    ...new Set([
+      ...Object.keys(manifest.vaults),
+      ...(await listNamespaceDirs(notesRoot)),
+    ]),
+  ].filter((name) => name !== source.name);
+  const nextManifest: Manifest = { vaults: { ...manifest.vaults } };
+  const prunedNamespaces: string[] = [];
+
+  for (const name of staleNames) {
+    delete nextManifest.vaults[name];
+
+    await rm(join(notesRoot, name), { recursive: true, force: true });
+    onProgress(`repo "${name}": removed stale namespace (not configured)`);
+    prunedNamespaces.push(name);
+  }
+
   const { notes, report } = await projectRepo(
     source,
     options.rawDir,
@@ -384,9 +405,9 @@ export async function runRepoSync(
     commit,
     onProgress,
   );
-  const nextManifest: Manifest = {
-    vaults: { ...manifest.vaults, [source.name]: notes },
-  };
+
+  nextManifest.vaults[source.name] = notes;
+
   const extras = { source_commit: commit, source_root: source.root };
 
   if (serializeManifest(nextManifest, extras) !== previousText) {
@@ -394,7 +415,7 @@ export async function runRepoSync(
     await writeManifest(manifestPath, nextManifest, extras);
   }
 
-  return report;
+  return { ...report, prunedNamespaces };
 }
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -461,7 +482,7 @@ export async function main(): Promise<void> {
                 removed: report.removed,
               },
             ],
-            prunedNamespaces: [],
+            prunedNamespaces: report.prunedNamespaces,
           },
           reportColors(),
         ),

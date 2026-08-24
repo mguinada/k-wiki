@@ -569,6 +569,32 @@ describe("loadSyncConfig discriminated sources", () => {
     ).rejects.toThrow(/"include" must be an array of non-empty strings/);
   });
 
+  it("rejects a repo source whose include pattern has a leading slash", async () => {
+    const bad = {
+      vaults: [{ ...ONE_REPO.vaults[0], include: ["/docs/**/*.md"] }],
+    };
+
+    await expect(
+      loadSyncConfig(await writeConfig(bad), "/home/alice"),
+    ).rejects.toThrow(/empty path segment/);
+  });
+
+  it("rejects a repo source whose include pattern has a trailing slash", async () => {
+    const bad = { vaults: [{ ...ONE_REPO.vaults[0], include: ["docs/"] }] };
+
+    await expect(
+      loadSyncConfig(await writeConfig(bad), "/home/alice"),
+    ).rejects.toThrow(/empty path segment/);
+  });
+
+  it("rejects a repo source whose include pattern has a doubled slash", async () => {
+    const bad = { vaults: [{ ...ONE_REPO.vaults[0], include: ["src//a.ts"] }] };
+
+    await expect(
+      loadSyncConfig(await writeConfig(bad), "/home/alice"),
+    ).rejects.toThrow(/empty path segment/);
+  });
+
   it("rejects a repo source that also sets exclude", async () => {
     const bad = {
       vaults: [{ ...ONE_REPO.vaults[0], exclude: "wiki:false" }],
