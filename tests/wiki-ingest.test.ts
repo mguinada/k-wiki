@@ -16,6 +16,7 @@ import {
   createAgentProgressSink,
   diffManifests,
   directSetForRemovals,
+  explicitSourceDiff,
   formatAgentInvocation,
   formatDigest,
   type IngestRun,
@@ -2647,6 +2648,333 @@ describe("runWikiIngest", () => {
   });
 });
 
+describe("explicitSourceDiff", () => {
+  const manifestOf = (vaults: Record<string, string[]>): Manifest => ({
+    vaults: Object.fromEntries(
+      Object.entries(vaults).map(([vault, paths]) => [
+        vault,
+        Object.fromEntries(paths.map((path) => [path, entry("x")])),
+      ]),
+    ),
+  });
+
+  it("resolves an ambiguous path to the longest vault name", () => {
+    const manifest = manifestOf({ "A/B": ["c.md"], A: ["B/c.md"] });
+
+    const diff = explicitSourceDiff(manifest, ["A/B/c.md"]);
+
+    expect(diff).toMatchObject({
+      vaults: [{ vault: "A/B", changed: ["c.md"] }],
+    });
+  });
+
+  it("keeps the longest vault name however the vault keys are ordered", () => {
+    const manifest = manifestOf({ A: ["B/c.md"], "A/B": ["c.md"] });
+
+    const diff = explicitSourceDiff(manifest, ["A/B/c.md"]);
+
+    expect(diff).toMatchObject({
+      vaults: [{ vault: "A/B", changed: ["c.md"] }],
+    });
+  });
+
+  it("rejects a path no vault prefix matches", () => {
+    const manifest = manifestOf({ Eng: ["neering/a.md"] });
+
+    expect(() => explicitSourceDiff(manifest, ["Engineering/a.md"])).toThrow(
+      "unknown --sources path(s): Engineering/a.md",
+    );
+  });
+
+  it("sorts paths within a vault", () => {
+    const manifest = manifestOf({ Engineering: ["b.md", "a.md"] });
+
+    const diff = explicitSourceDiff(manifest, [
+      "Engineering/b.md",
+      "Engineering/a.md",
+    ]);
+
+    expect(diff).toMatchObject({
+      vaults: [{ vault: "Engineering", changed: ["a.md", "b.md"] }],
+    });
+  });
+
+  it("sorts vaults by name regardless of source order", () => {
+    const manifest = manifestOf({
+      Zeta: ["x.md"],
+      Alpha: ["y.md"],
+      Mid: ["z.md"],
+    });
+
+    const diff = explicitSourceDiff(manifest, [
+      "Zeta/x.md",
+      "Alpha/y.md",
+      "Mid/z.md",
+    ]);
+
+    expect(diff.vaults.map((vault) => vault.vault)).toEqual([
+      "Alpha",
+      "Mid",
+      "Zeta",
+    ]);
+  });
+
+  it("returns an empty diff for an empty source list", () => {
+    const manifest = manifestOf({ Engineering: ["a.md"] });
+
+    expect(explicitSourceDiff(manifest, [])).toMatchObject({
+      vaults: [],
+      empty: true,
+    });
+  });
+});
+
+describe("runWikiIngest --sources", () => {
+  /** A stamped snapshot for the harness manifest: the corpus is fully
+   *  ingested, so the manifest diff is empty and only --sources runs. */
+  async function seedSnapshot(
+    h: Harness,
+    notes: Record<string, string>,
+    stamp = h.dataRoot,
+  ): Promise<void> {
+    await mkdir(dirname(h.snapshotPath), { recursive: true });
+    await writeFile(
+      h.snapshotPath,
+      serializeManifest(
+        manifestWith(
+          "Engineering",
+          Object.fromEntries(
+            Object.entries(notes).map(([path, content]) => [
+              path,
+              entry(content),
+            ]),
+          ),
+        ),
+        { snapshotFor: stamp },
+      ),
+    );
+  }
+
+  it("bypasses the empty-diff skip and runs the agent", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    await seedSnapshot(h, { "a.md": "a" });
+
+    const result = await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md"],
+    });
+
+    expect(result.status).toBe("ran");
+  });
+
+  it("forces the incremental prompt, never full or expunge", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    await seedSnapshot(h, { "a.md": "a", "gone.md": "gone" });
+
+    const result = await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md"],
+    });
+
+    expect(result).toMatchObject({ status: "ran", mode: "incremental" });
+    expect(invocation(h, 0).args.at(-1)).toContain("INCREMENTAL PROMPT");
+  });
+
+  it("replaces a manifest diff whose removals would route to expunge", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    await seedSnapshot(h, { "a.md": "a", "gone.md": "gone" });
+
+    const result = await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md"],
+    });
+
+    expect(result).toMatchObject({
+      status: "ran",
+      diff: { vaults: [{ vault: "Engineering", changed: ["a.md"] }] },
+    });
+  });
+
+  it("renders one ~ line per explicit source, deduped and sorted", async () => {
+    const h = await makeHarness({ "a.md": "a", "b.md": "b" });
+    await seedSnapshot(h, { "a.md": "a", "b.md": "b" });
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/b.md", "Engineering/a.md", "Engineering/b.md"],
+    });
+
+    const prompt = invocation(h, 0).args.at(-1) ?? "";
+
+    expect(prompt.split("~ Engineering/a.md").length - 1).toBe(1);
+    expect(prompt.split("~ Engineering/b.md").length - 1).toBe(1);
+    expect(prompt.indexOf("~ Engineering/a.md")).toBeLessThan(
+      prompt.indexOf("~ Engineering/b.md"),
+    );
+    expect(prompt).toContain("Changed sources since the previous ingestion:");
+  });
+
+  it("marks the digest Mode line with sources selected explicitly", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    await seedSnapshot(h, { "a.md": "a" });
+
+    const result = await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md"],
+    });
+
+    expect(result.status).toBe("ran");
+
+    const digest = await readFile(
+      join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"),
+      "utf8",
+    );
+
+    expect(digest).toContain("sources selected explicitly");
+  });
+
+  it("omits the sources-selected marker from an ordinary failure digest", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const saboteur: AgentRunner = async (_command, _args, options) => {
+      await writeFile(join(options.cwd, "wiki", "bad.md"), "no frontmatter\n");
+
+      return { stdout: "rogue report", stderr: "" };
+    };
+
+    await expect(
+      runWikiIngest({ ...optionsFor(h), runAgent: saboteur }),
+    ).rejects.toThrow("guardrail check 2 (frontmatter)");
+
+    const digest = await readFile(
+      join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"),
+      "utf8",
+    );
+
+    expect(digest).not.toContain("sources selected explicitly");
+  });
+
+  it("rejects unknown paths naming every path joined with a comma", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    await seedSnapshot(h, { "a.md": "a" });
+
+    await expect(
+      runWikiIngest({
+        ...optionsFor(h),
+        sources: ["Engineering/nope.md", "Engineering/also-missing.md"],
+      }),
+    ).rejects.toThrow(
+      "unknown --sources path(s): Engineering/nope.md, Engineering/also-missing.md",
+    );
+  });
+
+  it("treats an empty --sources array as absent and runs the manifest diff", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    const result = await runWikiIngest({ ...optionsFor(h), sources: [] });
+
+    expect(result).toMatchObject({ status: "ran", mode: "full" });
+  });
+
+  it("records sources selected explicitly on the failure digest of a reverted scoped run", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    await seedSnapshot(h, { "a.md": "a" });
+    const saboteur: AgentRunner = async (_command, _args, options) => {
+      await writeFile(join(options.cwd, "wiki", "bad.md"), "no frontmatter\n");
+
+      return { stdout: "rogue report", stderr: "" };
+    };
+
+    await expect(
+      runWikiIngest({
+        ...optionsFor(h),
+        sources: ["Engineering/a.md"],
+        runAgent: saboteur,
+      }),
+    ).rejects.toThrow("guardrail check 2 (frontmatter)");
+
+    const digest = await readFile(
+      join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"),
+      "utf8",
+    );
+
+    expect(digest).toContain("sources selected explicitly");
+  });
+
+  it("rejects --sources when no snapshot exists", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    await expect(
+      runWikiIngest({ ...optionsFor(h), sources: ["Engineering/a.md"] }),
+    ).rejects.toThrow(/run a full ingest first/);
+  });
+
+  it("rejects --sources on a foreign-stamped snapshot", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    await seedSnapshot(h, { "a.md": "a" }, "/foreign/data-root");
+
+    await expect(
+      runWikiIngest({ ...optionsFor(h), sources: ["Engineering/a.md"] }),
+    ).rejects.toThrow(/run a full ingest first/);
+  });
+
+  it("rewrites the snapshot idempotently on a successful scoped run", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    await seedSnapshot(h, { "a.md": "a" });
+    const before = await readFile(h.snapshotPath, "utf8");
+
+    const result = await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md"],
+    });
+
+    expect(result.status).toBe("ran");
+    expect(await readFile(h.snapshotPath, "utf8")).toBe(before);
+  });
+
+  it("leaves the snapshot untouched when the scoped agent run fails", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    await seedSnapshot(h, { "a.md": "a" });
+    const before = await readFile(h.snapshotPath, "utf8");
+    const failing: AgentRunner = async () => {
+      throw new Error("agent exited with code 1");
+    };
+
+    await expect(
+      runWikiIngest({
+        ...optionsFor(h),
+        sources: ["Engineering/a.md"],
+        runAgent: failing,
+      }),
+    ).rejects.toThrow("agent exited with code 1");
+
+    expect(await readFile(h.snapshotPath, "utf8")).toBe(before);
+  });
+
+  it("auto-reverts and leaves the snapshot when a guardrail trips on a scoped run", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    await seedSnapshot(h, { "a.md": "a" });
+    const before = await readFile(h.snapshotPath, "utf8");
+    const saboteur: AgentRunner = async (_command, _args, options) => {
+      await writeFile(join(options.cwd, "wiki", "bad.md"), "no frontmatter\n");
+
+      return { stdout: "rogue report", stderr: "" };
+    };
+
+    await expect(
+      runWikiIngest({
+        ...optionsFor(h),
+        sources: ["Engineering/a.md"],
+        runAgent: saboteur,
+      }),
+    ).rejects.toThrow("guardrail check 2 (frontmatter)");
+
+    await expect(
+      readFile(join(h.dataRoot, "wiki", "bad.md"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readFile(h.snapshotPath, "utf8")).toBe(before);
+  });
+});
+
 describe("runWikiIngest guardrails", () => {
   const digestPath = (h: Harness) =>
     join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md");
@@ -3123,7 +3451,7 @@ console.log("stub report");
 
   it("prints the usage line for --help", async () => {
     expect((await runCli(["--help"])).out).toContain(
-      "wiki-ingest [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<raw-dir>]",
+      "wiki-ingest [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [<raw-dir>]",
     );
   });
 
@@ -3138,6 +3466,84 @@ console.log("stub report");
     expect(out).toContain("--outputs");
     expect(out).toContain("<raw-dir>");
     expect(out).toContain("Default");
+  });
+
+  it("documents --sources with the exact-path rule and snapshot precondition", async () => {
+    const out = (await runCli(["--help"])).out;
+
+    expect(out).toContain("--sources <vault/path>");
+    expect(out).toContain("exact manifest paths");
+    expect(out).toContain("run a full ingest first");
+  });
+
+  it("parses a repeatable --sources flag and dedupes it", async () => {
+    const h = await makeCliHarness();
+
+    await mkdir(dirname(h.snapshotPath), { recursive: true });
+    await writeFile(
+      h.snapshotPath,
+      serializeManifest(manifestWith("Engineering", { "a.md": entry("a") }), {
+        snapshotFor: h.dataRoot,
+      }),
+    );
+
+    await runCli([
+      ...cliArgs(h),
+      "--sources",
+      "Engineering/a.md",
+      "--sources",
+      "Engineering/a.md",
+    ]);
+
+    const prompt = await readFile(
+      join(h.dataRoot, "outputs", "stub-prompt.txt"),
+      "utf8",
+    );
+
+    expect(prompt.split("~ Engineering/a.md").length - 1).toBe(1);
+  });
+
+  it("exits 1 on an unknown --sources path naming the path", async () => {
+    const h = await makeCliHarness();
+
+    await mkdir(dirname(h.snapshotPath), { recursive: true });
+    await writeFile(
+      h.snapshotPath,
+      serializeManifest(manifestWith("Engineering", { "a.md": entry("a") }), {
+        snapshotFor: h.dataRoot,
+      }),
+    );
+
+    const { err } = await runCli([
+      ...cliArgs(h),
+      "--sources",
+      "Engineering/nope.md",
+    ]);
+
+    expect(err).toContain("unknown --sources path(s): Engineering/nope.md");
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("exits 1 on --sources with no snapshot and says to run a full ingest first", async () => {
+    const h = await makeCliHarness();
+
+    const { err } = await runCli([
+      ...cliArgs(h),
+      "--sources",
+      "Engineering/a.md",
+    ]);
+
+    expect(err).toContain("run a full ingest first");
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("exits 1 when --sources has no value", async () => {
+    const h = await makeCliHarness();
+
+    const { err } = await runCli([...cliArgs(h), "--sources"]);
+
+    expect(err).toContain("--sources needs a path value");
+    expect(process.exitCode).toBe(1);
   });
 
   it("prints help before validating any argument or reading any file", async () => {

@@ -381,6 +381,73 @@ export function diffManifests(
   return { vaults, empty: vaults.length === 0 };
 }
 
+/** The synthetic changed-source set of an explicit `--sources` run
+ *  (issue #133): every listed path must name one manifest entry and
+ *  renders as a `~` (changed) line, so the composed prompt and the
+ *  digest read exactly like an incremental run over those sources.
+ *  Paths are exact manifest paths — no globbing, no substring
+ *  matching: a path naming no entry is an error listing every
+ *  offender, never a guess. A path that decomposes two ways (vault
+ *  "A" holding "B/c.md" and vault "A/B" holding "c.md") resolves to
+ *  the longest vault name — the most specific decomposition. */
+export function explicitSourceDiff(
+  manifest: Manifest,
+  sources: readonly string[],
+): ManifestDiff {
+  const pathsByVault = new Map<string, string[]>();
+  const unknown: string[] = [];
+
+  for (const source of sources) {
+    let match: { vault: string; path: string } | undefined;
+
+    for (const [vault, notes] of Object.entries(manifest.vaults)) {
+      const prefix = `${vault}/`;
+
+      if (!source.startsWith(prefix)) {
+        continue;
+      }
+
+      const path = source.slice(prefix.length);
+
+      if (
+        notes[path] !== undefined &&
+        (match === undefined || vault.length > match.vault.length)
+      ) {
+        match = { vault, path };
+      }
+    }
+
+    if (match === undefined) {
+      unknown.push(source);
+
+      continue;
+    }
+
+    const paths = pathsByVault.get(match.vault) ?? [];
+
+    paths.push(match.path);
+    pathsByVault.set(match.vault, paths);
+  }
+
+  if (unknown.length > 0) {
+    throw new Error(
+      `unknown --sources path(s): ${unknown.join(", ")} — paths are exact manifest paths (<vault name>/<vault-relative path>); no globbing, no substring matching`,
+    );
+  }
+
+  const vaults = [...pathsByVault.entries()]
+    .map(([vault, paths]) => ({
+      vault,
+      added: [] as string[],
+      changed: [...new Set(paths)].sort(),
+      removed: [] as string[],
+      renamed: [] as NoteRename[],
+    }))
+    .sort((a, b) => (a.vault < b.vault ? -1 : a.vault > b.vault ? 1 : 0));
+
+  return { vaults, empty: vaults.length === 0 };
+}
+
 /** Render the changed-source list appended below incremental and expunge prompts. */
 function changedSourceLines(diff: ManifestDiff): string[] {
   const lines: string[] = [];
@@ -677,6 +744,9 @@ export interface IngestRun {
   readonly unverifiedFrontier: readonly UnverifiedFrontierPage[];
   /** The guardrail that tripped, when the run was auto-reverted. */
   readonly guardrailFailure?: GuardrailFailure | undefined;
+  /** True when the run ingested explicit `--sources` paths
+   *  (issue #133); the digest Mode line records it. */
+  readonly explicitSources?: boolean | undefined;
 }
 
 /** Total note count of one kind (added, changed, or removed) across
@@ -721,11 +791,13 @@ function digestVaultLines(diff: ManifestDiff): string[] {
 export function formatDigest(run: IngestRun): string {
   const { settings } = run;
   const label = run.mode === "expunge" ? " (expunge)" : "";
+  const scoped =
+    run.explicitSources === true ? " · sources selected explicitly" : "";
   const lines: string[] = [
     `# Wiki ingest digest${label} — ${run.startedAt.toISOString()}`,
     "",
     `- **Agent:** \`${settings.command}\`${settings.provider ? ` · provider \`${settings.provider}\`` : ""} · model \`${settings.model}\` · reasoning \`${settings.reasoning}\` · ${isolationLabel(settings)}`,
-    `- **Mode:** ${run.mode} · prompt \`${run.promptFile}\``,
+    `- **Mode:** ${run.mode}${scoped} · prompt \`${run.promptFile}\``,
     `- **Sources:** ${sourceCount(run.diff, "added")} added, ${sourceCount(run.diff, "changed")} changed, ${sourceCount(run.diff, "removed")} removed, ${sourceCount(run.diff, "renamed")} renamed`,
   ];
 
@@ -1019,6 +1091,14 @@ export interface IngestOptions {
   readonly heartbeatMs?: number | undefined;
   /** Progress sink (uncolored messages); default: silent. */
   readonly onProgress?: (message: string) => void;
+  /** Explicit `--sources` paths (issue #133): scoped re-ingest. The
+   *  deduped list replaces the manifest diff as the run's
+   *  changed-source set (every path a sorted `~` line) and bypasses
+   *  the no-change skip; mode resolves to incremental (the snapshot
+   *  precondition below guarantees a previous manifest, and the
+   *  synthetic diff carries no removals). An empty list behaves as
+   *  an absent flag. */
+  readonly sources?: readonly string[] | undefined;
 }
 
 export type IngestResult =
@@ -1218,7 +1298,24 @@ export async function runWikiIngest(
   await adoptLegacySnapshot(legacySnapshotPath, snapshotPath, onProgress);
 
   const previous = await readSnapshot(snapshotPath, dataRoot, onProgress);
-  const diff = diffManifests(previous ?? emptyManifest(), current);
+
+  const explicitSources =
+    options.sources !== undefined && options.sources.length > 0
+      ? [...new Set(options.sources)]
+      : undefined;
+  const explicitDiff =
+    explicitSources === undefined
+      ? undefined
+      : explicitSourceDiff(current, explicitSources);
+
+  if (explicitDiff !== undefined && previous === undefined) {
+    throw new Error(
+      `--sources needs a valid snapshot for this data root (${snapshotPath}): run a full ingest first`,
+    );
+  }
+
+  const diff =
+    explicitDiff ?? diffManifests(previous ?? emptyManifest(), current);
 
   if (diff.empty) {
     const reason = "no changed sources since the last ingest; nothing to do";
@@ -1349,6 +1446,7 @@ export async function runWikiIngest(
         agentOutput: stdout,
         unverifiedFrontier: [],
         guardrailFailure: failure,
+        ...(explicitDiff !== undefined && { explicitSources: true }),
       }),
       "utf8",
     );
@@ -1380,6 +1478,7 @@ export async function runWikiIngest(
     directSet,
     agentOutput: stdout,
     unverifiedFrontier,
+    ...(explicitDiff !== undefined && { explicitSources: true }),
   };
   const digest = formatDigest(run);
 
@@ -1393,7 +1492,7 @@ export async function runWikiIngest(
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
-const HELP = `Usage: wiki-ingest [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<raw-dir>]
+const HELP = `Usage: wiki-ingest [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [<raw-dir>]
 
 Run the wiki agent headless over the sources that changed since the
 last ingest, then write a per-run digest (guide §18, issue #11).
@@ -1430,6 +1529,22 @@ Switches and arguments:
   --timeout <secs>   Kill the agent run after this many seconds and
                      fail it; the snapshot stays untouched. Default:
                      1800 (30 minutes).
+  --sources <vault/path>
+                     Scoped re-ingest of explicit sources (issue #133):
+                     re-open exactly these sources against the existing
+                     wiki — the recovery affordance for a wiki that is
+                     complete but under-filed. Repeatable; paths are
+                     exact manifest paths (<vault name>/<vault-relative
+                     path>), no globbing, no substring
+                     matching — an unknown path is an error naming it.
+                     Duplicates dedupe; the list sorts. The explicit
+                     list replaces the manifest diff (every path a \`~\`
+                     changed line), forces prompts/incremental.md, and
+                     bypasses the no-change skip. Requires a valid
+                     manifest snapshot for this data root; a missing or
+                     foreign-stamped snapshot is an error:
+                     run a full ingest first. Never touches raw/ or
+                     the vault.
   -h, --help         Print this help and exit; no side effects.
   <raw-dir>          raw/ directory holding manifest.json. Default:
                      <dataRoot>/raw from sync.json, otherwise the
@@ -1460,7 +1575,8 @@ preceded the run), writes a failure digest naming the check, and
 exits 1.
 
 With no changed sources since the snapshot nothing runs: it says so
-and exits 0. A digest is labeled expunge when the run purged deleted
+and exits 0 — unless --sources is present: the explicit list is the
+change set even when the snapshot matches the manifest. A digest is labeled expunge when the run purged deleted
 sources: it carries the direct-set preview, a deleted wiki-pages
 category, and the agent's threshold decision. On a terminal (TTY, color enabled) the agent run shows
 one animated status line - a braille spinner plus the elapsed time -
@@ -1533,7 +1649,7 @@ export function createAgentProgressSink(
   };
 }
 
-/** wiki-ingest entry point: `wiki-ingest [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<raw-dir>]`. */
+/** wiki-ingest entry point: `wiki-ingest [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [<raw-dir>]`. */
 export async function main(): Promise<void> {
   refuseTestWorker("wiki-ingest");
 
@@ -1556,6 +1672,18 @@ export async function main(): Promise<void> {
       consumed.add(index);
       consumed.add(index + 1);
     }
+  }
+
+  const sourcesRaw: (string | undefined)[] = [];
+
+  for (const [index, arg] of args.entries()) {
+    if (arg !== "--sources" || consumed.has(index)) {
+      continue;
+    }
+
+    consumed.add(index);
+    consumed.add(index + 1);
+    sourcesRaw.push(args[index + 1]);
   }
 
   const positional: string[] = [];
@@ -1592,6 +1720,14 @@ export async function main(): Promise<void> {
     }
   }
 
+  if (sourcesRaw.some((value) => value === undefined)) {
+    fail("--sources needs a path value");
+
+    return;
+  }
+
+  const sources = sourcesRaw as string[];
+
   const timeoutArg = values.get("--timeout");
 
   if (
@@ -1622,6 +1758,7 @@ export async function main(): Promise<void> {
       rawDir,
       outputsDir: values.get("--outputs") ?? join(repoRoot, "outputs"),
       promptsDir: join(repoRoot, "prompts"),
+      sources,
       timeoutMs:
         timeoutArg === undefined ? undefined : Number(timeoutArg) * 1000,
       heartbeatMs: animated ? 100 : undefined,
