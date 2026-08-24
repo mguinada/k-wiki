@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -943,7 +943,8 @@ export interface IngestOptions {
   readonly settingsPath: string;
   /** The raw dir holding manifest.json; its parent is the data repo. */
   readonly rawDir: string;
-  /** Digest and snapshot destination (the repo's outputs/). */
+  /** Digest destination (the repo's outputs/); a legacy snapshot
+   *  found here is adopted into the data repo (issue #112). */
   readonly outputsDir: string;
   /** Directory holding ingest.md and incremental.md. */
   readonly promptsDir: string;
@@ -1064,6 +1065,35 @@ async function readSnapshot(
 }
 
 /**
+ * Adopt a pre-#112 snapshot into the data repo: the snapshot is
+ * per-instance state and now lives in the data repo's outputs/ —
+ * the code repo's outputs/ is gitignored, shared by every worktree,
+ * and cleanable. The copy is byte-for-byte, so the snapshotFor
+ * stamp check still guards wrong-root snapshots, foreign or
+ * unstamped alike. A data-repo snapshot always wins; the legacy
+ * file is left in place, harmless where it is.
+ */
+async function adoptLegacySnapshot(
+  legacyPath: string,
+  snapshotPath: string,
+  onProgress: (message: string) => void,
+): Promise<void> {
+  if ((await readManifestText(snapshotPath)) !== undefined) {
+    return;
+  }
+
+  if ((await readManifestText(legacyPath)) === undefined) {
+    return;
+  }
+
+  await mkdir(dirname(snapshotPath), { recursive: true });
+  await copyFile(legacyPath, snapshotPath);
+  onProgress(
+    `wiki-ingest: adopting legacy snapshot from ${legacyPath} into the data repo (${snapshotPath})`,
+  );
+}
+
+/**
  * One headless ingest run. The snapshot is written only after a
  * successful agent run, so a failure retries the same sources next
  * time instead of silently skipping them. A manifest diff with removed
@@ -1089,7 +1119,14 @@ export async function runWikiIngest(
 
   const dataRoot = dirname(options.rawDir);
   const current = parseManifest(manifestText, manifestPath);
-  const snapshotPath = join(options.outputsDir, "last-ingested-manifest.json");
+  const snapshotPath = join(dataRoot, "outputs", "last-ingested-manifest.json");
+  const legacySnapshotPath = join(
+    options.outputsDir,
+    "last-ingested-manifest.json",
+  );
+
+  await adoptLegacySnapshot(legacySnapshotPath, snapshotPath, onProgress);
+
   const previous = await readSnapshot(snapshotPath, dataRoot, onProgress);
   const diff = diffManifests(previous ?? emptyManifest(), current);
 
@@ -1269,6 +1306,7 @@ export async function runWikiIngest(
   const digest = formatDigest(run);
 
   await writeFile(digestPath, digest, "utf8");
+  await mkdir(dirname(snapshotPath), { recursive: true });
   await writeManifest(snapshotPath, current, { snapshotFor: dataRoot });
 
   return { status: "ran", mode, digestPath, digest, pages, diff };
@@ -1283,7 +1321,9 @@ Run the wiki agent headless over the sources that changed since the
 last ingest, then write a per-run digest (guide §18, issue #11).
 
 Flow: read the raw manifest, diff it against the snapshot from the
-previous successful run (outputs/last-ingested-manifest.json), pick
+previous successful run (<dataRoot>/outputs/last-ingested-manifest.json
+— the data repo's outputs/, not this repo's; a legacy snapshot in
+this repo's outputs/ is adopted into the data repo on first run), pick
 prompts/ingest.md (no snapshot yet — first run),
 prompts/incremental.md (changed sources appended to the prompt), or
 prompts/expunge.md (a synced note was deleted — the removed note's
@@ -1301,8 +1341,10 @@ Switches and arguments:
                      settings.yml — command, model, provider, and reasoning
                      level, passed to the agent as --model/--thinking;
                      provider is optional and passed as --provider when set.
-  --outputs <dir>    Where the digest (runs/<timestamp>.md) and the
-                     manifest snapshot go. Default: the repo's outputs/.
+  --outputs <dir>    Where the run digest (runs/<timestamp>.md) goes.
+                     Default: the repo's outputs/. The manifest snapshot
+                     always lives in the data repo's outputs/ and is not
+                     moved by this switch (issue #112).
   --timeout <secs>   Kill the agent run after this many seconds and
                      fail it; the snapshot stays untouched. Default:
                      1800 (30 minutes).
@@ -1313,11 +1355,14 @@ Switches and arguments:
 
 What it writes:
   - wiki pages, by the agent, in the data repo (never raw/);
-  - outputs/last-ingested-manifest.json — the manifest snapshot the
-    next run diffs against (only after a successful agent run),
-    stamped with its data repo root: a snapshot stamped for another
-    instance — or an unstamped legacy one — is ignored with a loud
-    warning and the run falls back to full mode (issue #95);
+  - <dataRoot>/outputs/last-ingested-manifest.json — the manifest
+    snapshot the next run diffs against (only after a successful
+    agent run), stamped with its data repo root: a snapshot stamped
+    for another instance — or an unstamped legacy one — is ignored
+    with a loud warning and the run falls back to full mode (issue
+    #95). A pre-#112 snapshot in this repo's outputs/ is adopted
+    (copied) into the data repo when the data repo has none (issue
+    #112);
   - outputs/runs/<timestamp>.md — the digest, also printed to stdout.
 
 After every agent run three guardrails check the data repo (guide

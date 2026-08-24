@@ -132,12 +132,17 @@ interface Repo {
   readonly outputsDir: string;
   readonly settingsPath: string;
 }
-
-/** A temp data repo: git-tracked wiki/, raw/manifest.json, stub agent. */
+/** A temp data repo: git-tracked wiki/, raw/manifest.json, stub agent.
+ *  The wrapper's outputs dir is a separate temp dir (issue #112), so
+ *  the snapshot landing in <dataRoot>/outputs/ proves it follows the
+ *  data repo, not --outputs. */
 async function makeRepo(notes: Record<string, string>): Promise<Repo> {
   const dataRoot = await mkdtemp(join(tmpdir(), "k-wiki-ingest-e2e-"));
+  const outputsDir = await mkdtemp(
+    join(tmpdir(), "k-wiki-ingest-e2e-outputs-"),
+  );
 
-  tempDirs.push(dataRoot);
+  tempDirs.push(dataRoot, outputsDir);
 
   const manifest = {
     vaults: {
@@ -149,7 +154,6 @@ async function makeRepo(notes: Record<string, string>): Promise<Repo> {
       ),
     },
   };
-  const outputsDir = join(dataRoot, "outputs");
 
   await mkdir(join(dataRoot, "raw"), { recursive: true });
   await mkdir(join(dataRoot, "wiki"), { recursive: true });
@@ -238,7 +242,7 @@ describe("wiki-ingest e2e", () => {
     expect(result.out).toContain("**Mode:** full");
 
     const prompt = await readFile(
-      join(repo.outputsDir, "stub-prompt.txt"),
+      join(repo.dataRoot, "outputs", "stub-prompt.txt"),
       "utf8",
     );
 
@@ -272,7 +276,7 @@ describe("wiki-ingest e2e", () => {
     );
 
     const snapshot = await readFile(
-      join(repo.outputsDir, "last-ingested-manifest.json"),
+      join(repo.dataRoot, "outputs", "last-ingested-manifest.json"),
       "utf8",
     );
 
@@ -302,7 +306,7 @@ describe("wiki-ingest e2e", () => {
     expect(result.out).toContain("~ Engineering/AI/RAG.md");
 
     const prompt = await readFile(
-      join(repo.outputsDir, "stub-prompt.txt"),
+      join(repo.dataRoot, "outputs", "stub-prompt.txt"),
       "utf8",
     );
 
@@ -314,7 +318,7 @@ describe("wiki-ingest e2e", () => {
     const repo = await makeRepo({ "AI/RAG.md": "rag" });
 
     await ingest(repo);
-    await rm(join(repo.outputsDir, "stub-prompt.txt"));
+    await rm(join(repo.dataRoot, "outputs", "stub-prompt.txt"));
 
     const result = await ingest(repo);
 
@@ -323,7 +327,7 @@ describe("wiki-ingest e2e", () => {
     );
 
     await expect(
-      readFile(join(repo.outputsDir, "stub-prompt.txt"), "utf8"),
+      readFile(join(repo.dataRoot, "outputs", "stub-prompt.txt"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
@@ -344,7 +348,10 @@ describe("wiki-ingest e2e", () => {
     expect(result.err).toContain("code 4");
 
     await expect(
-      readFile(join(repo.outputsDir, "last-ingested-manifest.json"), "utf8"),
+      readFile(
+        join(repo.dataRoot, "outputs", "last-ingested-manifest.json"),
+        "utf8",
+      ),
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
@@ -373,7 +380,10 @@ describe("wiki-ingest e2e", () => {
     expect(result.err).toContain("timed out after 5 seconds");
 
     await expect(
-      readFile(join(repo.outputsDir, "last-ingested-manifest.json"), "utf8"),
+      readFile(
+        join(repo.dataRoot, "outputs", "last-ingested-manifest.json"),
+        "utf8",
+      ),
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
@@ -415,7 +425,10 @@ describe("wiki-ingest e2e", () => {
     ).rejects.toMatchObject({ code: "ENOENT" });
 
     await expect(
-      readFile(join(repo.outputsDir, "last-ingested-manifest.json"), "utf8"),
+      readFile(
+        join(repo.dataRoot, "outputs", "last-ingested-manifest.json"),
+        "utf8",
+      ),
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 

@@ -1180,6 +1180,10 @@ async function makeDataRepo(notes: Record<string, string>): Promise<string> {
 interface Harness {
   readonly dataRoot: string;
   readonly outputsDir: string;
+  /** The snapshot's home since #112: the data repo's outputs/. */
+  readonly snapshotPath: string;
+  /** The pre-#112 snapshot location (the wrapper's outputs dir). */
+  readonly legacySnapshotPath: string;
   readonly promptsDir: string;
   readonly settingsPath: string;
   readonly invocations: {
@@ -1212,7 +1216,13 @@ function wikiPage(body: string): string {
 /** Fixture prompt files plus a recording, wiki-writing fake agent. */
 async function makeHarness(notes: Record<string, string>): Promise<Harness> {
   const dataRoot = await makeDataRepo(notes);
-  const outputsDir = join(dataRoot, "outputs");
+  // The wrapper's outputs dir is NOT the data repo's (issue #112): a
+  // separate temp dir proves the snapshot follows the data repo while
+  // digests stay with the wrapper.
+  const outputsDir = await mkdtemp(join(tmpdir(), "k-wiki-ingest-outputs-"));
+
+  tempDirs.push(outputsDir);
+
   const promptsDir = join(dataRoot, "prompts");
 
   await mkdir(promptsDir, { recursive: true });
@@ -1249,6 +1259,8 @@ async function makeHarness(notes: Record<string, string>): Promise<Harness> {
   return {
     dataRoot,
     outputsDir,
+    snapshotPath: join(dataRoot, "outputs", "last-ingested-manifest.json"),
+    legacySnapshotPath: join(outputsDir, "last-ingested-manifest.json"),
     promptsDir,
     settingsPath,
     invocations,
@@ -1330,10 +1342,7 @@ describe("runWikiIngest", () => {
     await runWikiIngest(optionsFor(h));
 
     const snapshot = parseManifest(
-      await (await import("node:fs/promises")).readFile(
-        join(h.outputsDir, "last-ingested-manifest.json"),
-        "utf8",
-      ),
+      await (await import("node:fs/promises")).readFile(h.snapshotPath, "utf8"),
       "snapshot",
     );
 
@@ -1345,20 +1354,138 @@ describe("runWikiIngest", () => {
 
     await runWikiIngest(optionsFor(h));
 
-    const snapshot = JSON.parse(
-      await readFile(join(h.outputsDir, "last-ingested-manifest.json"), "utf8"),
-    );
+    const snapshot = JSON.parse(await readFile(h.snapshotPath, "utf8"));
 
     expect(snapshot.snapshotFor).toBe(h.dataRoot);
+  });
+
+  it("writes no snapshot into the wrapper's outputs dir", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    await runWikiIngest(optionsFor(h));
+
+    await expect(readFile(h.legacySnapshotPath, "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("adopts a legacy wrapper snapshot when the data repo has none", async () => {
+    const h = await makeHarness({ "a.md": "a2" });
+
+    await mkdir(h.outputsDir, { recursive: true });
+    await writeFile(
+      h.legacySnapshotPath,
+      serializeManifest(manifestWith("Engineering", { "a.md": entry("a") }), {
+        snapshotFor: h.dataRoot,
+      }),
+    );
+
+    const result = await runWikiIngest(optionsFor(h));
+
+    expect(result).toMatchObject({ status: "ran", mode: "incremental" });
+  });
+
+  it("adopts a legacy snapshot when the data repo outputs dir already holds files", async () => {
+    const h = await makeHarness({ "a.md": "a2" });
+
+    await mkdir(dirname(h.snapshotPath), { recursive: true });
+    await writeFile(
+      join(h.dataRoot, "outputs", "lint-2026-08-24.md"),
+      "lint report\n",
+    );
+    await mkdir(h.outputsDir, { recursive: true });
+    await writeFile(
+      h.legacySnapshotPath,
+      serializeManifest(manifestWith("Engineering", { "a.md": entry("a") }), {
+        snapshotFor: h.dataRoot,
+      }),
+    );
+
+    const result = await runWikiIngest(optionsFor(h));
+
+    expect(result).toMatchObject({ status: "ran", mode: "incremental" });
+  });
+
+  it("announces the legacy snapshot adoption on progress", async () => {
+    const h = await makeHarness({ "a.md": "a2" });
+    const messages: string[] = [];
+
+    await mkdir(h.outputsDir, { recursive: true });
+    await writeFile(
+      h.legacySnapshotPath,
+      serializeManifest(manifestWith("Engineering", { "a.md": entry("a") }), {
+        snapshotFor: h.dataRoot,
+      }),
+    );
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      onProgress: (message) => messages.push(message),
+    });
+
+    expect(
+      messages.some((message) =>
+        message.startsWith("wiki-ingest: adopting legacy snapshot from"),
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps guarding an adopted legacy snapshot stamped for a foreign root", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const messages: string[] = [];
+
+    await mkdir(h.outputsDir, { recursive: true });
+    await writeFile(
+      h.legacySnapshotPath,
+      serializeManifest(
+        manifestWith("Engineering", { "gone.md": entry("gone") }),
+        { snapshotFor: "/foreign/data-root" },
+      ),
+    );
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      onProgress: (message) => messages.push(message),
+    });
+
+    expect(
+      messages.some((message) =>
+        message.includes("is stamped for /foreign/data-root"),
+      ),
+    ).toBe(true);
+  });
+
+  it("prefers the data-repo snapshot when both locations hold one", async () => {
+    const h = await makeHarness({ "a.md": "a2" });
+
+    await mkdir(dirname(h.snapshotPath), { recursive: true });
+    await writeFile(
+      h.snapshotPath,
+      serializeManifest(manifestWith("Engineering", { "a.md": entry("a") }), {
+        snapshotFor: h.dataRoot,
+      }),
+    );
+    await mkdir(h.outputsDir, { recursive: true });
+    await writeFile(
+      h.legacySnapshotPath,
+      serializeManifest(
+        manifestWith("Engineering", { "gone.md": entry("gone") }),
+        { snapshotFor: h.dataRoot },
+      ),
+    );
+
+    const result = await runWikiIngest(optionsFor(h));
+
+    expect(result).toMatchObject({ status: "ran", mode: "incremental" });
   });
 
   it("ignores a foreign snapshot with a loud warning and a full run instead of expunging", async () => {
     const h = await makeHarness({ "a.md": "a" });
     const messages: string[] = [];
 
-    await mkdir(h.outputsDir, { recursive: true });
+    await mkdir(dirname(h.snapshotPath), { recursive: true });
     await writeFile(
-      join(h.outputsDir, "last-ingested-manifest.json"),
+      h.snapshotPath,
       serializeManifest(
         manifestWith("Engineering", { "gone.md": entry("gone") }),
         { snapshotFor: "/foreign/data-root" },
@@ -1384,9 +1511,9 @@ describe("runWikiIngest", () => {
     const h = await makeHarness({ "a.md": "a" });
     const messages: string[] = [];
 
-    await mkdir(h.outputsDir, { recursive: true });
+    await mkdir(dirname(h.snapshotPath), { recursive: true });
     await writeFile(
-      join(h.outputsDir, "last-ingested-manifest.json"),
+      h.snapshotPath,
       serializeManifest(
         manifestWith("Engineering", { "gone.md": entry("gone") }),
       ),
@@ -1411,9 +1538,9 @@ describe("runWikiIngest", () => {
     const h = await makeHarness({ "a.md": "a" });
     const messages: string[] = [];
 
-    await mkdir(h.outputsDir, { recursive: true });
+    await mkdir(dirname(h.snapshotPath), { recursive: true });
     await writeFile(
-      join(h.outputsDir, "last-ingested-manifest.json"),
+      h.snapshotPath,
       serializeManifest(
         manifestWith("Engineering", { "gone.md": entry("gone") }),
       ),
@@ -1436,11 +1563,8 @@ describe("runWikiIngest", () => {
   it("rejects a snapshot that is not valid JSON", async () => {
     const h = await makeHarness({ "a.md": "a" });
 
-    await mkdir(h.outputsDir, { recursive: true });
-    await writeFile(
-      join(h.outputsDir, "last-ingested-manifest.json"),
-      "not json",
-    );
+    await mkdir(dirname(h.snapshotPath), { recursive: true });
+    await writeFile(h.snapshotPath, "not json");
 
     await expect(runWikiIngest(optionsFor(h))).rejects.toThrow(
       /not valid JSON/,
@@ -1450,11 +1574,8 @@ describe("runWikiIngest", () => {
   it("names the JSON parse failure as the cause of the rejection", async () => {
     const h = await makeHarness({ "a.md": "a" });
 
-    await mkdir(h.outputsDir, { recursive: true });
-    await writeFile(
-      join(h.outputsDir, "last-ingested-manifest.json"),
-      "not json",
-    );
+    await mkdir(dirname(h.snapshotPath), { recursive: true });
+    await writeFile(h.snapshotPath, "not json");
 
     await expect(runWikiIngest(optionsFor(h))).rejects.toHaveProperty(
       "cause",
@@ -2240,9 +2361,9 @@ describe("runWikiIngest", () => {
 
     const { readFile } = await import("node:fs/promises");
 
-    await expect(
-      readFile(join(h.outputsDir, "last-ingested-manifest.json"), "utf8"),
-    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(h.snapshotPath, "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
     await expect(
       readFile(
         join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"),
@@ -2262,9 +2383,9 @@ describe("runWikiIngest", () => {
 
     const { readFile } = await import("node:fs/promises");
 
-    await expect(
-      readFile(join(h.outputsDir, "last-ingested-manifest.json"), "utf8"),
-    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(h.snapshotPath, "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 });
 
@@ -2300,9 +2421,9 @@ describe("runWikiIngest guardrails", () => {
     await expect(
       readFile(join(h.dataRoot, "wiki", "bad.md"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
-    await expect(
-      readFile(join(h.outputsDir, "last-ingested-manifest.json"), "utf8"),
-    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(h.snapshotPath, "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 
   it("writes a failure digest naming the tripped check", async () => {
