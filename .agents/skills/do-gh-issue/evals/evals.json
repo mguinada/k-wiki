@@ -9,6 +9,7 @@
       "files": [],
       "assertions": [
         "Does not assign the user to issue #6 when stopping on a blocker — assignment follows the blocker gate",
+        "Sets no Projects Status: the board is untouched when the run stops at the gate",
         "Final report identifies issue #5 as an open blocker, with its state and link",
         "Stops without implementing: no new branch created and no source files modified in the run worktree",
         "Codegraph init only when the run proceeds past the gate; on a blocked stop no index is built (a status check is allowed)"
@@ -34,6 +35,7 @@
       "files": [],
       "assertions": [
         "Creates a branch named 18-<slug> (exact convention, no prefixes or suffixes)",
+        "Attempts to set the issue's Projects Status to 'In progress' after the branch/worktree exists and before the first implementation edit; if the board cannot be read or written, prints one warning naming the cause and continues",
         "Test-first evidence: a failing test run is recorded before implementation files are written",
         "Vitest suite present and npm test passes, recorded in outputs",
         "All issue acceptance criteria addressed: checker exits 0 on current repo, suite covers extraction/resolution/exit behavior, broken-link fixture exits 1",
