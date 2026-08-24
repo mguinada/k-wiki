@@ -531,8 +531,13 @@ function colors() {
   return createColors(!process.env.NO_COLOR);
 }
 
-/** Bold the vault name of a progress message at the render boundary. */
+/** Color a progress line at the render boundary: WARNING severity
+ *  renders yellow, vault names render bold. */
 export function colorizeProgress(message: string): string {
+  if (message.includes("WARNING")) {
+    return colors().yellow(message);
+  }
+
   const name = /^vault "([^"]*)":/.exec(message)?.[1];
 
   if (name === undefined) {

@@ -1050,7 +1050,7 @@ async function readSnapshot(
         : `is stamped for ${snapshotFor}`;
 
     onProgress(
-      `wiki-ingest: WARNING — snapshot ${snapshotPath} ${origin}, not this instance (${dataRoot}); ignoring it and falling back to a full run`,
+      `wiki-ingest: WARNING — snapshot ${snapshotPath} ${origin}, not this instance (${dataRoot}); ignoring it and falling back to a full run; the next successful ingest rewrites the snapshot, so this warning will not repeat`,
     );
 
     return undefined;
@@ -1359,20 +1359,24 @@ export interface ProgressSink {
  * The stderr presentation for one wiki-ingest run: agent heartbeats
  * keep one animated line (spinner + clock) on a TTY; every other
  * message scrolls. Non-animated runs append plain lines only.
+ * Severity is detected here, at the render boundary: WARNING messages
+ * render yellow, everything else dim.
  */
 export function createAgentProgressSink(
   write: (text: string) => void,
   writeLine: (text: string) => void,
   animated: boolean,
-  dim: (text: string) => string,
+  tones: { dim: (text: string) => string; yellow: (text: string) => string },
   heartbeatPrefix: string | readonly string[] = AGENT_HEARTBEAT_PREFIX,
 ): ProgressSink {
   const prefixes =
     typeof heartbeatPrefix === "string" ? [heartbeatPrefix] : heartbeatPrefix;
+  const styled = (message: string) =>
+    message.includes("WARNING") ? tones.yellow(message) : tones.dim(message);
 
   if (!animated) {
     return {
-      render: (message) => writeLine(dim(message)),
+      render: (message) => writeLine(styled(message)),
       end: () => {},
     };
   }
@@ -1382,9 +1386,9 @@ export function createAgentProgressSink(
   return {
     render: (message) => {
       if (prefixes.some((prefix) => message.startsWith(prefix))) {
-        renderer.live(dim(message));
+        renderer.live(styled(message));
       } else {
-        renderer.event(dim(message));
+        renderer.event(styled(message));
       }
     },
     end: () => renderer.end(),
@@ -1467,7 +1471,7 @@ export async function main(): Promise<void> {
     (text) => process.stderr.write(text),
     (text) => console.error(text),
     animated,
-    (text) => colors().dim(text),
+    colors(),
   );
 
   try {

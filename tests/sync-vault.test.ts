@@ -1308,6 +1308,12 @@ describe("colorized output", () => {
     );
   });
 
+  it("colors a WARNING-severity progress message yellow", () => {
+    expect(
+      colorizeProgress("sync-vault: WARNING — config drift detected"),
+    ).toBe(pc.yellow("sync-vault: WARNING — config drift detected"));
+  });
+
   it("leaves progress messages without a vault name plain", () => {
     expect(colorizeProgress("sync-vault: raw dir /tmp/raw")).toBe(
       "sync-vault: raw dir /tmp/raw",
@@ -1401,6 +1407,14 @@ describe("colorized output", () => {
       expect(colorizeProgress(`vault "${VAULT_NAME}": 6 candidates`)).toBe(
         `vault "${VAULT_NAME}": 6 candidates`,
       );
+    });
+
+    it("strips WARNING color", () => {
+      process.env.NO_COLOR = "1";
+
+      expect(
+        colorizeProgress("sync-vault: WARNING — config drift detected"),
+      ).toBe("sync-vault: WARNING — config drift detected");
     });
 
     it("strips error color", () => {

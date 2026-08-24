@@ -146,6 +146,15 @@ argument is validated or any file is read, so `--help` never fails.
 A new switch lands together with its help entry and its tests in the
 same change.
 
+### CLI colors
+
+One color per feedback kind, applied at the render boundary (the
+stderr sink or `colorize*` helper), never at the call site: dim =
+progress, yellow = warning (`WARNING` in the message), red = error,
+green = ok, bold = emphasis. `NO_COLOR` stays honored everywhere.
+Full table and boundary rules:
+[`docs/references/colors.md`](docs/references/colors.md).
+
 ### Mutation testing (advisory)
 
 Mutation testing is an advisory signal, not a gate — but it is a
