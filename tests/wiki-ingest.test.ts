@@ -1369,6 +1369,36 @@ describe("runWikiIngest", () => {
     });
   });
 
+  it("keeps the written snapshot out of the data repo's git status", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    await runWikiIngest(optionsFor(h));
+
+    const { stdout } = await run("git", [
+      "-C",
+      h.dataRoot,
+      "status",
+      "--porcelain",
+      "-uall",
+      "--",
+      "outputs",
+    ]);
+
+    expect(stdout).toBe("");
+  });
+
+  it("appends the snapshot ignore entry to an existing data-repo .gitignore", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    await writeFile(join(h.dataRoot, ".gitignore"), "scratch/");
+
+    await runWikiIngest(optionsFor(h));
+
+    expect(await readFile(join(h.dataRoot, ".gitignore"), "utf8")).toBe(
+      "scratch/\n# wiki-ingest manifest snapshot: per-instance state, never committed (issue #112)\noutputs/last-ingested-manifest.json\n",
+    );
+  });
+
   it("adopts a legacy wrapper snapshot when the data repo has none", async () => {
     const h = await makeHarness({ "a.md": "a2" });
 
@@ -2225,6 +2255,7 @@ describe("runWikiIngest", () => {
 
     expect(messages).toEqual([
       expect.stringContaining("wiki-ingest: raw dir"),
+      expect.stringContaining("wiki-ingest: ignoring outputs/last-ingested-manifest.json"),
       expect.stringContaining(
         "invoking agent: pi --model GLM-5.2 --thinking high",
       ),

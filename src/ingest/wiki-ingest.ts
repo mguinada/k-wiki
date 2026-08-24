@@ -1067,6 +1067,37 @@ async function readSnapshot(
 const SNAPSHOT_FILENAME = "last-ingested-manifest.json";
 
 /**
+ * Keep the snapshot out of the data repo's history (issue #112): it
+ * is per-instance state stamped with this machine's data root, and
+ * the sync cycle's commit stages outputs/ wholesale. Appends the
+ * ignore entry when the data repo's .gitignore lacks it.
+ */
+async function ensureSnapshotIgnored(
+  dataRoot: string,
+  onProgress: (message: string) => void,
+): Promise<void> {
+  const entry = `outputs/${SNAPSHOT_FILENAME}`;
+  const ignorePath = join(dataRoot, ".gitignore");
+  const existing = (await readManifestText(ignorePath)) ?? "";
+
+  if (existing.split("\n").some((line) => line.trim() === entry)) {
+    return;
+  }
+
+  const body =
+    existing === "" || existing.endsWith("\n") ? existing : `${existing}\n`;
+
+  await writeFile(
+    ignorePath,
+    `${body}# wiki-ingest manifest snapshot: per-instance state, never committed (issue #112)\n${entry}\n`,
+    "utf8",
+  );
+  onProgress(
+    `wiki-ingest: ignoring ${entry} in the data repo (${ignorePath}) so no commit or clean can take the snapshot`,
+  );
+}
+
+/**
  * Adopt a pre-#112 snapshot into the data repo: the snapshot is
  * per-instance state and now lives in the data repo's outputs/ —
  * the code repo's outputs/ is gitignored, shared by every worktree,
@@ -1124,6 +1155,7 @@ export async function runWikiIngest(
   const snapshotPath = join(dataRoot, "outputs", SNAPSHOT_FILENAME);
   const legacySnapshotPath = join(options.outputsDir, SNAPSHOT_FILENAME);
 
+  await ensureSnapshotIgnored(dataRoot, onProgress);
   await adoptLegacySnapshot(legacySnapshotPath, snapshotPath, onProgress);
 
   const previous = await readSnapshot(snapshotPath, dataRoot, onProgress);

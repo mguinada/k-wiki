@@ -372,7 +372,8 @@ export interface WikiSyncOptions {
   readonly rawDir: string;
   /** Path to the agent settings file (settings.yml). */
   readonly settingsPath: string;
-  /** Digest and snapshot destination (the code repo's outputs/). */
+  /** Digest destination (the code repo's outputs/); the manifest
+   *  snapshot lives in the data repo's outputs/ (issue #112). */
   readonly outputsDir: string;
   /** Directory holding ingest.md, incremental.md, and lint.md. */
   readonly promptsDir: string;
@@ -634,9 +635,10 @@ command only chains them.
                      lint — and the optional secondBrain.domains list
                      of the crosslink stage. Provider is optional.
                      Default: the repo's settings.yml.
-  --outputs <dir>    Where the ingest digest (runs/<timestamp>.md) and
-                     the manifest snapshot go — the code repo's
-                     per-checkout state. Default: the repo's outputs/.
+  --outputs <dir>    Where the ingest digest (runs/<timestamp>.md) goes.
+                     Default: the repo's outputs/. The manifest snapshot
+                     always lives in the data repo's outputs/ and is not
+                     moved by this switch (issue #112).
   --timeout <secs>   Kill either agent run after this many seconds
                      and fail the cycle. Default: 1800 (30 minutes).
   -h, --help         Print this help and exit; no side effects.
