@@ -300,9 +300,15 @@ export type CommitResult =
     }
   | { readonly status: "nothing-to-commit" };
 
-/** Commit paths in the data repo; outputs/ only when it exists (a
- *  fresh data repo has none until the lint agent creates it). */
-async function commitPathspecs(dataRoot: string): Promise<readonly string[]> {
+/** Commit paths in the data repo; outputs/ only when it holds
+ *  something git can act on. Since the manifest snapshot moved there
+ *  (issue #112) the directory always exists — but it is ignored, and
+ *  `git commit -- outputs` fails on a pathspec nothing known to git
+ *  matches. */
+async function commitPathspecs(
+  dataRoot: string,
+  env: NodeJS.ProcessEnv,
+): Promise<readonly string[]> {
   const pathspecs = ["wiki", "raw"];
 
   if (
@@ -311,7 +317,23 @@ async function commitPathspecs(dataRoot: string): Promise<readonly string[]> {
       () => false,
     )
   ) {
-    pathspecs.push("outputs");
+    const { stdout } = await runGit(
+      dataRoot,
+      [
+        "-c",
+        "core.quotePath=false",
+        "status",
+        "--porcelain",
+        "-uall",
+        "--",
+        "outputs",
+      ],
+      env,
+    );
+
+    if (parseStatus(stdout).length > 0) {
+      pathspecs.push("outputs");
+    }
   }
 
   return pathspecs;
@@ -323,7 +345,7 @@ async function commitDataRepo(
   env: NodeJS.ProcessEnv,
   message: string,
 ): Promise<CommitResult> {
-  const pathspecs = await commitPathspecs(dataRoot);
+  const pathspecs = await commitPathspecs(dataRoot, env);
   const { stdout } = await runGit(
     dataRoot,
     [
