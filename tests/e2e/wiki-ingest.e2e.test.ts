@@ -204,6 +204,11 @@ function ingest(repo: Repo) {
   ]);
 }
 
+/** The snapshot's home since #112: the data repo's outputs/, never
+ *  the --outputs dir. */
+const snapshotAt = (dataRoot: string) =>
+  join(dataRoot, "outputs", "last-ingested-manifest.json");
+
 async function setNotes(repo: Repo, notes: Record<string, string>) {
   const manifest = {
     vaults: {
@@ -275,10 +280,7 @@ describe("wiki-ingest e2e", () => {
       (await readFile(join(runsDir, digestName), "utf8")).trimEnd(),
     );
 
-    const snapshot = await readFile(
-      join(repo.dataRoot, "outputs", "last-ingested-manifest.json"),
-      "utf8",
-    );
+    const snapshot = await readFile(snapshotAt(repo.dataRoot), "utf8");
 
     expect(snapshot).toContain(hashOf("rag"));
   });
@@ -348,10 +350,7 @@ describe("wiki-ingest e2e", () => {
     expect(result.err).toContain("code 4");
 
     await expect(
-      readFile(
-        join(repo.dataRoot, "outputs", "last-ingested-manifest.json"),
-        "utf8",
-      ),
+      readFile(snapshotAt(repo.dataRoot), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
@@ -380,10 +379,7 @@ describe("wiki-ingest e2e", () => {
     expect(result.err).toContain("timed out after 5 seconds");
 
     await expect(
-      readFile(
-        join(repo.dataRoot, "outputs", "last-ingested-manifest.json"),
-        "utf8",
-      ),
+      readFile(snapshotAt(repo.dataRoot), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
@@ -425,10 +421,7 @@ describe("wiki-ingest e2e", () => {
     ).rejects.toMatchObject({ code: "ENOENT" });
 
     await expect(
-      readFile(
-        join(repo.dataRoot, "outputs", "last-ingested-manifest.json"),
-        "utf8",
-      ),
+      readFile(snapshotAt(repo.dataRoot), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
@@ -594,10 +587,7 @@ describe("wiki-ingest expunge e2e (sync-driven)", () => {
     expect(prompt).toContain("Ephemeral note");
     expect(prompt).toContain("- wiki/sources/temp-research.md");
 
-    const snapshot = await readFile(
-      join(repo.dataRoot, "outputs", "last-ingested-manifest.json"),
-      "utf8",
-    );
+    const snapshot = await readFile(snapshotAt(repo.dataRoot), "utf8");
 
     expect(snapshot).not.toContain("Scratch/temp-research.md");
   });

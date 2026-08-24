@@ -1064,6 +1064,8 @@ async function readSnapshot(
   return parseManifest(text, snapshotPath);
 }
 
+const SNAPSHOT_FILENAME = "last-ingested-manifest.json";
+
 /**
  * Adopt a pre-#112 snapshot into the data repo: the snapshot is
  * per-instance state and now lives in the data repo's outputs/ —
@@ -1119,11 +1121,8 @@ export async function runWikiIngest(
 
   const dataRoot = dirname(options.rawDir);
   const current = parseManifest(manifestText, manifestPath);
-  const snapshotPath = join(dataRoot, "outputs", "last-ingested-manifest.json");
-  const legacySnapshotPath = join(
-    options.outputsDir,
-    "last-ingested-manifest.json",
-  );
+  const snapshotPath = join(dataRoot, "outputs", SNAPSHOT_FILENAME);
+  const legacySnapshotPath = join(options.outputsDir, SNAPSHOT_FILENAME);
 
   await adoptLegacySnapshot(legacySnapshotPath, snapshotPath, onProgress);
 
