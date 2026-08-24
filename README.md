@@ -630,12 +630,19 @@ model: GLM-5.2     # passed as --model
 reasoning: high    # pi thinking level, passed as --thinking
 ```
 
+Unless `isolate: false` opts out, every spawned ingest and lint run
+is isolated from the host's global agent setup (issue #118): the
+wrapper prepends `--no-context-files --no-extensions --no-skills`, so
+installed context files (AGENTS.md discovery), extensions, and skills
+cannot leak into headless runs. Set `false` only to debug with the
+ambient global setup. Query runs are not isolated.
+
 The per-run digest — the human's review surface while runs are
 unsupervised — is written to `outputs/runs/<timestamp>.md` (gitignored
 machine output; the durable review surface is the data repo's git
-diff) and printed to stdout: agent command, model, and reasoning level;
-mode and prompt
-file; sources added/changed/removed/renamed; wiki pages
+diff) and printed to stdout: agent command, model, reasoning level,
+and isolation state (`isolated` / `not isolated`); mode and
+prompt file; sources added/changed/removed/renamed; wiki pages
 created/updated/deleted (read
 from the data repo's git status, so it matches the `git diff` you
 review); and the agent's final report, which the prompt requires to
