@@ -45,8 +45,9 @@ import { runSync, type SyncReport } from "./sync-vault.ts";
  * wiki-sync: the one-command orchestrator (guide §18, issue #13). It
  * chains the proven pieces — sync-vault → wiki-ingest → headless lint
  * (§17, prompts/lint.md) → crosslink audit (issue #96, configured
- * second brains only) → data-repo commit — and prints one digest: the
- * run's ingest digest, the lint summary, the audit result, and the
+ * second brains only) → verification (issue #138) → data-repo commit
+ * — and prints one digest: the run's ingest digest, the lint summary,
+ * the audit result, the fidelity and provenance results, and the
  * commit hash. Nothing here is new capability; every stage stays
  * independently runnable (guide §8).
  *
@@ -819,9 +820,10 @@ failed run leaves untouched. A failure at any stage stops the chain
 and exits 1; a tripped guardrail has already reverted its agent run,
 and a verification failure has reverted the lint edits.
 
-The final digest on stdout — sync summary, lint summary, the commit
-hash, and the full ingest digest — plus git log -1 in the data repo
-tell the whole story of the run. Live progress goes to stderr.
+The final digest on stdout — sync summary, lint summary, the crosslink
+audit (configured second brains), the fidelity and provenance results,
+the commit hash, and the full ingest digest — plus git log -1 in the
+data repo tell the whole story of the run. Live progress goes to stderr.
 Scheduling is #14; publish/mirror is #15.`;
 
 function colors() {
