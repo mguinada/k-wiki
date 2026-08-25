@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
 import { afterAll, describe, expect, it } from "vitest";
-import { checkWikiProvenance } from "../scripts/check-provenance.ts";
+import { checkWikiProvenance } from "../src/wiki/provenance.ts";
 
 const script = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -87,6 +87,28 @@ function runNode(
 }
 
 describe("checkWikiProvenance", () => {
+  it("rejects a raw directory that does not exist", async () => {
+    const { wikiDir } = await makeFixture({ "index.md": "# Index" });
+    const root = await mkdtemp(join(tmpdir(), "k-wiki-provenance-"));
+
+    tempDirs.push(root);
+
+    await expect(
+      checkWikiProvenance(wikiDir, join(root, "missing")),
+    ).rejects.toThrow(`raw directory does not exist: ${join(root, "missing")}`);
+  });
+
+  it("rejects a raw path that is a file, not a directory", async () => {
+    const { wikiDir } = await makeFixture({ "index.md": "# Index" });
+    const fileAsRaw = join(dirname(wikiDir), "raw", "manifest.json");
+
+    await writeFile(fileAsRaw, "{}\n");
+
+    await expect(checkWikiProvenance(wikiDir, fileAsRaw)).rejects.toThrow(
+      `raw directory is not a directory: ${fileAsRaw}`,
+    );
+  });
+
   it("passes when every sources link resolves and every origin exists", async () => {
     const { wikiDir, rawDir } = await makeFixture(
       {
