@@ -24,11 +24,11 @@ export const repoRoot = resolve(
   "../..",
 );
 
-export const SYNC_SCRIPT = join(repoRoot, "src", "sync", "sync-vault.ts");
-export const HEALTH_SCRIPT = join(repoRoot, "src", "health", "check-raw.ts");
-export const INGEST_SCRIPT = join(repoRoot, "src", "ingest", "wiki-ingest.ts");
-export const SYNC_CYCLE_SCRIPT = join(repoRoot, "src", "sync", "wiki-sync.ts");
-export const QUERY_SCRIPT = join(repoRoot, "src", "query", "wiki-query.ts");
+export const SYNC_SCRIPT = join(repoRoot, "bin", "sync-vault.ts");
+export const HEALTH_SCRIPT = join(repoRoot, "bin", "check-raw.ts");
+export const INGEST_SCRIPT = join(repoRoot, "bin", "wiki-ingest.ts");
+export const SYNC_CYCLE_SCRIPT = join(repoRoot, "bin", "wiki-sync.ts");
+export const QUERY_SCRIPT = join(repoRoot, "bin", "wiki-query.ts");
 
 /** The fixture vault's notes ingested under `exclude: "wiki:false"`, sorted. */
 export const SELECTED_PATHS = [
@@ -48,12 +48,10 @@ export interface CliResult {
 }
 
 /**
- * Run a repo CLI as a real child process. `argv[1]` must be the real
- * path: `import.meta.url` is realpath'd by Node, and a symlinked spawn
- * path would make the CLI import guards compare unequal and skip
- * `main()`. Children run with `NO_COLOR=1` so byte-exact output
- * assertions stay plain; pass `{ color: true }` to drop it, or
- * `env` to expose more variables to the child.
+ * Run a repo CLI as a real child process through its bin/ launcher
+ * (the only entry path, issue #135). Children run with `NO_COLOR=1`
+ * so byte-exact output assertions stay plain; pass `{ color: true }`
+ * to drop it, or `env` to expose more variables to the child.
  */
 export function runCli(
   script: string,
@@ -151,4 +149,4 @@ export async function collectFiles(
 
   return files.sort();
 }
-export const SYNC_REPO_SCRIPT = join(repoRoot, "src", "sync", "sync-repo.ts");
+export const SYNC_REPO_SCRIPT = join(repoRoot, "bin", "sync-repo.ts");

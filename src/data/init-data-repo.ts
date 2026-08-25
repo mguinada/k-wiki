@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { copyFile, mkdir, readdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isMainModule, refuseTestWorker } from "../cli/is-main.ts";
+import { refuseDirectExecution } from "../cli/is-main.ts";
 import { loadSyncConfig } from "../sync/config.ts";
 import { runGit } from "./git.ts";
 
@@ -177,8 +177,6 @@ Idempotent — an already-seeded data repo is left untouched.
 
 /** data:init entry point: `init-data-repo [-h | --help] [--second-brain] [<config>]`. */
 export async function main(): Promise<void> {
-  refuseTestWorker("data:init");
-
   const args = process.argv.slice(2);
 
   if (args.includes("-h") || args.includes("--help")) {
@@ -212,9 +210,5 @@ export async function main(): Promise<void> {
   }
 }
 
-const isMain = isMainModule(import.meta.url);
-
-/* v8 ignore next: covered only under `node src/data/init-data-repo.ts` */
-if (isMain) {
-  await main();
-}
+/* v8 ignore next: covered only under direct `node src/data/init-data-repo.ts` runs */
+refuseDirectExecution(import.meta.url, "init-data-repo");

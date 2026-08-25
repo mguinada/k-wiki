@@ -1411,7 +1411,7 @@ config concern):
 ```bash
 npm run data:init -- --meta sync-meta.json
 npm run sync-repo -- sync-meta.json
-node src/ingest/wiki-ingest.ts --settings settings-meta.yml \
+node bin/wiki-ingest.ts --settings settings-meta.yml \
   ~/Lab/k-wiki-meta-data/raw
 npm run health -- ~/Lab/k-wiki-meta-data/raw
 ```

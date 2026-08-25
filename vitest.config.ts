@@ -2,9 +2,6 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    // Set the test-worker marker in every worker (issue #123); see
-    // tests/setup.ts.
-    setupFiles: ["tests/setup.ts"],
     // Git- and clock-heavy tests (wiki-ingest, guardrails, sync
     // progress) spawn real child processes and wait real intervals;
     // under heavy machine load (e.g. endpoint-security scanning) the

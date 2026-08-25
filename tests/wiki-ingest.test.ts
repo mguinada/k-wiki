@@ -3485,8 +3485,6 @@ console.log("stub report");
     process.argv = [...argv.slice(0, 2), ...args];
     process.exitCode = undefined;
 
-    vi.stubGlobal("__kWikiTestWorker__", undefined);
-
     const logSpy = vi
       .spyOn(console, "log")
       .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
@@ -3498,7 +3496,6 @@ console.log("stub report");
       await main();
     } finally {
       process.argv = argv;
-      vi.unstubAllGlobals();
       logSpy.mockRestore();
       errorSpy.mockRestore();
     }

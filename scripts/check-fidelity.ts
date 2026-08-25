@@ -1,7 +1,7 @@
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
-import { isMainModule, refuseTestWorker } from "../src/cli/is-main.ts";
+import { refuseDirectExecution } from "../src/cli/is-main.ts";
 import { checkWikiFidelity, summarizeFidelity } from "../src/wiki/fidelity.ts";
 import { printBackfillWarning } from "./check-provenance.ts";
 
@@ -55,8 +55,6 @@ disables color.`;
 
 /** check-fidelity entry point: `check-fidelity [-h | --help] [<wiki-dir> [<raw-dir>]]` (defaults: repo wiki/, sibling raw/). */
 export async function main(): Promise<void> {
-  refuseTestWorker("check-fidelity");
-
   const args = process.argv.slice(2);
 
   if (args.includes("-h") || args.includes("--help")) {
@@ -105,7 +103,5 @@ export async function main(): Promise<void> {
   }
 }
 
-/* v8 ignore next: covered only under `node scripts/check-fidelity.ts` */
-if (isMainModule(import.meta.url)) {
-  await main();
-}
+/* v8 ignore next: covered only under direct `node scripts/check-fidelity.ts` runs */
+refuseDirectExecution(import.meta.url, "check-fidelity");

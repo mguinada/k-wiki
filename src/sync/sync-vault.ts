@@ -12,7 +12,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
-import { isMainModule, refuseTestWorker } from "../cli/is-main.ts";
+import { refuseDirectExecution } from "../cli/is-main.ts";
 import {
   createProgressRenderer,
   formatDuration,
@@ -684,8 +684,6 @@ export function createSyncProgressSink(
 }
 
 export async function main(): Promise<void> {
-  refuseTestWorker("sync-vault");
-
   const args = process.argv.slice(2);
 
   if (args.includes("-h") || args.includes("--help")) {
@@ -749,9 +747,5 @@ export async function main(): Promise<void> {
   }
 }
 
-const isMain = isMainModule(import.meta.url);
-
-/* v8 ignore next: covered only under `node src/sync/sync-vault.ts` */
-if (isMain) {
-  await main();
-}
+/* v8 ignore next: covered only under direct `node src/sync/sync-vault.ts` runs */
+refuseDirectExecution(import.meta.url, "sync-vault");

@@ -23,11 +23,12 @@ import { main as syncVaultMain } from "../src/sync/sync-vault.ts";
 void syncVaultMain;
 
 /**
- * CLI entry-point tests. Two mechanisms, one goal: exercise the import
- * guards and default-argument paths that in-process imports never reach.
+ * CLI entry-point tests. Two mechanisms, one goal: exercise the bin
+ * launcher wiring and default-argument paths that in-process imports
+ * never reach (issue #135: launchers are the only entry path).
  *
  * - Child-process runs verify the real CLI behavior end to end.
- * - In-process dynamic imports of a staged copy verify them under
+ * - In-process dynamic imports of a staged launcher verify them under
  *   Stryker: the staged file is the instrumented one, and a dynamic
  *   import executes it in this process, where the active-mutant
  *   globals live — unlike a child process, which runs instrumented
@@ -103,21 +104,22 @@ async function makeTmpRepo(): Promise<string> {
 
   tempDirs.push(dir);
 
-  // Resolve src/ relative to this test file, not process.cwd(): under
-  // Stryker the mutated sources live in the sandbox next to the tests,
-  // while cwd still points at the original repo root.
-  const srcDir = join(dirname(fileURLToPath(import.meta.url)), "../src");
+  // Resolve src/ and bin/ relative to this test file, not
+  // process.cwd(): under Stryker the mutated sources live in the
+  // sandbox next to the tests, while cwd still points at the original
+  // repo root.
+  const testsDir = dirname(fileURLToPath(import.meta.url));
 
-  await cp(srcDir, join(dir, "src"), {
+  await cp(join(testsDir, "../src"), join(dir, "src"), {
+    recursive: true,
+  });
+  await cp(join(testsDir, "../bin"), join(dir, "bin"), {
     recursive: true,
   });
 
   // The CLI imports runtime dependencies (picocolors); link the repo's
   // node_modules so the staged copy can resolve them.
-  await symlink(
-    join(dirname(fileURLToPath(import.meta.url)), "../node_modules"),
-    join(dir, "node_modules"),
-  );
+  await symlink(join(testsDir, "../node_modules"), join(dir, "node_modules"));
 
   const vaultRoot = await generateFixtureVault(dir);
 
@@ -132,18 +134,17 @@ async function makeTmpRepo(): Promise<string> {
 }
 
 /**
- * A staged copy of src/ inside the test tree, importable in-process.
- * Returns the staged repo root (holds sync.json and src/).
+ * A staged copy of src/ and bin/ inside the test tree, importable
+ * in-process. Returns the staged repo root (holds sync.json, src/,
+ * and bin/).
  */
 async function stageRepo(): Promise<string> {
   const dir = join(stagingRoot, randomUUID());
+  const testsDir = dirname(fileURLToPath(import.meta.url));
 
   await mkdir(join(dir, "raw"), { recursive: true });
-  await cp(
-    join(dirname(fileURLToPath(import.meta.url)), "../src"),
-    join(dir, "src"),
-    { recursive: true },
-  );
+  await cp(join(testsDir, "../src"), join(dir, "src"), { recursive: true });
+  await cp(join(testsDir, "../bin"), join(dir, "bin"), { recursive: true });
 
   const vaultRoot = await generateFixtureVault(join(dir, "vault"));
 
@@ -178,10 +179,6 @@ async function importWithArgv(
     (part): part is string => part !== null,
   );
 
-  // Simulate a real `node <cli>` run: no test-worker marker, so the
-  // import guard fires main() (issue #123).
-  vi.stubGlobal("__kWikiTestWorker__", undefined);
-
   const logSpy = vi
     .spyOn(console, "log")
     .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
@@ -193,7 +190,6 @@ async function importWithArgv(
     await import(pathToFileURL(modulePath).href);
   } finally {
     process.argv = argv;
-    vi.unstubAllGlobals();
     logSpy.mockRestore();
     errorSpy.mockRestore();
   }
@@ -205,7 +201,7 @@ describe("generate CLI", () => {
   it("exits with a usage error when no target directory is given", async () => {
     const dir = await makeTmpRepo();
 
-    const result = await runNode([join(dir, "src", "fixtures", "generate.ts")]);
+    const result = await runNode([join(dir, "bin", "generate.ts")]);
 
     expect({ code: result.code, err: result.err }).toMatchObject({
       code: 1,
@@ -217,10 +213,7 @@ describe("generate CLI", () => {
     const dir = await makeTmpRepo();
     const target = join(dir, "target");
 
-    const result = await runNode([
-      join(dir, "src", "fixtures", "generate.ts"),
-      target,
-    ]);
+    const result = await runNode([join(dir, "bin", "generate.ts"), target]);
 
     expect({ code: result.code, out: result.out }).toMatchObject({
       code: 0,
@@ -238,19 +231,19 @@ describe("generate CLI", () => {
     expect(`${result.code}${result.out}${result.err}`).toBe("0");
   });
 
-  it("runs main when argv[1] is the module itself, with the given target", async () => {
+  it("runs main when imported through its bin launcher, with the given target", async () => {
     const repo = await stageRepo();
-    const modulePath = join(repo, "src", "fixtures", "generate.ts");
+    const launcherPath = join(repo, "bin", "generate.ts");
     const target = join(repo, "target");
 
-    const { out } = await importWithArgv(modulePath, modulePath, [target]);
+    const { out } = await importWithArgv(launcherPath, launcherPath, [target]);
 
     expect(out).toContain(
       `Fixture vault written to ${join(target, VAULT_NAME)}`,
     );
   });
 
-  it("runs nothing when argv[1] is a different module, even with a target given", async () => {
+  it("runs nothing when imported as a module with a foreign argv[1], even with a target given", async () => {
     const repo = await stageRepo();
     const modulePath = join(repo, "src", "fixtures", "generate.ts");
     const target = join(repo, "target");
@@ -283,7 +276,7 @@ describe("sync-vault CLI", () => {
   it("projects the fixture vault with its default arguments", async () => {
     const dir = await makeTmpRepo();
 
-    const result = await runNode([join(dir, "src", "sync", "sync-vault.ts")]);
+    const result = await runNode([join(dir, "bin", "sync-vault.ts")]);
 
     const note = await noteMarker(join(dir, "raw"), result);
 
@@ -309,7 +302,7 @@ describe("sync-vault CLI", () => {
       }),
     );
 
-    const result = await runNode([join(dir, "src", "sync", "sync-vault.ts")]);
+    const result = await runNode([join(dir, "bin", "sync-vault.ts")]);
 
     const note = await noteMarker(join(dir, "k-wiki-data", "raw"), result);
 
@@ -328,11 +321,11 @@ describe("sync-vault CLI", () => {
     expect(`${result.code}${result.out}${result.err}`).toBe("0");
   });
 
-  it("runs main with the default config and raw paths when argv[1] is the module itself", async () => {
+  it("runs main with the default config and raw paths when imported through its bin launcher", async () => {
     const repo = await stageRepo();
-    const modulePath = join(repo, "src", "sync", "sync-vault.ts");
+    const launcherPath = join(repo, "bin", "sync-vault.ts");
 
-    const { out } = await importWithArgv(modulePath, modulePath, []);
+    const { out } = await importWithArgv(launcherPath, launcherPath, []);
 
     const noteStat = await stat(
       join(repo, "raw", "notes", VAULT_NAME, "AI", "RAG.md"),

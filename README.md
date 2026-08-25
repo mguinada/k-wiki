@@ -382,7 +382,7 @@ excluded by construction, so the projection can never ingest itself.
 ```sh
 npm run data:init -- --meta sync-meta.json       # once
 npm run sync-repo -- sync-meta.json               # project a committed tree
-node src/ingest/wiki-ingest.ts --settings settings-meta.yml \
+node bin/wiki-ingest.ts --settings settings-meta.yml \
   ~/Lab/k-wiki-meta-data/raw                       # build the meta-wiki
 npm run health -- ~/Lab/k-wiki-meta-data/raw       # coherence + freshness
 ```

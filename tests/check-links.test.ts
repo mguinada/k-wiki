@@ -16,7 +16,7 @@ import {
 
 const script = join(
   dirname(fileURLToPath(import.meta.url)),
-  "../scripts/check-links.ts",
+  "../bin/check-links.ts",
 );
 
 const tempDirs: string[] = [];

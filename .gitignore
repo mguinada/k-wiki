@@ -44,6 +44,9 @@ tests/.health-import-staging/
 # In-process data-init CLI import staging (transient; see tests/data-init.test.ts)
 tests/.data-init-import-staging/
 
+# In-process bin-wiring import staging (transient; see tests/bin-wiring.test.ts)
+tests/.bin-wiring-staging/
+
 # wiki-ingest machine outputs (decision from PR #60 review): the
 # manifest snapshot is per-machine pipeline state, and the per-run
 # digests are high-frequency machine output whose review surface is

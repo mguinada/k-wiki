@@ -10,7 +10,7 @@ import { checkWikiFidelity, extractArtifacts } from "../src/wiki/fidelity.ts";
 
 const script = join(
   dirname(fileURLToPath(import.meta.url)),
-  "../scripts/check-fidelity.ts",
+  "../bin/check-fidelity.ts",
 );
 
 const tempDirs: string[] = [];
