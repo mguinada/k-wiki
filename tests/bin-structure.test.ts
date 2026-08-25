@@ -209,6 +209,34 @@ describe("bin/ launcher structure (issue #135)", () => {
     expect(problems).toEqual([]);
   });
 
+  it("every main()-exporting module under src/ or scripts/ is imported by some bin launcher", async () => {
+    const launcherFiles = await collectTsFiles(join(repoRoot, "bin"), "bin");
+    const launcherText = await Promise.all(
+      launcherFiles.map((file) => readFile(join(repoRoot, file), "utf8")),
+    );
+    const problems: string[] = [];
+
+    for (const root of ["src", "scripts"]) {
+      for (const file of await collectTsFiles(join(repoRoot, root), root)) {
+        const text = await readFile(join(repoRoot, file), "utf8");
+
+        if (!/\bexport\s+(async\s+)?function\s+main\b/.test(text)) {
+          continue;
+        }
+
+        const imported = launcherText.some((launcher) =>
+          launcher.includes(`"../${file}"`),
+        );
+
+        if (!imported) {
+          problems.push(`${file}: exports main() but no bin launcher imports it`);
+        }
+      }
+    }
+
+    expect(problems).toEqual([]);
+  });
+
   it("every bin launcher is committed 100755 with a node shebang and referenced by package.json or scripts/mutation-changed.sh", async () => {
     const binFiles = await collectTsFiles(join(repoRoot, "bin"), "bin");
     const pkg = await readPackageJson();
