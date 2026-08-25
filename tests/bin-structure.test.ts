@@ -35,7 +35,13 @@ async function collectTsFiles(root: string, prefix = ""): Promise<string[]> {
   return files.sort();
 }
 
-/** Biome-formatted comment lines: `// …`, `* …`, `/* …`. */
+/**
+ * Biome-formatted comment lines: `// …`, `* …`, `/* …`. Deliberately
+ * a per-line heuristic, not a comment-span stripper: stripping spans
+ * from `/*`-in-a-string or unbalanced markers can silently skip real
+ * code lines (false negatives), while this approximation can only
+ * over-flag (false positives) — the safe direction for a guard.
+ */
 function isCommentLine(line: string): boolean {
   const trimmed = line.trimStart();
 
@@ -46,8 +52,22 @@ function isCommentLine(line: string): boolean {
   );
 }
 
-const MAIN_INVOCATION = /^\s*(?:await\s+)?main\s*\(|=\s*(?:await\s+)?main\s*\(/;
+const MAIN_INVOCATION =
+  /^\s*(?:await\s+)?main\s*\(|[=;{)]\s*(?:await\s+)?main\s*\(/;
 const MAIN_DEFINITION = /\bfunction\s+main\s*\(/;
+
+/**
+ * The scan's per-line verdict: a non-comment line that invokes
+ * `main()` in statement position (bare, after `=`, or inside a
+ * single-line `if … main()` body) and is not the definition itself.
+ */
+function isMainInvocationLine(line: string): boolean {
+  return (
+    !isCommentLine(line) &&
+    MAIN_INVOCATION.test(line) &&
+    !MAIN_DEFINITION.test(line)
+  );
+}
 const QUOTED_BIN_PATH = /["'][^"']*\/?bin\//;
 const IMPORT_SYNTAX = /^\s*import[\s(]|\bfrom\s+["']/;
 const LAUNCHER_IMPORT = /^import\s+\{[^}]*\}\s+from\s+"(\.[^"]+)";/m;
@@ -67,6 +87,37 @@ function nodeScriptTargets(pkg: PackageJson): string[] {
     .map((value) => value.slice("node ".length).split(/\s+/)[0] ?? "");
 }
 
+describe("module-scope main() detector (issue #135 guard)", () => {
+  const regressionForms = [
+    "  await main();",
+    "  main(process.argv.slice(2));",
+    "  if (isMainModule(import.meta.url)) await main();",
+    "  if (isMain) { await main(); }",
+    "const isMain = main();",
+  ];
+
+  const benignForms = [
+    "export async function main(): Promise<void> {",
+    "lines changed vs origin/main (uncommitted work included): one",
+    "// await main();",
+    " * await main();",
+    "/* await main(); */",
+    'const url = "https://example.com/main (docs)";',
+  ];
+
+  for (const line of regressionForms) {
+    it(`flags the regression form: ${line.trim()}`, () => {
+      expect(isMainInvocationLine(line)).toBe(true);
+    });
+  }
+
+  for (const line of benignForms) {
+    it(`ignores the benign line: ${line.trim()}`, () => {
+      expect(isMainInvocationLine(line)).toBe(false);
+    });
+  }
+});
+
 describe("bin/ launcher structure (issue #135)", () => {
   it("no main() invocation exists anywhere under src/ or scripts/", async () => {
     const roots = ["src", "scripts"];
@@ -79,11 +130,7 @@ describe("bin/ launcher structure (issue #135)", () => {
         );
 
         lines.forEach((line, index) => {
-          if (
-            !isCommentLine(line) &&
-            MAIN_INVOCATION.test(line) &&
-            !MAIN_DEFINITION.test(line)
-          ) {
+          if (isMainInvocationLine(line)) {
             offenders.push(`${file}:${index + 1}: ${line.trim()}`);
           }
         });
