@@ -1523,6 +1523,7 @@ Ideas deliberately **not pursued now**. Each has a clear trigger for reconsidera
 | Option | What it adds | Reconsider when |
 |---|---|---|
 | `qmd` hybrid search (BM25 + vector + re-rank) | Search beyond index-first navigation (Section 20) | The wiki passes ~100 sources, index-based lookup degrades, or the wiki approaches the context-window degradation region |
+| `node:sqlite` FTS5 index | Zero-dependency BM25 retrieval — the stdlib-first step before `qmd` above; one disposable, gitignored index that also serves the deterministic expunge full-text seed (Section 14a) and missing-concept coverage probes (issue #113 class) | The `qmd` trigger above fires, or the next missing-concepts incident; measurements and design in `docs/research/sqlite-evolution.md` |
 | Obsidian Bases (`.base` files) | First-party database views over frontmatter — e.g. all low-confidence or stale pages at a glance; supersedes the Dataview plugin idea (keep Dataview only as a fallback for older Obsidian versions) | Dashboards over `confidence`, `status`, and canonical tags are wanted |
 | Obsidian Web Clipper + local images | One-click web articles into the source vault; images downloaded locally so the LLM can view them | Web articles become a primary source type |
 | `defuddle` CLI | Clean markdown extraction from URLs (`defuddle parse <url> --md`) — the automatable, agent-driven counterpart to Web Clipper | Web articles become a primary source type |
