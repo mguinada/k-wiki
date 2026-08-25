@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { pathToFileURL } from "node:url";
+import { refuseDirectExecution } from "../src/cli/is-main.ts";
 
 // Printer over the last Stryker JSON report (issue #21 advisory signal).
 // Exit code is always 0 when a report exists: a non-zero exit on
@@ -63,7 +63,7 @@ export function actionableLines(report: Report): string[] {
   return entries.map((e) => `${e.status}  ${e.file}:${e.line}  ${e.mutator}`);
 }
 
-function main(): void {
+export function main(): void {
   const args = process.argv.slice(2);
 
   if (args.includes("-h") || args.includes("--help")) {
@@ -103,9 +103,5 @@ function main(): void {
   }
 }
 
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
-  main();
-}
+/* v8 ignore next: covered only under direct `node scripts/mutation-survivors.ts` runs */
+refuseDirectExecution(import.meta.url, "mutation-survivors");

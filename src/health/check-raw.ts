@@ -2,7 +2,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
-import { isMainModule, refuseTestWorker } from "../cli/is-main.ts";
+import { refuseDirectExecution } from "../cli/is-main.ts";
 import { runGit } from "../data/git.ts";
 import { isPlainObject } from "../sync/config.ts";
 import { sha256 } from "../sync/hash.ts";
@@ -348,8 +348,6 @@ alone stays exit 0), 1 = one line per problem.`;
 
 /** check-raw entry point: `check-raw [-h | --help] [--fail-on-stale] [<raw-dir>]` (default: repo raw/). */
 export async function main(): Promise<void> {
-  refuseTestWorker("check-raw");
-
   const args = process.argv.slice(2);
 
   if (args.includes("-h") || args.includes("--help")) {
@@ -394,9 +392,5 @@ export async function main(): Promise<void> {
   }
 }
 
-const isMain = isMainModule(import.meta.url);
-
-/* v8 ignore next: covered only under `node src/health/check-raw.ts` */
-if (isMain) {
-  await main();
-}
+/* v8 ignore next: covered only under direct `node src/health/check-raw.ts` runs */
+refuseDirectExecution(import.meta.url, "check-raw");

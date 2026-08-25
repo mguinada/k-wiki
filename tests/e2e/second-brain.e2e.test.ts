@@ -248,11 +248,7 @@ async function makeEngineeringWiki(): Promise<string> {
 }
 
 describe("second brain e2e", () => {
-  const CHECK_CROSSLINKS_SCRIPT = join(
-    repoRoot,
-    "scripts",
-    "check-crosslinks.ts",
-  );
+  const CHECK_CROSSLINKS_SCRIPT = join(repoRoot, "bin", "check-crosslinks.ts");
   it("ingests a second-brain run whose profile and cross-wiki link pass the guardrails", async () => {
     const repo = await makeRepo("Brain", SB_STUB, true);
     const result = await ingest(repo);

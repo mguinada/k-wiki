@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
-import { isMainModule, refuseTestWorker } from "../cli/is-main.ts";
+import { refuseDirectExecution } from "../cli/is-main.ts";
 import { formatDuration } from "../cli/progress.ts";
 import { checkCrossWikiLinks } from "../crosslinks.ts";
 import { runGit } from "../data/git.ts";
@@ -838,8 +838,6 @@ function fail(message: string): void {
 
 /** wiki-sync entry point: `wiki-sync [-h | --help] [--settings <path>] [--timeout <secs>] [<config>] [<raw-dir>]`. */
 export async function main(): Promise<void> {
-  refuseTestWorker("wiki-sync");
-
   const args = process.argv.slice(2);
 
   if (args.includes("-h") || args.includes("--help")) {
@@ -948,9 +946,5 @@ export async function main(): Promise<void> {
   }
 }
 
-const isMain = isMainModule(import.meta.url);
-
-/* v8 ignore next: covered only under `node src/sync/wiki-sync.ts` */
-if (isMain) {
-  await main();
-}
+/* v8 ignore next: covered only under direct `node src/sync/wiki-sync.ts` runs */
+refuseDirectExecution(import.meta.url, "wiki-sync");

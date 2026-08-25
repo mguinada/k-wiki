@@ -10,7 +10,7 @@ import { checkWikiProvenance } from "../src/wiki/provenance.ts";
 
 const script = join(
   dirname(fileURLToPath(import.meta.url)),
-  "../scripts/check-provenance.ts",
+  "../bin/check-provenance.ts",
 );
 
 const tempDirs: string[] = [];

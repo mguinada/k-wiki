@@ -39,7 +39,7 @@ EOF
 case "${1:-}" in
   --full)
     npx stryker run
-    node scripts/mutation-survivors.ts
+    node bin/mutation-survivors.ts
     exit 0
     ;;
   --help|-h)
@@ -60,7 +60,7 @@ esac
 # diff (not `origin/main...HEAD`): it includes uncommitted work, so the
 # pre-handoff run sees what the agent actually changed. scripts/mutation-
 # scope.ts turns that diff into hunk-range --mutate patterns.
-patterns=$(node scripts/mutation-scope.ts)
+patterns=$(node bin/mutation-scope.ts)
 
 if [ -z "$patterns" ]; then
   changed=$(git diff --name-only origin/main -- 'src/*.ts'; git ls-files --others --exclude-standard -- 'src/*.ts')
@@ -80,4 +80,4 @@ printf '%s' "$patterns" | tr ',' '\n' | sed 's/^/  /'
 # Stryker's --mutate takes one comma-separated list; unquoted $patterns
 # would word-split into extra positional arguments.
 npx stryker run --mutate "$patterns" --concurrency 4
-node scripts/mutation-survivors.ts
+node bin/mutation-survivors.ts

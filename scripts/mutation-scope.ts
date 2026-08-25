@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { pathToFileURL } from "node:url";
+import { refuseDirectExecution } from "../src/cli/is-main.ts";
 
 // Hunk scoping for the advisory mutation run (issue #99, phase 1a).
 //
@@ -184,9 +184,5 @@ export function main(argv: readonly string[], git: GitText = runGitText) {
   }
 }
 
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
-  main(process.argv.slice(2));
-}
+/* v8 ignore next: covered only under direct `node scripts/mutation-scope.ts` runs */
+refuseDirectExecution(import.meta.url, "mutation-scope");

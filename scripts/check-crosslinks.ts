@@ -1,5 +1,5 @@
 import { createColors } from "picocolors";
-import { isMainModule, refuseTestWorker } from "../src/cli/is-main.ts";
+import { refuseDirectExecution } from "../src/cli/is-main.ts";
 import { checkCrossWikiLinks } from "../src/crosslinks.ts";
 
 /**
@@ -45,8 +45,6 @@ color.`;
 
 /** check-crosslinks entry point: `check-crosslinks [-h | --help] <wiki-dir> <domain-wiki-dir> [<domain-wiki-dir>...]`. */
 export async function main(): Promise<void> {
-  refuseTestWorker("check-crosslinks");
-
   const args = process.argv.slice(2);
 
   if (args.includes("-h") || args.includes("--help")) {
@@ -99,7 +97,5 @@ export async function main(): Promise<void> {
   }
 }
 
-/* v8 ignore next: covered only under `node scripts/check-crosslinks.ts` */
-if (isMainModule(import.meta.url)) {
-  await main();
-}
+/* v8 ignore next: covered only under direct `node scripts/check-crosslinks.ts` runs */
+refuseDirectExecution(import.meta.url, "check-crosslinks");

@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
-import { isMainModule, refuseTestWorker } from "../cli/is-main.ts";
+import { refuseDirectExecution } from "../cli/is-main.ts";
 import { runGit } from "../data/git.ts";
 import {
   loadSyncConfig,
@@ -449,8 +449,6 @@ when the source root is not a git repository.`;
 
 /** sync-repo entry point: `sync-repo [-h | --help] [<config>] [<raw-dir>]` (defaults: sync-meta.json). */
 export async function main(): Promise<void> {
-  refuseTestWorker("sync-repo");
-
   const args = process.argv.slice(2);
 
   if (args.includes("-h") || args.includes("--help")) {
@@ -519,9 +517,5 @@ function colorizeProgressRepo(
       );
 }
 
-const isMain = isMainModule(import.meta.url);
-
-/* v8 ignore next: covered only under `node src/sync/sync-repo.ts` */
-if (isMain) {
-  await main();
-}
+/* v8 ignore next: covered only under direct `node src/sync/sync-repo.ts` runs */
+refuseDirectExecution(import.meta.url, "sync-repo");

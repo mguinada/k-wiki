@@ -382,7 +382,7 @@ excluded by construction, so the projection can never ingest itself.
 ```sh
 npm run data:init -- --meta sync-meta.json       # once
 npm run sync-repo -- sync-meta.json               # project a committed tree
-node src/ingest/wiki-ingest.ts --settings settings-meta.yml \
+node bin/wiki-ingest.ts --settings settings-meta.yml \
   ~/Lab/k-wiki-meta-data/raw                       # build the meta-wiki
 npm run health -- ~/Lab/k-wiki-meta-data/raw       # coherence + freshness
 ```
@@ -410,7 +410,7 @@ sources directly, so there is no build step — install dependencies with
 
 | Command | Tool | Purpose |
 |---|---|---|
-| `npm run typecheck` | tsc | Type-check `src/` and `tests/` without emitting code |
+| `npm run typecheck` | tsc | Type-check `src/`, `bin/`, and `tests/` without emitting code |
 | `npm run lint` | Biome | Lint and verify formatting across the repo |
 | `npm run format` | Biome | Rewrite files to the canonical format — the fix command for lint findings, not a gate |
 | `npm test` | vitest | Run the unit test suite |

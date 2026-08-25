@@ -495,8 +495,6 @@ describe("health CLI", () => {
 
     delete process.env.NO_COLOR;
 
-    vi.stubGlobal("__kWikiTestWorker__", undefined);
-
     const logSpy = vi
       .spyOn(console, "log")
       .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
@@ -508,7 +506,6 @@ describe("health CLI", () => {
       await main();
     } finally {
       process.argv = argv;
-      vi.unstubAllGlobals();
 
       if (hadNoColor === undefined) {
         delete process.env.NO_COLOR;
@@ -607,8 +604,6 @@ describe("health CLI", () => {
 
     process.argv = [...argv.slice(0, 2), join(tmpdir(), "no-such-raw-dir")];
 
-    vi.stubGlobal("__kWikiTestWorker__", undefined);
-
     const logSpy = vi
       .spyOn(console, "log")
       .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
@@ -620,7 +615,6 @@ describe("health CLI", () => {
       await main();
     } finally {
       process.argv = argv;
-      vi.unstubAllGlobals();
       logSpy.mockRestore();
       errorSpy.mockRestore();
     }
@@ -633,10 +627,10 @@ describe("health CLI", () => {
   });
 });
 
-describe("check-raw import guard", () => {
+describe("check-raw bin launcher", () => {
   /**
-   * A staged copy of src/ inside the test tree, importable in-process
-   * with a controlled argv — the same trick as
+   * A staged copy of src/ and bin/ inside the test tree, importable
+   * in-process with a controlled argv — the same trick as
    * tests/sync-cli-spawn.test.ts: under Stryker the sandbox holds the
    * mutated sources next to the tests, and a dynamic import executes
    * them here, where the active-mutant globals live.
@@ -652,6 +646,7 @@ describe("check-raw import guard", () => {
 
     await mkdir(join(dir, "raw"), { recursive: true });
     await cp(join(testsDir, "../src"), join(dir, "src"), { recursive: true });
+    await cp(join(testsDir, "../bin"), join(dir, "bin"), { recursive: true });
 
     return dir;
   }
@@ -671,10 +666,6 @@ describe("check-raw import guard", () => {
 
     process.argv = [argv[0] ?? "node", argv1];
 
-    // Simulate a real `node <cli>` run: no test-worker marker, so the
-    // import guard fires main() (issue #123).
-    vi.stubGlobal("__kWikiTestWorker__", undefined);
-
     const logSpy = vi
       .spyOn(console, "log")
       .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
@@ -686,7 +677,6 @@ describe("check-raw import guard", () => {
       await import(pathToFileURL(modulePath).href);
     } finally {
       process.argv = argv;
-      vi.unstubAllGlobals();
       logSpy.mockRestore();
       errorSpy.mockRestore();
     }
@@ -698,11 +688,11 @@ describe("check-raw import guard", () => {
     await rm(stagingRoot, { recursive: true, force: true });
   });
 
-  it("runs main when argv[1] is the module itself, with the default raw dir", async () => {
+  it("runs main when imported through its bin launcher, with the default raw dir", async () => {
     const repo = await stageRepo();
-    const modulePath = join(repo, "src", "health", "check-raw.ts");
+    const launcherPath = join(repo, "bin", "check-raw.ts");
 
-    const { out } = await importWithArgv(modulePath, modulePath);
+    const { out } = await importWithArgv(launcherPath, launcherPath);
 
     expect(out).toBe(
       paint.green(
@@ -711,17 +701,17 @@ describe("check-raw import guard", () => {
     );
   });
 
-  it("checks the staged repository's raw/ directory when run without arguments", async () => {
+  it("checks the staged repository's raw/ directory when run through the bin launcher without arguments", async () => {
     const repo = await stageRepo();
     const rawDir = join(repo, "raw");
-    const modulePath = join(repo, "src", "health", "check-raw.ts");
+    const launcherPath = join(repo, "bin", "check-raw.ts");
 
     await projectNote(rawDir, "Documents", "AI/RAG.md", NOTE);
     await writeManifestFile(rawDir, {
       Documents: { "AI/RAG.md": entryFor(NOTE) },
     });
 
-    const { out } = await importWithArgv(modulePath, modulePath);
+    const { out } = await importWithArgv(launcherPath, launcherPath);
 
     expect(out).toBe(
       paint.green("healthy: manifest and projection agree (1 note, 1 vault)"),
@@ -851,8 +841,6 @@ describe("checkRaw freshness (repo-as-source)", () => {
 
     process.argv = [...argv.slice(0, 2), rawDir];
 
-    vi.stubGlobal("__kWikiTestWorker__", undefined);
-
     const logSpy = vi
       .spyOn(console, "log")
       .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
@@ -864,7 +852,6 @@ describe("checkRaw freshness (repo-as-source)", () => {
       await main();
     } finally {
       process.argv = argv;
-      vi.unstubAllGlobals();
       logSpy.mockRestore();
       errorSpy.mockRestore();
     }
@@ -886,8 +873,6 @@ describe("checkRaw freshness (repo-as-source)", () => {
 
     process.argv = [...argv.slice(0, 2), "--fail-on-stale", rawDir];
 
-    vi.stubGlobal("__kWikiTestWorker__", undefined);
-
     const logSpy = vi
       .spyOn(console, "log")
       .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
@@ -899,7 +884,6 @@ describe("checkRaw freshness (repo-as-source)", () => {
       await main();
     } finally {
       process.argv = argv;
-      vi.unstubAllGlobals();
       logSpy.mockRestore();
       errorSpy.mockRestore();
     }
@@ -916,8 +900,6 @@ describe("checkRaw freshness (repo-as-source)", () => {
 
     process.argv = [...argv.slice(0, 2), "--fail-on-stale", rawDir];
 
-    vi.stubGlobal("__kWikiTestWorker__", undefined);
-
     const logSpy = vi
       .spyOn(console, "log")
       .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
@@ -929,7 +911,6 @@ describe("checkRaw freshness (repo-as-source)", () => {
       await main();
     } finally {
       process.argv = argv;
-      vi.unstubAllGlobals();
       logSpy.mockRestore();
       errorSpy.mockRestore();
     }
@@ -960,8 +941,6 @@ describe("checkRaw freshness edges (issue #74)", () => {
     delete process.env.NO_COLOR;
     process.argv = [...argv.slice(0, 2), ...args];
 
-    vi.stubGlobal("__kWikiTestWorker__", undefined);
-
     const logSpy = vi
       .spyOn(console, "log")
       .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
@@ -973,7 +952,6 @@ describe("checkRaw freshness edges (issue #74)", () => {
       await main();
     } finally {
       process.argv = argv;
-      vi.unstubAllGlobals();
 
       if (hadNoColor === undefined) {
         delete process.env.NO_COLOR;

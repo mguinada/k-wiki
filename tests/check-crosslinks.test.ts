@@ -9,7 +9,7 @@ import { checkCrossWikiLinks } from "../scripts/check-crosslinks.ts";
 
 const script = join(
   dirname(fileURLToPath(import.meta.url)),
-  "../scripts/check-crosslinks.ts",
+  "../bin/check-crosslinks.ts",
 );
 
 const tempDirs: string[] = [];

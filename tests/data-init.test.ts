@@ -47,8 +47,6 @@ describe("data:init CLI help", () => {
     process.argv = [...argv.slice(0, 2), ...args];
     Object.assign(process.env, GIT_ENV);
 
-    vi.stubGlobal("__kWikiTestWorker__", undefined);
-
     const logSpy = vi
       .spyOn(console, "log")
       .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
@@ -60,7 +58,6 @@ describe("data:init CLI help", () => {
       await main();
     } finally {
       process.argv = argv;
-      vi.unstubAllGlobals();
 
       for (const [key, value] of savedEnv) {
         if (value === undefined) {
@@ -380,10 +377,10 @@ describe("git discovery ceiling (issue #52)", () => {
   });
 });
 
-describe("data:init import guard", () => {
+describe("data:init bin launcher", () => {
   /**
-   * A staged copy of src/ inside the test tree, importable in-process
-   * with a controlled argv — the same trick as
+   * A staged copy of src/ and bin/ inside the test tree, importable
+   * in-process with a controlled argv — the same trick as
    * tests/sync-cli-spawn.test.ts: under Stryker the sandbox holds the
    * mutated sources next to the tests, and a dynamic import executes
    * them here, where the active-mutant globals live.
@@ -407,6 +404,7 @@ describe("data:init import guard", () => {
     await mkdir(join(dir, "wiki"), { recursive: true });
     await writeFile(join(dir, "wiki", "index.md"), "# index\n");
     await cp(join(testsDir, "../src"), join(dir, "src"), { recursive: true });
+    await cp(join(testsDir, "../bin"), join(dir, "bin"), { recursive: true });
     await writeFile(
       join(dir, "sync.json"),
       JSON.stringify({ vaults: [], dataRoot: join(dir, "data") }),
@@ -433,10 +431,6 @@ describe("data:init import guard", () => {
 
     process.argv = [argv[0] ?? "node", modulePath, ...args];
 
-    // Simulate a real `node <cli>` run: no test-worker marker, so the
-    // import guard fires main() (issue #123).
-    vi.stubGlobal("__kWikiTestWorker__", undefined);
-
     const savedEnv = new Map(
       Object.keys(GIT_ENV).map((key) => [key, process.env[key]]),
     );
@@ -454,7 +448,6 @@ describe("data:init import guard", () => {
       await import(pathToFileURL(modulePath).href);
     } finally {
       process.argv = argv;
-      vi.unstubAllGlobals();
 
       for (const [key, value] of savedEnv) {
         if (value === undefined) {
@@ -471,9 +464,9 @@ describe("data:init import guard", () => {
     return { out: out.join("\n"), err: err.join("\n") };
   }
 
-  it("seeds the data root named by the default sync.json when imported as the main module", async () => {
+  it("seeds the data root named by the default sync.json when imported through its bin launcher", async () => {
     const repo = await stageRepo();
-    const modulePath = join(repo, "src", "data", "init-data-repo.ts");
+    const modulePath = join(repo, "bin", "init-data-repo.ts");
 
     const { out } = await importWithArgv(modulePath, []);
 
@@ -482,7 +475,7 @@ describe("data:init import guard", () => {
 
   it("seeds the data root of the config given as an argument, not the default one", async () => {
     const repo = await stageRepo();
-    const modulePath = join(repo, "src", "data", "init-data-repo.ts");
+    const modulePath = join(repo, "bin", "init-data-repo.ts");
     const argDataRoot = join(repo, "data-arg");
     const configPath = join(repo, "arg-sync.json");
 
@@ -498,7 +491,7 @@ describe("data:init import guard", () => {
 
   it("seeds the second-brain marker when --second-brain is passed", async () => {
     const repo = await stageRepo();
-    const modulePath = join(repo, "src", "data", "init-data-repo.ts");
+    const modulePath = join(repo, "bin", "init-data-repo.ts");
 
     const { out } = await importWithArgv(modulePath, ["--second-brain"]);
 

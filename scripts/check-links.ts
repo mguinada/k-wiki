@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
-import { isMainModule, refuseTestWorker } from "../src/cli/is-main.ts";
+import { refuseDirectExecution } from "../src/cli/is-main.ts";
 import { listWikiPages } from "../src/wiki/pages.ts";
 import {
   buildPageIndex,
@@ -100,8 +100,6 @@ disables color.`;
 
 /** check-links entry point: `check-links [-h | --help] [<wiki-dir>]` (default: repo wiki/). */
 export async function main(): Promise<void> {
-  refuseTestWorker("check-links");
-
   const args = process.argv.slice(2);
 
   if (args.includes("-h") || args.includes("--help")) {
@@ -147,7 +145,5 @@ export async function main(): Promise<void> {
   }
 }
 
-/* v8 ignore next: covered only under `node scripts/check-links.ts` */
-if (isMainModule(import.meta.url)) {
-  await main();
-}
+/* v8 ignore next: covered only under direct `node scripts/check-links.ts` runs */
+refuseDirectExecution(import.meta.url, "check-links");

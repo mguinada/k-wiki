@@ -1,41 +1,27 @@
 import { pathToFileURL } from "node:url";
 
 /**
- * True when the calling entry module is the script Node executed directly.
- * Pass the caller's own `import.meta.url`; the helper cannot see it itself.
+ * Direct-execution refusal for library modules (issue #135): `src/`
+ * and `scripts/` modules never invoke `main()` at module scope — the
+ * shebanged `bin/<name>.ts` launchers are the only entry path — so no
+ * Stryker mutant can fire a CLI `main()` as an import side effect with
+ * live defaults (issue #123's hazard class, eliminated by
+ * construction; the tests/bin-structure.test.ts scan keeps it true).
  *
- * Inside a test worker (vitest, including Stryker mutation runs) the answer
- * is always false: `tests/setup.ts` sets the `__kWikiTestWorker__` globalThis
- * flag in every worker, so a mutated import guard can never run `main()` as
- * an import side effect with the CLI's live defaults (issue #123). A
- * `globalThis` flag is used instead of `process.env.VITEST_WORKER_ID`
- * because spawned CLI children inherit the worker's environment; a
- * process-local flag never leaks into them (issue #123).
+ * Executing a library module directly (`node src/sync/sync-vault.ts`)
+ * prints the refusal naming its launcher and exits 1: the wrong path
+ * stays loudly unusable, never silently live.
  */
-export function isMainModule(moduleUrl: string): boolean {
-  if ((globalThis as { __kWikiTestWorker__?: boolean }).__kWikiTestWorker__) {
-    return false;
-  }
-
-  return (
+export function refuseDirectExecution(
+  moduleUrl: string,
+  launcher: string,
+): void {
+  if (
     process.argv[1] !== undefined &&
     moduleUrl === pathToFileURL(process.argv[1]).href
-  );
-}
+  ) {
+    console.error(`library module — run bin/${launcher}`);
 
-/**
- * Throws when called inside a test worker (vitest, including Stryker
- * mutation runs). Call it as the first statement of every CLI `main()`:
- * a mutated import guard can still invoke `main()` as an import side
- * effect, and the worker's empty `argv` then resolves every default to
- * live state, so the refusal must fire before any default is resolved
- * (issue #123). Real `node` runs and spawned CLI children never see the
- * flag and are unaffected.
- */
-export function refuseTestWorker(cli: string): void {
-  if ((globalThis as { __kWikiTestWorker__?: boolean }).__kWikiTestWorker__) {
-    throw new Error(
-      `${cli}: refusing to run inside a test worker (issue #123)`,
-    );
+    process.exit(1);
   }
 }

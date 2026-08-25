@@ -102,9 +102,9 @@ npm run health      # same trigger as e2e; also safe to run any time — read-on
 
 - `npm run e2e` takes no arguments. It builds its own fixture vault and
   temp data repos, and passes explicit arguments to every CLI it runs —
-  never run a CLI bare (without args, `node src/sync/sync-vault.ts`
+  never run a CLI bare (without args, `node bin/sync-vault.ts`
   uses the repo's real `sync.json` and vault root, and `node
-  src/ingest/wiki-ingest.ts` uses the repo's real `settings.yml`,
+  bin/wiki-ingest.ts` uses the repo's real `settings.yml`,
   `outputs/`, and data repo).
 - `npm run health` defaults to the repo's `raw/`; target another
   projection with `npm run health -- <raw-dir>`. Exit 0 = coherent
@@ -144,6 +144,18 @@ infrastructure, free to use for any unit or e2e work; the snapshot at
 
 ### CLI scripts
 
+Every CLI runs through a shebanged `bin/<name>.ts` launcher
+(`#!/usr/bin/env node`, committed `100755`); npm scripts invoke
+`node bin/<name>.ts`. `src/` and `scripts/` modules are libraries:
+they export `main()` but never invoke it at module scope — no Stryker
+mutant can fire a CLI as an import side effect with live defaults
+(issue #123's hazard class, eliminated by construction, issue #135).
+Patches of the pattern fail CI in `tests/bin-structure.test.ts`.
+Every library module that exports `main()` keeps a direct-execution
+tail — `refuseDirectExecution(import.meta.url, "<name>")` from
+`src/cli/is-main.ts` — so `node src/sync/sync-vault.ts` prints
+`library module — run bin/sync-vault` and exits 1.
+
 Every script meant to run on the terminal — every `main()` entry point
 under `src/` or `scripts/` — responds to `-h` and `--help`. The help must state the
 usage line, explain every switch and positional argument with its
@@ -151,12 +163,8 @@ default, say what the script writes (or that it writes nothing), and
 exit 0 without filesystem side effects. Help prints before any
 argument is validated or any file is read, so `--help` never fails.
 A new switch lands together with its help entry and its tests in the
-same change.
-
-The first statement of every `main()` is `refuseTestWorker("<cli>")`
-from `src/cli/is-main.ts`: it throws inside a test worker (vitest,
-Stryker mutation runs included), so a mutated import guard can never
-run a CLI against live state (issue #123).
+same change. A new CLI lands as a library module plus a `bin/`
+launcher, wired into `package.json` in the same change.
 
 ### CLI colors
 

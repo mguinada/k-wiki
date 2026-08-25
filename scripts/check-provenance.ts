@@ -1,7 +1,7 @@
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
-import { isMainModule, refuseTestWorker } from "../src/cli/is-main.ts";
+import { refuseDirectExecution } from "../src/cli/is-main.ts";
 import {
   checkWikiProvenance,
   summarizeProvenance,
@@ -73,8 +73,6 @@ signal, not a gate; the exit code stays 0. NO_COLOR disables color.`;
 
 /** check-provenance entry point: `check-provenance [-h | --help] [<wiki-dir> [<raw-dir>]]` (defaults: repo wiki/, sibling raw/). */
 export async function main(): Promise<void> {
-  refuseTestWorker("check-provenance");
-
   const args = process.argv.slice(2);
 
   if (args.includes("-h") || args.includes("--help")) {
@@ -123,7 +121,5 @@ export async function main(): Promise<void> {
   }
 }
 
-/* v8 ignore next: covered only under `node scripts/check-provenance.ts` */
-if (isMainModule(import.meta.url)) {
-  await main();
-}
+/* v8 ignore next: covered only under direct `node scripts/check-provenance.ts` runs */
+refuseDirectExecution(import.meta.url, "check-provenance");
