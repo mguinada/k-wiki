@@ -9,6 +9,7 @@ import { checkCrossWikiLinks } from "../crosslinks.ts";
 import { runGit } from "../data/git.ts";
 import {
   capturePreRunState,
+  type PreRunState,
   parseStatus,
   revertToPreRun,
   runGuardrails,
@@ -27,6 +28,16 @@ import {
   spawnAgent,
   wikiPages,
 } from "../ingest/wiki-ingest.ts";
+import {
+  checkWikiFidelity,
+  type FidelityReport,
+  summarizeFidelity,
+} from "../wiki/fidelity.ts";
+import {
+  checkWikiProvenance,
+  type ProvenanceReport,
+  summarizeProvenance,
+} from "../wiki/provenance.ts";
 import { expandHome, loadSyncConfig, resolveRawDir } from "./config.ts";
 import { runSync, type SyncReport } from "./sync-vault.ts";
 
@@ -34,8 +45,9 @@ import { runSync, type SyncReport } from "./sync-vault.ts";
  * wiki-sync: the one-command orchestrator (guide §18, issue #13). It
  * chains the proven pieces — sync-vault → wiki-ingest → headless lint
  * (§17, prompts/lint.md) → crosslink audit (issue #96, configured
- * second brains only) → data-repo commit — and prints one digest: the
- * run's ingest digest, the lint summary, the audit result, and the
+ * second brains only) → verification (issue #138) → data-repo commit
+ * — and prints one digest: the run's ingest digest, the lint summary,
+ * the audit result, the fidelity and provenance results, and the
  * commit hash. Nothing here is new capability; every stage stays
  * independently runnable (guide §8).
  *
@@ -53,6 +65,14 @@ import { runSync, type SyncReport } from "./sync-vault.ts";
  * every listed domain wiki, after lint and before the commit. A
  * failed audit fails the cycle like lint does; instances without the
  * key skip the stage, so the default instance is unchanged.
+ *
+ * The verification stage (issue #138) runs the deterministic
+ * check-fidelity (issue #125) and check-provenance (issue #65) cores
+ * over the data repo's wiki/ and raw/ every cycle, after lint and the
+ * crosslink audit. One problem line per finding fails the cycle
+ * before the commit: the lint edits are reverted (the ingest edits
+ * stay, uncommitted, as the fix surface), mirroring the lint stage's
+ * own failure semantics.
  */
 
 /** Liveness line while the lint agent runs (one animated line on a TTY). */
@@ -92,6 +112,10 @@ export interface LintOptions {
   readonly heartbeatMs?: number | undefined;
   /** Progress sink (uncolored messages); default: silent. */
   readonly onProgress?: (message: string) => void;
+  /** Pre-run state captured by the caller (the wiki-sync cycle
+   *  captures it once so its verification stage can revert to the
+   *  same point); captured here when absent. */
+  readonly pre?: PreRunState | undefined;
 }
 
 /** The agent's expected report path as an absolute check path. */
@@ -120,7 +144,7 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
   ).replaceAll("outputs/lint-<YYYY-MM-DD>.md", reportPath);
   const args = agentArgs(settings, promptText);
   const runAgent = options.runAgent ?? spawnAgent;
-  const pre = await capturePreRunState(dataRoot, env);
+  const pre = options.pre ?? (await capturePreRunState(dataRoot, env));
 
   onProgress(
     `wiki-sync: lint — invoking agent: ${formatAgentInvocation(settings)}`,
@@ -245,6 +269,59 @@ export async function runCrosslinksStage(
     external: report.external,
     domainPages: report.domainPages,
   };
+}
+
+/** What the verification stage reports back to the cycle digest. */
+export interface VerificationResult {
+  readonly fidelity: FidelityReport;
+  readonly provenance: ProvenanceReport;
+}
+
+export interface VerificationOptions {
+  /** The raw dir; its parent's wiki/ dir is the checked wiki. */
+  readonly rawDir: string;
+  /** Progress sink (uncolored messages); default: silent. */
+  readonly onProgress?: (message: string) => void;
+}
+
+/**
+ * The verification stage (issue #138): run the deterministic
+ * check-fidelity (issue #125) and check-provenance (issue #65) cores
+ * over the data repo's wiki/ and raw/ — every cycle, after lint and
+ * the crosslink audit, whatever the ingest stage did. One problem
+ * line per finding throws (fidelity first, provenance second),
+ * stopping the cycle before the commit; the caller owns the revert.
+ */
+export async function runVerificationStage(
+  options: VerificationOptions,
+): Promise<VerificationResult> {
+  const onProgress = options.onProgress ?? (() => {});
+
+  onProgress(
+    "wiki-sync: verification — checking citation fidelity and provenance",
+  );
+
+  const wikiDir = join(dirname(options.rawDir), "wiki");
+  const fidelity = await checkWikiFidelity(wikiDir, options.rawDir);
+
+  failProblems("fidelity", fidelity.problems);
+
+  const provenance = await checkWikiProvenance(wikiDir, options.rawDir);
+
+  failProblems("provenance", provenance.problems);
+
+  return { fidelity, provenance };
+}
+
+/** Fail the cycle naming one problem line per finding: the shared
+ *  failure shape of the stage's two checks. */
+function failProblems(
+  check: "fidelity" | "provenance",
+  problems: readonly string[],
+): void {
+  if (problems.length > 0) {
+    throw new Error(`${check} check failed:\n${problems.join("\n")}`);
+  }
 }
 
 /** One cycle commit: what the message summarizes. */
@@ -374,6 +451,8 @@ export interface WikiSyncResult {
   readonly lint: LintResult | undefined;
   /** Undefined when the instance has no `secondBrain.domains` key. */
   readonly crosslinks: CrosslinksResult | undefined;
+  /** The fidelity + provenance reports; the checks run every cycle. */
+  readonly verification: VerificationResult;
   readonly commit: CommitResult;
 }
 
@@ -457,13 +536,15 @@ async function commitSummaryOf(
 }
 
 /**
- * One full cycle: sync → ingest → lint → crosslinks → commit. Any
- * stage failure stops the chain and rejects (the CLI exits 1);
- * guardrail failures have already reverted their agent run. With no
- * changed sources the ingest stage skips on its own, lint is skipped
- * with it, and a clean data repo commits nothing — cost scales with
- * activity, not the clock. The configured crosslink audit still runs
- * every cycle: its discipline holds or the cycle fails. The ingest
+ * One full cycle: sync → ingest → lint → crosslinks → verification →
+ * commit. Any stage failure stops the chain and rejects (the CLI
+ * exits 1); guardrail failures have already reverted their agent run,
+ * and a verification failure reverts the lint edits (the ingest edits
+ * stay) before rejecting. With no changed sources the ingest stage
+ * skips on its own, lint is skipped with it, and a clean data repo
+ * commits nothing — cost scales with activity, not the clock. The
+ * configured crosslink audit and the verification checks still run
+ * every cycle: their discipline holds or the cycle fails. The ingest
  * skip also keys on the manifest snapshot, so a run whose agent
  * failed (snapshot untouched) is retried by the next cycle even when
  * sync then reports no changes.
@@ -478,7 +559,7 @@ export async function runWikiSync(
   const { secondBrainDomains: domains } = await loadAgentSettings(
     options.settingsPath,
   );
-  const total = domains === undefined ? 4 : 5;
+  const total = domains === undefined ? 5 : 6;
 
   onProgress(`wiki-sync: stage 1/${total} — sync-vault`);
 
@@ -504,6 +585,10 @@ export async function runWikiSync(
     onProgress,
   });
 
+  // The verification stage's revert target: everything the ingest
+  // stage left, before the lint agent runs.
+  const preLint = await capturePreRunState(dataRoot, env);
+
   let lint: LintResult | undefined;
 
   if (ingest.status === "ran") {
@@ -519,6 +604,7 @@ export async function runWikiSync(
       timeoutMs: options.timeoutMs,
       heartbeatMs: options.heartbeatMs,
       onProgress,
+      pre: preLint,
     });
   } else {
     onProgress(`wiki-sync: stage 3/${total} — lint skipped (no ingest ran)`);
@@ -535,6 +621,29 @@ export async function runWikiSync(
     });
   }
 
+  let verification: VerificationResult;
+
+  onProgress(
+    `wiki-sync: stage ${domains === undefined ? 4 : 5}/${total} — verification`,
+  );
+
+  try {
+    verification = await runVerificationStage({
+      rawDir: options.rawDir,
+      onProgress,
+    });
+  } catch (error) {
+    onProgress(
+      `wiki-sync: verification failed — reverting lint edits to ${preLint.commit.slice(0, 8)} (ingest edits kept)`,
+    );
+
+    const post = await runGuardrails(dataRoot, env, preLint);
+
+    await revertToPreRun(dataRoot, env, preLint, post.entries);
+
+    throw error;
+  }
+
   onProgress(`wiki-sync: stage ${total}/${total} — commit`);
 
   const summary = await commitSummaryOf(sync, ingest, lint, dataRoot, env);
@@ -544,6 +653,7 @@ export async function runWikiSync(
     ingest,
     lint,
     crosslinks,
+    verification,
     commit: await commitDataRepo(dataRoot, env, formatCommitMessage(summary)),
   };
 }
@@ -579,7 +689,7 @@ function crosslinksLine(crosslinks: CrosslinksResult): string {
  * digest.
  */
 export function formatFinalDigest(result: WikiSyncResult): string {
-  const { commit, crosslinks, ingest, lint, sync } = result;
+  const { commit, crosslinks, ingest, lint, sync, verification } = result;
 
   if (commit.status === "nothing-to-commit" && ingest.status === "skipped") {
     const audit =
@@ -587,7 +697,7 @@ export function formatFinalDigest(result: WikiSyncResult): string {
         ? ""
         : `; crosslink audit passed — ${crosslinksLine(crosslinks)}`;
 
-    return `wiki-sync: nothing to do — ${ingest.reason}${audit}\n`;
+    return `wiki-sync: nothing to do — ${ingest.reason}${audit}; fidelity + provenance ok\n`;
   }
 
   const lines: string[] = [
@@ -614,6 +724,13 @@ export function formatFinalDigest(result: WikiSyncResult): string {
     lines.push(`- **Crosslinks:** ok — ${crosslinksLine(crosslinks)}`);
   }
 
+  lines.push(
+    `- **Fidelity:** ok — ${summarizeFidelity(verification.fidelity)}`,
+  );
+  lines.push(
+    `- **Provenance:** ok — ${summarizeProvenance(verification.provenance)}`,
+  );
+
   if (commit.status === "committed") {
     lines.push(`- **Commit:** \`${commit.hash.slice(0, 8)}\``);
   } else {
@@ -638,8 +755,9 @@ const HELP = `Usage: wiki-sync [-h | --help] [--settings <path>] [--outputs <dir
 
 Run the whole cycle in one command (guide §18, issue #13):
 sync-vault → wiki-ingest → headless lint (prompts/lint.md) →
-crosslink audit (configured second brains) → one data-repo commit.
-Every stage stays independently runnable for debugging; this
+crosslink audit (configured second brains) → verification
+(check-fidelity + check-provenance, issue #138) → one data-repo
+commit. Every stage stays independently runnable for debugging; this
 command only chains them.
 
   --settings <path>  Agent settings file (command, model, provider,
@@ -682,21 +800,30 @@ What it does, stage by stage:
      [[<vault>/<page>]] link fails the cycle before the commit
      (nothing reverts; the uncommitted diff is the fix surface).
      Instances without the key skip the stage.
-  5. commit — stage wiki/, raw/, and outputs/ in the data repo and
+  5. verification — run the deterministic check-fidelity (issue
+     #125) and check-provenance (issue #65) cores over the data
+     repo's wiki/ and raw/ — every cycle, including no-change
+     cycles, no configuration. One problem line per finding fails
+     the cycle before the commit: the lint edits are reverted (the
+     ingest edits stay, uncommitted, as the fix surface), mirroring
+     the lint stage's failure semantics, and the command exits 1.
+  6. commit — stage wiki/, raw/, and outputs/ in the data repo and
      commit with a message summarizing sources processed and pages
      touched.
 
 With no changed sources the agent stages skip (cost scales with
 activity, not the clock), a clean data repo commits nothing, and the
-command exits 0; a configured crosslink audit still runs. A failed
-previous ingest is retried even when sync reports no changes — the
-skip keys on the manifest snapshot, which a failed run leaves
-untouched. A failure at any stage stops the chain and exits 1; a
-tripped guardrail has already reverted its agent run.
+command exits 0; a configured crosslink audit and the verification
+checks still run. A failed previous ingest is retried even when sync
+reports no changes — the skip keys on the manifest snapshot, which a
+failed run leaves untouched. A failure at any stage stops the chain
+and exits 1; a tripped guardrail has already reverted its agent run,
+and a verification failure has reverted the lint edits.
 
-The final digest on stdout — sync summary, lint summary, the commit
-hash, and the full ingest digest — plus git log -1 in the data repo
-tell the whole story of the run. Live progress goes to stderr.
+The final digest on stdout — sync summary, lint summary, the crosslink
+audit (configured second brains), the fidelity and provenance results,
+the commit hash, and the full ingest digest — plus git log -1 in the
+data repo tell the whole story of the run. Live progress goes to stderr.
 Scheduling is #14; publish/mirror is #15.`;
 
 function colors() {

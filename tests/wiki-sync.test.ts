@@ -18,6 +18,8 @@ import {
   LINT_HEARTBEAT_PREFIX,
   main,
   runCrosslinksStage,
+  runLintStage,
+  runVerificationStage,
   runWikiSync,
 } from "../src/sync/wiki-sync.ts";
 
@@ -27,11 +29,14 @@ const NOW = () => new Date("2026-08-20T18:00:00.000Z");
 
 const SETTINGS_YML = "command: pi\nmodel: GLM-5.2\nreasoning: high\n";
 
-/** A wiki page body with valid §9 frontmatter (guardrail 2 must pass). */
-function wikiPage(body: string): string {
+/** A wiki page body with valid §9 frontmatter (guardrail 2 must
+ *  pass) whose title kebab-cases to the file name the caller writes
+ *  (check-fidelity must pass; `index` callers rely on the structural
+ *  exemption). */
+function wikiPage(body: string, title = "Page"): string {
   return [
     "---",
-    'title: "Page"',
+    `title: "${title}"`,
     "type: concept",
     "created: 2026-08-20",
     "updated: 2026-08-20",
@@ -76,7 +81,7 @@ const ingestStub: AgentRunner = async (_command, _args, options) => {
   await mkdir(join(options.cwd, "wiki", "concepts"), { recursive: true });
   await writeFile(
     join(options.cwd, "wiki", "concepts", "new.md"),
-    wikiPage("New page"),
+    wikiPage("New page", "New"),
     { flag: "wx" },
   ).catch(() => {});
   await writeFile(
@@ -240,6 +245,35 @@ async function headOf(dataRoot: string): Promise<string> {
   return stdout.trim();
 }
 
+/** A domain wiki tree beside the harness's data repo (wiki/ plus the
+ *  sibling raw/manifest.json naming vault Engineering) for crosslink
+ *  audit and verification-ordering tests to validate links against. */
+async function makeDomainWiki(h: Harness): Promise<string> {
+  const root = join(dirname(h.dataRoot), "domain");
+
+  await mkdir(join(root, "raw"), { recursive: true });
+  await mkdir(join(root, "wiki"), { recursive: true });
+  await writeFile(
+    join(root, "raw", "manifest.json"),
+    `${JSON.stringify({ vaults: { Engineering: {} } }, null, 2)}\n`,
+  );
+  await writeFile(join(root, "wiki", "index.md"), "# Domain\n");
+  await writeFile(join(root, "wiki", "stub.md"), "# Stub\n");
+
+  return join(root, "wiki");
+}
+
+/** Point the instance's settings at a domain wiki and mark the data
+ *  repo as a second brain (the operator-owned `.second-brain` marker,
+ *  issue #94 — guardrails allow cross-wiki links only there). */
+async function configureDomains(h: Harness, domainWiki: string) {
+  await writeFile(join(h.dataRoot, ".second-brain"), "");
+  await writeFile(
+    h.settingsPath,
+    `${SETTINGS_YML}secondBrain.domains: [${domainWiki}]\n`,
+  );
+}
+
 describe("runWikiSync", () => {
   it("commits the whole cycle in the data repo", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
@@ -375,10 +409,22 @@ describe("formatFinalDigest", () => {
       ingest: { status: "skipped", reason: "no changed sources" },
       lint: undefined,
       crosslinks: undefined,
+      verification: {
+        fidelity: { problems: [], quotes: 0, titles: 0, skipped: 0, pages: 1 },
+        provenance: {
+          problems: [],
+          sources: 0,
+          origins: 0,
+          missingOrigins: 0,
+          pages: 1,
+        },
+      },
       commit: { status: "nothing-to-commit" },
     });
 
-    expect(digest).toBe("wiki-sync: nothing to do — no changed sources\n");
+    expect(digest).toBe(
+      "wiki-sync: nothing to do — no changed sources; fidelity + provenance ok\n",
+    );
   });
 
   it("leads with the counts of a committed cycle", async () => {
@@ -407,6 +453,16 @@ describe("formatFinalDigest", () => {
       ingest: { status: "skipped", reason: "no changed sources" },
       lint: undefined,
       crosslinks: undefined,
+      verification: {
+        fidelity: { problems: [], quotes: 0, titles: 0, skipped: 0, pages: 1 },
+        provenance: {
+          problems: [],
+          sources: 0,
+          origins: 0,
+          missingOrigins: 0,
+          pages: 1,
+        },
+      },
       commit: { status: "committed", hash: "a1b2c3d4", message: "m" },
     });
 
@@ -460,36 +516,6 @@ describe("createAgentProgressSink with lint heartbeats", () => {
 });
 
 describe("runWikiSync crosslinks stage", () => {
-  /** A domain wiki tree (wiki/ plus the sibling raw/manifest.json
-   *  naming vault Engineering) for the audit to validate links
-   *  against. */
-  async function makeDomainWiki(h: Harness): Promise<string> {
-    const root = join(dirname(h.dataRoot), "domain");
-
-    await mkdir(join(root, "raw"), { recursive: true });
-    await mkdir(join(root, "wiki"), { recursive: true });
-    await writeFile(
-      join(root, "raw", "manifest.json"),
-      `${JSON.stringify({ vaults: { Engineering: {} } }, null, 2)}\n`,
-    );
-    await writeFile(join(root, "wiki", "index.md"), "# Domain\\n");
-    await writeFile(join(root, "wiki", "stub.md"), "# Stub\\n");
-
-    return join(root, "wiki");
-  }
-
-  /** Point the instance's settings at the domain wiki and mark the
-   *  data repo as a second brain (the operator-owned `.second-brain`
-   *  marker, issue #94 — guardrails allow cross-wiki links only
-   *  there). */
-  async function configureDomains(h: Harness, domainWiki: string) {
-    await writeFile(join(h.dataRoot, ".second-brain"), "");
-    await writeFile(
-      h.settingsPath,
-      `${SETTINGS_YML}secondBrain.domains: [${domainWiki}]\n`,
-    );
-  }
-
   /** An ingest stub filing one page whose body carries a cross-wiki
    *  link to the domain wiki (second-brain identity itself is the
    *  operator-owned `.second-brain` marker — see configureDomains). */
@@ -497,7 +523,7 @@ describe("runWikiSync crosslinks stage", () => {
     return async (_command, _args, options) => {
       await writeFile(
         join(options.cwd, "wiki", "decision.md"),
-        wikiPage(`Domain background in ${link}.`),
+        wikiPage(`Domain background in ${link}.`, "Decision"),
         { flag: "wx" },
       ).catch(() => {});
       await writeFile(
@@ -540,7 +566,7 @@ describe("runWikiSync crosslinks stage", () => {
       onProgress: (m) => progress.push(m),
     });
 
-    expect(progress).toContainEqual("wiki-sync: stage 4/5 — crosslinks");
+    expect(progress).toContainEqual("wiki-sync: stage 4/6 — crosslinks");
   });
 
   it("skips the stage outright when no domains are configured", async () => {
@@ -682,7 +708,298 @@ describe("runWikiSync crosslinks stage", () => {
   });
 });
 
+describe("runVerificationStage", () => {
+  /** A minimal data-repo shape for the stage: wiki/ beside raw/,
+   *  one title-clean concept page with a resolvable source link. */
+  async function makeVerificationRoot(): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), "k-wiki-verify-"));
+
+    tempDirs.push(root);
+
+    await mkdir(join(root, "wiki", "concepts"), { recursive: true });
+    await mkdir(join(root, "raw"), { recursive: true });
+    await writeFile(join(root, "wiki", "index.md"), "# Index\n");
+    await writeFile(
+      join(root, "wiki", "concepts", "clean.md"),
+      wikiPage("Clean body", "Clean"),
+    );
+
+    return root;
+  }
+
+  it("passes a faithful, coherent wiki", async () => {
+    const root = await makeVerificationRoot();
+
+    const result = await runVerificationStage({ rawDir: join(root, "raw") });
+
+    expect(result.fidelity.problems).toEqual([]);
+    expect(result.provenance.problems).toEqual([]);
+  });
+
+  it("rejects listing one line per fidelity problem", async () => {
+    const root = await makeVerificationRoot();
+
+    await writeFile(
+      join(root, "wiki", "concepts", "drifted.md"),
+      wikiPage("Drifted body", "Elsewhere"),
+    );
+    await mkdir(join(root, "wiki", "sources"), { recursive: true });
+    await mkdir(join(root, "raw", "notes", "Engineering", "AI"), {
+      recursive: true,
+    });
+    await writeFile(
+      join(root, "raw", "notes", "Engineering", "AI", "RAG.md"),
+      "rag body without the command\n",
+    );
+    await writeFile(
+      join(root, "wiki", "sources", "misquote.md"),
+      [
+        "---",
+        'title: "Misquote"',
+        "type: source",
+        "created: 2026-08-20",
+        "updated: 2026-08-20",
+        "tags:",
+        "  - llm",
+        "origin: notes/Engineering/AI/RAG.md",
+        "---",
+        "",
+        "Run `npm run build`.",
+        "",
+      ].join("\n"),
+    );
+
+    await expect(
+      runVerificationStage({ rawDir: join(root, "raw") }),
+    ).rejects.toThrow(
+      "fidelity check failed:\n" +
+        'wiki/concepts/drifted.md -> title "Elsewhere" does not kebab to drifted\n' +
+        "wiki/sources/misquote.md -> `npm run build` not in origin notes/Engineering/AI/RAG.md",
+    );
+  });
+
+  it("rejects listing one line per provenance problem", async () => {
+    const root = await makeVerificationRoot();
+
+    await mkdir(join(root, "wiki", "sources"), { recursive: true });
+    await writeFile(
+      join(root, "wiki", "sources", "dead-origin.md"),
+      [
+        "---",
+        'title: "Dead Origin"',
+        "type: source",
+        "created: 2026-08-20",
+        "updated: 2026-08-20",
+        "tags:",
+        "  - llm",
+        "origin: notes/Engineering/gone.md",
+        "---",
+        "",
+        "body without artifacts",
+        "",
+      ].join("\n"),
+    );
+    await writeFile(
+      join(root, "wiki", "sources", "dead-link.md"),
+      [
+        "---",
+        'title: "Dead Link"',
+        "type: concept",
+        "created: 2026-08-20",
+        "updated: 2026-08-20",
+        "tags:",
+        "  - llm",
+        "sources:",
+        '  - "[[gone-page]]"',
+        "---",
+        "",
+        "body",
+        "",
+      ].join("\n"),
+    );
+
+    await expect(
+      runVerificationStage({ rawDir: join(root, "raw") }),
+    ).rejects.toThrow(
+      "provenance check failed:\n" +
+        "wiki/sources/dead-link.md -> [[gone-page]] (missing source page)\n" +
+        "wiki/sources/dead-origin.md -> origin notes/Engineering/gone.md (missing under raw/)",
+    );
+  });
+
+  it("announces the check on the progress line", async () => {
+    const root = await makeVerificationRoot();
+    const progress: string[] = [];
+
+    await runVerificationStage({
+      rawDir: join(root, "raw"),
+      onProgress: (message) => progress.push(message),
+    });
+
+    expect(progress).toContain(
+      "wiki-sync: verification — checking citation fidelity and provenance",
+    );
+  });
+});
+
+describe("runWikiSync verification stage", () => {
+  it("reports fidelity and provenance lines in the cycle digest", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const result = await runWikiSync(optionsFor(h));
+
+    const digest = formatFinalDigest(result);
+
+    expect(digest).toMatch(
+      /- \*\*Fidelity:\*\* ok — \d+ tokens? trace to origins, \d+ titles? match(?:es)? across \d+ pages?/,
+    );
+    expect(digest).toMatch(
+      /- \*\*Provenance:\*\* ok — \d+ source links? resolve, \d+ origins? exist across \d+ pages?/,
+    );
+  });
+
+  it("numbers the verification stage in the cycle progress", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const progress: string[] = [];
+
+    await runWikiSync({
+      ...optionsFor(h),
+      onProgress: (m) => progress.push(m),
+    });
+
+    expect(progress).toContainEqual("wiki-sync: stage 4/5 — verification");
+    expect(progress).toContainEqual("wiki-sync: stage 5/5 — commit");
+  });
+
+  it("runs verification after the crosslink audit when domains are configured", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const domainWiki = await makeDomainWiki(h);
+    const progress: string[] = [];
+
+    await configureDomains(h, domainWiki);
+
+    await runWikiSync({
+      ...optionsFor(h),
+      onProgress: (m) => progress.push(m),
+    });
+
+    const crosslinks = progress.indexOf("wiki-sync: stage 4/6 — crosslinks");
+    const verification = progress.indexOf(
+      "wiki-sync: stage 5/6 — verification",
+    );
+
+    expect(crosslinks).toBeGreaterThan(-1);
+    expect(verification).toBeGreaterThan(crosslinks);
+  });
+
+  it("fails the cycle on a fidelity problem, reverting the lint edits and keeping the ingest edits", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    h.lintAgent = async (command, args, options) => {
+      const result = await lintStub(command, args, options);
+
+      await mkdir(join(options.cwd, "wiki", "concepts"), { recursive: true });
+      await writeFile(
+        join(options.cwd, "wiki", "concepts", "drifted.md"),
+        wikiPage("Drifted body", "Elsewhere"),
+      );
+
+      return result;
+    };
+
+    const headBefore = await headOf(h.dataRoot);
+    const progress: string[] = [];
+
+    await expect(
+      runWikiSync({ ...optionsFor(h), onProgress: (m) => progress.push(m) }),
+    ).rejects.toThrow(
+      "fidelity check failed:\n" +
+        'wiki/concepts/drifted.md -> title "Elsewhere" does not kebab to drifted',
+    );
+    expect(await headOf(h.dataRoot)).toBe(headBefore);
+    expect(progress).toContain(
+      `wiki-sync: verification failed — reverting lint edits to ${headBefore.slice(0, 8)} (ingest edits kept)`,
+    );
+
+    await expect(
+      readFile(join(h.dataRoot, "outputs", "lint-2026-08-20.md"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(
+      readFile(join(h.dataRoot, "wiki", "concepts", "drifted.md"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(
+      readFile(join(h.dataRoot, "wiki", "concepts", "new.md"), "utf8"),
+    ).resolves.toContain("New page");
+  });
+
+  it("fails the cycle on a provenance problem, with no commit", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    h.lintAgent = async (command, args, options) => {
+      const result = await lintStub(command, args, options);
+
+      await mkdir(join(options.cwd, "wiki", "sources"), { recursive: true });
+      await writeFile(
+        join(options.cwd, "wiki", "sources", "dead-origin.md"),
+        [
+          "---",
+          'title: "Dead Origin"',
+          "type: source",
+          "created: 2026-08-20",
+          "updated: 2026-08-20",
+          "tags:",
+          "  - llm",
+          "origin: notes/Engineering/gone.md",
+          "---",
+          "",
+          "body without artifacts",
+          "",
+        ].join("\n"),
+      );
+
+      return result;
+    };
+
+    const headBefore = await headOf(h.dataRoot);
+
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow(
+      /provenance check failed:[\s\S]*dead-origin\.md -> origin notes\/Engineering\/gone\.md \(missing under raw\/\)/,
+    );
+    expect(await headOf(h.dataRoot)).toBe(headBefore);
+    await expect(
+      readFile(join(h.dataRoot, "wiki", "sources", "dead-origin.md"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("checks the wiki even when the ingest stage skips", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    await runWikiSync(optionsFor(h));
+
+    const result = await runWikiSync(optionsFor(h));
+    const digest = formatFinalDigest(result);
+
+    expect(result.ingest.status).toBe("skipped");
+    expect(result.verification.fidelity.problems).toEqual([]);
+    expect(digest).toContain("nothing to do");
+    expect(digest).toContain("; fidelity + provenance ok");
+  });
+});
+
 describe("runWikiSync lint stage", () => {
+  it("captures its own pre-run state when the caller passes none", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    const result = await runLintStage({
+      settingsPath: h.settingsPath,
+      rawDir: join(h.dataRoot, "raw"),
+      promptsDir: h.promptsDir,
+      env: optionsFor(h).env,
+      now: NOW,
+      runAgent: lintStub,
+    });
+
+    expect(result.reportWritten).toBe(true);
+  });
   it("reports an unwritten lint report", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 
@@ -888,7 +1205,7 @@ describe("wiki-sync CLI", () => {
 
     expect(out).toContain("# wiki-sync cycle digest");
     expect(out).toContain("## Lint summary");
-    expect(err).toContain("wiki-sync: stage 4/4 — commit");
+    expect(err).toContain("wiki-sync: stage 5/5 — commit");
     expect(process.exitCode).toBeUndefined();
   });
 
@@ -979,13 +1296,14 @@ describe("runWikiSync progress and invocation contract", () => {
     });
 
     for (const expected of [
-      "wiki-sync: stage 1/4 — sync-vault",
-      "wiki-sync: stage 2/4 — wiki-ingest",
-      "wiki-sync: stage 3/4 — lint",
+      "wiki-sync: stage 1/5 — sync-vault",
+      "wiki-sync: stage 2/5 — wiki-ingest",
+      "wiki-sync: stage 3/5 — lint",
       "wiki-sync: lint — invoking agent:",
       "wiki-sync: lint — agent finished",
       "wiki-sync: lint — guardrails passed",
-      "wiki-sync: stage 4/4 — commit",
+      "wiki-sync: stage 4/5 — verification",
+      "wiki-sync: stage 5/5 — commit",
     ]) {
       expect(progress.join("\n")).toContain(expected);
     }
@@ -1266,7 +1584,7 @@ describe("runWikiSync commit contents", () => {
     );
     expect(result.commit.message).toContain("- pages: 0 created, 1 updated");
     expect(progress).toContain(
-      "wiki-sync: stage 3/4 — lint skipped (no ingest ran)",
+      "wiki-sync: stage 3/5 — lint skipped (no ingest ran)",
     );
   });
 });
@@ -1326,6 +1644,16 @@ describe("formatFinalDigest sections", () => {
         summary: overrides.lintSummary ?? "lint summary body",
       },
       crosslinks: overrides.crosslinks,
+      verification: {
+        fidelity: { problems: [], quotes: 3, titles: 2, skipped: 0, pages: 4 },
+        provenance: {
+          problems: [],
+          sources: 5,
+          origins: 1,
+          missingOrigins: 0,
+          pages: 4,
+        },
+      },
       commit: overrides.commit ?? {
         status: "committed" as const,
         hash: "a1b2c3d4e5f6",
@@ -1382,5 +1710,63 @@ describe("formatFinalDigest sections", () => {
 
   it("ends with a newline", () => {
     expect(formatFinalDigest(ranResult({})).endsWith("\n")).toBe(true);
+  });
+
+  it("uses the singular wording for one token, title, and page in the fidelity line", () => {
+    const base = ranResult({});
+    const digest = formatFinalDigest({
+      ...base,
+      verification: {
+        fidelity: { problems: [], quotes: 1, titles: 1, skipped: 0, pages: 1 },
+        provenance: {
+          problems: [],
+          sources: 1,
+          origins: 1,
+          missingOrigins: 0,
+          pages: 1,
+        },
+      },
+    });
+
+    expect(digest).toContain(
+      "- **Fidelity:** ok — 1 token traces to origins, 1 title matches across 1 page\n",
+    );
+  });
+
+  it("uses the singular wording for one link, origin, and page in the provenance line", () => {
+    const base = ranResult({});
+    const digest = formatFinalDigest({
+      ...base,
+      verification: {
+        fidelity: { problems: [], quotes: 1, titles: 1, skipped: 0, pages: 1 },
+        provenance: {
+          problems: [],
+          sources: 1,
+          origins: 1,
+          missingOrigins: 0,
+          pages: 1,
+        },
+      },
+    });
+
+    expect(digest).toContain(
+      "- **Provenance:** ok — 1 source link resolves, 1 origin exists across 1 page\n",
+    );
+  });
+
+  it("uses the plural wording for several tokens and titles in the fidelity line", () => {
+    const digest = formatFinalDigest(ranResult({}));
+
+    expect(digest).toContain(
+      "- **Fidelity:** ok — 3 tokens trace to origins, 2 titles match across 4 pages\n",
+    );
+  });
+
+  it("uses the plural wording for several links and pages in the provenance line", () => {
+    const digest = formatFinalDigest(ranResult({}));
+
+    expect(digest).toContain(
+      "- **Provenance:** ok — 5 source links resolve, 1 origin exists across 4 pages\n",
+    );
   });
 });

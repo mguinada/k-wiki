@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
 import { afterAll, describe, expect, it } from "vitest";
-import { checkWikiFidelity } from "../scripts/check-fidelity.ts";
+import { checkWikiFidelity, extractArtifacts } from "../src/wiki/fidelity.ts";
 
 const script = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -463,6 +463,122 @@ describe("checkWikiFidelity", () => {
     await expect(
       checkWikiFidelity(wikiDir, join(root, "missing")),
     ).rejects.toThrow(`raw directory does not exist: ${join(root, "missing")}`);
+  });
+
+  it("treats every stopword-suffixed dotted token as a reference, not a config key", async () => {
+    const stopwords = [
+      "notes.md",
+      "notes.markdown",
+      "notes.txt",
+      "sync.json",
+      "conf.yml",
+      "conf.yaml",
+      "conf.toml",
+      "conf.ini",
+      "main.ts",
+      "main.tsx",
+      "main.js",
+      "main.mjs",
+      "main.cjs",
+      "run.sh",
+      "pkg.lock",
+      "page.html",
+      "style.css",
+      "doc.pdf",
+      "img.png",
+      "img.jpg",
+      "ex.com",
+      "ex.org",
+      "ex.net",
+      "ex.io",
+      "ex.dev",
+      "ex.to",
+      "ex.co",
+      "ex.ai",
+      "ex.app",
+      "ex.me",
+      "ex.so",
+      "ex.xyz",
+      "ex.info",
+      "ex.site",
+    ];
+    const { wikiDir, rawDir } = await makeFixture(
+      {
+        "sources/s.md": sourcePage(
+          "raw/notes/V/s.md",
+          `Mentions ${stopwords.join(" ")} inline.`,
+        ),
+      },
+      { "notes/V/s.md": "plain prose, none of those tokens" },
+    );
+
+    const report = await checkWikiFidelity(wikiDir, rawDir);
+
+    expect(`${report.problems.length}:${report.quotes}`).toBe("0:0");
+  });
+
+  it("counts exactly one skipped page beside a checked concept page", async () => {
+    const { wikiDir, rawDir } = await makeFixture(
+      {
+        "sources/s.md": "---\ntitle: S\ntype: source\n---\nno origin here\n",
+        "concepts/c.md": "---\ntitle: C\ntype: concept\n---\nbody\n",
+      },
+      {},
+    );
+
+    const report = await checkWikiFidelity(wikiDir, rawDir);
+
+    expect(`${report.skipped}:${report.problems.length}`).toBe("1:0");
+  });
+  it("skips the title check for a page without a title", async () => {
+    const { wikiDir, rawDir } = await makeFixture(
+      { "concepts/plain.md": "no frontmatter, no title\n" },
+      {},
+    );
+
+    expect((await checkWikiFidelity(wikiDir, rawDir)).problems).toEqual([]);
+  });
+
+  it("ends the body at the closing fence, not at a blank line inside the frontmatter", async () => {
+    const { wikiDir, rawDir } = await makeFixture(
+      {
+        "sources/s.md":
+          "---\ntitle: S\ntype: source\norigin: raw/notes/V/s.md\n\nx: push.pushOption\n---\n\nplain body\n",
+      },
+      { "notes/V/s.md": "plain prose" },
+    );
+
+    expect((await checkWikiFidelity(wikiDir, rawDir)).problems).toEqual([]);
+  });
+
+  it("keeps body line boundaries when scanning for dotted tokens", async () => {
+    const { wikiDir, rawDir } = await makeFixture(
+      {
+        "sources/s.md": sourcePage(
+          "raw/notes/V/s.md",
+          "wrapped token ab.\ncd across lines.",
+        ),
+      },
+      { "notes/V/s.md": "plain prose" },
+    );
+
+    expect((await checkWikiFidelity(wikiDir, rawDir)).problems).toEqual([]);
+  });
+});
+
+describe("extractArtifacts", () => {
+  it("extracts two-character-segment config keys and excludes single-character segments", () => {
+    expect(
+      extractArtifacts("Flags ab.cd and push.pushOption, not e.g or e.gx."),
+    ).toEqual(["ab.cd", "push.pushOption"]);
+  });
+
+  it("extracts every artifact class with stable trimming and boundaries", () => {
+    expect(
+      extractArtifacts(
+        "Run `npm run e2e:all --verbose -v` from ~/lab/path.. today; see ab.cd.ef.",
+      ),
+    ).toEqual(["--verbose", "-v", "ab.cd.ef", "npm run e2e:all", "~/lab/path"]);
   });
 });
 

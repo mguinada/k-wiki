@@ -59,6 +59,29 @@ if (mode === "break-lint" && prompt.startsWith("Audit the wiki")) {
   process.exit(0);
 }
 
+if (mode === "break-fidelity" && prompt.startsWith("Audit the wiki")) {
+  // Valid §9 frontmatter (the guardrails pass) but a title that does
+  // not kebab to the file name — the fidelity core's failure class.
+  await mkdir(join(process.cwd(), "wiki", "concepts"), { recursive: true });
+  await writeFile(join(process.cwd(), "wiki", "concepts", "drifted.md"), [
+    "---",
+    'title: "Elsewhere"',
+    "type: concept",
+    "created: 2026-08-20",
+    "updated: 2026-08-20",
+    "tags:",
+    "  - llm",
+    "sources:",
+    '  - "[[index]]"',
+    "---",
+    "",
+    "drifted body",
+    "",
+  ].join("\\n"));
+  console.log("lint: filed a drifted page");
+  process.exit(0);
+}
+
 if (mode === "link-domain" || mode === "link-broken") {
   // A second-brain run: a decision page carrying one cross-wiki link
   // to the domain wiki (second-brain identity itself is the
@@ -251,6 +274,12 @@ describe("wiki-sync e2e", () => {
     expect(result.code).toBe(0);
     expect(result.out).toContain("# wiki-sync cycle digest");
     expect(result.out).toContain(`**Lint:** report \`${lintPath}\``);
+    expect(result.out).toMatch(
+      /- \*\*Fidelity:\*\* ok — \d+ tokens? trace to origins, \d+ titles? match(?:es)? across \d+ pages?/,
+    );
+    expect(result.out).toMatch(
+      /- \*\*Provenance:\*\* ok — \d+ source links? resolve, \d+ origins? exist across \d+ pages?/,
+    );
     expect(result.out).toContain("**Commit:** `");
 
     const { stdout: log } = await run("git", ["log", "-1", "--pretty=%B"], {
@@ -375,6 +404,34 @@ describe("wiki-sync e2e", () => {
 
     await expect(
       readFile(join(repo.dataRoot, "wiki", "concepts", "broken.md"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(
+      readFile(join(repo.dataRoot, "wiki", "concepts", "stub.md"), "utf8"),
+    ).resolves.toContain("stub body");
+
+    const { stdout: headAfter } = await run("git", ["rev-parse", "HEAD"], {
+      cwd: repo.dataRoot,
+    });
+
+    expect(headAfter).toBe(head);
+  });
+
+  it("reverts the lint edits and keeps the ingest edits when the fidelity check fails", async () => {
+    const repo = await makeRepo();
+
+    const { stdout: head } = await run("git", ["rev-parse", "HEAD"], {
+      cwd: repo.dataRoot,
+    });
+    const result = await runCycle(repo, { STUB_MODE: "break-fidelity" });
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("fidelity check failed");
+    expect(result.err).toMatch(
+      /concepts\/drifted\.md -> title "Elsewhere" does not kebab to drifted/,
+    );
+
+    await expect(
+      readFile(join(repo.dataRoot, "wiki", "concepts", "drifted.md"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
     await expect(
       readFile(join(repo.dataRoot, "wiki", "concepts", "stub.md"), "utf8"),
