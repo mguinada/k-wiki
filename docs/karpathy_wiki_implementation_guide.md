@@ -396,7 +396,7 @@ wiki-ingest
     raw/ → wiki/
 
 wiki-sync
-    sync → ingest → lint → git commit
+    sync → ingest → lint → verification → git commit
 ```
 
 This separation is important.
@@ -909,9 +909,14 @@ wiki-sync
    │
    ├── 4. Run lint
    │
-   ├── 5. Git diff
+   ├── 5. Run the deterministic verification checks
+   │      (check-fidelity, check-provenance) — every cycle,
+   │      configured or not; a failed check fails the cycle
+   │      before the commit (issue #138)
    │
-   └── 6. Commit changes
+   ├── 6. Git diff
+   │
+   └── 7. Commit changes
 ```
 
 Suggested schedule:
@@ -1478,7 +1483,7 @@ All placement knowledge lives in one human-owned file at the `k-wiki` root:
 Append one step to `wiki-sync`:
 
 ```text
-sync → ingest → lint → publish (copy wiki/ → mirror vault) → git commit
+sync → ingest → lint → verification → publish (copy wiki/ → mirror vault) → git commit
 ```
 
 The mirror is derived data, like the wiki itself: if the transport ever mangles it, re-copying heals it. Devices only read the mirror; edits belong upstream in the source vault. The publish step ships `wiki/AGENTS.md` along with the pages — harmless, and it doubles as human-readable documentation of the wiki's rules on every device.
