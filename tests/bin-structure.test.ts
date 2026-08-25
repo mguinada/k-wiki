@@ -229,7 +229,9 @@ describe("bin/ launcher structure (issue #135)", () => {
         );
 
         if (!imported) {
-          problems.push(`${file}: exports main() but no bin launcher imports it`);
+          problems.push(
+            `${file}: exports main() but no bin launcher imports it`,
+          );
         }
       }
     }
