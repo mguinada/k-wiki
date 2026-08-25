@@ -231,3 +231,14 @@ export async function checkWikiFidelity(
 
   return { problems, quotes, titles, skipped, pages: files.length };
 }
+
+/** The report's summary sentence — quote tokens traced to origins and
+ *  titles matched — shared by the check-fidelity CLI's ok line and
+ *  the wiki-sync digest (issue #138), so the two surfaces cannot
+ *  drift apart. */
+export function summarizeFidelity(report: FidelityReport): string {
+  const tokens = `${report.quotes} ${report.quotes === 1 ? "token traces" : "tokens trace"} to origins`;
+  const titles = `${report.titles} ${report.titles === 1 ? "title matches" : "titles match"}`;
+
+  return `${tokens}, ${titles} across ${report.pages} ${report.pages === 1 ? "page" : "pages"}`;
+}

@@ -245,6 +245,35 @@ async function headOf(dataRoot: string): Promise<string> {
   return stdout.trim();
 }
 
+/** A domain wiki tree beside the harness's data repo (wiki/ plus the
+ *  sibling raw/manifest.json naming vault Engineering) for crosslink
+ *  audit and verification-ordering tests to validate links against. */
+async function makeDomainWiki(h: Harness): Promise<string> {
+  const root = join(dirname(h.dataRoot), "domain");
+
+  await mkdir(join(root, "raw"), { recursive: true });
+  await mkdir(join(root, "wiki"), { recursive: true });
+  await writeFile(
+    join(root, "raw", "manifest.json"),
+    `${JSON.stringify({ vaults: { Engineering: {} } }, null, 2)}\n`,
+  );
+  await writeFile(join(root, "wiki", "index.md"), "# Domain\n");
+  await writeFile(join(root, "wiki", "stub.md"), "# Stub\n");
+
+  return join(root, "wiki");
+}
+
+/** Point the instance's settings at a domain wiki and mark the data
+ *  repo as a second brain (the operator-owned `.second-brain` marker,
+ *  issue #94 — guardrails allow cross-wiki links only there). */
+async function configureDomains(h: Harness, domainWiki: string) {
+  await writeFile(join(h.dataRoot, ".second-brain"), "");
+  await writeFile(
+    h.settingsPath,
+    `${SETTINGS_YML}secondBrain.domains: [${domainWiki}]\n`,
+  );
+}
+
 describe("runWikiSync", () => {
   it("commits the whole cycle in the data repo", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
@@ -487,36 +516,6 @@ describe("createAgentProgressSink with lint heartbeats", () => {
 });
 
 describe("runWikiSync crosslinks stage", () => {
-  /** A domain wiki tree (wiki/ plus the sibling raw/manifest.json
-   *  naming vault Engineering) for the audit to validate links
-   *  against. */
-  async function makeDomainWiki(h: Harness): Promise<string> {
-    const root = join(dirname(h.dataRoot), "domain");
-
-    await mkdir(join(root, "raw"), { recursive: true });
-    await mkdir(join(root, "wiki"), { recursive: true });
-    await writeFile(
-      join(root, "raw", "manifest.json"),
-      `${JSON.stringify({ vaults: { Engineering: {} } }, null, 2)}\n`,
-    );
-    await writeFile(join(root, "wiki", "index.md"), "# Domain\\n");
-    await writeFile(join(root, "wiki", "stub.md"), "# Stub\\n");
-
-    return join(root, "wiki");
-  }
-
-  /** Point the instance's settings at the domain wiki and mark the
-   *  data repo as a second brain (the operator-owned `.second-brain`
-   *  marker, issue #94 — guardrails allow cross-wiki links only
-   *  there). */
-  async function configureDomains(h: Harness, domainWiki: string) {
-    await writeFile(join(h.dataRoot, ".second-brain"), "");
-    await writeFile(
-      h.settingsPath,
-      `${SETTINGS_YML}secondBrain.domains: [${domainWiki}]\n`,
-    );
-  }
-
   /** An ingest stub filing one page whose body carries a cross-wiki
    *  link to the domain wiki (second-brain identity itself is the
    *  operator-owned `.second-brain` marker — see configureDomains). */
@@ -873,22 +872,10 @@ describe("runWikiSync verification stage", () => {
 
   it("runs verification after the crosslink audit when domains are configured", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
-    const domainRoot = join(dirname(h.dataRoot), "domain");
+    const domainWiki = await makeDomainWiki(h);
     const progress: string[] = [];
 
-    await mkdir(join(domainRoot, "raw"), { recursive: true });
-    await mkdir(join(domainRoot, "wiki"), { recursive: true });
-    await writeFile(
-      join(domainRoot, "raw", "manifest.json"),
-      `${JSON.stringify({ vaults: { Engineering: {} } }, null, 2)}\n`,
-    );
-    await writeFile(join(domainRoot, "wiki", "index.md"), "# Domain\n");
-    await writeFile(join(domainRoot, "wiki", "stub.md"), "# Stub\n");
-    await writeFile(join(h.dataRoot, ".second-brain"), "");
-    await writeFile(
-      h.settingsPath,
-      `${SETTINGS_YML}secondBrain.domains: [${join(domainRoot, "wiki")}]\n`,
-    );
+    await configureDomains(h, domainWiki);
 
     await runWikiSync({
       ...optionsFor(h),
@@ -1725,7 +1712,7 @@ describe("formatFinalDigest sections", () => {
     expect(formatFinalDigest(ranResult({})).endsWith("\n")).toBe(true);
   });
 
-  it("uses the singular wording for one token, title, link, origin, and page", () => {
+  it("uses the singular wording for one token, title, and page in the fidelity line", () => {
     const base = ranResult({});
     const digest = formatFinalDigest({
       ...base,
@@ -1742,21 +1729,44 @@ describe("formatFinalDigest sections", () => {
     });
 
     expect(digest).toContain(
-      "- **Fidelity:** ok — 1 token traces to origins, 1 title matches across 1 page",
-    );
-    expect(digest).toContain(
-      "- **Provenance:** ok — 1 source link resolves, 1 origin exists across 1 page",
+      "- **Fidelity:** ok — 1 token traces to origins, 1 title matches across 1 page\n",
     );
   });
 
-  it("uses the plural wording for several tokens and titles", () => {
+  it("uses the singular wording for one link, origin, and page in the provenance line", () => {
+    const base = ranResult({});
+    const digest = formatFinalDigest({
+      ...base,
+      verification: {
+        fidelity: { problems: [], quotes: 1, titles: 1, skipped: 0, pages: 1 },
+        provenance: {
+          problems: [],
+          sources: 1,
+          origins: 1,
+          missingOrigins: 0,
+          pages: 1,
+        },
+      },
+    });
+
+    expect(digest).toContain(
+      "- **Provenance:** ok — 1 source link resolves, 1 origin exists across 1 page\n",
+    );
+  });
+
+  it("uses the plural wording for several tokens and titles in the fidelity line", () => {
     const digest = formatFinalDigest(ranResult({}));
 
     expect(digest).toContain(
-      "- **Fidelity:** ok — 3 tokens trace to origins, 2 titles match across 4 pages",
+      "- **Fidelity:** ok — 3 tokens trace to origins, 2 titles match across 4 pages\n",
     );
+  });
+
+  it("uses the plural wording for several links and pages in the provenance line", () => {
+    const digest = formatFinalDigest(ranResult({}));
+
     expect(digest).toContain(
-      "- **Provenance:** ok — 5 source links resolve, 1 origin exists across 4 pages",
+      "- **Provenance:** ok — 5 source links resolve, 1 origin exists across 4 pages\n",
     );
   });
 });

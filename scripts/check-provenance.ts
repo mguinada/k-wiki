@@ -2,7 +2,10 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
 import { isMainModule, refuseTestWorker } from "../src/cli/is-main.ts";
-import { checkWikiProvenance } from "../src/wiki/provenance.ts";
+import {
+  checkWikiProvenance,
+  summarizeProvenance,
+} from "../src/wiki/provenance.ts";
 
 /**
  * Dead-provenance checker CLI (issue #65): every `sources` entry must
@@ -96,13 +99,7 @@ export async function main(): Promise<void> {
     const report = await checkWikiProvenance(wikiDir, rawDir);
 
     if (report.problems.length === 0) {
-      const sourcePart = `${report.sources} ${report.sources === 1 ? "source link" : "source links"} ${report.sources === 1 ? "resolves" : "resolve"}`;
-      const originPart = `${report.origins} ${report.origins === 1 ? "origin exists" : "origins exist"}`;
-      const pages = `${report.pages} ${report.pages === 1 ? "page" : "pages"}`;
-
-      console.log(
-        colors().green(`ok: ${sourcePart}, ${originPart} across ${pages}`),
-      );
+      console.log(colors().green(`ok: ${summarizeProvenance(report)}`));
 
       if (report.missingOrigins > 0) {
         printBackfillWarning(report.missingOrigins, wikiDir, rawDir);

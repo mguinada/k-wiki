@@ -2,7 +2,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
 import { isMainModule, refuseTestWorker } from "../src/cli/is-main.ts";
-import { checkWikiFidelity } from "../src/wiki/fidelity.ts";
+import { checkWikiFidelity, summarizeFidelity } from "../src/wiki/fidelity.ts";
 import { printBackfillWarning } from "./check-provenance.ts";
 
 /**
@@ -81,13 +81,7 @@ export async function main(): Promise<void> {
     const report = await checkWikiFidelity(wikiDir, rawDir);
 
     if (report.problems.length === 0) {
-      const quotePart = `${report.quotes} ${report.quotes === 1 ? "token traces" : "tokens trace"} to origins`;
-      const titlePart = `${report.titles} ${report.titles === 1 ? "title matches" : "titles match"}`;
-      const pages = `${report.pages} ${report.pages === 1 ? "page" : "pages"}`;
-
-      console.log(
-        colors().green(`ok: ${quotePart}, ${titlePart} across ${pages}`),
-      );
+      console.log(colors().green(`ok: ${summarizeFidelity(report)}`));
 
       if (report.skipped > 0) {
         printBackfillWarning(report.skipped, wikiDir, rawDir);

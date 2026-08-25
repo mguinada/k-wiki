@@ -115,3 +115,14 @@ export async function checkWikiProvenance(
 
   return { problems, sources, origins, missingOrigins, pages: files.length };
 }
+
+/** The report's summary sentence — source links resolved and origins
+ *  verified — shared by the check-provenance CLI's ok line and the
+ *  wiki-sync digest (issue #138), so the two surfaces cannot drift
+ *  apart. */
+export function summarizeProvenance(report: ProvenanceReport): string {
+  const links = `${report.sources} ${report.sources === 1 ? "source link resolves" : "source links resolve"}`;
+  const origins = `${report.origins} ${report.origins === 1 ? "origin exists" : "origins exist"}`;
+
+  return `${links}, ${origins} across ${report.pages} ${report.pages === 1 ? "page" : "pages"}`;
+}

@@ -28,10 +28,15 @@ import {
   spawnAgent,
   wikiPages,
 } from "../ingest/wiki-ingest.ts";
-import { checkWikiFidelity, type FidelityReport } from "../wiki/fidelity.ts";
+import {
+  checkWikiFidelity,
+  type FidelityReport,
+  summarizeFidelity,
+} from "../wiki/fidelity.ts";
 import {
   checkWikiProvenance,
   type ProvenanceReport,
+  summarizeProvenance,
 } from "../wiki/provenance.ts";
 import { expandHome, loadSyncConfig, resolveRawDir } from "./config.ts";
 import { runSync, type SyncReport } from "./sync-vault.ts";
@@ -298,19 +303,24 @@ export async function runVerificationStage(
   const wikiDir = join(dirname(options.rawDir), "wiki");
   const fidelity = await checkWikiFidelity(wikiDir, options.rawDir);
 
-  if (fidelity.problems.length > 0) {
-    throw new Error(`fidelity check failed:\n${fidelity.problems.join("\n")}`);
-  }
+  failProblems("fidelity", fidelity.problems);
 
   const provenance = await checkWikiProvenance(wikiDir, options.rawDir);
 
-  if (provenance.problems.length > 0) {
-    throw new Error(
-      `provenance check failed:\n${provenance.problems.join("\n")}`,
-    );
-  }
+  failProblems("provenance", provenance.problems);
 
   return { fidelity, provenance };
+}
+
+/** Fail the cycle naming one problem line per finding: the shared
+ *  failure shape of the stage's two checks. */
+function failProblems(
+  check: "fidelity" | "provenance",
+  problems: readonly string[],
+): void {
+  if (problems.length > 0) {
+    throw new Error(`${check} check failed:\n${problems.join("\n")}`);
+  }
 }
 
 /** One cycle commit: what the message summarizes. */
@@ -672,25 +682,6 @@ function crosslinksLine(crosslinks: CrosslinksResult): string {
   return `${pluralized(crosslinks.external, "cross-wiki link")} against ${pluralized(crosslinks.domainPages, "domain page")}`;
 }
 
-/** The digest's fidelity sentence (issue #138): quote tokens traced
- *  to origins and titles matched, in the check-fidelity CLI's own
- *  singular/plural wording. */
-function fidelityLine(fidelity: FidelityReport): string {
-  const tokens = `${fidelity.quotes} ${fidelity.quotes === 1 ? "token traces" : "tokens trace"} to origins`;
-  const titles = `${fidelity.titles} ${fidelity.titles === 1 ? "title matches" : "titles match"}`;
-
-  return `${tokens}, ${titles} across ${pluralized(fidelity.pages, "page")}`;
-}
-
-/** The digest's provenance sentence (issue #138): source links and
- *  origins verified, in the check-provenance CLI's own wording. */
-function provenanceLine(provenance: ProvenanceReport): string {
-  const links = `${provenance.sources} ${provenance.sources === 1 ? "source link resolves" : "source links resolve"}`;
-  const origins = `${provenance.origins} ${provenance.origins === 1 ? "origin exists" : "origins exist"}`;
-
-  return `${links}, ${origins} across ${pluralized(provenance.pages, "page")}`;
-}
-
 /**
  * The final printed digest: counts first, details after — the sync
  * summary, the lint summary, the commit hash, then the full ingest
@@ -732,9 +723,11 @@ export function formatFinalDigest(result: WikiSyncResult): string {
     lines.push(`- **Crosslinks:** ok — ${crosslinksLine(crosslinks)}`);
   }
 
-  lines.push(`- **Fidelity:** ok — ${fidelityLine(verification.fidelity)}`);
   lines.push(
-    `- **Provenance:** ok — ${provenanceLine(verification.provenance)}`,
+    `- **Fidelity:** ok — ${summarizeFidelity(verification.fidelity)}`,
+  );
+  lines.push(
+    `- **Provenance:** ok — ${summarizeProvenance(verification.provenance)}`,
   );
 
   if (commit.status === "committed") {
