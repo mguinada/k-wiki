@@ -27,10 +27,10 @@ With two or more issues and a `subagent` tool available, launch one `delegate` p
 
 1. `herdr worktree create --cwd "$PWD" --branch "issue-<N>-<slug>" --base "origin/<default-branch>" --no-focus` — parse workspace/tab/pane IDs from the JSON, never guess.
 2. `herdr agent start "issue-<N>" --kind pi --pane <pane-id>`
-3. `herdr agent prompt "issue-<N>" "/do-gh-issue-v2 #<N>: <url>"` — without `--wait`.
+3. `herdr agent prompt "issue-<N>" "/do-gh-issue-v2 #<N>: <url>. You are already in worktree <path> on branch issue-<N>-<slug> from origin/<default-branch> — skip the skill's branch/worktree step. Report twice: herdr agent prompt <host-pane-id> 'issue #<N>: <PR URL>' as soon as the PR opens (the pipeline may still be running), and one final line after your handoff: 'issue #<N>: <outcome>, <PR URL>'."` — without `--wait`.
 
 Confirm pickup only after the last kickoff: `herdr agent wait "issue-<N>" --until working --timeout 60000`; on timeout, read the pane and record — never answer prompts for the user.
 
 ## 4. Report
 
-One table: number, title, result (launched / skipped / failed), worktree, branch, agent, workspace. List each skip or failure with its reason. Close: live progress is in the Herdr sidebar; each agent reports its outcome back to this pane; ask me any time for a status check.
+One table: number, title, result (launched / skipped / failed), worktree, branch, agent, workspace. List each skip or failure with its reason. Close: live progress is in the Herdr sidebar; each agent reports its outcome back to this pane; each agent also opens its own gate pane and runs a validating pipeline that pushes to origin — expect up to N extra panes and N concurrent no-mistakes runs; ask me any time for a status check.
