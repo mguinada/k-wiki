@@ -14,6 +14,7 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "e2e": "vitest run --config vitest.e2e.config.ts",
+    "eval:ping": "echo pong",
     "health": "node bin/check-raw.ts",
     "check-links": "node bin/check-links.ts",
     "check-crosslinks": "node bin/check-crosslinks.ts",
