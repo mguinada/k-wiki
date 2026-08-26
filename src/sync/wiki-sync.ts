@@ -327,7 +327,7 @@ function failProblems(
 /** One cycle commit: what the message summarizes. */
 export interface CommitSummary {
   readonly sourcesCount: number;
-  /** e.g. `1 added, 0 changed, 0 removed`. */
+  /** e.g. `1 added, 0 changed, 0 removed, 0 renamed`. */
   readonly sourcesLine: string;
   readonly pagesCreated: number;
   readonly pagesUpdated: number;
@@ -514,10 +514,11 @@ async function commitSummaryOf(
     const added = sourceCount(ingest.diff, "added");
     const changed = sourceCount(ingest.diff, "changed");
     const removed = sourceCount(ingest.diff, "removed");
+    const renamed = sourceCount(ingest.diff, "renamed");
 
     return {
-      sourcesCount: added + changed + removed,
-      sourcesLine: `${added} added, ${changed} changed, ${removed} removed`,
+      sourcesCount: added + changed + removed + renamed,
+      sourcesLine: `${added} added, ${changed} changed, ${removed} removed, ${renamed} renamed`,
       pagesCreated: pages.created.length,
       pagesUpdated: pages.updated.length,
       lintReport: lint?.reportWritten ? lint.reportPath : undefined,

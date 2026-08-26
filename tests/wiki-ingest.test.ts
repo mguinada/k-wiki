@@ -1451,6 +1451,63 @@ describe("removedNoteContent", () => {
       removedNoteContent(dataRoot, "raw/notes/Engineering/a.md", process.env),
     ).resolves.toBeUndefined();
   });
+
+  it("returns the blob matching the expected hash, skipping newer committed edits", async () => {
+    const dataRoot = await makeDataRepo({ "a.md": "first body" });
+
+    await writeFile(
+      join(dataRoot, "raw", "notes", "Engineering", "a.md"),
+      "second body",
+    );
+    await commitAll(dataRoot, "edit body");
+    await rm(join(dataRoot, "raw", "notes", "Engineering", "a.md"));
+    await commitAll(dataRoot, "remove note");
+
+    await expect(
+      removedNoteContent(
+        dataRoot,
+        "raw/notes/Engineering/a.md",
+        process.env,
+        hashOf("first body"),
+      ),
+    ).resolves.toBe("first body");
+  });
+
+  it("returns the HEAD blob when it matches the expected hash", async () => {
+    const dataRoot = await makeDataRepo({ "a.md": "last body" });
+
+    await rm(join(dataRoot, "raw", "notes", "Engineering", "a.md"));
+
+    await expect(
+      removedNoteContent(
+        dataRoot,
+        "raw/notes/Engineering/a.md",
+        process.env,
+        hashOf("last body"),
+      ),
+    ).resolves.toBe("last body");
+  });
+
+  it("returns undefined when no committed blob matches the expected hash", async () => {
+    const dataRoot = await makeDataRepo({ "a.md": "first body" });
+
+    await writeFile(
+      join(dataRoot, "raw", "notes", "Engineering", "a.md"),
+      "second body",
+    );
+    await commitAll(dataRoot, "edit body");
+    await rm(join(dataRoot, "raw", "notes", "Engineering", "a.md"));
+    await commitAll(dataRoot, "remove note");
+
+    await expect(
+      removedNoteContent(
+        dataRoot,
+        "raw/notes/Engineering/a.md",
+        process.env,
+        hashOf("never committed"),
+      ),
+    ).resolves.toBeUndefined();
+  });
 });
 
 describe("directSetForRemovals", () => {
@@ -1586,6 +1643,23 @@ async function makeDataRepo(notes: Record<string, string>): Promise<string> {
   );
 
   return dataRoot;
+}
+
+/** Commit every change in a data repo, as a sync cycle would. */
+async function commitAll(dataRoot: string, message: string): Promise<void> {
+  await run("git", ["-C", dataRoot, "add", "-A"]);
+  await run("git", [
+    "-C",
+    dataRoot,
+    "-c",
+    "user.email=t@t",
+    "-c",
+    "user.name=t",
+    "commit",
+    "--quiet",
+    "-m",
+    message,
+  ]);
 }
 
 interface Harness {
@@ -2318,6 +2392,76 @@ describe("runWikiIngest", () => {
       join(h.dataRoot, "raw", "manifest.json"),
       serializeManifest(manifestWith("Engineering", { "b.md": entry("same") })),
     );
+
+    const result = await runWikiIngest(optionsFor(h));
+
+    expect(result.status).toBe("ran");
+    if (result.status !== "ran") {
+      return;
+    }
+
+    expect(result.mode).toBe("incremental");
+    expect(invocation(h, 1).args.at(-1)).toContain(
+      "→ Engineering/a.md → Engineering/b.md",
+    );
+  });
+
+  it("does not pair a rename across a committed body edit the snapshot skipped", async () => {
+    const h = await makeHarness({ "a.md": "old body" });
+
+    await runWikiIngest(optionsFor(h));
+
+    const note = join(h.dataRoot, "raw", "notes", "Engineering", "a.md");
+
+    await writeFile(note, "new body");
+    await commitAll(h.dataRoot, "edit body");
+    await rm(note);
+    await writeFile(
+      join(h.dataRoot, "raw", "notes", "Engineering", "b.md"),
+      "new body",
+    );
+    await writeFile(
+      join(h.dataRoot, "raw", "manifest.json"),
+      serializeManifest(
+        manifestWith("Engineering", { "b.md": entry("new body") }),
+      ),
+    );
+    await commitAll(h.dataRoot, "move note");
+
+    const result = await runWikiIngest(optionsFor(h));
+
+    expect(result.status).toBe("ran");
+    if (result.status !== "ran") {
+      return;
+    }
+
+    expect(result.mode).toBe("expunge");
+    expect(invocation(h, 1).args.at(-1)).toContain("+ Engineering/b.md");
+    expect(invocation(h, 1).args.at(-1)).not.toContain(
+      "→ Engineering/a.md → Engineering/b.md",
+    );
+  });
+
+  it("still pairs a rename whose committed interim edit touched only frontmatter", async () => {
+    const tagged = "---\ntags: [a]\n---\nSame body.\n";
+    const retagged = "---\ntags: [a, b]\n---\nSame body.\n";
+    const h = await makeHarness({ "a.md": tagged });
+
+    await runWikiIngest(optionsFor(h));
+
+    const dir = join(h.dataRoot, "raw", "notes", "Engineering");
+
+    await writeFile(join(dir, "a.md"), retagged);
+    await commitAll(h.dataRoot, "retag note");
+    await rm(join(dir, "a.md"));
+    await writeFile(join(dir, "b.md"), retagged);
+    await writeFile(
+      join(h.dataRoot, "raw", "manifest.json"),
+      serializeManifest(
+        manifestWith("Engineering", { "b.md": entry(retagged) }),
+      ),
+    );
+    await commitAll(h.dataRoot, "move note");
 
     const result = await runWikiIngest(optionsFor(h));
 
