@@ -35,7 +35,7 @@ export const BINDING_FILE = ".k-wiki.json";
 /** Environment variable naming a checkout without a binding file. */
 export const CHECKOUT_ENV = "K_WIKI_CHECKOUT";
 
-/** The wiki page types, in listing order (guide §9). */
+/** The wiki page types (guide §9), listed in index.md order (guide §11). */
 export const PAGE_TYPES = [
   "concept",
   "entity",
@@ -260,7 +260,7 @@ Commands:
                      settings file, data repo, wiki dir, index.md.
                      No agent, no side effects.
   list [<type>]      Print one 'slug — title' line per wiki page,
-                     grouped by type in schema order; the navigation
+                     grouped by type in index.md order; the navigation
                      pages (index, log, overview) are not listed —
                      read them by name. Optional filter, one of
                      concept|entity|source|query|comparison.

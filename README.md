@@ -979,10 +979,11 @@ There is no filing passthrough: `--file-last` stays the human-run
 `wiki-query` command inside the checkout. The four read-only
 commands open no write path: `status` prints the resolution chain
 (checkout, origin, settings, data repo, wiki dir, `index.md`);
-`list` prints one `slug — title` line per page grouped by type in
-schema order (the navigation pages `index`, `log`, `overview` are
-read by name instead); `read` prints one page verbatim by file name
-with near-match suggestions when absent; `health` delegates to the
+`list` prints one `slug — title` line per page grouped by type
+in the `index.md` order (guide §11; the navigation pages `index`,
+`log`, `overview` are read by name instead); `read` prints one page
+verbatim by file name with near-match suggestions when absent and
+an ambiguity error on duplicate file names; `health` delegates to the
 read-only `check-raw` coherence/freshness check against the bound
 projection (`--fail-on-stale` makes staleness blocking). A wrong
 pairing (a binding whose checkout resolves an unexpected data repo)
