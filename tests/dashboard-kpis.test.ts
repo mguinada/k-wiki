@@ -206,6 +206,25 @@ describe("computeKpis link graph", () => {
     expect(kpis.orphans).toEqual(["a.md"]);
   });
 
+  it("does not count the navigation root index.md as an orphan", () => {
+    const kpis = computeKpis({
+      now: NOW,
+      head: "abc1234",
+      pages: [
+        page({ path: "index.md", outbound: [] }),
+        page({ path: "orphan.md", outbound: [] }),
+      ],
+      rawNoteKeys: [],
+      ingestedKeys: [],
+      lastSync: null,
+      commits: [],
+      firstAdded: [],
+      lastQuery: null,
+    });
+
+    expect(kpis.orphans).toEqual(["orphan.md"]);
+  });
+
   it("skips cross-wiki link targets in the internal graph", () => {
     const kpis = computeKpis({
       now: NOW,

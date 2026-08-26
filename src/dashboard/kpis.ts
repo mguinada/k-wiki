@@ -341,6 +341,11 @@ export interface DashboardKpis {
   };
 }
 
+/** The wiki's navigation root: linked structurally (the file list,
+ *  the mirror's landing page), never by [[wikilinks]] — an orphan
+ *  signal on it is noise, so it is exempt (issue #73 review). */
+const NAVIGATION_ROOT = "index.md";
+
 /** Compute every KPI from one input (issue #73's KPI menu). */
 export function computeKpis(input: DashboardInput): DashboardKpis {
   const nameToPath = buildPageIndex(input.pages.map((page) => page.path));
@@ -380,7 +385,11 @@ export function computeKpis(input: DashboardInput): DashboardKpis {
     syncLagDays:
       syncLagDays !== null && Number.isFinite(syncLagDays) ? syncLagDays : null,
     orphans: input.pages
-      .filter((page) => (inbound.get(page.path) ?? 0) === 0)
+      .filter(
+        (page) =>
+          page.path !== NAVIGATION_ROOT &&
+          (inbound.get(page.path) ?? 0) === 0,
+      )
       .map((page) => page.path)
       .sort(),
     deadLinks,
