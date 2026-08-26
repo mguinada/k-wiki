@@ -4,9 +4,13 @@ import {
   computeKpis,
   funnelFrom,
   growthSeries,
+  ingestCadence,
+  mostCitedSources,
+  needsReviewChurn,
   type PageSnapshot,
   provenanceBuckets,
   runsPerWeek,
+  sourceRotBuckets,
   stalenessBuckets,
   statusCounts,
   typeCounts,
@@ -29,6 +33,7 @@ function page(overrides: Partial<PageSnapshot> = {}): PageSnapshot {
     updated: "2026-08-25",
     status: "stable",
     sourcesCount: 2,
+    sources: [],
     outbound: [],
     ...overrides,
   };
@@ -144,6 +149,8 @@ describe("computeKpis link graph", () => {
       rawNoteKeys: [],
       ingestedKeys: [],
       lastSync: null,
+      rawNoteSyncDates: [],
+      statusFlips: [],
       commits: [],
       firstAdded: [],
       lastQuery: null,
@@ -163,6 +170,8 @@ describe("computeKpis link graph", () => {
       rawNoteKeys: [],
       ingestedKeys: [],
       lastSync: null,
+      rawNoteSyncDates: [],
+      statusFlips: [],
       commits: [],
       firstAdded: [],
       lastQuery: null,
@@ -179,6 +188,8 @@ describe("computeKpis link graph", () => {
       rawNoteKeys: [],
       ingestedKeys: [],
       lastSync: null,
+      rawNoteSyncDates: [],
+      statusFlips: [],
       commits: [],
       firstAdded: [],
       lastQuery: null,
@@ -198,6 +209,8 @@ describe("computeKpis link graph", () => {
       rawNoteKeys: [],
       ingestedKeys: [],
       lastSync: null,
+      rawNoteSyncDates: [],
+      statusFlips: [],
       commits: [],
       firstAdded: [],
       lastQuery: null,
@@ -217,6 +230,8 @@ describe("computeKpis link graph", () => {
       rawNoteKeys: [],
       ingestedKeys: [],
       lastSync: null,
+      rawNoteSyncDates: [],
+      statusFlips: [],
       commits: [],
       firstAdded: [],
       lastQuery: null,
@@ -233,6 +248,8 @@ describe("computeKpis link graph", () => {
       rawNoteKeys: [],
       ingestedKeys: [],
       lastSync: null,
+      rawNoteSyncDates: [],
+      statusFlips: [],
       commits: [],
       firstAdded: [],
       lastQuery: null,
@@ -254,6 +271,8 @@ describe("computeKpis link graph", () => {
       rawNoteKeys: [],
       ingestedKeys: [],
       lastSync: null,
+      rawNoteSyncDates: [],
+      statusFlips: [],
       commits: [],
       firstAdded: [],
       lastQuery: null,
@@ -281,6 +300,8 @@ describe("computeKpis link graph", () => {
       rawNoteKeys: [],
       ingestedKeys: [],
       lastSync: null,
+      rawNoteSyncDates: [],
+      statusFlips: [],
       commits: [],
       firstAdded: [],
       lastQuery: null,
@@ -440,6 +461,8 @@ describe("computeKpis totals", () => {
       rawNoteKeys: [],
       ingestedKeys: [],
       lastSync: null,
+      rawNoteSyncDates: [],
+      statusFlips: [],
       commits: [],
       firstAdded: [],
       lastQuery: null,
@@ -456,6 +479,8 @@ describe("computeKpis totals", () => {
       rawNoteKeys: [],
       ingestedKeys: [],
       lastSync: "2026-08-30T00:00:00.000Z",
+      rawNoteSyncDates: [],
+      statusFlips: [],
       commits: [],
       firstAdded: [],
       lastQuery: null,
@@ -472,6 +497,8 @@ describe("computeKpis totals", () => {
       rawNoteKeys: [],
       ingestedKeys: [],
       lastSync: null,
+      rawNoteSyncDates: [],
+      statusFlips: [],
       commits: [],
       firstAdded: [],
       lastQuery: null,
@@ -488,11 +515,197 @@ describe("computeKpis totals", () => {
       rawNoteKeys: [],
       ingestedKeys: [],
       lastSync: "banana",
+      rawNoteSyncDates: [],
+      statusFlips: [],
       commits: [],
       firstAdded: [],
       lastQuery: null,
     });
 
     expect(kpis.syncLagDays).toBeNull();
+  });
+});
+
+describe("missingPages", () => {
+  it("ranks dead-link targets by how many pages want them", () => {
+    const kpis = computeKpis({
+      now: NOW,
+      head: "abc1234",
+      pages: [
+        page({ path: "a.md", outbound: ["Wanted", "Wanted"] }),
+        page({ path: "b.md", outbound: ["Wanted"] }),
+        page({ path: "c.md", outbound: ["Also-wanted"] }),
+      ],
+      rawNoteKeys: [],
+      ingestedKeys: [],
+      lastSync: null,
+      rawNoteSyncDates: [],
+      statusFlips: [],
+      commits: [],
+      firstAdded: [],
+      lastQuery: null,
+    });
+
+    expect(kpis.missingPages).toEqual([
+      { target: "Wanted", wantedBy: 3 },
+      { target: "Also-wanted", wantedBy: 1 },
+    ]);
+  });
+
+  it("keeps at most five missing pages", () => {
+    const kpis = computeKpis({
+      now: NOW,
+      head: "abc1234",
+      pages: [1, 2, 3, 4, 5, 6].map((n) =>
+        page({ path: `p${n}.md`, outbound: [`Missing ${n}`] }),
+      ),
+      rawNoteKeys: [],
+      ingestedKeys: [],
+      lastSync: null,
+      rawNoteSyncDates: [],
+      statusFlips: [],
+      commits: [],
+      firstAdded: [],
+      lastQuery: null,
+    });
+
+    expect(kpis.missingPages).toHaveLength(5);
+  });
+
+  it("is empty when every link resolves", () => {
+    const kpis = computeKpis({
+      now: NOW,
+      head: "abc1234",
+      pages: [page({ path: "a.md", outbound: [] })],
+      rawNoteKeys: [],
+      ingestedKeys: [],
+      lastSync: null,
+      rawNoteSyncDates: [],
+      statusFlips: [],
+      commits: [],
+      firstAdded: [],
+      lastQuery: null,
+    });
+
+    expect(kpis.missingPages).toEqual([]);
+  });
+});
+
+describe("sourceRotBuckets", () => {
+  it("buckets raw notes by time since their content last changed", () => {
+    const buckets = sourceRotBuckets(
+      [
+        { key: "V/new.md", lastSynced: "2026-08-30T00:00:00.000Z" },
+        { key: "V/aging.md", lastSynced: "2026-07-15T00:00:00.000Z" },
+        { key: "V/stale.md", lastSynced: "2026-05-01T00:00:00.000Z" },
+      ],
+      NOW,
+    );
+
+    expect(buckets).toEqual({ fresh: 1, aging: 1, stale: 1 });
+  });
+
+  it("counts a note last synced 31 days ago as aging", () => {
+    const buckets = sourceRotBuckets(
+      [{ key: "V/a.md", lastSynced: "2026-08-01T00:00:00.000Z" }],
+      NOW,
+    );
+
+    expect(buckets.aging).toBe(1);
+  });
+
+  it("counts a note last synced 91 days ago as stale", () => {
+    const buckets = sourceRotBuckets(
+      [{ key: "V/a.md", lastSynced: "2026-06-02T00:00:00.000Z" }],
+      NOW,
+    );
+
+    expect(buckets.stale).toBe(1);
+  });
+});
+
+describe("mostCitedSources", () => {
+  it("ranks raw notes by how many pages cite them", () => {
+    const cited = mostCitedSources([
+      page({ sources: ["notes/Engineering/a.md", "notes/Engineering/b.md"] }),
+      page({
+        path: "b.md",
+        sources: ["notes/Engineering/a.md", "[[a]]"],
+      }),
+    ]);
+
+    expect(cited).toEqual([
+      { entry: "notes/Engineering/a.md", citedBy: 2 },
+      { entry: "[[a]]", citedBy: 1 },
+      { entry: "notes/Engineering/b.md", citedBy: 1 },
+    ]);
+  });
+
+  it("keeps at most five sources", () => {
+    const cited = mostCitedSources([
+      page({
+        sources: [1, 2, 3, 4, 5, 6].map((n) => `notes/Engineering/s${n}.md`),
+      }),
+    ]);
+
+    expect(cited).toHaveLength(5);
+  });
+});
+
+describe("ingestCadence", () => {
+  it("reports the mean days between ingest runs", () => {
+    const cadence = ingestCadence([
+      {
+        date: "2026-08-30",
+        subject: "wiki-sync: 1 source processed, 2 pages touched",
+      },
+      {
+        date: "2026-08-28",
+        subject: "wiki-sync: 2 sources processed, 3 pages touched",
+      },
+      {
+        date: "2026-08-25",
+        subject: "wiki-sync: 3 sources processed, 4 pages touched",
+      },
+    ]);
+
+    expect(cadence).toBe(2.5);
+  });
+
+  it("is null without at least two runs", () => {
+    expect(
+      ingestCadence([{ date: "2026-08-30", subject: "wiki-sync: x" }]),
+    ).toBeNull();
+  });
+
+  it("ignores commits that are not runs", () => {
+    expect(
+      ingestCadence([
+        { date: "2026-08-30", subject: "sweep: rename pages" },
+        { date: "2026-08-25", subject: "wiki-sync: x" },
+      ]),
+    ).toBeNull();
+  });
+});
+
+describe("needsReviewChurn", () => {
+  it("buckets status-flip commits per week over the trailing weeks", () => {
+    const weeks = needsReviewChurn(
+      [
+        { date: "2026-08-31", subject: "anything" },
+        { date: "2026-08-31", subject: "anything" },
+        { date: "2026-08-20", subject: "anything" },
+      ],
+      NOW,
+    );
+
+    expect(weeks[weeks.length - 1]?.count).toBe(2);
+    expect(weeks[weeks.length - 3]?.count).toBe(1);
+  });
+
+  it("returns the trailing twelve weeks oldest first", () => {
+    const weeks = needsReviewChurn([], NOW);
+
+    expect(weeks).toHaveLength(12);
   });
 });

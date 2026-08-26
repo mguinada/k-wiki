@@ -21,6 +21,8 @@ export interface PageSnapshot {
   readonly status: string | null;
   /** Number of `sources` entries. */
   readonly sourcesCount: number;
+  /** `sources` entries as written (wikilinks still bracketed). */
+  readonly sources: readonly string[];
   /** Wikilink page names this page links to. */
   readonly outbound: readonly string[];
 }
@@ -51,8 +53,16 @@ export interface DashboardInput {
   readonly ingestedKeys: readonly string[] | null;
   /** Newest `last_synced` of the raw manifest; null when absent. */
   readonly lastSync: string | null;
+  /** Every raw note with its own `last_synced` (content-change age). */
+  readonly rawNoteSyncDates: readonly {
+    readonly key: string;
+    readonly lastSynced: string;
+  }[];
   /** Data-repo commits, newest first, subjects included. */
   readonly commits: readonly CommitFact[];
+  /** Commits that changed a `status: needs-review` line in wiki/,
+   *  newest first (git log -G; both directions of the flip). */
+  readonly statusFlips: readonly CommitFact[];
   /** First-add facts for wiki pages, from git history. */
   readonly firstAdded: readonly AdditionFact[];
   /** Timestamp recorded in outputs/last-query.md; null when absent. */
@@ -310,6 +320,95 @@ export function funnelFrom(
   };
 }
 
+/** Raw notes by time since their content last changed (the manifest
+ *  rewrites `last_synced` only when the hash changes): ≤ 30 days
+ *  fresh, 31–90 aging, > 90 stale. */
+export function sourceRotBuckets(
+  syncDates: readonly { key: string; lastSynced: string }[],
+  now: Date,
+): { fresh: number; aging: number; stale: number } {
+  const buckets = { fresh: 0, aging: 0, stale: 0 };
+
+  for (const note of syncDates) {
+    const age = ageInDays(note.lastSynced.slice(0, 10), now);
+
+    if (!Number.isFinite(age)) {
+      continue;
+    }
+
+    if (age <= 30) {
+      buckets.fresh++;
+    } else if (age <= 90) {
+      buckets.aging++;
+    } else {
+      buckets.stale++;
+    }
+  }
+
+  return buckets;
+}
+
+/** Raw notes ranked by how many pages cite them (a `sources`
+ *  in-degree; contamination blast radius, issue #79). */
+export function mostCitedSources(
+  pages: readonly PageSnapshot[],
+  topN = 5,
+): { entry: string; citedBy: number }[] {
+  const counts = new Map<string, number>();
+
+  for (const page of pages) {
+    for (const entry of page.sources) {
+      counts.set(entry, (counts.get(entry) ?? 0) + 1);
+    }
+  }
+
+  return [...counts.entries()]
+    .map(([entry, citedBy]) => ({ entry, citedBy }))
+    .sort(
+      (a, b) =>
+        b.citedBy - a.citedBy ||
+        (a.entry < b.entry ? -1 : a.entry > b.entry ? 1 : 0),
+    )
+    .slice(0, topN);
+}
+
+/** Mean days between ingest runs; null without at least two. */
+export function ingestCadence(commits: readonly CommitFact[]): number | null {
+  const dates = commits
+    .filter((commit) => isIngestRun(commit.subject))
+    .map((commit) => Date.parse(`${commit.date}T00:00:00.000Z`))
+    .filter((ms) => Number.isFinite(ms));
+
+  if (dates.length < 2) {
+    return null;
+  }
+
+  const gaps = dates.slice(1).map((ms, i) => Math.abs(ms - (dates[i] ?? ms)));
+
+  return gaps.reduce((total, gap) => total + gap, 0) / gaps.length / 86_400_000;
+}
+
+/** Status-flip commits per week (both directions of the flip —
+ *  `git log -G` matches any change to a matching line), oldest
+ *  first over the trailing twelve weeks. */
+export function needsReviewChurn(
+  statusFlips: readonly CommitFact[],
+  now: Date,
+  weeks = 12,
+): WeekPoint[] {
+  const index = new Map(trailingWeeks(now, weeks).map((week) => [week, 0]));
+
+  for (const flip of statusFlips) {
+    const monday = mondayOf(new Date(`${flip.date}T00:00:00.000Z`));
+
+    if (index.has(monday)) {
+      index.set(monday, (index.get(monday) ?? 0) + 1);
+    }
+  }
+
+  return [...index.entries()].map(([week, count]) => ({ week, count }));
+}
+
 /** Every KPI the dashboard renders, from one input. */
 export interface DashboardKpis {
   readonly totalPages: number;
@@ -325,6 +424,16 @@ export interface DashboardKpis {
   readonly deadLinks: readonly { source: string; target: string }[];
   readonly hubs: readonly { path: string; inbound: number }[];
   readonly statusCounts: readonly KpiBar[];
+  /** Dead-link targets ranked by demand; the next pages to write. */
+  readonly missingPages: readonly { target: string; wantedBy: number }[];
+  /** Raw notes by content age: fresh ≤ 30d, aging 31–90d, stale > 90d. */
+  readonly sourceRot: { fresh: number; aging: number; stale: number };
+  /** Most-cited `sources` entries (contamination blast radius). */
+  readonly mostCited: readonly { entry: string; citedBy: number }[];
+  /** Mean days between ingest runs; null without at least two. */
+  readonly cadenceDays: number | null;
+  /** `status: needs-review` flips per week, oldest first. */
+  readonly needsReviewChurn: readonly WeekPoint[];
   readonly runsPerWeek: readonly WeekPoint[];
   readonly sourcesPerRun: number | null;
   readonly growth: readonly WeekPoint[];
@@ -387,8 +496,7 @@ export function computeKpis(input: DashboardInput): DashboardKpis {
     orphans: input.pages
       .filter(
         (page) =>
-          page.path !== NAVIGATION_ROOT &&
-          (inbound.get(page.path) ?? 0) === 0,
+          page.path !== NAVIGATION_ROOT && (inbound.get(page.path) ?? 0) === 0,
       )
       .map((page) => page.path)
       .sort(),
@@ -406,6 +514,24 @@ export function computeKpis(input: DashboardInput): DashboardKpis {
       )
       .slice(0, 5),
     statusCounts: statusCounts(input.pages),
+    missingPages: [
+      ...deadLinks.reduce((counts, link) => {
+        counts.set(link.target, (counts.get(link.target) ?? 0) + 1);
+
+        return counts;
+      }, new Map<string, number>()),
+    ]
+      .map(([target, wantedBy]) => ({ target, wantedBy }))
+      .sort(
+        (a, b) =>
+          b.wantedBy - a.wantedBy ||
+          (a.target < b.target ? -1 : a.target > b.target ? 1 : 0),
+      )
+      .slice(0, 5),
+    sourceRot: sourceRotBuckets(input.rawNoteSyncDates, input.now),
+    mostCited: mostCitedSources(input.pages),
+    cadenceDays: ingestCadence(input.commits),
+    needsReviewChurn: needsReviewChurn(input.statusFlips, input.now),
     runsPerWeek: runsPerWeek(input.commits, input.now),
     sourcesPerRun: sourcesPerRun(input.commits),
     growth: growthSeries(input.firstAdded, input.now),

@@ -96,11 +96,22 @@ function sparkline(points: readonly WeekPoint[]): string {
   return `<svg viewBox="0 0 100 100" class="spark" role="img" aria-label="weekly activity">${rects}${labels}</svg>`;
 }
 
-/** The stat card: one number, one label, optional accent. */
-function stat(value: string, label: string, accent = false): string {
+/** The glossary affordance: a circled i that reveals its tip on
+ *  hover or keyboard focus — pure CSS, no script. */
+function infoTip(tip: string): string {
+  return `<span class="info" tabindex="0" aria-label="explanation">i<span class="tip">${esc(tip)}</span></span>`;
+}
+
+/** The stat card: one number, one label, optional accent and tip. */
+function stat(value: string, label: string, accent = false, tip = ""): string {
   const cls = accent ? "stat stat-accent" : "stat";
 
-  return `<div class="${cls}"><span class="stat-value">${esc(value)}</span><span class="stat-label">${esc(label)}</span></div>`;
+  return `<div class="${cls}"><span class="stat-value">${esc(value)}</span><span class="stat-label">${esc(label)}${tip === "" ? "" : infoTip(tip)}</span></div>`;
+}
+
+/** A card title with an optional glossary tip. */
+function cardTitle(title: string, tip = ""): string {
+  return `<h3>${esc(title)}${tip === "" ? "" : infoTip(tip)}</h3>`;
 }
 
 function section(id: string, title: string, body: string, note = ""): string {
@@ -118,11 +129,11 @@ export function renderDashboard(
   const coverage = section(
     "coverage",
     "Coverage & freshness",
-    `${stat(String(kpis.totalPages), "wiki pages")}` +
-      `${stat(String(kpis.backlog.count), "un-ingested sources", kpis.backlog.count > 0)}` +
-      `${stat(kpis.syncLagDays === null ? "—" : `${kpis.syncLagDays}d`, "since last sync")}` +
-      `<div class="card wide"><h3>Pages by type</h3>${barTable(kpis.typeCounts)}</div>` +
-      `<div class="card wide"><h3>Staleness — pages by age since update</h3>` +
+    `${stat(String(kpis.totalPages), "wiki pages", false, "Every content page under wiki/ (AGENTS.md and its meta template excluded).")}` +
+      `${stat(String(kpis.backlog.count), "un-ingested sources", kpis.backlog.count > 0, "Raw notes present in raw/ but absent from the last ingest snapshot — waiting for the next wiki-ingest run.")}` +
+      `${stat(kpis.syncLagDays === null ? "—" : `${kpis.syncLagDays}d`, "since last sync", false, "Days since the newest last_synced stamp in raw/manifest.json — how far the projection trails the vault.")}` +
+      `<div class="card wide">${cardTitle("Pages by type", "Frontmatter type of each page: source (one per raw note), concept, entity, comparison, query, topic.")}${barTable(kpis.typeCounts)}</div>` +
+      `<div class="card wide">${cardTitle("Staleness — pages by age since update", "Days since each page's frontmatter updated date. > 90 days (accent) means the page has not been touched in a quarter.")}` +
       barTable(
         [
           { label: "≤ 7 days", count: kpis.staleness.fresh },
@@ -130,6 +141,16 @@ export function renderDashboard(
           { label: "31–90 days", count: kpis.staleness.quarter },
           { label: "> 90 days", count: kpis.staleness.stale },
           { label: "undated", count: kpis.staleness.undated },
+        ],
+        { accentLabel: "> 90 days" },
+      ) +
+      `</div>` +
+      `<div class="card wide">${cardTitle("Source rot — raw notes by content age", "Days since each raw note's content last changed (manifest last_synced; a note re-syncs only when its hash changes). > 90 days is decaying source material.")}` +
+      barTable(
+        [
+          { label: "≤ 30 days", count: kpis.sourceRot.fresh },
+          { label: "31–90 days", count: kpis.sourceRot.aging },
+          { label: "> 90 days", count: kpis.sourceRot.stale },
         ],
         { accentLabel: "> 90 days" },
       ) +
@@ -158,20 +179,32 @@ export function renderDashboard(
           .map((link) => `<li>${esc(link.source)} → ${esc(link.target)}</li>`)
           .join("")}</ul>`;
 
+  const missingList =
+    kpis.missingPages.length === 0
+      ? `<p class="note">no missing pages — every link resolves</p>`
+      : `<ul class="ticks">${kpis.missingPages
+          .map(
+            (page) =>
+              `<li>${esc(page.target)} <span class="count">× ${page.wantedBy}</span></li>`,
+          )
+          .join("")}</ul>`;
+
   const structure = section(
     "structure",
     "Structure quality",
-    `${stat(String(kpis.orphans.length), "orphan pages", kpis.orphans.length > 0)}` +
-      `${stat(String(kpis.deadLinks.length), "dead links", kpis.deadLinks.length > 0)}` +
-      `${stat(kpis.hubs[0] ? String(kpis.hubs[0].inbound) : "0", "top in-degree")}` +
-      `<div class="card"><h3>Status</h3>${barTable(kpis.statusCounts, { accentLabel: "needs-review" })}</div>` +
-      `<div class="card"><h3>Hubs — most linked pages</h3><ul class="ticks">${kpis.hubs
+    `${stat(String(kpis.orphans.length), "orphan pages", kpis.orphans.length > 0, "Pages no other page links to (the navigation root index.md is exempt). Candidates for integration or deletion.")}` +
+      `${stat(String(kpis.deadLinks.length), "dead links", kpis.deadLinks.length > 0, "[[wikilinks]] that resolve to no page — internal only; cross-wiki targets are validated by check-crosslinks.")}` +
+      `${stat(kpis.hubs[0] ? String(kpis.hubs[0].inbound) : "0", "top in-degree", false, "Inbound links of the most-linked page — the wiki's gravitational center.")}` +
+      `<div class="card">${cardTitle("Status", "Frontmatter status of each page: ingested, stable, filed, needs-review (accent). needs-review is unresolved review debt.")}${barTable(kpis.statusCounts, { accentLabel: "needs-review" })}</div>` +
+      `<div class="card">${cardTitle("Hubs — most linked pages", "Top five pages by inbound [[wikilinks]].")}<ul class="ticks">${kpis.hubs
         .map(
           (hub) =>
             `<li>${esc(hub.path)} <span class="count">${hub.inbound}</span></li>`,
         )
         .join("")}</ul></div>` +
-      `<div class="card wide"><div class="cols"><div><h3>Orphans</h3>${orphansList}</div><div><h3>Dead links</h3>${deadList}</div></div></div>`,
+      `<div class="card">${cardTitle("Missing pages — most wanted", "Dead-link targets ranked by how many pages cite them: the next pages to write, by demand.")}${missingList}</div>` +
+      `<div class="card">${cardTitle("needs-review flips per week", "Commits that changed a status: needs-review line (either direction) — review-debt churn; steady zeros mean a stable review queue.")}${sparkline(kpis.needsReviewChurn)}</div>` +
+      `<div class="card wide"><div class="cols"><div>${cardTitle("Orphans")}${orphansList}</div><div>${cardTitle("Dead links")}${deadList}</div></div></div>`,
   );
 
   const avgSources =
@@ -180,10 +213,11 @@ export function renderDashboard(
   const activity = section(
     "activity",
     "Activity",
-    `<div class="card wide"><h3>Ingest runs per week</h3>${sparkline(kpis.runsPerWeek)}</div>` +
-      `${stat(avgSources, "sources per run (avg)")}` +
-      `${stat(String(kpis.growth[kpis.growth.length - 1]?.count ?? 0), "pages added, cumulative")}` +
-      `<div class="card wide"><h3>Wiki growth — cumulative pages</h3>${sparkline(kpis.growth)}</div>`,
+    `<div class="card wide">${cardTitle("Ingest runs per week", "Commits whose subject starts wiki-sync or wiki-ingest, bucketed by the Monday of their week.")}${sparkline(kpis.runsPerWeek)}</div>` +
+      `${stat(avgSources, "sources per run (avg)", false, "Mean N sources processed across pipeline commits — how much raw material a typical run digests.")}` +
+      `${stat(kpis.cadenceDays === null ? "—" : kpis.cadenceDays.toFixed(1), "days between runs", false, "Mean gap between consecutive ingest commits — the pipeline heartbeat.")}` +
+      `${stat(String(kpis.growth[kpis.growth.length - 1]?.count ?? 0), "pages added, cumulative", false, "Total pages ever added (git first-appearance), sampled weekly.")}` +
+      `<div class="card wide">${cardTitle("Wiki growth — cumulative pages")}${sparkline(kpis.growth)}</div>`,
   );
 
   const funnel =
@@ -204,9 +238,9 @@ export function renderDashboard(
   const provenance = section(
     "provenance",
     "Provenance",
-    `${stat(String(kpis.provenance.single), "single-source pages", kpis.provenance.single > 0)}` +
+    `${stat(String(kpis.provenance.single), "single-source pages", kpis.provenance.single > 0, "Pages citing exactly one source (accent) — the unverified frontier: nothing cross-checks them.")}` +
       `${stat(String(kpis.provenance.fourPlus), "pages with 4+ sources")}` +
-      `<div class="card wide"><h3>Citation coverage — pages by source count</h3>` +
+      `<div class="card wide">${cardTitle("Citation coverage — pages by source count", "How many sources each page cites: single-source pages are the weakest provenance.")}` +
       barTable(
         [
           { label: "0 sources", count: kpis.provenance.zero },
@@ -216,7 +250,13 @@ export function renderDashboard(
         ],
         { accentLabel: "1 source" },
       ) +
-      `</div>`,
+      `</div>` +
+      `<div class="card wide">${cardTitle("Most-cited sources", "Raw notes ranked by how many pages cite them — over-reliance on one source widens contamination blast radius.")}<ul class="ticks">${kpis.mostCited
+        .map(
+          (source) =>
+            `<li>${esc(source.entry)} <span class="count">${source.citedBy}</span></li>`,
+        )
+        .join("")}</ul></div>`,
   );
 
   return `<!DOCTYPE html>
@@ -277,6 +317,10 @@ ul.ticks li { padding: 0.2rem 0; border-bottom: 1px dotted var(--line); }
 ul.ticks li:last-child { border-bottom: none; }
 .count { color: var(--soft); }
 .note { font-size: 0.75rem; color: var(--soft); font-style: italic; }
+.info { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 0.95em; height: 0.95em; margin-left: 0.4em; border-radius: 50%; background: var(--mid); color: var(--bg); font-family: var(--mono); font-style: italic; font-size: 0.9em; line-height: 1; cursor: help; }
+.info .tip { display: none; position: absolute; left: 50%; transform: translateX(-50%); bottom: 1.7em; width: 17em; max-width: 60vw; background: var(--fg); color: var(--bg); padding: 0.6em 0.75em; border-radius: 6px; font-family: var(--mono); font-style: normal; font-size: 0.68rem; line-height: 1.5; text-align: left; z-index: 5; box-shadow: 0 2px 8px rgba(0,0,0,0.25); }
+.info:hover .tip, .info:focus-visible .tip { display: block; }
+.info:focus-visible { outline: 2px solid var(--accent); }
 .spark { display: block; width: 100%; max-height: 9rem; }
 .spark rect { fill: var(--bar); }
 .spark rect:last-of-type { fill: var(--accent); }

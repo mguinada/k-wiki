@@ -24,6 +24,7 @@ function fixtureKpis() {
         updated: "2026-08-25",
         status: "stable",
         sourcesCount: 11,
+        sources: ["notes/Engineering/evals.md"],
         outbound: ["overview"],
       },
       {
@@ -33,6 +34,7 @@ function fixtureKpis() {
         updated: "2026-05-01",
         status: "needs-review",
         sourcesCount: 1,
+        sources: ["notes/Engineering/a.md"],
         outbound: [],
       },
       {
@@ -42,6 +44,7 @@ function fixtureKpis() {
         updated: "2026-08-30",
         status: "filed",
         sourcesCount: 2,
+        sources: ["notes/Engineering/a.md", "[[agent-evals]]"],
         outbound: [],
       },
       {
@@ -51,12 +54,18 @@ function fixtureKpis() {
         updated: null,
         status: null,
         sourcesCount: 0,
+        sources: [],
         outbound: ["agent-evals"],
       },
     ],
     rawNoteKeys: ["Engineering/a.md", "Engineering/b.md", "Engineering/c.md"],
     ingestedKeys: ["Engineering/a.md", "Engineering/b.md"],
     lastSync: "2026-08-30T00:00:00.000Z",
+    rawNoteSyncDates: [
+      { key: "Engineering/a.md", lastSynced: "2026-08-30T00:00:00.000Z" },
+      { key: "Engineering/b.md", lastSynced: "2026-05-01T00:00:00.000Z" },
+    ],
+    statusFlips: [{ date: "2026-08-20", subject: "ingest" }],
     commits: [
       { date: "2026-08-25", subject: "wiki-sync: 9 sources processed" },
       { date: "2026-08-20", subject: "wiki-sync: 0 sources processed" },
@@ -212,5 +221,89 @@ describe("renderDashboard", () => {
 
     expect(html).toContain("a&lt;b&gt;&amp;c.md");
     expect(html).not.toContain("a<b>&c.md");
+  });
+});
+
+describe("renderDashboard glossary and added KPIs", () => {
+  it("renders an info icon with a CSS-only hover popup next to KPI titles", () => {
+    const html = renderDashboard(fixtureKpis(), {
+      generatedAt: NOW,
+      head: "abee7c4",
+      dataRoot: "~/Lab/k-wiki-data",
+    });
+
+    expect(html).toContain('class="info"');
+    expect(html).toContain('class="tip"');
+    expect(html).toContain(".info:hover .tip");
+    expect(html).toContain(".info:focus-visible .tip");
+  });
+
+  it("carries a concise explanation for every glossary tip", () => {
+    const html = renderDashboard(fixtureKpis(), {
+      generatedAt: NOW,
+      head: "abee7c4",
+      dataRoot: "~/Lab/k-wiki-data",
+    });
+
+    const tips = [...html.matchAll(/<span class="tip">([^<]+)<\/span>/g)];
+
+    expect(tips.length).toBeGreaterThanOrEqual(8);
+
+    for (const tip of tips) {
+      expect((tip[1] ?? "").length).toBeGreaterThan(10);
+    }
+  });
+
+  it("renders the missing-pages card with wanted-by counts", () => {
+    const kpis = fixtureKpis();
+    const html = renderDashboard(
+      { ...kpis, missingPages: [{ target: "eval-harness", wantedBy: 3 }] },
+      { generatedAt: NOW, head: "abee7c4", dataRoot: "~/Lab/k-wiki-data" },
+    );
+
+    expect(html).toContain("Missing pages");
+    expect(html).toContain("eval-harness");
+  });
+
+  it("renders the source-rot buckets", () => {
+    const html = renderDashboard(fixtureKpis(), {
+      generatedAt: NOW,
+      head: "abee7c4",
+      dataRoot: "~/Lab/k-wiki-data",
+    });
+
+    expect(html).toContain("Source rot");
+    expect(html).toContain("31–90 days");
+  });
+
+  it("renders the most-cited sources card", () => {
+    const html = renderDashboard(fixtureKpis(), {
+      generatedAt: NOW,
+      head: "abee7c4",
+      dataRoot: "~/Lab/k-wiki-data",
+    });
+
+    expect(html).toContain("Most-cited");
+    expect(html).toContain("notes/Engineering/evals.md");
+  });
+
+  it("renders the ingest cadence stat", () => {
+    const html = renderDashboard(fixtureKpis(), {
+      generatedAt: NOW,
+      head: "abee7c4",
+      dataRoot: "~/Lab/k-wiki-data",
+    });
+
+    expect(html).toContain("days between runs");
+  });
+
+  it("renders the needs-review churn sparkline", () => {
+    const html = renderDashboard(fixtureKpis(), {
+      generatedAt: NOW,
+      head: "abee7c4",
+      dataRoot: "~/Lab/k-wiki-data",
+    });
+
+    expect(html).toContain("needs-review flips");
   });
 });

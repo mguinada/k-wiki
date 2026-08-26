@@ -83,6 +83,7 @@ async function collectPages(wikiRoot: string): Promise<PageSnapshot[]> {
       updated: scalarField(text, "updated"),
       status: scalarField(text, "status"),
       sourcesCount: fields.sources.length,
+      sources: fields.sources,
       outbound: extractWikilinks(text).map((link) => link.target),
     });
   }
@@ -163,12 +164,16 @@ async function collectIngestedKeys(dataRoot: string): Promise<string[] | null> {
   return keys;
 }
 
-/** The newest last_synced of the raw manifest; null when absent. */
-async function collectLastSync(dataRoot: string): Promise<string | null> {
+/** The raw manifest's note sync stamps: the newest `last_synced`
+ *  plus one entry per note (content-change age per note). */
+async function collectManifestNotes(dataRoot: string): Promise<{
+  newest: string | null;
+  notes: { key: string; lastSynced: string }[];
+}> {
   const text = await readText(join(dataRoot, "raw", "manifest.json"));
 
   if (text === undefined) {
-    return null;
+    return { newest: null, notes: [] };
   }
 
   let parsed: unknown;
@@ -176,7 +181,7 @@ async function collectLastSync(dataRoot: string): Promise<string | null> {
   try {
     parsed = JSON.parse(text);
   } catch {
-    return null;
+    return { newest: null, notes: [] };
   }
 
   const vaults =
@@ -185,29 +190,40 @@ async function collectLastSync(dataRoot: string): Promise<string | null> {
       : undefined;
 
   if (typeof vaults !== "object" || vaults === null) {
-    return null;
+    return { newest: null, notes: [] };
   }
 
   let newest: string | null = null;
+  const notes: { key: string; lastSynced: string }[] = [];
 
-  for (const notes of Object.values(vaults as Record<string, unknown>)) {
-    if (typeof notes !== "object" || notes === null) {
+  for (const [vault, entries] of Object.entries(
+    vaults as Record<string, unknown>,
+  )) {
+    if (typeof entries !== "object" || entries === null) {
       continue;
     }
 
-    for (const entry of Object.values(notes as Record<string, unknown>)) {
+    for (const [rel, entry] of Object.entries(
+      entries as Record<string, unknown>,
+    )) {
       const stamp =
         typeof entry === "object" && entry !== null
           ? (entry as { last_synced?: unknown }).last_synced
           : undefined;
 
-      if (typeof stamp === "string" && (newest === null || stamp > newest)) {
+      if (typeof stamp !== "string") {
+        continue;
+      }
+
+      notes.push({ key: `${vault}/${rel}`, lastSynced: stamp });
+
+      if (newest === null || stamp > newest) {
         newest = stamp;
       }
     }
   }
 
-  return newest;
+  return { newest, notes };
 }
 
 /** The timestamp recorded in outputs/last-query.md; null when absent. */
@@ -245,10 +261,11 @@ async function collectCommits(
     env,
   );
 
-  if (log === undefined) {
-    return [];
-  }
+  return log === undefined ? [] : parseCommitLog(log);
+}
 
+/** `%as %s` log lines → commit facts. */
+function parseCommitLog(log: string): CommitFact[] {
   return log
     .split("\n")
     .filter((line) => line !== "")
@@ -256,6 +273,21 @@ async function collectCommits(
       date: line.slice(0, 10),
       subject: line.slice(11),
     }));
+}
+
+/** Commits that changed a `status: needs-review` line in wiki/,
+ *  newest first — both directions of the flip (git -G). */
+async function collectStatusFlips(
+  dataRoot: string,
+  env: NodeJS.ProcessEnv,
+): Promise<CommitFact[]> {
+  const log = await tryGit(
+    dataRoot,
+    ["log", "-G", "^status: needs-review", "--format=%as %s", "--", "wiki"],
+    env,
+  );
+
+  return log === undefined ? [] : parseCommitLog(log);
 }
 
 /** First-add facts for wiki pages, from git history. */
@@ -313,6 +345,7 @@ export async function collectData(
   } = {},
 ): Promise<DashboardInput> {
   const env = options.env ?? process.env;
+  const manifest = await collectManifestNotes(dataRoot);
 
   return {
     now: options.now?.() ?? new Date(),
@@ -322,7 +355,9 @@ export async function collectData(
     pages: await collectPages(join(dataRoot, "wiki")),
     rawNoteKeys: await collectRawNoteKeys(dataRoot),
     ingestedKeys: await collectIngestedKeys(dataRoot),
-    lastSync: await collectLastSync(dataRoot),
+    lastSync: manifest.newest,
+    rawNoteSyncDates: manifest.notes,
+    statusFlips: await collectStatusFlips(dataRoot, env),
     commits: await collectCommits(dataRoot, env),
     firstAdded: await collectFirstAdded(dataRoot, env),
     lastQuery: await collectLastQuery(dataRoot),

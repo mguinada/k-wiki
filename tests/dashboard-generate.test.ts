@@ -209,7 +209,7 @@ describe("writeDashboard", () => {
     );
 
     expect(html).toContain(
-      '<span class="stat-value">3</span><span class="stat-label">pages added, cumulative</span>',
+      '<span class="stat-value">3</span><span class="stat-label">pages added, cumulative',
     );
   });
 
