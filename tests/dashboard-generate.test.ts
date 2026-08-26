@@ -279,9 +279,146 @@ describe("writeDashboard", () => {
       true,
     );
   });
+
+  it("reads quoted frontmatter values", async () => {
+    const dataRoot = await makeDataRepo();
+
+    await writeFile(
+      join(dataRoot, "wiki", "quoted.md"),
+      [
+        "---",
+        'title: "Quoted"',
+        "type: source",
+        'status: "needs-review"',
+        'updated: "2026-05-01"',
+        "sources:",
+        '  - "notes/Engineering/a.md"',
+        "---",
+        "",
+        "Body.",
+        "",
+      ].join("\n"),
+    );
+
+    const html = await readFile(
+      await writeDashboard(dataRoot, {
+        now: () => new Date("2026-09-01T12:00:00.000Z"),
+      }),
+      "utf8",
+    );
+
+    expect(html).toContain("&gt; 90 days");
+  });
+
+  it("ignores non-vault files at the raw notes root", async () => {
+    const dataRoot = await makeDataRepo();
+
+    await writeFile(join(dataRoot, "raw", "notes", ".gitkeep"), "");
+
+    const path = await writeDashboard(dataRoot, {
+      now: () => new Date("2026-09-01T12:00:00.000Z"),
+    });
+
+    expect((await readFile(path, "utf8")).startsWith("<!DOCTYPE html>")).toBe(
+      true,
+    );
+  });
+
+  it("treats an unparseable snapshot as absent", async () => {
+    const dataRoot = await makeDataRepo();
+
+    await writeFile(
+      join(dataRoot, "outputs", "last-ingested-manifest.json"),
+      "not json",
+    );
+
+    const html = await readFile(
+      await writeDashboard(dataRoot, {
+        now: () => new Date("2026-09-01T12:00:00.000Z"),
+      }),
+      "utf8",
+    );
+
+    expect(html).toContain("no ingest snapshot found");
+  });
 });
 
 describe("dashboard CLI", () => {
+  it("rejects an unknown option naming it, exit 1", async () => {
+    const { main } = await import("../src/dashboard/generate.ts");
+    const argv = process.argv;
+    const err: string[] = [];
+
+    process.argv = [...argv.slice(0, 2), "--bogus"];
+
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) => err.push(parts.join(" ")));
+
+    try {
+      await main();
+    } finally {
+      process.argv = argv;
+      errorSpy.mockRestore();
+    }
+
+    expect(err.join("\n")).toContain('unknown option "--bogus"');
+    expect(process.exitCode).toBe(1);
+
+    process.exitCode = undefined;
+  });
+
+  it("rejects more than one data-repo argument", async () => {
+    const { main } = await import("../src/dashboard/generate.ts");
+    const argv = process.argv;
+    const err: string[] = [];
+
+    process.argv = [...argv.slice(0, 2), "/tmp", "/tmp"];
+
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) => err.push(parts.join(" ")));
+
+    try {
+      await main();
+    } finally {
+      process.argv = argv;
+      errorSpy.mockRestore();
+    }
+
+    expect(err.join("\n")).toContain("expected at most one <data-repo>");
+    expect(process.exitCode).toBe(1);
+
+    process.exitCode = undefined;
+  });
+
+  it("fails red on a data repo that does not exist", async () => {
+    const { main } = await import("../src/dashboard/generate.ts");
+    const argv = process.argv;
+    const err: string[] = [];
+
+    process.argv = [
+      ...argv.slice(0, 2),
+      join(tmpdir(), "k-wiki-dash-nonexistent"),
+    ];
+
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) => err.push(parts.join(" ")));
+
+    try {
+      await main();
+    } finally {
+      process.argv = argv;
+      errorSpy.mockRestore();
+    }
+
+    expect(err.join("\n")).toContain("dashboard: ");
+    expect(process.exitCode).toBe(1);
+
+    process.exitCode = undefined;
+  });
+
   it("prints help for --help without side effects", async () => {
     const dataRoot = await makeDataRepo();
 
