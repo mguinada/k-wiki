@@ -560,3 +560,17 @@ describe("dashboard CLI --open", () => {
     expect(out.join("\n")).toContain("--open");
   });
 });
+
+describe("dashboard opener platform detection", () => {
+  it("selects macOS open on darwin", async () => {
+    const { openerFor } = await import("../src/dashboard/generate.ts");
+
+    expect(openerFor("darwin")).toBe("open");
+  });
+
+  it("selects xdg-open on linux", async () => {
+    const { openerFor } = await import("../src/dashboard/generate.ts");
+
+    expect(openerFor("linux")).toBe("xdg-open");
+  });
+});

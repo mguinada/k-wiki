@@ -106,8 +106,9 @@ the file).
 
 Switches and arguments:
   -o, --open    Open the generated file in the default browser
-                (macOS \`open\`) after writing it; an \`open\` failure
-                prints an error and exits 1 — the file is still written.
+                (macOS \`open\`, Linux \`xdg-open\`) after writing it; an
+                opener failure prints an error and exits 1 — the file is
+                still written.
   -h, --help   Print this help and exit; no side effects.
   <data-repo>  The data repo root (the directory holding wiki/,
                raw/, and outputs/). Default: the sync.json dataRoot,
@@ -122,9 +123,16 @@ function colors() {
   return createColors(!process.env.NO_COLOR);
 }
 
-/** Open the generated dashboard in the default browser (macOS `open`). */
+/** The browser opener per platform: macOS `open`, Linux `xdg-open`
+ *  (the freedesktop default-handler standard); anything else falls
+ *  back to xdg-open with the command named in the error message. */
+export function openerFor(platform: NodeJS.Platform): string {
+  return platform === "darwin" ? "open" : "xdg-open";
+}
+
+/** Open the generated dashboard in the default browser. */
 function openInBrowser(path: string): Promise<void> {
-  return execFile("open", [path]).then(() => {});
+  return execFile(openerFor(process.platform), [path]).then(() => {});
 }
 
 /** dashboard entry point: `dashboard [-h | --help] [-o | --open] [<data-repo>]`. */
