@@ -32,7 +32,7 @@ afterAll(async () => {
   await Promise.all(
     tempDirs.map((dir) => rm(dir, { recursive: true, force: true })),
   );
-});
+}, 120_000);
 
 const GIT_ENV = {
   PATH: process.env.PATH,

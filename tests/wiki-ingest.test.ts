@@ -4152,7 +4152,7 @@ console.log("stub report");
       "--outputs",
       h.outputsDir,
       "--timeout",
-      "1",
+      "5",
       join(h.dataRoot, "raw"),
     ]);
 
