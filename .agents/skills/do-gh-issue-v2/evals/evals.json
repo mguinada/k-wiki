@@ -4,44 +4,62 @@
     {
       "id": 0,
       "eval_name": "blocked-issue-stops",
-      "prompt": "implement issue 6",
-      "expected_output": "Agent bootstraps codegraph, assigns @me to #6, discovers #6 is blocked by open issue #5, and stops with a clear explanation of what is unresolved. No implementation, no branch.",
+      "prompt": "do-gh-issue-v2: implement issue #144",
+      "expected_output": "Agent reads #144, finds it blocked by open issue #129 (stated in the body), and stops with a clear explanation of what is unresolved. No implementation, no assignment, no branch.",
       "files": [],
       "assertions": [
-        "Does not assign the user to issue #6 when stopping on a blocker — assignment follows the blocker gate",
-        "Sets no Projects Status: the board is untouched when the run stops at the gate",
-        "Final report identifies issue #5 as an open blocker, with its state and link",
-        "Stops without implementing: no new branch created and no source files modified in the run worktree",
-        "Codegraph init only when the run proceeds past the gate; on a blocked stop no index is built (a status check is allowed)"
+        "Does not assign the user to the issue when stopping on a blocker — assignment (step 6) follows the blocker gate (step 4)",
+        "Sets no Projects Status: the board is untouched when the run stops at the gate (step 10 is never reached)",
+        "Final report names issue #129 as an open blocker, with its state and link, and what must land first",
+        "Stops without implementing: no new branch or worktree created and no source files modified",
+        "No Codegraph index is built on a blocked stop (step 5 is past the gate; a status check is allowed)"
       ]
     },
     {
       "id": 1,
       "eval_name": "no-reference-asks",
-      "prompt": "pick up an issue from the backlog and work on it",
+      "prompt": "do-gh-issue-v2: pick up an issue from the backlog and work on it",
       "expected_output": "Agent lists open issues with gh issue list and asks the user to choose. Does not pick an issue on its own, does not start implementing.",
       "files": [],
       "assertions": [
         "Lists open issues via gh issue list before any implementation action",
         "Final output asks the user to choose an issue",
-        "Does not assign itself to any issue and creates no branch"
+        "Does not assign itself to any issue and creates no branch or worktree"
       ]
     },
     {
       "id": 2,
-      "eval_name": "happy-path-implements",
-      "prompt": "do issue 18, but don't create the PR yet — stop after verification and show me the handoff summary",
-      "expected_output": "Full pipeline: codegraph bootstrap, assignment, blocker check passes, branch 18-<slug>, TDD implementation within scope, README doc line, quality gates run and passing, acceptance criteria re-checked, five-section handoff summary, stops before push/PR.",
+      "eval_name": "happy-path-through-gate",
+      "prompt": "do-gh-issue-v2: implement issue #152 (https://github.com/mguinada/k-wiki/issues/152) end-to-end. Report to host pane w1T:p1 twice: herdr agent prompt w1T:p1 'issue #152: <PR URL>' as soon as the PR opens (pipeline may still be running), and one final line after your handoff: 'issue #152: <outcome>, <PR URL>'.",
+      "expected_output": "Full v2 pipeline: blocker check passes, branch 152-<slug> from origin/main in its own worktree, TDD fix of the flaky forge in tests/health-check.test.ts, quality gates green, implementation committed (step 14), refactor-change-set pass with its own commit or an explicit none-adopted record (steps 15-16), PR opened BEFORE gating with an uncommented Closes #152 line, gate push from a separate Herdr pane, axi run --skip pr --yes, terminal outcome confirmed via axi status, branch_sync-aware sync, final handoff with the Refactor-change-set subsection and Pipeline line.",
       "files": [],
       "assertions": [
-        "Creates a branch named 18-<slug> (exact convention, no prefixes or suffixes)",
+        "Creates a branch named 152-<slug> (exact convention, no prefixes or suffixes) from origin/main",
         "Attempts to set the issue's Projects Status to 'In progress' after the branch/worktree exists and before the first implementation edit; if the board cannot be read or written, prints one warning naming the cause and continues",
-        "Test-first evidence: a failing test run is recorded before implementation files are written",
-        "Vitest suite present and npm test passes, recorded in outputs",
-        "All issue acceptance criteria addressed: checker exits 0 on current repo, suite covers extraction/resolution/exit behavior, broken-link fixture exits 1",
-        "README documents npm run check-links",
-        "Handoff summary contains all five sections: what changed, docs changed, verification run, remaining risk, blockers",
-        "Stops before PR: no branch push and no gh pr create"
+        "The forge fix lands in tests/health-check.test.ts with a guaranteed-differing last character (endsWith(\"0\") ? \"1\" : \"0\") and repeated runs of tests/health-check.test.ts stay green",
+        "Implementation is committed before the refactor pass runs, so any refactor changes form their own commit on top (or the pass records that nothing was adopted and creates no empty commit)",
+        "The refactor-change-set pass runs over the full change set and its adopted/rejected lists are recorded",
+        "A PR exists on the branch before the first git push no-mistakes, and its body contains an uncommented 'Closes #152' line",
+        "The gate push runs in a separate Herdr pane (pane split + pane run), with pane wait-output for the pipeline start between the push and the axi command",
+        "The axi run invocation carries both --skip pr and --yes",
+        "The terminal outcome is confirmed via no-mistakes axi status from the agent's own shell, not from the pane transcript alone",
+        "Post-outcome sync follows the branch_sync.next_action.code reported by axi status (sync/recover_custody/continue_active_run/user_owned)",
+        "Final handoff contains the Refactor-change-set subsection (adopted + rejected) and the Pipeline line with the outcome and PR URL",
+        "Both host-pane reports arrive: PR URL right after the PR opens, and the outcome line after the handoff",
+        "If the gate run is still active when nothing remains to do, the agent ends the turn with an interim handoff marked pipeline pending naming the gate pane ID, and on the next prompt finishes: axi status confirmation, sync, final handoff"
+      ]
+    },
+    {
+      "id": 3,
+      "eval_name": "non-herdr-fallback",
+      "prompt": "do-gh-issue-v2: implement issue #152 (run in an environment where HERDR_ENV is unset)",
+      "expected_output": "Steps 1-16 proceed normally. At step 17 the pane path requires Herdr: the check test \"${HERDR_ENV:-}\" = 1 fails, the agent warns the user, and drives the gate blocking in its own shell instead — same commands, same flags (--skip pr --yes), still to a terminal outcome with branch_sync-aware sync.",
+      "files": [],
+      "assertions": [
+        "Detects the missing Herdr environment at step 17 (the HERDR_ENV check) rather than attempting herdr commands blindly",
+        "Prints a warning naming the missing Herdr environment before falling back",
+        "Makes no herdr pane calls (no pane split, no pane run) on the fallback path",
+        "Still pushes through the no-mistakes gate and drives axi run with --skip pr and --yes, blocking in its own shell, to a terminal outcome confirmed via axi status"
       ]
     }
   ]
