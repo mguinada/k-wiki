@@ -126,9 +126,10 @@ export async function main(): Promise<void> {
   }
 
   const positional = args.filter((arg) => !arg.startsWith("-"));
+  const unknown = args.find((arg) => arg.startsWith("-"));
 
-  if (args.length !== positional.length) {
-    console.error(colors().red(`dashboard: unknown option`));
+  if (unknown !== undefined) {
+    console.error(colors().red(`dashboard: unknown option ${JSON.stringify(unknown)}`));
     process.exitCode = 1;
 
     return;

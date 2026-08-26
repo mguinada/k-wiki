@@ -59,6 +59,18 @@ describe("stalenessBuckets", () => {
     expect(buckets.stale).toBe(1);
   });
 
+  it("counts a page updated exactly 30 days ago as month, not quarter", () => {
+    const buckets = stalenessBuckets([page({ updated: "2026-08-02" })], NOW);
+
+    expect(buckets.month).toBe(1);
+  });
+
+  it("counts a page updated exactly 90 days ago as quarter, not stale", () => {
+    const buckets = stalenessBuckets([page({ updated: "2026-06-03" })], NOW);
+
+    expect(buckets.quarter).toBe(1);
+  });
+
   it("counts a page without an updated field as undated", () => {
     const buckets = stalenessBuckets([page({ updated: null })], NOW);
 
