@@ -64,7 +64,8 @@ gating specifics are in `docs/no-mistakes.md`.
 - **Adopted:** … (what changed and why)
 - **Rejected:** … (what was skipped and why)
 
-- **Pipeline:** `outcome: <checks-passed|passed|failed|cancelled>` — PR: <url>, ready for human review/merge (gate does not monitor CI)
+- **Pipeline:** `outcome: <checks-passed|passed|failed|cancelled>` — PR: <url> (on checks-passed/passed: ready for human review/merge; the gate does not monitor CI)
+  - Interim variant while the run is live: `- **Pipeline:** pending — gate pane <pane-id>; final handoff on the next prompt after the terminal outcome.`
 - **Remaining risk or follow-up:** …
 - **Blockers:** … (or "none — issue completed")
 ```
