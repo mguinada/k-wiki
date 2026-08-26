@@ -96,7 +96,7 @@ Run order from the repo root, before declaring work complete:
 npm run typecheck   # gate — always
 npm run lint        # gate — always
 npm test            # gate — always (unit only; e2e is NOT included)
-npm run e2e         # when the change touches src/sync/, src/ingest/, src/query/, src/wiki/, src/cli/, src/fixtures/, tests/e2e/, or raw/
+npm run e2e         # when the change touches src/sync/, src/ingest/, src/query/, src/dashboard/, src/wiki/, src/cli/, src/fixtures/, tests/e2e/, or raw/
 npm run health      # same trigger as e2e; also safe to run any time — read-only, no vault access
 ```
 
@@ -187,9 +187,10 @@ mandatory pre-handoff step. Before you declare work complete:
 2. Empty list — nothing to do; the step is complete.
 3. Non-empty list — load the mutation-triage skill
    (`.agents/skills/mutation-triage/SKILL.md`) and follow it: kill every
-   survivor with a new or stronger test, or record it as an equivalent
-   mutant in the PR body. Re-run `npm run mutation:changed` until only
-   recorded equivalents remain.
+   survivor with a new or stronger test (write the whole batch of
+   killing tests first), or record it as an equivalent mutant in the PR
+   body; then re-run `npm run mutation:changed` once per batch until
+   only recorded equivalents remain.
 4. `npm run mutation:changed -- --full` replaces step 1 when the change
    is broad, touches test infrastructure, or the user asks for a full
    run; `npm run mutation:survivors` re-lists the last report without

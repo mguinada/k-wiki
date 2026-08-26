@@ -303,6 +303,20 @@ describe("wiki-ingest e2e", () => {
     const snapshot = await readFile(snapshotAt(repo.dataRoot), "utf8");
 
     expect(snapshot).toContain(hashOf("rag"));
+
+    // Post-ingest hook (issue #73): the dashboard regenerates after a
+    // successful run, stamped with the data repo HEAD.
+    const dashboard = await readFile(
+      join(repo.dataRoot, "dashboard.html"),
+      "utf8",
+    );
+
+    expect(dashboard.startsWith("<!DOCTYPE html>")).toBe(true);
+    expect(dashboard).toContain(
+      (
+        await run("git", ["-C", repo.dataRoot, "rev-parse", "--short", "HEAD"])
+      ).stdout.trim(),
+    );
   });
 
   it("derives the wiki page counts from the data repo git status", async () => {
@@ -406,6 +420,10 @@ describe("wiki-ingest e2e", () => {
   it("auto-reverts a run whose changed page has broken frontmatter", async () => {
     const repo = await makeRepo({ "AI/RAG.md": "rag" });
 
+    // A stale dashboard must survive a reverted run untouched (issue
+    // #73): the dashboard reflects the last good state.
+    await writeFile(join(repo.dataRoot, "dashboard.html"), "STALE\n");
+
     await writeFile(
       join(repo.dataRoot, "stub-agent.mjs"),
       [
@@ -443,6 +461,10 @@ describe("wiki-ingest e2e", () => {
     await expect(
       readFile(snapshotAt(repo.dataRoot), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
+
+    expect(await readFile(join(repo.dataRoot, "dashboard.html"), "utf8")).toBe(
+      "STALE\n",
+    );
   });
 
   it("auto-reverts a run that writes into raw/", async () => {

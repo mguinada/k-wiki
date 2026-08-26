@@ -58,6 +58,11 @@ const ENTRIES: readonly Entry[] = [
     usage: "Usage: check-raw",
   },
   {
+    launcher: "dashboard.ts",
+    module: "src/dashboard/generate.ts",
+    usage: "Usage: dashboard",
+  },
+  {
     launcher: "generate.ts",
     module: "src/fixtures/generate.ts",
     usage: "Usage: fixtures",

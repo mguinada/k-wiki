@@ -10,6 +10,7 @@ import {
   formatDuration,
   isWarning,
 } from "../cli/progress.ts";
+import { writeDashboard } from "../dashboard/generate.ts";
 import { runGit } from "../data/git.ts";
 import {
   isPlainObject,
@@ -1390,6 +1391,39 @@ async function ensureSnapshotIgnored(
 }
 
 /**
+ * Keep the regenerated dashboard out of the data repo's history
+ * (issue #73): dashboard.html is per-checkout derived output, and a
+ * bare `git add .` must never commit it. Appends the ignore entry
+ * when the data repo's .gitignore lacks it.
+ */
+async function ensureDashboardIgnored(
+  dataRoot: string,
+  onProgress: (message: string) => void,
+): Promise<void> {
+  const entry = "dashboard.html";
+  const ignorePath = join(dataRoot, ".gitignore");
+  const existing = (await readManifestText(ignorePath)) ?? "";
+
+  if (
+    existing
+      .split("\n")
+      .some((line) => line.trim() === entry || line.trim() === `/${entry}`)
+  ) {
+    return;
+  }
+
+  const body =
+    existing === "" || existing.endsWith("\n") ? existing : `${existing}\n`;
+
+  await writeFile(
+    ignorePath,
+    `${body}# static dashboard: regenerated per checkout, never committed (issue #73)\n${entry}\n`,
+    "utf8",
+  );
+  onProgress(`wiki-ingest: ignoring ${entry} in the data repo (${ignorePath})`);
+}
+
+/**
  * Adopt a pre-#112 snapshot into the data repo: the snapshot is
  * per-instance state and now lives in the data repo's outputs/ —
  * the code repo's outputs/ is gitignored, shared by every worktree,
@@ -1489,6 +1523,7 @@ export async function runWikiIngest(
   const legacySnapshotPath = join(options.outputsDir, SNAPSHOT_FILENAME);
 
   await ensureSnapshotIgnored(dataRoot, onProgress);
+  await ensureDashboardIgnored(dataRoot, onProgress);
   await adoptLegacySnapshot(legacySnapshotPath, snapshotPath, onProgress);
   await warnTrackedIgnored(dataRoot, env, onProgress);
 
@@ -1694,6 +1729,24 @@ export async function runWikiIngest(
   if (explicitDiff === undefined) {
     await mkdir(dirname(snapshotPath), { recursive: true });
     await writeManifest(snapshotPath, current, { snapshotFor: dataRoot });
+  }
+
+  // Post-run hook (issue #73): refresh the static dashboard after the
+  // digest and snapshot — the dashboard reflects the last good state,
+  // so a failure path (revert, agent error) never regenerates it. A
+  // refresh failure must not fail the run: the dashboard is derived.
+  try {
+    const dashboardPath = await writeDashboard(dataRoot, {
+      env,
+      now,
+      warn: (message) => onProgress(`wiki-ingest: WARNING — ${message}`),
+    });
+
+    onProgress(`wiki-ingest: dashboard refreshed at ${dashboardPath}`);
+  } catch (error) {
+    onProgress(
+      `wiki-ingest: WARNING — dashboard refresh failed (${error instanceof Error ? error.message : String(error)}); the previous dashboard stays`,
+    );
   }
 
   return { status: "ran", mode, digestPath, digest, pages, diff };
