@@ -146,9 +146,7 @@ export async function main(): Promise<void> {
   }
 
   const wantsOpen = args.includes("-o") || args.includes("--open");
-  const positional = args.filter(
-    (arg) => !arg.startsWith("-") && arg !== "-o" && arg !== "--open",
-  );
+  const positional = args.filter((arg) => !arg.startsWith("-"));
   const unknown = args.find(
     (arg) => arg.startsWith("-") && arg !== "-o" && arg !== "--open",
   );
