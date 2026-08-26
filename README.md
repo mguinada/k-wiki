@@ -638,7 +638,10 @@ runs the agent non-interactively **in the data repo root** — `prompts/ingest.m
 for the first run, `prompts/incremental.md` with the changed sources
 (`+` added, `~` changed, `→` renamed, `-` removed) appended for every
 later one, except that removals route to `prompts/expunge.md` (see
-[below](#when-a-note-is-deleted-expungement)). The
+[below](#when-a-note-is-deleted-expungement)); a move is detected as a
+rename even when only its frontmatter changed — identical body text
+still pairs, so a same-day tag edit during a rename never expunges
+(issue #143). The
 snapshot is stamped with the data repo it belongs to (issue #95): one
 stamped for another instance — or an unstamped legacy one — is ignored
 with a loud warning and the run falls back to the full prompt, so a
@@ -775,9 +778,10 @@ citing `queries/` pages are expunged, and `log.md` carries the
 pages — the wiki reflects the current `raw/`.
 
 Rename exception: deleting `AI/old.md` and adding `AI/new.md` with
-identical content in the same sync is a **move**, not a deletion — the
+identical content — or identical body text, frontmatter edits aside
+(issue #143) — in the same sync is a **move**, not a deletion: the
 run treats it as a change/retitle (`→ vault/old → vault/new`) and never
-routes to expunge. A rename *with* edits still routes to expunge.
+routes to expunge. A rename *with* body edits still routes to expunge.
 
 Afterwards, `npm run check-provenance -- <wiki-dir>` is the permanent
 backstop: every `sources` entry and every `origin` must resolve, so a

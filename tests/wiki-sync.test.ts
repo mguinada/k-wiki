@@ -297,6 +297,29 @@ describe("runWikiSync", () => {
     expect(stdout).toContain("- lint: outputs/lint-2026-08-20.md");
   });
 
+  it("counts a renamed source in the commit message", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "---\ntags: [a]\n---\nbody\n" });
+
+    await runWikiSync(optionsFor(h));
+    await rm(join(h.vaultRoot, "AI", "RAG.md"));
+    await writeFile(
+      join(h.vaultRoot, "AI", "Deep research.md"),
+      "---\ntags: [a, b]\n---\nbody\n",
+    );
+    await runWikiSync(optionsFor(h));
+
+    const { stdout } = await runGit(
+      h.dataRoot,
+      ["log", "-1", "--pretty=%B"],
+      process.env,
+    );
+
+    expect(stdout).toContain("wiki-sync: 1 source processed");
+    expect(stdout).toContain(
+      "- sources: 0 added, 0 changed, 0 removed, 1 renamed",
+    );
+  });
+
   it("writes the lint report into the data repo outputs", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
     const result = await runWikiSync(optionsFor(h));
