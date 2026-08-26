@@ -178,6 +178,41 @@ describe("writeDashboard", () => {
     expect(html).toContain("beginner-roadmap.md");
   });
 
+  it("excludes the operating-contract files from the growth count", async () => {
+    const dataRoot = await makeDataRepo();
+
+    await writeFile(join(dataRoot, "wiki", "AGENTS.md"), "contract\n");
+    await writeFile(join(dataRoot, "wiki", "AGENTS.meta.md"), "meta\n");
+    await writeFile(
+      join(dataRoot, "wiki", "extra-page.md"),
+      "---\ntype: concept\n---\n\nBody.\n",
+    );
+    await run(
+      "git",
+      ["add", "wiki/AGENTS.md", "wiki/AGENTS.meta.md", "wiki/extra-page.md"],
+      { cwd: dataRoot },
+    );
+    await git(
+      dataRoot,
+      "commit",
+      "--quiet",
+      "--date=2029-12-20T10:00:00Z",
+      "-m",
+      "contracts and a page",
+    );
+
+    const html = await readFile(
+      await writeDashboard(dataRoot, {
+        now: () => new Date("2030-01-01T12:00:00.000Z"),
+      }),
+      "utf8",
+    );
+
+    expect(html).toContain(
+      '<span class="stat-value">3</span><span class="stat-label">pages added, cumulative</span>',
+    );
+  });
+
   it("hides the query funnel when last-query.md is absent", async () => {
     const dataRoot = await makeDataRepo();
 

@@ -155,7 +155,7 @@ async function listFiles(
 
 /** Operating-contract files: never wiki pages (issue #74 adds the
  *  meta contract template that lives in the code repo's skeleton). */
-const CONTRACT_FILES = new Set(["AGENTS.md", "AGENTS.meta.md"]);
+export const CONTRACT_FILES = new Set(["AGENTS.md", "AGENTS.meta.md"]);
 
 /**
  * List every wiki page under `dir`: markdown files, excluding the

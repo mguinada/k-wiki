@@ -108,6 +108,12 @@ export function stalenessBuckets(
 
     const age = ageInDays(page.updated, now);
 
+    if (!Number.isFinite(age)) {
+      buckets.undated++;
+
+      continue;
+    }
+
     if (age <= 7) {
       buckets.fresh++;
     } else if (age <= 30) {
@@ -361,15 +367,18 @@ export function computeKpis(input: DashboardInput): DashboardKpis {
     }
   }
 
+  const syncLagDays =
+    input.lastSync === null
+      ? null
+      : Math.floor(ageInDays(input.lastSync.slice(0, 10), input.now));
+
   return {
     totalPages: input.pages.length,
     backlog: backlogFrom(input.rawNoteKeys, input.ingestedKeys),
     typeCounts: typeCounts(input.pages),
     staleness: stalenessBuckets(input.pages, input.now),
     syncLagDays:
-      input.lastSync === null
-        ? null
-        : Math.floor(ageInDays(input.lastSync.slice(0, 10), input.now)),
+      syncLagDays !== null && Number.isFinite(syncLagDays) ? syncLagDays : null,
     orphans: input.pages
       .filter((page) => (inbound.get(page.path) ?? 0) === 0)
       .map((page) => page.path)

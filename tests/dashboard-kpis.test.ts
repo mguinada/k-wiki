@@ -77,6 +77,12 @@ describe("stalenessBuckets", () => {
     expect(buckets.undated).toBe(1);
   });
 
+  it("counts a page with an unparseable updated value as undated", () => {
+    const buckets = stalenessBuckets([page({ updated: "banana" })], NOW);
+
+    expect(buckets.undated).toBe(1);
+  });
+
   it("sorts every page of a mixed set into exactly one bucket", () => {
     const buckets = stalenessBuckets(
       [
@@ -447,6 +453,22 @@ describe("computeKpis totals", () => {
       rawNoteKeys: [],
       ingestedKeys: [],
       lastSync: null,
+      commits: [],
+      firstAdded: [],
+      lastQuery: null,
+    });
+
+    expect(kpis.syncLagDays).toBeNull();
+  });
+
+  it("reports null sync lag for an unparseable manifest timestamp", () => {
+    const kpis = computeKpis({
+      now: NOW,
+      head: "abc1234",
+      pages: [],
+      rawNoteKeys: [],
+      ingestedKeys: [],
+      lastSync: "banana",
       commits: [],
       firstAdded: [],
       lastQuery: null,

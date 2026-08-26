@@ -1,8 +1,12 @@
 import type { Dirent } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { runGit } from "../data/git.ts";
-import { listWikiPages, parsePageFields } from "../wiki/pages.ts";
+import {
+  CONTRACT_FILES,
+  listWikiPages,
+  parsePageFields,
+} from "../wiki/pages.ts";
 import { extractWikilinks, listFiles } from "../wiki-links.ts";
 import type {
   AdditionFact,
@@ -287,7 +291,12 @@ async function collectFirstAdded(
       continue;
     }
 
-    if (line !== "" && date !== undefined && line.endsWith(".md")) {
+    if (
+      line !== "" &&
+      date !== undefined &&
+      line.endsWith(".md") &&
+      !CONTRACT_FILES.has(basename(line))
+    ) {
       additions.push({ path: line, date });
     }
   }

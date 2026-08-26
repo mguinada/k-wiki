@@ -1963,6 +1963,18 @@ describe("runWikiIngest", () => {
     expect(await readFile(join(h.dataRoot, ".gitignore"), "utf8")).toBe(before);
   });
 
+  it("treats an anchored dashboard.html entry line as already present", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const before =
+      "scratch/\noutputs/last-ingested-manifest.json\n/dashboard.html\n";
+
+    await writeFile(join(h.dataRoot, ".gitignore"), before);
+
+    await runWikiIngest(optionsFor(h));
+
+    expect(await readFile(join(h.dataRoot, ".gitignore"), "utf8")).toBe(before);
+  });
+
   it("adopts a legacy wrapper snapshot when the data repo has none", async () => {
     const h = await makeHarness({ "a.md": "a2" });
 

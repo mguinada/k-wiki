@@ -1404,7 +1404,11 @@ async function ensureDashboardIgnored(
   const ignorePath = join(dataRoot, ".gitignore");
   const existing = (await readManifestText(ignorePath)) ?? "";
 
-  if (existing.split("\n").some((line) => line.trim() === entry)) {
+  if (
+    existing
+      .split("\n")
+      .some((line) => line.trim() === entry || line.trim() === `/${entry}`)
+  ) {
     return;
   }
 
