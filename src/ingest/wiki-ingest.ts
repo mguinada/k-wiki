@@ -17,6 +17,7 @@ import {
   loadSyncConfig,
   resolveRawDir,
 } from "../sync/config.ts";
+import { sha256 } from "../sync/hash.ts";
 import {
   emptyManifest,
   type Manifest,
@@ -329,6 +330,104 @@ function extractRenames(
   };
 }
 
+/** The text after a closed frontmatter block; the full text when the
+ *  note opens with no frontmatter or the fence never closes. Mirrors
+ *  `parsePageFields`' whitespace-trimmed closing fence (and fidelity's
+ *  private `bodyAfterFrontmatter`) without coupling this layer to the
+ *  fidelity core. */
+function bodyAfterFrontmatter(text: string): string {
+  const lines = text.split("\n");
+
+  if (lines[0] !== "---") {
+    return text;
+  }
+
+  const end = lines.findIndex(
+    (line, index) => index > 0 && line.trim() === "---",
+  );
+
+  return end === -1 ? text : lines.slice(end + 1).join("\n");
+}
+
+/** SHA-256 of a note's text after the frontmatter fence. */
+function bodyHash(content: string): string {
+  return sha256(Buffer.from(bodyAfterFrontmatter(content), "utf8"));
+}
+
+/**
+ * Reclassify leftover removed+added pairs whose bodies (text after
+ * the frontmatter fence) hash equal as renames (issue #143): a move
+ * plus a same-day frontmatter edit is mechanically a rename and
+ * never routes to expunge. Equal full-file hashes are the primary
+ * path, already paired by `diffManifests`; this pass pairs only the
+ * leftovers, so a note whose body also changed stays
+ * removed + added — that ambiguity stays with the agent. Content a
+ * reader cannot supply (no git history, unreadable file) leaves the
+ * pair unpaired: the pre-#143 behavior.
+ */
+export async function pairBodyIdenticalRenames(
+  diff: ManifestDiff,
+  readRemoved: (
+    vault: string,
+    path: string,
+  ) => string | undefined | Promise<string | undefined>,
+  readAdded: (
+    vault: string,
+    path: string,
+  ) => string | undefined | Promise<string | undefined>,
+): Promise<ManifestDiff> {
+  const vaults = await Promise.all(
+    diff.vaults.map(async (vault) => {
+      if (vault.removed.length === 0 || vault.added.length === 0) {
+        return vault;
+      }
+
+      const removedHashes = new Map<string, string>();
+      const taken = new Set<string>();
+      const renamed = [...vault.renamed];
+
+      for (const path of vault.removed) {
+        const content = await readRemoved(vault.vault, path);
+
+        if (content !== undefined) {
+          removedHashes.set(path, bodyHash(content));
+        }
+      }
+
+      const added: string[] = [];
+
+      for (const to of vault.added) {
+        const content = await readAdded(vault.vault, to);
+        const hash = content === undefined ? undefined : bodyHash(content);
+        const from =
+          hash === undefined
+            ? undefined
+            : vault.removed.find(
+                (path) => !taken.has(path) && removedHashes.get(path) === hash,
+              );
+
+        if (from === undefined) {
+          added.push(to);
+
+          continue;
+        }
+
+        taken.add(from);
+        renamed.push({ from, to });
+      }
+
+      return {
+        ...vault,
+        added,
+        renamed,
+        removed: vault.removed.filter((path) => !taken.has(path)),
+      };
+    }),
+  );
+
+  return { vaults, empty: vaults.length === 0 };
+}
+
 /** Diff two manifests by note path and hash; vaults sort by name. */
 export function diffManifests(
   previous: Manifest,
@@ -608,12 +707,24 @@ async function tryGit(
  * it), so HEAD either still holds it (removal not yet committed) or the
  * last commit that touched the path is its deletion — whose parent
  * tree holds the final content. Undefined when git never knew the path.
+ *
+ * With `expectedHash` (the manifest snapshot's recorded hash for the
+ * path), the content is instead the newest committed blob whose
+ * full-file hash equals it — the state the snapshot saw, not the
+ * note's final content, so edits a failed ingest never processed are
+ * not mistaken for the snapshot's state. Undefined when no committed
+ * blob matches (the state is unrecoverable).
  */
 export async function removedNoteContent(
   dataRoot: string,
   rawRelPath: string,
   env: NodeJS.ProcessEnv,
+  expectedHash?: string,
 ): Promise<string | undefined> {
+  if (expectedHash !== undefined) {
+    return snapshotNoteContent(dataRoot, rawRelPath, env, expectedHash);
+  }
+
   const atHead = await tryGit(dataRoot, ["show", `HEAD:${rawRelPath}`], env);
 
   if (atHead !== undefined) {
@@ -629,6 +740,47 @@ export async function removedNoteContent(
   }
 
   return tryGit(dataRoot, ["show", `${sha}^:${rawRelPath}`], env);
+}
+
+/** The newest committed blob of a raw path whose full-file hash
+ *  equals `expectedHash`, walking the path's history from HEAD;
+ *  undefined when no committed blob ever matched. */
+async function snapshotNoteContent(
+  dataRoot: string,
+  rawRelPath: string,
+  env: NodeJS.ProcessEnv,
+  expectedHash: string,
+): Promise<string | undefined> {
+  const log = await tryGit(
+    dataRoot,
+    ["log", "--format=%H", "HEAD", "--", rawRelPath],
+    env,
+  );
+
+  if (log === undefined) {
+    return undefined;
+  }
+
+  for (const sha of log.split("\n")) {
+    if (sha === "") {
+      continue;
+    }
+
+    const content = await tryGit(
+      dataRoot,
+      ["show", `${sha}:${rawRelPath}`],
+      env,
+    );
+
+    if (
+      content !== undefined &&
+      sha256(Buffer.from(content, "utf8")) === expectedHash
+    ) {
+      return content;
+    }
+  }
+
+  return undefined;
 }
 
 /**
@@ -1303,7 +1455,8 @@ async function adoptLegacySnapshot(
  * scoped run never writes it, so pending manifest changes stay
  * pending. A manifest diff with removed
  * entries routes to the expunge flow (issue #65); removed entries that
- * pair with equal-hash additions are renames and never route there.
+ * pair with an addition by equal full-file hash or identical body
+ * text are renames and never route there (issue #143).
  */
 export async function runWikiIngest(
   options: IngestOptions,
@@ -1348,8 +1501,20 @@ export async function runWikiIngest(
     );
   }
 
-  const diff =
-    explicitDiff ?? diffManifests(previous ?? emptyManifest(), current);
+  const diff = await pairBodyIdenticalRenames(
+    explicitDiff ?? diffManifests(previous ?? emptyManifest(), current),
+    (vault, path) =>
+      removedNoteContent(
+        dataRoot,
+        `raw/notes/${vault}/${path}`,
+        env,
+        previous?.vaults[vault]?.[path]?.hash,
+      ),
+    (vault, path) =>
+      readFile(join(options.rawDir, "notes", vault, path), "utf8").catch(
+        () => undefined,
+      ),
+  );
 
   if (diff.empty) {
     const reason = "no changed sources since the last ingest; nothing to do";

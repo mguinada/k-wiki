@@ -743,8 +743,13 @@ ingest discipline with new routing, seeding, and a contract section
 
 `wiki-ingest` routes to `prompts/expunge.md` when the manifest diff has
 `removed` entries. A remove+add pair in the same vault with an identical
-content hash is a **rename**: the run treats it as a change/retitle,
-never as a deletion. A mixed diff — a deletion plus additions or edits
+content hash — or, since issue #143, identical body text after the
+frontmatter fence, so a move plus a same-day frontmatter edit still
+pairs — is a **rename**: the run treats it as a change/retitle,
+never as a deletion. For the body comparison the removed side is read
+from git history at the state the ingest snapshot recorded (by
+full-file hash); when that state cannot be recovered the pair stays
+removed+added — the fallback. A mixed diff — a deletion plus additions or edits
 in one sync — stays one expunge run: the wrapper appends
 `prompts/incremental.md` below the expunge prompt, so the non-removed
 sources are ingested in the same run instead of being silently marked

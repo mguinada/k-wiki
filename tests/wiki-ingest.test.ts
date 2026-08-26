@@ -22,6 +22,7 @@ import {
   type IngestRun,
   loadAgentSettings,
   main,
+  pairBodyIdenticalRenames,
   parseSettings,
   readPrompt,
   removedNoteContent,
@@ -544,6 +545,282 @@ describe("diffManifests", () => {
       changed: [],
       removed: [],
       renamed: [{ from: "old.md", to: "new.md" }],
+    });
+  });
+});
+
+describe("pairBodyIdenticalRenames", () => {
+  const OLD_TAGGED = "---\ntags:\n  - ai\n---\n\nBody text.\n";
+  const NEW_TAGGED = "---\ntags:\n  - ai\n  - renamed\n---\n\nBody text.\n";
+  const EDITED_BODY = "---\ntags:\n  - ai\n---\n\nDifferent body.\n";
+
+  function bodyDiffOf(
+    before: Record<string, string>,
+    after: Record<string, string>,
+  ) {
+    return diffManifests(
+      manifestWith("Engineering", notesWithContent(before)),
+      manifestWith("Engineering", notesWithContent(after)),
+    );
+  }
+
+  function notesWithContent(notes: Record<string, string>): VaultNotes {
+    return Object.fromEntries(
+      Object.entries(notes).map(([path, content]) => [path, entry(content)]),
+    );
+  }
+
+  function readerOf(notes: Record<string, string>) {
+    return (vault: string, path: string) => notes[`${vault}/${path}`];
+  }
+
+  it("pairs a moved note whose frontmatter changed but body did not as renamed", async () => {
+    const diff = await pairBodyIdenticalRenames(
+      bodyDiffOf({ "old.md": OLD_TAGGED }, { "new.md": NEW_TAGGED }),
+      readerOf({ "Engineering/old.md": OLD_TAGGED }),
+      readerOf({ "Engineering/new.md": NEW_TAGGED }),
+    );
+
+    expect(diff.vaults[0]).toEqual({
+      vault: "Engineering",
+      added: [],
+      changed: [],
+      removed: [],
+      renamed: [{ from: "old.md", to: "new.md" }],
+    });
+  });
+
+  it("keeps a moved note whose body also changed as removed and added", async () => {
+    const diff = await pairBodyIdenticalRenames(
+      bodyDiffOf({ "old.md": OLD_TAGGED }, { "new.md": EDITED_BODY }),
+      readerOf({ "Engineering/old.md": OLD_TAGGED }),
+      readerOf({ "Engineering/new.md": EDITED_BODY }),
+    );
+
+    expect(diff.vaults[0]).toMatchObject({
+      added: ["new.md"],
+      removed: ["old.md"],
+      renamed: [],
+    });
+  });
+
+  it("pairs a note that gained frontmatter during the move", async () => {
+    const gained = "---\nwiki: true\n---\nBody text.\n";
+    const diff = await pairBodyIdenticalRenames(
+      bodyDiffOf({ "old.md": "Body text.\n" }, { "new.md": gained }),
+      readerOf({ "Engineering/old.md": "Body text.\n" }),
+      readerOf({ "Engineering/new.md": gained }),
+    );
+
+    expect(diff.vaults[0]).toMatchObject({
+      removed: [],
+      renamed: [{ from: "old.md", to: "new.md" }],
+    });
+  });
+
+  it("keeps an unclosed opening fence as part of the body", async () => {
+    const diff = await pairBodyIdenticalRenames(
+      bodyDiffOf(
+        { "old.md": OLD_TAGGED },
+        { "new.md": "---\ntags:\n  - ai\nBody text.\n" },
+      ),
+      readerOf({ "Engineering/old.md": OLD_TAGGED }),
+      readerOf({ "Engineering/new.md": "---\ntags:\n  - ai\nBody text.\n" }),
+    );
+
+    expect(diff.vaults[0]).toMatchObject({
+      added: ["new.md"],
+      removed: ["old.md"],
+      renamed: [],
+    });
+  });
+
+  it("leaves equal-hash renames from the first pass unchanged", async () => {
+    const diff = await pairBodyIdenticalRenames(
+      bodyDiffOf(
+        { "same.md": "Identical.\n", "old.md": OLD_TAGGED },
+        { "same-2.md": "Identical.\n", "new.md": NEW_TAGGED },
+      ),
+      readerOf({ "Engineering/old.md": OLD_TAGGED }),
+      readerOf({ "Engineering/new.md": NEW_TAGGED }),
+    );
+
+    expect(diff.vaults[0]).toMatchObject({
+      renamed: [
+        { from: "same.md", to: "same-2.md" },
+        { from: "old.md", to: "new.md" },
+      ],
+    });
+  });
+
+  it("does not pair notes across different vaults", async () => {
+    const diff = diffManifests(
+      {
+        vaults: {
+          One: notesWithContent({ "old.md": OLD_TAGGED }),
+          Two: notesWithContent({ "keep.md": "Keep.\n" }),
+        },
+      },
+      {
+        vaults: {
+          One: notesWithContent({ "keep.md": "Keep.\n" }),
+          Two: notesWithContent({ "new.md": NEW_TAGGED }),
+        },
+      },
+    );
+    const paired = await pairBodyIdenticalRenames(
+      diff,
+      readerOf({ "One/old.md": OLD_TAGGED }),
+      readerOf({ "Two/new.md": NEW_TAGGED }),
+    );
+
+    expect(paired.vaults.every((vault) => vault.renamed.length === 0)).toBe(
+      true,
+    );
+  });
+
+  it("pairs with the first unmatched removed note in sorted order", async () => {
+    const otherTagged = "---\ntags: []\n---\n\nBody text.\n";
+    const diff = await pairBodyIdenticalRenames(
+      bodyDiffOf(
+        { "a-old.md": OLD_TAGGED, "b-old.md": otherTagged },
+        { "new.md": NEW_TAGGED },
+      ),
+      readerOf({
+        "Engineering/a-old.md": OLD_TAGGED,
+        "Engineering/b-old.md": otherTagged,
+      }),
+      readerOf({ "Engineering/new.md": NEW_TAGGED }),
+    );
+
+    expect(diff.vaults[0]).toMatchObject({
+      removed: ["b-old.md"],
+      renamed: [{ from: "a-old.md", to: "new.md" }],
+    });
+  });
+
+  it("keeps a pair unpaired when the removed content is unavailable", async () => {
+    const diff = await pairBodyIdenticalRenames(
+      bodyDiffOf({ "old.md": OLD_TAGGED }, { "new.md": NEW_TAGGED }),
+      readerOf({}),
+      readerOf({ "Engineering/new.md": NEW_TAGGED }),
+    );
+
+    expect(diff.vaults[0]).toMatchObject({
+      added: ["new.md"],
+      removed: ["old.md"],
+      renamed: [],
+    });
+  });
+
+  it("keeps a pair unpaired when neither side's content is available", async () => {
+    const diff = await pairBodyIdenticalRenames(
+      bodyDiffOf({ "old.md": OLD_TAGGED }, { "new.md": NEW_TAGGED }),
+      readerOf({}),
+      readerOf({}),
+    );
+
+    expect(diff.vaults[0]).toMatchObject({
+      added: ["new.md"],
+      removed: ["old.md"],
+      renamed: [],
+    });
+  });
+
+  it("keeps a body horizontal rule outside frontmatter as body text", async () => {
+    const bare = "Intro\n\n---\n\nSection.\n";
+    const gained = `---\nwiki: true\n---\n${bare}`;
+    const diff = await pairBodyIdenticalRenames(
+      bodyDiffOf({ "old.md": bare }, { "new.md": gained }),
+      readerOf({ "Engineering/old.md": bare }),
+      readerOf({ "Engineering/new.md": gained }),
+    );
+
+    expect(diff.vaults[0]).toMatchObject({
+      removed: [],
+      renamed: [{ from: "old.md", to: "new.md" }],
+    });
+  });
+
+  it("matches a closing fence with surrounding whitespace", async () => {
+    const diff = await pairBodyIdenticalRenames(
+      bodyDiffOf(
+        { "old.md": "---\ntags: [a]\n--- \nBody.\n" },
+        { "new.md": "---\ntags: [b]\n---\t\nBody.\n" },
+      ),
+      readerOf({ "Engineering/old.md": "---\ntags: [a]\n--- \nBody.\n" }),
+      readerOf({ "Engineering/new.md": "---\ntags: [b]\n---\t\nBody.\n" }),
+    );
+
+    expect(diff.vaults[0]).toMatchObject({
+      removed: [],
+      renamed: [{ from: "old.md", to: "new.md" }],
+    });
+  });
+
+  it("pairs a note that lost empty frontmatter during the move", async () => {
+    const diff = await pairBodyIdenticalRenames(
+      bodyDiffOf(
+        { "old.md": "---\n---\nBody text.\n" },
+        { "new.md": "Body text.\n" },
+      ),
+      readerOf({ "Engineering/old.md": "---\n---\nBody text.\n" }),
+      readerOf({ "Engineering/new.md": "Body text.\n" }),
+    );
+
+    expect(diff.vaults[0]).toMatchObject({
+      removed: [],
+      renamed: [{ from: "old.md", to: "new.md" }],
+    });
+  });
+
+  it("reads no note contents when a vault has no removed sources", async () => {
+    const diff = diffManifests(
+      manifestWith("Engineering", { "keep.md": entry("keep") }),
+      manifestWith("Engineering", {
+        "keep.md": entry("keep"),
+        "new.md": entry("new"),
+      }),
+    );
+    const paired = await pairBodyIdenticalRenames(
+      diff,
+      () => {
+        throw new Error("readRemoved must not be called");
+      },
+      () => {
+        throw new Error("readAdded must not be called");
+      },
+    );
+
+    expect(paired.vaults[0]).toMatchObject({
+      added: ["new.md"],
+      removed: [],
+      renamed: [],
+    });
+  });
+
+  it("reads no note contents when a vault has no added sources", async () => {
+    const diff = diffManifests(
+      manifestWith("Engineering", {
+        "gone.md": entry("gone"),
+        "keep.md": entry("keep"),
+      }),
+      manifestWith("Engineering", { "keep.md": entry("keep") }),
+    );
+    const paired = await pairBodyIdenticalRenames(
+      diff,
+      () => {
+        throw new Error("readRemoved must not be called");
+      },
+      () => {
+        throw new Error("readAdded must not be called");
+      },
+    );
+
+    expect(paired.vaults[0]).toMatchObject({
+      added: [],
+      removed: ["gone.md"],
+      renamed: [],
     });
   });
 });
@@ -1174,6 +1451,63 @@ describe("removedNoteContent", () => {
       removedNoteContent(dataRoot, "raw/notes/Engineering/a.md", process.env),
     ).resolves.toBeUndefined();
   });
+
+  it("returns the blob matching the expected hash, skipping newer committed edits", async () => {
+    const dataRoot = await makeDataRepo({ "a.md": "first body" });
+
+    await writeFile(
+      join(dataRoot, "raw", "notes", "Engineering", "a.md"),
+      "second body",
+    );
+    await commitAll(dataRoot, "edit body");
+    await rm(join(dataRoot, "raw", "notes", "Engineering", "a.md"));
+    await commitAll(dataRoot, "remove note");
+
+    await expect(
+      removedNoteContent(
+        dataRoot,
+        "raw/notes/Engineering/a.md",
+        process.env,
+        hashOf("first body"),
+      ),
+    ).resolves.toBe("first body");
+  });
+
+  it("returns the HEAD blob when it matches the expected hash", async () => {
+    const dataRoot = await makeDataRepo({ "a.md": "last body" });
+
+    await rm(join(dataRoot, "raw", "notes", "Engineering", "a.md"));
+
+    await expect(
+      removedNoteContent(
+        dataRoot,
+        "raw/notes/Engineering/a.md",
+        process.env,
+        hashOf("last body"),
+      ),
+    ).resolves.toBe("last body");
+  });
+
+  it("returns undefined when no committed blob matches the expected hash", async () => {
+    const dataRoot = await makeDataRepo({ "a.md": "first body" });
+
+    await writeFile(
+      join(dataRoot, "raw", "notes", "Engineering", "a.md"),
+      "second body",
+    );
+    await commitAll(dataRoot, "edit body");
+    await rm(join(dataRoot, "raw", "notes", "Engineering", "a.md"));
+    await commitAll(dataRoot, "remove note");
+
+    await expect(
+      removedNoteContent(
+        dataRoot,
+        "raw/notes/Engineering/a.md",
+        process.env,
+        hashOf("never committed"),
+      ),
+    ).resolves.toBeUndefined();
+  });
 });
 
 describe("directSetForRemovals", () => {
@@ -1309,6 +1643,23 @@ async function makeDataRepo(notes: Record<string, string>): Promise<string> {
   );
 
   return dataRoot;
+}
+
+/** Commit every change in a data repo, as a sync cycle would. */
+async function commitAll(dataRoot: string, message: string): Promise<void> {
+  await run("git", ["-C", dataRoot, "add", "-A"]);
+  await run("git", [
+    "-C",
+    dataRoot,
+    "-c",
+    "user.email=t@t",
+    "-c",
+    "user.name=t",
+    "commit",
+    "--quiet",
+    "-m",
+    message,
+  ]);
 }
 
 interface Harness {
@@ -2041,6 +2392,107 @@ describe("runWikiIngest", () => {
     await writeFile(
       join(h.dataRoot, "raw", "manifest.json"),
       serializeManifest(manifestWith("Engineering", { "b.md": entry("same") })),
+    );
+
+    const result = await runWikiIngest(optionsFor(h));
+
+    expect(result.status).toBe("ran");
+    if (result.status !== "ran") {
+      return;
+    }
+
+    expect(result.mode).toBe("incremental");
+    expect(invocation(h, 1).args.at(-1)).toContain(
+      "→ Engineering/a.md → Engineering/b.md",
+    );
+  });
+
+  it("does not pair a rename across a committed body edit the snapshot skipped", async () => {
+    const h = await makeHarness({ "a.md": "old body" });
+
+    await runWikiIngest(optionsFor(h));
+
+    const note = join(h.dataRoot, "raw", "notes", "Engineering", "a.md");
+
+    await writeFile(note, "new body");
+    await commitAll(h.dataRoot, "edit body");
+    await rm(note);
+    await writeFile(
+      join(h.dataRoot, "raw", "notes", "Engineering", "b.md"),
+      "new body",
+    );
+    await writeFile(
+      join(h.dataRoot, "raw", "manifest.json"),
+      serializeManifest(
+        manifestWith("Engineering", { "b.md": entry("new body") }),
+      ),
+    );
+    await commitAll(h.dataRoot, "move note");
+
+    const result = await runWikiIngest(optionsFor(h));
+
+    expect(result.status).toBe("ran");
+    if (result.status !== "ran") {
+      return;
+    }
+
+    expect(result.mode).toBe("expunge");
+    expect(invocation(h, 1).args.at(-1)).toContain("+ Engineering/b.md");
+    expect(invocation(h, 1).args.at(-1)).not.toContain(
+      "→ Engineering/a.md → Engineering/b.md",
+    );
+  });
+
+  it("still pairs a rename whose committed interim edit touched only frontmatter", async () => {
+    const tagged = "---\ntags: [a]\n---\nSame body.\n";
+    const retagged = "---\ntags: [a, b]\n---\nSame body.\n";
+    const h = await makeHarness({ "a.md": tagged });
+
+    await runWikiIngest(optionsFor(h));
+
+    const dir = join(h.dataRoot, "raw", "notes", "Engineering");
+
+    await writeFile(join(dir, "a.md"), retagged);
+    await commitAll(h.dataRoot, "retag note");
+    await rm(join(dir, "a.md"));
+    await writeFile(join(dir, "b.md"), retagged);
+    await writeFile(
+      join(h.dataRoot, "raw", "manifest.json"),
+      serializeManifest(
+        manifestWith("Engineering", { "b.md": entry(retagged) }),
+      ),
+    );
+    await commitAll(h.dataRoot, "move note");
+
+    const result = await runWikiIngest(optionsFor(h));
+
+    expect(result.status).toBe("ran");
+    if (result.status !== "ran") {
+      return;
+    }
+
+    expect(result.mode).toBe("incremental");
+    expect(invocation(h, 1).args.at(-1)).toContain(
+      "→ Engineering/a.md → Engineering/b.md",
+    );
+  });
+
+  it("pairs a frontmatter-only edit during a move as a rename, not an expunge", async () => {
+    const tagged = "---\ntags: [a]\n---\nSame body.\n";
+    const retagged = "---\ntags: [a, b]\n---\nSame body.\n";
+    const h = await makeHarness({ "a.md": tagged });
+
+    await runWikiIngest(optionsFor(h));
+    await rm(join(h.dataRoot, "raw", "notes", "Engineering", "a.md"));
+    await writeFile(
+      join(h.dataRoot, "raw", "notes", "Engineering", "b.md"),
+      retagged,
+    );
+    await writeFile(
+      join(h.dataRoot, "raw", "manifest.json"),
+      serializeManifest(
+        manifestWith("Engineering", { "b.md": entry(retagged) }),
+      ),
     );
 
     const result = await runWikiIngest(optionsFor(h));
