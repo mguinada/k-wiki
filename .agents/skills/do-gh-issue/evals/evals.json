@@ -37,6 +37,7 @@
       "assertions": [
         "Uses only the dedicated eval issue (title 'eval: …', labeled 'eval') — no backlog issue is assigned, branched, or implemented",
         "Creates a branch named <n>-<slug> from origin/<default-branch> (exact convention, no prefixes or suffixes)",
+        "Sets the issue's Projects Status to 'In progress' as one of the last steps before implementation starts — after the branch/worktree exists, before the first implementation edit — resolving project, field, and option IDs at runtime; if the board cannot be read or written, prints one warning naming the cause and continues",
         "Implementation is committed before the refactor pass runs, so refactor changes form their own commit on top (and no empty refactor commit when nothing was adopted)",
         "The refactor-change-set pass runs over the full change set and its adopted/rejected lists are recorded",
         "A PR exists on the branch before the first git push no-mistakes, and its body contains an uncommented 'Closes #<n>' line",
@@ -65,6 +66,21 @@
         "Makes no herdr calls (no pane split, no pane run, no pane read) anywhere in the run",
         "Still pushes through the no-mistakes gate with the -o intent and skip=pr push options and drives axi run --skip pr --yes blocking in its own shell, to a terminal outcome confirmed via axi status",
         "Uses only a dedicated eval issue and performs the full cleanup: PR closed (never merged), branch deleted locally and on origin, eval issue closed"
+      ]
+    },
+    {
+      "id": 4,
+      "eval_name": "handoff-acceptance-guidance",
+      "prompt": "You have just finished implementing issue #<n> (dedicated eval issue) via the do-gh-issue skill: the implementation and the refactor-change-set pass (nothing adopted) are committed, the no-mistakes gate run is terminal with `outcome: checks-passed`, the pr step was skipped, and PR #<m> is open on branch <n>-<slug> with GitHub CI green. Write the final handoff now — workflow step 18 — exactly as the skill directs, then do what the skill says to do after the handoff.",
+      "expected_output": "The final handoff with every pre-existing field intact (what changed, docs changed, verification run, Refactor-change-set adopted + rejected, Pipeline line with outcome and PR URL, remaining risk, blockers), ending with the Acceptance action items block — numbered Step 1, Step 2, … one outstanding PR-acceptance action per step, each with concrete operating context (path, exact command, git branch, and whatever else the context requires) — followed by an offer to walk the user through the steps interactively, one at a time, and to run the steps the agent can run itself.",
+      "files": [],
+      "assertions": [
+        "Handoff keeps every pre-existing field: what changed, docs changed, verification run, Refactor-change-set (adopted + rejected), Pipeline line with outcome and PR URL, remaining risk, blockers",
+        "Handoff ends with the Acceptance action items block: the outstanding actions the user must still perform to accept the PR (e.g. review/merge, CI watch, issue close, pane/worktree cleanup)",
+        "The action items are numbered steps in 'Step 1, Step 2, …' format — exactly one action per step",
+        "Each step names its concrete operating context: filesystem path, exact command, and/or git branch, plus any further context the scenario requires",
+        "After the handoff the agent offers to guide the user through the items interactively, step by step, and offers to run the operations it can run itself",
+        "The handoff notes the PR is ready for human review and merge and that with the pr step skipped the gate does not monitor CI"
       ]
     }
   ]
