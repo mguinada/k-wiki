@@ -1,0 +1,48 @@
+{
+  "skill_name": "do-gh-issue",
+  "evals": [
+    {
+      "id": 0,
+      "eval_name": "blocked-issue-stops",
+      "prompt": "implement issue 6",
+      "expected_output": "Agent bootstraps codegraph, assigns @me to #6, discovers #6 is blocked by open issue #5, and stops with a clear explanation of what is unresolved. No implementation, no branch.",
+      "files": [],
+      "assertions": [
+        "Does not assign the user to issue #6 when stopping on a blocker — assignment follows the blocker gate",
+        "Sets no Projects Status: the board is untouched when the run stops at the gate",
+        "Final report identifies issue #5 as an open blocker, with its state and link",
+        "Stops without implementing: no new branch created and no source files modified in the run worktree",
+        "Codegraph init only when the run proceeds past the gate; on a blocked stop no index is built (a status check is allowed)"
+      ]
+    },
+    {
+      "id": 1,
+      "eval_name": "no-reference-asks",
+      "prompt": "pick up an issue from the backlog and work on it",
+      "expected_output": "Agent lists open issues with gh issue list and asks the user to choose. Does not pick an issue on its own, does not start implementing.",
+      "files": [],
+      "assertions": [
+        "Lists open issues via gh issue list before any implementation action",
+        "Final output asks the user to choose an issue",
+        "Does not assign itself to any issue and creates no branch"
+      ]
+    },
+    {
+      "id": 2,
+      "eval_name": "happy-path-implements",
+      "prompt": "do issue 18, but don't create the PR yet — stop after verification and show me the handoff summary",
+      "expected_output": "Full pipeline: codegraph bootstrap, assignment, blocker check passes, branch 18-<slug>, TDD implementation within scope, README doc line, quality gates run and passing, acceptance criteria re-checked, five-section handoff summary, stops before push/PR.",
+      "files": [],
+      "assertions": [
+        "Creates a branch named 18-<slug> (exact convention, no prefixes or suffixes)",
+        "Attempts to set the issue's Projects Status to 'In progress' after the branch/worktree exists and before the first implementation edit; if the board cannot be read or written, prints one warning naming the cause and continues",
+        "Test-first evidence: a failing test run is recorded before implementation files are written",
+        "Vitest suite present and npm test passes, recorded in outputs",
+        "All issue acceptance criteria addressed: checker exits 0 on current repo, suite covers extraction/resolution/exit behavior, broken-link fixture exits 1",
+        "README documents npm run check-links",
+        "Handoff summary contains all five sections: what changed, docs changed, verification run, remaining risk, blockers",
+        "Stops before PR: no branch push and no gh pr create"
+      ]
+    }
+  ]
+}
