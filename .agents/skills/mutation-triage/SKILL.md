@@ -27,7 +27,8 @@ of the advisory workflow in AGENTS.md, never a gate.
    read the source line named there.
 
 3. **Triage each mutant.** Read the mutated code with enough context,
-   then decide:
+   then decide — make every kill/equivalent decision and write every
+   killing test first, as one batch, before any re-run:
 
    - **Kill** — write one test that fails against the mutant. Repo
      rules apply: exactly one expectation per `it`, the `it` name
@@ -42,9 +43,13 @@ of the advisory workflow in AGENTS.md, never a gate.
      comment without a written justification line in the PR body is
      forbidden.
 
-4. **Confirm the kills.** Re-run the same command from step 1. Every
-   newly killed mutant must show `Killed`; survivors left must all be
-   the equivalents you recorded.
+4. **Verify the batch — one run.** Do not re-run after each individual
+   fix. Re-run the same command from step 1 once, after the batch.
+   Every newly killed mutant must show `Killed`; survivors left must
+   all be the equivalents you recorded. If the run reports
+   still-survived mutants whose killing test was already written,
+   strengthen that test and re-run once more — repeat in batched
+   rounds until only recorded equivalents remain.
 
 5. **Report** a table: mutant → killed-by-test or equivalent + reason,
    plus the before/after mutation score.
