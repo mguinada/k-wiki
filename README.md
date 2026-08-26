@@ -65,6 +65,13 @@ stay available for debugging, and `wiki-ingest` already runs the
 post-run guardrails — checks and auto-revert — after every agent run.
 Scheduling is #14.
 
+After every successful ingest the pipeline also regenerates the
+static KPI dashboard (issue #73): `npm run dashboard [-- <data-repo>]`
+reads the data repo's wiki, manifests, and git history — read-only —
+and writes a self-contained `<data-repo>/dashboard.html` (gitignored;
+opens offline via `file://`) with coverage, structure, activity, and
+provenance KPIs in dark and light themes.
+
 ## Usage models
 
 Every way this wiki can run today, one worked example each. The design
@@ -86,6 +93,7 @@ npm run check-links -- ~/Lab/k-wiki-data/wiki   # every [[wikilink]] resolves
 npm run check-provenance -- ~/Lab/k-wiki-data/wiki  # every sources entry and origin is alive
 npm run check-fidelity -- ~/Lab/k-wiki-data/wiki ~/Lab/k-wiki-data/raw  # quoted tokens trace to origins; titles match file names
 npm run health -- ~/Lab/k-wiki-data/raw         # raw/ matches its manifest
+npm run dashboard -- ~/Lab/k-wiki-data          # regenerate the KPI dashboard (also refreshed by every ingest)
 ```
 
 The command commits the data repo itself, so the next digest covers

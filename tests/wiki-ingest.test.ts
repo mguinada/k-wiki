@@ -1562,14 +1562,14 @@ describe("runWikiIngest", () => {
     await runWikiIngest(optionsFor(h));
 
     expect(await readFile(join(h.dataRoot, ".gitignore"), "utf8")).toBe(
-      "scratch/\n# wiki-ingest manifest snapshot: per-instance state, never committed (issue #112)\noutputs/last-ingested-manifest.json\n",
+      "scratch/\n# wiki-ingest manifest snapshot: per-instance state, never committed (issue #112)\noutputs/last-ingested-manifest.json\n# static dashboard: regenerated per checkout, never committed (issue #73)\ndashboard.html\n",
     );
   });
 
   it("leaves a data-repo .gitignore that already ignores the snapshot untouched", async () => {
     const h = await makeHarness({ "a.md": "a" });
     const before =
-      "scratch/\n# wiki-ingest manifest snapshot: per-instance state, never committed (issue #112)\noutputs/last-ingested-manifest.json\n";
+      "scratch/\n# wiki-ingest manifest snapshot: per-instance state, never committed (issue #112)\noutputs/last-ingested-manifest.json\n# static dashboard: regenerated per checkout, never committed (issue #73)\ndashboard.html\n";
 
     await writeFile(join(h.dataRoot, ".gitignore"), before);
 
@@ -1586,7 +1586,7 @@ describe("runWikiIngest", () => {
     await runWikiIngest(optionsFor(h));
 
     expect(await readFile(join(h.dataRoot, ".gitignore"), "utf8")).toBe(
-      "scratch/\n# wiki-ingest manifest snapshot: per-instance state, never committed (issue #112)\noutputs/last-ingested-manifest.json\n",
+      "scratch/\n# wiki-ingest manifest snapshot: per-instance state, never committed (issue #112)\noutputs/last-ingested-manifest.json\n# static dashboard: regenerated per checkout, never committed (issue #73)\ndashboard.html\n",
     );
   });
 
@@ -1596,13 +1596,14 @@ describe("runWikiIngest", () => {
     await runWikiIngest(optionsFor(h));
 
     expect(await readFile(join(h.dataRoot, ".gitignore"), "utf8")).toBe(
-      "# wiki-ingest manifest snapshot: per-instance state, never committed (issue #112)\noutputs/last-ingested-manifest.json\n",
+      "# wiki-ingest manifest snapshot: per-instance state, never committed (issue #112)\noutputs/last-ingested-manifest.json\n# static dashboard: regenerated per checkout, never committed (issue #73)\ndashboard.html\n",
     );
   });
 
   it("treats a whitespace-padded snapshot entry line as already present", async () => {
     const h = await makeHarness({ "a.md": "a" });
-    const before = "scratch/\n  outputs/last-ingested-manifest.json  \n";
+    const before =
+      "scratch/\n  outputs/last-ingested-manifest.json  \n# static dashboard: regenerated per checkout, never committed (issue #73)\ndashboard.html\n";
 
     await writeFile(join(h.dataRoot, ".gitignore"), before);
 
@@ -2470,11 +2471,13 @@ describe("runWikiIngest", () => {
       expect.stringContaining(
         "wiki-ingest: ignoring outputs/last-ingested-manifest.json",
       ),
+      expect.stringContaining("wiki-ingest: ignoring dashboard.html"),
       expect.stringContaining(
         "invoking agent: pi --model GLM-5.2 --thinking high",
       ),
       "wiki-ingest: agent finished",
       "wiki-ingest: guardrails passed",
+      expect.stringContaining("wiki-ingest: dashboard refreshed at"),
     ]);
   });
 
@@ -4072,5 +4075,62 @@ describe("error causes and sink prefixes", () => {
     sink.render("pfx: agent still running (0s)");
 
     expect(written).toEqual(["\r⠋ pfx: agent still running (0s)"]);
+  });
+});
+
+describe("runWikiIngest dashboard hook (issue #73)", () => {
+  it("regenerates the dashboard after a successful run", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    const result = await runWikiIngest(optionsFor(h));
+
+    expect(result.status).toBe("ran");
+
+    const html = await readFile(join(h.dataRoot, "dashboard.html"), "utf8");
+
+    expect(html.startsWith("<!DOCTYPE html>")).toBe(true);
+    expect(html).toContain("generated");
+  });
+
+  it("leaves a stale dashboard untouched when a guardrail trips", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    await writeFile(join(h.dataRoot, "dashboard.html"), "STALE\n");
+
+    const saboteur: AgentRunner = async (_command, _args, options) => {
+      await writeFile(join(options.cwd, "wiki", "bad.md"), "no frontmatter\n");
+
+      return { stdout: "rogue report", stderr: "" };
+    };
+
+    await expect(
+      runWikiIngest({ ...optionsFor(h), runAgent: saboteur }),
+    ).rejects.toThrow("guardrail check 2 (frontmatter)");
+
+    const html = await readFile(join(h.dataRoot, "dashboard.html"), "utf8");
+
+    expect(html).toBe("STALE\n");
+  });
+
+  it("adds dashboard.html to the data repo gitignore", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    await runWikiIngest(optionsFor(h));
+
+    const gitignore = await readFile(join(h.dataRoot, ".gitignore"), "utf8");
+
+    expect(gitignore.split("\n")).toContain("dashboard.html");
+  });
+
+  it("keeps the run successful when the dashboard refresh fails", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    // A directory at the output path makes the write fail; the run
+    // itself must stay successful (the dashboard is derived).
+    await mkdir(join(h.dataRoot, "dashboard.html"));
+
+    const result = await runWikiIngest(optionsFor(h));
+
+    expect(result.status).toBe("ran");
   });
 });
