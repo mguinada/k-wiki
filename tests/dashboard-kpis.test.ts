@@ -614,6 +614,15 @@ describe("sourceRotBuckets", () => {
     expect(buckets.aging).toBe(1);
   });
 
+  it("skips a note whose sync stamp is unparseable", () => {
+    const buckets = sourceRotBuckets(
+      [{ key: "V/bad.md", lastSynced: "banana" }],
+      NOW,
+    );
+
+    expect(buckets).toEqual({ fresh: 0, aging: 0, stale: 0 });
+  });
+
   it("counts a note last synced 91 days ago as stale", () => {
     const buckets = sourceRotBuckets(
       [{ key: "V/a.md", lastSynced: "2026-06-02T00:00:00.000Z" }],
@@ -707,5 +716,14 @@ describe("needsReviewChurn", () => {
     const weeks = needsReviewChurn([], NOW);
 
     expect(weeks).toHaveLength(12);
+  });
+
+  it("ignores flips older than the trailing window", () => {
+    const weeks = needsReviewChurn(
+      [{ date: "2026-01-01", subject: "x" }],
+      NOW,
+    );
+
+    expect(weeks.reduce((total, week) => total + week.count, 0)).toBe(0);
   });
 });

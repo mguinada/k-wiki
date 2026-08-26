@@ -224,20 +224,36 @@ function isIngestRun(subject: string): boolean {
   return /^(wiki-sync|wiki-ingest)\b/.test(subject);
 }
 
-/** Ingest runs per week over the trailing twelve weeks, oldest first. */
-export function runsPerWeek(
-  commits: readonly CommitFact[],
+/** Count entries sorted by count desc, then key asc, top N kept. */
+function topCounts(
+  counts: ReadonlyMap<string, number>,
+  topN: number,
+): { key: string; count: number }[] {
+  return [...counts.entries()]
+    .map(([key, count]) => ({ key, count }))
+    .sort(
+      (a, b) =>
+        b.count - a.count || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0),
+    )
+    .slice(0, topN);
+}
+
+/** Commit facts per week, oldest first over the trailing weeks; only
+ *  facts passing `keep` are counted. */
+function factsPerWeek(
+  facts: readonly CommitFact[],
   now: Date,
-  weeks = 12,
+  keep: (fact: CommitFact) => boolean,
+  weeks: number,
 ): WeekPoint[] {
   const index = new Map(trailingWeeks(now, weeks).map((week) => [week, 0]));
 
-  for (const commit of commits) {
-    if (!isIngestRun(commit.subject)) {
+  for (const fact of facts) {
+    if (!keep(fact)) {
       continue;
     }
 
-    const monday = mondayOf(new Date(`${commit.date}T00:00:00.000Z`));
+    const monday = mondayOf(new Date(`${fact.date}T00:00:00.000Z`));
 
     if (index.has(monday)) {
       index.set(monday, (index.get(monday) ?? 0) + 1);
@@ -245,6 +261,15 @@ export function runsPerWeek(
   }
 
   return [...index.entries()].map(([week, count]) => ({ week, count }));
+}
+
+/** Ingest runs per week over the trailing twelve weeks, oldest first. */
+export function runsPerWeek(
+  commits: readonly CommitFact[],
+  now: Date,
+  weeks = 12,
+): WeekPoint[] {
+  return factsPerWeek(commits, now, (fact) => isIngestRun(fact.subject), weeks);
 }
 
 /** Mean sources per ingest run over commits that report a count. */
@@ -362,14 +387,10 @@ export function mostCitedSources(
     }
   }
 
-  return [...counts.entries()]
-    .map(([entry, citedBy]) => ({ entry, citedBy }))
-    .sort(
-      (a, b) =>
-        b.citedBy - a.citedBy ||
-        (a.entry < b.entry ? -1 : a.entry > b.entry ? 1 : 0),
-    )
-    .slice(0, topN);
+  return topCounts(counts, topN).map(({ key, count }) => ({
+    entry: key,
+    citedBy: count,
+  }));
 }
 
 /** Mean days between ingest runs; null without at least two. */
@@ -396,17 +417,7 @@ export function needsReviewChurn(
   now: Date,
   weeks = 12,
 ): WeekPoint[] {
-  const index = new Map(trailingWeeks(now, weeks).map((week) => [week, 0]));
-
-  for (const flip of statusFlips) {
-    const monday = mondayOf(new Date(`${flip.date}T00:00:00.000Z`));
-
-    if (index.has(monday)) {
-      index.set(monday, (index.get(monday) ?? 0) + 1);
-    }
-  }
-
-  return [...index.entries()].map(([week, count]) => ({ week, count }));
+  return factsPerWeek(statusFlips, now, () => true, weeks);
 }
 
 /** Every KPI the dashboard renders, from one input. */
@@ -514,20 +525,18 @@ export function computeKpis(input: DashboardInput): DashboardKpis {
       )
       .slice(0, 5),
     statusCounts: statusCounts(input.pages),
-    missingPages: [
-      ...deadLinks.reduce((counts, link) => {
-        counts.set(link.target, (counts.get(link.target) ?? 0) + 1);
+    missingPages: (() => {
+      const counts = new Map<string, number>();
 
-        return counts;
-      }, new Map<string, number>()),
-    ]
-      .map(([target, wantedBy]) => ({ target, wantedBy }))
-      .sort(
-        (a, b) =>
-          b.wantedBy - a.wantedBy ||
-          (a.target < b.target ? -1 : a.target > b.target ? 1 : 0),
-      )
-      .slice(0, 5),
+      for (const link of deadLinks) {
+        counts.set(link.target, (counts.get(link.target) ?? 0) + 1);
+      }
+
+      return topCounts(counts, 5).map(({ key, count }) => ({
+        target: key,
+        wantedBy: count,
+      }));
+    })(),
     sourceRot: sourceRotBuckets(input.rawNoteSyncDates, input.now),
     mostCited: mostCitedSources(input.pages),
     cadenceDays: ingestCadence(input.commits),
