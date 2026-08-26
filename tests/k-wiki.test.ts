@@ -528,6 +528,16 @@ describe("k-wiki CLI", () => {
     expect(out).toContain("resolution order");
   });
 
+  it("documents the AI-agent instructions block", async () => {
+    const out = (await runKWiki(process.cwd(), ["--help"])).out;
+
+    expect(out).toContain("If you are an AI agent, follow these instructions:");
+    expect(out).toContain("The answer is stdout, nothing else");
+    expect(out).toContain("Exit 0 always carries an answer");
+    expect(out).toContain("Exit 1 means the run failed");
+    expect(out).toContain("filing is a human step");
+  });
+
   it("prints help before validating any argument or reading any file", async () => {
     const { out } = await runKWiki(process.cwd(), ["--help", "leftover"]);
 

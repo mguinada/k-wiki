@@ -146,6 +146,7 @@ describe("k-wiki e2e", () => {
     expect(`${result.code}|${result.out}`).toMatch(/0\|Usage: k-wiki/);
     expect(result.out).toContain(".k-wiki.json");
     expect(result.out).toContain("K_WIKI_CHECKOUT");
+    expect(result.out).toContain("If you are an AI agent, follow these instructions:");
     expect(result.out).not.toContain("--file-last <");
   });
 

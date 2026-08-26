@@ -245,7 +245,20 @@ guardrails. Errors print red, prefixed "k-wiki:", and exit 1.
 Progress goes to stderr (an animated status line on a terminal,
 one plain heartbeat line per 60 seconds otherwise); NO_COLOR is
 honored. Human alias, optional:
-alias k-wiki='node ~/k-wiki/bin/k-wiki.ts'`;
+alias k-wiki='node ~/k-wiki/bin/k-wiki.ts'
+
+If you are an AI agent, follow these instructions:
+  - Run: k-wiki query "<question>" — zero flags inside a bound
+    project.
+  - The answer is stdout, nothing else. Progress goes to stderr;
+    ignore it.
+  - Exit 0 always carries an answer. If the wiki cannot answer, the
+    answer says so and suggests sources — report that, do not retry.
+  - Exit 1 means the run failed and nothing was saved; the error on
+    stderr names the cause. Retry only if the cause is transient.
+  - You cannot file the answer anywhere; filing is a human step
+    (wiki-query --file-last, run by the human inside the checkout).
+    Do not attempt wiki writes.`;
 
 /** Print one CLI usage error red on stderr and set the exit code. */
 function fail(message: string): void {
