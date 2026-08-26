@@ -565,12 +565,24 @@ describe("dashboard opener platform detection", () => {
   it("selects macOS open on darwin", async () => {
     const { openerFor } = await import("../src/dashboard/generate.ts");
 
-    expect(openerFor("darwin")).toBe("open");
+    expect(openerFor("darwin")).toEqual({ command: "open", argsPrefix: [] });
   });
 
   it("selects xdg-open on linux", async () => {
     const { openerFor } = await import("../src/dashboard/generate.ts");
 
-    expect(openerFor("linux")).toBe("xdg-open");
+    expect(openerFor("linux")).toEqual({
+      command: "xdg-open",
+      argsPrefix: [],
+    });
+  });
+
+  it("routes Windows through cmd start with an empty title argument", async () => {
+    const { openerFor } = await import("../src/dashboard/generate.ts");
+
+    expect(openerFor("win32")).toEqual({
+      command: "cmd",
+      argsPrefix: ["/c", "start", ""],
+    });
   });
 });

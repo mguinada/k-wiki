@@ -106,9 +106,9 @@ the file).
 
 Switches and arguments:
   -o, --open    Open the generated file in the default browser
-                (macOS \`open\`, Linux \`xdg-open\`) after writing it; an
-                opener failure prints an error and exits 1 — the file is
-                still written.
+                (macOS \`open\`, Linux \`xdg-open\`, Windows
+                \`start\`) after writing it; an opener failure prints
+                an error and exits 1 — the file is still written.
   -h, --help   Print this help and exit; no side effects.
   <data-repo>  The data repo root (the directory holding wiki/,
                raw/, and outputs/). Default: the sync.json dataRoot,
@@ -123,16 +123,36 @@ function colors() {
   return createColors(!process.env.NO_COLOR);
 }
 
-/** The browser opener per platform: macOS `open`, Linux `xdg-open`
- *  (the freedesktop default-handler standard); anything else falls
- *  back to xdg-open with the command named in the error message. */
-export function openerFor(platform: NodeJS.Platform): string {
-  return platform === "darwin" ? "open" : "xdg-open";
+/** How to invoke the platform's default-app opener. */
+export interface OpenerSpec {
+  readonly command: string;
+  /** Fixed leading argv entries before the file path. */
+  readonly argsPrefix: readonly string[];
+}
+
+/** The browser opener per platform: macOS `open`; Windows routed
+ *  through `cmd /c start ""` (the empty title argument stops `start`
+ *  from swallowing a quoted path as the window title); everything
+ *  else gets `xdg-open`, the freedesktop default-handler standard. */
+export function openerFor(platform: NodeJS.Platform): OpenerSpec {
+  if (platform === "darwin") {
+    return { command: "open", argsPrefix: [] };
+  }
+
+  if (platform === "win32") {
+    return { command: "cmd", argsPrefix: ["/c", "start", ""] };
+  }
+
+  return { command: "xdg-open", argsPrefix: [] };
 }
 
 /** Open the generated dashboard in the default browser. */
 function openInBrowser(path: string): Promise<void> {
-  return execFile(openerFor(process.platform), [path]).then(() => {});
+  const opener = openerFor(process.platform);
+
+  return execFile(opener.command, [...opener.argsPrefix, path]).then(
+    () => {},
+  );
 }
 
 /** dashboard entry point: `dashboard [-h | --help] [-o | --open] [<data-repo>]`. */
