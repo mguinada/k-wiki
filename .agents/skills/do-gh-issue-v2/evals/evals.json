@@ -1,16 +1,17 @@
 {
   "skill_name": "do-gh-issue-v2",
+  "policy": "Evals never consume backlog issues. Any live run that implements an issue uses a dedicated eval issue created for the run — title prefixed 'eval:', body marked experimental, labeled 'eval' — or an issue the user explicitly names. After the run: the PR is CLOSED, never merged, by anyone, at any time; the branch is deleted locally and on origin; every eval issue is closed. Nothing from an eval run stays in a review queue.",
   "evals": [
     {
       "id": 0,
       "eval_name": "blocked-issue-stops",
-      "prompt": "do-gh-issue-v2: implement issue #144",
-      "expected_output": "Agent reads #144, finds it blocked by open issue #129 (stated in the body), and stops with a clear explanation of what is unresolved. No implementation, no assignment, no branch.",
+      "prompt": "implement issue <blocked-parent-number>",
+      "expected_output": "Agent resolves the target, reads it, discovers the open blocker named in its body, and stops at the gate: reports what blocks with state and link, takes nothing (no assignment, no branch, no Projects Status, no codegraph index).",
       "files": [],
       "assertions": [
-        "Does not assign the user to the issue when stopping on a blocker — assignment (step 6) follows the blocker gate (step 4)",
+        "Does not assign the user to the target issue when stopping on a blocker — assignment (step 6) follows the blocker gate",
         "Sets no Projects Status: the board is untouched when the run stops at the gate (step 10 is never reached)",
-        "Final report names issue #129 as an open blocker, with its state and link, and what must land first",
+        "Final report names the blocking issue as an open blocker, with its state and link, and what must land first",
         "Stops without implementing: no new branch or worktree created and no source files modified",
         "No Codegraph index is built on a blocked stop (step 5 is past the gate; a status check is allowed)"
       ]
@@ -18,7 +19,7 @@
     {
       "id": 1,
       "eval_name": "no-reference-asks",
-      "prompt": "do-gh-issue-v2: pick up an issue from the backlog and work on it",
+      "prompt": "pick up an issue from the backlog and work on it",
       "expected_output": "Agent lists open issues with gh issue list and asks the user to choose. Does not pick an issue on its own, does not start implementing.",
       "files": [],
       "assertions": [
@@ -30,36 +31,38 @@
     {
       "id": 2,
       "eval_name": "happy-path-through-gate",
-      "prompt": "do-gh-issue-v2: implement issue #152 (https://github.com/mguinada/k-wiki/issues/152) end-to-end. Report to host pane w1T:p1 twice: herdr agent prompt w1T:p1 'issue #152: <PR URL>' as soon as the PR opens (pipeline may still be running), and one final line after your handoff: 'issue #152: <outcome>, <PR URL>'.",
-      "expected_output": "Full v2 pipeline: blocker check passes, branch 152-<slug> from origin/main in its own worktree, TDD fix of the flaky forge in tests/health-check.test.ts, quality gates green, implementation committed (step 14), refactor-change-set pass with its own commit or an explicit none-adopted record (steps 15-16), PR opened BEFORE gating with an uncommented Closes #152 line, gate push from a separate Herdr pane, axi run --skip pr --yes, terminal outcome confirmed via axi status, branch_sync-aware sync, final handoff with the Refactor-change-set subsection and Pipeline line.",
+      "prompt": "run the do-gh-issue-v2 skill end-to-end for the dedicated eval issue #<n> created for this run",
+      "expected_output": "Full v2 pipeline against a dedicated eval issue: implementation commit, refactor pass (own commit if adopted), PR before gating with uncommented Closes #<n>, gate push with intent and skip as push options from a pane running the TUI dashboard, yolo engaged once via footer-verified toggle, terminal outcome via axi status, branch_sync-aware sync, final handoff, two-part report-back, then full cleanup (PR closed — never merged — branch deleted, eval issue closed).",
       "files": [],
       "assertions": [
-        "Creates a branch named 152-<slug> (exact convention, no prefixes or suffixes) from origin/main",
-        "Attempts to set the issue's Projects Status to 'In progress' after the branch/worktree exists and before the first implementation edit; if the board cannot be read or written, prints one warning naming the cause and continues",
-        "The forge fix lands in tests/health-check.test.ts with a guaranteed-differing last character (endsWith(\"0\") ? \"1\" : \"0\") and repeated runs of tests/health-check.test.ts stay green",
-        "Implementation is committed before the refactor pass runs, so any refactor changes form their own commit on top (or the pass records that nothing was adopted and creates no empty commit)",
+        "Uses only the dedicated eval issue (title 'eval: …', labeled 'eval') — no backlog issue is assigned, branched, or implemented",
+        "Creates a branch named <n>-<slug> from origin/<default-branch> (exact convention, no prefixes or suffixes)",
+        "Implementation is committed before the refactor pass runs, so refactor changes form their own commit on top (and no empty refactor commit when nothing was adopted)",
         "The refactor-change-set pass runs over the full change set and its adopted/rejected lists are recorded",
-        "A PR exists on the branch before the first git push no-mistakes, and its body contains an uncommented 'Closes #152' line",
-        "The gate push runs in a separate Herdr pane (pane split + pane run), with pane wait-output for the pipeline start between the push and the axi command",
-        "The axi run invocation carries both --skip pr and --yes",
-        "The terminal outcome is confirmed via no-mistakes axi status from the agent's own shell, not from the pane transcript alone",
-        "Post-outcome sync follows the branch_sync.next_action.code reported by axi status (sync/recover_custody/continue_active_run/user_owned)",
+        "A PR exists on the branch before the first git push no-mistakes, and its body contains an uncommented 'Closes #<n>' line",
+        "The gate push runs in a separate Herdr pane and carries BOTH push options: -o no-mistakes.intent='<issue title + flattened issue body + implementation decisions>' and -o no-mistakes.skip=pr",
+        "After wait-output 'Pipeline started', the pane runs 'no-mistakes attach' — the TUI dashboard, not TOON axi output",
+        "Yolo is engaged exactly once via the verify-then-toggle protocol: footer read shows 'y yolo' → single 'y' send → footer confirms 'end yolo'; no blind second 'y' is ever sent",
+        "After engagement the agent only polls axi status from its own shell (no further pane keys) until the terminal outcome",
+        "The terminal outcome is confirmed via no-mistakes axi status from the agent's own shell, not from the pane transcript",
+        "Post-outcome sync follows the branch_sync.next_action.code reported by axi status (sync/recover_custody/continue_active_run/user_owned each acted on correctly)",
         "Final handoff contains the Refactor-change-set subsection (adopted + rejected) and the Pipeline line with the outcome and PR URL",
         "Both host-pane reports arrive: PR URL right after the PR opens, and the outcome line after the handoff",
-        "If the gate run is still active when nothing remains to do, the agent ends the turn with an interim handoff marked pipeline pending naming the gate pane ID, and on the next prompt finishes: axi status confirmation, sync, final handoff"
+        "Cleanup: the PR is CLOSED (never merged — no merge command or merge action anywhere), the branch is deleted locally and on origin, and the eval issue is closed"
       ]
     },
     {
       "id": 3,
       "eval_name": "non-herdr-fallback",
-      "prompt": "do-gh-issue-v2: implement issue #152 (run in an environment where HERDR_ENV is unset)",
-      "expected_output": "Steps 1-16 proceed normally. At step 17 the pane path requires Herdr: the check test \"${HERDR_ENV:-}\" = 1 fails, the agent warns the user, and drives the gate blocking in its own shell instead — same commands, same flags (--skip pr --yes), still to a terminal outcome with branch_sync-aware sync.",
+      "prompt": "run the do-gh-issue-v2 skill end-to-end for the dedicated eval issue #<n>, where your Herdr environment check evaluates to unset (simulate with env -u HERDR_ENV when evaluating and running the gate path)",
+      "expected_output": "Agent detects the missing Herdr environment at step 17, warns, and drives the gate blocking in its own shell: push with the same -o options, then no-mistakes axi run --skip pr --yes (non-interactive). No herdr commands anywhere. Same dedicated-eval-issue policy and full cleanup.",
       "files": [],
       "assertions": [
-        "Detects the missing Herdr environment at step 17 (the HERDR_ENV check) rather than attempting herdr commands blindly",
+        "Detects the missing Herdr environment at step 17 (HERDR_ENV check evaluated under env -u HERDR_ENV) rather than attempting herdr commands blindly",
         "Prints a warning naming the missing Herdr environment before falling back",
-        "Makes no herdr pane calls (no pane split, no pane run) on the fallback path",
-        "Still pushes through the no-mistakes gate and drives axi run with --skip pr and --yes, blocking in its own shell, to a terminal outcome confirmed via axi status"
+        "Makes no herdr calls (no pane split, no pane run, no pane read) anywhere in the run",
+        "Still pushes through the no-mistakes gate with the -o intent and skip=pr push options and drives axi run --skip pr --yes blocking in its own shell, to a terminal outcome confirmed via axi status",
+        "Uses only a dedicated eval issue and performs the full cleanup: PR closed (never merged), branch deleted locally and on origin, eval issue closed"
       ]
     }
   ]
