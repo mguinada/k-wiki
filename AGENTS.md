@@ -96,7 +96,7 @@ Run order from the repo root, before declaring work complete:
 npm run typecheck   # gate — always
 npm run lint        # gate — always
 npm test            # gate — always (unit only; e2e is NOT included)
-npm run e2e         # when the change touches src/sync/, src/ingest/, src/query/, src/wiki/, src/cli/, src/fixtures/, tests/e2e/, or raw/
+npm run e2e         # when the change touches src/sync/, src/ingest/, src/query/, src/dashboard/, src/wiki/, src/cli/, src/fixtures/, tests/e2e/, or raw/
 npm run health      # same trigger as e2e; also safe to run any time — read-only, no vault access
 ```
 

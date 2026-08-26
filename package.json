@@ -15,6 +15,7 @@
     "test:coverage": "vitest run --coverage",
     "e2e": "vitest run --config vitest.e2e.config.ts",
     "health": "node bin/check-raw.ts",
+    "dashboard": "node bin/dashboard.ts",
     "check-links": "node bin/check-links.ts",
     "check-crosslinks": "node bin/check-crosslinks.ts",
     "check-provenance": "node bin/check-provenance.ts",
