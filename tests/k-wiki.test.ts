@@ -391,6 +391,11 @@ interface Harness {
   readonly checkout: string;
   readonly project: string;
   readonly outputsDir: string;
+  readonly invocations: {
+    command: string;
+    args: readonly string[];
+    cwd: string;
+  }[];
 }
 
 /** A git-tracked data repo with a stub agent, as in wiki-query tests. */
@@ -399,9 +404,28 @@ async function makeDataRepo(): Promise<string> {
 
   tempDirs.push(dataRoot);
   await mkdir(join(dataRoot, "raw"), { recursive: true });
-  await mkdir(join(dataRoot, "wiki"), { recursive: true });
+  await mkdir(join(dataRoot, "wiki", "concepts"), { recursive: true });
+  await mkdir(join(dataRoot, "wiki", "sources"), { recursive: true });
+  await mkdir(join(dataRoot, "wiki", "comparisons"), { recursive: true });
+  await mkdir(join(dataRoot, "wiki", "queries"), { recursive: true });
   await writeFile(join(dataRoot, "wiki", "index.md"), "# Index\n");
   await writeFile(join(dataRoot, "wiki", "log.md"), "# Log\n");
+  await writeFile(
+    join(dataRoot, "wiki", "concepts", "rag.md"),
+    "---\ntype: concept\ntitle: Retrieval-Augmented Generation\n---\nRAG body.\n",
+  );
+  await writeFile(
+    join(dataRoot, "wiki", "sources", "attention.md"),
+    "---\ntype: source\ntitle: Attention Is All You Need\n---\nAttention body.\n",
+  );
+  await writeFile(
+    join(dataRoot, "wiki", "comparisons", "rag-vs-fine-tuning.md"),
+    "---\ntype: comparison\ntitle: RAG vs Fine-Tuning\n---\nComparison body.\n",
+  );
+  await writeFile(
+    join(dataRoot, "wiki", "queries", "when-to-prefer-rag.md"),
+    "---\ntype: query\ntitle: When to Prefer RAG\n---\nQuery body.\n",
+  );
   await writeFile(join(dataRoot, ".cli-test-repo"), "");
   await writeFile(join(dataRoot, "stub-agent.mjs"), STUB_AGENT, {
     mode: 0o755,
@@ -471,7 +495,15 @@ async function makeBoundProject(
     await writeFile(join(project, BINDING_FILE), text);
   }
 
-  return { dataRoot, checkout, project, outputsDir: join(checkout, "outputs") };
+  const invocations: Harness["invocations"] = [];
+
+  return {
+    dataRoot,
+    checkout,
+    project,
+    outputsDir: join(checkout, "outputs"),
+    invocations,
+  };
 }
 
 /** Run main() in-process against a given cwd, capturing the console. */
@@ -907,5 +939,308 @@ console.log("An answer.");
     await expect(
       readFile(join(h.outputsDir, "last-query.md")),
     ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+});
+
+describe("k-wiki status", () => {
+  it("prints the resolution chain and the wiki paths", async () => {
+    const h = await makeBoundProject();
+    const { out } = await runKWiki(join(h.project, "nested"), ["status"]);
+
+    expect(out).toContain(`checkout:  ${h.checkout}`);
+    expect(out).toContain("from .k-wiki.json");
+    expect(out).toContain(`settings:  ${join(h.checkout, "settings.yml")}`);
+    expect(out).toContain(`data repo: ${h.dataRoot}`);
+    expect(out).toContain(`wiki:      ${join(h.dataRoot, "wiki")}`);
+    expect(out).toContain(`index:     ${join(h.dataRoot, "wiki", "index.md")}`);
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("names the cwd origin when no binding exists", async () => {
+    const h = await makeBoundProject(null);
+    const { out } = await runKWiki(h.checkout, ["status"]);
+
+    expect(out).toContain("from the cwd itself");
+  });
+
+  it("runs no agent and writes nothing", async () => {
+    const h = await makeBoundProject();
+    await runKWiki(join(h.project, "nested"), ["status"]);
+
+    expect(h.invocations).toEqual([]);
+
+    await expect(
+      readFile(join(h.outputsDir, "last-query.md")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("exits 1 naming the sync config when the checkout has none", async () => {
+    const empty = await mkdtemp(join(tmpdir(), "k-wiki-empty-"));
+
+    tempDirs.push(empty);
+    const { err } = await runKWiki(empty, ["status"]);
+
+    expect(err).toContain("cannot read sync config");
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("exits 1 for extra positional arguments", async () => {
+    const h = await makeBoundProject();
+    const { err } = await runKWiki(h.project, ["status", "extra"]);
+
+    expect(err).toContain("takes no arguments");
+    expect(process.exitCode).toBe(1);
+  });
+});
+
+describe("k-wiki list", () => {
+  it("prints one slug — title line per page grouped by type", async () => {
+    const h = await makeBoundProject();
+    const { out } = await runKWiki(join(h.project, "nested"), ["list"]);
+
+    expect(out).toContain("## concepts");
+    expect(out).toContain("rag — Retrieval-Augmented Generation");
+    expect(out).toContain("## sources");
+    expect(out).toContain("attention — Attention Is All You Need");
+    expect(out).toContain("## comparisons");
+    expect(out).toContain("rag-vs-fine-tuning — RAG vs Fine-Tuning");
+    expect(out).toContain("## queries");
+    expect(out).toContain("when-to-prefer-rag — When to Prefer RAG");
+  });
+
+  it("orders the type groups in schema order", async () => {
+    const h = await makeBoundProject();
+    const { out } = await runKWiki(join(h.project, "nested"), ["list"]);
+
+    const concepts = out.indexOf("## concepts");
+    const sources = out.indexOf("## sources");
+    const comparisons = out.indexOf("## comparisons");
+    const queries = out.indexOf("## queries");
+
+    expect(concepts).toBeLessThan(sources);
+    expect(sources).toBeLessThan(queries);
+    expect(queries).toBeLessThan(comparisons);
+  });
+
+  it("filters to the requested type", async () => {
+    const h = await makeBoundProject();
+    const { out } = await runKWiki(join(h.project, "nested"), [
+      "list",
+      "concept",
+    ]);
+
+    expect(out).toContain("rag — Retrieval-Augmented Generation");
+    expect(out).not.toContain("attention —");
+    expect(out).not.toContain("## sources");
+  });
+
+  it("omits the navigation pages index, log, and overview", async () => {
+    const h = await makeBoundProject();
+    const { out } = await runKWiki(join(h.project, "nested"), ["list"]);
+
+    expect(out).not.toContain("index —");
+    expect(out).not.toContain("log —");
+    expect(out).not.toContain("overview —");
+  });
+
+  it("exits 1 naming the valid types for an unknown type filter", async () => {
+    const h = await makeBoundProject();
+    const { err } = await runKWiki(join(h.project, "nested"), [
+      "list",
+      "bogus",
+    ]);
+
+    expect(err).toContain("unknown type");
+    expect(err).toContain("concept");
+    expect(err).toContain("comparison");
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("exits 1 naming the wiki dir when it does not exist", async () => {
+    const h = await makeBoundProject();
+
+    await rm(join(h.dataRoot, "wiki"), { recursive: true });
+    const { err } = await runKWiki(join(h.project, "nested"), ["list"]);
+
+    expect(err).toContain("wiki directory does not exist");
+    expect(process.exitCode).toBe(1);
+  });
+});
+
+/** Run main() capturing raw stdout writes (verbatim page output). */
+async function runKWikiStdout(
+  cwd: string,
+  args: string[],
+): Promise<{ out: string; err: string }> {
+  const argv = process.argv;
+  const out: string[] = [];
+  const err: string[] = [];
+
+  process.argv = [...argv.slice(0, 2), ...args];
+  process.exitCode = undefined;
+
+  const writeSpy = vi
+    .spyOn(process.stdout, "write")
+    .mockImplementation((chunk: unknown) => {
+      out.push(String(chunk));
+
+      return true;
+    });
+  const errorSpy = vi
+    .spyOn(console, "error")
+    .mockImplementation((...parts: unknown[]) => err.push(parts.join(" ")));
+
+  try {
+    await main(cwd);
+  } finally {
+    process.argv = argv;
+    writeSpy.mockRestore();
+    errorSpy.mockRestore();
+  }
+
+  return { out: out.join(""), err: err.join("\n") };
+}
+
+describe("k-wiki read", () => {
+  it("prints the page verbatim by file name", async () => {
+    const h = await makeBoundProject();
+    const { out } = await runKWikiStdout(join(h.project, "nested"), [
+      "read",
+      "rag",
+    ]);
+
+    expect(out).toContain("type: concept");
+    expect(out).toContain("RAG body.");
+  });
+
+  it("resolves a page outside its type directory", async () => {
+    const h = await makeBoundProject();
+    const { out } = await runKWikiStdout(join(h.project, "nested"), [
+      "read",
+      "attention",
+    ]);
+
+    expect(out).toContain("Attention body.");
+  });
+
+  it("reads the navigation page index", async () => {
+    const h = await makeBoundProject();
+    const { out } = await runKWikiStdout(join(h.project, "nested"), [
+      "read",
+      "index",
+    ]);
+
+    expect(out).toContain("# Index");
+  });
+
+  it("exits 1 with near matches when the page is absent", async () => {
+    const h = await makeBoundProject();
+    const { err } = await runKWiki(join(h.project, "nested"), [
+      "read",
+      "atten",
+    ]);
+
+    expect(err).toContain('no page named "atten"');
+    expect(err).toContain("attention");
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("exits 1 plainly when no near match exists", async () => {
+    const h = await makeBoundProject();
+    const { err } = await runKWiki(join(h.project, "nested"), [
+      "read",
+      "zzz-void",
+    ]);
+
+    expect(err).toContain('no page named "zzz-void"');
+    expect(err).not.toContain("near matches");
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("exits 1 naming every match when the file name is not unique", async () => {
+    const h = await makeBoundProject();
+
+    await mkdir(join(h.dataRoot, "wiki", "dup1"), { recursive: true });
+    await mkdir(join(h.dataRoot, "wiki", "dup2"), { recursive: true });
+    await writeFile(join(h.dataRoot, "wiki", "dup1", "dup.md"), "one\n");
+    await writeFile(join(h.dataRoot, "wiki", "dup2", "dup.md"), "two\n");
+
+    const { err } = await runKWiki(join(h.project, "nested"), ["read", "dup"]);
+
+    expect(err).toContain("ambiguous");
+    expect(err).toContain("dup1/dup.md");
+    expect(err).toContain("dup2/dup.md");
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("exits 1 when the slug is missing", async () => {
+    const { err } = await runKWiki(process.cwd(), ["read"]);
+
+    expect(err).toContain("a <slug> is required");
+    expect(process.exitCode).toBe(1);
+  });
+});
+
+describe("k-wiki health", () => {
+  it("prints the healthy summary and exits 0 for a coherent projection", async () => {
+    const h = await makeBoundProject();
+    const { out } = await runKWiki(join(h.project, "nested"), ["health"]);
+
+    expect(out).toContain("healthy");
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("prints each problem and exits 1 for an incoherent projection", async () => {
+    const h = await makeBoundProject();
+
+    await writeFile(join(h.dataRoot, "raw", "manifest.json"), "{ broken json");
+    const { out, err } = await runKWiki(join(h.project, "nested"), ["health"]);
+
+    expect(`${out}${err}`).toContain("manifest.json");
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("exits 1 for extra positional arguments", async () => {
+    const h = await makeBoundProject();
+    const { err } = await runKWiki(h.project, ["health", "extra"]);
+
+    expect(err).toContain("takes no arguments");
+    expect(process.exitCode).toBe(1);
+  });
+});
+
+describe("k-wiki help with the read-only commands", () => {
+  it("documents every command in the usage block", async () => {
+    const out = (await runKWiki(process.cwd(), ["--help"])).out;
+
+    for (const command of ["query", "status", "list", "read", "health"]) {
+      expect(out).toContain(`k-wiki ${command}`);
+    }
+  });
+
+  it("documents the read-only commands in the AI-agent block", async () => {
+    const out = (await runKWiki(process.cwd(), ["--help"])).out;
+
+    expect(out).toContain("k-wiki status shows which wiki you are bound to");
+    expect(out).toContain("k-wiki list [type] and k-wiki read <slug> browse");
+    expect(out).toContain("k-wiki health checks the projection");
+  });
+
+  it("names the valid types in the list command entry", async () => {
+    const out = (await runKWiki(process.cwd(), ["--help"])).out;
+
+    expect(out).toContain("concept|entity|source|query|comparison");
+  });
+
+  it("exits 1 listing every command for an unknown command", async () => {
+    const { err } = await runKWiki(process.cwd(), ["ingest", "q"]);
+
+    expect(err).toContain('unknown command "ingest"');
+    expect(err).toContain("query");
+    expect(err).toContain("status");
+    expect(err).toContain("list");
+    expect(err).toContain("read");
+    expect(err).toContain("health");
+    expect(process.exitCode).toBe(1);
   });
 });

@@ -63,8 +63,23 @@ async function makeSetup(): Promise<Setup> {
   await mkdir(join(dataRoot, "raw"), { recursive: true });
   await mkdir(join(dataRoot, "wiki"), { recursive: true });
   await mkdir(join(dataRoot, "outputs"), { recursive: true });
+  await mkdir(join(dataRoot, "wiki", "concepts"), { recursive: true });
+  await mkdir(join(dataRoot, "wiki", "sources"), { recursive: true });
+  await mkdir(join(dataRoot, "wiki", "queries"), { recursive: true });
   await writeFile(join(dataRoot, "wiki", "index.md"), "# Index\n");
   await writeFile(join(dataRoot, "wiki", "log.md"), "# Log\n");
+  await writeFile(
+    join(dataRoot, "wiki", "concepts", "rag.md"),
+    "---\ntype: concept\ntitle: Retrieval-Augmented Generation\n---\nRAG body.\n",
+  );
+  await writeFile(
+    join(dataRoot, "wiki", "sources", "attention.md"),
+    "---\ntype: source\ntitle: Attention Is All You Need\n---\nAttention body.\n",
+  );
+  await writeFile(
+    join(dataRoot, "wiki", "queries", "when-to-prefer-rag.md"),
+    "---\ntype: query\ntitle: When to Prefer RAG\n---\nQuery body.\n",
+  );
   await writeFile(join(dataRoot, "stub-agent.mjs"), STUB_AGENT, {
     mode: 0o755,
   });
@@ -146,7 +161,9 @@ describe("k-wiki e2e", () => {
     expect(`${result.code}|${result.out}`).toMatch(/0\|Usage: k-wiki/);
     expect(result.out).toContain(".k-wiki.json");
     expect(result.out).toContain("K_WIKI_CHECKOUT");
-    expect(result.out).toContain("If you are an AI agent, follow these instructions:");
+    expect(result.out).toContain(
+      "If you are an AI agent, follow these instructions:",
+    );
     expect(result.out).not.toContain("--file-last <");
   });
 
@@ -269,5 +286,97 @@ describe("k-wiki e2e", () => {
 
     expect(result.code).toBe(1);
     expect(result.err).toContain("--file-last");
+  });
+});
+
+describe("k-wiki read-only commands e2e", () => {
+  it("status prints the resolution chain from a bound project", async () => {
+    const setup = await makeSetup();
+
+    await bind(setup);
+
+    const result = await runCli(K_WIKI_SCRIPT, ["status"], {
+      cwd: join(setup.project, "nested", "deep"),
+    });
+
+    expect(result.code).toBe(0);
+    expect(result.out).toContain(`checkout:  ${setup.checkout}`);
+    expect(result.out).toContain("from .k-wiki.json");
+    expect(result.out).toContain(`data repo: ${setup.dataRoot}`);
+    expect(result.out).toContain(
+      `index:     ${join(setup.dataRoot, "wiki", "index.md")}`,
+    );
+  });
+
+  it("list prints one slug — title line per page grouped by type", async () => {
+    const setup = await makeSetup();
+
+    await bind(setup);
+
+    const result = await runCli(K_WIKI_SCRIPT, ["list"], {
+      cwd: setup.project,
+    });
+
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("## concepts");
+    expect(result.out).toContain("rag — Retrieval-Augmented Generation");
+    expect(result.out).toContain("## sources");
+    expect(result.out).toContain("attention — Attention Is All You Need");
+    expect(result.out).not.toContain("index —");
+  });
+
+  it("list filters by type", async () => {
+    const setup = await makeSetup();
+
+    await bind(setup);
+
+    const result = await runCli(K_WIKI_SCRIPT, ["list", "concept"], {
+      cwd: setup.project,
+    });
+
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("rag — Retrieval-Augmented Generation");
+    expect(result.out).not.toContain("## sources");
+  });
+
+  it("read prints a page verbatim by file name", async () => {
+    const setup = await makeSetup();
+
+    await bind(setup);
+
+    const result = await runCli(K_WIKI_SCRIPT, ["read", "rag"], {
+      cwd: setup.project,
+    });
+
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("type: concept");
+    expect(result.out).toContain("RAG body.");
+  });
+
+  it("read exits 1 with near matches when the page is absent", async () => {
+    const setup = await makeSetup();
+
+    await bind(setup);
+
+    const result = await runCli(K_WIKI_SCRIPT, ["read", "atten"], {
+      cwd: setup.project,
+    });
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain('no page named "atten"');
+    expect(result.err).toContain("attention");
+  });
+
+  it("health prints the healthy summary for a coherent projection", async () => {
+    const setup = await makeSetup();
+
+    await bind(setup);
+
+    const result = await runCli(K_WIKI_SCRIPT, ["health"], {
+      cwd: setup.project,
+    });
+
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("healthy");
   });
 });
