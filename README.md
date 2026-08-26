@@ -389,6 +389,18 @@ excluded by construction, so the projection can never ingest itself.
 
 ```sh
 npm run data:init -- --meta sync-meta.json       # once
+npm run wiki-sync -- --settings settings-meta.yml sync-meta.json \
+  ~/Lab/k-wiki-meta-data/raw                     # the one-command cycle
+```
+
+The meta instance rides the same cycle as every vault instance
+(issue #145): `wiki-sync` sees the repo-typed source in
+`sync-meta.json` and runs the sync-repo core in-process at stage 1,
+so lint, the crosslink audit, verification, and the single
+regeneration commit run in-cycle — no operator discipline needed.
+The piecewise commands stay the debug path, one stage at a time:
+
+```sh
 npm run sync-repo -- sync-meta.json               # project a committed tree
 node bin/wiki-ingest.ts --settings settings-meta.yml \
   ~/Lab/k-wiki-meta-data/raw                       # build the meta-wiki
@@ -423,7 +435,7 @@ sources directly, so there is no build step — install dependencies with
 | `npm run format` | Biome | Rewrite files to the canonical format — the fix command for lint findings, not a gate |
 | `npm test` | vitest | Run the unit test suite |
 | `npm run test:coverage` | vitest | Run the unit tests and fail below the 90% coverage thresholds — what CI runs |
-| `npm run e2e` | vitest | Run the end-to-end suite (`tests/e2e/`): real CLI child processes — sync-vault through a full vault lifecycle (first run, no-op re-run, edit, delete, block flip, multi-vault) against the synthetic fixture vault in temp workspaces under `.e2e-tmp/` (gitignored), wiki-ingest through first-run, incremental, expunge, rename, skip, failure, timeout, scoped `--sources`, and guardrail auto-revert runs against a stub agent in temp data repos, the second brain through profile-layer ingest, cross-wiki link validation, the reverted domain→second-brain leak, and a health-checked second-brain sync, sync-repo through verbatim projection, commit stamping, unchanged re-run, dirty-source and wrong-config failures, and health freshness runs in temp source repos, and wiki-sync through full-cycle, no-change rerun, failure, guardrail-revert, configured crosslink-audit (pass and fail), and reverted fidelity-failure runs |
+| `npm run e2e` | vitest | Run the end-to-end suite (`tests/e2e/`): real CLI child processes — sync-vault through a full vault lifecycle (first run, no-op re-run, edit, delete, block flip, multi-vault) against the synthetic fixture vault in temp workspaces under `.e2e-tmp/` (gitignored), wiki-ingest through first-run, incremental, expunge, rename, skip, failure, timeout, scoped `--sources`, and guardrail auto-revert runs against a stub agent in temp data repos, the second brain through profile-layer ingest, cross-wiki link validation, the reverted domain→second-brain leak, and a health-checked second-brain sync, sync-repo through verbatim projection, commit stamping, unchanged re-run, dirty-source and wrong-config failures, and health freshness runs in temp source repos, and wiki-sync through full-cycle, no-change rerun, failure, guardrail-revert, configured crosslink-audit (pass and fail), reverted fidelity-failure, and repo-source cycle (the meta flow) runs |
 | `npm run health [-- <raw-dir>] [--fail-on-stale]` | health CLI | Check the coherence of a `raw/` projection (default: the repo's `raw/`): every `raw/notes/<vault>/` file matches its `manifest.json` sha-256, with no orphans and no missing entries; a repo-sourced projection (sync-repo) is also freshness-checked — a recorded source commit behind the source repo's HEAD warns, and `--fail-on-stale` (after the `--`) makes it exit 1; read-only, no vault access; exit 0 = coherent (including healthy-empty), exit 1 = one line per problem |
 | `npm run check-links [-- <wiki-dir>]` | wikilink checker | Check that every `[[wikilink]]` under `wiki/` (default) resolves to an existing page by file name, skipping external slashed `[[<vault>/<page>]]` cross-wiki targets; exit 0 = all links resolve, exit 1 = one `file:line -> [[link]]` line per broken link |
 | `npm run check-crosslinks <wiki-dir> <domain-wiki-dir> [<domain-wiki-dir>…]` | cross-wiki link checker | Check the one-way link discipline between a wiki and its domain wikis: every slashed `[[<vault>/<page>]]` link names a vault of a passed domain wiki (validated against its `raw/manifest.json`, case-insensitive) and resolves to an existing page there, and the domain wikis carry no cross-wiki links; exit 0 = discipline holds, exit 1 = one `file:line -> [[link]]` line per problem |
@@ -434,7 +446,7 @@ sources directly, so there is no build step — install dependencies with
 | `npm run sync-vault -- [--dry-run] [<sync.json>] [<raw-dir>]` | sync CLI | Ingest every note not blocked by the vault's exclusion rule into `raw/notes/` (deterministic, no LLM; [details below](#running-the-sync)) |
 | `npm run sync-repo -- [-h \| --help] [<config>] [<raw-dir>]` | repo sync CLI | Project the allowlisted files of a committed source repository verbatim into `raw/notes/<name>/`, recording the source HEAD commit in the manifest (deterministic, no LLM; the meta-wiki adapter, [§9](#9-the-meta-wiki-a-repository-as-source)) |
 | `npm run wiki-ingest -- [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [<raw-dir>]` | ingest wrapper | Run the wiki agent headless over the sources that changed since the last ingest and write the per-run digest (reads `settings.yml`; [details below](#running-the-wiki-agent-wiki-ingest)) |
-| `npm run wiki-sync -- [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<sync.json>] [<raw-dir>]` | cycle orchestrator | Run the whole cycle — sync → ingest → lint → crosslink audit (configured second brains) → verification (check-fidelity + check-provenance) → one data-repo commit — and print the digest (reads `settings.yml`, including its optional `secondBrain.domains` list; [details below](#running-the-full-cycle-wiki-sync)) |
+| `npm run wiki-sync -- [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<sync.json>] [<raw-dir>]` | cycle orchestrator | Run the whole cycle — sync (sync-vault for vault sources, sync-repo for repo-sourced configs, [§9](#9-the-meta-wiki-a-repository-as-source)) → ingest → lint → crosslink audit (configured second brains) → verification (check-fidelity + check-provenance) → one data-repo commit — and print the digest (reads `settings.yml`, including its optional `secondBrain.domains` list; [details below](#running-the-full-cycle-wiki-sync)) |
 | `npm run wiki-query -- [-h \| --help] [--file-last] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>` | query wrapper | Ask the built wiki one question headless: print the answer, save it for review (stage 1, default); `--file-last` files the reviewed answer deterministically (stage 2; reads `settings.yml` in stage 1; [details below](#running-queries-wiki-query)) |
 | `npm run data:init -- [--second-brain] [--meta] [<sync.json>]` | data repo seeder | Create and seed the data repo at `sync.json`'s `dataRoot`: git init, copy the `raw/`+`wiki/` skeleton from the code repo, first commit; idempotent; `--second-brain` also writes the `.second-brain` identity marker ([§5](#5-the-second-brain)); `--meta` seeds the meta contract (`wiki/AGENTS.meta.md`) as the data repo's `wiki/AGENTS.md` ([§9](#9-the-meta-wiki-a-repository-as-source)) |
 | `npm run mutation:changed` | StrykerJS | Advisory mutation run scoped to the changed hunks of the `src/` files that differ from `main` (uncommitted included; new files whole) — `scripts/mutation-scope.ts` builds the `file:start-end` ranges; exits 0 without running when nothing changed, and ends by printing the actionable mutants — the default pre-handoff step |
@@ -804,7 +816,13 @@ npm run wiki-sync   # sync → ingest → lint → crosslinks (configured) → v
 `wiki-sync` is the one-command orchestrator (guide §18, issue #13).
 It chains the proven pieces and adds no capability of its own:
 
-1. **sync** — `sync-vault` in-process: vault → `raw/`.
+1. **sync** — `sync-vault` in-process: vault → `raw/`. A repo-sourced
+   config ([§9](#9-the-meta-wiki-a-repository-as-source), e.g.
+   `sync-meta.json`) runs the `sync-repo` core in-process instead:
+   the allowlisted files of the committed source tree project
+   verbatim into `raw/notes/<name>/`, stamped with the source HEAD
+   commit (issue #145); a dirty source tree fails the cycle, and
+   mixed vault+repo configs are refused — one instance per config.
 2. **ingest** — `wiki-ingest` in-process: the agent over changed
    sources, the post-run guardrails, the digest in the code repo's
    `outputs/runs/` (gitignored, per-checkout).

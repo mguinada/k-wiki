@@ -425,6 +425,114 @@ describe("runWikiSync", () => {
   });
 });
 
+describe("runWikiSync repo-sourced instances", () => {
+  /** A harness whose config is repo-sourced (the meta shape): a
+   *  committed temp source repo, `source: "repo"` config, and the
+   *  same committed data-repo skeleton and agent stubs as the vault
+   *  harness (issue #145: stage 1 dispatches on source kind). */
+  async function makeRepoHarness(): Promise<
+    Harness & { readonly sourceRoot: string }
+  > {
+    const h = await makeHarness({});
+    const sourceRoot = join(dirname(h.dataRoot), "source");
+
+    await mkdir(join(sourceRoot, "docs"), { recursive: true });
+    await writeFile(join(sourceRoot, "README.md"), "readme body\n");
+    await writeFile(join(sourceRoot, "docs", "guide.md"), "guide\n");
+    await run("git", ["init", "--quiet"], { cwd: sourceRoot });
+    await run("git", ["config", "user.email", "t@t"], { cwd: sourceRoot });
+    await run("git", ["config", "user.name", "t"], { cwd: sourceRoot });
+    await run("git", ["add", "-A"], { cwd: sourceRoot });
+    await run("git", ["commit", "--quiet", "-m", "fixture"], {
+      cwd: sourceRoot,
+    });
+    await writeFile(
+      h.configPath,
+      JSON.stringify({
+        dataRoot: h.dataRoot,
+        vaults: [
+          {
+            source: "repo",
+            name: "k-wiki",
+            root: sourceRoot,
+            include: ["README.md", "docs/*.md"],
+          },
+        ],
+      }),
+    );
+
+    return { ...h, sourceRoot };
+  }
+
+  it("dispatches a repo-sourced config to the sync-repo core", async () => {
+    const h = await makeRepoHarness();
+    const result = await runWikiSync(optionsFor(h));
+
+    expect(result.commit.status).toBe("committed");
+    await expect(
+      readFile(join(h.dataRoot, "raw", "notes", "k-wiki", "README.md"), "utf8"),
+    ).resolves.toBe("readme body\n");
+
+    const manifest = JSON.parse(
+      await readFile(join(h.dataRoot, "raw", "manifest.json"), "utf8"),
+    );
+    const { stdout } = await run("git", ["rev-parse", "HEAD"], {
+      cwd: h.sourceRoot,
+    });
+
+    expect(manifest.source_commit).toBe(stdout.trim());
+  });
+
+  it("refuses a mixed vault+repo config", async () => {
+    const h = await makeRepoHarness();
+
+    await writeFile(
+      h.configPath,
+      JSON.stringify({
+        vaults: [
+          {
+            source: "repo",
+            name: "k-wiki",
+            root: h.sourceRoot,
+            include: ["README.md"],
+          },
+          {
+            name: "Engineering",
+            root: join(dirname(h.dataRoot), "vault"),
+            exclude: "wiki:false",
+          },
+        ],
+      }),
+    );
+
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow(
+      "mixed source kinds",
+    );
+  });
+
+  it("carries the repo sync summary in the digest", async () => {
+    const h = await makeRepoHarness();
+    const result = await runWikiSync(optionsFor(h));
+    const digest = formatFinalDigest(result);
+
+    expect(digest).toContain("2 sources copied, 0 sources removed");
+    expect(digest).toMatch(/at commit [0-9a-f]{8}/);
+  });
+
+  it("announces stage 1 as sync-repo for a repo-sourced config", async () => {
+    const h = await makeRepoHarness();
+    const progress: string[] = [];
+
+    await runWikiSync({
+      ...optionsFor(h),
+      onProgress: (m) => progress.push(m),
+    });
+
+    expect(progress).toContainEqual("wiki-sync: stage 1/5 — sync-repo");
+    expect(progress).not.toContainEqual("wiki-sync: stage 1/5 — sync-vault");
+  });
+});
+
 describe("formatFinalDigest", () => {
   it("states nothing to do when the cycle was a no-op", () => {
     const digest = formatFinalDigest({
