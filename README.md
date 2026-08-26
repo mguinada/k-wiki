@@ -638,7 +638,10 @@ runs the agent non-interactively **in the data repo root** — `prompts/ingest.m
 for the first run, `prompts/incremental.md` with the changed sources
 (`+` added, `~` changed, `→` renamed, `-` removed) appended for every
 later one, except that removals route to `prompts/expunge.md` (see
-[below](#when-a-note-is-deleted-expungement)). The
+[below](#when-a-note-is-deleted-expungement)); a move is detected as a
+rename even when only its frontmatter changed — identical body text
+still pairs, so a same-day tag edit during a rename never expunges
+(issue #143). The
 snapshot is stamped with the data repo it belongs to (issue #95): one
 stamped for another instance — or an unstamped legacy one — is ignored
 with a loud warning and the run falls back to the full prompt, so a

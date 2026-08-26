@@ -803,4 +803,44 @@ describe("wiki-ingest expunge e2e (sync-driven)", () => {
       "→ Documents/AI/RAG.md → Documents/AI/retrieval-augmented-generation.md",
     );
   });
+
+  it("treats a rename with a frontmatter-only edit as a rename, not an expunge", async () => {
+    const repo = await makeSyncedRepo();
+    const first = await ingestSynced(repo);
+
+    expect(first.code).toBe(0);
+    await git(repo.dataRoot, "add", "-A");
+    await git(repo.dataRoot, "commit", "--quiet", "-m", "after first ingest");
+
+    const note = await readFile(
+      join(repo.dataRoot, "Documents", "AI", "RAG.md"),
+      "utf8",
+    );
+
+    await rm(join(repo.dataRoot, "Documents", "AI", "RAG.md"));
+    await writeFile(
+      join(
+        repo.dataRoot,
+        "Documents",
+        "AI",
+        "retrieval-augmented-generation.md",
+      ),
+      note.replace("  - retrieval\n", "  - retrieval\n  - rag\n"),
+    );
+
+    const sync = await runCli(SYNC_SCRIPT, [repo.configPath, repo.rawDir]);
+
+    expect(sync.code).toBe(0);
+
+    const result = await ingestSynced(repo);
+
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("**Mode:** incremental");
+    expect(result.out).not.toContain("**Mode:** expunge");
+    expect(result.out).toContain("0 added, 0 changed, 0 removed, 1 renamed");
+    expect(result.out).toContain(
+      "→ Documents/AI/RAG.md → Documents/AI/retrieval-augmented-generation.md",
+    );
+    expect(result.err).toContain("wiki-ingest: mode incremental");
+  });
 });
