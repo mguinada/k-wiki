@@ -719,10 +719,7 @@ describe("needsReviewChurn", () => {
   });
 
   it("ignores flips older than the trailing window", () => {
-    const weeks = needsReviewChurn(
-      [{ date: "2026-01-01", subject: "x" }],
-      NOW,
-    );
+    const weeks = needsReviewChurn([{ date: "2026-01-01", subject: "x" }], NOW);
 
     expect(weeks.reduce((total, week) => total + week.count, 0)).toBe(0);
   });
