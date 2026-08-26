@@ -73,6 +73,11 @@ const ENTRIES: readonly Entry[] = [
     usage: "Usage: init-data-repo",
   },
   {
+    launcher: "k-wiki.ts",
+    module: "src/cli/k-wiki.ts",
+    usage: "Usage: k-wiki",
+  },
+  {
     launcher: "mutation-scope.ts",
     module: "scripts/mutation-scope.ts",
     usage: "Usage: mutation-scope",
