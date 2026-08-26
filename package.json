@@ -28,6 +28,7 @@
     "wiki-query": "node bin/wiki-query.ts",
     "data:init": "node bin/init-data-repo.ts",
     "mutation": "stryker run",
+    "eval:ping2": "echo pong",
     "mutation:changed": "sh scripts/mutation-changed.sh",
     "mutation:survivors": "node bin/mutation-survivors.ts"
   },

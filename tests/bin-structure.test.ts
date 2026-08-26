@@ -209,6 +209,12 @@ describe("bin/ launcher structure (issue #135)", () => {
     expect(problems).toEqual([]);
   });
 
+  it("eval:ping2 is a plain echo pong npm script (issue #164)", async () => {
+    const pkg = await readPackageJson();
+
+    expect(pkg.scripts["eval:ping2"]).toBe("echo pong");
+  });
+
   it("every main()-exporting module under src/ or scripts/ is imported by some bin launcher", async () => {
     const launcherFiles = await collectTsFiles(join(repoRoot, "bin"), "bin");
     const launcherText = await Promise.all(
