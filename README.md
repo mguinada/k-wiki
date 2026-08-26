@@ -93,7 +93,7 @@ npm run check-links -- ~/Lab/k-wiki-data/wiki   # every [[wikilink]] resolves
 npm run check-provenance -- ~/Lab/k-wiki-data/wiki  # every sources entry and origin is alive
 npm run check-fidelity -- ~/Lab/k-wiki-data/wiki ~/Lab/k-wiki-data/raw  # quoted tokens trace to origins; titles match file names
 npm run health -- ~/Lab/k-wiki-data/raw         # raw/ matches its manifest
-npm run dashboard -- ~/Lab/k-wiki-data          # regenerate the KPI dashboard (also refreshed by every ingest)
+npm run dashboard -- ~/Lab/k-wiki-data          # regenerate the KPI dashboard (also refreshed by every ingest); add -o to open it
 ```
 
 The command commits the data repo itself, so the next digest covers

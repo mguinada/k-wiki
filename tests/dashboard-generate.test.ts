@@ -494,3 +494,69 @@ describe("dashboard CLI", () => {
     expect(htmlAfter).toBe(htmlBefore);
   });
 });
+
+describe("dashboard CLI --open", () => {
+  /** A PATH-stub `open` that records its argument to a log file. */
+  async function makeOpenStub(): Promise<{ stubDir: string; log: string }> {
+    const stubDir = await mkdtemp(join(tmpdir(), "k-wiki-open-"));
+
+    tempDirs.push(stubDir);
+
+    const log = join(stubDir, "open-log");
+
+    await writeFile(
+      join(stubDir, "open"),
+      `#!/bin/sh\nprintf '%s' "$1" > ${JSON.stringify(log)}\n`,
+      { mode: 0o755 },
+    );
+
+    return { stubDir, log };
+  }
+
+  it("opens the generated dashboard file with -o", async () => {
+    const dataRoot = await makeDataRepo();
+    const { stubDir, log } = await makeOpenStub();
+    const { main } = await import("../src/dashboard/generate.ts");
+    const argv = process.argv;
+    const pathEnv = process.env.PATH;
+    const spies = [
+      vi.spyOn(console, "log").mockImplementation(() => {}),
+      vi.spyOn(console, "error").mockImplementation(() => {}),
+    ];
+
+    process.argv = [...argv.slice(0, 2), "-o", dataRoot];
+    process.env.PATH = `${stubDir}:${pathEnv}`;
+
+    try {
+      await main();
+    } finally {
+      process.argv = argv;
+      process.env.PATH = pathEnv;
+
+      for (const spy of spies) spy.mockRestore();
+    }
+
+    expect(await readFile(log, "utf8")).toBe(join(dataRoot, "dashboard.html"));
+  });
+
+  it("documents --open in the help text", async () => {
+    const { main } = await import("../src/dashboard/generate.ts");
+    const argv = process.argv;
+    const out: string[] = [];
+
+    process.argv = [...argv.slice(0, 2), "--help"];
+
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+
+    try {
+      await main();
+    } finally {
+      process.argv = argv;
+      logSpy.mockRestore();
+    }
+
+    expect(out.join("\n")).toContain("--open");
+  });
+});

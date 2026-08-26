@@ -1,7 +1,9 @@
+import { execFile as execFileCb } from "node:child_process";
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { createColors } from "picocolors";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { loadSyncConfig, resolveRawDir } from "../sync/config.ts";
@@ -77,10 +79,12 @@ export async function writeDashboard(
   return outputPath;
 }
 
+const execFile = promisify(execFileCb);
+
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
-const HELP = `Usage: dashboard [-h | --help] [<data-repo>]
+const HELP = `Usage: dashboard [-h | --help] [-o | --open] [<data-repo>]
 
 Generate the static KPI dashboard (issue #73): one self-contained
 HTML file — inline CSS and SVG, no external references — written to
@@ -101,6 +105,9 @@ entry (wiki-ingest adds the entry; a bare git add must never commit
 the file).
 
 Switches and arguments:
+  -o, --open    Open the generated file in the default browser
+                (macOS \`open\`) after writing it; an \`open\` failure
+                prints an error and exits 1 — the file is still written.
   -h, --help   Print this help and exit; no side effects.
   <data-repo>  The data repo root (the directory holding wiki/,
                raw/, and outputs/). Default: the sync.json dataRoot,
@@ -115,7 +122,12 @@ function colors() {
   return createColors(!process.env.NO_COLOR);
 }
 
-/** dashboard entry point: `dashboard [-h | --help] [<data-repo>]`. */
+/** Open the generated dashboard in the default browser (macOS `open`). */
+function openInBrowser(path: string): Promise<void> {
+  return execFile("open", [path]).then(() => {});
+}
+
+/** dashboard entry point: `dashboard [-h | --help] [-o | --open] [<data-repo>]`. */
 export async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
@@ -125,8 +137,13 @@ export async function main(): Promise<void> {
     return;
   }
 
-  const positional = args.filter((arg) => !arg.startsWith("-"));
-  const unknown = args.find((arg) => arg.startsWith("-"));
+  const wantsOpen = args.includes("-o") || args.includes("--open");
+  const positional = args.filter(
+    (arg) => !arg.startsWith("-") && arg !== "-o" && arg !== "--open",
+  );
+  const unknown = args.find(
+    (arg) => arg.startsWith("-") && arg !== "-o" && arg !== "--open",
+  );
 
   if (unknown !== undefined) {
     console.error(
@@ -159,6 +176,19 @@ export async function main(): Promise<void> {
     });
 
     console.log(colors().green(`dashboard: wrote ${path}`));
+
+    if (wantsOpen) {
+      try {
+        await openInBrowser(path);
+      } catch (error) {
+        console.error(
+          colors().red(
+            `dashboard: wrote ${path} but could not open it: ${error instanceof Error ? error.message : String(error)}`,
+          ),
+        );
+        process.exitCode = 1;
+      }
+    }
   } catch (error) {
     console.error(
       colors().red(
