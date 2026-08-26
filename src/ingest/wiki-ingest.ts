@@ -1419,6 +1419,44 @@ async function adoptLegacySnapshot(
 }
 
 /**
+ * Pre-flight signal (issue #146): a tracked file that matches an
+ * ignore rule is the external-writer guardrail-1 hazard — gitignore
+ * does not apply to tracked files, so the rule covers nothing and an
+ * outside writer (the operator's open Obsidian) trips the
+ * immutability check and reverts runs. One warning per file, each
+ * naming its fix; a signal, not a gate. Runs after
+ * ensureSnapshotIgnored so a tracked snapshot is flagged too.
+ */
+export async function warnTrackedIgnored(
+  dataRoot: string,
+  env: NodeJS.ProcessEnv,
+  onProgress: (message: string) => void,
+): Promise<void> {
+  const stdout = await tryGit(
+    dataRoot,
+    [
+      "-c",
+      "core.quotePath=false",
+      "ls-files",
+      "--ignored",
+      "--exclude-standard",
+      "--cached",
+    ],
+    env,
+  );
+
+  if (stdout === undefined) {
+    return;
+  }
+
+  for (const path of stdout.split("\n").filter(Boolean)) {
+    onProgress(
+      `wiki-ingest: WARNING — ${path} is tracked but ignored; the rule covers nothing, and an external writer changing it will trip guardrail 1 — untrack it: git rm --cached ${path}`,
+    );
+  }
+}
+
+/**
  * One headless ingest run. The snapshot is written only after a
  * successful agent run without --sources, so a failure retries the
  * same sources next time instead of silently skipping them; a
@@ -1452,6 +1490,7 @@ export async function runWikiIngest(
 
   await ensureSnapshotIgnored(dataRoot, onProgress);
   await adoptLegacySnapshot(legacySnapshotPath, snapshotPath, onProgress);
+  await warnTrackedIgnored(dataRoot, env, onProgress);
 
   const previous = await readSnapshot(snapshotPath, dataRoot, onProgress);
 
@@ -1683,6 +1722,12 @@ added, edited, or renamed sources gets prompts/incremental.md
 appended below the expunge prompt, so those sources are ingested in
 the same run), invoke the agent CLI non-interactively in the data
 repo root (the parent of the raw dir), and record what happened.
+
+Before the agent runs, a pre-flight check lists tracked files that
+also match an ignore rule — gitignore does not apply to tracked
+files, so such a rule covers nothing and an external writer (an open
+Obsidian) would trip guardrail 1 — as one yellow WARNING per file
+with its fix (git rm --cached <path>); a signal, not a gate.
 
 Switches and arguments:
   --settings <path>  Agent settings file. Default: the repo's
