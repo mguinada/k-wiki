@@ -930,6 +930,10 @@ describe("checkRaw freshness edges (issue #74)", () => {
     HOME: process.env.HOME,
   };
 
+  /** Forge a SHA that differs from `sha` — a stale stand-in for it. */
+  const staleSha = (sha: string): string =>
+    `${sha.slice(0, -1)}${sha.endsWith("0") ? "1" : "0"}`;
+
   async function runHealthCli(
     args: string[],
   ): Promise<{ out: string; err: string }> {
@@ -1097,7 +1101,7 @@ describe("checkRaw freshness edges (issue #74)", () => {
       join(rawDir, "manifest.json"),
       serializeManifest(
         { vaults: { "k-wiki": notes } },
-        { source_commit: `${commit.slice(0, -1)}0`, source_root: sourceRoot },
+        { source_commit: staleSha(commit), source_root: sourceRoot },
       ),
     );
 
@@ -1105,5 +1109,11 @@ describe("checkRaw freshness edges (issue #74)", () => {
 
     expect(report.warnings[0]).toContain(commit.slice(0, 8));
     expect(report.warnings[0]).toContain("re-run sync-repo");
+  });
+
+  it("forges a stale SHA that differs from the real one for both SHA endings", () => {
+    const endings = [`${"a".repeat(39)}0`, `${"a".repeat(39)}1`];
+
+    expect(endings.map((sha) => staleSha(sha) !== sha)).toEqual([true, true]);
   });
 });
