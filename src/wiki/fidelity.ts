@@ -107,37 +107,50 @@ function isConfigKey(token: string): boolean {
   );
 }
 
+/** A tilde path contributes without its trailing punctuation. */
+function tildePathToken(token: string): string {
+  return token.replace(/[./-]+$/, "");
+}
+
+/** A dotted token contributes only when it is a config key. */
+function configKeyToken(token: string): string | undefined {
+  return isConfigKey(token) ? token : undefined;
+}
+
+/** Collect every regex match as a token, mapped through `transform`
+ *  (identity by default); a transform returning undefined drops the
+ *  token. */
+function collectTokens(
+  body: string,
+  pattern: RegExp,
+  tokens: Set<string>,
+  transform: (match: string) => string | undefined = (match) => match,
+): void {
+  for (const match of body.matchAll(pattern)) {
+    const token = transform(match[0] ?? "");
+
+    if (token !== undefined) {
+      tokens.add(token);
+    }
+  }
+}
+
 /** Extract the machine-checkable artifacts from a page body: tilde
  *  paths, dotted config keys, long and short CLI flags, and `npm run`
  *  commands. Sorted and de-duplicated for deterministic output. */
 export function extractArtifacts(body: string): string[] {
   const tokens = new Set<string>();
 
-  for (const match of body.matchAll(/~\/[A-Za-z0-9_./-]+/g)) {
-    tokens.add((match[0] ?? "").replace(/[./-]+$/, ""));
-  }
-
-  for (const match of body.matchAll(
+  collectTokens(body, /~\/[A-Za-z0-9_./-]+/g, tokens, tildePathToken);
+  collectTokens(
+    body,
     /\b[A-Za-z][A-Za-z0-9-]*(?:\.[A-Za-z][A-Za-z0-9]*)+\b/g,
-  )) {
-    const token = match[0] ?? "";
-
-    if (isConfigKey(token)) {
-      tokens.add(token);
-    }
-  }
-
-  for (const match of body.matchAll(/--[A-Za-z][A-Za-z0-9-]*/g)) {
-    tokens.add(match[0] ?? "");
-  }
-
-  for (const match of body.matchAll(/(?<![\w-])-[A-Za-z]\b/g)) {
-    tokens.add(match[0] ?? "");
-  }
-
-  for (const match of body.matchAll(/npm run [A-Za-z0-9:_-]+/g)) {
-    tokens.add(match[0] ?? "");
-  }
+    tokens,
+    configKeyToken,
+  );
+  collectTokens(body, /--[A-Za-z][A-Za-z0-9-]*/g, tokens);
+  collectTokens(body, /(?<![\w-])-[A-Za-z]\b/g, tokens);
+  collectTokens(body, /npm run [A-Za-z0-9:_-]+/g, tokens);
 
   return [...tokens].sort();
 }
@@ -154,6 +167,99 @@ function appearsInOrigin(token: string, originText: string): boolean {
   return new RegExp(`${escapeRegExp(token)}(?![\\w-])(?!\\.[\\w-])`).test(
     originText,
   );
+}
+
+/** Running fidelity counters threaded through the per-page checks. */
+interface FidelityCounters {
+  quotes: number;
+  titles: number;
+  skipped: number;
+}
+
+/** Check a non-structural page's `title` kebab-cases to its file
+ *  stem. */
+function checkTitle(
+  page: string,
+  stem: string,
+  title: string | undefined,
+  problems: string[],
+  counters: FidelityCounters,
+): void {
+  if (title === undefined || STRUCTURAL_PAGES.has(stem)) {
+    return;
+  }
+
+  if (kebab(title) === stem) {
+    counters.titles++;
+  } else {
+    problems.push(
+      `${page} -> title ${JSON.stringify(title)} does not kebab to ${stem}`,
+    );
+  }
+}
+
+/** A source page's origin text, or undefined when unreadable — a
+ *  dead origin is check-provenance's problem, so its page skips
+ *  quote checking. */
+async function readOriginText(
+  rawDir: string,
+  origin: string,
+): Promise<string | undefined> {
+  try {
+    return await readFile(join(rawDir, normalizeRawPath(origin)), "utf8");
+  } catch {
+    return undefined;
+  }
+}
+
+/** Check every artifact quoted in a page body appears in its
+ *  origin. */
+function checkQuotes(
+  page: string,
+  text: string,
+  origin: string,
+  originText: string,
+  problems: string[],
+  counters: FidelityCounters,
+): void {
+  for (const token of extractArtifacts(bodyAfterFrontmatter(text))) {
+    counters.quotes++;
+
+    if (!appearsInOrigin(token, originText)) {
+      problems.push(`${page} -> \`${token}\` not in origin ${origin}`);
+    }
+  }
+}
+
+/** Run every fidelity check for one wiki page. */
+async function checkPageFidelity(
+  wikiDir: string,
+  rawDir: string,
+  file: string,
+  problems: string[],
+  counters: FidelityCounters,
+): Promise<void> {
+  const text = await readFile(join(wikiDir, file), "utf8");
+  const fields = parsePageFields(text);
+  const page = relative(resolve(wikiDir, ".."), join(wikiDir, file));
+
+  checkTitle(page, basename(file, ".md"), fields.title, problems, counters);
+
+  if (fields.type !== "source" || fields.origin === undefined) {
+    if (fields.type === "source") {
+      counters.skipped++;
+    }
+
+    return;
+  }
+
+  const originText = await readOriginText(rawDir, fields.origin);
+
+  if (originText === undefined) {
+    return;
+  }
+
+  checkQuotes(page, text, fields.origin, originText, problems, counters);
 }
 
 /**
@@ -179,57 +285,19 @@ export async function checkWikiFidelity(
 
   await assertRawDir(rawDir);
   const problems: string[] = [];
-  let quotes = 0;
-  let titles = 0;
-  let skipped = 0;
+  const counters: FidelityCounters = { quotes: 0, titles: 0, skipped: 0 };
 
   for (const file of files) {
-    const text = await readFile(join(wikiDir, file), "utf8");
-    const fields = parsePageFields(text);
-    const page = relative(resolve(wikiDir, ".."), join(wikiDir, file));
-    const stem = basename(file, ".md");
-
-    if (fields.title !== undefined && !STRUCTURAL_PAGES.has(stem)) {
-      if (kebab(fields.title) === stem) {
-        titles++;
-      } else {
-        problems.push(
-          `${page} -> title ${JSON.stringify(fields.title)} does not kebab to ${stem}`,
-        );
-      }
-    }
-
-    if (fields.type !== "source" || fields.origin === undefined) {
-      if (fields.type === "source") {
-        skipped++;
-      }
-
-      continue;
-    }
-
-    let originText: string | undefined;
-
-    try {
-      originText = await readFile(
-        join(rawDir, normalizeRawPath(fields.origin)),
-        "utf8",
-      );
-    } catch {
-      // A dead origin is check-provenance's problem; nothing to
-      // compare against here.
-      continue;
-    }
-
-    for (const token of extractArtifacts(bodyAfterFrontmatter(text))) {
-      quotes++;
-
-      if (!appearsInOrigin(token, originText)) {
-        problems.push(`${page} -> \`${token}\` not in origin ${fields.origin}`);
-      }
-    }
+    await checkPageFidelity(wikiDir, rawDir, file, problems, counters);
   }
 
-  return { problems, quotes, titles, skipped, pages: files.length };
+  return {
+    problems,
+    quotes: counters.quotes,
+    titles: counters.titles,
+    skipped: counters.skipped,
+    pages: files.length,
+  };
 }
 
 /** The report's summary sentence — quote tokens traced to origins and
