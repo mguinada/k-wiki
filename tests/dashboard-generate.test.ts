@@ -9,6 +9,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { writeDashboard } from "../src/dashboard/generate.ts";
 
