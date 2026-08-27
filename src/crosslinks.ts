@@ -80,19 +80,14 @@ async function loadDomainWiki(dirInput: string): Promise<DomainWiki> {
  * wiki root's parent directory. Throws when a directory is missing or
  * a domain wiki has no sibling manifest.
  */
-export async function checkCrossWikiLinks(
-  wikiDirInput: string,
-  ...domainDirInputs: string[]
-): Promise<CrossLinkReport> {
-  const wikiDir = resolve(wikiDirInput);
-  const displayRoot = resolve(wikiDir, "..");
-  const files = await listWikiPages(wikiDirInput);
-  const domains = [];
-
-  for (const dirInput of domainDirInputs) {
-    domains.push(await loadDomainWiki(dirInput));
-  }
-
+/** Audit the audited wiki's outgoing links: every cross-wiki link
+ *  must name a known domain vault and resolve to that domain's page. */
+async function auditWikiLinks(
+  wikiDir: string,
+  displayRoot: string,
+  files: readonly string[],
+  domains: readonly DomainWiki[],
+): Promise<{ problems: string[]; external: number }> {
   const problems: string[] = [];
   let external = 0;
 
@@ -121,10 +116,17 @@ export async function checkCrossWikiLinks(
     }
   }
 
-  let domainPages = 0;
+  return { problems, external };
+}
+
+/** Audit the domain wikis: they are link sinks, so any cross-wiki
+ *  link inside them is forbidden. */
+async function auditDomainLinks(
+  domains: readonly DomainWiki[],
+): Promise<string[]> {
+  const problems: string[] = [];
 
   for (const domain of domains) {
-    domainPages += domain.files.length;
     const domainDisplayRoot = resolve(domain.dir, "..");
 
     for (const file of domain.files) {
@@ -140,5 +142,32 @@ export async function checkCrossWikiLinks(
     }
   }
 
-  return { problems, external, auditedPages: files.length, domainPages };
+  return problems;
+}
+
+export async function checkCrossWikiLinks(
+  wikiDirInput: string,
+  ...domainDirInputs: string[]
+): Promise<CrossLinkReport> {
+  const wikiDir = resolve(wikiDirInput);
+  const displayRoot = resolve(wikiDir, "..");
+  const files = await listWikiPages(wikiDirInput);
+  const domains = [];
+
+  for (const dirInput of domainDirInputs) {
+    domains.push(await loadDomainWiki(dirInput));
+  }
+
+  const audited = await auditWikiLinks(wikiDir, displayRoot, files, domains);
+  const domainProblems = await auditDomainLinks(domains);
+
+  return {
+    problems: [...audited.problems, ...domainProblems],
+    external: audited.external,
+    auditedPages: files.length,
+    domainPages: domains.reduce(
+      (total, domain) => total + domain.files.length,
+      0,
+    ),
+  };
 }
