@@ -73,8 +73,8 @@ until all three pass. Run them before every handoff.
   repo-as-source projection runs in temp source repos (verbatim copy,
   commit stamping, dirty-source and wrong-config failures, health
   freshness), and wiki-sync through
-  full-cycle, no-change, failure, guardrail-revert, and reverted
-  fidelity-failure runs.
+  full-cycle, no-change, failure, guardrail-revert, reverted
+  fidelity-failure, and repo-source cycle (the meta flow) runs.
 - `npm run health [-- <raw-dir>] [--fail-on-stale]` — coherence check
   of a `raw/` projection (default: the repo's `raw/`); a repo-sourced
   projection is also freshness-checked (`--fail-on-stale` makes a

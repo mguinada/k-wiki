@@ -906,7 +906,9 @@ One command performs the whole cycle — implemented as
 ```text
 wiki-sync
    │
-   ├── 1. Synchronize MyVault → raw/
+   ├── 1. Synchronize the sources into raw/ — sync-vault for vault
+   │      sources, the sync-repo core for a repo-typed source
+   │      (Scenario E, issue #145)
    │
    ├── 2. Determine changed/deleted sources
    │
@@ -1399,7 +1401,10 @@ Deltas from the simple path:
 4. **Separate config, same machinery.** `sync-meta.json` names the repo
    source; `settings-meta.yml` names the agent. `sync-vault` rejects a
    config holding a repo source and `sync-repo` rejects a vault config,
-   so a wrong-pairing run fails loudly instead of mis-projecting.
+   so a wrong-pairing run fails loudly instead of mis-projecting;
+   `wiki-sync` dispatches stage 1 on the config's source kinds and
+   refuses a mixed vault+repo config — one instance per config
+   (issue #145).
 5. **The meta contract.** The meta data repo's `wiki/AGENTS.md` is not
    the canonical contract: it is seeded (by `data:init --meta`) from
    the code repo's `wiki/AGENTS.meta.md`, which replaces the
@@ -1410,16 +1415,14 @@ Deltas from the simple path:
    fixes); page granularity (pages for mechanisms and entry points,
    never per-file résumés).
 
-Operating the instance (manual for the MVP; scheduling is a later
-config concern):
-
-```bash
-npm run data:init -- --meta sync-meta.json
-npm run sync-repo -- sync-meta.json
-node bin/wiki-ingest.ts --settings settings-meta.yml \
-  ~/Lab/k-wiki-meta-data/raw
-npm run health -- ~/Lab/k-wiki-meta-data/raw
-```
+Operating the instance: the same one-command cycle as every other
+instance (issue #145) — `wiki-sync` reads the repo-typed source in
+`sync-meta.json` and runs the sync-repo core at stage 1, so lint, the
+verification checks, and the single regeneration commit are
+in-cycle. The piecewise stages (`sync-repo`, `wiki-ingest`,
+`health`) stay the debug path, one stage at a time. The README's
+meta usage model (its §9) has the exact commands; scheduling is a
+later config concern.
 
 Every regeneration goes through the same git-diff review flow as any
 other wiki (Section 19), and the projection commit SHA lands in the
