@@ -425,6 +425,72 @@ describe("runWikiSync", () => {
   });
 });
 
+describe("runWikiSync ingest pre-flight (issue #146)", () => {
+  /** The hazard order of k-wiki-meta-data 72dce82: commit the Obsidian
+   *  UI state first, add the ignore rule afterwards — gitignore does
+   *  not apply to tracked files. */
+  async function trackIgnoredObsidianState(h: Harness): Promise<void> {
+    await mkdir(join(h.dataRoot, ".obsidian"), { recursive: true });
+    await writeFile(join(h.dataRoot, ".obsidian", "workspace.json"), "{}");
+    await run("git", ["-C", h.dataRoot, "add", "-A"]);
+    await run("git", [
+      "-C",
+      h.dataRoot,
+      "commit",
+      "--quiet",
+      "-m",
+      "track obsidian state",
+    ]);
+    await writeFile(join(h.dataRoot, ".gitignore"), ".obsidian/\n");
+  }
+
+  it("surfaces the tracked-but-ignored warning in the cycle progress", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const progress: string[] = [];
+
+    await trackIgnoredObsidianState(h);
+
+    await runWikiSync({
+      ...optionsFor(h),
+      onProgress: (message) => progress.push(message),
+    });
+
+    expect(
+      progress.some(
+        (message) =>
+          message.includes("WARNING") &&
+          message.includes("git rm --cached .obsidian/workspace.json"),
+      ),
+    ).toBe(true);
+  });
+
+  it("emits exactly one pre-flight warning per tracked-but-ignored file", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const progress: string[] = [];
+
+    await trackIgnoredObsidianState(h);
+
+    await runWikiSync({
+      ...optionsFor(h),
+      onProgress: (message) => progress.push(message),
+    });
+
+    expect(
+      progress.filter((message) => message.includes("is tracked but ignored")),
+    ).toHaveLength(1);
+  });
+
+  it("still commits the cycle when a tracked-but-ignored file is present", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    await trackIgnoredObsidianState(h);
+
+    const result = await runWikiSync(optionsFor(h));
+
+    expect(result.commit.status).toBe("committed");
+  });
+});
+
 describe("formatFinalDigest", () => {
   it("states nothing to do when the cycle was a no-op", () => {
     const digest = formatFinalDigest({
