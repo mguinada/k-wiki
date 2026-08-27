@@ -1,9 +1,14 @@
 # Quality gates for pipeline development.
 #
 # Runs the gates (typecheck, lint, test) plus the end-to-end job
-# (e2e + health) on every pull request. The run tests the PR's merge
-# commit, so it catches incompatibilities with main before merge. Pushes are not run separately: the pull_request run
-# already covers each commit through its PR. The test job runs with
+# (e2e + health) on every pull request and on every push to main.
+# The pull_request run tests the PR's merge commit, so it catches
+# incompatibilities with main before merge; the push run catches a
+# merge that landed despite a red PR check — without it, a merge
+# like #171 (unit tests red on its own final checks) leaves main
+# broken with nothing to say so (#146 review, 2026-08-27). Push runs
+# are cheap: they test the merged commit the PR run already
+# validated, so they only differ when the PR was merged red. The test job runs with
 # coverage and fails below the 90% thresholds in vitest.config.ts; the
 # report prints file paths and percentages only. The repo is private and
 # runs on GitHub-hosted runners: no step may print raw/ or vault contents
@@ -32,6 +37,8 @@ name: CI
 on:
   pull_request:
     types: [opened, synchronize, reopened, labeled]
+  push:
+    branches: [main]
   schedule:
     # Nightly at 03:30 UTC.
     - cron: "30 3 * * *"
@@ -49,7 +56,7 @@ jobs:
     name: Type check
     # `labeled` events exist only to evaluate the mutation job's label
     # condition; the gates skip them.
-    if: github.event_name == 'pull_request' && github.event.action != 'labeled'
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'labeled')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -62,7 +69,7 @@ jobs:
 
   lint:
     name: Lint
-    if: github.event_name == 'pull_request' && github.event.action != 'labeled'
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'labeled')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -75,7 +82,7 @@ jobs:
 
   test:
     name: Unit tests
-    if: github.event_name == 'pull_request' && github.event.action != 'labeled'
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'labeled')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -88,7 +95,7 @@ jobs:
 
   e2e:
     name: End-to-end and health
-    if: github.event_name == 'pull_request' && github.event.action != 'labeled'
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'labeled')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -103,10 +110,11 @@ jobs:
   mutation:
     name: Mutation testing (advisory)
     # PRs: only when labeled `mutation`. Otherwise: nightly schedule on
-    # main and manual workflow_dispatch runs. Scheduled/dispatched runs
-    # carry no pull_request context, so contains() falls through to false
-    # without erroring.
-    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'mutation')
+    # main and manual workflow_dispatch runs — never per push: the full
+    # run is slow and the nightly cadence already covers main. Pushes
+    # carry no pull_request context, so contains() falls through to
+    # false without erroring; the explicit event list keeps them out.
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'mutation'))
     runs-on: ubuntu-latest
     # Advisory signal, not a gate: a failing run must never block a merge.
     continue-on-error: true

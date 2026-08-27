@@ -28,6 +28,7 @@ import {
   removedNoteContent,
   runWikiIngest,
   spawnAgent,
+  warnTrackedIgnored,
 } from "../src/ingest/wiki-ingest.ts";
 import {
   emptyManifest,
@@ -3112,6 +3113,118 @@ describe("runWikiIngest", () => {
     await expect(readFile(h.snapshotPath, "utf8")).rejects.toMatchObject({
       code: "ENOENT",
     });
+  });
+});
+
+describe("runWikiIngest tracked-but-ignored pre-flight (issue #146)", () => {
+  /** Track `.obsidian/workspace.json` in the data repo, then add the
+   *  ignore rule afterwards — the hazard order from k-wiki-meta-data
+   *  commit 72dce82: gitignore does not apply to tracked files. */
+  async function trackIgnoredObsidianState(h: Harness): Promise<void> {
+    await mkdir(join(h.dataRoot, ".obsidian"), { recursive: true });
+    await writeFile(join(h.dataRoot, ".obsidian", "workspace.json"), "{}");
+    await commitAll(h.dataRoot, "track obsidian state");
+    await writeFile(join(h.dataRoot, ".gitignore"), ".obsidian/\n");
+  }
+
+  it("warns pre-flight with the untrack fix for a tracked-but-ignored file", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const messages: string[] = [];
+
+    await trackIgnoredObsidianState(h);
+
+    const result = await runWikiIngest({
+      ...optionsFor(h),
+      onProgress: (message) => messages.push(message),
+    });
+
+    expect(result).toMatchObject({ status: "ran", mode: "full" });
+    expect(
+      messages.some(
+        (message) =>
+          message.includes("WARNING") &&
+          message.includes(".obsidian/workspace.json") &&
+          message.includes("git rm --cached .obsidian/workspace.json"),
+      ),
+    ).toBe(true);
+  });
+
+  it("warns once per tracked-but-ignored file", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const messages: string[] = [];
+
+    await mkdir(join(h.dataRoot, ".obsidian"), { recursive: true });
+    await writeFile(join(h.dataRoot, ".obsidian", "workspace.json"), "{}");
+    await writeFile(join(h.dataRoot, ".obsidian", "app.json"), "{}");
+    await commitAll(h.dataRoot, "track obsidian state");
+    await writeFile(join(h.dataRoot, ".gitignore"), ".obsidian/\n");
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      onProgress: (message) => messages.push(message),
+    });
+
+    const warnings = messages.filter((message) => message.includes("WARNING"));
+
+    expect(warnings).toHaveLength(2);
+  });
+
+  it("stays silent when no tracked file is ignored", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const messages: string[] = [];
+
+    await mkdir(join(h.dataRoot, ".obsidian"), { recursive: true });
+    await writeFile(join(h.dataRoot, ".obsidian", "workspace.json"), "{}");
+    await writeFile(join(h.dataRoot, ".gitignore"), ".obsidian/\n");
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      onProgress: (message) => messages.push(message),
+    });
+
+    expect(messages.some((message) => message.includes("WARNING"))).toBe(false);
+  });
+
+  it("warns for a tracked snapshot after appending its ignore entry", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const messages: string[] = [];
+
+    await mkdir(dirname(h.snapshotPath), { recursive: true });
+    await writeFile(
+      h.snapshotPath,
+      serializeManifest(manifestWith("Engineering", { "a.md": entry("a") })),
+    );
+    await commitAll(h.dataRoot, "track the snapshot");
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      onProgress: (message) => messages.push(message),
+    });
+
+    expect(
+      messages.some(
+        (message) =>
+          message.includes("WARNING") &&
+          message.includes(
+            "git rm --cached outputs/last-ingested-manifest.json",
+          ),
+      ),
+    ).toBe(true);
+  });
+});
+
+describe("warnTrackedIgnored (issue #146)", () => {
+  it("emits no warning and does not throw when git cannot report", async () => {
+    const messages: string[] = [];
+    const notARepo = await mkdtemp(join(tmpdir(), "k-wiki-not-a-repo-"));
+
+    tempDirs.push(notARepo);
+
+    await warnTrackedIgnored(notARepo, process.env, (message) =>
+      messages.push(message),
+    );
+
+    expect(messages).toEqual([]);
   });
 });
 

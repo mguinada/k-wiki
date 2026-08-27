@@ -83,10 +83,12 @@ until all three pass. Run them before every handoff.
 `npm run format` (`biome format --write .`) is the fix command for
 formatting differences reported by `npm run lint`; it is not a gate.
 
-CI (`.github/workflows/ci.yml`) runs the gates on every pull request;
-the run tests the PR's merge commit against `main`, and the test job
-enforces the 90% coverage floor. The `e2e` job runs `npm run e2e` and
-`npm run health` on every PR — blocking, like the gates.
+CI (`.github/workflows/ci.yml`) runs the gates on every pull request
+and on every push to `main` — the PR run tests the merge commit
+against `main`, the push run catches a merge that landed despite a
+red PR check; the test job enforces the 90% coverage floor. The `e2e`
+job runs `npm run e2e` and `npm run health` on every PR and `main`
+push — blocking, like the gates.
 
 ### End-to-end verification run order
 

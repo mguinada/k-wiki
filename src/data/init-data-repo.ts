@@ -1,5 +1,11 @@
 import { existsSync } from "node:fs";
-import { copyFile, mkdir, readdir, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  mkdir,
+  readdir,
+  readFile,
+  writeFile,
+} from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { refuseDirectExecution } from "../cli/is-main.ts";
@@ -71,6 +77,53 @@ async function listSkeletonPaths(
     .sort();
 }
 
+/** The standing .gitignore rules every data repo must carry (issue
+ *  #146): the ones both live data repos converged on by hand after
+ *  incidents — Obsidian UI state (an open Obsidian writing into the
+ *  repo trips guardrail 1, so the rule must predate the files) and
+ *  the wiki-ingest snapshot (per-instance state, issue #112).
+ *  gitignore does not apply to already-tracked files; wiki-ingest
+ *  warns pre-flight when that happens. */
+const STANDING_IGNORE_BLOCKS = [
+  {
+    comment:
+      "# Obsidian UI state: never part of the wiki (external writer; guardrail 1 hazard)",
+    entries: [".obsidian/", "wiki/.obsidian/"],
+  },
+  {
+    comment:
+      "# wiki-ingest manifest snapshot: per-instance state, never committed (issue #112)",
+    entries: ["outputs/last-ingested-manifest.json"],
+  },
+] as const;
+
+/** Write the standing ignore rules into the data repo's .gitignore,
+ *  merging any missing entries into an existing file — idempotent:
+ *  a .gitignore that already carries every rule is left untouched. */
+export async function seedStandingIgnores(dataRoot: string): Promise<void> {
+  const ignorePath = join(dataRoot, ".gitignore");
+  const existing = await readFile(ignorePath, "utf8").catch(() => "");
+  const present = new Set(existing.split("\n").map((line) => line.trim()));
+  const additions: string[] = [];
+
+  for (const block of STANDING_IGNORE_BLOCKS) {
+    const missing = block.entries.filter((entry) => !present.has(entry));
+
+    if (missing.length > 0) {
+      additions.push(block.comment, ...missing);
+    }
+  }
+
+  if (additions.length === 0) {
+    return;
+  }
+
+  const body =
+    existing === "" || existing.endsWith("\n") ? existing : `${existing}\n`;
+
+  await writeFile(ignorePath, `${body}${additions.join("\n")}\n`, "utf8");
+}
+
 /** Copy the skeleton and commit it as the data repo's first commit. */
 async function seed(
   dataRoot: string,
@@ -101,6 +154,8 @@ async function seed(
       join(dataRoot, "wiki", "AGENTS.md"),
     );
   }
+
+  await seedStandingIgnores(dataRoot);
 
   const message = "Seed data repo from k-wiki skeleton";
 
@@ -156,7 +211,10 @@ const defaultRepoRoot = resolve(
 const HELP = `Usage: init-data-repo [-h | --help] [--second-brain] [--meta] [<config>]
 
 Create and seed the data repo at the config's dataRoot: git init, copy
-the raw/ and wiki/ skeleton from the code repo, first commit.
+the raw/ and wiki/ skeleton from the code repo, write the standing
+.gitignore (Obsidian UI state and the ingest snapshot — gitignore
+does not apply to tracked files, so the rules must precede the
+files), first commit.
 Idempotent — an already-seeded data repo is left untouched.
 
   --second-brain  Also write .second-brain, the operator-owned

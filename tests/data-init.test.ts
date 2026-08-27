@@ -6,7 +6,11 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { runGit } from "../src/data/git.ts";
-import { main, seedDataRepo } from "../src/data/init-data-repo.ts";
+import {
+  main,
+  seedDataRepo,
+  seedStandingIgnores,
+} from "../src/data/init-data-repo.ts";
 
 const tempDirs: string[] = [];
 
@@ -94,6 +98,10 @@ describe("data:init CLI help", () => {
     expect((await runInitCli(["--help"])).out).toContain(
       "Default: the repo's own sync.json",
     );
+  });
+
+  it("documents the seeded standing .gitignore", async () => {
+    expect((await runInitCli(["--help"])).out).toContain(".gitignore");
   });
 
   it("leaves the exit code unset for --help", async () => {
@@ -497,6 +505,88 @@ describe("data:init bin launcher", () => {
 
     expect(out).toBe(`data:init: seeded ${join(repo, "data")}`);
     expect(existsSync(join(repo, "data", ".second-brain"))).toBe(true);
+  });
+});
+
+describe("data:init standing .gitignore (issue #146)", () => {
+  const STANDING_GITIGNORE = [
+    "# Obsidian UI state: never part of the wiki (external writer; guardrail 1 hazard)",
+    ".obsidian/",
+    "wiki/.obsidian/",
+    "# wiki-ingest manifest snapshot: per-instance state, never committed (issue #112)",
+    "outputs/last-ingested-manifest.json",
+    "",
+  ].join("\n");
+
+  it("seeds the standing ignore rules both live repos converged on", async () => {
+    const dataRoot = await makeTempDir();
+
+    await seedDataRepo({
+      configPath: await writeConfig(dataRoot),
+      repoRoot: await makeCodeRepoFixture(),
+      env: GIT_ENV,
+    });
+
+    expect(await readFile(join(dataRoot, ".gitignore"), "utf8")).toBe(
+      STANDING_GITIGNORE,
+    );
+  }, 20000);
+
+  it("commits the seeded .gitignore with the skeleton", async () => {
+    const dataRoot = await makeTempDir();
+
+    await seedDataRepo({
+      configPath: await writeConfig(dataRoot),
+      repoRoot: await makeCodeRepoFixture(),
+      env: GIT_ENV,
+    });
+
+    const { stdout } = await git(dataRoot, "ls-files", "--", ".gitignore");
+
+    expect(stdout.trim()).toBe(".gitignore");
+  }, 20000);
+
+  it("merges the missing standing rules into an existing .gitignore", async () => {
+    const dataRoot = await makeTempDir();
+
+    await writeFile(join(dataRoot, ".gitignore"), "scratch/\n");
+    await seedStandingIgnores(dataRoot);
+
+    expect(await readFile(join(dataRoot, ".gitignore"), "utf8")).toBe(
+      `scratch/\n${STANDING_GITIGNORE}`,
+    );
+  });
+
+  it("terminates an unterminated .gitignore before appending", async () => {
+    const dataRoot = await makeTempDir();
+
+    await writeFile(join(dataRoot, ".gitignore"), "scratch/");
+    await seedStandingIgnores(dataRoot);
+
+    expect(await readFile(join(dataRoot, ".gitignore"), "utf8")).toBe(
+      `scratch/\n${STANDING_GITIGNORE}`,
+    );
+  });
+
+  it("leaves a .gitignore that already carries every standing rule untouched", async () => {
+    const dataRoot = await makeTempDir();
+    const before = `${STANDING_GITIGNORE}operator-rule/\n`;
+
+    await writeFile(join(dataRoot, ".gitignore"), before);
+    await seedStandingIgnores(dataRoot);
+
+    expect(await readFile(join(dataRoot, ".gitignore"), "utf8")).toBe(before);
+  });
+
+  it("treats a whitespace-padded standing rule as already present", async () => {
+    const dataRoot = await makeTempDir();
+
+    await writeFile(join(dataRoot, ".gitignore"), "  .obsidian/  \n");
+    await seedStandingIgnores(dataRoot);
+
+    expect(await readFile(join(dataRoot, ".gitignore"), "utf8")).toBe(
+      `  .obsidian/  \n# Obsidian UI state: never part of the wiki (external writer; guardrail 1 hazard)\nwiki/.obsidian/\n# wiki-ingest manifest snapshot: per-instance state, never committed (issue #112)\noutputs/last-ingested-manifest.json\n`,
+    );
   });
 });
 

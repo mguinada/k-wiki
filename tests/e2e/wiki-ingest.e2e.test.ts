@@ -493,6 +493,36 @@ describe("wiki-ingest e2e", () => {
       readFile(join(repo.dataRoot, "raw", "notes", "rogue.md"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
+
+  it("warns pre-flight on tracked-but-ignored files and still succeeds", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag" });
+
+    await mkdir(join(repo.dataRoot, ".obsidian"), { recursive: true });
+    await writeFile(join(repo.dataRoot, ".obsidian", "workspace.json"), "{}");
+    await run("git", ["-C", repo.dataRoot, "add", "-A"]);
+    await run(
+      "git",
+      [
+        "-c",
+        "user.email=t@t",
+        "-c",
+        "user.name=t",
+        "commit",
+        "--quiet",
+        "-m",
+        "track obsidian state",
+      ],
+      { cwd: repo.dataRoot },
+    );
+    await writeFile(join(repo.dataRoot, ".gitignore"), ".obsidian/\n");
+
+    const result = await ingest(repo);
+
+    expect(result.code).toBe(0);
+    expect(result.err).toContain("WARNING");
+    expect(result.err).toContain("git rm --cached .obsidian/workspace.json");
+    expect(result.out).toContain("Wiki ingest digest");
+  });
 });
 
 describe("wiki-ingest --sources e2e", () => {
