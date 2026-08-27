@@ -120,11 +120,19 @@ async function collectRawNoteKeys(dataRoot: string): Promise<string[]> {
   return keys.sort();
 }
 
-/** Snapshot keys of ingested sources; null when no snapshot exists. */
-async function collectIngestedKeys(dataRoot: string): Promise<string[] | null> {
-  const text = await readText(
-    join(dataRoot, "outputs", "last-ingested-manifest.json"),
-  );
+/** The value as a record; null when it is not an object. */
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+/** The `vaults` map of a JSON artifact; null when the file is missing,
+ *  unparsable, or shaped wrong. */
+async function readVaults(
+  path: string,
+): Promise<Record<string, unknown> | null> {
+  const text = await readText(path);
 
   if (text === undefined) {
     return null;
@@ -138,30 +146,62 @@ async function collectIngestedKeys(dataRoot: string): Promise<string[] | null> {
     return null;
   }
 
-  const vaults =
-    typeof parsed === "object" && parsed !== null
-      ? (parsed as { vaults?: unknown }).vaults
-      : undefined;
+  const parsedRecord = asRecord(parsed);
 
-  if (typeof vaults !== "object" || vaults === null) {
+  return parsedRecord === null ? null : asRecord(parsedRecord.vaults);
+}
+
+/** Snapshot keys of ingested sources; null when no snapshot exists. */
+async function collectIngestedKeys(dataRoot: string): Promise<string[] | null> {
+  const vaults = await readVaults(
+    join(dataRoot, "outputs", "last-ingested-manifest.json"),
+  );
+
+  if (vaults === null) {
     return null;
   }
 
   const keys: string[] = [];
 
-  for (const [vault, notes] of Object.entries(
-    vaults as Record<string, unknown>,
-  )) {
-    if (typeof notes !== "object" || notes === null) {
+  for (const [vault, notes] of Object.entries(vaults)) {
+    const record = asRecord(notes);
+
+    if (record === null) {
       continue;
     }
 
-    for (const rel of Object.keys(notes)) {
+    for (const rel of Object.keys(record)) {
       keys.push(`${vault}/${rel}`);
     }
   }
 
   return keys;
+}
+
+/** One vault's manifest entries → note sync stamps; also that vault's
+ *  newest `last_synced` stamp. */
+function collectVaultNotes(
+  vault: string,
+  entries: Record<string, unknown>,
+  notes: { key: string; lastSynced: string }[],
+): string | null {
+  let newest: string | null = null;
+
+  for (const [rel, entry] of Object.entries(entries)) {
+    const stamp = asRecord(entry)?.last_synced;
+
+    if (typeof stamp !== "string") {
+      continue;
+    }
+
+    notes.push({ key: `${vault}/${rel}`, lastSynced: stamp });
+
+    if (newest === null || stamp > newest) {
+      newest = stamp;
+    }
+  }
+
+  return newest;
 }
 
 /** The raw manifest's note sync stamps: the newest `last_synced`
@@ -170,56 +210,26 @@ async function collectManifestNotes(dataRoot: string): Promise<{
   newest: string | null;
   notes: { key: string; lastSynced: string }[];
 }> {
-  const text = await readText(join(dataRoot, "raw", "manifest.json"));
+  const vaults = await readVaults(join(dataRoot, "raw", "manifest.json"));
 
-  if (text === undefined) {
-    return { newest: null, notes: [] };
-  }
-
-  let parsed: unknown;
-
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    return { newest: null, notes: [] };
-  }
-
-  const vaults =
-    typeof parsed === "object" && parsed !== null
-      ? (parsed as { vaults?: unknown }).vaults
-      : undefined;
-
-  if (typeof vaults !== "object" || vaults === null) {
+  if (vaults === null) {
     return { newest: null, notes: [] };
   }
 
   let newest: string | null = null;
   const notes: { key: string; lastSynced: string }[] = [];
 
-  for (const [vault, entries] of Object.entries(
-    vaults as Record<string, unknown>,
-  )) {
-    if (typeof entries !== "object" || entries === null) {
+  for (const [vault, entries] of Object.entries(vaults)) {
+    const record = asRecord(entries);
+
+    if (record === null) {
       continue;
     }
 
-    for (const [rel, entry] of Object.entries(
-      entries as Record<string, unknown>,
-    )) {
-      const stamp =
-        typeof entry === "object" && entry !== null
-          ? (entry as { last_synced?: unknown }).last_synced
-          : undefined;
+    const vaultNewest = collectVaultNotes(vault, record, notes);
 
-      if (typeof stamp !== "string") {
-        continue;
-      }
-
-      notes.push({ key: `${vault}/${rel}`, lastSynced: stamp });
-
-      if (newest === null || stamp > newest) {
-        newest = stamp;
-      }
+    if (vaultNewest !== null && (newest === null || vaultNewest > newest)) {
+      newest = vaultNewest;
     }
   }
 
