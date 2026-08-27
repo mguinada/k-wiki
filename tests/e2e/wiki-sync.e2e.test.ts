@@ -37,12 +37,39 @@ afterAll(async () => {
  * variant that fails outright tests the stopped chain.
  */
 const STUB_AGENT = `#!/usr/bin/env node
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const index = process.argv.indexOf("--print");
 const prompt = index === -1 ? undefined : process.argv[index + 1];
 const mode = process.env.STUB_MODE ?? "";
+
+// A real raw/notes file for the stub hub's origin: the vault name
+// differs between the fixture (Documents) and the repo-sourced
+// instance (k-wiki), so derive the first note on disk instead of
+// hard-coding one vault — otherwise the provenance check fails for
+// one of the two flows.
+async function firstNote(dir) {
+  const entries = await readdir(dir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    if (entry.name.startsWith(".")) {
+      continue;
+    }
+
+    if (entry.isDirectory()) {
+      const found = await firstNote(dir + "/" + entry.name);
+
+      if (found !== undefined) {
+        return found;
+      }
+    } else if (entry.name.endsWith(".md")) {
+      return dir + "/" + entry.name;
+    }
+  }
+
+  return undefined;
+}
 
 if (prompt === undefined || prompt === "") {
   process.exit(3);
@@ -126,6 +153,10 @@ if (mode === "link-domain" || mode === "link-broken") {
 } else {
   await mkdir(join(process.cwd(), "wiki", "concepts"), { recursive: true });
   await mkdir(join(process.cwd(), "wiki", "sources"), { recursive: true });
+  const note = await firstNote(join(process.cwd(), "raw", "notes"));
+  const origin = (
+    note ?? process.cwd() + "/raw/notes/unresolved/placeholder.md"
+  ).slice((process.cwd() + "/").length);
   await writeFile(
     join(process.cwd(), "wiki", "sources", "stub-source.md"),
     [
@@ -136,7 +167,7 @@ if (mode === "link-domain" || mode === "link-broken") {
       "updated: 2026-08-20",
       "tags:",
       "  - llm",
-      "origin: raw/notes/${VAULT_NAME}/AI/RAG.md",
+      "origin: " + origin,
       "sources:",
       '  - "[[stub-source]]"',
       "---",
@@ -579,7 +610,9 @@ describe("wiki-sync e2e", () => {
       cwd: repo.dataRoot,
     });
 
-    expect(log).toMatch(/^wiki-sync: 2 sources processed, 2 pages touched$/m);
+    expect(log).toMatch(
+      /^wiki-sync: 2 sources processed, 3 pages touched$/m,
+    );
   });
 
   it("does nothing on a repo-sourced rerun with no source changes", async () => {
