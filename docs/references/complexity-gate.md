@@ -19,7 +19,11 @@ changing the npm scripts, the test, or the CI shape.
   `src/*.ts` files that differ from `origin/main` (uncommitted work
   included — the same plain two-endpoint diff, so the pre-handoff run
   sees what the agent actually changed). New/untracked files are gated
-  whole; deleted files are skipped; renames gate as new files.
+  whole; deleted files are skipped. A rename gates like an edit, not
+  like a new file: a pure rename emits no new-side hunks under the
+  `-U0 --diff-filter=ACMRT` diff, so nothing is gated (moved-only
+  content is legacy code), while a rename with content edits gates
+  exactly the functions intersecting the edited hunks.
 - **A violation fails the gate only when the function's line extent
   intersects a changed hunk** (new side). The engine supplies each
   function's real `start_line`/`end_line`, so no approximation is used.
