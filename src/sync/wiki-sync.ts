@@ -17,6 +17,7 @@ import {
 import {
   AGENT_HEARTBEAT_PREFIX,
   type AgentRunner,
+  type AgentSettings,
   agentArgs,
   createAgentProgressSink,
   formatAgentInvocation,
@@ -125,6 +126,56 @@ function absoluteReportPath(dataRoot: string, reportPath: string): string {
   return join(dataRoot, ...reportPath.split("/"));
 }
 
+/** The lint agent run's outcome: its stdout, or the failure that
+ *  must wait for the guardrail check before it escapes. */
+interface LintAgentRun {
+  readonly stdout: string;
+  readonly error: unknown;
+}
+
+/** Invoke the lint agent under its heartbeat line. The run's failure
+ *  is captured, not thrown: the guardrails must run first, and a
+ *  guardrail failure names the agent error as its cause. */
+async function invokeLintAgent(
+  settings: AgentSettings,
+  args: readonly string[],
+  dataRoot: string,
+  env: NodeJS.ProcessEnv,
+  runAgent: AgentRunner,
+  timeoutMs: number | undefined,
+  heartbeatMs: number | undefined,
+  onProgress: (message: string) => void,
+  now: () => Date,
+): Promise<LintAgentRun> {
+  const startedAt = now().getTime();
+  const heartbeat = setInterval(() => {
+    const elapsed = formatDuration(now().getTime() - startedAt);
+
+    onProgress(`${LINT_HEARTBEAT_PREFIX} (${elapsed})`);
+  }, heartbeatMs ?? 60_000);
+
+  let stdout = "";
+  let error: unknown;
+
+  try {
+    ({ stdout } = await runAgent(settings.command, args, {
+      cwd: dataRoot,
+      env,
+      timeoutMs,
+    }));
+  } catch (caught) {
+    error = caught;
+  } finally {
+    clearInterval(heartbeat);
+  }
+
+  if (error === undefined) {
+    onProgress("wiki-sync: lint — agent finished");
+  }
+
+  return { stdout, error };
+}
+
 /**
  * One headless lint run (guide §17): invoke the agent with
  * prompts/lint.md in the data repo root, guardrail the result, and
@@ -152,31 +203,17 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
     `wiki-sync: lint — invoking agent: ${formatAgentInvocation(settings)}`,
   );
 
-  const startedAt = now().getTime();
-  const heartbeat = setInterval(() => {
-    const elapsed = formatDuration(now().getTime() - startedAt);
-
-    onProgress(`${LINT_HEARTBEAT_PREFIX} (${elapsed})`);
-  }, options.heartbeatMs ?? 60_000);
-
-  let stdout = "";
-  let agentError: unknown;
-
-  try {
-    ({ stdout } = await runAgent(settings.command, args, {
-      cwd: dataRoot,
-      env,
-      timeoutMs: options.timeoutMs,
-    }));
-  } catch (error) {
-    agentError = error;
-  } finally {
-    clearInterval(heartbeat);
-  }
-
-  if (agentError === undefined) {
-    onProgress("wiki-sync: lint — agent finished");
-  }
+  const { stdout, error: agentError } = await invokeLintAgent(
+    settings,
+    args,
+    dataRoot,
+    env,
+    runAgent,
+    options.timeoutMs,
+    options.heartbeatMs,
+    onProgress,
+    now,
+  );
 
   const post = await runGuardrails(dataRoot, env, pre);
 
@@ -546,6 +583,133 @@ async function commitSummaryOf(
   };
 }
 
+/** Stage 1 (issue #145 dispatch): load the config, refuse mixed
+ *  source kinds, then run the sync-repo core for a repo-typed
+ *  config and the sync-vault core otherwise. */
+async function runSyncStage(
+  options: WikiSyncOptions,
+  env: NodeJS.ProcessEnv,
+  now: () => Date,
+  onProgress: (message: string) => void,
+  total: number,
+): Promise<SyncReport | RepoSyncReport> {
+  const config = await loadSyncConfig(options.configPath, homedir());
+  const repoSourced = config.vaults.some((source) => source.kind === "repo");
+
+  if (repoSourced && config.vaults.some((source) => source.kind === "vault")) {
+    throw new Error(
+      `mixed source kinds in ${options.configPath}: one instance per config — vault sources for sync-vault, a repo source for sync-repo`,
+    );
+  }
+
+  onProgress(
+    `wiki-sync: stage 1/${total} — ${repoSourced ? "sync-repo" : "sync-vault"}`,
+  );
+
+  return repoSourced
+    ? await runRepoSync({
+        configPath: options.configPath,
+        rawDir: options.rawDir,
+        env,
+        now,
+        onProgress,
+      })
+    : await runSync({
+        configPath: options.configPath,
+        rawDir: options.rawDir,
+        now,
+        onProgress,
+      });
+}
+
+/** Stage 3: lint what the ingest agent produced, or skip the lint
+ *  stage with it when no ingest ran. */
+async function runLintOrSkip(
+  options: WikiSyncOptions,
+  ingest: IngestResult,
+  env: NodeJS.ProcessEnv,
+  now: () => Date,
+  onProgress: (message: string) => void,
+  total: number,
+  pre: PreRunState,
+): Promise<LintResult | undefined> {
+  if (ingest.status !== "ran") {
+    onProgress(`wiki-sync: stage 3/${total} — lint skipped (no ingest ran)`);
+
+    return undefined;
+  }
+
+  onProgress(`wiki-sync: stage 3/${total} — lint`);
+
+  return await runLintStage({
+    settingsPath: options.settingsPath,
+    rawDir: options.rawDir,
+    promptsDir: options.promptsDir,
+    env,
+    now,
+    runAgent: options.runAgent,
+    timeoutMs: options.timeoutMs,
+    heartbeatMs: options.heartbeatMs,
+    onProgress,
+    pre,
+  });
+}
+
+/** Stage 4: the configured crosslink audit; skipped outright when
+ *  the instance carries no `secondBrain.domains` key. */
+async function runCrosslinksOrSkip(
+  options: WikiSyncOptions,
+  domains: readonly string[] | undefined,
+  onProgress: (message: string) => void,
+  total: number,
+): Promise<CrosslinksResult | undefined> {
+  if (domains === undefined) {
+    return undefined;
+  }
+
+  onProgress(`wiki-sync: stage 4/${total} — crosslinks`);
+
+  return await runCrosslinksStage({
+    rawDir: options.rawDir,
+    domains,
+    onProgress,
+  });
+}
+
+/** The verification stage with the cycle's revert semantics: on
+ *  failure, revert the lint edits (the ingest edits stay) before
+ *  rejecting. */
+async function runVerificationWithRevert(
+  options: WikiSyncOptions,
+  dataRoot: string,
+  env: NodeJS.ProcessEnv,
+  preLint: PreRunState,
+  domains: readonly string[] | undefined,
+  onProgress: (message: string) => void,
+  total: number,
+): Promise<VerificationResult> {
+  onProgress(
+    `wiki-sync: stage ${domains === undefined ? 4 : 5}/${total} — verification`,
+  );
+
+  try {
+    return await runVerificationStage({
+      rawDir: options.rawDir,
+      onProgress,
+    });
+  } catch (error) {
+    onProgress(
+      `wiki-sync: verification failed — reverting lint edits to ${preLint.commit.slice(0, 8)} (ingest edits kept)`,
+    );
+
+    const post = await runGuardrails(dataRoot, env, preLint);
+
+    await revertToPreRun(dataRoot, env, preLint, post.entries);
+
+    throw error;
+  }
+}
+
 /**
  * One full cycle: sync → ingest → lint → crosslinks → verification →
  * commit. Stage 1 dispatches on the config's source kinds (issue
@@ -574,37 +738,7 @@ export async function runWikiSync(
     options.settingsPath,
   );
   const total = domains === undefined ? 5 : 6;
-  const config = await loadSyncConfig(options.configPath, homedir());
-  const repoSourced = config.vaults.some((source) => source.kind === "repo");
-
-  if (repoSourced && config.vaults.some((source) => source.kind === "vault")) {
-    throw new Error(
-      `mixed source kinds in ${options.configPath}: one instance per config — vault sources for sync-vault, a repo source for sync-repo`,
-    );
-  }
-
-  onProgress(
-    `wiki-sync: stage 1/${total} — ${repoSourced ? "sync-repo" : "sync-vault"}`,
-  );
-
-  // Stage 1 dispatch (issue #145): vault configs run the sync-vault
-  // core unchanged; a repo-typed config (the meta instance) runs the
-  // sync-repo core in-process over that config — same cycle, same
-  // lint → verification → commit flow, whatever the source kind.
-  const sync = repoSourced
-    ? await runRepoSync({
-        configPath: options.configPath,
-        rawDir: options.rawDir,
-        env,
-        now,
-        onProgress,
-      })
-    : await runSync({
-        configPath: options.configPath,
-        rawDir: options.rawDir,
-        now,
-        onProgress,
-      });
+  const sync = await runSyncStage(options, env, now, onProgress, total);
 
   onProgress(`wiki-sync: stage 2/${total} — wiki-ingest`);
 
@@ -625,60 +759,30 @@ export async function runWikiSync(
   // stage left, before the lint agent runs.
   const preLint = await capturePreRunState(dataRoot, env);
 
-  let lint: LintResult | undefined;
-
-  if (ingest.status === "ran") {
-    onProgress(`wiki-sync: stage 3/${total} — lint`);
-
-    lint = await runLintStage({
-      settingsPath: options.settingsPath,
-      rawDir: options.rawDir,
-      promptsDir: options.promptsDir,
-      env,
-      now,
-      runAgent: options.runAgent,
-      timeoutMs: options.timeoutMs,
-      heartbeatMs: options.heartbeatMs,
-      onProgress,
-      pre: preLint,
-    });
-  } else {
-    onProgress(`wiki-sync: stage 3/${total} — lint skipped (no ingest ran)`);
-  }
-
-  let crosslinks: CrosslinksResult | undefined;
-
-  if (domains !== undefined) {
-    onProgress(`wiki-sync: stage 4/${total} — crosslinks`);
-    crosslinks = await runCrosslinksStage({
-      rawDir: options.rawDir,
-      domains,
-      onProgress,
-    });
-  }
-
-  let verification: VerificationResult;
-
-  onProgress(
-    `wiki-sync: stage ${domains === undefined ? 4 : 5}/${total} — verification`,
+  const lint = await runLintOrSkip(
+    options,
+    ingest,
+    env,
+    now,
+    onProgress,
+    total,
+    preLint,
   );
-
-  try {
-    verification = await runVerificationStage({
-      rawDir: options.rawDir,
-      onProgress,
-    });
-  } catch (error) {
-    onProgress(
-      `wiki-sync: verification failed — reverting lint edits to ${preLint.commit.slice(0, 8)} (ingest edits kept)`,
-    );
-
-    const post = await runGuardrails(dataRoot, env, preLint);
-
-    await revertToPreRun(dataRoot, env, preLint, post.entries);
-
-    throw error;
-  }
+  const crosslinks = await runCrosslinksOrSkip(
+    options,
+    domains,
+    onProgress,
+    total,
+  );
+  const verification = await runVerificationWithRevert(
+    options,
+    dataRoot,
+    env,
+    preLint,
+    domains,
+    onProgress,
+    total,
+  );
 
   onProgress(`wiki-sync: stage ${total}/${total} — commit`);
 
@@ -723,6 +827,23 @@ function crosslinksLine(crosslinks: CrosslinksResult): string {
   return `${pluralized(crosslinks.external, "cross-wiki link")} against ${pluralized(crosslinks.domainPages, "domain page")}`;
 }
 
+/** The one-line digest of a no-op cycle — nothing to commit after
+ *  a skipped ingest; undefined whenever the cycle did real work. */
+function nothingToDoLine(result: WikiSyncResult): string | undefined {
+  const { commit, crosslinks, ingest } = result;
+
+  if (commit.status !== "nothing-to-commit" || ingest.status !== "skipped") {
+    return undefined;
+  }
+
+  const audit =
+    crosslinks === undefined
+      ? ""
+      : `; crosslink audit passed — ${crosslinksLine(crosslinks)}`;
+
+  return `wiki-sync: nothing to do — ${ingest.reason}${audit}; fidelity + provenance ok\n`;
+}
+
 /**
  * The final printed digest: counts first, details after — the sync
  * summary, the lint summary, the commit hash, then the full ingest
@@ -730,14 +851,10 @@ function crosslinksLine(crosslinks: CrosslinksResult): string {
  */
 export function formatFinalDigest(result: WikiSyncResult): string {
   const { commit, crosslinks, ingest, lint, sync, verification } = result;
+  const nothing = nothingToDoLine(result);
 
-  if (commit.status === "nothing-to-commit" && ingest.status === "skipped") {
-    const audit =
-      crosslinks === undefined
-        ? ""
-        : `; crosslink audit passed — ${crosslinksLine(crosslinks)}`;
-
-    return `wiki-sync: nothing to do — ${ingest.reason}${audit}; fidelity + provenance ok\n`;
+  if (nothing !== undefined) {
+    return nothing;
   }
 
   const lines: string[] = [
@@ -885,16 +1002,17 @@ function fail(message: string): void {
   process.exitCode = 1;
 }
 
-/** wiki-sync entry point: `wiki-sync [-h | --help] [--settings <path>] [--timeout <secs>] [<config>] [<raw-dir>]`. */
-export async function main(): Promise<void> {
-  const args = process.argv.slice(2);
+/** The parsed command line: the flag values and positionals, or the
+ *  first usage error (`fail` prints it verbatim). */
+interface ParsedArgs {
+  readonly error: string | undefined;
+  readonly positional: readonly string[];
+  readonly values: Map<string, string | undefined>;
+}
 
-  if (args.includes("-h") || args.includes("--help")) {
-    console.log(HELP);
-
-    return;
-  }
-
+/** Pull the three value flags and the positionals out of argv,
+ *  rejecting unknown options and more than two positionals. */
+function parseCliArgs(args: readonly string[]): ParsedArgs {
   const values = new Map<string, string | undefined>();
   const consumed = new Set<number>();
 
@@ -916,31 +1034,39 @@ export async function main(): Promise<void> {
     }
 
     if (arg.startsWith("-")) {
-      fail(`unknown option ${JSON.stringify(arg)}`);
-
-      return;
+      return {
+        error: `unknown option ${JSON.stringify(arg)}`,
+        positional,
+        values,
+      };
     }
 
     positional.push(arg);
   }
 
   if (positional.length > 2) {
-    fail(
-      `expected at most two arguments (<config> and <raw-dir>), got ${positional.length}`,
-    );
-
-    return;
+    return {
+      error: `expected at most two arguments (<config> and <raw-dir>), got ${positional.length}`,
+      positional,
+      values,
+    };
   }
 
+  return { error: undefined, positional, values };
+}
+
+/** Validate the parsed flags: every path flag needs a value, and
+ *  --timeout a positive integer number of seconds. */
+function validateFlagValues(
+  values: Map<string, string | undefined>,
+): string | undefined {
   for (const [flag, value] of values) {
     if (flag === "--timeout") {
       continue;
     }
 
     if (value === undefined) {
-      fail(`${flag} needs a path value`);
-
-      return;
+      return `${flag} needs a path value`;
     }
   }
 
@@ -950,13 +1076,63 @@ export async function main(): Promise<void> {
     values.has("--timeout") &&
     (timeoutArg === undefined || !/^[1-9][0-9]*$/.test(timeoutArg))
   ) {
-    fail("--timeout needs a positive integer number of seconds");
+    return "--timeout needs a positive integer number of seconds";
+  }
+
+  return undefined;
+}
+
+/** Run the whole cycle for the parsed arguments and return its
+ *  result for the digest. */
+async function runCycle(
+  parsed: ParsedArgs,
+  onProgress: (message: string) => void,
+  animated: boolean,
+): Promise<WikiSyncResult> {
+  const { positional, values } = parsed;
+  const timeoutArg = values.get("--timeout");
+  const configPath = positional[0] ?? join(repoRoot, "sync.json");
+  const config = await loadSyncConfig(configPath, homedir());
+  const rawDir = positional[1] ?? resolveRawDir(config.dataRoot, repoRoot);
+
+  return await runWikiSync({
+    configPath,
+    rawDir,
+    settingsPath: values.get("--settings") ?? join(repoRoot, "settings.yml"),
+    outputsDir: values.get("--outputs") ?? join(repoRoot, "outputs"),
+    promptsDir: join(repoRoot, "prompts"),
+    timeoutMs: timeoutArg === undefined ? undefined : Number(timeoutArg) * 1000,
+    heartbeatMs: animated ? 100 : undefined,
+    onProgress,
+  });
+}
+
+/** wiki-sync entry point: `wiki-sync [-h | --help] [--settings <path>] [--timeout <secs>] [<config>] [<raw-dir>]`. */
+export async function main(): Promise<void> {
+  const args = process.argv.slice(2);
+
+  if (args.includes("-h") || args.includes("--help")) {
+    console.log(HELP);
 
     return;
   }
 
-  const settingsPath =
-    values.get("--settings") ?? join(repoRoot, "settings.yml");
+  const parsed = parseCliArgs(args);
+
+  if (parsed.error !== undefined) {
+    fail(parsed.error);
+
+    return;
+  }
+
+  const flagError = validateFlagValues(parsed.values);
+
+  if (flagError !== undefined) {
+    fail(flagError);
+
+    return;
+  }
+
   const animated = process.stderr.isTTY === true && !process.env.NO_COLOR;
   const sink = createAgentProgressSink(
     (text) => process.stderr.write(text),
@@ -967,20 +1143,7 @@ export async function main(): Promise<void> {
   );
 
   try {
-    const configPath = positional[0] ?? join(repoRoot, "sync.json");
-    const config = await loadSyncConfig(configPath, homedir());
-    const rawDir = positional[1] ?? resolveRawDir(config.dataRoot, repoRoot);
-    const result = await runWikiSync({
-      configPath,
-      rawDir,
-      settingsPath,
-      outputsDir: values.get("--outputs") ?? join(repoRoot, "outputs"),
-      promptsDir: join(repoRoot, "prompts"),
-      timeoutMs:
-        timeoutArg === undefined ? undefined : Number(timeoutArg) * 1000,
-      heartbeatMs: animated ? 100 : undefined,
-      onProgress: sink.render,
-    });
+    const result = await runCycle(parsed, sink.render, animated);
 
     sink.end();
     console.log(formatFinalDigest(result));
