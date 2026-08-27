@@ -74,11 +74,11 @@ function parseEngineFile(file: unknown): EngineReport["files"][number] {
     throw engineShapeError(`file ${String(entry.path)}`);
   }
 
+  const path: string = entry.path;
+
   return {
-    path: entry.path,
-    functions: entry.functions.map((fn) =>
-      parseEngineFunction(entry.path, fn),
-    ),
+    path,
+    functions: entry.functions.map((fn) => parseEngineFunction(path, fn)),
   };
 }
 
