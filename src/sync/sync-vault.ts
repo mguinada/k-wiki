@@ -377,6 +377,30 @@ export interface VaultDryRunReport {
   readonly wouldIngest: readonly string[];
 }
 
+/** Remove namespaces that left the config — unless the vault list is
+ *  empty: an empty list is a misconfigured run (truncated sync.json),
+ *  never "prune everything". */
+async function pruneStaleNamespaces(
+  staleNames: readonly string[],
+  vaults: readonly VaultSourceConfig[],
+  nextManifest: Manifest,
+  notesRoot: string,
+  onProgress: (message: string) => void,
+): Promise<string[]> {
+  const prunedNamespaces: string[] = [];
+
+  if (vaults.length > 0) {
+    for (const name of staleNames) {
+      delete nextManifest.vaults[name];
+      await rm(join(notesRoot, name), { recursive: true, force: true });
+      onProgress(`vault "${name}": removed stale namespace (not configured)`);
+      prunedNamespaces.push(name);
+    }
+  }
+
+  return prunedNamespaces;
+}
+
 /** Run one full sync pass and return the run report. */
 export async function runSync(options: SyncOptions): Promise<SyncReport> {
   const home = options.home ?? homedir();
@@ -403,19 +427,13 @@ export async function runSync(options: SyncOptions): Promise<SyncReport> {
       ...(await listNamespaceDirs(notesRoot)),
     ]),
   ].filter((name) => !configuredNames.has(name));
-
-  const prunedNamespaces: string[] = [];
-
-  // An empty vault list is a misconfigured run (truncated sync.json);
-  // it must never be read as "prune everything".
-  if (vaults.length > 0) {
-    for (const name of staleNames) {
-      delete nextManifest.vaults[name];
-      await rm(join(notesRoot, name), { recursive: true, force: true });
-      onProgress(`vault "${name}": removed stale namespace (not configured)`);
-      prunedNamespaces.push(name);
-    }
-  }
+  const prunedNamespaces = await pruneStaleNamespaces(
+    staleNames,
+    vaults,
+    nextManifest,
+    notesRoot,
+    onProgress,
+  );
 
   for (const vault of vaults) {
     const { notes, report } = await syncVault(
@@ -504,6 +522,28 @@ function durationClause(elapsedMs: number | undefined): string {
   return elapsedMs === undefined ? "" : ` (${formatDuration(elapsedMs)})`;
 }
 
+/** The trailing `sync complete:` summary line for the run totals. */
+function summaryLine(
+  copied: number,
+  removed: number,
+  pruned: number,
+  duration: string,
+  colors: ReportColors,
+): string {
+  if (copied === 0 && removed === 0 && pruned === 0) {
+    return colors.dim(`sync complete: no changes${duration}`);
+  }
+
+  const prunedClause =
+    pruned === 0
+      ? ""
+      : `, ${pruned} namespace${pruned === 1 ? "" : "s"} pruned`;
+
+  return colors[removed > 0 || pruned > 0 ? "red" : "green"](
+    `sync complete: ${copied} copied, ${removed} removed${prunedClause}${duration}`,
+  );
+}
+
 /** Render the run summary; `+` marks copies and `-` marks removals. */
 export function formatReport(
   report: SyncReport,
@@ -543,23 +583,14 @@ export function formatReport(
     (total, vault) => total + vault.removed.length,
     0,
   );
-  const pruned = report.prunedNamespaces.length;
-  const duration = durationClause(report.elapsedMs);
-
-  if (copied === 0 && removed === 0 && pruned === 0) {
-    lines.push(colors.dim(`sync complete: no changes${duration}`));
-
-    return lines.join("\n");
-  }
-
-  const prunedClause =
-    pruned === 0
-      ? ""
-      : `, ${pruned} namespace${pruned === 1 ? "" : "s"} pruned`;
 
   lines.push(
-    colors[removed > 0 || pruned > 0 ? "red" : "green"](
-      `sync complete: ${copied} copied, ${removed} removed${prunedClause}${duration}`,
+    summaryLine(
+      copied,
+      removed,
+      report.prunedNamespaces.length,
+      durationClause(report.elapsedMs),
+      colors,
     ),
   );
 
