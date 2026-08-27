@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, describe, expect, it, vi } from "vitest";
+import { collectData } from "../src/dashboard/collect.ts";
 import { writeDashboard } from "../src/dashboard/generate.ts";
 
 /**
@@ -378,6 +379,130 @@ describe("writeDashboard", () => {
   });
 });
 
+describe("collectData", () => {
+  /** A repo whose raw manifest exercises vault order and stamp order:
+   *  Zeta oldest-first, Alpha newest-first and overall newest, Beta
+   *  trailing, Delta carrying junk entries. */
+  async function makeManifestRepo(
+    vaults: Record<string, unknown>,
+  ): Promise<string> {
+    const dataRoot = await makeDataRepo();
+
+    await writeFile(
+      join(dataRoot, "raw", "manifest.json"),
+      `${JSON.stringify({ vaults })}\n`,
+    );
+
+    return dataRoot;
+  }
+
+  const orderedVaults = {
+    Zeta: {
+      "z1.md": { hash: "z1", last_synced: "2026-07-10T00:00:00.000Z" },
+      "z2.md": { hash: "z2", last_synced: "2026-08-01T00:00:00.000Z" },
+    },
+    Alpha: {
+      "a.md": { hash: "a", last_synced: "2026-09-25T00:00:00.000Z" },
+      "b.md": { hash: "b", last_synced: "2026-08-15T00:00:00.000Z" },
+    },
+    Beta: {
+      "c.md": { hash: "c", last_synced: "2026-07-01T00:00:00.000Z" },
+    },
+    Delta: {
+      "d.md": null,
+      "e.md": { hash: "e" },
+      "f.md": "junk",
+    },
+  };
+
+  it("returns the newest sync stamp across vaults", async () => {
+    const input = await collectData(await makeManifestRepo(orderedVaults));
+
+    expect(input.lastSync).toBe("2026-09-25T00:00:00.000Z");
+  });
+
+  it("returns the newest sync stamp when a vault's stamps run oldest-first", async () => {
+    const input = await collectData(
+      await makeManifestRepo({
+        Alpha: {
+          "a.md": { hash: "a", last_synced: "2026-08-15T00:00:00.000Z" },
+          "b.md": { hash: "b", last_synced: "2026-09-25T00:00:00.000Z" },
+        },
+        Beta: {
+          "c.md": { hash: "c", last_synced: "2026-07-01T00:00:00.000Z" },
+        },
+      }),
+    );
+
+    expect(input.lastSync).toBe("2026-09-25T00:00:00.000Z");
+  });
+
+  it("lists one sync entry per manifest note that has a string last_synced", async () => {
+    const input = await collectData(await makeManifestRepo(orderedVaults));
+
+    expect(input.rawNoteSyncDates).toEqual([
+      { key: "Zeta/z1.md", lastSynced: "2026-07-10T00:00:00.000Z" },
+      { key: "Zeta/z2.md", lastSynced: "2026-08-01T00:00:00.000Z" },
+      { key: "Alpha/a.md", lastSynced: "2026-09-25T00:00:00.000Z" },
+      { key: "Alpha/b.md", lastSynced: "2026-08-15T00:00:00.000Z" },
+      { key: "Beta/c.md", lastSynced: "2026-07-01T00:00:00.000Z" },
+    ]);
+  });
+
+  it("reports no lastSync when the raw manifest is missing", async () => {
+    const dataRoot = await makeDataRepo();
+
+    await rm(join(dataRoot, "raw", "manifest.json"));
+
+    const input = await collectData(dataRoot);
+
+    expect(input.lastSync).toBeNull();
+  });
+
+  it("treats a non-object raw manifest as absent", async () => {
+    const dataRoot = await makeDataRepo();
+
+    await writeFile(join(dataRoot, "raw", "manifest.json"), "42\n");
+
+    const input = await collectData(dataRoot);
+
+    expect(input.lastSync).toBeNull();
+  });
+
+  it("skips manifest vaults whose entries are not objects", async () => {
+    const input = await collectData(
+      await makeManifestRepo({
+        Good: {
+          "x.md": { hash: "x", last_synced: "2026-01-01T00:00:00.000Z" },
+        },
+        Bad: null,
+      }),
+    );
+
+    expect(input.rawNoteSyncDates).toEqual([
+      { key: "Good/x.md", lastSynced: "2026-01-01T00:00:00.000Z" },
+    ]);
+  });
+
+  it("collects the ingest snapshot's note keys, skipping non-object vaults", async () => {
+    const dataRoot = await makeDataRepo();
+
+    await writeFile(
+      join(dataRoot, "outputs", "last-ingested-manifest.json"),
+      `${JSON.stringify({
+        vaults: {
+          Engineering: { "a.md": { hash: "x", last_synced: "t" } },
+          Bad: null,
+        },
+      })}\n`,
+    );
+
+    const input = await collectData(dataRoot);
+
+    expect(input.ingestedKeys).toEqual(["Engineering/a.md"]);
+  });
+});
+
 describe("dashboard CLI", () => {
   it("rejects an unknown option naming it, exit 1", async () => {
     const { main } = await import("../src/dashboard/generate.ts");
@@ -517,6 +642,60 @@ describe("dashboard CLI --open", () => {
     return { stubDir, log };
   }
 
+  /** A PATH-stub opener that always fails (exit 1). */
+  async function makeFailingOpenStub(): Promise<string> {
+    const { openerFor } = await import("../src/dashboard/generate.ts");
+    const stubDir = await mkdtemp(join(tmpdir(), "k-wiki-openfail-"));
+
+    tempDirs.push(stubDir);
+
+    await writeFile(
+      join(stubDir, openerFor(process.platform).command),
+      "#!/bin/sh\nexit 1\n",
+      { mode: 0o755 },
+    );
+
+    return stubDir;
+  }
+
+  /** Run main() with argv (and optionally PATH) stubbed; capture
+   *  console output. */
+  async function runMain(
+    args: readonly string[],
+    pathPrefix?: string,
+  ): Promise<{ out: string; err: string }> {
+    const { main } = await import("../src/dashboard/generate.ts");
+    const argv = process.argv;
+    const pathEnv = process.env.PATH;
+    const out: string[] = [];
+    const err: string[] = [];
+    const spies = [
+      vi
+        .spyOn(console, "log")
+        .mockImplementation((...parts: unknown[]) => out.push(parts.join(" "))),
+      vi
+        .spyOn(console, "error")
+        .mockImplementation((...parts: unknown[]) => err.push(parts.join(" "))),
+    ];
+
+    process.argv = [...argv.slice(0, 2), ...args];
+
+    if (pathPrefix !== undefined) {
+      process.env.PATH = `${pathPrefix}:${pathEnv}`;
+    }
+
+    try {
+      await main();
+    } finally {
+      process.argv = argv;
+      process.env.PATH = pathEnv;
+
+      for (const spy of spies) spy.mockRestore();
+    }
+
+    return { out: out.join("\n"), err: err.join("\n") };
+  }
+
   it("opens the generated dashboard file with -o", async () => {
     const dataRoot = await makeDataRepo();
     const { stubDir, log } = await makeOpenStub();
@@ -541,6 +720,55 @@ describe("dashboard CLI --open", () => {
     }
 
     expect(await readFile(log, "utf8")).toBe(join(dataRoot, "dashboard.html"));
+  });
+
+  it("opens the generated dashboard file with --open", async () => {
+    const dataRoot = await makeDataRepo();
+    const { stubDir, log } = await makeOpenStub();
+
+    await runMain(["--open", dataRoot], stubDir);
+
+    expect(await readFile(log, "utf8")).toBe(join(dataRoot, "dashboard.html"));
+  });
+
+  it("does not open the dashboard when no open flag is given", async () => {
+    const dataRoot = await makeDataRepo();
+    const { stubDir, log } = await makeOpenStub();
+
+    await runMain([dataRoot], stubDir);
+
+    expect(await readFile(log, "utf8").catch(() => "")).toBe("");
+  });
+
+  it("prints an error when the opener fails", async () => {
+    const dataRoot = await makeDataRepo();
+    const stubDir = await makeFailingOpenStub();
+
+    const { err } = await runMain(["-o", dataRoot], stubDir);
+
+    expect(err).toContain("could not open it");
+  });
+
+  it("exits 1 when the opener fails", async () => {
+    const dataRoot = await makeDataRepo();
+    const stubDir = await makeFailingOpenStub();
+
+    await runMain(["-o", dataRoot], stubDir);
+
+    expect(process.exitCode).toBe(1);
+
+    process.exitCode = undefined;
+  });
+
+  it("keeps the written dashboard when the opener fails", async () => {
+    const dataRoot = await makeDataRepo();
+    const stubDir = await makeFailingOpenStub();
+
+    await runMain(["-o", dataRoot], stubDir);
+
+    const html = await readFile(join(dataRoot, "dashboard.html"), "utf8");
+
+    expect(html.startsWith("<!DOCTYPE html>")).toBe(true);
   });
 
   it("documents --open in the help text", async () => {
