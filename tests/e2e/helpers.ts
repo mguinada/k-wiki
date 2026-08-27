@@ -29,6 +29,7 @@ export const HEALTH_SCRIPT = join(repoRoot, "bin", "check-raw.ts");
 export const INGEST_SCRIPT = join(repoRoot, "bin", "wiki-ingest.ts");
 export const SYNC_CYCLE_SCRIPT = join(repoRoot, "bin", "wiki-sync.ts");
 export const QUERY_SCRIPT = join(repoRoot, "bin", "wiki-query.ts");
+export const K_WIKI_SCRIPT = join(repoRoot, "bin", "k-wiki.ts");
 
 /** The fixture vault's notes ingested under `exclude: "wiki:false"`, sorted. */
 export const SELECTED_PATHS = [
@@ -51,12 +52,13 @@ export interface CliResult {
  * Run a repo CLI as a real child process through its bin/ launcher
  * (the only entry path, issue #135). Children run with `NO_COLOR=1`
  * so byte-exact output assertions stay plain; pass `{ color: true }`
- * to drop it, or `env` to expose more variables to the child.
+ * to drop it, `env` to expose more variables to the child, or `cwd`
+ * to run it from another directory (default: this process's cwd).
  */
 export function runCli(
   script: string,
   args: readonly string[],
-  options: { color?: boolean; env?: NodeJS.ProcessEnv } = {},
+  options: { color?: boolean; env?: NodeJS.ProcessEnv; cwd?: string } = {},
 ): Promise<CliResult> {
   const realScript = realpathSync(script);
   const env: NodeJS.ProcessEnv = { ...process.env, NO_COLOR: "1" };
@@ -71,6 +73,7 @@ export function runCli(
     const child = spawn(process.execPath, [realScript, ...args], {
       stdio: "pipe",
       env,
+      cwd: options.cwd,
     });
 
     let out = "";

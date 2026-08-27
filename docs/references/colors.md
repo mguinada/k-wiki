@@ -11,7 +11,7 @@ shared predicate `isWarning` (`src/cli/progress.ts`).
 
 | Color | Feedback kind | Examples |
 |---|---|---|
-| dim | progress and heartbeat lines | `createAgentProgressSink` in `src/ingest/wiki-ingest.ts` (also consumed by `src/sync/wiki-sync.ts`, `src/query/wiki-query.ts`), the no-change summary in `formatReport` (`src/sync/sync-vault.ts`) |
+| dim | progress and heartbeat lines | `createAgentProgressSink` in `src/ingest/wiki-ingest.ts` (also consumed by `src/sync/wiki-sync.ts`, `src/query/wiki-query.ts`, `src/cli/k-wiki.ts`), the dim human-step filing hint in `src/cli/k-wiki.ts`, and the no-change summary in `formatReport` (`src/sync/sync-vault.ts`) |
 | yellow | warning severity | any progress message containing `WARNING` — today the foreign-snapshot warning in `readSnapshot` (`src/ingest/wiki-ingest.ts`) — and the freshness warning rendered at the sink in `src/health/check-raw.ts` |
 | red | error | `fail()` in every entry point, broken crosslinks, removed files, health problems in `src/health/check-raw.ts` |
 | green | ok / healthy / added | `src/health/check-raw.ts`, the ok summary in `scripts/check-crosslinks.ts`, copied files in `src/sync/sync-vault.ts` |

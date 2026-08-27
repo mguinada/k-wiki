@@ -873,6 +873,22 @@ Use this when asking questions against the wiki. Asking is two-stage
   entries. A drift warning fires when `raw/` or `wiki/` changed
   after the saved timestamp.
 
+The agent-facing CLI `k-wiki` (issue #76) exposes stage 1 plus four
+read-only commands, from any project: a `.k-wiki.json` binding at
+the bound project's root names the checkout (and, optionally, a
+non-default settings file inside it); checkout resolution is the
+`--checkout` flag, then the `K_WIKI_CHECKOUT` env var, then the
+nearest binding file walking up from the cwd, then the cwd itself.
+One binding binds exactly one wiki — lists and multi-wiki forms are
+rejected — and there is no filing passthrough: stage 2 stays
+human-run inside the checkout. Besides `k-wiki query
+"<question>"` (stage 1 above), the entry provides `status`
+(resolution chain and wiki paths), `list [<type>]` (one `slug —
+title` line per page, grouped by type in §11's index order), `read
+<slug>` (one page verbatim by file name), and `health` (the read-only check-raw
+projection check). The README's "Querying from any project"
+section carries the full contract.
+
 Full text: `prompts/query.md`.
 
 Intent: find the relevant pages via `index.md`, synthesize an answer
@@ -1543,7 +1559,7 @@ Ideas deliberately **not pursued now**. Each has a clear trigger for reconsidera
 | JSON Canvas | Auto-generated wiki maps and canvas answers (`.canvas`) as an additional query output format | Canvas outputs or knowledge-map visualizations are wanted |
 | Marp | Slide decks generated from wiki pages | Presentations are needed from wiki material |
 | LLM Wiki v2 extensions | Supersession tracking, retention decay, typed relationships, consolidation tiers | The wiki exceeds ~200 pages |
-| CLI interaction layer (`oclif` / `@inquirer/prompts` / `Ink`) | Framework plumbing, one-shot prompts, or a full TUI for interactive use | Interactive ingest mode is built, or the CLIs grow into a multi-command `k-wiki` tool; until then Node's built-in `util.parseArgs` covers all flags |
+| CLI interaction layer (`oclif` / `@inquirer/prompts` / `Ink`) | Framework plumbing, one-shot prompts, or a full TUI for interactive use | Interactive ingest mode is built, or the `k-wiki` command set (issue #76: query, status, list, read, health) outgrows hand-rolled `util.parseArgs` dispatch; until then the stdlib covers all flags |
 
 Several options pair with agent skills from [kepano/obsidian-skills](https://github.com/kepano/obsidian-skills). Install a skill when its trigger fires, not before — a skill's cost is context and attention. `obsidian-markdown` and `obsidian-bases` are installed at implementation time (Section 23); `defuddle` and `json-canvas` are installed when their rows above are triggered.
 

@@ -448,6 +448,7 @@ sources directly, so there is no build step — install dependencies with
 | `npm run wiki-ingest -- [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [<raw-dir>]` | ingest wrapper | Run the wiki agent headless over the sources that changed since the last ingest and write the per-run digest (reads `settings.yml`; [details below](#running-the-wiki-agent-wiki-ingest)) |
 | `npm run wiki-sync -- [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<sync.json>] [<raw-dir>]` | cycle orchestrator | Run the whole cycle — sync (sync-vault for vault sources, sync-repo for repo-sourced configs, [§9](#9-the-meta-wiki-a-repository-as-source)) → ingest → lint → crosslink audit (configured second brains) → verification (check-fidelity + check-provenance) → one data-repo commit — and print the digest (reads `settings.yml`, including its optional `secondBrain.domains` list; [details below](#running-the-full-cycle-wiki-sync)) |
 | `npm run wiki-query -- [-h \| --help] [--file-last] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>` | query wrapper | Ask the built wiki one question headless: print the answer, save it for review (stage 1, default); `--file-last` files the reviewed answer deterministically (stage 2; reads `settings.yml` in stage 1; [details below](#running-queries-wiki-query)) |
+| `node <checkout>/bin/k-wiki.ts query "<question>"` (also `npm run k-wiki -- …` inside the checkout) | agent-facing CLI | Ask the wiki bound to the current project from any cwd — zero flags once `.k-wiki.json` binds it; plus four read-only commands: `status` (binding + paths), `list [<type>]` (pages by type), `read <slug>` (one page verbatim), `health` (projection check); answer-only, no filing passthrough ([details below](#querying-from-any-project-k-wiki)) |
 | `npm run data:init -- [--second-brain] [--meta] [<sync.json>]` | data repo seeder | Create and seed the data repo at `sync.json`'s `dataRoot`: git init, copy the `raw/`+`wiki/` skeleton from the code repo, write the standing `.gitignore` (Obsidian UI state, ingest snapshot — issue #146), first commit; idempotent; `--second-brain` also writes the `.second-brain` identity marker ([§5](#5-the-second-brain)); `--meta` seeds the meta contract (`wiki/AGENTS.meta.md`) as the data repo's `wiki/AGENTS.md` ([§9](#9-the-meta-wiki-a-repository-as-source)) |
 | `npm run mutation:changed` | StrykerJS | Advisory mutation run scoped to the changed hunks of the `src/` files that differ from `main` (uncommitted included; new files whole) — `scripts/mutation-scope.ts` builds the `file:start-end` ranges; exits 0 without running when nothing changed, and ends by printing the actionable mutants — the default pre-handoff step |
 | `npm run mutation:changed -- --full` | StrykerJS | Advisory mutation run over all of `src/`, not just changed files; same printed summary |
@@ -929,3 +930,63 @@ the default, and there is exactly one filing path (`--file-last`).
 Stage 1 switches: `--settings <path>`, `--outputs <dir>`,
 `--raw-dir <dir>`, `--timeout <secs>` (default 1800) — `-h`
 documents them all.
+
+## Querying from any project (`k-wiki`)
+
+```sh
+k-wiki query "When should I prefer RAG over fine-tuning?"   # any cwd inside a bound project
+k-wiki status                                               # which wiki am I bound to?
+k-wiki list [concept|entity|source|query|comparison]       # pages by type
+k-wiki read retrieval-augmented-generation                 # one page verbatim
+k-wiki health                                               # projection coherence/freshness
+```
+
+`k-wiki` is the agent-facing CLI (guide §16, issue #76): a thin
+wrapper — one LLM `query` command plus four read-only deterministic
+ones, `util.parseArgs`, no CLI framework — that resolves the current
+project's wiki and
+delegates to the answer-only stage-1 query above. After #72 the
+query is answer-only by construction, so exposing it to agents is
+safe: this entry can never write to `wiki/`, whatever flags an
+agent passes or omits.
+
+Binding file `.k-wiki.json` at the bound project's root:
+
+```json
+{ "checkout": "~/k-wiki", "settings": "settings-meta.yml" }
+```
+
+- `checkout` — a k-wiki checkout whose `sync.json` resolves the data
+  repo; its `prompts/`, `outputs/`, and settings live there too.
+- `settings` — optional non-default settings file inside the
+  checkout (e.g. `settings-meta.yml`, the meta-wiki instance of
+  [§9](#9-the-meta-wiki-a-repository-as-source)); default
+  `settings.yml`.
+- One project binds exactly one wiki: the file must be a single
+  JSON object; lists and multi-wiki forms are rejected. That 1:1
+  limit is the safety property — no ambient path between work and
+  personal knowledge.
+- Gitignore the file in personal projects; commit it in team
+  projects.
+
+Checkout resolution order (first hit wins): the `--checkout <path>`
+flag, the `K_WIKI_CHECKOUT` environment variable, the nearest
+`.k-wiki.json` walking up from the cwd (stopping at the home
+directory or the filesystem root), then the cwd itself — today's
+behavior of running from inside the checkout, preserved.
+
+There is no filing passthrough: `--file-last` stays the human-run
+`wiki-query` command inside the checkout. The four read-only
+commands open no write path: `status` prints the resolution chain
+(checkout, origin, settings, data repo, wiki dir, `index.md`);
+`list` prints one `slug — title` line per page grouped by type
+in the `index.md` order (guide §11; the navigation pages `index`,
+`log`, `overview` are read by name instead); `read` prints one page
+verbatim by file name with near-match suggestions when absent and
+an ambiguity error on duplicate file names; `health` delegates to the
+read-only `check-raw` coherence/freshness check against the bound
+projection (`--fail-on-stale` makes staleness blocking). A wrong
+pairing (a binding whose checkout resolves an unexpected data repo)
+fails loudly via the existing guardrails — no silent cross-wiki
+reads. Humans can add a shell alias:
+`alias k-wiki='node ~/k-wiki/bin/k-wiki.ts'`.
