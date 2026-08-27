@@ -5,9 +5,11 @@ import { createColors } from "picocolors";
 import { refuseDirectExecution } from "../src/cli/is-main.ts";
 import { assertCleanTree } from "../src/data/git.ts";
 import {
+  closingFence,
   isWikilinkEntry,
   listWikiPages,
   normalizeRawPath,
+  unquote,
 } from "../src/wiki/pages.ts";
 
 /**
@@ -102,18 +104,6 @@ function corroboratesTitle(pageTitle: string, noteName: string): boolean {
   );
 
   return shared.length >= 2 || shared.some((token) => token.length >= 7);
-}
-
-function unquote(value: string): string {
-  const quote = value[0];
-
-  return quote === '"' || quote === "'" ? value.slice(1, -1) : value;
-}
-
-/** Index of the closing frontmatter fence — trim-tolerant, matching
- *  the shared parser in src/wiki/pages.ts — or -1. */
-function closingFence(lines: readonly string[]): number {
-  return lines.findIndex((line, index) => index > 0 && line.trim() === "---");
 }
 
 /** Parse a closed frontmatter block; undefined when there is none. */

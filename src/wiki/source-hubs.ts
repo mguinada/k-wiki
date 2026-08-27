@@ -47,6 +47,43 @@ export function citationAlias(path: string): string | undefined {
   return parent === undefined || parent === "" ? undefined : parent;
 }
 
+/** The wikilink a covered raw path cites as — plain `[[hub]]` for an
+ *  origin match, aliased `[[hub|Chapter]]` for a citation match —
+ *  or the reason the path cannot be mapped. One definition shared by
+ *  the link-sources migration (which performs the rewrite), the
+ *  guardrails (which demand it), and check-provenance (which flag
+ *  it), so the three cannot drift apart. */
+export function wikilinkFor(
+  path: string,
+  hubs: SourceHubIndex,
+): { wikilink: string } | { reason: string } {
+  const normalized = normalizeRawPath(path);
+  const originHub = hubs.byOrigin.get(normalized);
+
+  if (originHub !== undefined) {
+    return { wikilink: `[[${originHub}]]` };
+  }
+
+  const citationHub = hubs.byCitation.get(normalized);
+
+  if (citationHub !== undefined) {
+    const alias = citationAlias(normalized);
+
+    return {
+      wikilink:
+        alias === undefined
+          ? `[[${citationHub}]]`
+          : `[[${citationHub}|${alias}]]`,
+    };
+  }
+
+  return {
+    reason: hubs.ambiguous.has(normalized)
+      ? "covered by more than one hub"
+      : "no hub covers this path",
+  };
+}
+
 /** Add one coverage entry; a second, different hub makes the path
  *  ambiguous and removes it from the map. */
 function cover(

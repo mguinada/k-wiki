@@ -703,6 +703,21 @@ describe("runGuardrails — check 2, sources entry format", () => {
     );
   });
 
+  it("trips when a sources wikilink has no page target", async () => {
+    const dataRoot = await makeRepo();
+    const post = await guardedRun(dataRoot, async (root) => {
+      await writeFile(
+        join(root, "wiki", "cites.md"),
+        page().replace('"[[src]]"', '"[[|alias]]"'),
+      );
+    });
+
+    expect(post.failure?.check).toBe(2);
+    expect(post.failure?.problems[0]).toContain(
+      "wiki/cites.md: sources entry [[|alias]] has no page target",
+    );
+  });
+
   it("does not check the sources format of a changed type: source page", async () => {
     const dataRoot = await makeRepo();
     const post = await guardedRun(dataRoot, async (root) => {

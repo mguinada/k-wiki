@@ -5,11 +5,12 @@ import { createColors } from "picocolors";
 import { refuseDirectExecution } from "../src/cli/is-main.ts";
 import { assertCleanTree } from "../src/data/git.ts";
 import {
+  closingFence,
   isWikilinkEntry,
   listWikiPages,
-  normalizeRawPath,
+  unquote,
 } from "../src/wiki/pages.ts";
-import { citationAlias, loadSourceHubIndex } from "../src/wiki/source-hubs.ts";
+import { loadSourceHubIndex, wikilinkFor } from "../src/wiki/source-hubs.ts";
 
 /**
  * One-shot `sources` wikilink migration (issue #126, Part A): every
@@ -66,51 +67,6 @@ function colors() {
   return createColors(!process.env.NO_COLOR);
 }
 
-function unquote(value: string): string {
-  const quote = value[0];
-
-  return quote === '"' || quote === "'" ? value.slice(1, -1) : value;
-}
-
-/** Index of the closing frontmatter fence — trim-tolerant, matching
- *  the shared parser in src/wiki/pages.ts — or -1. */
-function closingFence(lines: readonly string[]): number {
-  return lines.findIndex((line, index) => index > 0 && line.trim() === "---");
-}
-
-/** The wikilink for one covered path, or undefined plus a skip
- *  reason when the path cannot be mapped deterministically. */
-function mapEntry(
-  path: string,
-  hubs: Awaited<ReturnType<typeof loadSourceHubIndex>>,
-): { wikilink: string } | { reason: string } {
-  const normalized = normalizeRawPath(path);
-  const originHub = hubs.byOrigin.get(normalized);
-
-  if (originHub !== undefined) {
-    return { wikilink: `[[${originHub}]]` };
-  }
-
-  const citationHub = hubs.byCitation.get(normalized);
-
-  if (citationHub !== undefined) {
-    const alias = citationAlias(normalized);
-
-    return {
-      wikilink:
-        alias === undefined
-          ? `[[${citationHub}]]`
-          : `[[${citationHub}|${alias}]]`,
-    };
-  }
-
-  return {
-    reason: hubs.ambiguous.has(normalized)
-      ? "covered by more than one hub"
-      : "no hub covers this path",
-  };
-}
-
 /** Rewrite every coverable path item of one page's `sources` list,
  *  in place, only inside the frontmatter block; body text, other
  *  frontmatter lines, and wikilink entries stay byte-identical. */
@@ -157,7 +113,7 @@ function rewritePage(
       continue;
     }
 
-    const mapped = mapEntry(entry, hubs);
+    const mapped = wikilinkFor(entry, hubs);
 
     if ("reason" in mapped) {
       report.skipped.push({ page, entry, reason: mapped.reason });

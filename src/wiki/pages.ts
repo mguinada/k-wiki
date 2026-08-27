@@ -45,10 +45,19 @@ const EMPTY_FIELDS: PageFields = {
   sources: [],
 };
 
-function unquote(value: string): string {
+/** Unquote one frontmatter scalar or list-item value: a wrapping
+ *  single or double quote is stripped, anything else stays as
+ *  written. Shared by the migration scripts' line-based rewrites. */
+export function unquote(value: string): string {
   const quote = value[0];
 
   return quote === '"' || quote === "'" ? value.slice(1, -1) : value;
+}
+
+/** Index of the closing frontmatter fence — trim-tolerant — in a
+ *  page's lines, or -1 when the block never closes. */
+export function closingFence(lines: readonly string[]): number {
+  return lines.findIndex((line, index) => index > 0 && line.trim() === "---");
 }
 
 /** Whether a `sources` entry is a wikilink (bracketed) or a raw path. */

@@ -5,14 +5,13 @@ import { sha256 } from "../sync/hash.ts";
 import {
   isWikilinkEntry,
   listWikiPages,
-  normalizeRawPath,
   parsePageFields,
   wikilinkTarget,
 } from "../wiki/pages.ts";
 import {
-  citationAlias,
   loadSourceHubIndex,
   type SourceHubIndex,
+  wikilinkFor,
 } from "../wiki/source-hubs.ts";
 import {
   buildPageIndex,
@@ -516,18 +515,11 @@ export function checkSourcesEntries(
       continue;
     }
 
-    const path = normalizeRawPath(entry);
-    const hub = hubs.byOrigin.get(path) ?? hubs.byCitation.get(path);
+    const mapped = wikilinkFor(entry, hubs);
 
-    if (hub !== undefined) {
-      const alias = citationAlias(path);
-      const wikilink =
-        hubs.byOrigin.has(path) || alias === undefined
-          ? `[[${hub}]]`
-          : `[[${hub}|${alias}]]`;
-
+    if ("wikilink" in mapped) {
       problems.push(
-        `sources entry "${entry}" cites a path that has a hub — use "${wikilink}"`,
+        `sources entry "${entry}" cites a path that has a hub — use "${mapped.wikilink}"`,
       );
     }
   }
