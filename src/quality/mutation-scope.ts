@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { refuseDirectExecution } from "../src/cli/is-main.ts";
+import { refuseDirectExecution } from "../cli/is-main.ts";
 
 // Hunk scoping for the advisory mutation run (issue #99, phase 1a).
 //
@@ -17,6 +17,11 @@ export type Range = { start: number; end: number };
 
 /** Reads the stdout of a git invocation; the seam tests fake. */
 export type GitText = (args: readonly string[]) => string;
+
+/** Runs git in the repository root; the seam the gate test drives. */
+export function runGitText(args: readonly string[]): string {
+  return execFileSync("git", args, { encoding: "utf8" });
+}
 
 export type FileDiff = { path: string; ranges: Range[] | null };
 
@@ -138,8 +143,8 @@ function parseFileDiffs(diffText: string): FileDiff[] {
   return files;
 }
 
-/** The full --mutate argument, or "" when nothing mutable changed. */
-export function collectPatterns(git: GitText): string {
+/** The changed src/ files — hunk-ranged, whole, or absent when deleted. */
+export function collectChangedFiles(git: GitText): FileDiff[] {
   const diffText = git([
     "diff",
     "-U0",
@@ -163,11 +168,12 @@ export function collectPatterns(git: GitText): string {
     files.push({ path, ranges: null });
   }
 
-  return buildPatterns(files);
+  return files;
 }
 
-function runGitText(args: readonly string[]): string {
-  return execFileSync("git", args, { encoding: "utf8" });
+/** The full --mutate argument, or "" when nothing mutable changed. */
+export function collectPatterns(git: GitText): string {
+  return buildPatterns(collectChangedFiles(git));
 }
 
 export function main(argv: readonly string[], git: GitText = runGitText) {
@@ -184,5 +190,5 @@ export function main(argv: readonly string[], git: GitText = runGitText) {
   }
 }
 
-/* v8 ignore next: covered only under direct `node scripts/mutation-scope.ts` runs */
+/* v8 ignore next: covered only under direct `node src/quality/mutation-scope.ts` runs */
 refuseDirectExecution(import.meta.url, "mutation-scope");

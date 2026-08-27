@@ -1,0 +1,14 @@
+{
+  "files": {
+    "exclude": []
+  },
+  "thresholds": {
+    "cyclomatic": { "warning": 8, "error": 10 }
+  },
+  "counting_rules": {
+    "logical_operators": true,
+    "nullish_coalescing": true,
+    "optional_chaining": true,
+    "switch_case_mode": "perCase"
+  }
+}

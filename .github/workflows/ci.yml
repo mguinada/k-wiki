@@ -25,7 +25,11 @@
 # The mutation job is advisory, never a gate (issue #21): it runs only
 # when a PR carries the `mutation` label, nightly on main, or via manual
 # dispatch, and continue-on-error keeps its outcome from blocking merge.
-# PR runs are scoped like the local pre-handoff step (issue #99): they
+# The same nightly arm carries the advisory complexity debt report
+# (issue #178): npm run complexity:full prints the whole-src/ per-function
+# debt table and uploads it as an artifact (7-day retention); the table
+# is advisory, though the run also re-executes the changed-mode gate (a
+# clean nightly checkout has nothing changed, so it passes). PR runs are scoped like the local pre-handoff step (issue #99): they
 # mutate only the src/ hunks changed vs origin/main, so the checkout
 # needs full history (fetch-depth: 0). Nightly and dispatched runs stay
 # full. It follows the same log-hygiene rule: Stryker mutates and prints
@@ -86,6 +90,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history: the complexity gate rides this job inside the
+          # unit run and diffs the working tree against origin/main,
+          # which a shallow checkout does not contain.
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -129,6 +138,16 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Complexity debt report (advisory)
+        if: always()
+        run: npm run complexity:full | tee complexity-debt-report.txt
+      - name: Upload complexity debt report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: complexity-debt-report
+          path: complexity-debt-report.txt
+          retention-days: 7
       # PRs: diff-scoped (issue #99). Scheduled/dispatched: full run.
       - run: ${{ github.event_name == 'pull_request' && 'npm run mutation:changed' || 'npm run mutation' }}
       - name: Upload mutation report

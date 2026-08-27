@@ -1,12 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   buildPatterns,
+  collectChangedFiles,
   collectPatterns,
   type GitText,
   main,
   mergeRanges,
   parseNewRanges,
-} from "../scripts/mutation-scope.ts";
+} from "../src/quality/mutation-scope.ts";
 
 const HUNK_FILE = [
   "diff --git a/src/a.ts b/src/a.ts",
@@ -86,6 +87,32 @@ describe("buildPatterns", () => {
 
   it("renders nothing for a file with no mutable ranges", () => {
     expect(buildPatterns([{ path: "src/a.ts", ranges: [] }])).toBe("");
+  });
+});
+
+describe("collectChangedFiles", () => {
+  it("keeps a hunk file and drops a deleted file from the changed list", () => {
+    const git: GitText = (args) =>
+      args[0] === "diff"
+        ? [
+            "diff --git a/src/a.ts b/src/a.ts",
+            "--- a/src/a.ts",
+            "+++ b/src/a.ts",
+            "@@ -1,1 +2,2 @@",
+            " context",
+            "+new",
+            "diff --git a/src/gone.ts b/src/gone.ts",
+            "deleted file mode 100644",
+            "--- a/src/gone.ts",
+            "+++ /dev/null",
+            "@@ -1,1 +0,0 @@",
+            "-old",
+          ].join("\n")
+        : "";
+
+    expect(collectChangedFiles(git)).toEqual([
+      { path: "src/a.ts", ranges: [{ start: 2, end: 3 }] },
+    ]);
   });
 });
 

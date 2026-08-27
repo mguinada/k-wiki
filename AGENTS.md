@@ -61,7 +61,13 @@ until all three pass. Run them before every handoff.
 
 - `npm run typecheck` — type check (`tsc --noEmit`).
 - `npm run lint` — lint and format verification (`biome check .`).
-- `npm test` — unit tests (`vitest run`).
+- `npm test` — unit tests (`vitest run`). Includes the complexity
+  gate test (`tests/quality/complexity.test.ts`).
+- `npm run complexity` — cyclomatic complexity gate (blocking,
+  changed mode): every `src/` function whose line extent intersects a
+  hunk changed vs `origin/main` (uncommitted work included; new files
+  whole; deleted files skipped) must stay at cyclomatic ≤ 10; it also
+  runs as part of `npm test` — this script targets it alone.
 - `npm run test:coverage` — unit tests with coverage; the run fails
   below the 90% thresholds in `vitest.config.ts`.
 - `npm run e2e` — end-to-end suite (`vitest.e2e.config.ts`): real CLI
@@ -83,6 +89,19 @@ until all three pass. Run them before every handoff.
 `npm run format` (`biome format --write .`) is the fix command for
 formatting differences reported by `npm run lint`; it is not a gate.
 
+When `npm run complexity` fails, resolve it by refactoring the named
+function(s) — extract helpers, table-driven dispatch, early returns,
+split generators into named steps — and re-run; there are no inline
+suppressions. A genuinely irreducible function is excluded via a
+`.complexityguard.json` `files.exclude` entry with a written
+justification line in the PR body — same rule as `// Stryker disable`.
+`npm run complexity:full` prints the advisory whole-`src/` per-function
+debt table (worst first) that steers complexity-lowering refactors; the
+table is advisory, but the same run re-executes the changed-mode gate,
+so a working tree with a gated violation still fails it. Semantics,
+calibration, and suppression policy:
+[`docs/references/complexity-gate.md`](docs/references/complexity-gate.md).
+
 CI (`.github/workflows/ci.yml`) runs the gates on every pull request
 and on every push to `main` — the PR run tests the merge commit
 against `main`, the push run catches a merge that landed despite a
@@ -97,7 +116,8 @@ Run order from the repo root, before declaring work complete:
 ```sh
 npm run typecheck   # gate — always
 npm run lint        # gate — always
-npm test            # gate — always (unit only; e2e is NOT included)
+npm test            # gate — always (unit only; e2e is NOT included; includes the complexity gate)
+npm run complexity  # gate — fast targeted re-run of the gate when only it matters
 npm run e2e         # when the change touches src/sync/, src/ingest/, src/query/, src/dashboard/, src/wiki/, src/cli/, src/fixtures/, tests/e2e/, or raw/
 npm run health      # same trigger as e2e; also safe to run any time — read-only, no vault access
 ```
@@ -198,8 +218,9 @@ mandatory pre-handoff step. Before you declare work complete:
    run; `npm run mutation:survivors` re-lists the last report without
    re-running.
 
-The blocking gates (`npm run typecheck`, `npm run lint`, `npm test`)
-must still pass after any new tests. A `// Stryker disable` comment
+The blocking gates (`npm run typecheck`, `npm run lint`, `npm test`,
+`npm run complexity`) must still pass after any new tests. A
+`// Stryker disable` comment
 without a written justification line in the PR body is forbidden.
 
 ## Iron Rules

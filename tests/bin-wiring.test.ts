@@ -84,12 +84,12 @@ const ENTRIES: readonly Entry[] = [
   },
   {
     launcher: "mutation-scope.ts",
-    module: "scripts/mutation-scope.ts",
+    module: "src/quality/mutation-scope.ts",
     usage: "Usage: mutation-scope",
   },
   {
     launcher: "mutation-survivors.ts",
-    module: "scripts/mutation-survivors.ts",
+    module: "src/quality/mutation-survivors.ts",
     usage: "Usage: mutation-survivors",
   },
   {

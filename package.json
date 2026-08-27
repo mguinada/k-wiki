@@ -32,8 +32,10 @@
     "k-wiki": "node bin/k-wiki.ts",
     "data:init": "node bin/init-data-repo.ts",
     "mutation": "stryker run",
-    "mutation:changed": "sh scripts/mutation-changed.sh",
-    "mutation:survivors": "node bin/mutation-survivors.ts"
+    "mutation:changed": "sh src/quality/mutation-changed.sh",
+    "mutation:survivors": "node bin/mutation-survivors.ts",
+    "complexity": "vitest run --disableConsoleIntercept tests/quality/complexity.test.ts",
+    "complexity:full": "COMPLEXITY_FULL=1 vitest run --disableConsoleIntercept tests/quality/complexity.test.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",
@@ -41,6 +43,7 @@
     "@stryker-mutator/vitest-runner": "^10.0.0",
     "@types/node": "^22.20.1",
     "@vitest/coverage-v8": "^4.1.10",
+    "complexity-guard": "0.10.0",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   },

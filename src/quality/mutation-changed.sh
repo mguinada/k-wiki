@@ -9,7 +9,7 @@ set -eu
 
 usage() {
   cat <<'EOF'
-usage: scripts/mutation-changed.sh [--full]
+usage: src/quality/mutation-changed.sh [--full]
        (same as: npm run mutation:changed [--full])
 
 Advisory StrykerJS mutation testing — a signal, never a gate.
@@ -20,7 +20,7 @@ report any time with: npm run mutation:survivors
 Default:  Mutate only the changed hunks of the src/*.ts files that
           differ from origin/main (uncommitted work included), at
           hunk granularity: one file:start-end range per changed
-          hunk (scripts/mutation-scope.ts builds the list). New or
+          hunk (src/quality/mutation-scope.ts builds the list). New or
           untracked files mutate whole; deleted files are skipped;
           code outside the hunks keeps its nightly full-run check.
           Runs capped at --concurrency 4 — scoped runs are small and
@@ -58,8 +58,8 @@ esac
 # origin/main, not local main: survives fresh clones and worktrees where
 # the local branch is checked out elsewhere or missing. Plain two-endpoint
 # diff (not `origin/main...HEAD`): it includes uncommitted work, so the
-# pre-handoff run sees what the agent actually changed. scripts/mutation-
-# scope.ts turns that diff into hunk-range --mutate patterns.
+# pre-handoff run sees what the agent actually changed. src/quality/
+# mutation-scope.ts turns that diff into hunk-range --mutate patterns.
 patterns=$(node bin/mutation-scope.ts)
 
 if [ -z "$patterns" ]; then
