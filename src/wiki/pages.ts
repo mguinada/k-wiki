@@ -83,6 +83,87 @@ function scalar(value: string | undefined): string | undefined {
     : undefined;
 }
 
+/** Page fields under construction while parsing, plus the list mode
+ *  the `sources` key switches on and every other key switches off. */
+interface MutablePageFields {
+  title: string | undefined;
+  type: string | undefined;
+  origin: string | undefined;
+  sources: string[];
+  inSources: boolean;
+}
+
+/** Apply a `key: value` line to `fields`, returning whether the line
+ *  is a key line at all; unknown keys still switch list mode off. */
+function applyKeyLine(line: string, fields: MutablePageFields): boolean {
+  const key = /^([A-Za-z][\w-]*):\s*(.*)$/.exec(line);
+
+  if (key === null || key[1] === undefined) {
+    return false;
+  }
+
+  fields.inSources = key[1] === "sources";
+
+  if (key[1] === "title") {
+    fields.title = scalar(key[2]);
+  }
+
+  if (key[1] === "type") {
+    fields.type = scalar(key[2]);
+  }
+
+  if (key[1] === "origin") {
+    fields.origin = scalar(key[2]);
+  }
+
+  return true;
+}
+
+/** Add one `- item` line to `sources` while inside the sources
+ *  list. */
+function applySourcesItem(line: string, fields: MutablePageFields): void {
+  if (!fields.inSources) {
+    return;
+  }
+
+  const item = /^\s+-\s+(.+)$/.exec(line)?.[1];
+
+  if (item === undefined) {
+    return;
+  }
+
+  fields.sources.push(unquote(item.trim()));
+}
+
+/** Fold the lines after the opening fence into fields until the
+ *  closing fence; EMPTY_FIELDS when the block never closes. */
+function parseFrontmatterBody(lines: readonly string[]): PageFields {
+  const fields: MutablePageFields = {
+    title: undefined,
+    type: undefined,
+    origin: undefined,
+    sources: [],
+    inSources: false,
+  };
+
+  for (const line of lines) {
+    if (line.trim() === FRONTMATTER_FENCE) {
+      return {
+        title: fields.title,
+        type: fields.type,
+        origin: fields.origin,
+        sources: fields.sources,
+      };
+    }
+
+    if (!applyKeyLine(line, fields)) {
+      applySourcesItem(line, fields);
+    }
+  }
+
+  return EMPTY_FIELDS;
+}
+
 /** Parse `title`, `type`, `origin`, and `sources` from a wiki page's
  *  YAML frontmatter: top-level scalars and one list of single-line
  *  items, nothing more. Returns empty fields when there is no closed
@@ -94,51 +175,7 @@ export function parsePageFields(text: string): PageFields {
     return EMPTY_FIELDS;
   }
 
-  let title: string | undefined;
-  let type: string | undefined;
-  let origin: string | undefined;
-  const sources: string[] = [];
-  let inSources = false;
-
-  for (const line of lines.slice(1)) {
-    if (line.trim() === FRONTMATTER_FENCE) {
-      return { title, type, origin, sources };
-    }
-
-    const key = /^([A-Za-z][\w-]*):\s*(.*)$/.exec(line);
-
-    if (key !== null && key[1] !== undefined) {
-      inSources = key[1] === "sources";
-
-      if (key[1] === "title") {
-        title = scalar(key[2]);
-      }
-
-      if (key[1] === "type") {
-        type = scalar(key[2]);
-      }
-
-      if (key[1] === "origin") {
-        origin = scalar(key[2]);
-      }
-
-      continue;
-    }
-
-    if (!inSources) {
-      continue;
-    }
-
-    const item = /^\s+-\s+(.+)$/.exec(line)?.[1];
-
-    if (item === undefined) {
-      continue;
-    }
-
-    sources.push(unquote(item.trim()));
-  }
-
-  return EMPTY_FIELDS;
+  return parseFrontmatterBody(lines.slice(1));
 }
 
 /** Recursively list every wiki-relative markdown path under `dir`. */
