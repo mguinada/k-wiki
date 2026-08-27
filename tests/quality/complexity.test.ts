@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -22,6 +23,16 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 const realGit: GitText = (args) =>
   execFileSync("git", args, { encoding: "utf8", cwd: repoRoot });
+
+/** Paths the engine suppresses by omission — the files.exclude list the
+ *  engine itself reads from .complexityguard.json. */
+function excludedPaths(): Set<string> {
+  const config = JSON.parse(
+    readFileSync(join(repoRoot, ".complexityguard.json"), "utf8"),
+  ) as { files?: { exclude?: string[] } };
+
+  return new Set(config.files?.exclude ?? []);
+}
 
 /** Engine JSON shaped exactly like `complexity-guard -f json` output. */
 const ENGINE_JSON = `{
@@ -219,6 +230,28 @@ describe("complexity gate (live)", () => {
     }
 
     expect(result.violations, text).toEqual([]);
+  });
+
+  it("the engine reports every changed file the config does not exclude", ({ skip }) => {
+    const changed = collectChangedFiles(realGit);
+
+    if (changed.length === 0) {
+      skip();
+
+      return;
+    }
+
+    const report = runEngine(changed.map((file) => file.path));
+    const reported = new Set(report.files.map((file) => file.path));
+    const excluded = excludedPaths();
+    const missing = changed
+      .map((file) => file.path)
+      .filter((path) => !excluded.has(path) && !reported.has(path));
+
+    expect(
+      missing,
+      `engine omitted changed files (path drift?): ${missing.join(", ")}`,
+    ).toEqual([]);
   });
 
   it.skipIf(process.env.COMPLEXITY_FULL !== "1")(
