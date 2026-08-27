@@ -5,9 +5,14 @@ export default defineConfig({
     // Git- and clock-heavy tests (wiki-ingest, guardrails, sync
     // progress) spawn real child processes and wait real intervals;
     // under heavy machine load (e.g. endpoint-security scanning) the
-    // default 5 s starves them. The e2e config sets 30 s for the CLI
-    // suites for the same reason.
-    testTimeout: 30_000,
+    // defaults starve them. The run output showed ingest tests at
+    // 24-30 s under full-suite load, so 60 s leaves headroom. The e2e
+    // config sets 30 s for the CLI suites for the same reason.
+    testTimeout: 60_000,
+    // afterAll cleanup rm's many git-heavy temp dirs; under load the
+    // 10 s default kills the hook (guardrails flake, issue #145 run).
+    // Same value the heaviest suites already declare per-file.
+    hookTimeout: 120_000,
     // Keep vitest out of Stryker's sandbox copies: a crashed mutation run
     // leaves them behind, and they would double the suite. Keep the e2e
     // suite out of the unit run (npm test) and coverage: it spawns the

@@ -252,6 +252,70 @@ function runCycle(repo: Repo, extraEnv: NodeJS.ProcessEnv = {}) {
   );
 }
 
+/** A temp data repo plus a committed temp source repo and a
+ *  repo-sourced config (the meta shape, issue #145) — the sync-repo
+ *  fixture pattern from sync-repo.e2e.test.ts, wired for the cycle. */
+async function makeRepoSourcedRepo(): Promise<
+  Repo & { readonly sourceRoot: string }
+> {
+  const tmp = await mkdtemp(join(tmpdir(), "k-wiki-meta-e2e-"));
+
+  tempDirs.push(tmp);
+
+  const sourceRoot = join(tmp, "source");
+
+  await mkdir(join(sourceRoot, "docs"), { recursive: true });
+  await writeFile(join(sourceRoot, "README.md"), "readme body\n");
+  await writeFile(join(sourceRoot, "docs", "guide.md"), "guide\n");
+  await run("git", ["init", "--quiet"], { cwd: sourceRoot });
+  await run("git", ["config", "user.email", "t@t"], { cwd: sourceRoot });
+  await run("git", ["config", "user.name", "t"], { cwd: sourceRoot });
+  await run("git", ["add", "-A"], { cwd: sourceRoot });
+  await run("git", ["commit", "--quiet", "-m", "fixture"], {
+    cwd: sourceRoot,
+  });
+
+  const dataRoot = join(tmp, "data");
+  const configPath = join(tmp, "sync-meta.json");
+  const settingsPath = join(tmp, "settings.yml");
+  const outputsDir = join(tmp, "outputs");
+
+  await writeFile(
+    configPath,
+    JSON.stringify({
+      vaults: [
+        {
+          source: "repo",
+          name: "k-wiki",
+          root: sourceRoot,
+          include: ["README.md", "docs/*.md"],
+        },
+      ],
+    }),
+  );
+  await mkdir(join(dataRoot, "raw"), { recursive: true });
+  await mkdir(join(dataRoot, "wiki"), { recursive: true });
+  await writeFile(
+    join(dataRoot, "raw", "manifest.json"),
+    `${JSON.stringify({ vaults: {} }, null, 2)}\n`,
+  );
+  await writeFile(join(dataRoot, "wiki", "index.md"), "# Index\n");
+  await run("git", ["init", "--quiet"], { cwd: dataRoot });
+  await run("git", ["config", "user.email", "t@t"], { cwd: dataRoot });
+  await run("git", ["config", "user.name", "t"], { cwd: dataRoot });
+  await run("git", ["add", "-A"], { cwd: dataRoot });
+  await run("git", ["commit", "--quiet", "-m", "init"], { cwd: dataRoot });
+  await writeFile(join(dataRoot, "stub-agent.mjs"), STUB_AGENT, {
+    mode: 0o755,
+  });
+  await writeFile(
+    settingsPath,
+    `command: ${join(dataRoot, "stub-agent.mjs")}\nmodel: E2E-MODEL\nreasoning: low\n`,
+  );
+
+  return { dataRoot, configPath, settingsPath, outputsDir, sourceRoot };
+}
+
 describe("wiki-sync e2e", () => {
   it("answers --help with usage and exit 0", async () => {
     const result = await runCli(SYNC_CYCLE_SCRIPT, ["--help"]);
@@ -436,6 +500,61 @@ describe("wiki-sync e2e", () => {
     await expect(
       readFile(join(repo.dataRoot, "wiki", "concepts", "stub.md"), "utf8"),
     ).resolves.toContain("stub body");
+
+    const { stdout: headAfter } = await run("git", ["rev-parse", "HEAD"], {
+      cwd: repo.dataRoot,
+    });
+
+    expect(headAfter).toBe(head);
+  });
+
+  it("runs the full cycle for a repo-sourced instance (the meta flow)", async () => {
+    const repo = await makeRepoSourcedRepo();
+    const result = await runCycle(repo);
+
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("# wiki-sync cycle digest");
+    expect(result.out).toContain("2 sources copied, 0 sources removed");
+    expect(result.err).toContain("wiki-sync: stage 1/5 — sync-repo");
+
+    await expect(
+      readFile(
+        join(repo.dataRoot, "raw", "notes", "k-wiki", "README.md"),
+        "utf8",
+      ),
+    ).resolves.toBe("readme body\n");
+
+    const manifest = JSON.parse(
+      await readFile(join(repo.dataRoot, "raw", "manifest.json"), "utf8"),
+    );
+    const { stdout: sourceHead } = await run("git", [
+      "-C",
+      repo.sourceRoot,
+      "rev-parse",
+      "HEAD",
+    ]);
+
+    expect(manifest.source_commit).toBe(sourceHead.trim());
+
+    const { stdout: log } = await run("git", ["log", "-1", "--pretty=%B"], {
+      cwd: repo.dataRoot,
+    });
+
+    expect(log).toMatch(/^wiki-sync: 2 sources processed, 2 pages touched$/m);
+  });
+
+  it("does nothing on a repo-sourced rerun with no source changes", async () => {
+    const repo = await makeRepoSourcedRepo();
+
+    await runCycle(repo);
+
+    const { stdout: head } = await run("git", ["rev-parse", "HEAD"], {
+      cwd: repo.dataRoot,
+    });
+    const result = await runCycle(repo);
+
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("nothing to do");
 
     const { stdout: headAfter } = await run("git", ["rev-parse", "HEAD"], {
       cwd: repo.dataRoot,

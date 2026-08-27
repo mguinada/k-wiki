@@ -150,9 +150,7 @@ export function openerFor(platform: NodeJS.Platform): OpenerSpec {
 function openInBrowser(path: string): Promise<void> {
   const opener = openerFor(process.platform);
 
-  return execFile(opener.command, [...opener.argsPrefix, path]).then(
-    () => {},
-  );
+  return execFile(opener.command, [...opener.argsPrefix, path]).then(() => {});
 }
 
 /** dashboard entry point: `dashboard [-h | --help] [-o | --open] [<data-repo>]`. */

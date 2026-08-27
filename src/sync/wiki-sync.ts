@@ -39,17 +39,19 @@ import {
   summarizeProvenance,
 } from "../wiki/provenance.ts";
 import { expandHome, loadSyncConfig, resolveRawDir } from "./config.ts";
+import { type RepoSyncReport, runRepoSync } from "./sync-repo.ts";
 import { runSync, type SyncReport } from "./sync-vault.ts";
 
 /**
  * wiki-sync: the one-command orchestrator (guide §18, issue #13). It
- * chains the proven pieces — sync-vault → wiki-ingest → headless lint
- * (§17, prompts/lint.md) → crosslink audit (issue #96, configured
- * second brains only) → verification (issue #138) → data-repo commit
- * — and prints one digest: the run's ingest digest, the lint summary,
- * the audit result, the fidelity and provenance results, and the
- * commit hash. Nothing here is new capability; every stage stays
- * independently runnable (guide §8).
+ * chains the proven pieces — sync (sync-vault for vault sources,
+ * sync-repo for repo sources, issue #145) → wiki-ingest → headless
+ * lint (§17, prompts/lint.md) → crosslink audit (issue #96,
+ * configured second brains only) → verification (issue #138) →
+ * data-repo commit — and prints one digest: the run's ingest digest,
+ * the lint summary, the audit result, the fidelity and provenance
+ * results, and the commit hash. Nothing here is new capability;
+ * every stage stays independently runnable (guide §8).
  *
  * The lint stage is the headless sibling of the manual lint run: the
  * same prompt file, invoked through the same agent settings, with the
@@ -445,7 +447,10 @@ async function commitDataRepo(
 
 /** Everything one wiki-sync cycle reports. */
 export interface WikiSyncResult {
-  readonly sync: SyncReport;
+  /** The stage-1 report: vault-shaped (`SyncReport`) or repo-shaped
+   *  (`RepoSyncReport`) — the config's source kinds decide (issue
+   *  #145). */
+  readonly sync: SyncReport | RepoSyncReport;
   readonly ingest: IngestResult;
   /** Undefined when the ingest stage skipped (nothing to lint). */
   readonly lint: LintResult | undefined;
@@ -482,27 +487,32 @@ export interface WikiSyncOptions {
   readonly onProgress?: (message: string) => void;
 }
 
-/** Count a sync report's copied and removed notes across every vault. */
-function syncChangeCounts(sync: SyncReport): {
+/** Count a sync report's copied and removed notes — across every
+ *  vault of a vault run, or the one repo source of a repo run. */
+function syncChangeCounts(sync: SyncReport | RepoSyncReport): {
   copied: number;
   removed: number;
 } {
-  return {
-    copied: sync.vaults.reduce(
-      (total, vault) => total + vault.copied.length,
-      0,
-    ),
-    removed: sync.vaults.reduce(
-      (total, vault) => total + vault.removed.length,
-      0,
-    ),
-  };
+  if ("vaults" in sync) {
+    return {
+      copied: sync.vaults.reduce(
+        (total, vault) => total + vault.copied.length,
+        0,
+      ),
+      removed: sync.vaults.reduce(
+        (total, vault) => total + vault.removed.length,
+        0,
+      ),
+    };
+  }
+
+  return { copied: sync.copied.length, removed: sync.removed.length };
 }
 
 /** The commit summary of one cycle: ingest diff counts when the agent
  *  ran, the sync report's counts otherwise. */
 async function commitSummaryOf(
-  sync: SyncReport,
+  sync: SyncReport | RepoSyncReport,
   ingest: IngestResult,
   lint: LintResult | undefined,
   dataRoot: string,
@@ -538,17 +548,20 @@ async function commitSummaryOf(
 
 /**
  * One full cycle: sync → ingest → lint → crosslinks → verification →
- * commit. Any stage failure stops the chain and rejects (the CLI
- * exits 1); guardrail failures have already reverted their agent run,
- * and a verification failure reverts the lint edits (the ingest edits
- * stay) before rejecting. With no changed sources the ingest stage
- * skips on its own, lint is skipped with it, and a clean data repo
- * commits nothing — cost scales with activity, not the clock. The
- * configured crosslink audit and the verification checks still run
- * every cycle: their discipline holds or the cycle fails. The ingest
- * skip also keys on the manifest snapshot, so a run whose agent
- * failed (snapshot untouched) is retried by the next cycle even when
- * sync then reports no changes.
+ * commit. Stage 1 dispatches on the config's source kinds (issue
+ * #145): vault sources run the sync-vault core, a repo-typed source
+ * (the meta instance) runs the sync-repo core in-process — mixed
+ * configs refuse. Any stage failure stops the chain and rejects (the
+ * CLI exits 1); guardrail failures have already reverted their agent
+ * run, and a verification failure reverts the lint edits (the ingest
+ * edits stay) before rejecting. With no changed sources the ingest
+ * stage skips on its own, lint is skipped with it, and a clean data
+ * repo commits nothing — cost scales with activity, not the clock.
+ * The configured crosslink audit and the verification checks still
+ * run every cycle: their discipline holds or the cycle fails. The
+ * ingest skip also keys on the manifest snapshot, so a run whose
+ * agent failed (snapshot untouched) is retried by the next cycle
+ * even when sync then reports no changes.
  */
 export async function runWikiSync(
   options: WikiSyncOptions,
@@ -561,15 +574,37 @@ export async function runWikiSync(
     options.settingsPath,
   );
   const total = domains === undefined ? 5 : 6;
+  const config = await loadSyncConfig(options.configPath, homedir());
+  const repoSourced = config.vaults.some((source) => source.kind === "repo");
 
-  onProgress(`wiki-sync: stage 1/${total} — sync-vault`);
+  if (repoSourced && config.vaults.some((source) => source.kind === "vault")) {
+    throw new Error(
+      `mixed source kinds in ${options.configPath}: one instance per config — vault sources for sync-vault, a repo source for sync-repo`,
+    );
+  }
 
-  const sync = await runSync({
-    configPath: options.configPath,
-    rawDir: options.rawDir,
-    now,
-    onProgress,
-  });
+  onProgress(
+    `wiki-sync: stage 1/${total} — ${repoSourced ? "sync-repo" : "sync-vault"}`,
+  );
+
+  // Stage 1 dispatch (issue #145): vault configs run the sync-vault
+  // core unchanged; a repo-typed config (the meta instance) runs the
+  // sync-repo core in-process over that config — same cycle, same
+  // lint → verification → commit flow, whatever the source kind.
+  const sync = repoSourced
+    ? await runRepoSync({
+        configPath: options.configPath,
+        rawDir: options.rawDir,
+        env,
+        now,
+        onProgress,
+      })
+    : await runSync({
+        configPath: options.configPath,
+        rawDir: options.rawDir,
+        now,
+        onProgress,
+      });
 
   onProgress(`wiki-sync: stage 2/${total} — wiki-ingest`);
 
@@ -663,8 +698,8 @@ function pluralized(count: number, noun: string): string {
   return count === 1 ? `1 ${noun}` : `${count} ${noun}s`;
 }
 
-/** One line per vault: what sync copied and removed. */
-function syncSummaryLines(sync: SyncReport): string[] {
+/** One line per vault or repo source: what sync copied and removed. */
+function syncSummaryLines(sync: SyncReport | RepoSyncReport): string[] {
   const { copied, removed } = syncChangeCounts(sync);
   const pruned = sync.prunedNamespaces.length;
 
@@ -672,9 +707,13 @@ function syncSummaryLines(sync: SyncReport): string[] {
     return ["no source changes"];
   }
 
+  const commit =
+    "vaults" in sync ? "" : ` at commit ${sync.commit.slice(0, 8)}`;
+
   return [
     `${pluralized(copied, "source")} copied, ${pluralized(removed, "source")} removed` +
-      (pruned === 0 ? "" : `, ${pluralized(pruned, "namespace")} pruned`),
+      (pruned === 0 ? "" : `, ${pluralized(pruned, "namespace")} pruned`) +
+      commit,
   ];
 }
 
@@ -755,7 +794,8 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const HELP = `Usage: wiki-sync [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<config>] [<raw-dir>]
 
 Run the whole cycle in one command (guide §18, issue #13):
-sync-vault → wiki-ingest → headless lint (prompts/lint.md) →
+sync (sync-vault for vault sources, sync-repo for repo sources,
+issue #145) → wiki-ingest → headless lint (prompts/lint.md) →
 crosslink audit (configured second brains) → verification
 (check-fidelity + check-provenance, issue #138) → one data-repo
 commit. Every stage stays independently runnable for debugging; this
@@ -778,7 +818,9 @@ command only chains them.
   --timeout <secs>   Kill either agent run after this many seconds
                      and fail the cycle. Default: 1800 (30 minutes).
   -h, --help         Print this help and exit; no side effects.
-  <config>           Path to sync.json. Default: the repo's own
+  <config>           Path to sync.json (vault sources) or a
+                     repo-sourced config such as sync-meta.json
+                     (source: "repo"). Default: the repo's own
                      sync.json.
   <raw-dir>          raw/ directory; its parent is the data repo the
                      agents run in and the commit lands in. Default:
@@ -786,7 +828,13 @@ command only chains them.
                      repo's own raw/.
 
 What it does, stage by stage:
-  1. sync — sync-vault: project the vaults into raw/ (deterministic).
+  1. sync — vault configs: sync-vault projects the vaults into raw/
+     (deterministic). Repo-sourced configs (source: "repo", e.g.
+     sync-meta.json) run the sync-repo core instead: the allowlisted
+     files of the committed source tree are projected verbatim into
+     raw/notes/<name>/, stamped with the source HEAD commit; a dirty
+     source tree fails the cycle (commit first). Mixed vault+repo
+     configs are refused — one instance per config.
   2. ingest — wiki-ingest: run the wiki agent over the changed
      sources, guardrail-check it (auto-revert on failure), and write
      the digest to the code repo's outputs/runs/ (gitignored).
