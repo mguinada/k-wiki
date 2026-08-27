@@ -118,15 +118,9 @@ function section(id: string, title: string, body: string, note = ""): string {
   return `<section id="${id}"><h2>${esc(title)}</h2>${body}${note === "" ? "" : `<p class="note">${esc(note)}</p>`}</section>`;
 }
 
-/** The full page. Pure: KPIs in, HTML string out. */
-export function renderDashboard(
-  kpis: DashboardKpis,
-  meta: DashboardMeta,
-): string {
-  const generated = meta.generatedAt.toISOString();
-  const stamp = `generated ${generated.slice(0, 10)} ${generated.slice(11, 16)} UTC from ${esc(meta.head === "" ? "no git history" : meta.head)}`;
-
-  const coverage = section(
+/** The coverage & freshness section. */
+function coverageSection(kpis: DashboardKpis): string {
+  return section(
     "coverage",
     "Coverage & freshness",
     `${stat(String(kpis.totalPages), "wiki pages", false, "Every content page under wiki/ (AGENTS.md and its meta template excluded).")}` +
@@ -159,7 +153,10 @@ export function renderDashboard(
       ? `${kpis.backlog.rawTotal} raw notes total; backlog = raw notes absent from the last ingest snapshot.`
       : `${kpis.backlog.rawTotal} raw notes total; no ingest snapshot found, so every note counts as un-ingested.`,
   );
+}
 
+/** The structure-quality section. */
+function structureSection(kpis: DashboardKpis): string {
   const orphansList =
     kpis.orphans.length === 0
       ? `<p class="note">no orphans — every page is linked</p>`
@@ -189,7 +186,7 @@ export function renderDashboard(
           )
           .join("")}</ul>`;
 
-  const structure = section(
+  return section(
     "structure",
     "Structure quality",
     `${stat(String(kpis.orphans.length), "orphan pages", kpis.orphans.length > 0, "Pages no other page links to (the navigation root index.md is exempt). Candidates for integration or deletion.")}` +
@@ -206,11 +203,14 @@ export function renderDashboard(
       `<div class="card">${cardTitle("needs-review flips per week", "Commits that changed a status: needs-review line (either direction) — review-debt churn; steady zeros mean a stable review queue.")}${sparkline(kpis.needsReviewChurn)}</div>` +
       `<div class="card wide"><div class="cols"><div>${cardTitle("Orphans")}${orphansList}</div><div>${cardTitle("Dead links")}${deadList}</div></div></div>`,
   );
+}
 
+/** The activity section. */
+function activitySection(kpis: DashboardKpis): string {
   const avgSources =
     kpis.sourcesPerRun === null ? "—" : kpis.sourcesPerRun.toFixed(1);
 
-  const activity = section(
+  return section(
     "activity",
     "Activity",
     `<div class="card wide">${cardTitle("Ingest runs per week", "Commits whose subject starts wiki-sync or wiki-ingest, bucketed by the Monday of their week.")}${sparkline(kpis.runsPerWeek)}</div>` +
@@ -219,23 +219,28 @@ export function renderDashboard(
       `${stat(String(kpis.growth[kpis.growth.length - 1]?.count ?? 0), "pages added, cumulative", false, "Total pages ever added (git first-appearance), sampled weekly.")}` +
       `<div class="card wide">${cardTitle("Wiki growth — cumulative pages")}${sparkline(kpis.growth)}</div>`,
   );
+}
 
-  const funnel =
-    kpis.funnel.present === false
-      ? ""
-      : section(
-          "funnel",
-          "Query funnel",
-          `${stat(String(kpis.funnel.filedCount), "queries filed")}` +
-            `${stat(
-              kpis.funnel.lastRunAt === null
-                ? "—"
-                : kpis.funnel.lastRunAt.slice(0, 10),
-              "last query run",
-            )}`,
-        );
+/** The query-funnel section; empty when no query run exists. */
+function funnelSection(kpis: DashboardKpis): string {
+  return kpis.funnel.present === false
+    ? ""
+    : section(
+        "funnel",
+        "Query funnel",
+        `${stat(String(kpis.funnel.filedCount), "queries filed")}` +
+          `${stat(
+            kpis.funnel.lastRunAt === null
+              ? "—"
+              : kpis.funnel.lastRunAt.slice(0, 10),
+            "last query run",
+          )}`,
+      );
+}
 
-  const provenance = section(
+/** The provenance section. */
+function provenanceSection(kpis: DashboardKpis): string {
+  return section(
     "provenance",
     "Provenance",
     `${stat(String(kpis.provenance.single), "single-source pages", kpis.provenance.single > 0, "Pages citing exactly one source (accent) — the unverified frontier: nothing cross-checks them.")}` +
@@ -258,6 +263,20 @@ export function renderDashboard(
         )
         .join("")}</ul></div>`,
   );
+}
+
+/** The full page. Pure: KPIs in, HTML string out. */
+export function renderDashboard(
+  kpis: DashboardKpis,
+  meta: DashboardMeta,
+): string {
+  const generated = meta.generatedAt.toISOString();
+  const stamp = `generated ${generated.slice(0, 10)} ${generated.slice(11, 16)} UTC from ${esc(meta.head === "" ? "no git history" : meta.head)}`;
+  const coverage = coverageSection(kpis);
+  const structure = structureSection(kpis);
+  const activity = activitySection(kpis);
+  const funnel = funnelSection(kpis);
+  const provenance = provenanceSection(kpis);
 
   return `<!DOCTYPE html>
 <html lang="en">
