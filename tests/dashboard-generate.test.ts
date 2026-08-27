@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { writeDashboard } from "../src/dashboard/generate.ts";
+import { openerFor, writeDashboard } from "../src/dashboard/generate.ts";
 
 /**
  * The generator's contract over a real temp data repo (issue #73):
@@ -503,10 +503,16 @@ describe("dashboard CLI --open", () => {
     tempDirs.push(stubDir);
 
     const log = join(stubDir, "open-log");
+    // Name the stub after the opener this platform actually invokes
+    // (open on macOS, xdg-open on Linux): a stub named only for one
+    // platform never runs on the others, so the log is never written.
+    // The stub logs its last argument — the path, for every opener
+    // spec (cmd /c start "" <path> included).
+    const { command } = openerFor(process.platform);
 
     await writeFile(
-      join(stubDir, "open"),
-      `#!/bin/sh\nprintf '%s' "$1" > ${JSON.stringify(log)}\n`,
+      join(stubDir, command),
+      `#!/bin/sh\nfor last in "$@"; do :; done\nprintf '%s' "$last" > ${JSON.stringify(log)}\n`,
       { mode: 0o755 },
     );
 
