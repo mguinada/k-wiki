@@ -52,7 +52,7 @@ export interface SelfCitation {
 }
 
 /** The page-name stem of a wiki-relative path. */
-function stem(file: string): string {
+export function stem(file: string): string {
   return basename(file, ".md");
 }
 
@@ -180,6 +180,34 @@ function selfCitationRule(
   }
 
   return { hub, originDir, alias };
+}
+
+/** True when a no-origin source hub's own raw path entry is an
+ *  aliased self-citation whose coverage cannot be re-derived after
+ *  a rewrite: rewriting it to `[[hub|Chapter]]` would silently drop
+ *  the chapter path from `byOrigin`, `byCitation`, and `selfCitations`
+ *  alike (the migration/check-provenance guard for issue #126). */
+export function isUnmigratableSelfCitation(
+  hubName: string,
+  entry: string,
+  hubs: SourceHubIndex,
+): boolean {
+  const hubFields = hubs.fields.get(hubName);
+
+  if (hubFields?.type !== "source" || hubFields.origin !== undefined) {
+    return false;
+  }
+
+  const mapped = wikilinkFor(entry, hubs);
+
+  if (!("wikilink" in mapped)) {
+    return false;
+  }
+
+  return (
+    wikilinkTarget(mapped.wikilink) === hubName &&
+    wikilinkAlias(mapped.wikilink) !== undefined
+  );
 }
 
 /** Build the index over every page under `wikiDir`; unreadable

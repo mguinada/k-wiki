@@ -10,7 +10,12 @@ import {
   listWikiPages,
   unquote,
 } from "../src/wiki/pages.ts";
-import { loadSourceHubIndex, wikilinkFor } from "../src/wiki/source-hubs.ts";
+import {
+  isUnmigratableSelfCitation,
+  loadSourceHubIndex,
+  stem,
+  wikilinkFor,
+} from "../src/wiki/source-hubs.ts";
 
 /**
  * One-shot `sources` wikilink migration (issue #126, Part A): every
@@ -18,7 +23,11 @@ import { loadSourceHubIndex, wikilinkFor } from "../src/wiki/source-hubs.ts";
  * rewritten to a clickable wikilink — plain `[[hub]]` when the path
  * is the hub's origin, aliased `[[hub|Chapter]]` when the hub's own
  * `sources` list cites the path (the multi-part-hub case; the alias
- * is the cited path's parent directory name). Coverage and ambiguity
+ * is the cited path's parent directory name). A no-origin hub's own
+ * chapter citation is an exception: its aliased self-wikilink cannot
+ * be re-derived without an origin anchor, so that entry is skipped
+ * and reported, never rewritten, rather than silently drop the
+ * chapter's coverage. Coverage and ambiguity
  * come from the shared hub index (src/wiki/source-hubs.ts), so the
  * migration, the guardrails, and check-provenance apply one rule.
  * Safety envelope modeled on backfill-origin (issue #88): dry-run by
@@ -117,6 +126,16 @@ function rewritePage(
 
     if ("reason" in mapped) {
       report.skipped.push({ page, entry, reason: mapped.reason });
+
+      continue;
+    }
+
+    if (isUnmigratableSelfCitation(stem(page), entry, hubs)) {
+      report.skipped.push({
+        page,
+        entry,
+        reason: "hub has no origin to anchor its own chapter coverage",
+      });
 
       continue;
     }

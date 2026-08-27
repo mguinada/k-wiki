@@ -189,7 +189,7 @@ describe("checkWikiProvenance", () => {
     ]);
   });
 
-  it("reports a path-form entry a hub covers by citing it in its own sources", async () => {
+  it("reports a citing page's path-form entry but exempts the no-origin hub's own cite", async () => {
     const { wikiDir, rawDir } = await makeFixture(
       {
         "sources/sdn.md":
@@ -204,7 +204,6 @@ describe("checkWikiProvenance", () => {
 
     expect(report.problems).toEqual([
       "wiki/concepts/rate-limiting.md -> sources notes/Books/SDN/04. Rate Limiter/Readme.md (path has hub [[sdn|04. Rate Limiter]] — use the wikilink)",
-      "wiki/sources/sdn.md -> sources notes/Books/SDN/04. Rate Limiter/Readme.md (path has hub [[sdn|04. Rate Limiter]] — use the wikilink)",
     ]);
   });
 

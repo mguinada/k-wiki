@@ -207,6 +207,77 @@ describe("linkSources", () => {
     });
   });
 
+  it("skips and reports a no-origin hub's own chapter cite while migrating the citing page", async () => {
+    const noOriginHub = [
+      "---",
+      'title: "System design interview notes"',
+      "type: source",
+      "created: 2026-08-20",
+      "updated: 2026-08-20",
+      "tags:",
+      "  - source",
+      "sources:",
+      `  - "${CHAPTER}"`,
+      "---",
+      "",
+      "digest",
+      "",
+    ].join("\n");
+
+    const wikiDir = await makeWiki({
+      "sources/sdn.md": noOriginHub,
+      "concepts/rate-limiting.md": citing([CHAPTER]),
+    });
+
+    const report = await linkSources(wikiDir, {
+      write: true,
+      date: "2026-08-26",
+    });
+
+    expect(report.skipped).toEqual([
+      {
+        page: "sources/sdn.md",
+        entry: CHAPTER,
+        reason: "hub has no origin to anchor its own chapter coverage",
+      },
+    ]);
+    expect(report.rewrites).toEqual([
+      {
+        page: "concepts/rate-limiting.md",
+        entry: CHAPTER,
+        replacement: "[[sdn|04. Rate Limiter]]",
+      },
+    ]);
+    expect(await readFile(join(wikiDir, "sources", "sdn.md"), "utf8")).toBe(
+      noOriginHub,
+    );
+  });
+
+  it("rewrites a hub with an origin's own chapter cite to a self-wikilink", async () => {
+    const wikiDir = await makeWiki({
+      "sources/system-design-interview-notes.md": MULTIPART_HUB,
+    });
+
+    const report = await linkSources(wikiDir, {
+      write: true,
+      date: "2026-08-26",
+    });
+
+    expect(report.rewrites).toEqual([
+      {
+        page: "sources/system-design-interview-notes.md",
+        entry: "notes/Books/SDN/Readme.md",
+        replacement: "[[system-design-interview-notes]]",
+      },
+      {
+        page: "sources/system-design-interview-notes.md",
+        entry: CHAPTER,
+        replacement: "[[system-design-interview-notes|04. Rate Limiter]]",
+      },
+    ]);
+    expect(report.skipped).toEqual([]);
+  });
+
   it("skips and reports a cited path no hub covers", async () => {
     const wikiDir = await makeWiki({
       "sources/gpu-memory-math.md": SIMPLE_HUB,

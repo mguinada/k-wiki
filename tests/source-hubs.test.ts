@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import {
   citationAlias,
+  isUnmigratableSelfCitation,
   loadSourceHubIndex,
   type SourceHubIndex,
   wikilinkFor,
@@ -316,5 +317,76 @@ describe("derived citation coverage (migrated multi-part hubs)", () => {
     expect(wikilinkFor("notes/V/Chap/Readme.md", index)).toEqual({
       wikilink: "[[hub|Chap]]",
     });
+  });
+});
+
+describe("isUnmigratableSelfCitation", () => {
+  const UNANCHORED = {
+    "sources/sdn.md": page({ title: "Sdn", type: "source" }, [
+      "notes/Books/SDN/04. Rate Limiter/Readme.md",
+    ]),
+    "concepts/cite.md": page({ title: "Cite", type: "concept" }, [
+      "notes/Books/SDN/04. Rate Limiter/Readme.md",
+    ]),
+  } as const;
+  const CHAPTER = "notes/Books/SDN/04. Rate Limiter/Readme.md";
+
+  it("flags a no-origin hub's own aliased chapter citation", async () => {
+    const index = await loadSourceHubIndex(await makeWiki(UNANCHORED));
+
+    expect(isUnmigratableSelfCitation("sdn", CHAPTER, index)).toBe(true);
+  });
+
+  it("does not flag the same entry on a citing concept page", async () => {
+    const index = await loadSourceHubIndex(await makeWiki(UNANCHORED));
+
+    expect(isUnmigratableSelfCitation("cite", CHAPTER, index)).toBe(false);
+  });
+
+  it("does not flag a hub's own citation when the hub has an origin", async () => {
+    const index = await loadSourceHubIndex(
+      await makeWiki({
+        "sources/sdn.md": page(
+          {
+            title: "Sdn",
+            type: "source",
+            origin: "raw/notes/Books/SDN/Readme.md",
+          },
+          ["notes/Books/SDN/04. Rate Limiter/Readme.md"],
+        ),
+      }),
+    );
+
+    expect(isUnmigratableSelfCitation("sdn", CHAPTER, index)).toBe(false);
+  });
+
+  it("does not flag a chapter covered by another hub's origin", async () => {
+    const index = await loadSourceHubIndex(
+      await makeWiki({
+        "sources/sdn.md": page({ title: "Sdn", type: "source" }, [
+          "notes/Books/SDN/Readme.md",
+        ]),
+        "sources/other.md": page(
+          {
+            title: "Other",
+            type: "source",
+            origin: "raw/notes/Books/SDN/Readme.md",
+          },
+          [],
+        ),
+      }),
+    );
+
+    expect(
+      isUnmigratableSelfCitation("sdn", "notes/Books/SDN/Readme.md", index),
+    ).toBe(false);
+  });
+
+  it("does not flag an unwikilinkable raw path", async () => {
+    const index = await loadSourceHubIndex(await makeWiki(UNANCHORED));
+
+    expect(isUnmigratableSelfCitation("sdn", "notes/uncovered.md", index)).toBe(
+      false,
+    );
   });
 });

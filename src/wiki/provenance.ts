@@ -8,7 +8,12 @@ import {
   readPageFields,
   wikilinkTarget,
 } from "./pages.ts";
-import { loadSourceHubIndex, wikilinkFor } from "./source-hubs.ts";
+import {
+  isUnmigratableSelfCitation,
+  loadSourceHubIndex,
+  stem,
+  wikilinkFor,
+} from "./source-hubs.ts";
 
 /**
  * Dead-provenance core (issue #65): the deterministic backstop that
@@ -120,7 +125,10 @@ export async function checkWikiProvenance(
 
       const mapped = wikilinkFor(entry, hubs);
 
-      if ("wikilink" in mapped) {
+      if (
+        "wikilink" in mapped &&
+        !isUnmigratableSelfCitation(stem(file), entry, hubs)
+      ) {
         problems.push(
           `${page} -> sources ${entry} (path has hub ${mapped.wikilink} — use the wikilink)`,
         );
