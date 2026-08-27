@@ -396,7 +396,7 @@ npm run wiki-sync -- --settings settings-meta.yml sync-meta.json \
 The meta instance rides the same cycle as every vault instance
 (issue #145): `wiki-sync` sees the repo-typed source in
 `sync-meta.json` and runs the sync-repo core in-process at stage 1,
-so lint, the crosslink audit, verification, and the single
+so lint, the configured crosslink audit, verification, and the single
 regeneration commit run in-cycle — no operator discipline needed.
 The piecewise commands stay the debug path, one stage at a time:
 
