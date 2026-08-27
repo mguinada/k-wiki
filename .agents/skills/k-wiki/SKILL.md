@@ -64,4 +64,4 @@ Copy this skill directory into the target project's (or machine's)
 skill location. The binding file is per-project: gitignore it in
 personal projects (machine-specific paths), commit it in team
 projects. The skill itself stays generic — the binding, not this
-file, names the wiki..agents/skills/wiki-consult/SKILL.md
+file, names the wiki.

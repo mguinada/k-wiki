@@ -56,7 +56,7 @@ const ORIGIN_LABELS = {
 } as const;
 
 /** The k-wiki command vocabulary (drift-guarded against the
- *  wiki-consult skill by tests/wiki-consult-skill.test.ts). */
+ *  k-wiki skill by tests/k-wiki-skill.test.ts). */
 export const COMMANDS = ["query", "status", "list", "read", "health"] as const;
 
 /** One parsed binding: exactly one wiki (issue #76's 1:1 rule). */
