@@ -519,6 +519,51 @@ describe("runWikiSync repo-sourced instances", () => {
     expect(digest).toMatch(/at commit [0-9a-f]{8}/);
   });
 
+  it("stamps the repo sync summary with exactly the 8-char source commit", async () => {
+    const h = await makeRepoHarness();
+    const result = await runWikiSync(optionsFor(h));
+    const { stdout: sourceHead } = await run("git", ["rev-parse", "HEAD"], {
+      cwd: h.sourceRoot,
+    });
+    const sha8 = sourceHead.trim().slice(0, 8);
+
+    expect(formatFinalDigest(result)).toMatch(
+      new RegExp(
+        `^- \\*\\*Sync:\\*\\* 2 sources copied, 0 sources removed at commit ${sha8}$`,
+        "m",
+      ),
+    );
+  });
+
+  it("ends the vault sync summary line right after the removed count", async () => {
+    const h = await makeRepoHarness();
+
+    await writeFile(
+      h.configPath,
+      JSON.stringify({
+        dataRoot: h.dataRoot,
+        vaults: [
+          {
+            name: "Engineering",
+            root: join(dirname(h.dataRoot), "vault"),
+            exclude: "wiki:false",
+          },
+        ],
+      }),
+    );
+    await mkdir(join(dirname(h.dataRoot), "vault"), { recursive: true });
+    await writeFile(
+      join(dirname(h.dataRoot), "vault", "note.md"),
+      "note body\n",
+    );
+
+    const result = await runWikiSync(optionsFor(h));
+
+    expect(formatFinalDigest(result)).toMatch(
+      /^- \*\*Sync:\*\* 1 source copied, 0 sources removed$/m,
+    );
+  });
+
   it("announces stage 1 as sync-repo for a repo-sourced config", async () => {
     const h = await makeRepoHarness();
     const progress: string[] = [];
