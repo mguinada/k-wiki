@@ -496,8 +496,11 @@ describe("dashboard CLI", () => {
 });
 
 describe("dashboard CLI --open", () => {
-  /** A PATH-stub `open` that records its argument to a log file. */
+  /** A PATH-stub of the opener command `openerFor` returns for this
+   *  platform (darwin `open`, linux `xdg-open`) that records its
+   *  argument to a log file. */
   async function makeOpenStub(): Promise<{ stubDir: string; log: string }> {
+    const { openerFor } = await import("../src/dashboard/generate.ts");
     const stubDir = await mkdtemp(join(tmpdir(), "k-wiki-open-"));
 
     tempDirs.push(stubDir);
@@ -505,7 +508,7 @@ describe("dashboard CLI --open", () => {
     const log = join(stubDir, "open-log");
 
     await writeFile(
-      join(stubDir, "open"),
+      join(stubDir, openerFor(process.platform).command),
       `#!/bin/sh\nprintf '%s' "$1" > ${JSON.stringify(log)}\n`,
       { mode: 0o755 },
     );
