@@ -88,7 +88,9 @@ changed and full mode. `files.exclude` starts empty.
   `fetch-depth: 0` because the gate diffs against `origin/main`.
 - **Nightly + manual dispatch (advisory):** the mutation job's arm runs
   `npm run complexity:full`, uploads `complexity-debt-report` as an
-  artifact (7-day retention), and never blocks.
+  artifact (7-day retention). The debt table is advisory; the same run
+  re-executes the changed-mode gate, which on the nightly's clean
+  checkout finds nothing changed and passes.
 
 ## What lives where
 

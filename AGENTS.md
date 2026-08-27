@@ -96,8 +96,10 @@ suppressions. A genuinely irreducible function is excluded via a
 `.complexityguard.json` `files.exclude` entry with a written
 justification line in the PR body — same rule as `// Stryker disable`.
 `npm run complexity:full` prints the advisory whole-`src/` per-function
-debt table (worst first) that steers complexity-lowering refactors; it
-never fails. Semantics, calibration, and suppression policy:
+debt table (worst first) that steers complexity-lowering refactors; the
+table is advisory, but the same run re-executes the changed-mode gate,
+so a working tree with a gated violation still fails it. Semantics,
+calibration, and suppression policy:
 [`docs/references/complexity-gate.md`](docs/references/complexity-gate.md).
 
 CI (`.github/workflows/ci.yml`) runs the gates on every pull request

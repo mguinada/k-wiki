@@ -51,18 +51,60 @@ export interface GateResult {
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
-/** Parse `complexity-guard -f json` output into the fields the gate uses. */
+/** Parse `complexity-guard -f json` output into the fields the gate
+ *  uses; a report whose shape has drifted throws instead of gating
+ *  nothing silently. */
 export function parseEngineReport(json: string): EngineReport {
-  const parsed = JSON.parse(json) as {
-    files?: { path: string; functions?: EngineFunction[] }[];
-  };
+  const parsed = JSON.parse(json) as { files?: unknown };
+
+  if (!Array.isArray(parsed.files)) {
+    throw engineShapeError("files");
+  }
+
+  return { files: parsed.files.map((file) => parseEngineFile(file)) };
+}
+
+function parseEngineFile(file: unknown): EngineReport["files"][number] {
+  const entry = file as { path?: unknown; functions?: unknown };
+
+  if (
+    typeof entry.path !== "string" ||
+    !Array.isArray(entry.functions)
+  ) {
+    throw engineShapeError(`file ${String(entry.path)}`);
+  }
 
   return {
-    files: (parsed.files ?? []).map((file) => ({
-      path: file.path,
-      functions: file.functions ?? [],
-    })),
+    path: entry.path,
+    functions: entry.functions.map((fn) =>
+      parseEngineFunction(entry.path, fn),
+    ),
   };
+}
+
+function parseEngineFunction(path: string, fn: unknown): EngineFunction {
+  const candidate = fn as Partial<EngineFunction>;
+
+  if (
+    typeof candidate.name !== "string" ||
+    !isFiniteNumber(candidate.start_line) ||
+    !isFiniteNumber(candidate.end_line) ||
+    !isFiniteNumber(candidate.cyclomatic)
+  ) {
+    throw engineShapeError(`function ${String(candidate.name)} in ${path}`);
+  }
+
+  return candidate as EngineFunction;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function engineShapeError(where: string): Error {
+  return new Error(
+    `complexity-guard report shape not recognized at ${where} — engine output changed; adjust parseEngineReport in src/quality/complexity.ts`,
+  );
 }
 
 /** Run the real engine over the given repo-relative paths. */

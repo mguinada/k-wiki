@@ -457,7 +457,7 @@ sources directly, so there is no build step — install dependencies with
 | `npm run mutation:survivors` | triage helper | Re-list the actionable mutants from the last report — no run, instant |
 | `npm run mutation` | StrykerJS | Raw full Stryker run without the printed summary — prefer the two above |
 | `npm run complexity` | complexity gate | Blocking cyclomatic gate over changed code: every `src/` function whose lines a change vs `main` touches (new files whole, deletions skipped) must stay at cyclomatic ≤ 10 (engine: complexity-guard; scoping mirrors `mutation:changed`); runs as part of `npm test` too; failures name file, line, function, score, and the refactor instruction; no inline suppressions — exclusions via `.complexityguard.json` justified in the PR body ([reference](docs/references/complexity-gate.md)) |
-| `npm run complexity:full` | complexity report | Advisory whole-`src/` per-function debt table, worst first — the input for complexity-lowering refactors; never fails |
+| `npm run complexity:full` | complexity report | Advisory whole-`src/` per-function debt table, worst first — the input for complexity-lowering refactors; the table is advisory, but the same run re-executes the changed-mode gate, so a working tree with a gated violation still fails it |
 
 Type check, lint, and unit tests are quality gates: every change passes
 them before it is done — the unit run includes the cyclomatic complexity

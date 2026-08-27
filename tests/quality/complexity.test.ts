@@ -68,6 +68,35 @@ describe("parseEngineReport", () => {
   it("yields no files for empty engine output", () => {
     expect(parseEngineReport('{"files": []}').files).toEqual([]);
   });
+
+  it("throws when a function's cyclomatic score is missing", () => {
+    const drifted = ENGINE_JSON.replace('"cyclomatic": 30', '"cyclo": 30');
+
+    expect(() => parseEngineReport(drifted)).toThrow(
+      /shape not recognized/,
+    );
+  });
+
+  it("throws when the report carries no files array", () => {
+    expect(() => parseEngineReport("{}")).toThrow(/shape not recognized/);
+  });
+
+  it("throws when a file entry carries no functions array", () => {
+    const json = '{"files": [{"path": "src/a.ts"}]}';
+
+    expect(() => parseEngineReport(json)).toThrow(/shape not recognized/);
+  });
+
+  it("throws when a function's line extent is missing", () => {
+    const drifted = ENGINE_JSON.replace(
+      '"name": "legacyBig", "start_line": 10, "end_line": 50, ',
+      '"name": "legacyBig", ',
+    );
+
+    expect(() => parseEngineReport(drifted)).toThrow(
+      /function legacyBig in src\/a\.ts/,
+    );
+  });
 });
 
 describe("gateChanged", () => {
