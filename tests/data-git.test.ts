@@ -1,8 +1,9 @@
+import { realpathSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
-import { runGit } from "../src/data/git.ts";
+import { afterAll, describe, expect, it, vi } from "vitest";
+import { assertCleanTree, gitRepoRoot, runGit } from "../src/data/git.ts";
 
 const tempDirs: string[] = [];
 
@@ -105,5 +106,64 @@ describe("git discovery ceiling (issue #52)", () => {
       .stdout;
 
     expect(`${commits}:${staged}`).toBe("2:");
+  });
+});
+
+describe("gitRepoRoot", () => {
+  it("returns the repository root containing a directory", async () => {
+    const repo = await makeCodeRepoFixture();
+
+    await expect(gitRepoRoot(join(repo, "wiki"), GIT_ENV)).resolves.toBe(
+      realpathSync(repo),
+    );
+  });
+
+  it("returns undefined outside any git repository", async () => {
+    const dir = await makeTempDir();
+
+    await expect(gitRepoRoot(dir, GIT_ENV)).resolves.toBeUndefined();
+  });
+});
+
+describe("assertCleanTree", () => {
+  it("passes a clean tree", async () => {
+    const repo = await makeCodeRepoFixture();
+
+    await expect(
+      assertCleanTree(join(repo, "wiki"), "clean-test", GIT_ENV),
+    ).resolves.toBeUndefined();
+  });
+
+  it("refuses a dirty tree naming the diff surface", async () => {
+    const repo = await makeCodeRepoFixture();
+
+    await writeFile(join(repo, "wiki", "index.md"), "# edited\n");
+
+    await expect(
+      assertCleanTree(join(repo, "wiki"), "dirty-test", GIT_ENV),
+    ).rejects.toThrow("uncommitted changes — commit or stash first");
+  });
+
+  it("warns without color codes under NO_COLOR outside a git repo", async () => {
+    const dir = await makeTempDir();
+    const errors: string[] = [];
+    const spy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) => {
+        errors.push(parts.join(" "));
+      });
+
+    try {
+      await assertCleanTree(dir, "no-repo-test", {
+        ...GIT_ENV,
+        NO_COLOR: "1",
+      });
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(errors[0]).toBe(
+      `no-repo-test: no git repo at ${dir} — proceeding without the git safety net`,
+    );
   });
 });

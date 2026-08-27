@@ -2,7 +2,11 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { citationAlias, loadSourceHubIndex } from "../src/wiki/source-hubs.ts";
+import {
+  citationAlias,
+  loadSourceHubIndex,
+  wikilinkFor,
+} from "../src/wiki/source-hubs.ts";
 
 const tempDirs: string[] = [];
 
@@ -165,5 +169,52 @@ describe("loadSourceHubIndex", () => {
     await expect(loadSourceHubIndex("/nonexistent-wiki")).rejects.toThrow(
       "wiki directory does not exist",
     );
+  });
+});
+
+describe("citationAlias edge segments", () => {
+  it("returns undefined when the parent directory segment is empty", () => {
+    expect(citationAlias("/note.md")).toBeUndefined();
+  });
+});
+
+describe("wikilinkFor", () => {
+  it("returns the plain hub link when a covered cited path has no directory part", async () => {
+    const wikiDir = await makeWiki({
+      "sources/hub.md": page({ title: "Hub", type: "source" }, ["note.md"]),
+    });
+
+    const index = await loadSourceHubIndex(wikiDir);
+
+    expect(wikilinkFor("note.md", index)).toEqual({ wikilink: "[[hub]]" });
+  });
+
+  it("reports the reason when no hub covers the path", async () => {
+    const wikiDir = await makeWiki({
+      "sources/hub.md": page({ title: "Hub", type: "source" }, ["note.md"]),
+    });
+
+    const index = await loadSourceHubIndex(wikiDir);
+
+    expect(wikilinkFor("notes/other.md", index)).toEqual({
+      reason: "no hub covers this path",
+    });
+  });
+});
+
+describe("loadSourceHubIndex duplicate self-citation", () => {
+  it("does not mark a path ambiguous when one hub cites it twice", async () => {
+    const wikiDir = await makeWiki({
+      "sources/hub.md": page({ title: "Hub", type: "source" }, [
+        "notes/V/x.md",
+        "notes/V/x.md",
+      ]),
+    });
+
+    const index = await loadSourceHubIndex(wikiDir);
+
+    expect(
+      `${index.byCitation.get("notes/V/x.md")}:${index.ambiguous.has("notes/V/x.md")}`,
+    ).toBe("hub:false");
   });
 });
