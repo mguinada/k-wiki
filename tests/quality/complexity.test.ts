@@ -83,9 +83,7 @@ describe("parseEngineReport", () => {
   it("throws when a function's cyclomatic score is missing", () => {
     const drifted = ENGINE_JSON.replace('"cyclomatic": 30', '"cyclo": 30');
 
-    expect(() => parseEngineReport(drifted)).toThrow(
-      /shape not recognized/,
-    );
+    expect(() => parseEngineReport(drifted)).toThrow(/shape not recognized/);
   });
 
   it("throws when the report carries no files array", () => {
@@ -232,7 +230,9 @@ describe("complexity gate (live)", () => {
     expect(result.violations, text).toEqual([]);
   });
 
-  it("the engine reports every changed file the config does not exclude", ({ skip }) => {
+  it("the engine reports every changed file the config does not exclude", ({
+    skip,
+  }) => {
     const changed = collectChangedFiles(realGit);
 
     if (changed.length === 0) {

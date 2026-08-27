@@ -67,10 +67,7 @@ export function parseEngineReport(json: string): EngineReport {
 function parseEngineFile(file: unknown): EngineReport["files"][number] {
   const entry = file as { path?: unknown; functions?: unknown };
 
-  if (
-    typeof entry.path !== "string" ||
-    !Array.isArray(entry.functions)
-  ) {
+  if (typeof entry.path !== "string" || !Array.isArray(entry.functions)) {
     throw engineShapeError(`file ${String(entry.path)}`);
   }
 
