@@ -35,9 +35,6 @@ export interface EngineReport {
   }[];
 }
 
-/** The engine seam: metrics for the given paths; tests fake it. */
-export type EngineRunner = (paths: readonly string[]) => EngineReport;
-
 export interface Violation {
   readonly path: string;
   readonly line: number;
@@ -100,8 +97,6 @@ function gatedBy(
 export function gateChanged(
   report: EngineReport,
   changed: readonly FileDiff[],
-  limit: number = CYCLOMATIC_LIMIT,
-  warnLimit: number = CYCLOMATIC_WARN,
 ): GateResult {
   const violations: Violation[] = [];
   const warnings: Violation[] = [];
@@ -134,9 +129,9 @@ export function gateChanged(
         cyclomatic: fn.cyclomatic,
       };
 
-      if (fn.cyclomatic > limit) {
+      if (fn.cyclomatic > CYCLOMATIC_LIMIT) {
         violations.push(entry);
-      } else if (fn.cyclomatic > warnLimit) {
+      } else if (fn.cyclomatic > CYCLOMATIC_WARN) {
         warnings.push(entry);
       }
     }
@@ -154,34 +149,31 @@ function colors() {
 const REFACTOR_ADVICE =
   "Refactor it: extract helpers, use table-driven dispatch, return early, or split generators into named steps. Do not suppress — a genuinely irreducible function gets a .complexityguard.json files.exclude entry justified in the PR body.";
 
-function violationLine(v: Violation, limit: number): string {
-  return `${v.path}:${v.line}  ${v.name}  cyclomatic ${v.cyclomatic} > ${limit}`;
+function violationLine(v: Violation): string {
+  return `${v.path}:${v.line}  ${v.name}  cyclomatic ${v.cyclomatic} > ${CYCLOMATIC_LIMIT}`;
 }
 
 /** The agent-facing changed-mode report; doubles as the vitest
  *  assertion message when the gate fails. */
-export function renderGateReport(
-  result: GateResult,
-  limit: number = CYCLOMATIC_LIMIT,
-): string {
+export function renderGateReport(result: GateResult): string {
   const tone = colors();
   const lines: string[] = [];
 
   if (result.violations.length === 0) {
     lines.push(
       tone.green(
-        `complexity gate: clean — ${result.functionsGated} functions checked (limit ${limit})`,
+        `complexity gate: clean — ${result.functionsGated} functions checked (limit ${CYCLOMATIC_LIMIT})`,
       ),
     );
   } else {
     lines.push(
       tone.red(
-        `complexity gate: ${result.violations.length} violation(s) over cyclomatic ${limit} — refactor, do not suppress`,
+        `complexity gate: ${result.violations.length} violation(s) over cyclomatic ${CYCLOMATIC_LIMIT} — refactor, do not suppress`,
       ),
     );
 
     for (const v of result.violations) {
-      lines.push(tone.red(violationLine(v, limit)));
+      lines.push(tone.red(violationLine(v)));
       lines.push(`  Refactor ${v.name} — ${REFACTOR_ADVICE}`);
     }
   }
@@ -189,7 +181,7 @@ export function renderGateReport(
   for (const w of result.warnings) {
     lines.push(
       tone.yellow(
-        `${w.path}:${w.line}  ${w.name}  cyclomatic ${w.cyclomatic} — warning tier (over ${CYCLOMATIC_WARN}, at or under ${limit})`,
+        `${w.path}:${w.line}  ${w.name}  cyclomatic ${w.cyclomatic} — warning tier (over ${CYCLOMATIC_WARN}, at or under ${CYCLOMATIC_LIMIT})`,
       ),
     );
   }
@@ -204,32 +196,27 @@ export function renderGateReport(
 }
 
 /** The advisory full-repo debt report, worst functions first. */
-export function renderDebtReport(
-  report: EngineReport,
-  limit: number = CYCLOMATIC_LIMIT,
-  warnLimit: number = CYCLOMATIC_WARN,
-  top = 20,
-): string {
+export function renderDebtReport(report: EngineReport): string {
   const tone = colors();
 
   const fns = report.files.flatMap((file) =>
     file.functions.map((fn) => ({ fn, path: file.path })),
   );
 
-  const over = fns.filter((e) => e.fn.cyclomatic > limit).length;
-  const warned = fns.filter((e) => e.fn.cyclomatic > warnLimit).length;
+  const over = fns.filter((e) => e.fn.cyclomatic > CYCLOMATIC_LIMIT).length;
+  const warned = fns.filter((e) => e.fn.cyclomatic > CYCLOMATIC_WARN).length;
 
   fns.sort((a, b) => b.fn.cyclomatic - a.fn.cyclomatic);
 
   const lines: string[] = [
     tone.bold(
-      `complexity debt report (advisory, whole src/): ${fns.length} functions, ${over} over ${limit}, ${warned} over ${warnLimit}`,
+      `complexity debt report (advisory, whole src/): ${fns.length} functions, ${over} over ${CYCLOMATIC_LIMIT}, ${warned} over ${CYCLOMATIC_WARN}`,
     ),
   ];
 
-  for (const entry of fns.slice(0, top)) {
+  for (const entry of fns.slice(0, 20)) {
     const score =
-      entry.fn.cyclomatic > limit
+      entry.fn.cyclomatic > CYCLOMATIC_LIMIT
         ? tone.red(String(entry.fn.cyclomatic))
         : String(entry.fn.cyclomatic);
 
