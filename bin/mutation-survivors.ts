@@ -1,4 +1,4 @@
 #!/usr/bin/env node
-import { main } from "../scripts/mutation-survivors.ts";
+import { main } from "../src/quality/mutation-survivors.ts";
 
 main();

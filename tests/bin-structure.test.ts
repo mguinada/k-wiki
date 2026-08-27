@@ -239,11 +239,11 @@ describe("bin/ launcher structure (issue #135)", () => {
     expect(problems).toEqual([]);
   });
 
-  it("every bin launcher is committed 100755 with a node shebang and referenced by package.json or scripts/mutation-changed.sh", async () => {
+  it("every bin launcher is committed 100755 with a node shebang and referenced by package.json or src/quality/mutation-changed.sh", async () => {
     const binFiles = await collectTsFiles(join(repoRoot, "bin"), "bin");
     const pkg = await readPackageJson();
     const shell = await readFile(
-      join(repoRoot, "scripts", "mutation-changed.sh"),
+      join(repoRoot, "src", "quality", "mutation-changed.sh"),
       "utf8",
     );
 

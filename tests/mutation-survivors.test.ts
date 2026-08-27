@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
-import { actionableLines } from "../scripts/mutation-survivors.ts";
+import { actionableLines } from "../src/quality/mutation-survivors.ts";
 
 const tempDirs: string[] = [];
 

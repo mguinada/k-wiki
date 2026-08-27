@@ -452,15 +452,20 @@ sources directly, so there is no build step — install dependencies with
 | `npm run wiki-query -- [-h \| --help] [--file-last] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>` | query wrapper | Ask the built wiki one question headless: print the answer, save it for review (stage 1, default); `--file-last` files the reviewed answer deterministically (stage 2; reads `settings.yml` in stage 1; [details below](#running-queries-wiki-query)) |
 | `node <checkout>/bin/k-wiki.ts query "<question>"` (also `npm run k-wiki -- …` inside the checkout) | agent-facing CLI | Ask the wiki bound to the current project from any cwd — zero flags once `.k-wiki.json` binds it; plus four read-only commands: `status` (binding + paths), `list [<type>]` (pages by type), `read <slug>` (one page verbatim), `health` (projection check); answer-only, no filing passthrough ([details below](#querying-from-any-project-k-wiki)) |
 | `npm run data:init -- [--second-brain] [--meta] [<sync.json>]` | data repo seeder | Create and seed the data repo at `sync.json`'s `dataRoot`: git init, copy the `raw/`+`wiki/` skeleton from the code repo, write the standing `.gitignore` (Obsidian UI state, ingest snapshot — issue #146), first commit; idempotent; `--second-brain` also writes the `.second-brain` identity marker ([§5](#5-the-second-brain)); `--meta` seeds the meta contract (`wiki/AGENTS.meta.md`) as the data repo's `wiki/AGENTS.md` ([§9](#9-the-meta-wiki-a-repository-as-source)) |
-| `npm run mutation:changed` | StrykerJS | Advisory mutation run scoped to the changed hunks of the `src/` files that differ from `main` (uncommitted included; new files whole) — `scripts/mutation-scope.ts` builds the `file:start-end` ranges; exits 0 without running when nothing changed, and ends by printing the actionable mutants — the default pre-handoff step |
+| `npm run mutation:changed` | StrykerJS | Advisory mutation run scoped to the changed hunks of the `src/` files that differ from `main` (uncommitted included; new files whole) — `src/quality/mutation-scope.ts` builds the `file:start-end` ranges; exits 0 without running when nothing changed, and ends by printing the actionable mutants — the default pre-handoff step |
 | `npm run mutation:changed -- --full` | StrykerJS | Advisory mutation run over all of `src/`, not just changed files; same printed summary |
 | `npm run mutation:survivors` | triage helper | Re-list the actionable mutants from the last report — no run, instant |
 | `npm run mutation` | StrykerJS | Raw full Stryker run without the printed summary — prefer the two above |
+| `npm run complexity` | complexity gate | Blocking cyclomatic gate over changed code: every `src/` function whose lines a change vs `main` touches (new files whole, deletions skipped) must stay at cyclomatic ≤ 10 (engine: complexity-guard; scoping mirrors `mutation:changed`); runs as part of `npm test` too; failures name file, line, function, score, and the refactor instruction; no inline suppressions — exclusions via `.complexityguard.json` justified in the PR body ([reference](docs/references/complexity-gate.md)) |
+| `npm run complexity:full` | complexity report | Advisory whole-`src/` per-function debt table, worst first — the input for complexity-lowering refactors; never fails |
 
 Type check, lint, and unit tests are quality gates: every change passes
-them before it is done. CI (`.github/workflows/ci.yml`) enforces the same
-gates on every pull request, testing each PR's merge commit against
-`main`, with a 90% coverage floor on unit tests.
+them before it is done — the unit run includes the cyclomatic complexity
+gate over changed code (`npm run complexity` runs it alone; functions a
+change touches must stay at cyclomatic ≤ 10). CI
+(`.github/workflows/ci.yml`) enforces the same gates on every pull
+request, testing each PR's merge commit against `main`, with a 90%
+coverage floor on unit tests.
 
 Every CLI above also answers `-h` / `--help` with its usage line, every
 switch explained, defaults, and exit 0 with no side effects.

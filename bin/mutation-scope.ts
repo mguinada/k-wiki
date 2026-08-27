@@ -1,4 +1,4 @@
 #!/usr/bin/env node
-import { main } from "../scripts/mutation-scope.ts";
+import { main } from "../src/quality/mutation-scope.ts";
 
 main(process.argv.slice(2));
