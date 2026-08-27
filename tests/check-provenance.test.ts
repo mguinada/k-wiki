@@ -113,7 +113,7 @@ describe("checkWikiProvenance", () => {
     const { wikiDir, rawDir } = await makeFixture(
       {
         "sources/Temp research.md":
-          "---\ntitle: Temp research\norigin: raw/notes/V/Scratch/temp.md\n---\nbody",
+          "---\ntitle: Temp research\ntype: source\norigin: raw/notes/V/Scratch/temp.md\n---\nbody",
         "concepts/cites.md":
           '---\ntitle: Cites\nsources:\n  - "[[Temp research]]"\n---\nbody',
         "index.md": "# Index",
@@ -138,6 +138,20 @@ describe("checkWikiProvenance", () => {
 
     expect(report.problems).toEqual([
       "wiki/concepts/cites.md -> [[Temp research]] (missing source page)",
+    ]);
+  });
+
+  it("reports a sources link whose page exists but is not type: source", async () => {
+    const { wikiDir, rawDir } = await makeFixture({
+      "concepts/cites.md":
+        '---\ntitle: Cites\nsources:\n  - "[[index]]"\n---\nbody',
+      "index.md": "---\ntitle: Index\ntype: topic\n---\nbody",
+    });
+
+    const report = await checkWikiProvenance(wikiDir, rawDir);
+
+    expect(report.problems).toEqual([
+      "wiki/concepts/cites.md -> [[index]] (does not cite a type: source page)",
     ]);
   });
 
@@ -189,8 +203,37 @@ describe("checkWikiProvenance", () => {
     const report = await checkWikiProvenance(wikiDir, rawDir);
 
     expect(report.problems).toEqual([
-      "wiki/concepts/rate-limiting.md -> sources notes/Books/SDN/04. Rate Limiter/Readme.md (path has hub [[sdn]] — use the wikilink)",
-      "wiki/sources/sdn.md -> sources notes/Books/SDN/04. Rate Limiter/Readme.md (path has hub [[sdn]] — use the wikilink)",
+      "wiki/concepts/rate-limiting.md -> sources notes/Books/SDN/04. Rate Limiter/Readme.md (path has hub [[sdn|04. Rate Limiter]] — use the wikilink)",
+      "wiki/sources/sdn.md -> sources notes/Books/SDN/04. Rate Limiter/Readme.md (path has hub [[sdn|04. Rate Limiter]] — use the wikilink)",
+    ]);
+  });
+
+  it("reports a chapter path covered only by a migrated hub's self-wikilink", async () => {
+    const { wikiDir, rawDir } = await makeFixture(
+      {
+        "sources/sdn.md": [
+          "---",
+          "type: source",
+          "origin: raw/notes/Books/SDN/Readme.md",
+          "sources:",
+          '  - "[[sdn]]"',
+          '  - "[[sdn|04. Rate Limiter]]"',
+          "---",
+          "body",
+        ].join("\n"),
+        "concepts/rate-limiting.md":
+          '---\nsources:\n  - "notes/Books/SDN/04. Rate Limiter/Readme.md"\n---\nbody',
+      },
+      {
+        "notes/Books/SDN/Readme.md": "book body",
+        "notes/Books/SDN/04. Rate Limiter/Readme.md": "chapter body",
+      },
+    );
+
+    const report = await checkWikiProvenance(wikiDir, rawDir);
+
+    expect(report.problems).toEqual([
+      "wiki/concepts/rate-limiting.md -> sources notes/Books/SDN/04. Rate Limiter/Readme.md (path has hub [[sdn|04. Rate Limiter]] — use the wikilink)",
     ]);
   });
 
@@ -352,7 +395,8 @@ describe("check-provenance CLI", () => {
   it("exits 0 with a green summary on a coherent wiki", async () => {
     const { wikiDir, rawDir } = await makeFixture(
       {
-        "sources/S.md": "---\norigin: raw/notes/V/s.md\n---\nbody",
+        "sources/S.md":
+          "---\ntype: source\norigin: raw/notes/V/s.md\n---\nbody",
         "concepts/c.md": '---\nsources:\n  - "[[S]]"\n---\nbody',
       },
       { "notes/V/s.md": "s" },
@@ -388,7 +432,8 @@ describe("check-provenance CLI", () => {
   it("defaults the raw dir to the sibling of the given wiki dir", async () => {
     const { wikiDir, rawDir } = await makeFixture(
       {
-        "sources/S.md": "---\norigin: raw/notes/V/s.md\n---\nbody",
+        "sources/S.md":
+          "---\ntype: source\norigin: raw/notes/V/s.md\n---\nbody",
       },
       { "notes/V/s.md": "s" },
     );

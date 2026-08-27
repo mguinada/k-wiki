@@ -496,17 +496,10 @@ describe("dashboard CLI", () => {
 });
 
 describe("dashboard CLI --open", () => {
-<<<<<<< HEAD
   /** A PATH-stub opener that records its argument to a log file,
    *  named after the command `openerFor` actually invokes on this
    *  platform (`open` on macOS, `xdg-open` on Linux) — a stub named
    *  only `open` never runs on Linux CI. */
-=======
-  /** A PATH-stub opener that records its argument to a log file,
-   *  named after the command `openerFor` actually invokes on this
-   *  platform (`open` on macOS, `xdg-open` on Linux) — a stub named
-   *  only `open` never runs on Linux CI. */
->>>>>>> 54b34e2 (fix(ci): format #171 dashboard files, platform-aware open stub)
   async function makeOpenStub(): Promise<{ stubDir: string; log: string }> {
     const { openerFor } = await import("../src/dashboard/generate.ts");
     const stubDir = await mkdtemp(join(tmpdir(), "k-wiki-open-"));

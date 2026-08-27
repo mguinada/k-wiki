@@ -157,6 +157,34 @@ describe("linkSources", () => {
     ]);
   });
 
+  it("rewrites a late path-form cite against a migrated hub's self-wikilinks", async () => {
+    const wikiDir = await makeWiki({
+      "sources/system-design-interview-notes.md": hub(
+        "System design interview notes",
+        "notes/Books/SDN/Readme.md",
+        [
+          "[[system-design-interview-notes]]",
+          "[[system-design-interview-notes|04. Rate Limiter]]",
+        ],
+      ),
+      "concepts/rate-limiting.md": citing([CHAPTER]),
+    });
+
+    const report = await linkSources(wikiDir, {
+      write: true,
+      date: "2026-08-26",
+    });
+
+    expect(report.rewrites).toEqual([
+      {
+        page: "concepts/rate-limiting.md",
+        entry: CHAPTER,
+        replacement: "[[system-design-interview-notes|04. Rate Limiter]]",
+      },
+    ]);
+    expect(report.alreadyLinked).toBe(2);
+  });
+
   it("prefers the origin match over the citation match", async () => {
     const wikiDir = await makeWiki({
       "sources/a.md": hub("A", "notes/V/x.md", [

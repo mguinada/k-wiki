@@ -646,6 +646,37 @@ describe("runGuardrails — check 2, sources entry format", () => {
     );
   });
 
+  it("trips when a changed page cites a chapter path of a migrated multi-part hub", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(
+      join(dataRoot, "wiki", "sources", "sdn.md"),
+      hubPage()
+        .replace('title: "Src"', 'title: "Sdn"')
+        .replace(
+          "origin: raw/notes/src.md",
+          "origin: raw/notes/Books/SDN/Readme.md",
+        )
+        .replace('"notes/src.md"', '"[[sdn|04. Rate Limiter]]"'),
+    );
+    await commit(dataRoot, "add migrated multi-part hub");
+
+    const post = await guardedRun(dataRoot, async (root) => {
+      await writeFile(
+        join(root, "wiki", "cites.md"),
+        page().replace(
+          '"[[src]]"',
+          '"notes/Books/SDN/04. Rate Limiter/Readme.md"',
+        ),
+      );
+    });
+
+    expect(post.failure?.check).toBe(2);
+    expect(post.failure?.problems[0]).toContain(
+      'cites a path that has a hub — use "[[sdn|04. Rate Limiter]]"',
+    );
+  });
+
   it("passes a path-form entry whose raw path has no hub", async () => {
     const dataRoot = await makeRepo();
     const post = await guardedRun(dataRoot, async (root) => {

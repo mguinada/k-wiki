@@ -1,11 +1,12 @@
 import { readFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import {
   isWikilinkEntry,
   listWikiPages,
   normalizeRawPath,
   type PageFields,
   parsePageFields,
+  wikilinkTarget,
 } from "./pages.ts";
 
 /**
@@ -14,10 +15,14 @@ import {
  * contract — the link-sources migration, the ingest guardrails, and
  * check-provenance — applies one rule, not three. A path is covered
  * when it is a hub's `origin` (priority 1) or cited in a hub's own
- * `sources` list (priority 2, the multi-part-hub case). A path
- * covered by two different hubs is ambiguous: reported, never
- * guessed. The index also exposes every page's parsed fields by page
- * name, the resolution surface for wikilink `sources` entries.
+ * `sources` list (priority 2, the multi-part-hub case). The citation
+ * form survives the migration itself: a hub's own sources migrate
+ * to aliased self-wikilinks (`[[hub|Chapter]]`), and each such
+ * self-citation still covers its chapter directory — the reverse of
+ * the alias rule. A path covered by two different hubs is ambiguous:
+ * reported, never guessed. The index also exposes every page's parsed
+ * fields by page name, the resolution surface for wikilink `sources`
+ * entries.
  */
 
 export interface SourceHubIndex {
@@ -28,8 +33,22 @@ export interface SourceHubIndex {
   /** Normalized raw path → covering hub page name (hub `sources`
    *  citation match). */
   readonly byCitation: ReadonlyMap<string, string>;
+  /** A hub's aliased self-citations (`[[hub|Chapter]]`), the
+   *  migrated form of its own chapter citations: each still covers
+   *  the chapter directory `<originDir>/<alias>/`, so citation
+   *  coverage survives the migration. */
+  readonly selfCitations: readonly SelfCitation[];
   /** Raw paths covered by more than one hub: never guessed. */
   readonly ambiguous: ReadonlySet<string>;
+}
+
+/** One derived-coverage rule of a migrated multi-part hub: the hub
+ *  covers every path whose parent directory is
+ *  `<originDir>/<alias>` — the reverse of `citationAlias`. */
+export interface SelfCitation {
+  readonly hub: string;
+  readonly originDir: string;
+  readonly alias: string;
 }
 
 /** The page-name stem of a wiki-relative path. */
@@ -77,11 +96,36 @@ export function wikilinkFor(
     };
   }
 
+  if (hubs.ambiguous.has(normalized)) {
+    return { reason: "covered by more than one hub" };
+  }
+
+  const derived = derivedHubs(normalized, hubs);
+
+  if (derived.length === 1 && derived[0] !== undefined) {
+    return { wikilink: `[[${derived[0]}|${citationAlias(normalized)}]]` };
+  }
+
   return {
-    reason: hubs.ambiguous.has(normalized)
-      ? "covered by more than one hub"
-      : "no hub covers this path",
+    reason:
+      derived.length > 1
+        ? "covered by more than one hub"
+        : "no hub covers this path",
   };
+}
+
+/** Hubs whose self-citations cover the path: its parent directory
+ *  equals `<originDir>/<alias>`. */
+function derivedHubs(normalized: string, hubs: SourceHubIndex): string[] {
+  const parent = normalized.split("/").slice(0, -1).join("/");
+
+  return [
+    ...new Set(
+      hubs.selfCitations
+        .filter((rule) => parent === `${rule.originDir}/${rule.alias}`)
+        .map((rule) => rule.hub),
+    ),
+  ];
 }
 
 /** Add one coverage entry; a second, different hub makes the path
@@ -108,6 +152,36 @@ function cover(
   map.delete(path);
 }
 
+/** The alias part of a wikilink entry (`[[hub|Chapter]]` →
+ *  `Chapter`); undefined when the entry carries none. */
+function wikilinkAlias(entry: string): string | undefined {
+  const alias = entry.slice(2, -2).split("|")[1]?.trim();
+
+  return alias === undefined || alias === "" ? undefined : alias;
+}
+
+/** The derived-coverage rule one self-citation certifies, or none:
+ *  only an aliased wikilink to the hub itself, in a hub that has an
+ *  origin with a directory part, anchors a chapter directory. */
+function selfCitationRule(
+  entry: string,
+  origin: string | undefined,
+  hub: string,
+): SelfCitation | undefined {
+  if (origin === undefined || wikilinkTarget(entry) !== hub) {
+    return undefined;
+  }
+
+  const alias = wikilinkAlias(entry);
+  const originDir = dirname(normalizeRawPath(origin));
+
+  if (alias === undefined || originDir === "." || originDir === "/") {
+    return undefined;
+  }
+
+  return { hub, originDir, alias };
+}
+
 /** Build the index over every page under `wikiDir`; unreadable
  *  frontmatter contributes nothing, matching the shared parser.
  *  Throws when the wiki directory is missing, via `listWikiPages`. */
@@ -118,6 +192,7 @@ export async function loadSourceHubIndex(
   const fields = new Map<string, PageFields>();
   const byOrigin = new Map<string, string>();
   const byCitation = new Map<string, string>();
+  const selfCitations: SelfCitation[] = [];
   const ambiguous = new Set<string>();
 
   for (const file of files) {
@@ -129,16 +204,26 @@ export async function loadSourceHubIndex(
       continue;
     }
 
+    const name = stem(file);
+
     if (parsed.origin !== undefined) {
-      cover(byOrigin, ambiguous, normalizeRawPath(parsed.origin), stem(file));
+      cover(byOrigin, ambiguous, normalizeRawPath(parsed.origin), name);
     }
 
     for (const entry of parsed.sources) {
       if (!isWikilinkEntry(entry)) {
-        cover(byCitation, ambiguous, normalizeRawPath(entry), stem(file));
+        cover(byCitation, ambiguous, normalizeRawPath(entry), name);
+
+        continue;
+      }
+
+      const rule = selfCitationRule(entry, parsed.origin, name);
+
+      if (rule !== undefined) {
+        selfCitations.push(rule);
       }
     }
   }
 
-  return { fields, byOrigin, byCitation, ambiguous };
+  return { fields, byOrigin, byCitation, selfCitations, ambiguous };
 }

@@ -487,6 +487,64 @@ describe("wiki-ingest e2e", () => {
     );
   });
 
+  it("auto-reverts a run whose changed page cites a hub-covered path in sources", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag" });
+
+    await writeFile(
+      join(repo.dataRoot, "stub-agent.mjs"),
+      [
+        "#!/usr/bin/env node",
+        'import { mkdir, writeFile } from "node:fs/promises";',
+        'import { join } from "node:path";',
+        "const page = (type, origin, sources) => [",
+        '  "---",',
+        "  'title: \"Stub\"',",
+        '  "type: " + type,',
+        '  "created: 2026-08-20",',
+        '  "updated: 2026-08-20",',
+        '  "tags:",',
+        '  "  - llm",',
+        '  ...(origin === undefined ? [] : ["origin: " + origin]),',
+        '  "sources:",',
+        "  ...sources.map((entry) => '  - \"' + entry + '\"'),",
+        '  "---",',
+        '  "",',
+        '  "stub body",',
+        '  "",',
+        '].join("\\n");',
+        'await mkdir(join(process.cwd(), "wiki", "concepts"), { recursive: true });',
+        'await mkdir(join(process.cwd(), "wiki", "sources"), { recursive: true });',
+        "await writeFile(",
+        '  join(process.cwd(), "wiki", "sources", "stub-source.md"),',
+        '  page("source", "raw/notes/Engineering/AI/RAG.md", ["[[stub-source]]"]),',
+        ");",
+        "await writeFile(",
+        '  join(process.cwd(), "wiki", "concepts", "stub.md"),',
+        '  page("concept", undefined, ["raw/notes/Engineering/AI/RAG.md"]),',
+        ");",
+        'console.log("stub agent: sources processed; no contradictions");',
+        "",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+
+    const result = await ingest(repo);
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("guardrail check 2 (frontmatter)");
+    expect(result.err).toContain(
+      'cites a path that has a hub — use "[[stub-source]]"',
+    );
+
+    await expect(
+      readFile(join(repo.dataRoot, "wiki", "concepts", "stub.md"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+
+    await expect(
+      readFile(snapshotAt(repo.dataRoot), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("auto-reverts a run that writes into raw/", async () => {
     const repo = await makeRepo({ "AI/RAG.md": "rag" });
 

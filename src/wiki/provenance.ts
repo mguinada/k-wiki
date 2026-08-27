@@ -8,17 +8,19 @@ import {
   readPageFields,
   wikilinkTarget,
 } from "./pages.ts";
-import { loadSourceHubIndex } from "./source-hubs.ts";
+import { loadSourceHubIndex, wikilinkFor } from "./source-hubs.ts";
 
 /**
  * Dead-provenance core (issue #65): the deterministic backstop that
  * catches any purge miss — and any sync/wiki drift of any kind. Every
  * `sources` wikilink on every wiki page must resolve to an existing
- * page, and every `origin` raw path must exist under `raw/`. A
- * path-form `sources` entry (issue #126) must be backed by a raw file
- * AND must not be a path a `type: source` hub covers — a covered path
- * has a clickable wikilink, and citing the raw path instead is
- * dead-provenance drift. The scripts/check-provenance CLI renders it;
+ * `type: source` page, and every `origin` raw path must exist under
+ * `raw/`. A path-form `sources` entry (issue #126) must be backed by a
+ * raw file AND must not be a path a `type: source` hub covers — a
+ * covered path has a clickable wikilink, and citing the raw path
+ * instead is dead-provenance drift. Coverage follows the shared hub
+ * index (src/wiki/source-hubs.ts), the one rule the migration and the
+ * guardrails also apply. The scripts/check-provenance CLI renders it;
  * the wiki-sync verification stage (issue #138) runs it every cycle.
  */
 
@@ -91,8 +93,18 @@ export async function checkWikiProvenance(
       sources++;
 
       if (isWikilinkEntry(entry)) {
-        if (!index.has(wikilinkTarget(entry))) {
+        const target = wikilinkTarget(entry);
+
+        if (!index.has(target)) {
           problems.push(`${page} -> ${entry} (missing source page)`);
+
+          continue;
+        }
+
+        if (hubs.fields.get(target)?.type !== "source") {
+          problems.push(
+            `${page} -> ${entry} (does not cite a type: source page)`,
+          );
         }
 
         continue;
@@ -106,13 +118,11 @@ export async function checkWikiProvenance(
         continue;
       }
 
-      const covered =
-        hubs.byOrigin.get(normalizeRawPath(entry)) ??
-        hubs.byCitation.get(normalizeRawPath(entry));
+      const mapped = wikilinkFor(entry, hubs);
 
-      if (covered !== undefined) {
+      if ("wikilink" in mapped) {
         problems.push(
-          `${page} -> sources ${entry} (path has hub [[${covered}]] — use the wikilink)`,
+          `${page} -> sources ${entry} (path has hub ${mapped.wikilink} — use the wikilink)`,
         );
       }
     }

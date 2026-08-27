@@ -465,6 +465,7 @@ const EMPTY_HUBS: SourceHubIndex = {
   fields: new Map(),
   byOrigin: new Map(),
   byCitation: new Map(),
+  selfCitations: [],
   ambiguous: new Set(),
 };
 

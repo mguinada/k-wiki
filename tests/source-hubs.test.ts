@@ -5,6 +5,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import {
   citationAlias,
   loadSourceHubIndex,
+  type SourceHubIndex,
   wikilinkFor,
 } from "../src/wiki/source-hubs.ts";
 
@@ -216,5 +217,104 @@ describe("loadSourceHubIndex duplicate self-citation", () => {
     expect(
       `${index.byCitation.get("notes/V/x.md")}:${index.ambiguous.has("notes/V/x.md")}`,
     ).toBe("hub:false");
+  });
+});
+
+describe("derived citation coverage (migrated multi-part hubs)", () => {
+  async function migratedWiki(
+    pages: Record<string, string>,
+  ): Promise<SourceHubIndex> {
+    return loadSourceHubIndex(await makeWiki(pages));
+  }
+
+  const MIGRATED_SDN = {
+    "sources/sdn.md": page(
+      { title: "Sdn", type: "source", origin: "raw/notes/Books/SDN/Readme.md" },
+      ["[[sdn]]", "[[sdn|04. Rate Limiter]]"],
+    ),
+  } as const;
+  const CHAPTER = "notes/Books/SDN/04. Rate Limiter/Readme.md";
+
+  it("records one rule per aliased self-citation of a hub with an origin", async () => {
+    const index = await migratedWiki(MIGRATED_SDN);
+
+    expect(index.selfCitations).toEqual([
+      { hub: "sdn", originDir: "notes/Books/SDN", alias: "04. Rate Limiter" },
+    ]);
+  });
+
+  it("maps a chapter path under the hub origin to the aliased self-wikilink", async () => {
+    const index = await migratedWiki(MIGRATED_SDN);
+
+    expect(wikilinkFor(CHAPTER, index)).toEqual({
+      wikilink: "[[sdn|04. Rate Limiter]]",
+    });
+  });
+
+  it("leaves a sibling chapter directory uncovered when no self-citation names it", async () => {
+    const index = await migratedWiki(MIGRATED_SDN);
+
+    expect(wikilinkFor("notes/Books/SDN/05. Proxy/Readme.md", index)).toEqual({
+      reason: "no hub covers this path",
+    });
+  });
+
+  it("leaves a deeper path inside a covered chapter directory uncovered", async () => {
+    const index = await migratedWiki(MIGRATED_SDN);
+
+    expect(
+      wikilinkFor("notes/Books/SDN/04. Rate Limiter/sub/Readme.md", index),
+    ).toEqual({ reason: "no hub covers this path" });
+  });
+
+  it("reports ambiguity when two hubs' self-citations cover the same chapter path", async () => {
+    const index = await migratedWiki({
+      "sources/one.md": page(
+        { title: "One", type: "source", origin: "raw/notes/V/one/Readme.md" },
+        ["[[one|Chap]]"],
+      ),
+      "sources/two.md": page(
+        { title: "Two", type: "source", origin: "raw/notes/V/one/Toc.md" },
+        ["[[two|Chap]]"],
+      ),
+    });
+
+    expect(wikilinkFor("notes/V/one/Chap/Readme.md", index)).toEqual({
+      reason: "covered by more than one hub",
+    });
+  });
+
+  it("records no rule for a hub's wikilink to another page", async () => {
+    const index = await migratedWiki({
+      "sources/hub.md": page(
+        { title: "Hub", type: "source", origin: "raw/notes/V/Readme.md" },
+        ["[[other|Chap]]"],
+      ),
+    });
+
+    expect(index.selfCitations).toEqual([]);
+  });
+
+  it("records no rule for a self-citation in a hub without an origin", async () => {
+    const index = await migratedWiki({
+      "sources/hub.md": page({ title: "Hub", type: "source" }, [
+        "[[hub|Chap]]",
+      ]),
+    });
+
+    expect(index.selfCitations).toEqual([]);
+  });
+
+  it("dedupes identical rules from a repeated aliased self-citation", async () => {
+    const index = await migratedWiki({
+      "sources/hub.md": page(
+        { title: "Hub", type: "source", origin: "raw/notes/V/Readme.md" },
+        ["[[hub|Chap]]", "[[hub|Chap]]"],
+      ),
+    });
+
+    expect(wikilinkFor("notes/V/Chap/Readme.md", index)).toEqual({
+      wikilink: "[[hub|Chap]]",
+    });
   });
 });
