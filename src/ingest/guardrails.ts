@@ -400,6 +400,35 @@ async function readPages(
   return texts;
 }
 
+/** The frontmatter keys and the `type` value of a `---` block:
+ *  only `key:` lines count — anything else is body noise. */
+function parseFrontmatterKeys(lines: readonly string[]): {
+  keys: Set<string>;
+  type: string | undefined;
+} {
+  const keys = new Set<string>();
+  let type: string | undefined;
+
+  for (const line of lines) {
+    const match = /^([A-Za-z][A-Za-z0-9_-]*):/.exec(line);
+
+    if (match === null) {
+      continue;
+    }
+
+    keys.add(match[1] ?? "");
+
+    if (match[1] === "type") {
+      type = line
+        .slice(line.indexOf(":") + 1)
+        .trim()
+        .replace(/^["']|["']$/g, "");
+    }
+  }
+
+  return { keys, type };
+}
+
 /**
  * Frontmatter problems of one wiki page (guardrail 2): a complete
  * `---` block and the required fields of §9. Pages not of type
@@ -422,26 +451,7 @@ export function checkWikiFrontmatter(
     return ["no closing --- for the frontmatter block"];
   }
 
-  const keys = new Set<string>();
-  let type: string | undefined;
-
-  for (const line of lines.slice(1, closing)) {
-    const match = /^([A-Za-z][A-Za-z0-9_-]*):/.exec(line);
-
-    if (match === null) {
-      continue;
-    }
-
-    keys.add(match[1] ?? "");
-
-    if (match[1] === "type") {
-      type = line
-        .slice(line.indexOf(":") + 1)
-        .trim()
-        .replace(/^["']|["']$/g, "");
-    }
-  }
-
+  const { keys, type } = parseFrontmatterKeys(lines.slice(1, closing));
   const missing: string[] = REQUIRED_FIELDS.filter((field) => !keys.has(field));
 
   if (
@@ -635,6 +645,58 @@ function checkChangedFrontmatter(
   return { check: 2, name: "frontmatter", problems };
 }
 
+/** Paths the run or the pre-run state already removed before this
+ *  run: rename origins and deletions of the pre-run status. */
+function preRunGonePaths(status: readonly StatusEntry[]): Set<string> {
+  const gone = new Set<string>();
+
+  for (const entry of status) {
+    if (entry.origin !== undefined || isDeleted(entry)) {
+      gone.add(entry.origin ?? entry.path);
+    }
+  }
+
+  return gone;
+}
+
+/** Pre-run untracked wiki pages whose file is now gone: deleting an
+ *  untracked page leaves no status trace, so the disk is the witness. */
+async function vanishedUntrackedWikiPaths(
+  dataRoot: string,
+  status: readonly StatusEntry[],
+): Promise<string[]> {
+  const paths: string[] = [];
+
+  for (const entry of status) {
+    if (
+      isWikiPage(entry.path) &&
+      isUntracked(entry) &&
+      (await readContent(join(dataRoot, entry.path))) === null
+    ) {
+      paths.push(entry.path);
+    }
+  }
+
+  return paths;
+}
+
+/** Wiki page paths this run removed by deletion or rename. */
+function runRemovedWikiPaths(entries: readonly StatusEntry[]): string[] {
+  const paths: string[] = [];
+
+  for (const entry of entries) {
+    if (entry.origin !== undefined && isWikiPage(entry.origin)) {
+      paths.push(entry.origin);
+    }
+
+    if (isWikiPage(entry.path) && isDeleted(entry)) {
+      paths.push(entry.path);
+    }
+  }
+
+  return paths;
+}
+
 /**
  * Wiki page names the run removed, by deletion or rename: every
  * remaining link to one is newly dangling. A page already deleted
@@ -648,43 +710,17 @@ async function deletedWikiPageNames(
   pre: PreRunState,
   entries: readonly StatusEntry[],
 ): Promise<Set<string>> {
-  const alreadyGone = new Set<string>();
+  const alreadyGone = preRunGonePaths(pre.status);
+  const removed = [
+    ...(await vanishedUntrackedWikiPaths(dataRoot, pre.status)),
+    ...runRemovedWikiPaths(entries),
+  ];
 
-  for (const entry of pre.status) {
-    if (entry.origin !== undefined || isDeleted(entry)) {
-      alreadyGone.add(entry.origin ?? entry.path);
-    }
-  }
-
-  const deleted = new Set<string>();
-
-  const take = (path: string): void => {
-    if (!alreadyGone.has(path)) {
-      deleted.add(basename(path, ".md"));
-    }
-  };
-
-  for (const entry of pre.status) {
-    if (
-      isWikiPage(entry.path) &&
-      isUntracked(entry) &&
-      (await readContent(join(dataRoot, entry.path))) === null
-    ) {
-      take(entry.path);
-    }
-  }
-
-  for (const entry of entries) {
-    if (entry.origin !== undefined && isWikiPage(entry.origin)) {
-      take(entry.origin);
-    }
-
-    if (isWikiPage(entry.path) && isDeleted(entry)) {
-      take(entry.path);
-    }
-  }
-
-  return deleted;
+  return new Set(
+    removed
+      .filter((path) => !alreadyGone.has(path))
+      .map((path) => basename(path, ".md")),
+  );
 }
 
 /** True when the wiki is a second brain — identified by the
@@ -704,6 +740,60 @@ async function isSecondBrain(dataRoot: string): Promise<boolean> {
   }
 }
 
+/** Unresolved-link problems in the pages this run changed: every
+ *  wikilink must resolve to an existing wiki file — except
+ *  cross-wiki targets, external by design in a second brain. */
+function changedPageLinkProblems(
+  texts: ReadonlyMap<string, string>,
+  index: ReadonlyMap<string, string>,
+  secondBrain: boolean,
+): string[] {
+  const problems: string[] = [];
+
+  for (const [path, text] of texts) {
+    for (const link of extractWikilinks(text)) {
+      if (secondBrain && crossWikiTarget(link.target) !== undefined) {
+        continue;
+      }
+
+      if (!index.has(link.target)) {
+        problems.push(`${path}:${link.line} -> ${link.raw}`);
+      }
+    }
+  }
+
+  return problems;
+}
+
+/** Dangling-link problems in the pages this run did not change: a
+ *  remaining link to a page the run deleted. */
+async function danglingLinkProblems(
+  dataRoot: string,
+  files: readonly string[],
+  texts: ReadonlyMap<string, string>,
+  index: ReadonlyMap<string, string>,
+  deletedNames: ReadonlySet<string>,
+): Promise<string[]> {
+  const problems: string[] = [];
+  const checked = new Set(texts.keys());
+
+  for (const file of files) {
+    if (checked.has(`wiki/${file}`)) {
+      continue;
+    }
+
+    const text = await readFile(join(dataRoot, "wiki", file), "utf8");
+
+    for (const link of extractWikilinks(text)) {
+      if (deletedNames.has(link.target) && !index.has(link.target)) {
+        problems.push(`wiki/${file}:${link.line} -> ${link.raw}`);
+      }
+    }
+  }
+
+  return problems;
+}
+
 /** Guardrail 3: every wikilink in every changed page resolves, and no
  *  remaining page keeps a link to a page the run deleted. */
 async function checkChangedWikilinks(
@@ -720,40 +810,13 @@ async function checkChangedWikilinks(
   }
 
   const index = buildPageIndex(files);
-  const problems: string[] = [];
   const secondBrain = await isSecondBrain(dataRoot);
-
-  for (const [path, text] of texts) {
-    for (const link of extractWikilinks(text)) {
-      // Cross-wiki links (issue #81) are external by design — but
-      // only in a second brain; elsewhere they never resolve.
-      if (secondBrain && crossWikiTarget(link.target) !== undefined) {
-        continue;
-      }
-
-      if (!index.has(link.target)) {
-        problems.push(`${path}:${link.line} -> ${link.raw}`);
-      }
-    }
-  }
-
-  if (deletedNames.size > 0) {
-    const checked = new Set(texts.keys());
-
-    for (const file of files) {
-      if (checked.has(`wiki/${file}`)) {
-        continue;
-      }
-
-      const text = await readFile(join(dataRoot, "wiki", file), "utf8");
-
-      for (const link of extractWikilinks(text)) {
-        if (deletedNames.has(link.target) && !index.has(link.target)) {
-          problems.push(`wiki/${file}:${link.line} -> ${link.raw}`);
-        }
-      }
-    }
-  }
+  const problems = [
+    ...changedPageLinkProblems(texts, index, secondBrain),
+    ...(deletedNames.size > 0
+      ? await danglingLinkProblems(dataRoot, files, texts, index, deletedNames)
+      : []),
+  ];
 
   if (problems.length === 0) {
     return undefined;
@@ -864,6 +927,88 @@ export async function revertToPreRun(
   }
 }
 
+/** Rename origins under the prefix that this run moved: an origin
+ *  untouched by the run was already a pre-run rename origin whose
+ *  content hash still matches the pre-run snapshot. */
+async function changedRenameOrigins(
+  dataRoot: string,
+  entries: readonly StatusEntry[],
+  preRunOrigins: ReadonlySet<string>,
+  hashes: ReadonlyMap<string, string>,
+  under: (path: string) => boolean,
+): Promise<string[]> {
+  const changed: string[] = [];
+
+  for (const entry of entries) {
+    if (entry.origin === undefined || !under(entry.origin)) {
+      continue;
+    }
+
+    const untouched =
+      preRunOrigins.has(entry.origin) &&
+      (await hashPath(join(dataRoot, entry.origin))) ===
+        hashes.get(entry.origin);
+
+    if (!untouched) {
+      changed.push(entry.origin);
+    }
+  }
+
+  return changed;
+}
+
+/** Paths under the prefix whose post-run git state differs from the
+ *  pre-run snapshot: a new status entry, a moved status code or
+ *  rename origin, or a re-edit of a file already dirty before the
+ *  run (caught by the content hash). */
+async function changedStatusPaths(
+  dataRoot: string,
+  entries: readonly StatusEntry[],
+  before: ReadonlyMap<string, StatusEntry>,
+  hashes: ReadonlyMap<string, string>,
+  under: (path: string) => boolean,
+): Promise<string[]> {
+  const changed: string[] = [];
+
+  for (const entry of entries) {
+    if (!under(entry.path)) {
+      continue;
+    }
+
+    const untouched =
+      isPreExisting(before.get(entry.path), entry) &&
+      (await hashPath(join(dataRoot, entry.path))) === hashes.get(entry.path);
+
+    if (!untouched) {
+      changed.push(entry.path);
+    }
+  }
+
+  return changed;
+}
+
+/** Pre-run dirty paths under the prefix that vanished from the
+ *  post-run status entirely: a deleted untracked page is invisible
+ *  to git status, so the captured hashes are compared against disk. */
+async function vanishedPreRunPaths(
+  dataRoot: string,
+  hashes: ReadonlyMap<string, string>,
+  under: (path: string) => boolean,
+): Promise<string[]> {
+  const changed: string[] = [];
+
+  for (const path of hashes.keys()) {
+    if (
+      under(path) &&
+      (await hashPath(join(dataRoot, path))) !== hashes.get(path)
+    ) {
+      changed.push(path);
+    }
+  }
+
+  return changed;
+}
+
 /**
  * Post-run comparison under one path prefix (issue #72, wiki-query
  * stage 1): the full post-run status entries, every path under
@@ -898,47 +1043,21 @@ export async function statusSince(
     ),
   );
   const under = (path: string): boolean => path.startsWith(`${prefix}/`);
-  const changed = new Set<string>();
-
-  for (const entry of entries) {
-    if (entry.origin !== undefined && under(entry.origin)) {
-      const untouched =
-        preRunOrigins.has(entry.origin) &&
-        (await hashPath(join(dataRoot, entry.origin))) ===
-          pre.hashes.get(entry.origin);
-
-      if (!untouched) {
-        changed.add(entry.origin);
-      }
-    }
-
-    if (!under(entry.path)) {
-      continue;
-    }
-
-    const untouched =
-      isPreExisting(before.get(entry.path), entry) &&
-      (await hashPath(join(dataRoot, entry.path))) ===
-        pre.hashes.get(entry.path);
-
-    if (!untouched) {
-      changed.add(entry.path);
-    }
-  }
-
-  for (const path of pre.hashes.keys()) {
-    if (!under(path)) {
-      continue;
-    }
-
-    if ((await hashPath(join(dataRoot, path))) !== pre.hashes.get(path)) {
-      changed.add(path);
-    }
-  }
+  const changed = [
+    ...(await changedRenameOrigins(
+      dataRoot,
+      entries,
+      preRunOrigins,
+      pre.hashes,
+      under,
+    )),
+    ...(await changedStatusPaths(dataRoot, entries, before, pre.hashes, under)),
+    ...(await vanishedPreRunPaths(dataRoot, pre.hashes, under)),
+  ];
 
   return {
     entries,
-    changed: [...changed].sort(),
+    changed: [...new Set(changed)].sort(),
     headMoved: (await headCommit(dataRoot, env)) !== pre.commit,
   };
 }
