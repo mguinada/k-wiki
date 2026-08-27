@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { writeDashboard } from "../src/dashboard/generate.ts";
+import { openerFor, writeDashboard } from "../src/dashboard/generate.ts";
 
 /**
  * The generator's contract over a real temp data repo (issue #73):
@@ -496,9 +496,17 @@ describe("dashboard CLI", () => {
 });
 
 describe("dashboard CLI --open", () => {
-  /** A PATH-stub of the opener command `openerFor` returns for this
-   *  platform (darwin `open`, linux `xdg-open`) that records its
-   *  argument to a log file. */
+<<<<<<< HEAD
+  /** A PATH-stub opener that records its argument to a log file,
+   *  named after the command `openerFor` actually invokes on this
+   *  platform (`open` on macOS, `xdg-open` on Linux) — a stub named
+   *  only `open` never runs on Linux CI. */
+=======
+  /** A PATH-stub opener that records its argument to a log file,
+   *  named after the command `openerFor` actually invokes on this
+   *  platform (`open` on macOS, `xdg-open` on Linux) — a stub named
+   *  only `open` never runs on Linux CI. */
+>>>>>>> 54b34e2 (fix(ci): format #171 dashboard files, platform-aware open stub)
   async function makeOpenStub(): Promise<{ stubDir: string; log: string }> {
     const { openerFor } = await import("../src/dashboard/generate.ts");
     const stubDir = await mkdtemp(join(tmpdir(), "k-wiki-open-"));
