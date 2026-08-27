@@ -159,6 +159,79 @@ describe("checkWikiFrontmatter", () => {
       }),
     ).toEqual([]);
   });
+
+  it("ignores an indented key: value line inside the frontmatter block", () => {
+    const text = [
+      "---",
+      'title: "Page"',
+      "created: 2026-08-20",
+      "updated: 2026-08-20",
+      "tags: []",
+      "sources:",
+      '  - "[[src]]"',
+      "  type: concept",
+      "---",
+      "",
+      "Body.",
+    ].join("\n");
+
+    expect(checkWikiFrontmatter(text)).toEqual([
+      'missing required frontmatter field "type"',
+    ]);
+  });
+
+  it("ignores a key: value line in the body after the closing ---", () => {
+    const text = [
+      "---",
+      'title: "Page"',
+      "type: concept",
+      "updated: 2026-08-20",
+      "tags: []",
+      "sources:",
+      '  - "[[src]]"',
+      "---",
+      "",
+      "created: 2020-01-01",
+    ].join("\n");
+
+    expect(checkWikiFrontmatter(text)).toEqual([
+      'missing required frontmatter field "created"',
+    ]);
+  });
+
+  it("strips quotes only at the edges of the type value", () => {
+    const text = [
+      "---",
+      'title: "Page"',
+      'type: so"urce',
+      "created: 2026-08-20",
+      "updated: 2026-08-20",
+      "tags: []",
+      "---",
+      "",
+      "Body.",
+    ].join("\n");
+
+    expect(checkWikiFrontmatter(text)).toEqual([
+      'missing required frontmatter field "sources"',
+    ]);
+  });
+
+  it("unquotes a quoted type value before comparing it to source", () => {
+    const text = [
+      "---",
+      'title: "Page"',
+      "type: 'source'",
+      "created: 2026-08-20",
+      "updated: 2026-08-20",
+      "tags: []",
+      "---",
+      "",
+      "Body.",
+    ].join("\n");
+
+    expect(checkWikiFrontmatter(text)).toEqual([]);
+  });
 });
 
 /** Commit everything in a fixture data repo. */
@@ -893,6 +966,21 @@ describe("runGuardrails — check 3, wikilinks", () => {
     expect(post.failure?.check).toBe(3);
   });
 
+  it("reports a changed page's link to a run-deleted page once, not twice", async () => {
+    const dataRoot = await makeRepo();
+    const body = "[[index]]";
+    const post = await guardedRun(dataRoot, async (root) => {
+      await writeFile(join(root, "wiki", "new.md"), page(body));
+      await rm(join(root, "wiki", "index.md"));
+    });
+
+    const line = page(body).split("\n").indexOf(body) + 1;
+
+    expect(post.failure?.problems).toEqual([
+      `wiki/new.md:${line} -> [[index]]`,
+    ]);
+  });
+
   it("trips when the run deletes a page other pages link to", async () => {
     const dataRoot = await makeRepo();
 
@@ -1331,5 +1419,36 @@ describe("statusSince", () => {
     expect(entries.map((entry) => entry.path)).toEqual(
       expect.arrayContaining(["wiki/queries/q.md", "raw/notes/new.md"]),
     );
+  });
+
+  it("reports a wiki page the run staged into the index", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(join(dataRoot, "wiki", "draft.md"), "Draft\n");
+
+    const pre = await capturePreRunState(dataRoot, process.env);
+
+    await run("git", ["add", "wiki/draft.md"], { cwd: dataRoot });
+
+    expect(
+      (await statusSince(dataRoot, process.env, pre, "wiki")).changed,
+    ).toEqual(["wiki/draft.md"]);
+  });
+
+  it("lists changed paths sorted, not in discovery order", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(join(dataRoot, "wiki", "m.md"), "M\n");
+    await commit(dataRoot, "m");
+
+    const pre = await capturePreRunState(dataRoot, process.env);
+
+    await mkdir(join(dataRoot, "notes"), { recursive: true });
+    await run("git", ["mv", "wiki/m.md", "notes/m.md"], { cwd: dataRoot });
+    await writeFile(join(dataRoot, "wiki", "a.md"), "A\n");
+
+    expect(
+      (await statusSince(dataRoot, process.env, pre, "wiki")).changed,
+    ).toEqual(["wiki/a.md", "wiki/m.md"]);
   });
 });
