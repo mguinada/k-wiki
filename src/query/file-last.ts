@@ -347,23 +347,19 @@ function appendLogEntry(logText: string, entry: string): string {
  * answer cites may have moved. Undefined when git cannot report or
  * nothing moved.
  */
-/** Warning when a commit touched raw/ or wiki/ after the save. */
+/** Warning when a commit touched raw/ or wiki/ after the save.
+ *  Throws when git log fails — the caller aborts the whole check,
+ *  matching the pre-extraction semantics. */
 async function committedAfterSave(
   dataRoot: string,
   env: NodeJS.ProcessEnv,
   savedAt: number,
 ): Promise<string | undefined> {
-  let stdout: string;
-
-  try {
-    ({ stdout } = await runGit(
-      dataRoot,
-      ["log", "-1", "--format=%cI", "--", "raw", "wiki"],
-      env,
-    ));
-  } catch {
-    return undefined;
-  }
+  const { stdout } = await runGit(
+    dataRoot,
+    ["log", "-1", "--format=%cI", "--", "raw", "wiki"],
+    env,
+  );
 
   const last = stdout.trim();
 
@@ -443,7 +439,14 @@ export async function driftWarning(
   savedTimestamp: string,
 ): Promise<string | undefined> {
   const savedAt = Date.parse(savedTimestamp);
-  const committed = await committedAfterSave(dataRoot, env, savedAt);
+
+  let committed: string | undefined;
+
+  try {
+    committed = await committedAfterSave(dataRoot, env, savedAt);
+  } catch {
+    return undefined;
+  }
 
   if (committed !== undefined) {
     return committed;

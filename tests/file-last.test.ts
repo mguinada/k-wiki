@@ -377,6 +377,25 @@ describe("driftWarning", () => {
     ).toBeUndefined();
   });
 
+  it("is undefined when git log fails even if uncommitted changes are newer", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-fl-"));
+
+    tempDirs.push(dir);
+
+    await run("git", ["init", "--quiet"], { cwd: dir });
+    await mkdir(join(dir, "wiki"), { recursive: true });
+    await writeFile(join(dir, "wiki", "index.md"), "# Index\n");
+    await utimes(
+      join(dir, "wiki", "index.md"),
+      new Date("2026-08-21T12:00:00Z"),
+      new Date("2026-08-21T12:00:00Z"),
+    );
+
+    expect(
+      await driftWarning(dir, process.env, "2026-08-20T10:00:00Z"),
+    ).toBeUndefined();
+  });
+
   it("warns on uncommitted wiki changes newer than the saved answer", async () => {
     const dataRoot = await makeCommittedRepo();
 
