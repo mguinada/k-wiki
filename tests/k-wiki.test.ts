@@ -793,6 +793,21 @@ describe("k-wiki query", () => {
 
   it("animates the progress line on a TTY", async () => {
     const h = await makeBoundProject();
+    // The stub must outlive the 100 ms heartbeat interval (2.5×
+    // margin): a fast CI child would otherwise finish before the
+    // first live frame, making the \r assertion a spawn-speed race.
+    const slowStub = join(h.dataRoot, "slow-agent.mjs");
+
+    await writeFile(
+      slowStub,
+      '#!/usr/bin/env node\nsetTimeout(() => console.log("Slow answer."), 300);\n',
+      { mode: 0o755 },
+    );
+    await writeFile(
+      join(h.checkout, "settings.yml"),
+      `command: ${slowStub}\nmodel: M\nreasoning: low\n`,
+    );
+
     const writeSpy = vi
       .spyOn(process.stderr, "write")
       .mockImplementation(() => true);
@@ -803,18 +818,12 @@ describe("k-wiki query", () => {
     delete process.env.NO_COLOR;
 
     try {
-      const { out } = await runKWiki(join(h.project, "nested"), [
-        "query",
-        QUESTION,
-      ]);
+      await runKWiki(join(h.project, "nested"), ["query", QUESTION]);
 
       const written = writeSpy.mock.calls
         .map((call) => String(call[0]))
         .join("");
 
-      expect(out).toContain(
-        "Prefer RAG when the knowledge base changes often.",
-      );
       expect(written).toContain("\r");
     } finally {
       writeSpy.mockRestore();
