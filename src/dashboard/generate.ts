@@ -153,6 +153,41 @@ function openInBrowser(path: string): Promise<void> {
   return execFile(opener.command, [...opener.argsPrefix, path]).then(() => {});
 }
 
+/** Parsed CLI arguments: the open flag, positionals, first unknown
+ *  option (undefined when every option is recognized). */
+function parseArgs(args: readonly string[]): {
+  wantsOpen: boolean;
+  positional: string[];
+  unknown: string | undefined;
+} {
+  const wantsOpen = args.includes("-o") || args.includes("--open");
+  const positional = args.filter((arg) => !arg.startsWith("-"));
+  const unknown = args.find(
+    (arg) => arg.startsWith("-") && arg !== "-o" && arg !== "--open",
+  );
+
+  return { wantsOpen, positional, unknown };
+}
+
+/** One red `dashboard: …` error line, plus exit code 1. */
+function fail(message: string): void {
+  console.error(colors().red(`dashboard: ${message}`));
+
+  process.exitCode = 1;
+}
+
+/** Open the written dashboard; an opener failure prints an error and
+ *  sets exit code 1 — the file is still written. */
+async function openWrittenDashboard(path: string): Promise<void> {
+  try {
+    await openInBrowser(path);
+  } catch (error) {
+    fail(
+      `wrote ${path} but could not open it: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
 /** dashboard entry point: `dashboard [-h | --help] [-o | --open] [<data-repo>]`. */
 export async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -163,28 +198,16 @@ export async function main(): Promise<void> {
     return;
   }
 
-  const wantsOpen = args.includes("-o") || args.includes("--open");
-  const positional = args.filter((arg) => !arg.startsWith("-"));
-  const unknown = args.find(
-    (arg) => arg.startsWith("-") && arg !== "-o" && arg !== "--open",
-  );
+  const { wantsOpen, positional, unknown } = parseArgs(args);
 
   if (unknown !== undefined) {
-    console.error(
-      colors().red(`dashboard: unknown option ${JSON.stringify(unknown)}`),
-    );
-    process.exitCode = 1;
+    fail(`unknown option ${JSON.stringify(unknown)}`);
 
     return;
   }
 
   if (positional.length > 1) {
-    console.error(
-      colors().red(
-        `dashboard: expected at most one <data-repo> argument, got ${positional.length}`,
-      ),
-    );
-    process.exitCode = 1;
+    fail(`expected at most one <data-repo> argument, got ${positional.length}`);
 
     return;
   }
@@ -202,24 +225,10 @@ export async function main(): Promise<void> {
     console.log(colors().green(`dashboard: wrote ${path}`));
 
     if (wantsOpen) {
-      try {
-        await openInBrowser(path);
-      } catch (error) {
-        console.error(
-          colors().red(
-            `dashboard: wrote ${path} but could not open it: ${error instanceof Error ? error.message : String(error)}`,
-          ),
-        );
-        process.exitCode = 1;
-      }
+      await openWrittenDashboard(path);
     }
   } catch (error) {
-    console.error(
-      colors().red(
-        `dashboard: ${error instanceof Error ? error.message : String(error)}`,
-      ),
-    );
-    process.exitCode = 1;
+    fail(error instanceof Error ? error.message : String(error));
   }
 }
 
