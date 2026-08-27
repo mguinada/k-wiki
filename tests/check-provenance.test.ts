@@ -157,6 +157,59 @@ describe("checkWikiProvenance", () => {
     ]);
   });
 
+  it("reports a path-form entry whose path a hub's origin covers", async () => {
+    const { wikiDir, rawDir } = await makeFixture(
+      {
+        "sources/temp.md":
+          "---\ntype: source\norigin: raw/notes/V/Scratch/temp.md\n---\nbody",
+        "concepts/cites.md":
+          '---\nsources:\n  - "notes/V/Scratch/temp.md"\n---\nbody',
+      },
+      { "notes/V/Scratch/temp.md": "temp body" },
+    );
+
+    const report = await checkWikiProvenance(wikiDir, rawDir);
+
+    expect(report.problems).toEqual([
+      "wiki/concepts/cites.md -> sources notes/V/Scratch/temp.md (path has hub [[temp]] — use the wikilink)",
+    ]);
+  });
+
+  it("reports a path-form entry a hub covers by citing it in its own sources", async () => {
+    const { wikiDir, rawDir } = await makeFixture(
+      {
+        "sources/sdn.md":
+          '---\ntype: source\nsources:\n  - "notes/Books/SDN/04. Rate Limiter/Readme.md"\n---\nbody',
+        "concepts/rate-limiting.md":
+          '---\nsources:\n  - "notes/Books/SDN/04. Rate Limiter/Readme.md"\n---\nbody',
+      },
+      { "notes/Books/SDN/04. Rate Limiter/Readme.md": "chapter body" },
+    );
+
+    const report = await checkWikiProvenance(wikiDir, rawDir);
+
+    expect(report.problems).toEqual([
+      "wiki/concepts/rate-limiting.md -> sources notes/Books/SDN/04. Rate Limiter/Readme.md (path has hub [[sdn]] — use the wikilink)",
+      "wiki/sources/sdn.md -> sources notes/Books/SDN/04. Rate Limiter/Readme.md (path has hub [[sdn]] — use the wikilink)",
+    ]);
+  });
+
+  it("reports a hub's own path-form cite of its covered origin", async () => {
+    const { wikiDir, rawDir } = await makeFixture(
+      {
+        "sources/temp.md":
+          '---\ntype: source\norigin: raw/notes/V/Scratch/temp.md\nsources:\n  - "notes/V/Scratch/temp.md"\n---\nbody',
+      },
+      { "notes/V/Scratch/temp.md": "temp body" },
+    );
+
+    const report = await checkWikiProvenance(wikiDir, rawDir);
+
+    expect(report.problems).toEqual([
+      "wiki/sources/temp.md -> sources notes/V/Scratch/temp.md (path has hub [[temp]] — use the wikilink)",
+    ]);
+  });
+
   it("resolves a sources path written with the raw/ prefix", async () => {
     const { wikiDir, rawDir } = await makeFixture(
       {
@@ -228,8 +281,7 @@ describe("checkWikiProvenance", () => {
       {
         "sources/has.md":
           "---\ntype: source\norigin: raw/notes/V/a.md\n---\nbody",
-        "sources/lacks.md":
-          "---\ntype: source\nsources:\n  - notes/V/a.md\n---\nbody",
+        "sources/lacks.md": "---\ntype: source\n---\nbody",
         "concepts/plain.md": "---\ntitle: Plain\n---\nbody",
       },
       { "notes/V/a.md": "a" },
@@ -356,8 +408,7 @@ describe("check-provenance CLI", () => {
   it("exits 0 and prints the backfill warning when a source page lacks origin", async () => {
     const { wikiDir, rawDir } = await makeFixture(
       {
-        "sources/lacks.md":
-          "---\ntype: source\nsources:\n  - notes/V/a.md\n---\nbody",
+        "sources/lacks.md": "---\ntype: source\n---\nbody",
       },
       { "notes/V/a.md": "a" },
     );
@@ -368,7 +419,7 @@ describe("check-provenance CLI", () => {
     expect(
       `${/^\d{4}-\d{2}-\d{2}$/.test(date)}: ${result.code}: ${result.out}`,
     ).toBe(
-      `true: 0: ${paint.green("ok: 1 source link resolves, 0 origins exist across 1 page")}\n${paint.yellow("warning: 1 type: source page lacks origin — run a backfill:")}\n  first preview:  npm run backfill-origin -- --dry-run --date ${date} "${wikiDir}" "${rawDir}"\n  then write:     npm run backfill-origin -- --date ${date} "${wikiDir}" "${rawDir}"\n`,
+      `true: 0: ${paint.green("ok: 0 source links resolve, 0 origins exist across 1 page")}\n${paint.yellow("warning: 1 type: source page lacks origin — run a backfill:")}\n  first preview:  npm run backfill-origin -- --dry-run --date ${date} "${wikiDir}" "${rawDir}"\n  then write:     npm run backfill-origin -- --date ${date} "${wikiDir}" "${rawDir}"\n`,
     );
   });
 

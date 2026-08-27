@@ -43,7 +43,7 @@ function wikiPage(body: string, title = "Page"): string {
     "tags:",
     "  - llm",
     "sources:",
-    '  - "[[index]]"',
+    '  - "[[src]]"',
     "---",
     "",
     body,
@@ -123,12 +123,16 @@ function committedDataRepoTemplate(): Promise<string> {
     tempDirs.push(template);
 
     await mkdir(join(template, "raw"), { recursive: true });
-    await mkdir(join(template, "wiki"), { recursive: true });
+    await mkdir(join(template, "wiki", "sources"), { recursive: true });
     await writeFile(
       join(template, "raw", "manifest.json"),
       serializeManifest({ vaults: {} }),
     );
     await writeFile(join(template, "wiki", "index.md"), "# Index\n");
+    await writeFile(
+      join(template, "wiki", "sources", "src.md"),
+      "---\ntitle: Src\ntype: source\ncreated: 2026-08-20\nupdated: 2026-08-20\ntags:\n  - source\n---\nHub.\n",
+    );
     await run("git", ["init", "--quiet"], { cwd: template });
     await run("git", ["config", "user.email", "t@t"], { cwd: template });
     await run("git", ["config", "user.name", "t"], { cwd: template });
@@ -959,8 +963,13 @@ describe("runVerificationStage", () => {
     tempDirs.push(root);
 
     await mkdir(join(root, "wiki", "concepts"), { recursive: true });
+    await mkdir(join(root, "wiki", "sources"), { recursive: true });
     await mkdir(join(root, "raw"), { recursive: true });
     await writeFile(join(root, "wiki", "index.md"), "# Index\n");
+    await writeFile(
+      join(root, "wiki", "sources", "src.md"),
+      "---\ntitle: Src\ntype: source\ncreated: 2026-08-20\nupdated: 2026-08-20\ntags:\n  - source\n---\nHub.\n",
+    );
     await writeFile(
       join(root, "wiki", "concepts", "clean.md"),
       wikiPage("Clean body", "Clean"),
@@ -1296,7 +1305,7 @@ describe("runWikiSync lint stage", () => {
 });
 
 const CLI_STUB =
-  '#!/usr/bin/env node\nimport { existsSync } from "node:fs";\nimport { mkdir, writeFile } from "node:fs/promises";\nimport { join } from "node:path";\n// Guard: a mutated wrapper may redirect this stub into the real data\n// repo; refuse to write anywhere but this harness\'s data root.\nif (!existsSync(join(process.cwd(), ".cli-test-repo"))) process.exit(5);\nconst index = process.argv.indexOf("--print");\nconst prompt = index === -1 ? "" : process.argv[index + 1] ?? "";\nawait mkdir(join(process.cwd(), "wiki", "concepts"), { recursive: true });\nawait writeFile(join(process.cwd(), "wiki", "concepts", "stub.md"), [\n  "---",\n  \'title: "Stub"\',\n  "type: concept",\n  "created: 2026-08-20",\n  "updated: 2026-08-20",\n  "tags:",\n  "  - llm",\n  "sources:",\n  \'  - "[[index]]"\',\n  "---",\n  "",\n  "stub body",\n  "",\n].join("\\n"));\nif (prompt.startsWith("Audit the wiki")) {\n  const reportPath = prompt.match(/outputs\\/lint-\\d{4}-\\d{2}-\\d{2}\\.md/)?.[0];\n  if (reportPath) {\n    await mkdir(join(process.cwd(), "outputs"), { recursive: true });\n    await writeFile(join(process.cwd(), reportPath), "# Lint\\n");\n  }\n  console.log("lint: clean");\n} else {\n  console.log("ingest report");\n}\n';
+  '#!/usr/bin/env node\nimport { existsSync } from "node:fs";\nimport { mkdir, writeFile } from "node:fs/promises";\nimport { join } from "node:path";\n// Guard: a mutated wrapper may redirect this stub into the real data\n// repo; refuse to write anywhere but this harness\'s data root.\nif (!existsSync(join(process.cwd(), ".cli-test-repo"))) process.exit(5);\nconst index = process.argv.indexOf("--print");\nconst prompt = index === -1 ? "" : process.argv[index + 1] ?? "";\nawait mkdir(join(process.cwd(), "wiki", "concepts"), { recursive: true });\nawait writeFile(join(process.cwd(), "wiki", "concepts", "stub.md"), [\n  "---",\n  \'title: "Stub"\',\n  "type: concept",\n  "created: 2026-08-20",\n  "updated: 2026-08-20",\n  "tags:",\n  "  - llm",\n  "sources:",\n  \'  - "[[src]]"\',\n  "---",\n  "",\n  "stub body",\n  "",\n].join("\\n"));\nif (prompt.startsWith("Audit the wiki")) {\n  const reportPath = prompt.match(/outputs\\/lint-\\d{4}-\\d{2}-\\d{2}\\.md/)?.[0];\n  if (reportPath) {\n    await mkdir(join(process.cwd(), "outputs"), { recursive: true });\n    await writeFile(join(process.cwd(), reportPath), "# Lint\\n");\n  }\n  console.log("lint: clean");\n} else {\n  console.log("ingest report");\n}\n';
 
 describe("wiki-sync CLI", () => {
   async function makeCliHarness() {

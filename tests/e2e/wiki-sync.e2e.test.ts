@@ -72,7 +72,7 @@ if (mode === "break-fidelity" && prompt.startsWith("Audit the wiki")) {
     "tags:",
     "  - llm",
     "sources:",
-    '  - "[[index]]"',
+    '  - "[[stub-source]]"',
     "---",
     "",
     "drifted body",
@@ -87,6 +87,25 @@ if (mode === "link-domain" || mode === "link-broken") {
   // to the domain wiki (second-brain identity itself is the
   // operator-owned .second-brain marker, written by the test).
   const link = mode === "link-domain" ? "[[engineering/stub]]" : "[[engineering/missing]]";
+  await mkdir(join(process.cwd(), "wiki", "sources"), { recursive: true });
+  await writeFile(
+    join(process.cwd(), "wiki", "sources", "stub-source.md"),
+    [
+      "---",
+      'title: "Stub source"',
+      "type: source",
+      "created: 2026-08-20",
+      "updated: 2026-08-20",
+      "tags:",
+      "  - llm",
+      "sources:",
+      '  - "[[stub-source]]"',
+      "---",
+      "",
+      "hub body",
+      "",
+    ].join("\\n"),
+  );
   const page = (title, type, body, source) => [
     "---",
     'title: "' + title + '"',
@@ -102,10 +121,30 @@ if (mode === "link-domain" || mode === "link-broken") {
     "",
   ].join("\\n");
 
-  await writeFile(join(process.cwd(), "wiki", "decision.md"), page("Decision", "decision", "Chose vitest; domain background in " + link + ".", "[[index]]"));
+  await writeFile(join(process.cwd(), "wiki", "decision.md"), page("Decision", "decision", "Chose vitest; domain background in " + link + ".", "[[stub-source]]"));
   await writeFile(join(process.cwd(), "wiki", "index.md"), page("Index", "topic", "# Index v2"));
 } else {
   await mkdir(join(process.cwd(), "wiki", "concepts"), { recursive: true });
+  await mkdir(join(process.cwd(), "wiki", "sources"), { recursive: true });
+  await writeFile(
+    join(process.cwd(), "wiki", "sources", "stub-source.md"),
+    [
+      "---",
+      'title: "Stub source"',
+      "type: source",
+      "created: 2026-08-20",
+      "updated: 2026-08-20",
+      "tags:",
+      "  - llm",
+      "origin: raw/notes/${VAULT_NAME}/AI/RAG.md",
+      "sources:",
+      '  - "[[stub-source]]"',
+      "---",
+      "",
+      "hub body",
+      "",
+    ].join("\\n"),
+  );
   await writeFile(
     join(process.cwd(), "wiki", "concepts", "stub.md"),
     [
@@ -117,7 +156,7 @@ if (mode === "link-domain" || mode === "link-broken") {
       "tags:",
       "  - llm",
       "sources:",
-      '  - "[[index]]"',
+      '  - "[[stub-source]]"',
       "---",
       "",
       "stub body",
@@ -135,7 +174,7 @@ if (mode === "link-domain" || mode === "link-broken") {
       "tags:",
       "  - llm",
       "sources:",
-      '  - "[[index]]"',
+      '  - "[[stub-source]]"',
       "---",
       "",
       "# Index v2",
@@ -342,7 +381,7 @@ describe("wiki-sync e2e", () => {
       /- \*\*Fidelity:\*\* ok — \d+ tokens? trace to origins, \d+ titles? match(?:es)? across \d+ pages?/,
     );
     expect(result.out).toMatch(
-      /- \*\*Provenance:\*\* ok — \d+ source links? resolve, \d+ origins? exist across \d+ pages?/,
+      /- \*\*Provenance:\*\* ok — \d+ source links? resolve, \d+ origins? exist(?:s)? across \d+ pages?/,
     );
     expect(result.out).toContain("**Commit:** `");
 

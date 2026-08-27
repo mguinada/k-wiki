@@ -8,14 +8,18 @@ import {
   readPageFields,
   wikilinkTarget,
 } from "./pages.ts";
+import { loadSourceHubIndex } from "./source-hubs.ts";
 
 /**
  * Dead-provenance core (issue #65): the deterministic backstop that
  * catches any purge miss — and any sync/wiki drift of any kind. Every
  * `sources` wikilink on every wiki page must resolve to an existing
- * page, and every `origin` raw path must exist under `raw/`. The
- * scripts/check-provenance CLI renders it; the wiki-sync verification
- * stage (issue #138) runs it every cycle.
+ * page, and every `origin` raw path must exist under `raw/`. A
+ * path-form `sources` entry (issue #126) must be backed by a raw file
+ * AND must not be a path a `type: source` hub covers — a covered path
+ * has a clickable wikilink, and citing the raw path instead is
+ * dead-provenance drift. The scripts/check-provenance CLI renders it;
+ * the wiki-sync verification stage (issue #138) runs it every cycle.
  */
 
 export interface ProvenanceReport {
@@ -69,6 +73,7 @@ export async function checkWikiProvenance(
 
   await assertRawDir(rawDir);
   const index = buildPageIndex(files);
+  const hubs = await loadSourceHubIndex(wikiDir);
   const problems: string[] = [];
   let sources = 0;
   let origins = 0;
@@ -97,6 +102,18 @@ export async function checkWikiProvenance(
         await stat(join(rawDir, normalizeRawPath(entry)));
       } catch {
         problems.push(`${page} -> sources ${entry} (missing under raw/)`);
+
+        continue;
+      }
+
+      const covered =
+        hubs.byOrigin.get(normalizeRawPath(entry)) ??
+        hubs.byCitation.get(normalizeRawPath(entry));
+
+      if (covered !== undefined) {
+        problems.push(
+          `${page} -> sources ${entry} (path has hub [[${covered}]] — use the wikilink)`,
+        );
       }
     }
 

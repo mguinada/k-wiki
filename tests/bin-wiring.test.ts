@@ -78,6 +78,11 @@ const ENTRIES: readonly Entry[] = [
     usage: "Usage: k-wiki",
   },
   {
+    launcher: "link-sources.ts",
+    module: "scripts/link-sources.ts",
+    usage: "Usage: link-sources",
+  },
+  {
     launcher: "mutation-scope.ts",
     module: "scripts/mutation-scope.ts",
     usage: "Usage: mutation-scope",
@@ -86,6 +91,11 @@ const ENTRIES: readonly Entry[] = [
     launcher: "mutation-survivors.ts",
     module: "scripts/mutation-survivors.ts",
     usage: "Usage: mutation-survivors",
+  },
+  {
+    launcher: "open-origin.ts",
+    module: "scripts/open-origin.ts",
+    usage: "Usage: open-origin",
   },
   {
     launcher: "sync-repo.ts",

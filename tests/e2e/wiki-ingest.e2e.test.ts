@@ -67,6 +67,26 @@ await writeFile(
   process.argv.slice(2).join("\\n"),
 );
 await mkdir(join(process.cwd(), "wiki", "concepts"), { recursive: true });
+await mkdir(join(process.cwd(), "wiki", "sources"), { recursive: true });
+await writeFile(
+  join(process.cwd(), "wiki", "sources", "stub-source.md"),
+  [
+    "---",
+    'title: "Stub source"',
+    "type: source",
+    "created: 2026-08-20",
+    "updated: 2026-08-20",
+    "tags:",
+    "  - llm",
+    "origin: raw/notes/Engineering/AI/RAG.md",
+    "sources:",
+    '  - "[[stub-source]]"',
+    "---",
+    "",
+    "hub body",
+    "",
+  ].join("\\n"),
+);
 await writeFile(
   join(process.cwd(), "wiki", "concepts", "stub.md"),
   [
@@ -78,7 +98,7 @@ await writeFile(
     "tags:",
     "  - llm",
     "sources:",
-    '  - "[[index]]"',
+    '  - "[[stub-source]]"',
     "---",
     "",
     "stub body",
@@ -100,7 +120,7 @@ if (prompt.includes("deleted from the vault")) {
       "tags:",
       "  - llm",
       "sources:",
-      '  - "[[index]]"',
+      '  - "[[stub-source]]"',
       "---",
       "",
       "# Index v3",
@@ -120,7 +140,7 @@ if (prompt.includes("deleted from the vault")) {
       "tags:",
       "  - llm",
       "sources:",
-      '  - "[[index]]"',
+      '  - "[[stub-source]]"',
       "---",
       "",
       "# Index v2",
@@ -324,7 +344,7 @@ describe("wiki-ingest e2e", () => {
     const result = await ingest(repo);
 
     expect(result.out).toContain(
-      "**Wiki pages:** 1 created, 1 updated, 0 deleted",
+      "**Wiki pages:** 2 created, 1 updated, 0 deleted",
     );
     expect(result.out).toContain("- wiki/concepts/stub.md");
     expect(result.out).toContain("- wiki/index.md");
@@ -675,7 +695,7 @@ title: Temp research
 type: source
 origin: raw/notes/Documents/Scratch/temp-research.md
 sources:
-  - "notes/Documents/Scratch/temp-research.md"
+  - "[[temp-research]]"
 ---
 
 Ephemeral scratch note ([[cites]] its findings).
@@ -685,7 +705,7 @@ const SEEDED_CONCEPT_PAGE = `---
 title: Cites
 type: concept
 sources:
-  - "notes/Documents/Scratch/temp-research.md"
+  - "[[temp-research]]"
 ---
 
 Findings from the temp research note.

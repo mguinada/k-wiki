@@ -41,7 +41,11 @@ For each changed source:
 8. Record `origin: raw/notes/<vault>/<path>` in the frontmatter of every
    source page you create, and add it to any source page you touch that
    lacks it.
-9. Add source attribution to every affected page.
+9. Add source attribution to every affected page: `sources` entries are
+   wikilinks to `type: source` pages — `- "[[hub]]"`, aliased
+   (`- "[[hub|Chapter]]"`) when citing a sub-source of a multi-part
+   hub; create the source page first when it does not exist. A raw
+   path with no source page stays legal (repo-as-source code files).
 10. Add appropriate wikilinks.
 11. Preserve contradictions and uncertainty.
 12. Do not invent facts.

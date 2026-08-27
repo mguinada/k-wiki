@@ -521,6 +521,20 @@ describe("backfill-origin CLI", () => {
     ).toContain(`origin: raw/${NOTE}`);
   });
 
+  it("honors positional dirs without --date (regression: index 0 was consumed)", async () => {
+    const f = await makeFixture(
+      { "sources/gpu-memory-math.md": sourcePage([NOTE]) },
+      { [NOTE]: "note body" },
+    );
+
+    const result = await runCli([f.wikiDir, f.rawDir]);
+
+    expect(result.code).toBe(0);
+    expect(result.out).toContain(
+      `wiki/sources/gpu-memory-math.md -> raw/${NOTE}`,
+    );
+  });
+
   it("prints each backfilled pair with its origin path", async () => {
     const f = await makeFixture(
       { "sources/gpu-memory-math.md": sourcePage([NOTE]) },
