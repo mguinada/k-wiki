@@ -610,9 +610,7 @@ describe("wiki-sync e2e", () => {
       cwd: repo.dataRoot,
     });
 
-    expect(log).toMatch(
-      /^wiki-sync: 2 sources processed, 3 pages touched$/m,
-    );
+    expect(log).toMatch(/^wiki-sync: 2 sources processed, 3 pages touched$/m);
   });
 
   it("does nothing on a repo-sourced rerun with no source changes", async () => {
