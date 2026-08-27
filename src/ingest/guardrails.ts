@@ -2,7 +2,17 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { runGit } from "../data/git.ts";
 import { sha256 } from "../sync/hash.ts";
-import { listWikiPages } from "../wiki/pages.ts";
+import {
+  isWikilinkEntry,
+  listWikiPages,
+  parsePageFields,
+  wikilinkTarget,
+} from "../wiki/pages.ts";
+import {
+  loadSourceHubIndex,
+  type SourceHubIndex,
+  wikilinkFor,
+} from "../wiki/source-hubs.ts";
 import {
   buildPageIndex,
   crossWikiTarget,
@@ -24,6 +34,13 @@ import {
  *     required fields (`title`, `type`, `created`, `updated`, `tags`;
  *     plus `sources` for pages not of type `source`) — except
  *     `wiki/log.md`, the append-only log, which has none by design;
+ *     on a changed non-source page every `sources` entry must be a
+ *     wikilink to an existing `type: source` page (issue #126): a
+ *     legacy raw-path entry fails only when a hub covers the path
+ *     ("cited a path that has a hub — use the wikilink"), so raw
+ *     paths with no source page — repo-as-source code files in a
+ *     second brain — stay legal; a slashed target is a cross-wiki
+ *     link, never allowed in `sources`;
  *  3. wikilinks — every `[[wikilink]]` in a changed page resolves to
  *     an existing wiki file, and no remaining page keeps a link to a
  *     page the run deleted; cross-wiki `[[<vault>/<page>]]` targets
@@ -441,6 +458,76 @@ export function checkWikiFrontmatter(
   );
 }
 
+/** The source-hub index of a wiki tree that cannot be read: no
+ *  hubs, no fields — a run that deleted every wiki page has no
+ *  `sources` entries left to check. */
+const EMPTY_HUBS: SourceHubIndex = {
+  fields: new Map(),
+  byOrigin: new Map(),
+  byCitation: new Map(),
+  selfCitations: [],
+  ambiguous: new Set(),
+};
+
+/**
+ * Sources-entry format problems of one page (guardrail 2, issue
+ * #126). Source pages are exempt — their own `sources` lists cite
+ * raw paths, the hub pattern. Every other page's entries must be
+ * wikilinks to an existing `type: source` page: a cross-wiki
+ * (`[[vault/page]]`) target fails outright, and a legacy raw-path
+ * entry fails only when a hub covers the path — the multi-instance
+ * rule (second brains cite repo-as-source code files that have no
+ * hub, and those stay legal).
+ */
+export function checkSourcesEntries(
+  text: string,
+  hubs: SourceHubIndex,
+): string[] {
+  const fields = parsePageFields(text);
+
+  if (fields.type === "source") {
+    return [];
+  }
+
+  const problems: string[] = [];
+
+  for (const entry of fields.sources) {
+    if (isWikilinkEntry(entry)) {
+      const target = wikilinkTarget(entry);
+
+      if (target === "") {
+        problems.push(`sources entry ${entry} has no page target`);
+
+        continue;
+      }
+
+      if (crossWikiTarget(target) !== undefined) {
+        problems.push(`sources entry ${entry} is a cross-wiki target`);
+
+        continue;
+      }
+
+      if (hubs.fields.get(target)?.type !== "source") {
+        problems.push(
+          `sources entry ${entry} does not cite a type: source page`,
+        );
+      }
+
+      continue;
+    }
+
+    const mapped = wikilinkFor(entry, hubs);
+
+    if ("wikilink" in mapped) {
+      problems.push(
+        `sources entry "${entry}" cites a path that has a hub — use "${mapped.wikilink}"`,
+      );
+    }
+  }
+
+  return problems;
+}
+
 /** The post-run git state plus the first guardrail that tripped, if any. */
 export interface PostRunState {
   readonly entries: readonly StatusEntry[];
@@ -521,6 +608,7 @@ async function checkImmutability(
 /** Guardrail 2: every changed page carries the §9 required fields. */
 function checkChangedFrontmatter(
   texts: ReadonlyMap<string, string>,
+  hubs: SourceHubIndex,
 ): GuardrailFailure | undefined {
   const problems: string[] = [];
 
@@ -532,6 +620,10 @@ function checkChangedFrontmatter(
     for (const problem of checkWikiFrontmatter(text, {
       skipSources: SOURCES_EXEMPT.has(path),
     })) {
+      problems.push(`${path}: ${problem}`);
+    }
+
+    for (const problem of checkSourcesEntries(text, hubs)) {
       problems.push(`${path}: ${problem}`);
     }
   }
@@ -705,7 +797,15 @@ export async function runGuardrails(
 
   const changed = await changedWikiPages(dataRoot, pre, entries);
   const texts = await readPages(dataRoot, changed);
-  const frontmatter = checkChangedFrontmatter(texts);
+  let hubs: SourceHubIndex = EMPTY_HUBS;
+
+  try {
+    hubs = await loadSourceHubIndex(join(dataRoot, "wiki"));
+  } catch {
+    // A run that deleted every wiki page has no sources entries left.
+  }
+
+  const frontmatter = checkChangedFrontmatter(texts, hubs);
 
   if (frontmatter !== undefined) {
     return { entries, failure: frontmatter };

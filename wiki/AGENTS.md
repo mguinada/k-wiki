@@ -161,6 +161,14 @@ source page that lacks it whenever the page is touched, and update it —
 and any `sources` entry citing the old path — when its note is renamed;
 it enables deterministic expungement.
 
+`sources` entries are Obsidian wikilinks to `type: source` pages —
+`- "[[hub-name]]"`, aliased (`- "[[hub|Chapter]]"`) when citing a
+sub-source of a multi-part hub. When citing material that has no
+source page, create the source page first. Raw-path entries are the
+legacy pre-migration format; a raw path with no source page stays
+legal (repo-as-source code files). `sources` never contains
+cross-wiki (`[[vault/page]]`) targets.
+
 Use ISO dates: `YYYY-MM-DD`.
 
 Use Obsidian wikilinks for references to other notes.

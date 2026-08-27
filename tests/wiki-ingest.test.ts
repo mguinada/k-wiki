@@ -1610,7 +1610,7 @@ async function makeDataRepo(notes: Record<string, string>): Promise<string> {
   await mkdir(join(dataRoot, "raw", "notes", "Engineering"), {
     recursive: true,
   });
-  await mkdir(join(dataRoot, "wiki"), { recursive: true });
+  await mkdir(join(dataRoot, "wiki", "sources"), { recursive: true });
 
   for (const [path, content] of Object.entries(notes)) {
     await writeFile(
@@ -1624,6 +1624,10 @@ async function makeDataRepo(notes: Record<string, string>): Promise<string> {
     serializeManifest(manifest),
   );
   await writeFile(join(dataRoot, "wiki", "index.md"), "# Index\n");
+  await writeFile(
+    join(dataRoot, "wiki", "sources", "src.md"),
+    "---\ntitle: Src\ntype: source\ncreated: 2026-08-20\nupdated: 2026-08-20\ntags:\n  - source\norigin: raw/notes/Engineering/a.md\n---\nHub.\n",
+  );
   await writeFile(join(dataRoot, "wiki", "A-page.md"), "# A page\n");
   await writeFile(join(dataRoot, "wiki", "gone.md"), "# Gone\n");
   await run("git", ["init", "--quiet"], { cwd: dataRoot });
@@ -1691,7 +1695,7 @@ function wikiPage(body: string): string {
     "tags:",
     "  - llm",
     "sources:",
-    '  - "[[index]]"',
+    '  - "[[src]]"',
     "---",
     "",
     body,
@@ -2556,7 +2560,7 @@ describe("runWikiIngest", () => {
     });
 
     expect(messages).toContain(
-      "wiki-ingest: expunge — 2 removed sources; direct set: wiki/index.md, wiki/overview.md",
+      "wiki-ingest: expunge — 2 removed sources; direct set: wiki/A-page.md, wiki/concepts/new.md, wiki/index.md, wiki/overview.md, wiki/sources/src.md",
     );
   });
 
@@ -2855,7 +2859,7 @@ describe("runWikiIngest", () => {
     }
 
     expect(result.digest).toContain(
-      "- wiki/concepts/new.md (1 source: [[index]])",
+      "- wiki/concepts/new.md (1 source: [[src]])",
     );
   });
 
@@ -4023,7 +4027,7 @@ await writeFile(join(process.cwd(), "wiki", "concepts", "stub.md"), [
   "tags:",
   "  - llm",
   "sources:",
-  '  - "[[index]]"',
+  '  - "[[src]]"',
   "---",
   "",
   "stub body",

@@ -488,6 +488,20 @@ written at ingest time, backfilled onto older pages in one wiki
 operation — and is the deterministic handle expungement uses (Section
 14a).
 
+`sources` entries are wikilinks to `type: source` pages — aliased
+(`[[hub|Chapter]]`) when citing a sub-source of a multi-part hub — so
+they render as clickable chips in Obsidian's properties panel. A raw
+path with no source page stays legal (repo-as-source code files);
+anything a hub covers must use the wikilink: the ingest guardrails
+reject a covered path entry on changed pages, and `check-provenance`
+flags it. Legacy path-form entries migrate in one wiki operation with
+`npm run link-sources -- <wiki-dir>` (dry run by default; `--write`
+refuses a dirty tree and logs the audit trail to `wiki/log.md`, the
+same safety envelope as backfill-origin). The reader-side deep dive
+from a hub to the live vault note is `npm run open-origin -- <hub>`:
+it maps `origin` to an `obsidian://open` URI against `sync.json` and
+opens it; nothing is stored in wiki data.
+
 #### Derived concept pages
 
 Use `sources` (plural) because a wiki page may synthesize multiple sources:
@@ -821,8 +835,10 @@ missing `origin` automatically (Sections 13–14).
 
 Frontmatter tracing cannot *prove* the absence of uncited influence.
 Mitigations: phase-1 full-text search, the permanent dead-provenance
-check (`npm run check-provenance`: every `sources` entry resolves, every
-`origin` exists under `raw/`), the quote-fidelity check
+check (`npm run check-provenance`: every `sources` entry resolves —
+wikilinks to existing `type: source` pages, raw paths both to files
+under `raw/` and to no hub that covers them — every `origin` exists
+under `raw/`), the quote-fidelity check
 (`npm run check-fidelity`: every machine-checkable token a source
 page quotes — tilde paths, config keys, CLI flags, `npm run`
 commands — appears in its `origin`, and every page title kebab-cases

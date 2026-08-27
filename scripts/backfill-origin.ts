@@ -1,18 +1,16 @@
-import { execFile } from "node:child_process";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 import { createColors } from "picocolors";
 import { refuseDirectExecution } from "../src/cli/is-main.ts";
-import { runGit } from "../src/data/git.ts";
+import { assertCleanTree } from "../src/data/git.ts";
 import {
+  closingFence,
   isWikilinkEntry,
   listWikiPages,
   normalizeRawPath,
+  unquote,
 } from "../src/wiki/pages.ts";
-
-const execFileAsync = promisify(execFile);
 
 /**
  * Deterministic origin backfill (guide §14a, issue #88): every
@@ -106,18 +104,6 @@ function corroboratesTitle(pageTitle: string, noteName: string): boolean {
   );
 
   return shared.length >= 2 || shared.some((token) => token.length >= 7);
-}
-
-function unquote(value: string): string {
-  const quote = value[0];
-
-  return quote === '"' || quote === "'" ? value.slice(1, -1) : value;
-}
-
-/** Index of the closing frontmatter fence — trim-tolerant, matching
- *  the shared parser in src/wiki/pages.ts — or -1. */
-function closingFence(lines: readonly string[]): number {
-  return lines.findIndex((line, index) => index > 0 && line.trim() === "---");
 }
 
 /** Parse a closed frontmatter block; undefined when there is none. */
@@ -346,64 +332,19 @@ export async function backfillOrigins(
   return { backfilled, needsJudgment, untouched };
 }
 
-/**
- * The git safety gate: a real (non-dry) run refuses a wiki tree with
- * uncommitted changes — the backfill's review surface is a clean git
- * diff and its revert is `git restore`. Outside a git repo there is no
- * safety net: warn and proceed.
- */
+/** The git safety gate, shared with link-sources: a real (non-dry)
+ *  run refuses a wiki tree with uncommitted changes — the review
+ *  surface is a clean git diff and the revert is `git restore`.
+ *  Outside a git repo there is no safety net: warn and proceed. The
+ *  shared helper resolves the repo root from the wiki dir first,
+ *  because runGit confines repository discovery to its dir argument
+ *  (the live-run lesson recorded in src/data/git.ts). */
 async function assertCleanWiki(
   wikiDir: string,
   dryRun: boolean,
 ): Promise<void> {
-  if (dryRun) {
-    return;
-  }
-
-  // runGit sets GIT_CEILING_DIRECTORIES to the parent of its dir
-  // argument, so passing the wiki subdir would cut discovery at the
-  // data-repo root and make .git undiscoverable — the real data-repo
-  // layout; the guard would then misread it as "no git repo" and
-  // proceed without the safety net (found during the live run). So:
-  // resolve the repo root from the wiki dir first, then run the
-  // status check from that root — the same pattern the guardrails use.
-  const repoRoot = await gitRepoRoot(wikiDir);
-
-  if (repoRoot === undefined) {
-    console.error(
-      colors().yellow(
-        "backfill-origin: no git repo at the wiki dir — proceeding without the git safety net",
-      ),
-    );
-
-    return;
-  }
-
-  const { stdout } = await runGit(
-    repoRoot,
-    ["status", "--porcelain", "--", "."],
-    process.env,
-  );
-
-  if (stdout.trim() !== "") {
-    throw new Error(
-      `wiki tree has uncommitted changes — commit or stash first; the backfill's review surface is a clean git diff (see git -C ${repoRoot} status)`,
-    );
-  }
-}
-
-/** The repo root containing `dir`, or undefined outside any git repo. */
-async function gitRepoRoot(dir: string): Promise<string | undefined> {
-  try {
-    const { stdout } = await execFileAsync(
-      "git",
-      ["-C", dir, "rev-parse", "--show-toplevel"],
-      { env: process.env },
-    );
-
-    return stdout.trim() || undefined;
-  } catch {
-    return undefined;
+  if (!dryRun) {
+    await assertCleanTree(wikiDir, "backfill-origin");
   }
 }
 
@@ -461,7 +402,9 @@ export async function main(): Promise<void> {
     dateIndex === -1
       ? new Date().toISOString().slice(0, 10)
       : args[dateIndex + 1];
-  const consumed = new Set<number>([dateIndex, dateIndex + 1]);
+  const consumed = new Set<number>(
+    dateIndex === -1 ? [] : [dateIndex, dateIndex + 1],
+  );
   const positional: string[] = [];
 
   for (const [index, arg] of args.entries()) {

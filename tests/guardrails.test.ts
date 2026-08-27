@@ -23,7 +23,9 @@ afterAll(async () => {
   );
 });
 
-/** A minimal wiki page body with valid frontmatter (guide §9). */
+/** A minimal wiki page body with valid frontmatter (guide §9);
+ *  `sources` cites the fixture's source page, wikilink form
+ *  (issue #126). */
 function page(body = "Body text."): string {
   return [
     "---",
@@ -34,10 +36,31 @@ function page(body = "Body text."): string {
     "tags:",
     "  - llm",
     "sources:",
-    '  - "[[index]]"',
+    '  - "[[src]]"',
     "---",
     "",
     body,
+    "",
+  ].join("\n");
+}
+
+/** The fixture's `type: source` hub: origin raw/notes/src.md, its
+ *  own sources citing that same raw path. */
+function hubPage(): string {
+  return [
+    "---",
+    'title: "Src"',
+    "type: source",
+    "created: 2026-08-20",
+    "updated: 2026-08-20",
+    "tags:",
+    "  - llm",
+    "origin: raw/notes/src.md",
+    "sources:",
+    '  - "notes/src.md"',
+    "---",
+    "",
+    "Hub body.",
     "",
   ].join("\n");
 }
@@ -125,13 +148,13 @@ describe("checkWikiFrontmatter", () => {
 
   it("requires sources on every page not of type source", () => {
     expect(
-      checkWikiFrontmatter(page().replace('sources:\n  - "[[index]]"\n', "")),
+      checkWikiFrontmatter(page().replace('sources:\n  - "[[src]]"\n', "")),
     ).toEqual(['missing required frontmatter field "sources"']);
   });
 
   it("skips the sources check when skipSources is true", () => {
     expect(
-      checkWikiFrontmatter(page().replace('sources:\n  - "[[index]]"\n', ""), {
+      checkWikiFrontmatter(page().replace('sources:\n  - "[[src]]"\n', ""), {
         skipSources: true,
       }),
     ).toEqual([]);
@@ -157,17 +180,19 @@ async function commit(root: string, message: string): Promise<void> {
   );
 }
 
-/** A committed data repo: raw/notes + manifest, wiki/index.md. */
+/** A committed data repo: raw/notes + manifest, wiki/index.md, and
+ *  the wiki/sources/src.md hub every fixture page cites. */
 async function makeRepo(): Promise<string> {
   const dataRoot = await mkdtemp(join(tmpdir(), "k-wiki-guard-"));
 
   tempDirs.push(dataRoot);
 
   await mkdir(join(dataRoot, "raw", "notes"), { recursive: true });
-  await mkdir(join(dataRoot, "wiki"), { recursive: true });
+  await mkdir(join(dataRoot, "wiki", "sources"), { recursive: true });
   await writeFile(join(dataRoot, "raw", "manifest.json"), "{}\n");
   await writeFile(join(dataRoot, "raw", "notes", "src.md"), "# src\n");
   await writeFile(join(dataRoot, "wiki", "index.md"), page("# Index\n"));
+  await writeFile(join(dataRoot, "wiki", "sources", "src.md"), hubPage());
   await run("git", ["init", "--quiet"], { cwd: dataRoot });
   await commit(dataRoot, "init");
 
@@ -559,6 +584,180 @@ describe("runGuardrails — check 2, frontmatter", () => {
       await writeFile(
         join(root, "wiki", "second-brain", "profile.md"),
         "---\ntitle: Profile\ntype: profile\ncreated: 2026-08-22\nupdated: 2026-08-22\ntags:\n  - brain\n---\n\n# Profile\n",
+      );
+    });
+
+    expect(post.failure).toBeUndefined();
+  });
+});
+
+describe("runGuardrails — check 2, sources entry format", () => {
+  it("accepts a sources wikilink to an existing type: source page", async () => {
+    const dataRoot = await makeRepo();
+    const post = await guardedRun(dataRoot, async (root) => {
+      await writeFile(join(root, "wiki", "cites.md"), page());
+    });
+
+    expect(post.failure).toBeUndefined();
+  });
+
+  it("trips when a changed page cites a raw path that is a hub's origin", async () => {
+    const dataRoot = await makeRepo();
+    const post = await guardedRun(dataRoot, async (root) => {
+      await writeFile(
+        join(root, "wiki", "cites.md"),
+        page().replace('"[[src]]"', '"notes/src.md"'),
+      );
+    });
+
+    expect(post.failure?.check).toBe(2);
+    expect(post.failure?.problems[0]).toContain(
+      'wiki/cites.md: sources entry "notes/src.md" cites a path that has a hub — use "[[src]]"',
+    );
+  });
+
+  it("trips when a changed page cites a raw path covered by a hub's own sources", async () => {
+    const dataRoot = await makeRepo();
+    await writeFile(
+      join(dataRoot, "wiki", "sources", "sdn.md"),
+      hubPage()
+        .replace('title: "Src"', 'title: "Sdn"')
+        .replace("origin: raw/notes/src.md", "origin: raw/notes/sdn.md")
+        .replace(
+          '"notes/src.md"',
+          '"notes/Books/SDN/04. Rate Limiter/Readme.md"',
+        ),
+    );
+    await commit(dataRoot, "add multi-part hub");
+
+    const post = await guardedRun(dataRoot, async (root) => {
+      await writeFile(
+        join(root, "wiki", "cites.md"),
+        page().replace(
+          '"[[src]]"',
+          '"notes/Books/SDN/04. Rate Limiter/Readme.md"',
+        ),
+      );
+    });
+
+    expect(post.failure?.check).toBe(2);
+    expect(post.failure?.problems[0]).toContain(
+      'cites a path that has a hub — use "[[sdn|04. Rate Limiter]]"',
+    );
+  });
+
+  it("trips when a changed page cites a chapter path of a migrated multi-part hub", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(
+      join(dataRoot, "wiki", "sources", "sdn.md"),
+      hubPage()
+        .replace('title: "Src"', 'title: "Sdn"')
+        .replace(
+          "origin: raw/notes/src.md",
+          "origin: raw/notes/Books/SDN/Readme.md",
+        )
+        .replace('"notes/src.md"', '"[[sdn|04. Rate Limiter]]"'),
+    );
+    await commit(dataRoot, "add migrated multi-part hub");
+
+    const post = await guardedRun(dataRoot, async (root) => {
+      await writeFile(
+        join(root, "wiki", "cites.md"),
+        page().replace(
+          '"[[src]]"',
+          '"notes/Books/SDN/04. Rate Limiter/Readme.md"',
+        ),
+      );
+    });
+
+    expect(post.failure?.check).toBe(2);
+    expect(post.failure?.problems[0]).toContain(
+      'cites a path that has a hub — use "[[sdn|04. Rate Limiter]]"',
+    );
+  });
+
+  it("passes a path-form entry whose raw path has no hub", async () => {
+    const dataRoot = await makeRepo();
+    const post = await guardedRun(dataRoot, async (root) => {
+      await writeFile(
+        join(root, "wiki", "cites.md"),
+        page().replace('"[[src]]"', '"notes/unhubbed.md"'),
+      );
+    });
+
+    expect(post.failure).toBeUndefined();
+  });
+
+  it("trips when a sources wikilink targets a page that is not type: source", async () => {
+    const dataRoot = await makeRepo();
+    const post = await guardedRun(dataRoot, async (root) => {
+      await writeFile(
+        join(root, "wiki", "cites.md"),
+        page().replace('"[[src]]"', '"[[index]]"'),
+      );
+    });
+
+    expect(post.failure?.check).toBe(2);
+    expect(post.failure?.problems[0]).toContain(
+      "wiki/cites.md: sources entry [[index]] does not cite a type: source page",
+    );
+  });
+
+  it("trips when a sources wikilink targets a missing page", async () => {
+    const dataRoot = await makeRepo();
+    const post = await guardedRun(dataRoot, async (root) => {
+      await writeFile(
+        join(root, "wiki", "cites.md"),
+        page().replace('"[[src]]"', '"[[missing]]"'),
+      );
+    });
+
+    expect(post.failure?.check).toBe(2);
+    expect(post.failure?.problems[0]).toContain(
+      "sources entry [[missing]] does not cite a type: source page",
+    );
+  });
+
+  it("trips when a sources wikilink is a cross-wiki target", async () => {
+    const dataRoot = await makeRepo();
+    const post = await guardedRun(dataRoot, async (root) => {
+      await writeFile(
+        join(root, "wiki", "cites.md"),
+        page().replace('"[[src]]"', '"[[engineering/hub]]"'),
+      );
+    });
+
+    expect(post.failure?.check).toBe(2);
+    expect(post.failure?.problems[0]).toContain(
+      "sources entry [[engineering/hub]] is a cross-wiki target",
+    );
+  });
+
+  it("trips when a sources wikilink has no page target", async () => {
+    const dataRoot = await makeRepo();
+    const post = await guardedRun(dataRoot, async (root) => {
+      await writeFile(
+        join(root, "wiki", "cites.md"),
+        page().replace('"[[src]]"', '"[[|alias]]"'),
+      );
+    });
+
+    expect(post.failure?.check).toBe(2);
+    expect(post.failure?.problems[0]).toContain(
+      "wiki/cites.md: sources entry [[|alias]] has no page target",
+    );
+  });
+
+  it("does not check the sources format of a changed type: source page", async () => {
+    const dataRoot = await makeRepo();
+    const post = await guardedRun(dataRoot, async (root) => {
+      await writeFile(
+        join(root, "wiki", "sources", "second.md"),
+        hubPage()
+          .replace('title: "Src"', 'title: "Second"')
+          .replace("origin: raw/notes/src.md", "origin: raw/notes/second.md")
+          .replace('"notes/src.md"', '"notes/second.md"'),
       );
     });
 

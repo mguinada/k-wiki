@@ -113,7 +113,7 @@ describe("checkWikiProvenance", () => {
     const { wikiDir, rawDir } = await makeFixture(
       {
         "sources/Temp research.md":
-          "---\ntitle: Temp research\norigin: raw/notes/V/Scratch/temp.md\n---\nbody",
+          "---\ntitle: Temp research\ntype: source\norigin: raw/notes/V/Scratch/temp.md\n---\nbody",
         "concepts/cites.md":
           '---\ntitle: Cites\nsources:\n  - "[[Temp research]]"\n---\nbody',
         "index.md": "# Index",
@@ -141,6 +141,20 @@ describe("checkWikiProvenance", () => {
     ]);
   });
 
+  it("reports a sources link whose page exists but is not type: source", async () => {
+    const { wikiDir, rawDir } = await makeFixture({
+      "concepts/cites.md":
+        '---\ntitle: Cites\nsources:\n  - "[[index]]"\n---\nbody',
+      "index.md": "---\ntitle: Index\ntype: topic\n---\nbody",
+    });
+
+    const report = await checkWikiProvenance(wikiDir, rawDir);
+
+    expect(report.problems).toEqual([
+      "wiki/concepts/cites.md -> [[index]] (does not cite a type: source page)",
+    ]);
+  });
+
   it("reports a sources path that no raw file backs", async () => {
     const { wikiDir, rawDir } = await makeFixture(
       {
@@ -154,6 +168,87 @@ describe("checkWikiProvenance", () => {
 
     expect(report.problems).toEqual([
       "wiki/concepts/cites.md -> sources notes/V/Scratch/temp.md (missing under raw/)",
+    ]);
+  });
+
+  it("reports a path-form entry whose path a hub's origin covers", async () => {
+    const { wikiDir, rawDir } = await makeFixture(
+      {
+        "sources/temp.md":
+          "---\ntype: source\norigin: raw/notes/V/Scratch/temp.md\n---\nbody",
+        "concepts/cites.md":
+          '---\nsources:\n  - "notes/V/Scratch/temp.md"\n---\nbody',
+      },
+      { "notes/V/Scratch/temp.md": "temp body" },
+    );
+
+    const report = await checkWikiProvenance(wikiDir, rawDir);
+
+    expect(report.problems).toEqual([
+      "wiki/concepts/cites.md -> sources notes/V/Scratch/temp.md (path has hub [[temp]] — use the wikilink)",
+    ]);
+  });
+
+  it("reports a citing page's path-form entry but exempts the no-origin hub's own cite", async () => {
+    const { wikiDir, rawDir } = await makeFixture(
+      {
+        "sources/sdn.md":
+          '---\ntype: source\nsources:\n  - "notes/Books/SDN/04. Rate Limiter/Readme.md"\n---\nbody',
+        "concepts/rate-limiting.md":
+          '---\nsources:\n  - "notes/Books/SDN/04. Rate Limiter/Readme.md"\n---\nbody',
+      },
+      { "notes/Books/SDN/04. Rate Limiter/Readme.md": "chapter body" },
+    );
+
+    const report = await checkWikiProvenance(wikiDir, rawDir);
+
+    expect(report.problems).toEqual([
+      "wiki/concepts/rate-limiting.md -> sources notes/Books/SDN/04. Rate Limiter/Readme.md (path has hub [[sdn|04. Rate Limiter]] — use the wikilink)",
+    ]);
+  });
+
+  it("reports a chapter path covered only by a migrated hub's self-wikilink", async () => {
+    const { wikiDir, rawDir } = await makeFixture(
+      {
+        "sources/sdn.md": [
+          "---",
+          "type: source",
+          "origin: raw/notes/Books/SDN/Readme.md",
+          "sources:",
+          '  - "[[sdn]]"',
+          '  - "[[sdn|04. Rate Limiter]]"',
+          "---",
+          "body",
+        ].join("\n"),
+        "concepts/rate-limiting.md":
+          '---\nsources:\n  - "notes/Books/SDN/04. Rate Limiter/Readme.md"\n---\nbody',
+      },
+      {
+        "notes/Books/SDN/Readme.md": "book body",
+        "notes/Books/SDN/04. Rate Limiter/Readme.md": "chapter body",
+      },
+    );
+
+    const report = await checkWikiProvenance(wikiDir, rawDir);
+
+    expect(report.problems).toEqual([
+      "wiki/concepts/rate-limiting.md -> sources notes/Books/SDN/04. Rate Limiter/Readme.md (path has hub [[sdn|04. Rate Limiter]] — use the wikilink)",
+    ]);
+  });
+
+  it("reports a hub's own path-form cite of its covered origin", async () => {
+    const { wikiDir, rawDir } = await makeFixture(
+      {
+        "sources/temp.md":
+          '---\ntype: source\norigin: raw/notes/V/Scratch/temp.md\nsources:\n  - "notes/V/Scratch/temp.md"\n---\nbody',
+      },
+      { "notes/V/Scratch/temp.md": "temp body" },
+    );
+
+    const report = await checkWikiProvenance(wikiDir, rawDir);
+
+    expect(report.problems).toEqual([
+      "wiki/sources/temp.md -> sources notes/V/Scratch/temp.md (path has hub [[temp]] — use the wikilink)",
     ]);
   });
 
@@ -228,8 +323,7 @@ describe("checkWikiProvenance", () => {
       {
         "sources/has.md":
           "---\ntype: source\norigin: raw/notes/V/a.md\n---\nbody",
-        "sources/lacks.md":
-          "---\ntype: source\nsources:\n  - notes/V/a.md\n---\nbody",
+        "sources/lacks.md": "---\ntype: source\n---\nbody",
         "concepts/plain.md": "---\ntitle: Plain\n---\nbody",
       },
       { "notes/V/a.md": "a" },
@@ -300,7 +394,8 @@ describe("check-provenance CLI", () => {
   it("exits 0 with a green summary on a coherent wiki", async () => {
     const { wikiDir, rawDir } = await makeFixture(
       {
-        "sources/S.md": "---\norigin: raw/notes/V/s.md\n---\nbody",
+        "sources/S.md":
+          "---\ntype: source\norigin: raw/notes/V/s.md\n---\nbody",
         "concepts/c.md": '---\nsources:\n  - "[[S]]"\n---\nbody',
       },
       { "notes/V/s.md": "s" },
@@ -336,7 +431,8 @@ describe("check-provenance CLI", () => {
   it("defaults the raw dir to the sibling of the given wiki dir", async () => {
     const { wikiDir, rawDir } = await makeFixture(
       {
-        "sources/S.md": "---\norigin: raw/notes/V/s.md\n---\nbody",
+        "sources/S.md":
+          "---\ntype: source\norigin: raw/notes/V/s.md\n---\nbody",
       },
       { "notes/V/s.md": "s" },
     );
@@ -356,8 +452,7 @@ describe("check-provenance CLI", () => {
   it("exits 0 and prints the backfill warning when a source page lacks origin", async () => {
     const { wikiDir, rawDir } = await makeFixture(
       {
-        "sources/lacks.md":
-          "---\ntype: source\nsources:\n  - notes/V/a.md\n---\nbody",
+        "sources/lacks.md": "---\ntype: source\n---\nbody",
       },
       { "notes/V/a.md": "a" },
     );
@@ -368,7 +463,7 @@ describe("check-provenance CLI", () => {
     expect(
       `${/^\d{4}-\d{2}-\d{2}$/.test(date)}: ${result.code}: ${result.out}`,
     ).toBe(
-      `true: 0: ${paint.green("ok: 1 source link resolves, 0 origins exist across 1 page")}\n${paint.yellow("warning: 1 type: source page lacks origin — run a backfill:")}\n  first preview:  npm run backfill-origin -- --dry-run --date ${date} "${wikiDir}" "${rawDir}"\n  then write:     npm run backfill-origin -- --date ${date} "${wikiDir}" "${rawDir}"\n`,
+      `true: 0: ${paint.green("ok: 0 source links resolve, 0 origins exist across 1 page")}\n${paint.yellow("warning: 1 type: source page lacks origin — run a backfill:")}\n  first preview:  npm run backfill-origin -- --dry-run --date ${date} "${wikiDir}" "${rawDir}"\n  then write:     npm run backfill-origin -- --date ${date} "${wikiDir}" "${rawDir}"\n`,
     );
   });
 
