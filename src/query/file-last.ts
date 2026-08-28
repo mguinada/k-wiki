@@ -2,7 +2,12 @@ import { access, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { runGit } from "../data/git.ts";
 import { parseStatus } from "../ingest/guardrails.ts";
-import { kebab, listWikiPages, readPageFields } from "../wiki/pages.ts";
+import {
+  appendWikiLog,
+  kebab,
+  listWikiPages,
+  readPageFields,
+} from "../wiki/pages.ts";
 import { buildPageIndex, extractWikilinks } from "../wiki-links.ts";
 
 /**
@@ -327,18 +332,6 @@ async function readTextIfExists(path: string): Promise<string> {
   }
 }
 
-/** Append the log entry, creating the log with its heading if absent. */
-function appendLogEntry(logText: string, entry: string): string {
-  const prefix =
-    logText === ""
-      ? "# Wiki Log\n"
-      : logText.endsWith("\n")
-        ? logText
-        : `${logText}\n`;
-
-  return `${prefix}\n${entry}\n`;
-}
-
 /** Warning when a commit touched raw/ or wiki/ after the save.
  *  Throws when git log fails — the caller aborts the whole check,
  *  matching the pre-extraction semantics. */
@@ -521,7 +514,7 @@ export async function fileLastQuery(
 
   await writeFile(
     join(wikiDir, "log.md"),
-    appendLogEntry(logText, logEntry(artifact.question, date)),
+    appendWikiLog(logText, logEntry(artifact.question, date)),
     "utf8",
   );
 

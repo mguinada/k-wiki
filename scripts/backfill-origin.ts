@@ -5,6 +5,7 @@ import { createColors } from "picocolors";
 import { refuseDirectExecution } from "../src/cli/is-main.ts";
 import { assertCleanTree } from "../src/data/git.ts";
 import {
+  appendWikiLog,
   closingFence,
   isWikilinkEntry,
   listWikiPages,
@@ -237,21 +238,17 @@ async function appendLogEntry(
   try {
     prior = await readFile(logPath, "utf8");
   } catch {
-    prior = "# Wiki Log\n";
+    prior = "";
   }
 
   const count = pairs.length;
   const entry = [
-    "",
     `## [${date}] origin-backfill | ${count} page${count === 1 ? "" : "s"}`,
     "",
     ...pairs.map((pair) => `- wiki/${pair.page} -> ${pair.origin}`),
   ].join("\n");
 
-  await writeFile(
-    logPath,
-    `${prior}${prior.endsWith("\n") ? "" : "\n"}${entry}\n`,
-  );
+  await writeFile(logPath, appendWikiLog(prior, entry));
 }
 
 /**

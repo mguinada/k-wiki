@@ -240,3 +240,17 @@ export async function readPageFields(path: string): Promise<PageFields> {
 export function pageReportPath(wikiDir: string, file: string): string {
   return relative(resolve(wikiDir, ".."), join(wikiDir, file));
 }
+
+/** Append one audit entry to wiki/log.md content: the standing
+ *  `# Wiki Log` header is created when the log is absent, and a
+ *  blank line separates entries (guide §12). */
+export function appendWikiLog(prior: string, entry: string): string {
+  const prefix =
+    prior === ""
+      ? "# Wiki Log\n"
+      : prior.endsWith("\n")
+        ? prior
+        : `${prior}\n`;
+
+  return `${prefix}\n${entry}\n`;
+}
