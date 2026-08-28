@@ -4544,7 +4544,11 @@ describe("runWikiIngest --sources", () => {
 
     const prompt = invocation(h, 0).args.at(-1) ?? "";
 
-    expect(["a.md", "b.md"].map((f) => prompt.split("~ Engineering/" + f).length - 1)).toEqual([1, 1]);
+    expect(
+      ["a.md", "b.md"].map(
+        (f) => prompt.split("~ Engineering/" + f).length - 1,
+      ),
+    ).toEqual([1, 1]);
   });
 
   it("sorts explicit-source ~ lines in manifest order", async () => {
@@ -4558,7 +4562,9 @@ describe("runWikiIngest --sources", () => {
 
     const prompt = invocation(h, 0).args.at(-1) ?? "";
 
-    expect(prompt.indexOf("~ Engineering/a.md")).toBeLessThan(prompt.indexOf("~ Engineering/b.md"));
+    expect(prompt.indexOf("~ Engineering/a.md")).toBeLessThan(
+      prompt.indexOf("~ Engineering/b.md"),
+    );
   });
 
   it("announces changed sources since the previous ingestion", async () => {
@@ -4618,7 +4624,7 @@ describe("runWikiIngest --sources", () => {
     expect(digest).not.toContain("sources selected explicitly");
   });
 
-  it('lists the explicitly named source in a scoped prompt', async () => {
+  it("lists the explicitly named source in a scoped prompt", async () => {
     const h = await makeHarness({
       "a.md": "a",
       "new.md": "added since snapshot",
@@ -5344,11 +5350,18 @@ describe("createAgentProgressSink", () => {
   });
 
   it("does nothing on end when not animated", () => {
-    const { sink, written, lines } = makeSink(false);
+    const { sink, written } = makeSink(false);
 
     sink.end();
 
     expect(written).toEqual([]);
+  });
+
+  it("keeps the scroll lines empty on end when not animated", () => {
+    const { sink, lines } = makeSink(false);
+
+    sink.end();
+
     expect(lines).toEqual([]);
   });
 });
@@ -5565,6 +5578,21 @@ console.log("stub report");
     ]);
 
     expect(err).toContain("unknown --sources path(s): Engineering/nope.md");
+  });
+
+  it("sets exit code 1 for an unknown --sources path", async () => {
+    const h = await makeCliHarness();
+
+    await mkdir(dirname(h.snapshotPath), { recursive: true });
+    await writeFile(
+      h.snapshotPath,
+      serializeManifest(manifestWith("Engineering", { "a.md": entry("a") }), {
+        snapshotFor: h.dataRoot,
+      }),
+    );
+
+    await runCli([...cliArgs(h), "--sources", "Engineering/nope.md"]);
+
     expect(process.exitCode).toBe(1);
   });
 
@@ -5578,6 +5606,13 @@ console.log("stub report");
     ]);
 
     expect(err).toContain("run a full ingest first");
+  });
+
+  it("sets exit code 1 when --sources has no snapshot", async () => {
+    const h = await makeCliHarness();
+
+    await runCli([...cliArgs(h), "--sources", "Engineering/a.md"]);
+
     expect(process.exitCode).toBe(1);
   });
 
@@ -5587,6 +5622,13 @@ console.log("stub report");
     const { err } = await runCli([...cliArgs(h), "--sources"]);
 
     expect(err).toContain("--sources needs a path value");
+  });
+
+  it("sets exit code 1 when --sources has no value", async () => {
+    const h = await makeCliHarness();
+
+    await runCli([...cliArgs(h), "--sources"]);
+
     expect(process.exitCode).toBe(1);
   });
 
@@ -5615,12 +5657,24 @@ console.log("stub report");
     expect(err).toContain(
       "cannot read agent settings at /no/such/settings.yml",
     );
+  });
+
+  it("sets exit code 1 when settings cannot be read", async () => {
+    const h = await makeCliHarness();
+    await runCli([
+      "--settings",
+      "/no/such/settings.yml",
+      "--outputs",
+      h.outputsDir,
+      join(h.dataRoot, "raw"),
+    ]);
+
     expect(process.exitCode).toBe(1);
   });
 
   it("runs the stub agent end to end and prints the digest", async () => {
     const h = await makeCliHarness();
-    const { out, err } = await runCli([
+    const { out } = await runCli([
       "--settings",
       h.settingsPath,
       "--outputs",
@@ -5629,8 +5683,44 @@ console.log("stub report");
     ]);
 
     expect(out).toContain("Wiki ingest digest");
+  });
+
+  it("prints the created and updated page counts in the digest", async () => {
+    const h = await makeCliHarness();
+    const { out } = await runCli([
+      "--settings",
+      h.settingsPath,
+      "--outputs",
+      h.outputsDir,
+      join(h.dataRoot, "raw"),
+    ]);
+
     expect(out).toContain("**Wiki pages:** 1 created, 0 updated, 0 deleted");
+  });
+
+  it("announces the full ingest mode on stderr", async () => {
+    const h = await makeCliHarness();
+    const { err } = await runCli([
+      "--settings",
+      h.settingsPath,
+      "--outputs",
+      h.outputsDir,
+      join(h.dataRoot, "raw"),
+    ]);
+
     expect(err).toContain("wiki-ingest: mode full, invoking agent");
+  });
+
+  it("leaves the exit code unset after a successful end-to-end run", async () => {
+    const h = await makeCliHarness();
+    await runCli([
+      "--settings",
+      h.settingsPath,
+      "--outputs",
+      h.outputsDir,
+      join(h.dataRoot, "raw"),
+    ]);
+
     expect(process.exitCode).toBeUndefined();
   });
 
@@ -5651,6 +5741,21 @@ console.log("stub report");
     expect(out).toBe(
       "wiki-ingest: no changed sources since the last ingest; nothing to do",
     );
+  });
+
+  it("leaves the exit code unset for a no-change second run", async () => {
+    const h = await makeCliHarness();
+    const args = [
+      "--settings",
+      h.settingsPath,
+      "--outputs",
+      h.outputsDir,
+      join(h.dataRoot, "raw"),
+    ];
+
+    await runCli(args);
+    await runCli(args);
+
     expect(process.exitCode).toBeUndefined();
   });
 
@@ -5667,6 +5772,20 @@ console.log("stub report");
     ]);
 
     expect(out).toContain("Wiki ingest digest");
+  });
+
+  it("leaves the exit code unset when --timeout is accepted", async () => {
+    const h = await makeCliHarness();
+    await runCli([
+      "--settings",
+      h.settingsPath,
+      "--outputs",
+      h.outputsDir,
+      "--timeout",
+      "1800",
+      join(h.dataRoot, "raw"),
+    ]);
+
     expect(process.exitCode).toBeUndefined();
   });
 
@@ -5695,6 +5814,32 @@ console.log("stub report");
     ]);
 
     expect(out).toContain("slow but fine");
+  });
+
+  it("leaves the exit code unset when the agent finishes under the deadline", async () => {
+    const h = await makeCliHarness();
+    const stub = join(h.dataRoot, "slow-stub.mjs");
+
+    await writeFile(
+      stub,
+      "#!/usr/bin/env node\nawait new Promise((r) => setTimeout(r, 50));\nconsole.log('slow but fine');\n",
+      { mode: 0o755 },
+    );
+    await writeFile(
+      h.settingsPath,
+      `command: ${stub}\nmodel: M\nreasoning: low\n`,
+    );
+
+    await runCli([
+      "--settings",
+      h.settingsPath,
+      "--outputs",
+      h.outputsDir,
+      "--timeout",
+      "5",
+      join(h.dataRoot, "raw"),
+    ]);
+
     expect(process.exitCode).toBeUndefined();
   });
 
@@ -5723,6 +5868,32 @@ console.log("stub report");
     ]);
 
     expect(err).toMatch(/timed out after 1 second/);
+  });
+
+  it("sets exit code 1 when a stalled agent is killed at the deadline", async () => {
+    const h = await makeCliHarness();
+    const stub = join(h.dataRoot, "stalled-stub.mjs");
+
+    await writeFile(
+      stub,
+      "#!/usr/bin/env node\nsetTimeout(() => {}, 60000);\n",
+      { mode: 0o755 },
+    );
+    await writeFile(
+      h.settingsPath,
+      `command: ${stub}\nmodel: M\nreasoning: low\n`,
+    );
+
+    await runCli([
+      "--settings",
+      h.settingsPath,
+      "--outputs",
+      h.outputsDir,
+      "--timeout",
+      "1",
+      join(h.dataRoot, "raw"),
+    ]);
+
     expect(process.exitCode).toBe(1);
   });
 
@@ -5731,6 +5902,12 @@ console.log("stub report");
     const { err } = await runCli([...cliArgs(h), "--bogus"]);
 
     expect(err).toContain("wiki-ingest: unknown option");
+  });
+
+  it("sets exit code 1 for an unknown option", async () => {
+    const h = await makeCliHarness();
+    await runCli([...cliArgs(h), "--bogus"]);
+
     expect(process.exitCode).toBe(1);
   });
 
@@ -5762,6 +5939,17 @@ console.log("stub report");
     ]);
 
     expect(err).toContain("needs a path value");
+  });
+
+  it("sets exit code 1 when --settings has no value", async () => {
+    const h = await makeCliHarness();
+    await runCli([
+      "--outputs",
+      h.outputsDir,
+      join(h.dataRoot, "raw"),
+      "--settings",
+    ]);
+
     expect(process.exitCode).toBe(1);
   });
 
@@ -5770,6 +5958,12 @@ console.log("stub report");
     const { err } = await runCli([...cliArgs(h), "one", "two"]);
 
     expect(err).toContain("expected at most one <raw-dir>");
+  });
+
+  it("sets exit code 1 for more than one positional argument", async () => {
+    const h = await makeCliHarness();
+    await runCli([...cliArgs(h), "one", "two"]);
+
     expect(process.exitCode).toBe(1);
   });
 
@@ -5783,6 +5977,17 @@ console.log("stub report");
     ]);
 
     expect(err).toContain("--outputs needs a path value");
+  });
+
+  it("sets exit code 1 for --outputs without a value", async () => {
+    const h = await makeCliHarness();
+    await runCli([
+      "--settings",
+      h.settingsPath,
+      join(h.dataRoot, "raw"),
+      "--outputs",
+    ]);
+
     expect(process.exitCode).toBe(1);
   });
 
@@ -5790,6 +5995,11 @@ console.log("stub report");
     const out = (await runCli(["--help"])).out;
 
     expect(out).toContain("--timeout <secs>");
+  });
+
+  it("documents the --timeout default of 1800 seconds in the help text", async () => {
+    const out = (await runCli(["--help"])).out;
+
     expect(out).toContain("1800");
   });
 
@@ -5800,6 +6010,12 @@ console.log("stub report");
     expect(err).toContain(
       "--timeout needs a positive integer number of seconds",
     );
+  });
+
+  it("sets exit code 1 for --timeout without a value", async () => {
+    const h = await makeCliHarness();
+    await runCli([...cliArgs(h), "--timeout"]);
+
     expect(process.exitCode).toBe(1);
   });
 
@@ -5810,6 +6026,12 @@ console.log("stub report");
     expect(err).toContain(
       "--timeout needs a positive integer number of seconds",
     );
+  });
+
+  it("sets exit code 1 for --timeout zero", async () => {
+    const h = await makeCliHarness();
+    await runCli([...cliArgs(h), "--timeout", "0"]);
+
     expect(process.exitCode).toBe(1);
   });
 
@@ -5820,6 +6042,12 @@ console.log("stub report");
     expect(err).toContain(
       "--timeout needs a positive integer number of seconds",
     );
+  });
+
+  it("sets exit code 1 for --timeout negative", async () => {
+    const h = await makeCliHarness();
+    await runCli([...cliArgs(h), "--timeout", "-5"]);
+
     expect(process.exitCode).toBe(1);
   });
 
@@ -5830,6 +6058,12 @@ console.log("stub report");
     expect(err).toContain(
       "--timeout needs a positive integer number of seconds",
     );
+  });
+
+  it("sets exit code 1 for --timeout non-numeric", async () => {
+    const h = await makeCliHarness();
+    await runCli([...cliArgs(h), "--timeout", "abc"]);
+
     expect(process.exitCode).toBe(1);
   });
 
@@ -5840,6 +6074,12 @@ console.log("stub report");
     expect(err).toContain(
       "--timeout needs a positive integer number of seconds",
     );
+  });
+
+  it("sets exit code 1 for --timeout with trailing junk", async () => {
+    const h = await makeCliHarness();
+    await runCli([...cliArgs(h), "--timeout", "5x"]);
+
     expect(process.exitCode).toBe(1);
   });
 
@@ -5952,6 +6192,19 @@ describe("formatDigest structure", () => {
     );
 
     expect(digest).toContain("\n## Guardrails failed\n");
+  });
+
+  it("states that the run was auto-reverted in the guardrails failure", () => {
+    const digest = formatDigest(
+      digestRun({
+        guardrailFailure: {
+          check: 1,
+          name: "immutability",
+          problems: ["raw/x changed by the run"],
+        },
+      }),
+    );
+
     expect(digest).toContain(
       "tripped; the run was auto-reverted to the pre-run commit.",
     );
@@ -5987,22 +6240,61 @@ describe("formatDigest structure", () => {
 describe("runWikiIngest failure reporting detail", () => {
   it("names the check, the revert target, and the problems in the error", async () => {
     const h = await makeHarness({ "a.md": "a" });
-    const progress: string[] = [];
 
     const error = await runWikiIngest({
       ...optionsFor(h),
       runAgent: frontmatterSaboteur("bad.md"),
-      onProgress: (message) => progress.push(message),
     }).then(
       () => undefined,
       (cause: unknown) => cause,
     );
 
     expect(error).toBeInstanceOf(Error);
+  });
+
+  it("formats the guardrail error message with the revert target", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    const error = await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: frontmatterSaboteur("bad.md"),
+    }).then(
+      () => undefined,
+      (cause: unknown) => cause,
+    );
+
     expect((error as Error).message).toMatch(
       /^guardrail check 2 \(frontmatter\) failed; run reverted to [0-9a-f]{8} — wiki\/bad\.md: no frontmatter block$/,
     );
+  });
+
+  it("leaves the cause unset for a guardrail failure", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    const error = await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: frontmatterSaboteur("bad.md"),
+    }).then(
+      () => undefined,
+      (cause: unknown) => cause,
+    );
+
     expect((error as Error).cause).toBeUndefined();
+  });
+
+  it("reports the guardrail failure on progress", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const progress: string[] = [];
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: frontmatterSaboteur("bad.md"),
+      onProgress: (message) => progress.push(message),
+    }).then(
+      () => undefined,
+      () => undefined,
+    );
+
     expect(progress.join("\n")).toMatch(
       /^wiki-ingest: guardrail check 2 \(frontmatter\) failed — reverting to [0-9a-f]{8}$/m,
     );
@@ -6046,7 +6338,7 @@ describe("runWikiIngest failure reporting detail", () => {
     });
   });
 
-  it("states the mode and prompt file in the failure digest", async () => {
+  it("rejects the run when the agent sabotages the frontmatter", async () => {
     const h = await makeHarness({ "a.md": "a" });
 
     await expect(
@@ -6055,6 +6347,18 @@ describe("runWikiIngest failure reporting detail", () => {
         runAgent: frontmatterSaboteur("bad.md"),
       }),
     ).rejects.toThrow();
+  });
+
+  it("states the mode in the failure digest", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: frontmatterSaboteur("bad.md"),
+    }).then(
+      () => undefined,
+      () => undefined,
+    );
 
     const digest = await readFile(
       join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"),
@@ -6062,7 +6366,43 @@ describe("runWikiIngest failure reporting detail", () => {
     );
 
     expect(digest).toContain("**Mode:** full");
+  });
+
+  it("names the prompt file in the failure digest", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: frontmatterSaboteur("bad.md"),
+    }).then(
+      () => undefined,
+      () => undefined,
+    );
+
+    const digest = await readFile(
+      join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"),
+      "utf8",
+    );
+
     expect(digest).toContain("prompt `prompts/ingest.md`");
+  });
+
+  it("reports the wiki pages as unavailable in the failure digest", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: frontmatterSaboteur("bad.md"),
+    }).then(
+      () => undefined,
+      () => undefined,
+    );
+
+    const digest = await readFile(
+      join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"),
+      "utf8",
+    );
+
     expect(digest).toContain(
       "**Wiki pages:** unavailable — run reverted — guardrail check 2 (frontmatter) tripped",
     );
@@ -6075,29 +6415,61 @@ describe("runWikiIngest failure reporting detail", () => {
       throw new Error("agent exited with code 9");
     };
 
-    await expect(
-      runWikiIngest({
-        ...optionsFor(h),
-        runAgent: failing,
-        onProgress: (message) => progress.push(message),
-      }),
-    ).rejects.toThrow("agent exited with code 9");
+    await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: failing,
+      onProgress: (message) => progress.push(message),
+    }).then(
+      () => undefined,
+      () => undefined,
+    );
 
     expect(progress).toContain(
       "wiki-ingest: agent failed — guardrails passed, changes kept",
     );
   });
+
+  it("rejects a kept-changes agent failure with the agent error", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const failing: AgentRunner = async () => {
+      throw new Error("agent exited with code 9");
+    };
+
+    await expect(
+      runWikiIngest({
+        ...optionsFor(h),
+        runAgent: failing,
+      }),
+    ).rejects.toThrow("agent exited with code 9");
+  });
 });
 
 describe("error causes and sink prefixes", () => {
-  it("attaches the read error as the cause of a settings failure", async () => {
+  it("rejects settings loading with an Error", async () => {
     const error = await loadAgentSettings("/no/such/settings.yml").then(
       () => undefined,
       (cause: unknown) => cause,
     );
 
     expect(error).toBeInstanceOf(Error);
+  });
+
+  it("attaches the read error as the cause of a settings failure", async () => {
+    const error = await loadAgentSettings("/no/such/settings.yml").then(
+      () => undefined,
+      (cause: unknown) => cause,
+    );
+
     expect((error as Error).cause).toBeInstanceOf(Error);
+  });
+
+  it("rejects prompt loading with an Error", async () => {
+    const error = await readPrompt("/no/such/prompt.md").then(
+      () => undefined,
+      (cause: unknown) => cause,
+    );
+
+    expect(error).toBeInstanceOf(Error);
   });
 
   it("attaches the read error as the cause of a prompt failure", async () => {
@@ -6106,7 +6478,6 @@ describe("error causes and sink prefixes", () => {
       (cause: unknown) => cause,
     );
 
-    expect(error).toBeInstanceOf(Error);
     expect((error as Error).cause).toBeInstanceOf(Error);
   });
 
@@ -6148,14 +6519,29 @@ describe("runWikiIngest dashboard hook (issue #73)", () => {
     const result = await runWikiIngest(optionsFor(h));
 
     expect(result.status).toBe("ran");
+  });
+
+  it("renders the dashboard as an HTML document after a successful run", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    await runWikiIngest(optionsFor(h));
 
     const html = await readFile(join(h.dataRoot, "dashboard.html"), "utf8");
 
     expect(html.startsWith("<!DOCTYPE html>")).toBe(true);
+  });
+
+  it("marks the regenerated dashboard as generated", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    await runWikiIngest(optionsFor(h));
+
+    const html = await readFile(join(h.dataRoot, "dashboard.html"), "utf8");
+
     expect(html).toContain("generated");
   });
 
-  it("leaves a stale dashboard untouched when a guardrail trips", async () => {
+  it("rejects the run when a guardrail trips and a stale dashboard exists", async () => {
     const h = await makeHarness({ "a.md": "a" });
 
     await writeFile(join(h.dataRoot, "dashboard.html"), "STALE\n");
@@ -6166,6 +6552,20 @@ describe("runWikiIngest dashboard hook (issue #73)", () => {
         runAgent: frontmatterSaboteur("bad.md"),
       }),
     ).rejects.toThrow("guardrail check 2 (frontmatter)");
+  });
+
+  it("leaves a stale dashboard untouched when a guardrail trips", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    await writeFile(join(h.dataRoot, "dashboard.html"), "STALE\n");
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: frontmatterSaboteur("bad.md"),
+    }).then(
+      () => undefined,
+      () => undefined,
+    );
 
     const html = await readFile(join(h.dataRoot, "dashboard.html"), "utf8");
 
@@ -6257,7 +6657,7 @@ describe("wikiPages vanished untracked detection", () => {
 });
 
 describe("gitignore guard progress", () => {
-  it("reports each ignore entry the run appended", async () => {
+  it("reports the manifest ignore entry the run appended", async () => {
     const h = await makeHarness({ "a.md": "a" });
     const messages: string[] = [];
     const options = {
@@ -6272,6 +6672,18 @@ describe("gitignore guard progress", () => {
         m.includes("ignoring outputs/last-ingested-manifest.json"),
       ),
     ).toBe(true);
+  });
+
+  it("reports the dashboard ignore entry the run appended", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const messages: string[] = [];
+    const options = {
+      ...optionsFor(h),
+      onProgress: (m: string) => messages.push(m),
+    };
+
+    await runWikiIngest(options);
+
     expect(messages.some((m) => m.includes("ignoring dashboard.html"))).toBe(
       true,
     );
