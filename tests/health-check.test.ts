@@ -1124,3 +1124,19 @@ describe("checkRaw freshness edges (issue #74)", () => {
     expect(endings.map((sha) => staleSha(sha) !== sha)).toEqual([true, true]);
   });
 });
+
+describe("orphan scan ordering", () => {
+  it("lists orphans sorted by path regardless of directory read order", async () => {
+    const rawDir = await makeRawDir();
+
+    await projectNote(rawDir, "Documents", "zz-last.md", NOTE);
+    await projectNote(rawDir, "Documents", "aa-first.md", NOTE);
+    await projectNote(rawDir, "Documents", "mm-middle.md", NOTE);
+
+    expect((await checkRaw(rawDir)).problems).toEqual([
+      "notes/Documents/aa-first.md: orphan (no manifest entry)",
+      "notes/Documents/mm-middle.md: orphan (no manifest entry)",
+      "notes/Documents/zz-last.md: orphan (no manifest entry)",
+    ]);
+  });
+});

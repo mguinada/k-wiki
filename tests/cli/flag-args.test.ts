@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { flagValueError } from "../../src/cli/flag-args.ts";
+import {
+  flagValueError,
+  isIsoDate,
+  readDateFlag,
+  timeoutArgError,
+} from "../../src/cli/flag-args.ts";
 
 function values(entries: [string, string | undefined][] = []) {
   return new Map(entries);
@@ -84,5 +89,91 @@ describe("flagValueError", () => {
         ["/notes/a.md"],
       ),
     ).toBeUndefined();
+  });
+});
+
+describe("timeoutArgError", () => {
+  it("is undefined for a positive integer of seconds", () => {
+    expect(timeoutArgError("5")).toBeUndefined();
+  });
+
+  it("rejects undefined (the caller must only pass a present flag)", () => {
+    expect(timeoutArgError(undefined)).toBe(
+      "--timeout needs a positive integer number of seconds",
+    );
+  });
+
+  it("rejects zero", () => {
+    expect(timeoutArgError("0")).toBe(
+      "--timeout needs a positive integer number of seconds",
+    );
+  });
+
+  it("rejects a leading zero", () => {
+    expect(timeoutArgError("05")).toBe(
+      "--timeout needs a positive integer number of seconds",
+    );
+  });
+
+  it("rejects non-numeric text", () => {
+    expect(timeoutArgError("soon")).toBe(
+      "--timeout needs a positive integer number of seconds",
+    );
+  });
+
+  it("rejects an empty value", () => {
+    expect(timeoutArgError("")).toBe(
+      "--timeout needs a positive integer number of seconds",
+    );
+  });
+});
+
+describe("readDateFlag", () => {
+  it("defaults to today's calendar date when the flag is absent", () => {
+    const { date, consumed } = readDateFlag(["wiki"]);
+
+    expect(date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect([...consumed]).toEqual([]);
+  });
+
+  it("reads the flag's value and marks both indexes consumed", () => {
+    const { date, consumed } = readDateFlag([
+      "wiki",
+      "--date",
+      "2026-08-28",
+      "raw",
+    ]);
+
+    expect(date).toBe("2026-08-28");
+    expect([...consumed]).toEqual([1, 2]);
+  });
+
+  it("yields an undefined date when the flag ends argv", () => {
+    const { date, consumed } = readDateFlag(["--date"]);
+
+    expect(date).toBeUndefined();
+    expect([...consumed]).toEqual([0, 1]);
+  });
+});
+
+describe("isIsoDate", () => {
+  it("accepts a calendar-shaped value", () => {
+    expect(isIsoDate("2026-08-28")).toBe(true);
+  });
+
+  it("rejects undefined", () => {
+    expect(isIsoDate(undefined)).toBe(false);
+  });
+
+  it("rejects an empty value", () => {
+    expect(isIsoDate("")).toBe(false);
+  });
+
+  it("rejects slash-separated dates", () => {
+    expect(isIsoDate("2026/08/28")).toBe(false);
+  });
+
+  it("rejects a short year", () => {
+    expect(isIsoDate("26-08-28")).toBe(false);
   });
 });

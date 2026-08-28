@@ -8,6 +8,7 @@ import {
   capturePreRunState,
   checkWikiFrontmatter,
   parseStatus,
+  renameOriginsOf,
   revertToPreRun,
   runGuardrails,
   statusSince,
@@ -1450,5 +1451,23 @@ describe("statusSince", () => {
     expect(
       (await statusSince(dataRoot, process.env, pre, "wiki")).changed,
     ).toEqual(["wiki/a.md", "wiki/m.md"]);
+  });
+});
+
+describe("renameOriginsOf", () => {
+  it("collects only the origins of rename entries", () => {
+    const status = parseStatus(
+      "R  wiki/old.md -> wiki/new.md\n M wiki/index.md\n?? wiki/fresh.md\nR  wiki/x.md -> wiki/y.md\n",
+    );
+
+    expect(renameOriginsOf(status)).toEqual(
+      new Set(["wiki/old.md", "wiki/x.md"]),
+    );
+  });
+
+  it("is empty when no entry carries an origin", () => {
+    const status = parseStatus(" M wiki/index.md\n?? wiki/fresh.md\n");
+
+    expect(renameOriginsOf(status)).toEqual(new Set());
   });
 });

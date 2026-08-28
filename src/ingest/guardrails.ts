@@ -559,8 +559,8 @@ function outsidePaths(entry: StatusEntry): string[] {
 }
 
 /** The rename origins of a status snapshot: the set of `origin`
- *  paths pre-run renames recorded. */
-function renameOriginsOf(status: readonly StatusEntry[]): Set<string> {
+ *  paths pre-run renames recorded. Exported as a direct test seam. */
+export function renameOriginsOf(status: readonly StatusEntry[]): Set<string> {
   return new Set(
     status.flatMap((entry) =>
       entry.origin === undefined ? [] : [entry.origin],

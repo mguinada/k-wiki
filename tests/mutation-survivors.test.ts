@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -144,5 +144,77 @@ describe("mutation-survivors CLI", () => {
     expect(result.code).toBe(0);
     expect(result.err).toBe("");
     expect(result.out).toContain("Usage: mutation-survivors");
+  });
+
+  it("exits 1 naming the drifted shape when the report is valid JSON but not a Stryker report", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutsurv-"));
+
+    tempDirs.push(dir);
+    await mkdir(join(dir, "reports", "mutation"), { recursive: true });
+    await writeFile(
+      join(dir, "reports", "mutation", "mutation.json"),
+      '{"config": {}}',
+    );
+
+    const result = await runNode([], dir);
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("unexpected shape");
+  });
+});
+
+describe("parseReport shape edges", () => {
+  it("rejects a report whose files value is null", () => {
+    expect(() => parseReport('{"files": null}')).toThrow(/unexpected shape/);
+  });
+
+  it("rejects a report whose files value is not an object", () => {
+    expect(() => parseReport('{"files": "x"}')).toThrow(/unexpected shape/);
+  });
+
+  it("rejects a file entry that is null", () => {
+    expect(() => parseReport('{"files": {"src/a.ts": null}}')).toThrow(
+      /unexpected shape/,
+    );
+  });
+
+  it("rejects a file entry that is not an object", () => {
+    expect(() => parseReport('{"files": {"src/a.ts": 42}}')).toThrow(
+      /unexpected shape/,
+    );
+  });
+
+  it("rejects a file entry whose mutants is not an array", () => {
+    expect(() =>
+      parseReport('{"files": {"src/a.ts": {"mutants": "x"}}}'),
+    ).toThrow(/unexpected shape/);
+  });
+});
+
+describe("actionableLines file grouping", () => {
+  it("orders same-file mutants by ascending line", () => {
+    const lines = actionableLines({
+      files: {
+        "src/a.ts": {
+          mutants: [
+            {
+              mutatorName: "Second",
+              status: "Survived",
+              location: { start: { line: 20 } },
+            },
+            {
+              mutatorName: "First",
+              status: "Survived",
+              location: { start: { line: 5 } },
+            },
+          ],
+        },
+      },
+    });
+
+    expect(lines).toEqual([
+      "Survived  src/a.ts:5  First",
+      "Survived  src/a.ts:20  Second",
+    ]);
   });
 });
