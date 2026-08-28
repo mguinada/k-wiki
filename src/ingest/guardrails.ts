@@ -327,15 +327,7 @@ export async function capturePreRunState(
     );
   }
 
-  const status = parseStatus(
-    (
-      await runGit(
-        dataRoot,
-        ["-c", "core.quotePath=false", "status", "--porcelain", "-uall"],
-        env,
-      )
-    ).stdout,
-  );
+  const status = await porcelainStatus(dataRoot, env);
   const contents = new Map<string, Buffer | null>();
   const hashes = new Map<string, string>();
 
