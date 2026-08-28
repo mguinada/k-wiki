@@ -55,6 +55,12 @@ describe("flagValueError", () => {
     );
   });
 
+  it("rejects --timeout with trailing junk", () => {
+    expect(flagValueError(values([["--timeout", "5s"]]))).toBe(
+      "--timeout needs a positive integer number of seconds",
+    );
+  });
+
   it("reports a missing --sources value", () => {
     expect(flagValueError(values(), ["/notes/a.md", undefined])).toBe(
       "--sources needs a path value",
