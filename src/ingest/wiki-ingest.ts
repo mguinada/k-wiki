@@ -1473,35 +1473,54 @@ async function readSnapshot(
 
 const SNAPSHOT_FILENAME = "last-ingested-manifest.json";
 
+/** Append `entry` under `comment` to the data repo's .gitignore;
+ *  false when an accepted form of the entry is already present.
+ *  Shared by the snapshot and dashboard ignore guards. */
+async function appendGitignoreEntry(
+  dataRoot: string,
+  entry: string,
+  accepted: readonly string[],
+  comment: string,
+): Promise<boolean> {
+  const ignorePath = join(dataRoot, ".gitignore");
+  const existing = (await readManifestText(ignorePath)) ?? "";
+
+  if (existing.split("\n").some((line) => accepted.includes(line.trim()))) {
+    return false;
+  }
+
+  const body =
+    existing === "" || existing.endsWith("\n") ? existing : `${existing}\n`;
+
+  await writeFile(ignorePath, `${body}${comment}\n${entry}\n`, "utf8");
+
+  return true;
+}
+
 /**
- * Keep the snapshot out of the data repo's history (issue #112): it
- * is per-instance state stamped with this machine's data root, and
- * the sync cycle's commit stages outputs/ wholesale. Appends the
- * ignore entry when the data repo's .gitignore lacks it.
+ * Keep the manifest snapshot out of the data repo's history (issue
+ * #112): the snapshot is per-instance state, and a commit or clean
+ * must never take it. Appends the ignore entry when the data repo's
+ * .gitignore lacks it.
  */
 async function ensureSnapshotIgnored(
   dataRoot: string,
   onProgress: (message: string) => void,
 ): Promise<void> {
   const entry = `outputs/${SNAPSHOT_FILENAME}`;
-  const ignorePath = join(dataRoot, ".gitignore");
-  const existing = (await readManifestText(ignorePath)) ?? "";
 
-  if (existing.split("\n").some((line) => line.trim() === entry)) {
-    return;
+  if (
+    await appendGitignoreEntry(
+      dataRoot,
+      entry,
+      [entry],
+      "# wiki-ingest manifest snapshot: per-instance state, never committed (issue #112)",
+    )
+  ) {
+    onProgress(
+      `wiki-ingest: ignoring ${entry} in the data repo (${join(dataRoot, ".gitignore")}) so no commit or clean can take the snapshot`,
+    );
   }
-
-  const body =
-    existing === "" || existing.endsWith("\n") ? existing : `${existing}\n`;
-
-  await writeFile(
-    ignorePath,
-    `${body}# wiki-ingest manifest snapshot: per-instance state, never committed (issue #112)\n${entry}\n`,
-    "utf8",
-  );
-  onProgress(
-    `wiki-ingest: ignoring ${entry} in the data repo (${ignorePath}) so no commit or clean can take the snapshot`,
-  );
 }
 
 /**
@@ -1515,26 +1534,19 @@ async function ensureDashboardIgnored(
   onProgress: (message: string) => void,
 ): Promise<void> {
   const entry = "dashboard.html";
-  const ignorePath = join(dataRoot, ".gitignore");
-  const existing = (await readManifestText(ignorePath)) ?? "";
 
   if (
-    existing
-      .split("\n")
-      .some((line) => line.trim() === entry || line.trim() === `/${entry}`)
+    await appendGitignoreEntry(
+      dataRoot,
+      entry,
+      [entry, `/${entry}`],
+      "# static dashboard: regenerated per checkout, never committed (issue #73)",
+    )
   ) {
-    return;
+    onProgress(
+      `wiki-ingest: ignoring ${entry} in the data repo (${join(dataRoot, ".gitignore")})`,
+    );
   }
-
-  const body =
-    existing === "" || existing.endsWith("\n") ? existing : `${existing}\n`;
-
-  await writeFile(
-    ignorePath,
-    `${body}# static dashboard: regenerated per checkout, never committed (issue #73)\n${entry}\n`,
-    "utf8",
-  );
-  onProgress(`wiki-ingest: ignoring ${entry} in the data repo (${ignorePath})`);
 }
 
 /**
