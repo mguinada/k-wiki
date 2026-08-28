@@ -84,7 +84,7 @@ function fixtureKpis() {
 }
 
 describe("renderDashboard", () => {
-  it("emits a complete HTML document", () => {
+  it("starts the document with a DOCTYPE", () => {
     const html = renderDashboard(fixtureKpis(), {
       generatedAt: NOW,
       head: "abee7c4",
@@ -92,6 +92,15 @@ describe("renderDashboard", () => {
     });
 
     expect(html.startsWith("<!DOCTYPE html>")).toBe(true);
+  });
+
+  it("ends the document with a closing html tag", () => {
+    const html = renderDashboard(fixtureKpis(), {
+      generatedAt: NOW,
+      head: "abee7c4",
+      dataRoot: "~/Lab/k-wiki-data",
+    });
+
     expect(html.trimEnd().endsWith("</html>")).toBe(true);
   });
 
@@ -103,11 +112,29 @@ describe("renderDashboard", () => {
     });
 
     expect(html).not.toMatch(/(src|href)\s*=\s*["']?(https?:|file:|\/\/)/i);
+  });
+
+  it("links no external stylesheet", () => {
+    const html = renderDashboard(fixtureKpis(), {
+      generatedAt: NOW,
+      head: "abee7c4",
+      dataRoot: "~/Lab/k-wiki-data",
+    });
+
     expect(html).not.toMatch(/<link\b/i);
+  });
+
+  it("imports no external css", () => {
+    const html = renderDashboard(fixtureKpis(), {
+      generatedAt: NOW,
+      head: "abee7c4",
+      dataRoot: "~/Lab/k-wiki-data",
+    });
+
     expect(html).not.toMatch(/@import/i);
   });
 
-  it("stamps the generation timestamp and data-repo HEAD", () => {
+  it("stamps the generation date", () => {
     const html = renderDashboard(fixtureKpis(), {
       generatedAt: NOW,
       head: "abee7c4",
@@ -115,6 +142,15 @@ describe("renderDashboard", () => {
     });
 
     expect(html).toContain("2026-09-01");
+  });
+
+  it("stamps the data-repo HEAD", () => {
+    const html = renderDashboard(fixtureKpis(), {
+      generatedAt: NOW,
+      head: "abee7c4",
+      dataRoot: "~/Lab/k-wiki-data",
+    });
+
     expect(html).toContain("abee7c4");
   });
 
@@ -156,6 +192,15 @@ describe("renderDashboard", () => {
     });
 
     expect(html).toMatch(/<button[^>]*id="theme-toggle"/);
+  });
+
+  it("overrides the preference through localStorage", () => {
+    const html = renderDashboard(fixtureKpis(), {
+      generatedAt: NOW,
+      head: "abee7c4",
+      dataRoot: "~/Lab/k-wiki-data",
+    });
+
     expect(html).toContain("localStorage");
   });
 
@@ -169,7 +214,25 @@ describe("renderDashboard", () => {
     expect(html).toContain(
       '<span class="stat-value">1</span><span class="stat-label">un-ingested sources',
     );
+  });
+
+  it("marks KPIs that need review", () => {
+    const html = renderDashboard(fixtureKpis(), {
+      generatedAt: NOW,
+      head: "abee7c4",
+      dataRoot: "~/Lab/k-wiki-data",
+    });
+
     expect(html).toContain("needs-review");
+  });
+
+  it("lists the orphan page path", () => {
+    const html = renderDashboard(fixtureKpis(), {
+      generatedAt: NOW,
+      head: "abee7c4",
+      dataRoot: "~/Lab/k-wiki-data",
+    });
+
     expect(html).toContain("concepts/agent-evals.md");
   });
 
@@ -181,6 +244,15 @@ describe("renderDashboard", () => {
     });
 
     expect(html).toContain("<svg");
+  });
+
+  it("renders no chart images", () => {
+    const html = renderDashboard(fixtureKpis(), {
+      generatedAt: NOW,
+      head: "abee7c4",
+      dataRoot: "~/Lab/k-wiki-data",
+    });
+
     expect(html).not.toMatch(/<img\b/i);
   });
 
@@ -222,6 +294,21 @@ describe("renderDashboard", () => {
     });
 
     expect(html).toContain("a&lt;b&gt;&amp;c.md");
+  });
+
+  it("emits no unescaped orphan path", () => {
+    const kpis = fixtureKpis();
+    const poisoned = {
+      ...kpis,
+      orphans: ["concepts/a<b>&c.md"],
+    };
+
+    const html = renderDashboard(poisoned, {
+      generatedAt: NOW,
+      head: "abee7c4",
+      dataRoot: "~/Lab/k-wiki-data",
+    });
+
     expect(html).not.toContain("a<b>&c.md");
   });
 
@@ -269,8 +356,35 @@ describe("renderDashboard glossary and added KPIs", () => {
     });
 
     expect(html).toContain('class="info"');
+  });
+
+  it("renders the tip popup next to the icon", () => {
+    const html = renderDashboard(fixtureKpis(), {
+      generatedAt: NOW,
+      head: "abee7c4",
+      dataRoot: "~/Lab/k-wiki-data",
+    });
+
     expect(html).toContain('class="tip"');
+  });
+
+  it("shows the tip on hover", () => {
+    const html = renderDashboard(fixtureKpis(), {
+      generatedAt: NOW,
+      head: "abee7c4",
+      dataRoot: "~/Lab/k-wiki-data",
+    });
+
     expect(html).toContain(".info:hover .tip");
+  });
+
+  it("shows the tip on keyboard focus", () => {
+    const html = renderDashboard(fixtureKpis(), {
+      generatedAt: NOW,
+      head: "abee7c4",
+      dataRoot: "~/Lab/k-wiki-data",
+    });
+
     expect(html).toContain(".info:focus-visible .tip");
   });
 
@@ -284,6 +398,16 @@ describe("renderDashboard glossary and added KPIs", () => {
     const tips = [...html.matchAll(/<span class="tip">([^<]+)<\/span>/g)];
 
     expect(tips.length).toBeGreaterThanOrEqual(8);
+  });
+
+  it("explains every glossary tip", () => {
+    const html = renderDashboard(fixtureKpis(), {
+      generatedAt: NOW,
+      head: "abee7c4",
+      dataRoot: "~/Lab/k-wiki-data",
+    });
+
+    const tips = [...html.matchAll(/<span class="tip">([^<]+)<\/span>/g)];
 
     for (const tip of tips) {
       expect((tip[1] ?? "").length).toBeGreaterThan(10);
@@ -298,6 +422,15 @@ describe("renderDashboard glossary and added KPIs", () => {
     );
 
     expect(html).toContain("Missing pages");
+  });
+
+  it("lists the missing page target", () => {
+    const kpis = fixtureKpis();
+    const html = renderDashboard(
+      { ...kpis, missingPages: [{ target: "eval-harness", wantedBy: 3 }] },
+      { generatedAt: NOW, head: "abee7c4", dataRoot: "~/Lab/k-wiki-data" },
+    );
+
     expect(html).toContain("eval-harness");
   });
 
@@ -309,6 +442,15 @@ describe("renderDashboard glossary and added KPIs", () => {
     });
 
     expect(html).toContain("Source rot");
+  });
+
+  it("renders the 31–90-day source-rot bucket", () => {
+    const html = renderDashboard(fixtureKpis(), {
+      generatedAt: NOW,
+      head: "abee7c4",
+      dataRoot: "~/Lab/k-wiki-data",
+    });
+
     expect(html).toContain("31–90 days");
   });
 
@@ -320,6 +462,15 @@ describe("renderDashboard glossary and added KPIs", () => {
     });
 
     expect(html).toContain("Most-cited");
+  });
+
+  it("lists the most-cited source path", () => {
+    const html = renderDashboard(fixtureKpis(), {
+      generatedAt: NOW,
+      head: "abee7c4",
+      dataRoot: "~/Lab/k-wiki-data",
+    });
+
     expect(html).toContain("notes/Engineering/evals.md");
   });
 
