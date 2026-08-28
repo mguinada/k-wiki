@@ -182,7 +182,9 @@ async function loadVaultEntries(
     return parseManifest(manifestText, displayPath(manifestPath, rawDir))
       .vaults;
   } catch (cause) {
-    problems.push((cause as Error).message);
+    problems.push(
+      cause instanceof Error ? cause.message : String(cause),
+    );
 
     return {};
   }
