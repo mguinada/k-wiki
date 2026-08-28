@@ -940,12 +940,14 @@ export interface WikiPages {
   readonly unavailable: string | undefined;
 }
 
-/** One completed run, everything the digest reports. */
+/** A created or updated page citing exactly one source — the
+ *  mechanical unverified frontier (issue #79). */
 export interface UnverifiedFrontierPage {
   readonly path: string;
   readonly sources: readonly string[];
 }
 
+/** One completed run, everything the digest reports. */
 export interface IngestRun {
   readonly startedAt: Date;
   readonly mode: "full" | "incremental" | "expunge";
@@ -1154,7 +1156,8 @@ export type AgentRunner = (
 /** The agent gets 30 minutes by default; a hung run must not hang the wrapper. */
 export const AGENT_TIMEOUT_MS = 30 * 60_000;
 
-/** Liveness line on the progress sink while the agent runs. */
+/** Interval for the progress-sink liveness line while the agent
+ *  runs (see AGENT_HEARTBEAT_PREFIX for the line's wording). */
 export const HEARTBEAT_MS = 60_000;
 
 /** Heartbeat sentence prefixes (plain or expunge-labeled); the TTY
