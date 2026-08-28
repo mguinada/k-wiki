@@ -596,6 +596,22 @@ describe("k-wiki CLI", () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it("separates the unknown-command menu with commas", async () => {
+    const { err } = await runKWiki(process.cwd(), ["ingest", "q"]);
+
+    expect(err).toContain(
+      "the commands are: query, status, list, read, health",
+    );
+  });
+
+  it("prints the command menu joined by pipes when no command is given", async () => {
+    const { err } = await runKWiki(process.cwd(), []);
+
+    expect(err).toContain(
+      "k-wiki query | k-wiki status | k-wiki list | k-wiki read | k-wiki health",
+    );
+  });
+
   it("exits 1 when the question is missing", async () => {
     const { err } = await runKWiki(process.cwd(), ["query"]);
 
@@ -949,6 +965,28 @@ console.log("An answer.");
       readFile(join(h.outputsDir, "last-query.md")),
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
+
+  it("clears the animated progress line when the query fails", async () => {
+    const h = await makeBoundProject();
+    const failingStub = join(h.dataRoot, "failing-agent.mjs");
+
+    await writeFile(
+      failingStub,
+      "#!/usr/bin/env node\nsetTimeout(() => process.exit(3), 300);\n",
+      { mode: 0o755 },
+    );
+    await writeFile(
+      join(h.checkout, "settings.yml"),
+      `command: ${failingStub}\nmodel: M\nreasoning: low\n`,
+    );
+
+    const { written } = await runKWikiAnimated(join(h.project, "nested"), [
+      "query",
+      QUESTION,
+    ]);
+
+    expect(written).toMatch(/\r +\r/);
+  });
 });
 
 describe("k-wiki status", () => {
@@ -999,6 +1037,13 @@ describe("k-wiki status", () => {
 
     expect(err).toContain("takes no arguments");
     expect(process.exitCode).toBe(1);
+  });
+
+  it("prints exactly one error line for an invalid binding", async () => {
+    const h = await makeBoundProject('[{ "checkout": "/a" }]');
+    const { err } = await runKWiki(join(h.project, "nested"), ["status"]);
+
+    expect((err.match(/k-wiki:/g) ?? []).length).toBe(1);
   });
 });
 
@@ -1074,6 +1119,95 @@ describe("k-wiki list", () => {
     expect(err).toContain("wiki directory does not exist");
     expect(process.exitCode).toBe(1);
   });
+
+  it("names the valid types joined by pipes for an unknown type filter", async () => {
+    const h = await makeBoundProject();
+    const { err } = await runKWiki(join(h.project, "nested"), [
+      "list",
+      "bogus",
+    ]);
+
+    expect(err).toContain(
+      "valid types: concept|entity|source|query|comparison",
+    );
+  });
+
+  it("exits 1 when given more than one type argument", async () => {
+    const h = await makeBoundProject();
+    const { err } = await runKWiki(join(h.project, "nested"), [
+      "list",
+      "concept",
+      "entity",
+    ]);
+
+    expect(err).toContain("k-wiki list takes at most one <type> argument");
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("prints one line per page for a filtered type", async () => {
+    const h = await makeBoundProject();
+
+    await writeFile(
+      join(h.dataRoot, "wiki", "concepts", "retrieval.md"),
+      "---\ntype: concept\ntitle: Retrieval\n---\nBody.\n",
+    );
+    const { out } = await runKWiki(join(h.project, "nested"), [
+      "list",
+      "concept",
+    ]);
+
+    expect(out.split("\n")).toEqual(
+      expect.arrayContaining([
+        "rag — Retrieval-Augmented Generation",
+        "retrieval — Retrieval",
+      ]),
+    );
+  });
+
+  it("prints one line per page in the grouped listing", async () => {
+    const h = await makeBoundProject();
+
+    await writeFile(
+      join(h.dataRoot, "wiki", "concepts", "retrieval.md"),
+      "---\ntype: concept\ntitle: Retrieval\n---\nBody.\n",
+    );
+    const { out } = await runKWiki(join(h.project, "nested"), ["list"]);
+
+    expect(out.split("\n")).toEqual(
+      expect.arrayContaining([
+        "## concepts",
+        "rag — Retrieval-Augmented Generation",
+        "retrieval — Retrieval",
+        "## sources",
+        "attention — Attention Is All You Need",
+      ]),
+    );
+  });
+
+  it("groups pages without a type under untyped", async () => {
+    const h = await makeBoundProject();
+
+    await mkdir(join(h.dataRoot, "wiki", "scratch"), { recursive: true });
+    await writeFile(
+      join(h.dataRoot, "wiki", "scratch", "loose-note.md"),
+      "No frontmatter.\n",
+    );
+    const { out } = await runKWiki(join(h.project, "nested"), ["list"]);
+
+    expect(out.split("\n")).toEqual(
+      expect.arrayContaining(["## untyped", "loose-note — loose-note"]),
+    );
+  });
+
+  it("runs no agent after listing", async () => {
+    const h = await makeBoundProject();
+
+    await runKWiki(join(h.project, "nested"), ["list"]);
+
+    await expect(
+      readFile(join(h.outputsDir, "last-query.md")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
 });
 
 /** Run main() capturing raw stdout writes (verbatim page output). */
@@ -1108,6 +1242,58 @@ async function runKWikiStdout(
   }
 
   return { out: out.join(""), err: err.join("\n") };
+}
+
+/** Run main() with a TTY stderr (animated progress), capturing raw
+ *  stderr writes so the animated line's lifecycle is observable. */
+async function runKWikiAnimated(
+  cwd: string,
+  args: string[],
+): Promise<{ written: string; out: string; err: string }> {
+  const argv = process.argv;
+  const out: string[] = [];
+  const err: string[] = [];
+  const writes: string[] = [];
+
+  process.argv = [...argv.slice(0, 2), ...args];
+  process.exitCode = undefined;
+
+  const writeSpy = vi
+    .spyOn(process.stderr, "write")
+    .mockImplementation((chunk: unknown) => {
+      writes.push(String(chunk));
+
+      return true;
+    });
+  const tty = Object.getOwnPropertyDescriptor(process.stderr, "isTTY");
+  const logSpy = vi
+    .spyOn(console, "log")
+    .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+  const errorSpy = vi
+    .spyOn(console, "error")
+    .mockImplementation((...parts: unknown[]) => err.push(parts.join(" ")));
+  const priorNoColor = process.env.NO_COLOR;
+
+  Object.defineProperty(process.stderr, "isTTY", { value: true });
+  delete process.env.NO_COLOR;
+
+  try {
+    await main(cwd);
+  } finally {
+    process.argv = argv;
+    writeSpy.mockRestore();
+    logSpy.mockRestore();
+    errorSpy.mockRestore();
+    Object.defineProperty(process.stderr, "isTTY", tty ?? {});
+
+    if (priorNoColor === undefined) {
+      delete process.env.NO_COLOR;
+    } else {
+      process.env.NO_COLOR = priorNoColor;
+    }
+  }
+
+  return { written: writes.join(""), out: out.join("\n"), err: err.join("\n") };
 }
 
 describe("k-wiki read", () => {
@@ -1188,6 +1374,28 @@ describe("k-wiki read", () => {
     expect(err).toContain("a <slug> is required");
     expect(process.exitCode).toBe(1);
   });
+
+  it("exits 1 when given more than one slug", async () => {
+    const h = await makeBoundProject();
+    const { err } = await runKWiki(join(h.project, "nested"), [
+      "read",
+      "rag",
+      "attention",
+    ]);
+
+    expect(err).toContain("k-wiki read takes exactly one <slug> argument");
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("runs no agent after reading a page", async () => {
+    const h = await makeBoundProject();
+
+    await runKWiki(join(h.project, "nested"), ["read", "rag"]);
+
+    await expect(
+      readFile(join(h.outputsDir, "last-query.md")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
 });
 
 describe("k-wiki health", () => {
@@ -1214,6 +1422,69 @@ describe("k-wiki health", () => {
     const { err } = await runKWiki(h.project, ["health", "extra"]);
 
     expect(err).toContain("takes no arguments");
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("runs no agent after the health check", async () => {
+    const h = await makeBoundProject();
+
+    await runKWiki(join(h.project, "nested"), ["health"]);
+
+    await expect(
+      readFile(join(h.outputsDir, "last-query.md")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+});
+
+/** Stamp the projection's manifest with the data repo's HEAD, then
+ *  advance HEAD with a commit so the projection becomes stale. */
+async function makeStaleProjection(h: Harness): Promise<void> {
+  const { stdout } = await run("git", ["-C", h.dataRoot, "rev-parse", "HEAD"]);
+
+  await writeFile(
+    join(h.dataRoot, "raw", "manifest.json"),
+    `${JSON.stringify({
+      source_commit: stdout.trim(),
+      source_root: h.dataRoot,
+      vaults: {},
+    })}\n`,
+  );
+  await run("git", ["-C", h.dataRoot, "add", "-A"], { cwd: h.dataRoot });
+  await run(
+    "git",
+    [
+      "-C",
+      h.dataRoot,
+      "-c",
+      "user.email=t@t",
+      "-c",
+      "user.name=t",
+      "commit",
+      "--quiet",
+      "-m",
+      "stamp",
+    ],
+    { cwd: h.dataRoot },
+  );
+}
+
+describe("k-wiki health staleness", () => {
+  it("warns about a stale projection but stays exit 0 without --fail-on-stale", async () => {
+    const h = await makeBoundProject();
+
+    await makeStaleProjection(h);
+    const { out, err } = await runKWiki(join(h.project, "nested"), ["health"]);
+
+    expect(`${out}${err}`).toContain("stale projection");
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("exits 1 for a stale projection with --fail-on-stale", async () => {
+    const h = await makeBoundProject();
+
+    await makeStaleProjection(h);
+    await runKWiki(join(h.project, "nested"), ["health", "--fail-on-stale"]);
+
     expect(process.exitCode).toBe(1);
   });
 });

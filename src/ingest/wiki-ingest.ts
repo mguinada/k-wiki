@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
+import { flagValueError } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import {
   createProgressRenderer,
@@ -42,6 +43,7 @@ import {
   parseStatus,
   revertToPreRun,
   runGuardrails,
+  type StatusEntry,
 } from "./guardrails.ts";
 
 /**
@@ -114,6 +116,139 @@ function parseDomainDirs(value: string, origin: string): string[] {
   return dirs;
 }
 
+/** One parsed settings line: skipped, the one list-valued key,
+ *  or one scalar setting. */
+type ParsedSettingLine =
+  | { readonly kind: "skip" }
+  | { readonly kind: "domain"; readonly value: string }
+  | {
+      readonly kind: "setting";
+      readonly key: SettingKey;
+      readonly value: string;
+    };
+
+/** Parse one settings line: reject nesting and malformed pairs,
+ *  drop blanks and comments, split `key: value`. */
+function parseSettingLine(rawLine: string, origin: string): ParsedSettingLine {
+  if (/^\s/.test(rawLine)) {
+    const indented = rawLine.trim();
+
+    if (indented !== "" && !indented.startsWith("#")) {
+      throw new Error(
+        `invalid agent settings at ${origin}: nested values are not supported`,
+      );
+    }
+
+    return { kind: "skip" };
+  }
+
+  const line = rawLine.replace(/\s+#.*$/, "").trim();
+
+  if (line === "" || line.startsWith("#")) {
+    return { kind: "skip" };
+  }
+
+  const separator = line.indexOf(":");
+
+  if (separator < 1) {
+    throw new Error(
+      `invalid agent settings at ${origin}: expected \`key: value\`, got ${JSON.stringify(line)}`,
+    );
+  }
+
+  const key = line.slice(0, separator).trim();
+  const value = unquote(line.slice(separator + 1).trim());
+
+  if (key === DOMAIN_KEY) {
+    return { kind: "domain", value };
+  }
+
+  if (!(SETTING_KEYS as readonly string[]).includes(key)) {
+    throw new Error(
+      `invalid agent settings at ${origin}: unknown setting ${JSON.stringify(key)}`,
+    );
+  }
+
+  return { kind: "setting", key: key as SettingKey, value };
+}
+
+/** Record the `secondBrain.domains` value; a second one is an error. */
+function recordDomain(
+  domains: readonly string[] | undefined,
+  value: string,
+  origin: string,
+): readonly string[] {
+  if (domains !== undefined) {
+    throw new Error(
+      `invalid agent settings at ${origin}: duplicate setting ${JSON.stringify(DOMAIN_KEY)}`,
+    );
+  }
+
+  return parseDomainDirs(value, origin);
+}
+
+/** Record one scalar setting; duplicates and empty values are errors. */
+function recordSetting(
+  values: Map<SettingKey, string>,
+  key: SettingKey,
+  value: string,
+  origin: string,
+): void {
+  if (values.has(key)) {
+    throw new Error(
+      `invalid agent settings at ${origin}: duplicate setting ${JSON.stringify(key)}`,
+    );
+  }
+
+  if (value === "") {
+    throw new Error(
+      `invalid agent settings at ${origin}: setting ${JSON.stringify(key)} needs a value`,
+    );
+  }
+
+  values.set(key, value);
+}
+
+/** After the loop: every required key present, isolate a boolean. */
+function validateSettings(
+  values: Map<SettingKey, string>,
+  origin: string,
+): void {
+  for (const key of REQUIRED_KEYS) {
+    if (!values.has(key)) {
+      throw new Error(
+        `invalid agent settings at ${origin}: missing setting ${JSON.stringify(key)}`,
+      );
+    }
+  }
+
+  const isolate = values.get("isolate");
+
+  if (isolate !== undefined && isolate !== "true" && isolate !== "false") {
+    throw new Error(
+      `invalid agent settings at ${origin}: setting ${JSON.stringify("isolate")} must be true or false, got ${JSON.stringify(isolate)}`,
+    );
+  }
+}
+
+/** The AgentSettings the parsed map and domain list describe. */
+function finalizeSettings(
+  values: Map<SettingKey, string>,
+  domains: readonly string[] | undefined,
+): AgentSettings {
+  const provider = values.get("provider");
+  const isolate = values.get("isolate");
+
+  return {
+    command: values.get("command") ?? "",
+    model: values.get("model") ?? "",
+    reasoning: values.get("reasoning") ?? "",
+    ...(provider !== undefined && { provider }),
+    ...(isolate !== undefined && { isolate: isolate === "true" }),
+    ...(domains !== undefined && { secondBrainDomains: domains }),
+  };
+}
+
 /**
  * Parse the settings file: a YAML subset of top-level `key: value`
  * scalars, `#` comments on their own line or trailing the value, and
@@ -126,93 +261,22 @@ export function parseSettings(text: string, origin: string): AgentSettings {
   let domains: readonly string[] | undefined;
 
   for (const rawLine of text.split("\n")) {
-    if (/^\s/.test(rawLine)) {
-      const indented = rawLine.trim();
+    const parsed = parseSettingLine(rawLine, origin);
 
-      if (indented !== "" && !indented.startsWith("#")) {
-        throw new Error(
-          `invalid agent settings at ${origin}: nested values are not supported`,
-        );
-      }
-
+    if (parsed.kind === "skip") {
       continue;
     }
 
-    const line = rawLine.replace(/\s+#.*$/, "").trim();
-
-    if (line === "" || line.startsWith("#")) {
-      continue;
-    }
-
-    const separator = line.indexOf(":");
-
-    if (separator < 1) {
-      throw new Error(
-        `invalid agent settings at ${origin}: expected \`key: value\`, got ${JSON.stringify(line)}`,
-      );
-    }
-
-    const key = line.slice(0, separator).trim();
-    const value = unquote(line.slice(separator + 1).trim());
-
-    if (key === DOMAIN_KEY) {
-      if (domains !== undefined) {
-        throw new Error(
-          `invalid agent settings at ${origin}: duplicate setting ${JSON.stringify(key)}`,
-        );
-      }
-
-      domains = parseDomainDirs(value, origin);
-
-      continue;
-    }
-
-    if (!(SETTING_KEYS as readonly string[]).includes(key)) {
-      throw new Error(
-        `invalid agent settings at ${origin}: unknown setting ${JSON.stringify(key)}`,
-      );
-    }
-
-    if (values.has(key as SettingKey)) {
-      throw new Error(
-        `invalid agent settings at ${origin}: duplicate setting ${JSON.stringify(key)}`,
-      );
-    }
-
-    if (value === "") {
-      throw new Error(
-        `invalid agent settings at ${origin}: setting ${JSON.stringify(key)} needs a value`,
-      );
-    }
-
-    values.set(key as SettingKey, value);
-  }
-
-  for (const key of REQUIRED_KEYS) {
-    if (!values.has(key)) {
-      throw new Error(
-        `invalid agent settings at ${origin}: missing setting ${JSON.stringify(key)}`,
-      );
+    if (parsed.kind === "domain") {
+      domains = recordDomain(domains, parsed.value, origin);
+    } else {
+      recordSetting(values, parsed.key, parsed.value, origin);
     }
   }
 
-  const provider = values.get("provider");
-  const isolate = values.get("isolate");
+  validateSettings(values, origin);
 
-  if (isolate !== undefined && isolate !== "true" && isolate !== "false") {
-    throw new Error(
-      `invalid agent settings at ${origin}: setting ${JSON.stringify("isolate")} must be true or false, got ${JSON.stringify(isolate)}`,
-    );
-  }
-
-  return {
-    command: values.get("command") ?? "",
-    model: values.get("model") ?? "",
-    reasoning: values.get("reasoning") ?? "",
-    ...(provider !== undefined && { provider }),
-    ...(isolate !== undefined && { isolate: isolate === "true" }),
-    ...(domains !== undefined && { secondBrainDomains: domains }),
-  };
+  return finalizeSettings(values, domains);
 }
 
 /** The pi isolation flags (issue #118): mechanically disable every
@@ -877,12 +941,14 @@ export interface WikiPages {
   readonly unavailable: string | undefined;
 }
 
-/** One completed run, everything the digest reports. */
+/** A created or updated page citing exactly one source — the
+ *  mechanical unverified frontier (issue #79). */
 export interface UnverifiedFrontierPage {
   readonly path: string;
   readonly sources: readonly string[];
 }
 
+/** One completed run, everything the digest reports. */
 export interface IngestRun {
   readonly startedAt: Date;
   readonly mode: "full" | "incremental" | "expunge";
@@ -940,8 +1006,8 @@ function digestVaultLines(diff: ManifestDiff): string[] {
   return lines;
 }
 
-/** Render the per-run digest markdown: counts first, details after. */
-export function formatDigest(run: IngestRun): string {
+/** The digest header: run identity, agent, mode, sources, counts. */
+function digestHeaderLines(run: IngestRun): string[] {
   const { settings } = run;
   const label = run.mode === "expunge" ? " (expunge)" : "";
   const scoped =
@@ -962,22 +1028,100 @@ export function formatDigest(run: IngestRun): string {
     lines.push(`- **Wiki pages:** unavailable — ${run.pages.unavailable}`);
   }
 
-  if (run.guardrailFailure !== undefined) {
-    const failure = run.guardrailFailure;
+  return lines;
+}
 
-    lines.push(
-      "",
-      "## Guardrails failed",
-      "",
-      `Check ${failure.check} (${failure.name}) tripped; the run was auto-reverted to the pre-run commit.`,
-      "",
-    );
-
-    for (const problem of failure.problems) {
-      lines.push(`- ${problem}`);
-    }
+/** The Guardrails-failed section, or nothing when none tripped. */
+function digestGuardrailLines(failure: GuardrailFailure | undefined): string[] {
+  if (failure === undefined) {
+    return [];
   }
 
+  const lines = [
+    "",
+    "## Guardrails failed",
+    "",
+    `Check ${failure.check} (${failure.name}) tripped; the run was auto-reverted to the pre-run commit.`,
+    "",
+  ];
+
+  for (const problem of failure.problems) {
+    lines.push(`- ${problem}`);
+  }
+
+  return lines;
+}
+
+/** The expunge run's deterministic direct set, or nothing. */
+function digestDirectSetLines(run: IngestRun): string[] {
+  if (run.mode !== "expunge" || run.directSet === undefined) {
+    return [];
+  }
+
+  const lines = ["", "## Expunge direct set", ""];
+
+  for (const page of run.directSet) {
+    lines.push(`- wiki/${page}`);
+  }
+
+  return lines;
+}
+
+/** The unverified-frontier section, or nothing when empty. */
+function digestFrontierLines(
+  frontier: readonly UnverifiedFrontierPage[],
+): string[] {
+  if (frontier.length === 0) {
+    return [];
+  }
+
+  const lines = [
+    "",
+    "## Unverified frontier",
+    "",
+    "Pages with exactly one source (mechanical):",
+  ];
+
+  for (const page of frontier) {
+    lines.push(`- ${page.path} (1 source: ${page.sources[0]})`);
+  }
+
+  return lines;
+}
+
+/** The git-diff page listing: created, updated, deleted — or why
+ *  git could not report. */
+function digestPageDiffLines(pages: WikiPages): string[] {
+  if (pages.unavailable !== undefined) {
+    return [`unavailable: ${pages.unavailable}`];
+  }
+
+  const lines = ["Created:"];
+
+  for (const path of pages.created) {
+    lines.push(`- ${path}`);
+  }
+
+  lines.push("", "Updated:");
+
+  for (const path of pages.updated) {
+    lines.push(`- ${path}`);
+  }
+
+  lines.push("", "Deleted:");
+
+  for (const path of pages.deleted) {
+    lines.push(`- ${path}`);
+  }
+
+  return lines;
+}
+
+/** Render the per-run digest markdown: counts first, details after. */
+export function formatDigest(run: IngestRun): string {
+  const lines = digestHeaderLines(run);
+
+  lines.push(...digestGuardrailLines(run.guardrailFailure));
   lines.push(
     "- **Contradictions and unresolved questions:** in the agent report below",
   );
@@ -986,51 +1130,14 @@ export function formatDigest(run: IngestRun): string {
     lines.push("", "## Changed sources", "", ...digestVaultLines(run.diff));
   }
 
-  if (run.mode === "expunge" && run.directSet !== undefined) {
-    lines.push("", "## Expunge direct set", "");
-
-    for (const page of run.directSet) {
-      lines.push(`- wiki/${page}`);
-    }
-  }
-
-  if (run.unverifiedFrontier.length > 0) {
-    lines.push(
-      "",
-      "## Unverified frontier",
-      "",
-      "Pages with exactly one source (mechanical):",
-    );
-
-    for (const page of run.unverifiedFrontier) {
-      lines.push(`- ${page.path} (1 source: ${page.sources[0]})`);
-    }
-  }
-
-  lines.push("", "## Wiki pages (git diff)", "");
-
-  if (run.pages.unavailable !== undefined) {
-    lines.push(`unavailable: ${run.pages.unavailable}`);
-  } else {
-    lines.push("Created:");
-
-    for (const path of run.pages.created) {
-      lines.push(`- ${path}`);
-    }
-
-    lines.push("", "Updated:");
-
-    for (const path of run.pages.updated) {
-      lines.push(`- ${path}`);
-    }
-
-    lines.push("", "Deleted:");
-
-    for (const path of run.pages.deleted) {
-      lines.push(`- ${path}`);
-    }
-  }
-
+  lines.push(...digestDirectSetLines(run));
+  lines.push(...digestFrontierLines(run.unverifiedFrontier));
+  lines.push(
+    "",
+    "## Wiki pages (git diff)",
+    "",
+    ...digestPageDiffLines(run.pages),
+  );
   lines.push("", "## Agent report", "", run.agentOutput);
 
   return `${lines.join("\n")}\n`;
@@ -1050,7 +1157,8 @@ export type AgentRunner = (
 /** The agent gets 30 minutes by default; a hung run must not hang the wrapper. */
 export const AGENT_TIMEOUT_MS = 30 * 60_000;
 
-/** Liveness line on the progress sink while the agent runs. */
+/** Interval for the progress-sink liveness line while the agent
+ *  runs (see AGENT_HEARTBEAT_PREFIX for the line's wording). */
 export const HEARTBEAT_MS = 60_000;
 
 /** Heartbeat sentence prefixes (plain or expunge-labeled); the TTY
@@ -1147,6 +1255,53 @@ export function spawnAgent(
   });
 }
 
+/** Bucket the post-run status entries: created (added or
+ *  untracked), updated (modified), deleted (deleted now but not
+ *  already deleted pre-run). */
+function currentEntryBuckets(
+  entries: readonly StatusEntry[],
+  before: ReadonlyMap<string, StatusEntry>,
+): { created: string[]; updated: string[]; deleted: string[] } {
+  const created: string[] = [];
+  const updated: string[] = [];
+  const deleted: string[] = [];
+
+  for (const { code, path } of entries) {
+    if (code.includes("A") || code.includes("?")) {
+      created.push(path);
+    } else if (code.includes("M")) {
+      updated.push(path);
+    } else if (code.includes("D") && !before.get(path)?.code.includes("D")) {
+      deleted.push(path);
+    }
+  }
+
+  return { created, updated, deleted };
+}
+
+/** Pre-run untracked pages whose file vanished during the run: git
+ *  status never lists them, so the pre-run state is the only witness. */
+function vanishedUntracked(
+  before: ReadonlyMap<string, StatusEntry>,
+  entries: readonly StatusEntry[],
+  pathspec: string,
+): string[] {
+  const deleted: string[] = [];
+
+  for (const entry of before.values()) {
+    if (
+      entry.code.includes("?") &&
+      entry.path.startsWith(`${pathspec}/`) &&
+      entry.path.endsWith(".md") &&
+      !entries.some((current) => current.path === entry.path)
+    ) {
+      deleted.push(entry.path);
+    }
+  }
+
+  return deleted;
+}
+
 /**
  * Wiki pages created, updated, and deleted by the run, from the data
  * repo's git status: untracked or added paths count as created,
@@ -1189,35 +1344,15 @@ export async function wikiPages(
   const before = new Map(
     (pre?.status ?? []).map((entry) => [entry.path, entry] as const),
   );
-  const created: string[] = [];
-  const updated: string[] = [];
-  const deleted: string[] = [];
-
-  for (const { code, path } of entries) {
-    if (code.includes("A") || code.includes("?")) {
-      created.push(path);
-    } else if (code.includes("M")) {
-      updated.push(path);
-    } else if (code.includes("D") && !before.get(path)?.code.includes("D")) {
-      deleted.push(path);
-    }
-  }
-
-  for (const entry of before.values()) {
-    if (
-      entry.code.includes("?") &&
-      entry.path.startsWith(`${pathspec}/`) &&
-      entry.path.endsWith(".md") &&
-      !entries.some((current) => current.path === entry.path)
-    ) {
-      deleted.push(entry.path);
-    }
-  }
+  const { created, updated, deleted } = currentEntryBuckets(entries, before);
 
   return {
     created: created.sort(),
     updated: updated.sort(),
-    deleted: deleted.sort(),
+    deleted: [
+      ...deleted,
+      ...vanishedUntracked(before, entries, pathspec),
+    ].sort(),
     unavailable: undefined,
   };
 }
@@ -1490,45 +1625,65 @@ export async function warnTrackedIgnored(
   }
 }
 
-/**
- * One headless ingest run. The snapshot is written only after a
- * successful agent run without --sources, so a failure retries the
- * same sources next time instead of silently skipping them; a
- * scoped run never writes it, so pending manifest changes stay
- * pending. A manifest diff with removed
- * entries routes to the expunge flow (issue #65); removed entries that
- * pair with an addition by equal full-file hash or identical body
- * text are renames and never route there (issue #143).
- */
-export async function runWikiIngest(
-  options: IngestOptions,
-): Promise<IngestResult> {
-  const env = options.env ?? process.env;
-  const now = options.now ?? (() => new Date());
-  const onProgress = options.onProgress ?? (() => {});
-  const settings = await loadAgentSettings(options.settingsPath);
+/** The run's ambient context — environment, clock, progress sink —
+ *  with their defaults applied. */
+function runContext(options: IngestOptions): {
+  env: NodeJS.ProcessEnv;
+  now: () => Date;
+  onProgress: (message: string) => void;
+} {
+  return {
+    env: options.env ?? process.env,
+    now: options.now ?? (() => new Date()),
+    onProgress: options.onProgress ?? (() => {}),
+  };
+}
 
-  onProgress(`wiki-ingest: raw dir ${options.rawDir}`);
-
-  const manifestPath = join(options.rawDir, "manifest.json");
+/** The run's manifest and data repo root; a missing manifest means
+ *  sync-vault has not run. */
+async function readRunManifest(
+  rawDir: string,
+): Promise<{ dataRoot: string; current: Manifest }> {
+  const manifestPath = join(rawDir, "manifest.json");
   const manifestText = await readManifestText(manifestPath);
 
   if (manifestText === undefined) {
     throw new Error(`no manifest at ${manifestPath}: run sync-vault first`);
   }
 
-  const dataRoot = dirname(options.rawDir);
-  const current = parseManifest(manifestText, manifestPath);
-  const snapshotPath = join(dataRoot, "outputs", SNAPSHOT_FILENAME);
-  const legacySnapshotPath = join(options.outputsDir, SNAPSHOT_FILENAME);
+  return {
+    dataRoot: dirname(rawDir),
+    current: parseManifest(manifestText, manifestPath),
+  };
+}
 
-  await ensureSnapshotIgnored(dataRoot, onProgress);
-  await ensureDashboardIgnored(dataRoot, onProgress);
-  await adoptLegacySnapshot(legacySnapshotPath, snapshotPath, onProgress);
-  await warnTrackedIgnored(dataRoot, env, onProgress);
+/** The removed-content reader for rename pairing: each removed
+ *  path's content as the snapshot's hash records it. */
+function removedContentReader(
+  dataRoot: string,
+  env: NodeJS.ProcessEnv,
+  previous: Manifest | undefined,
+): (vault: string, path: string) => Promise<string | undefined> {
+  return (vault, path) =>
+    removedNoteContent(
+      dataRoot,
+      `raw/notes/${vault}/${path}`,
+      env,
+      previous?.vaults[vault]?.[path]?.hash,
+    );
+}
 
-  const previous = await readSnapshot(snapshotPath, dataRoot, onProgress);
-
+/** The manifest diff this run ingests: the explicit `--sources` set
+ *  when given (which requires a valid snapshot), else snapshot vs
+ *  current — with body-identical remove+add pairs paired as renames. */
+async function computeRunDiff(
+  current: Manifest,
+  previous: Manifest | undefined,
+  options: IngestOptions,
+  dataRoot: string,
+  env: NodeJS.ProcessEnv,
+  snapshotPath: string,
+): Promise<{ diff: ManifestDiff; explicitDiff: ManifestDiff | undefined }> {
   const explicitSources =
     options.sources !== undefined && options.sources.length > 0
       ? [...new Set(options.sources)]
@@ -1546,17 +1701,220 @@ export async function runWikiIngest(
 
   const diff = await pairBodyIdenticalRenames(
     explicitDiff ?? diffManifests(previous ?? emptyManifest(), current),
-    (vault, path) =>
-      removedNoteContent(
-        dataRoot,
-        `raw/notes/${vault}/${path}`,
-        env,
-        previous?.vaults[vault]?.[path]?.hash,
-      ),
+    removedContentReader(dataRoot, env, previous),
     (vault, path) =>
       readFile(join(options.rawDir, "notes", vault, path), "utf8").catch(
         () => undefined,
       ),
+  );
+
+  return { diff, explicitDiff };
+}
+
+/** The run's mode and removed-source count: first run full, removals
+ *  expunge, everything else incremental. */
+function resolveRunMode(
+  previous: Manifest | undefined,
+  diff: ManifestDiff,
+): { mode: "full" | "incremental" | "expunge"; removedCount: number } {
+  const removedCount = sourceCount(diff, "removed");
+  const mode =
+    previous === undefined
+      ? "full"
+      : removedCount > 0
+        ? "expunge"
+        : "incremental";
+
+  return { mode, removedCount };
+}
+
+/** Compose the agent message and, for an expunge run, its
+ *  deterministic direct set. */
+async function composeRunPrompt(
+  mode: "full" | "incremental" | "expunge",
+  removedCount: number,
+  promptText: string,
+  promptsDir: string,
+  dataRoot: string,
+  diff: ManifestDiff,
+  env: NodeJS.ProcessEnv,
+  onProgress: (message: string) => void,
+): Promise<{ composed: string; directSet: readonly string[] | undefined }> {
+  if (mode !== "expunge") {
+    return {
+      composed: composePrompt(
+        promptText,
+        mode === "incremental" ? diff : undefined,
+      ),
+      directSet: undefined,
+    };
+  }
+
+  const removedNotes = await collectRemovedNotes(dataRoot, diff, env);
+
+  const directSet = await directSetForRemovals(
+    join(dataRoot, "wiki"),
+    removedNotes.map((note) => note.rawPath),
+  );
+
+  const carriesNonRemovals =
+    sourceCount(diff, "added") +
+      sourceCount(diff, "changed") +
+      sourceCount(diff, "renamed") >
+    0;
+  const incrementalText = carriesNonRemovals
+    ? await readPrompt(join(promptsDir, "incremental.md"))
+    : undefined;
+  const composed = composeExpungePrompt(
+    promptText,
+    diff,
+    removedNotes,
+    directSet,
+    incrementalText,
+  );
+
+  onProgress(
+    `wiki-ingest: expunge — ${removedCount} removed source${removedCount === 1 ? "" : "s"}; direct set: ${directSet.map((page) => `wiki/${page}`).join(", ")}`,
+  );
+
+  return { composed, directSet };
+}
+
+/** Start the agent liveness heartbeat; the caller clears it when the
+ *  agent settles. */
+function startHeartbeat(beat: {
+  mode: "full" | "incremental" | "expunge";
+  now: () => Date;
+  intervalMs: number | undefined;
+  onProgress: (message: string) => void;
+}): ReturnType<typeof setInterval> {
+  const agentStartedAt = beat.now().getTime();
+
+  return setInterval(() => {
+    const elapsed = formatDuration(beat.now().getTime() - agentStartedAt);
+    const label = beat.mode === "expunge" ? "expunge " : "";
+
+    beat.onProgress(`wiki-ingest: ${label}agent still running (${elapsed})`);
+  }, beat.intervalMs ?? HEARTBEAT_MS);
+}
+
+/** Write the digest of a guardrail-reverted run: no page counts, the
+ *  tripped check named, the agent output kept for review. */
+async function writeFailureDigest(
+  digestPath: string,
+  run: {
+    startedAt: Date;
+    mode: "full" | "incremental" | "expunge";
+    promptFile: string;
+    settings: AgentSettings;
+    diff: ManifestDiff;
+    agentOutput: string;
+    failure: GuardrailFailure;
+    explicitDiff: ManifestDiff | undefined;
+  },
+): Promise<void> {
+  const { failure } = run;
+
+  await writeFile(
+    digestPath,
+    formatDigest({
+      startedAt: run.startedAt,
+      mode: run.mode,
+      promptFile: run.promptFile,
+      settings: run.settings,
+      diff: run.diff,
+      pages: {
+        created: [],
+        updated: [],
+        deleted: [],
+        unavailable: `run reverted — guardrail check ${failure.check} (${failure.name}) tripped`,
+      },
+      directSet: undefined,
+      agentOutput: run.agentOutput,
+      unverifiedFrontier: [],
+      guardrailFailure: failure,
+      ...(run.explicitDiff !== undefined && { explicitSources: true }),
+    }),
+    "utf8",
+  );
+}
+
+/** Advance the manifest snapshot — never for a scoped `--sources`
+ *  run, whose manifest diff stays pending. */
+async function writeSnapshotIfNeeded(
+  explicitDiff: ManifestDiff | undefined,
+  snapshotPath: string,
+  current: Manifest,
+  dataRoot: string,
+): Promise<void> {
+  if (explicitDiff !== undefined) {
+    return;
+  }
+
+  await mkdir(dirname(snapshotPath), { recursive: true });
+  await writeManifest(snapshotPath, current, { snapshotFor: dataRoot });
+}
+
+/** Post-run hook (issue #73): refresh the static dashboard after the
+ *  digest and snapshot — the dashboard reflects the last good state,
+ *  so a failure path (revert, agent error) never regenerates it. A
+ *  refresh failure must not fail the run: the dashboard is derived. */
+async function refreshDashboard(
+  dataRoot: string,
+  env: NodeJS.ProcessEnv,
+  now: () => Date,
+  onProgress: (message: string) => void,
+): Promise<void> {
+  try {
+    const dashboardPath = await writeDashboard(dataRoot, {
+      env,
+      now,
+      warn: (message) => onProgress(`wiki-ingest: WARNING — ${message}`),
+    });
+
+    onProgress(`wiki-ingest: dashboard refreshed at ${dashboardPath}`);
+  } catch (error) {
+    onProgress(
+      `wiki-ingest: WARNING — dashboard refresh failed (${error instanceof Error ? error.message : String(error)}); the previous dashboard stays`,
+    );
+  }
+}
+
+/**
+ * One headless ingest run. The snapshot is written only after a
+ * successful agent run without --sources, so a failure retries the
+ * same sources next time instead of silently skipping them; a
+ * scoped run never writes it, so pending manifest changes stay
+ * pending. A manifest diff with removed
+ * entries routes to the expunge flow (issue #65); removed entries that
+ * pair with an addition by equal full-file hash or identical body
+ * text are renames and never route there (issue #143).
+ */
+export async function runWikiIngest(
+  options: IngestOptions,
+): Promise<IngestResult> {
+  const { env, now, onProgress } = runContext(options);
+  const settings = await loadAgentSettings(options.settingsPath);
+
+  onProgress(`wiki-ingest: raw dir ${options.rawDir}`);
+
+  const { dataRoot, current } = await readRunManifest(options.rawDir);
+  const snapshotPath = join(dataRoot, "outputs", SNAPSHOT_FILENAME);
+  const legacySnapshotPath = join(options.outputsDir, SNAPSHOT_FILENAME);
+
+  await ensureSnapshotIgnored(dataRoot, onProgress);
+  await ensureDashboardIgnored(dataRoot, onProgress);
+  await adoptLegacySnapshot(legacySnapshotPath, snapshotPath, onProgress);
+  await warnTrackedIgnored(dataRoot, env, onProgress);
+
+  const previous = await readSnapshot(snapshotPath, dataRoot, onProgress);
+  const { diff, explicitDiff } = await computeRunDiff(
+    current,
+    previous,
+    options,
+    dataRoot,
+    env,
+    snapshotPath,
   );
 
   if (diff.empty) {
@@ -1567,53 +1925,19 @@ export async function runWikiIngest(
     return { status: "skipped", reason };
   }
 
-  const removedCount = sourceCount(diff, "removed");
-  const mode =
-    previous === undefined
-      ? "full"
-      : removedCount > 0
-        ? "expunge"
-        : "incremental";
+  const { mode, removedCount } = resolveRunMode(previous, diff);
   const promptFile = promptFileFor(mode);
   const promptText = await readPrompt(join(options.promptsDir, promptFile));
-
-  let composed: string;
-  let directSet: readonly string[] | undefined;
-
-  if (mode === "expunge") {
-    const removedNotes = await collectRemovedNotes(dataRoot, diff, env);
-
-    directSet = await directSetForRemovals(
-      join(dataRoot, "wiki"),
-      removedNotes.map((note) => note.rawPath),
-    );
-
-    const carriesNonRemovals =
-      sourceCount(diff, "added") +
-        sourceCount(diff, "changed") +
-        sourceCount(diff, "renamed") >
-      0;
-    const incrementalText = carriesNonRemovals
-      ? await readPrompt(join(options.promptsDir, "incremental.md"))
-      : undefined;
-
-    composed = composeExpungePrompt(
-      promptText,
-      diff,
-      removedNotes,
-      directSet,
-      incrementalText,
-    );
-
-    onProgress(
-      `wiki-ingest: expunge — ${removedCount} removed source${removedCount === 1 ? "" : "s"}; direct set: ${directSet.map((page) => `wiki/${page}`).join(", ")}`,
-    );
-  } else {
-    composed = composePrompt(
-      promptText,
-      mode === "incremental" ? diff : undefined,
-    );
-  }
+  const { composed, directSet } = await composeRunPrompt(
+    mode,
+    removedCount,
+    promptText,
+    options.promptsDir,
+    dataRoot,
+    diff,
+    env,
+    onProgress,
+  );
 
   const args = agentArgs(settings, composed);
   const runAgent = options.runAgent ?? spawnAgent;
@@ -1623,13 +1947,12 @@ export async function runWikiIngest(
     `wiki-ingest: mode ${mode}, invoking agent: ${formatAgentInvocation(settings)}`,
   );
 
-  const agentStartedAt = now().getTime();
-  const heartbeat = setInterval(() => {
-    const elapsed = formatDuration(now().getTime() - agentStartedAt);
-    const label = mode === "expunge" ? "expunge " : "";
-
-    onProgress(`wiki-ingest: ${label}agent still running (${elapsed})`);
-  }, options.heartbeatMs ?? HEARTBEAT_MS);
+  const heartbeat = startHeartbeat({
+    mode,
+    now,
+    intervalMs: options.heartbeatMs,
+    onProgress,
+  });
 
   let stdout = "";
   let agentError: unknown;
@@ -1670,28 +1993,16 @@ export async function runWikiIngest(
     );
 
     await revertToPreRun(dataRoot, env, pre, post.entries);
-    await writeFile(
-      digestPath,
-      formatDigest({
-        startedAt,
-        mode,
-        promptFile: `prompts/${promptFile}`,
-        settings,
-        diff,
-        pages: {
-          created: [],
-          updated: [],
-          deleted: [],
-          unavailable: `run reverted — guardrail check ${failure.check} (${failure.name}) tripped`,
-        },
-        directSet: undefined,
-        agentOutput: stdout,
-        unverifiedFrontier: [],
-        guardrailFailure: failure,
-        ...(explicitDiff !== undefined && { explicitSources: true }),
-      }),
-      "utf8",
-    );
+    await writeFailureDigest(digestPath, {
+      startedAt,
+      mode,
+      promptFile: `prompts/${promptFile}`,
+      settings,
+      diff,
+      agentOutput: stdout,
+      failure,
+      explicitDiff,
+    });
 
     throw new Error(
       `guardrail check ${failure.check} (${failure.name}) failed; run reverted to ${pre.commit.slice(0, 8)} — ${failure.problems.join("; ")}`,
@@ -1725,29 +2036,8 @@ export async function runWikiIngest(
   const digest = formatDigest(run);
 
   await writeFile(digestPath, digest, "utf8");
-
-  if (explicitDiff === undefined) {
-    await mkdir(dirname(snapshotPath), { recursive: true });
-    await writeManifest(snapshotPath, current, { snapshotFor: dataRoot });
-  }
-
-  // Post-run hook (issue #73): refresh the static dashboard after the
-  // digest and snapshot — the dashboard reflects the last good state,
-  // so a failure path (revert, agent error) never regenerates it. A
-  // refresh failure must not fail the run: the dashboard is derived.
-  try {
-    const dashboardPath = await writeDashboard(dataRoot, {
-      env,
-      now,
-      warn: (message) => onProgress(`wiki-ingest: WARNING — ${message}`),
-    });
-
-    onProgress(`wiki-ingest: dashboard refreshed at ${dashboardPath}`);
-  } catch (error) {
-    onProgress(
-      `wiki-ingest: WARNING — dashboard refresh failed (${error instanceof Error ? error.message : String(error)}); the previous dashboard stays`,
-    );
-  }
+  await writeSnapshotIfNeeded(explicitDiff, snapshotPath, current, dataRoot);
+  await refreshDashboard(dataRoot, env, now, onProgress);
 
   return { status: "ran", mode, digestPath, digest, pages, diff };
 }
@@ -1921,16 +2211,12 @@ export function createAgentProgressSink(
   };
 }
 
-/** wiki-ingest entry point: `wiki-ingest [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [<raw-dir>]`. */
-export async function main(): Promise<void> {
-  const args = process.argv.slice(2);
-
-  if (args.includes("-h") || args.includes("--help")) {
-    console.log(HELP);
-
-    return;
-  }
-
+/** The value-taking flags (`--settings`, `--outputs`, `--timeout`)
+ *  with their consumed argument indexes. */
+function readFlagValues(args: readonly string[]): {
+  values: Map<string, string | undefined>;
+  consumed: Set<number>;
+} {
   const values = new Map<string, string | undefined>();
   const consumed = new Set<number>();
 
@@ -1944,6 +2230,16 @@ export async function main(): Promise<void> {
     }
   }
 
+  return { values, consumed };
+}
+
+/** Every `--sources <path>` pair's value (a missing final value
+ *  surfaces as undefined and fails validation); also marks the
+ *  consumed indexes so the values are never read as positionals. */
+function readSourcesArgs(
+  args: readonly string[],
+  consumed: Set<number>,
+): (string | undefined)[] {
   const sourcesRaw: (string | undefined)[] = [];
 
   for (const [index, arg] of args.entries()) {
@@ -1956,6 +2252,15 @@ export async function main(): Promise<void> {
     sourcesRaw.push(args[index + 1]);
   }
 
+  return sourcesRaw;
+}
+
+/** Positional args after flag consumption, or the unknown-option
+ *  usage error that stops the run. */
+function collectPositional(
+  args: readonly string[],
+  consumed: ReadonlySet<number>,
+): { positional: string[]; error: string | undefined } {
   const positional: string[] = [];
 
   for (const [index, arg] of args.entries()) {
@@ -1964,12 +2269,81 @@ export async function main(): Promise<void> {
     }
 
     if (arg.startsWith("-")) {
-      fail(`unknown option ${JSON.stringify(arg)}`);
+      return { positional, error: `unknown option ${JSON.stringify(arg)}` };
+    }
+
+    positional.push(arg);
+  }
+
+  return { positional, error: undefined };
+}
+
+/** Run the ingest with the parsed CLI state and print the outcome;
+ *  errors print red and set the exit code. */
+async function runCliIngest(parsed: {
+  values: Map<string, string | undefined>;
+  positional: readonly string[];
+  sources: readonly string[];
+  settingsPath: string;
+  heartbeatMs: number | undefined;
+  sink: ProgressSink;
+}): Promise<void> {
+  const timeoutArg = parsed.values.get("--timeout");
+
+  try {
+    const config = await loadSyncConfig(join(repoRoot, "sync.json"), homedir());
+    const rawDir =
+      parsed.positional[0] ?? resolveRawDir(config.dataRoot, repoRoot);
+    const result = await runWikiIngest({
+      settingsPath: parsed.settingsPath,
+      rawDir,
+      outputsDir: parsed.values.get("--outputs") ?? join(repoRoot, "outputs"),
+      promptsDir: join(repoRoot, "prompts"),
+      sources: parsed.sources,
+      timeoutMs:
+        timeoutArg === undefined ? undefined : Number(timeoutArg) * 1000,
+      heartbeatMs: parsed.heartbeatMs,
+      onProgress: parsed.sink.render,
+    });
+
+    parsed.sink.end();
+
+    if (result.status === "skipped") {
+      console.log(`wiki-ingest: ${result.reason}`);
 
       return;
     }
 
-    positional.push(arg);
+    console.log(result.digest);
+  } catch (error) {
+    parsed.sink.end();
+    console.error(
+      colors().red(
+        `wiki-ingest: ${error instanceof Error ? error.message : String(error)}`,
+      ),
+    );
+    process.exitCode = 1;
+  }
+}
+
+/** wiki-ingest entry point: `wiki-ingest [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [<raw-dir>]`. */
+export async function main(): Promise<void> {
+  const args = process.argv.slice(2);
+
+  if (args.includes("-h") || args.includes("--help")) {
+    console.log(HELP);
+
+    return;
+  }
+
+  const { values, consumed } = readFlagValues(args);
+  const sourcesRaw = readSourcesArgs(args, consumed);
+  const { positional, error } = collectPositional(args, consumed);
+
+  if (error !== undefined) {
+    fail(error);
+
+    return;
   }
 
   if (positional.length > 1) {
@@ -1978,33 +2352,10 @@ export async function main(): Promise<void> {
     return;
   }
 
-  for (const [flag, value] of values) {
-    if (flag === "--timeout") {
-      continue;
-    }
+  const usageError = flagValueError(values, sourcesRaw);
 
-    if (value === undefined) {
-      fail(`${flag} needs a path value`);
-
-      return;
-    }
-  }
-
-  if (sourcesRaw.some((value) => value === undefined)) {
-    fail("--sources needs a path value");
-
-    return;
-  }
-
-  const sources = sourcesRaw as string[];
-
-  const timeoutArg = values.get("--timeout");
-
-  if (
-    values.has("--timeout") &&
-    (timeoutArg === undefined || !/^[1-9][0-9]*$/.test(timeoutArg))
-  ) {
-    fail("--timeout needs a positive integer number of seconds");
+  if (usageError !== undefined) {
+    fail(usageError);
 
     return;
   }
@@ -2020,39 +2371,14 @@ export async function main(): Promise<void> {
     colors(),
   );
 
-  try {
-    const config = await loadSyncConfig(join(repoRoot, "sync.json"), homedir());
-    const rawDir = positional[0] ?? resolveRawDir(config.dataRoot, repoRoot);
-    const result = await runWikiIngest({
-      settingsPath,
-      rawDir,
-      outputsDir: values.get("--outputs") ?? join(repoRoot, "outputs"),
-      promptsDir: join(repoRoot, "prompts"),
-      sources,
-      timeoutMs:
-        timeoutArg === undefined ? undefined : Number(timeoutArg) * 1000,
-      heartbeatMs: animated ? 100 : undefined,
-      onProgress: sink.render,
-    });
-
-    sink.end();
-
-    if (result.status === "skipped") {
-      console.log(`wiki-ingest: ${result.reason}`);
-
-      return;
-    }
-
-    console.log(result.digest);
-  } catch (error) {
-    sink.end();
-    console.error(
-      colors().red(
-        `wiki-ingest: ${error instanceof Error ? error.message : String(error)}`,
-      ),
-    );
-    process.exitCode = 1;
-  }
+  await runCliIngest({
+    values,
+    positional,
+    sources: sourcesRaw as string[],
+    settingsPath,
+    heartbeatMs: animated ? 100 : undefined,
+    sink,
+  });
 }
 
 /* v8 ignore next: covered only under direct `node src/ingest/wiki-ingest.ts` runs */

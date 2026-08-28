@@ -307,3 +307,89 @@ describe("renderDashboard glossary and added KPIs", () => {
     expect(html).toContain("needs-review flips");
   });
 });
+
+describe("renderDashboard funnel section and stamp details", () => {
+  it("stamps the generation date and wall-clock time as day and HH:MM UTC", () => {
+    const html = renderDashboard(fixtureKpis(), {
+      generatedAt: NOW,
+      head: "abee7c4",
+      dataRoot: "~/Lab/k-wiki-data",
+    });
+
+    expect(html).toContain("generated 2026-09-01 12:00 UTC from abee7c4");
+  });
+
+  it("says 'no git history' in the stamp when HEAD is empty", () => {
+    const html = renderDashboard(fixtureKpis(), {
+      generatedAt: NOW,
+      head: "",
+      dataRoot: "~/Lab/k-wiki-data",
+    });
+
+    expect(html).toContain("from no git history");
+  });
+
+  it("leaves no content between the activity and provenance sections when no query run exists", () => {
+    const kpis = fixtureKpis();
+
+    const html = renderDashboard(
+      {
+        ...kpis,
+        funnel: { ...kpis.funnel, present: false, lastRunAt: null },
+      },
+      { generatedAt: NOW, head: "abee7c4", dataRoot: "~/Lab/k-wiki-data" },
+    );
+
+    expect(html).toContain('</section>\n\n<section id="provenance"');
+  });
+
+  it("gives the query funnel section its funnel id when a run exists", () => {
+    const html = renderDashboard(fixtureKpis(), {
+      generatedAt: NOW,
+      head: "abee7c4",
+      dataRoot: "~/Lab/k-wiki-data",
+    });
+
+    expect(html).toContain('<section id="funnel">');
+  });
+
+  it("renders the filed-query count stat with its label", () => {
+    const html = renderDashboard(fixtureKpis(), {
+      generatedAt: NOW,
+      head: "abee7c4",
+      dataRoot: "~/Lab/k-wiki-data",
+    });
+
+    expect(html).toContain(
+      '<span class="stat-value">1</span><span class="stat-label">queries filed',
+    );
+  });
+
+  it("renders an em dash for the last query run when the run timestamp is absent", () => {
+    const kpis = fixtureKpis();
+
+    const html = renderDashboard(
+      {
+        ...kpis,
+        funnel: { present: true, filedCount: 1, lastRunAt: null },
+      },
+      { generatedAt: NOW, head: "abee7c4", dataRoot: "~/Lab/k-wiki-data" },
+    );
+
+    expect(html).toContain(
+      '<span class="stat-value">—</span><span class="stat-label">last query run',
+    );
+  });
+
+  it("truncates the last query run timestamp to its day", () => {
+    const html = renderDashboard(fixtureKpis(), {
+      generatedAt: NOW,
+      head: "abee7c4",
+      dataRoot: "~/Lab/k-wiki-data",
+    });
+
+    expect(html).toContain(
+      '<span class="stat-value">2026-08-30</span><span class="stat-label">last query run',
+    );
+  });
+});

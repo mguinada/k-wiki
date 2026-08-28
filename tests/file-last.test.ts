@@ -377,6 +377,25 @@ describe("driftWarning", () => {
     ).toBeUndefined();
   });
 
+  it("is undefined when git log fails even if uncommitted changes are newer", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-fl-"));
+
+    tempDirs.push(dir);
+
+    await run("git", ["init", "--quiet"], { cwd: dir });
+    await mkdir(join(dir, "wiki"), { recursive: true });
+    await writeFile(join(dir, "wiki", "index.md"), "# Index\n");
+    await utimes(
+      join(dir, "wiki", "index.md"),
+      new Date("2026-08-21T12:00:00Z"),
+      new Date("2026-08-21T12:00:00Z"),
+    );
+
+    expect(
+      await driftWarning(dir, process.env, "2026-08-20T10:00:00Z"),
+    ).toBeUndefined();
+  });
+
   it("warns on uncommitted wiki changes newer than the saved answer", async () => {
     const dataRoot = await makeCommittedRepo();
 
@@ -1147,5 +1166,69 @@ describe("parseQueryArtifact hand-edited bodies", () => {
         '---\nquestion: "q"\ntimestamp: "2026-01-01T00:00:00Z"\npages: []\n---\nA.\nB.',
       ).answer,
     ).toBe("A.\nB.");
+  });
+});
+
+describe("readHeaders order and shape", () => {
+  it("parses headers whatever their order inside the frontmatter block", () => {
+    const text = [
+      "---",
+      `timestamp: ${JSON.stringify(ARTIFACT.timestamp)}`,
+      `pages: ${JSON.stringify(ARTIFACT.pages)}`,
+      `question: ${JSON.stringify(QUESTION)}`,
+      "---",
+      "",
+      ANSWER,
+      "",
+    ].join("\n");
+
+    expect(parseQueryArtifact(text)).toEqual(ARTIFACT);
+  });
+
+  it("rejects a numeric pages value naming the missing header", () => {
+    expect(() =>
+      parseQueryArtifact(
+        `---\nquestion: "q"\ntimestamp: "${ARTIFACT.timestamp}"\npages: 42\n---\n\nA.\n`,
+      ),
+    ).toThrow(
+      "not a wiki-query artifact: missing question, timestamp, or pages header",
+    );
+  });
+
+  it("does not let a string pages line stand in for the timestamp header", () => {
+    expect(() =>
+      parseQueryArtifact(
+        '---\nquestion: "q"\npages: "oops"\npages: ["p"]\n---\n\nA.\n',
+      ),
+    ).toThrow(
+      "not a wiki-query artifact: missing question, timestamp, or pages header",
+    );
+  });
+
+  it("does not let an array question line stand in for the pages header", () => {
+    expect(() =>
+      parseQueryArtifact(
+        `---\nquestion: ["q"]\nquestion: "q"\ntimestamp: "${ARTIFACT.timestamp}"\n---\n\nA.\n`,
+      ),
+    ).toThrow(
+      "not a wiki-query artifact: missing question, timestamp, or pages header",
+    );
+  });
+});
+
+describe("committedAfterSave predates the answer", () => {
+  it("stays undefined when the last raw/ or wiki/ commit predates the saved answer", async () => {
+    const dataRoot = await makeCommittedRepo();
+
+    await commitAll(
+      dataRoot,
+      "wiki edit",
+      [["wiki/index.md", "# Index v2\n"]],
+      "2026-08-19T12:00:00+00:00",
+    );
+
+    expect(
+      await driftWarning(dataRoot, process.env, "2026-08-20T10:00:00Z"),
+    ).toBeUndefined();
   });
 });

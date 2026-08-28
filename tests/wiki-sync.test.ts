@@ -1,7 +1,16 @@
 import { execFile } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  cp,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { runGit } from "../src/data/git.ts";
@@ -1531,6 +1540,74 @@ describe("wiki-sync CLI", () => {
     expect(err).toContain("code 4");
     expect(process.exitCode).toBe(1);
   });
+
+  it("kills the agent and exits 1 when --timeout expires", async () => {
+    const h = await makeCliHarness();
+
+    await writeFile(
+      join(h.dataRoot, "stub-agent.mjs"),
+      '#!/usr/bin/env node\nimport { existsSync } from "node:fs";\nif (!existsSync(process.cwd() + "/.cli-test-repo")) process.exit(5);\nawait new Promise((resolve) => setTimeout(resolve, 2500));\nconsole.log("slow agent done");\n',
+      { mode: 0o755 },
+    );
+
+    const { err } = await runCli([...cycleArgs(h), "--timeout", "1"]);
+
+    expect(err).toContain("timed out after 1 second");
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("exits 1 naming the unread settings file when the config argument is omitted", async () => {
+    const h = await makeCliHarness();
+    const { err } = await runCli([
+      "--settings",
+      "/no/such/settings.yml",
+      "--outputs",
+      h.outputsDir,
+    ]);
+
+    expect(err).toContain(
+      "cannot read agent settings at /no/such/settings.yml",
+    );
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("reads the repo's default settings before failing at an inaccessible vault", async () => {
+    const h = await makeHarness({});
+    const { err } = await runCli([h.configPath, join(h.dataRoot, "raw")]);
+
+    expect(err).toContain('vault root for "Engineering" is not accessible');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("writes the run digest under the --outputs directory", async () => {
+    const h = await makeCliHarness();
+
+    await runCli(cycleArgs(h));
+
+    expect((await readdir(join(h.outputsDir, "runs"))).length).toBeGreaterThan(
+      0,
+    );
+  });
+
+  it("defaults the digest directory to the repo outputs when --outputs is omitted", async () => {
+    const h = await makeCliHarness();
+    const runsDir = join(
+      fileURLToPath(new URL("..", import.meta.url)),
+      "outputs",
+      "runs",
+    );
+    const before = await readdir(runsDir).catch(() => [] as string[]);
+
+    const { out } = await runCli([
+      "--settings",
+      h.settingsPath,
+      h.configPath,
+      join(h.dataRoot, "raw"),
+    ]);
+
+    expect(out).toContain("# wiki-sync cycle digest");
+    expect((await readdir(runsDir)).length).toBeGreaterThan(before.length);
+  });
 });
 
 describe("runWikiSync progress and invocation contract", () => {
@@ -2015,6 +2092,54 @@ describe("formatFinalDigest sections", () => {
 
     expect(digest).toContain(
       "- **Provenance:** ok — 5 source links resolve, 1 origin exists across 4 pages\n",
+    );
+  });
+});
+
+describe("runWikiSync environment passthrough", () => {
+  it("passes the caller's env to the agent invocation", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    let agentEnv: NodeJS.ProcessEnv | undefined;
+
+    h.ingestAgent = async (_command, _args, options) => {
+      agentEnv = options.env;
+
+      return { stdout: "ingest report", stderr: "" };
+    };
+
+    await runWikiSync({
+      ...optionsFor(h),
+      env: { ...optionsFor(h).env, K_WIKI_TEST_ENV_SENTINEL: "sentinel" },
+    });
+
+    expect(agentEnv?.K_WIKI_TEST_ENV_SENTINEL).toBe("sentinel");
+  });
+});
+
+describe("runLintStage heartbeat clock", () => {
+  it("reports the elapsed time since the lint run started in the heartbeat", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const progress: string[] = [];
+    let clock = NOW().getTime();
+
+    await runLintStage({
+      settingsPath: h.settingsPath,
+      rawDir: join(h.dataRoot, "raw"),
+      promptsDir: h.promptsDir,
+      env: optionsFor(h).env,
+      heartbeatMs: 1,
+      now: () => new Date(clock),
+      runAgent: async () => {
+        clock += 60_000;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+
+        return { stdout: "lint done", stderr: "" };
+      },
+      onProgress: (message) => progress.push(message),
+    });
+
+    expect(progress).toContainEqual(
+      "wiki-sync: lint agent still running (1m00s)",
     );
   });
 });

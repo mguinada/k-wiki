@@ -189,6 +189,137 @@ async function checkFreshness(
   };
 }
 
+/** Parse the manifest's vault entries; a manifest that fails to
+ *  parse yields no entries and reports its message as a problem. */
+async function loadVaultEntries(
+  manifestText: string | undefined,
+  manifestPath: string,
+  rawDir: string,
+  problems: string[],
+): Promise<Record<string, VaultNotes>> {
+  if (manifestText === undefined) {
+    return {};
+  }
+
+  try {
+    return parseManifest(manifestText, displayPath(manifestPath, rawDir))
+      .vaults;
+  } catch (cause) {
+    problems.push((cause as Error).message);
+
+    return {};
+  }
+}
+
+/** Check one projected note against its manifest entry; returns
+ *  whether the file hash matched. */
+async function checkNoteFile(
+  notesRoot: string,
+  rawDir: string,
+  vault: string,
+  relPath: string,
+  entry: VaultNotes[string] | undefined,
+  fileSet: ReadonlySet<string>,
+  problems: string[],
+): Promise<boolean> {
+  const abs = join(notesRoot, vault, ...relPath.split("/"));
+
+  if (entry === undefined) {
+    problems.push(`${displayPath(abs, rawDir)}: orphan (no manifest entry)`);
+
+    return false;
+  }
+
+  if (!fileSet.has(relPath)) {
+    problems.push(
+      `${displayPath(abs, rawDir)}: missing (manifest entry without file)`,
+    );
+
+    return false;
+  }
+
+  if (sha256(await readFile(abs)) !== entry.hash) {
+    problems.push(
+      `${displayPath(abs, rawDir)}: hash mismatch (file differs from manifest)`,
+    );
+
+    return false;
+  }
+
+  return true;
+}
+
+/** Compare one vault namespace against its manifest entries. */
+async function compareVault(
+  notesRoot: string,
+  rawDir: string,
+  vault: string,
+  entries: VaultNotes,
+  problems: string[],
+): Promise<{ matched: number; active: boolean }> {
+  const files = (await scanNamespace(join(notesRoot, vault))) ?? [];
+  const paths = [...new Set([...Object.keys(entries), ...files])].sort();
+  const fileSet = new Set(files);
+  let matched = 0;
+
+  for (const relPath of paths) {
+    if (
+      await checkNoteFile(
+        notesRoot,
+        rawDir,
+        vault,
+        relPath,
+        entries[relPath],
+        fileSet,
+        problems,
+      )
+    ) {
+      matched++;
+    }
+  }
+
+  return {
+    matched,
+    active: Object.keys(entries).length > 0 || files.length > 0,
+  };
+}
+
+/** Compare every vault namespace against the manifest, across both
+ *  the manifest's vaults and the namespaces present on disk. */
+async function compareVaultProjections(
+  notesRoot: string,
+  rawDir: string,
+  entriesByVault: Record<string, VaultNotes>,
+  problems: string[],
+): Promise<{ matched: number; activeVaults: number }> {
+  const namespaces = [
+    ...new Set([
+      ...Object.keys(entriesByVault),
+      ...(await listNamespaceDirs(notesRoot)),
+    ]),
+  ].sort();
+  let matched = 0;
+  let activeVaults = 0;
+
+  for (const vault of namespaces) {
+    const result = await compareVault(
+      notesRoot,
+      rawDir,
+      vault,
+      entriesByVault[vault] ?? {},
+      problems,
+    );
+
+    matched += result.matched;
+
+    if (result.active) {
+      activeVaults++;
+    }
+  }
+
+  return { matched, activeVaults };
+}
+
 /**
  * Check the coherence of the projection at `rawDirInput`. Throws when
  * the raw directory itself is missing or not a directory; a projection
@@ -206,70 +337,18 @@ export async function checkRaw(
   const manifestPath = join(rawDir, "manifest.json");
   const manifestText = await readManifestText(manifestPath);
   const problems: string[] = [];
-  let entriesByVault: Record<string, VaultNotes> = {};
-
-  if (manifestText !== undefined) {
-    try {
-      entriesByVault = parseManifest(
-        manifestText,
-        displayPath(manifestPath, rawDir),
-      ).vaults;
-    } catch (cause) {
-      problems.push((cause as Error).message);
-    }
-  }
-
-  const namespaces = [
-    ...new Set([
-      ...Object.keys(entriesByVault),
-      ...(await listNamespaceDirs(notesRoot)),
-    ]),
-  ].sort();
-  let matched = 0;
-  let activeVaults = 0;
-
-  for (const vault of namespaces) {
-    const entries = entriesByVault[vault] ?? {};
-    const files = (await scanNamespace(join(notesRoot, vault))) ?? [];
-
-    if (Object.keys(entries).length > 0 || files.length > 0) {
-      activeVaults++;
-    }
-
-    const paths = [...new Set([...Object.keys(entries), ...files])].sort();
-    const fileSet = new Set(files);
-
-    for (const relPath of paths) {
-      const abs = join(notesRoot, vault, ...relPath.split("/"));
-      const entry = entries[relPath];
-
-      if (entry === undefined) {
-        problems.push(
-          `${displayPath(abs, rawDir)}: orphan (no manifest entry)`,
-        );
-
-        continue;
-      }
-
-      if (!fileSet.has(relPath)) {
-        problems.push(
-          `${displayPath(abs, rawDir)}: missing (manifest entry without file)`,
-        );
-
-        continue;
-      }
-
-      if (sha256(await readFile(abs)) === entry.hash) {
-        matched++;
-
-        continue;
-      }
-
-      problems.push(
-        `${displayPath(abs, rawDir)}: hash mismatch (file differs from manifest)`,
-      );
-    }
-  }
+  const entriesByVault = await loadVaultEntries(
+    manifestText,
+    manifestPath,
+    rawDir,
+    problems,
+  );
+  const { matched, activeVaults } = await compareVaultProjections(
+    notesRoot,
+    rawDir,
+    entriesByVault,
+    problems,
+  );
 
   const freshness = await checkFreshness(
     manifestText,
@@ -346,6 +425,30 @@ reported as a warning.
 Exit status: 0 = coherent (healthy-empty counts; a stale warning
 alone stays exit 0), 1 = one line per problem.`;
 
+/** Print a check-raw report: warnings first, then the healthy summary
+ *  or one red line per problem; sets the exit code accordingly. */
+function printReport(report: HealthReport, failOnStale: boolean): void {
+  for (const warning of report.warnings) {
+    console.error(colors().yellow(`check-raw: ${warning}`));
+  }
+
+  if (report.healthy) {
+    console.log(colors().green(report.summary));
+
+    if (failOnStale && report.stale) {
+      process.exitCode = 1;
+    }
+
+    return;
+  }
+
+  for (const line of report.problems) {
+    console.error(colors().red(line));
+  }
+
+  process.exitCode = 1;
+}
+
 /** check-raw entry point: `check-raw [-h | --help] [--fail-on-stale] [<raw-dir>]` (default: repo raw/). */
 export async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -361,27 +464,7 @@ export async function main(): Promise<void> {
   const rawDir = positional[0] ?? join(repoRoot, "raw");
 
   try {
-    const report = await checkRaw(rawDir);
-
-    for (const warning of report.warnings) {
-      console.error(colors().yellow(`check-raw: ${warning}`));
-    }
-
-    if (report.healthy) {
-      console.log(colors().green(report.summary));
-
-      if (failOnStale && report.stale) {
-        process.exitCode = 1;
-      }
-
-      return;
-    }
-
-    for (const line of report.problems) {
-      console.error(colors().red(line));
-    }
-
-    process.exitCode = 1;
+    printReport(await checkRaw(rawDir), failOnStale);
   } catch (error) {
     console.error(
       colors().red(

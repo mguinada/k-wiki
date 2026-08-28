@@ -160,17 +160,12 @@ async function walkFiles(
   }
 }
 
-/**
- * Select the files of a source repo that match the allowlist. Only the
- * literal directory prefixes of the patterns are walked (excluded by
- * construction); fully literal patterns are checked as exact files.
- */
-export async function selectRepoFiles(
-  root: string,
-  patterns: readonly string[],
-): Promise<{ candidates: number; selected: readonly string[] }> {
-  const matchers = patterns.map(compileAllowlistPattern);
-  const matches = (relPath: string) => matchers.some((m) => m.test(relPath));
+/** Split the patterns into fully-literal exact files and the
+ *  directory roots the walk must cover. */
+function classifyPatterns(patterns: readonly string[]): {
+  exactFiles: Set<string>;
+  walkRoots: Set<string>;
+} {
   const walkRoots = new Set<string>();
   const exactFiles = new Set<string>();
 
@@ -184,6 +179,22 @@ export async function selectRepoFiles(
       walkRoots.add(prefix.join("/"));
     }
   }
+
+  return { exactFiles, walkRoots };
+}
+
+/**
+ * Select the files of a source repo that match the allowlist. Only the
+ * literal directory prefixes of the patterns are walked (excluded by
+ * construction); fully literal patterns are checked as exact files.
+ */
+export async function selectRepoFiles(
+  root: string,
+  patterns: readonly string[],
+): Promise<{ candidates: number; selected: readonly string[] }> {
+  const matchers = patterns.map(compileAllowlistPattern);
+  const matches = (relPath: string) => matchers.some((m) => m.test(relPath));
+  const { exactFiles, walkRoots } = classifyPatterns(patterns);
 
   const selected = new Set<string>();
   let candidates = 0;
@@ -343,19 +354,8 @@ async function projectRepo(
   };
 }
 
-/** Run one repo projection pass and return the run report. */
-export async function runRepoSync(
-  options: RepoSyncOptions,
-): Promise<RepoSyncReport> {
-  const home = options.home ?? homedir();
-  const now = options.now ?? (() => new Date());
-  const env = options.env ?? process.env;
-  const onProgress = options.onProgress ?? (() => {});
-
-  onProgress(`sync-repo: raw dir ${options.rawDir}`);
-
-  const source = await theRepoSource(options.configPath, home);
-
+/** Verify the source repo root is an accessible directory. */
+async function assertRepoDirectory(source: RepoSourceConfig): Promise<void> {
   let info: Stats;
 
   try {
@@ -372,6 +372,22 @@ export async function runRepoSync(
       `source root for "${source.name}" is not a directory: ${source.root}`,
     );
   }
+}
+
+/** Run one repo projection pass and return the run report. */
+export async function runRepoSync(
+  options: RepoSyncOptions,
+): Promise<RepoSyncReport> {
+  const home = options.home ?? homedir();
+  const now = options.now ?? (() => new Date());
+  const env = options.env ?? process.env;
+  const onProgress = options.onProgress ?? (() => {});
+
+  onProgress(`sync-repo: raw dir ${options.rawDir}`);
+
+  const source = await theRepoSource(options.configPath, home);
+
+  await assertRepoDirectory(source);
 
   await assertCommittedTree(source.root, env);
 

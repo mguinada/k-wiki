@@ -1,7 +1,9 @@
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentRunner } from "../src/ingest/wiki-ingest.ts";
@@ -21,6 +23,11 @@ reasoning: high
 `;
 
 const tempDirs: string[] = [];
+
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+/** The CLI's default saved-answer path (outputs/ is per-machine). */
+const defaultLastQuery = join(repoRoot, "outputs", "last-query.md");
 
 afterAll(async () => {
   await Promise.all(
@@ -83,6 +90,7 @@ interface Harness {
     command: string;
     args: readonly string[];
     cwd: string;
+    env: NodeJS.ProcessEnv;
   }[];
   runAgent: AgentRunner;
 }
@@ -158,7 +166,12 @@ async function makeHarness(): Promise<Harness> {
 
   const invocations: Harness["invocations"] = [];
   const runAgent: AgentRunner = async (command, args, options) => {
-    invocations.push({ command, args, cwd: options.cwd });
+    invocations.push({
+      command,
+      args,
+      cwd: options.cwd,
+      env: options.env,
+    });
 
     return {
       stdout:
@@ -1003,6 +1016,40 @@ console.log("An answer.");
     );
   });
 
+  it("files the saved answer from the checkout's default outputs directory when --outputs is omitted", async () => {
+    const h = await makeCliHarness();
+
+    await runCli(queryArgs(h));
+
+    const cliOutputs = join(repoRoot, "outputs");
+    const defaultArtifact = join(cliOutputs, "last-query.md");
+    const previous = await readFile(defaultArtifact).catch(() => null);
+
+    await mkdir(cliOutputs, { recursive: true });
+    await writeFile(
+      defaultArtifact,
+      await readFile(join(h.outputsDir, "last-query.md")),
+    );
+
+    try {
+      const { out } = await runCli([
+        "--file-last",
+        "--raw-dir",
+        join(h.dataRoot, "raw"),
+      ]);
+
+      expect(out).toContain(
+        "Filed: wiki/queries/when-should-i-prefer-rag-over-fine-tuning.md",
+      );
+    } finally {
+      if (previous === null) {
+        await rm(defaultArtifact, { force: true });
+      } else {
+        await writeFile(defaultArtifact, previous);
+      }
+    }
+  });
+
   it("bolds the Filed line", async () => {
     const h = await makeCliHarness();
 
@@ -1108,6 +1155,86 @@ console.log("An answer.");
     }
 
     expect(calls).toBe(0);
+  });
+
+  it("fails at the data repo guardrail, not at settings, when --settings is omitted", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-query-nogit-"));
+
+    tempDirs.push(dir);
+
+    const { err } = await runCli([
+      "--raw-dir",
+      join(dir, "raw"),
+      "a question?",
+    ]);
+
+    expect(err).toContain("the data repo has no commit to revert to");
+  });
+
+  it.skipIf(existsSync(defaultLastQuery))(
+    "names the repo's outputs/last-query.md when --outputs is omitted",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "k-wiki-query-"));
+
+      tempDirs.push(dir);
+
+      const { err } = await runCli([
+        "--file-last",
+        "--raw-dir",
+        join(dir, "raw"),
+      ]);
+
+      expect(err).toContain(`no saved answer at ${defaultLastQuery}`);
+    },
+  );
+
+  it("erases the live heartbeat line before printing a failure", async () => {
+    const h = await makeCliHarness();
+
+    await writeFile(
+      join(h.dataRoot, "stub-agent.mjs"),
+      "#!/usr/bin/env node\nsetTimeout(() => process.exit(3), 250);\n",
+      { mode: 0o755 },
+    );
+
+    const argv = process.argv;
+    const isTTY = process.stderr.isTTY;
+    const noColor = process.env.NO_COLOR;
+    const writes: string[] = [];
+
+    process.argv = [...argv.slice(0, 2), ...queryArgs(h)];
+    process.stderr.isTTY = true;
+    delete process.env.NO_COLOR;
+
+    const writeSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation((chunk: string | Uint8Array) => {
+        writes.push(String(chunk));
+
+        return true;
+      });
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      await main();
+    } finally {
+      process.argv = argv;
+      process.stderr.isTTY = isTTY;
+
+      if (noColor === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = noColor;
+      }
+
+      writeSpy.mockRestore();
+      logSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
+
+    expect(writes.join("")).toMatch(/\r +\r/);
+    expect(process.exitCode).toBe(1);
   });
 });
 
@@ -1224,5 +1351,133 @@ describe("wiki-query CLI stderr surface", () => {
         .join("\n")
         .endsWith("\n\nTo file this answer: wiki-query --file-last"),
     ).toBe(true);
+  });
+});
+
+describe("runWikiQuery caller env", () => {
+  it("hands the caller's env object to the agent runner", async () => {
+    const h = await makeHarness();
+    const env = { ...process.env, K_WIKI_QUERY_ENV_PROBE: "1" };
+
+    await runWikiQuery({ ...optionsFor(h), env });
+
+    expect(invocation(h, 0).env).toBe(env);
+  });
+});
+
+describe("runWikiQuery HEAD-only move", () => {
+  /** An agent that commits outside wiki/: wiki/ stays clean, HEAD moves. */
+  function rogueHeadMover(): AgentRunner {
+    return async (_command, _args, options) => {
+      await writeFile(join(options.cwd, "NOTES.md"), "note\n");
+      await run("git", ["add", "-A"], { cwd: options.cwd });
+      await run(
+        "git",
+        [
+          "-c",
+          "user.email=t@t",
+          "-c",
+          "user.name=t",
+          "commit",
+          "--quiet",
+          "-m",
+          "outside wiki",
+        ],
+        { cwd: options.cwd },
+      );
+
+      return { stdout: "An answer.", stderr: "" };
+    };
+  }
+
+  it("reports the HEAD-move reason on the progress sink", async () => {
+    const h = await makeHarness();
+    const { stdout: sha } = await run("git", [
+      "-C",
+      h.dataRoot,
+      "rev-parse",
+      "HEAD",
+    ]);
+    const messages: string[] = [];
+
+    try {
+      await runWikiQuery({
+        ...optionsFor(h),
+        runAgent: rogueHeadMover(),
+        onProgress: (message) => messages.push(message),
+      });
+    } catch {
+      // expected: the violation throws after the progress line
+    }
+
+    expect(messages).toContain(
+      `wiki-query: the data repo's HEAD moved during the answer-only run — reverting to ${sha.trim().slice(0, 8)}`,
+    );
+  });
+
+  it("names only the HEAD move in the failure message", async () => {
+    const h = await makeHarness();
+    const { stdout: sha } = await run("git", [
+      "-C",
+      h.dataRoot,
+      "rev-parse",
+      "HEAD",
+    ]);
+    let message = "";
+
+    try {
+      await runWikiQuery({ ...optionsFor(h), runAgent: rogueHeadMover() });
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(message).toBe(
+      `answer-only run moved the data repo's HEAD; reverted to ${sha.trim().slice(0, 8)} — the answer was saved nowhere; rerun the question`,
+    );
+  });
+});
+
+describe("runWikiQuery combined violations", () => {
+  /** An agent that writes wiki/ and moves the HEAD: two violations. */
+  function rogueWriterAndHeadMover(): AgentRunner {
+    return async (_command, _args, options) => {
+      await writeFile(join(options.cwd, "wiki", "rogue.md"), "# Rogue\n");
+      await writeFile(join(options.cwd, "NOTES.md"), "note\n");
+      await run("git", ["add", "NOTES.md"], { cwd: options.cwd });
+      await run(
+        "git",
+        [
+          "-c",
+          "user.email=t@t",
+          "-c",
+          "user.name=t",
+          "commit",
+          "--quiet",
+          "-m",
+          "rogue write and move",
+        ],
+        { cwd: options.cwd },
+      );
+
+      return { stdout: "An answer.", stderr: "" };
+    };
+  }
+
+  it("joins both violations with and in the failure message", async () => {
+    const h = await makeHarness();
+    let message = "";
+
+    try {
+      await runWikiQuery({
+        ...optionsFor(h),
+        runAgent: rogueWriterAndHeadMover(),
+      });
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(message).toContain(
+      "wrote to wiki/ (wiki/rogue.md) and moved the data repo's HEAD",
+    );
   });
 });

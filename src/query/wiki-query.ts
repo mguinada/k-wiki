@@ -2,18 +2,22 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
+import { flagValueError } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { formatDuration } from "../cli/progress.ts";
 import {
   capturePreRunState,
+  type PreRunState,
   revertToPreRun,
   statusSince,
 } from "../ingest/guardrails.ts";
 import {
   type AgentRunner,
+  type AgentSettings,
   createAgentProgressSink,
   HEARTBEAT_MS,
   loadAgentSettings,
+  type ProgressSink,
   readPrompt,
   spawnAgent,
 } from "../ingest/wiki-ingest.ts";
@@ -94,6 +98,68 @@ export interface QueryResult {
   readonly artifactPath: string;
 }
 
+/** The agent CLI argument list for one answer-only run. */
+function queryAgentArgs(settings: AgentSettings, composed: string): string[] {
+  return [
+    ...(settings.provider ? ["--provider", settings.provider] : []),
+    "--model",
+    settings.model,
+    "--thinking",
+    settings.reasoning,
+    "--print",
+    composed,
+  ];
+}
+
+/** Announce the exact agent invocation before it starts. */
+function announceAgent(
+  onProgress: (message: string) => void,
+  settings: AgentSettings,
+): void {
+  const providerFlag = settings.provider
+    ? ` --provider ${settings.provider}`
+    : "";
+
+  onProgress(
+    `wiki-query: invoking agent: ${settings.command}${providerFlag} --model ${settings.model} --thinking ${settings.reasoning}`,
+  );
+}
+
+/** Fail the run when the answer-only contract was violated: revert, then throw. */
+async function assertWikiUnchanged(
+  dataRoot: string,
+  env: NodeJS.ProcessEnv,
+  pre: PreRunState,
+  onProgress: (message: string) => void,
+): Promise<void> {
+  const { entries, changed, headMoved } = await statusSince(
+    dataRoot,
+    env,
+    pre,
+    "wiki",
+  );
+
+  if (changed.length > 0 || headMoved) {
+    const revertTo = pre.commit.slice(0, 8);
+    const reason =
+      changed.length > 0 ? "wiki changed" : "the data repo's HEAD moved";
+
+    onProgress(
+      `wiki-query: ${reason} during the answer-only run — reverting to ${revertTo}`,
+    );
+    await revertToPreRun(dataRoot, env, pre, entries);
+
+    const violations = [
+      ...(changed.length > 0 ? [`wrote to wiki/ (${changed.join(", ")})`] : []),
+      ...(headMoved ? ["moved the data repo's HEAD"] : []),
+    ];
+
+    throw new Error(
+      `answer-only run ${violations.join(" and ")}; reverted to ${revertTo} — the answer was saved nowhere; rerun the question`,
+    );
+  }
+}
+
 /**
  * One headless answer-only query run: capture the pre-run state,
  * compose, invoke, then verify mechanically that wiki/ did not move
@@ -113,24 +179,10 @@ export async function runWikiQuery(
   const pre = await capturePreRunState(dataRoot, env);
   const promptText = await readPrompt(join(options.promptsDir, "query.md"));
   const composed = composeQueryPrompt(promptText, options.question);
-  const args = [
-    ...(settings.provider ? ["--provider", settings.provider] : []),
-    "--model",
-    settings.model,
-    "--thinking",
-    settings.reasoning,
-    "--print",
-    composed,
-  ];
+  const args = queryAgentArgs(settings, composed);
   const runAgent = options.runAgent ?? spawnAgent;
 
-  const providerFlag = settings.provider
-    ? ` --provider ${settings.provider}`
-    : "";
-
-  onProgress(
-    `wiki-query: invoking agent: ${settings.command}${providerFlag} --model ${settings.model} --thinking ${settings.reasoning}`,
-  );
+  announceAgent(onProgress, settings);
 
   const agentStartedAt = Date.now();
   const heartbeat = setInterval(() => {
@@ -159,32 +211,7 @@ export async function runWikiQuery(
     throw new Error("the agent produced no answer");
   }
 
-  const { entries, changed, headMoved } = await statusSince(
-    dataRoot,
-    env,
-    pre,
-    "wiki",
-  );
-
-  if (changed.length > 0 || headMoved) {
-    const revertTo = pre.commit.slice(0, 8);
-    const reason =
-      changed.length > 0 ? "wiki changed" : "the data repo's HEAD moved";
-
-    onProgress(
-      `wiki-query: ${reason} during the answer-only run — reverting to ${revertTo}`,
-    );
-    await revertToPreRun(dataRoot, env, pre, entries);
-
-    const violations = [
-      ...(changed.length > 0 ? [`wrote to wiki/ (${changed.join(", ")})`] : []),
-      ...(headMoved ? ["moved the data repo's HEAD"] : []),
-    ];
-
-    throw new Error(
-      `answer-only run ${violations.join(" and ")}; reverted to ${revertTo} — the answer was saved nowhere; rerun the question`,
-    );
-  }
+  await assertWikiUnchanged(dataRoot, env, pre, onProgress);
 
   const artifactPath = join(options.outputsDir, LAST_QUERY_FILE);
 
@@ -278,19 +305,20 @@ function fail(message: string): void {
   process.exitCode = 1;
 }
 
-/** wiki-query entry point: `wiki-query [-h | --help] [--file-last] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>`. */
-export async function main(): Promise<void> {
-  const args = process.argv.slice(2);
+/** What parseArgs lifted out of argv: switch values, positionals, mode. */
+interface ParsedArgs {
+  readonly values: Map<string, string | undefined>;
+  readonly positional: string[];
+  readonly fileLast: boolean;
+  readonly error: string | undefined;
+}
 
-  if (args.includes("-h") || args.includes("--help")) {
-    console.log(HELP);
-
-    return;
-  }
-
+/** Split argv into switch values, positionals, and the --file-last mode. */
+function parseArgs(args: readonly string[]): ParsedArgs {
   const values = new Map<string, string | undefined>();
   const positional: string[] = [];
   let fileLast = false;
+  let error: string | undefined;
 
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
@@ -318,70 +346,157 @@ export async function main(): Promise<void> {
     }
 
     if (arg.startsWith("-")) {
-      fail(`unknown option ${JSON.stringify(arg)}`);
+      error = `unknown option ${JSON.stringify(arg)}`;
 
-      return;
+      break;
     }
 
     positional.push(arg);
   }
 
-  for (const [flag, value] of values) {
-    if (flag === "--timeout") {
-      continue;
-    }
+  return { values, positional, fileLast, error };
+}
 
-    if (value === undefined) {
-      fail(`${flag} needs a path value`);
-
-      return;
-    }
-  }
-
-  const timeoutArg = values.get("--timeout");
-
-  if (
-    values.has("--timeout") &&
-    (timeoutArg === undefined || !/^[1-9][0-9]*$/.test(timeoutArg))
-  ) {
-    fail("--timeout needs a positive integer number of seconds");
-
-    return;
-  }
-
+/** The first usage error in the positional question, if any. */
+function questionError(
+  positional: readonly string[],
+  fileLast: boolean,
+): string | undefined {
   if (fileLast && positional.length > 0) {
-    fail(
-      `--file-last takes no <question> argument (it files the saved answer; got ${JSON.stringify(positional[0])})`,
-    );
-
-    return;
+    return `--file-last takes no <question> argument (it files the saved answer; got ${JSON.stringify(positional[0])})`;
   }
 
   if (!fileLast) {
     if (positional.length === 0) {
-      fail('a question is required: wiki-query "<question>"');
-
-      return;
+      return 'a question is required: wiki-query "<question>"';
     }
 
     if (positional.length > 1) {
-      fail(
-        `expected exactly one <question> argument, got ${positional.length}`,
-      );
-
-      return;
+      return `expected exactly one <question> argument, got ${positional.length}`;
     }
   }
 
   const question = positional[0] ?? "";
 
   if (!fileLast && question.trim() === "") {
-    fail('a question is required: wiki-query "<question>"');
+    return 'a question is required: wiki-query "<question>"';
+  }
+
+  return undefined;
+}
+
+/** Stage 2: file the saved answer and print the Filed line. */
+async function fileLastStage(
+  colors: ReturnType<typeof terminalColors>,
+  rawDir: string,
+  outputsDir: string,
+): Promise<void> {
+  const result = await fileLastQuery({
+    artifactPath: join(outputsDir, LAST_QUERY_FILE),
+    dataRoot: dirname(rawDir),
+  });
+
+  console.log(colors.bold(`Filed: ${result.pagePath}`));
+
+  if (result.warning !== undefined) {
+    console.error(result.warning);
+  }
+}
+
+/** Stage 1: ask the question, print the answer and the filing hint. */
+async function answerStage(
+  parsed: ParsedArgs,
+  colors: ReturnType<typeof terminalColors>,
+  rawDir: string,
+  outputsDir: string,
+  animated: boolean,
+  sink: ProgressSink,
+): Promise<void> {
+  const timeoutArg = parsed.values.get("--timeout");
+  const result = await runWikiQuery({
+    settingsPath:
+      parsed.values.get("--settings") ?? join(repoRoot, "settings.yml"),
+    rawDir,
+    promptsDir: join(repoRoot, "prompts"),
+    outputsDir,
+    question: parsed.positional[0] ?? "",
+    timeoutMs: timeoutArg === undefined ? undefined : Number(timeoutArg) * 1000,
+    heartbeatMs: animated ? 100 : undefined,
+    onProgress: sink.render,
+  });
+
+  sink.end();
+
+  console.log(result.answer);
+  console.error();
+  console.error(colors.dim(`To file this answer: wiki-query --file-last`));
+}
+
+/** Run the stage the arguments selected, in the data repo it resolved. */
+async function dispatchStage(
+  parsed: ParsedArgs,
+  colors: ReturnType<typeof terminalColors>,
+  animated: boolean,
+  sink: ProgressSink,
+): Promise<void> {
+  const outputsDir =
+    parsed.values.get("--outputs") ?? join(repoRoot, "outputs");
+  const config = await loadSyncConfig(join(repoRoot, "sync.json"), homedir());
+  const rawDir =
+    parsed.values.get("--raw-dir") ?? resolveRawDir(config.dataRoot, repoRoot);
+
+  if (parsed.fileLast) {
+    await fileLastStage(colors, rawDir, outputsDir);
 
     return;
   }
 
-  const outputsDir = values.get("--outputs") ?? join(repoRoot, "outputs");
+  await answerStage(parsed, colors, rawDir, outputsDir, animated, sink);
+}
+
+/** Print the failure red and set the exit code; the sink is closed first. */
+function reportFailure(
+  sink: ProgressSink,
+  colors: ReturnType<typeof terminalColors>,
+  error: unknown,
+): void {
+  sink.end();
+  console.error(
+    colors.red(
+      `wiki-query: ${error instanceof Error ? error.message : String(error)}`,
+    ),
+  );
+  process.exitCode = 1;
+}
+
+/** wiki-query entry point: `wiki-query [-h | --help] [--file-last] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>`. */
+export async function main(): Promise<void> {
+  const args = process.argv.slice(2);
+
+  if (args.includes("-h") || args.includes("--help")) {
+    console.log(HELP);
+
+    return;
+  }
+
+  const parsed = parseArgs(args);
+
+  if (parsed.error !== undefined) {
+    fail(parsed.error);
+
+    return;
+  }
+
+  const usageError =
+    flagValueError(parsed.values) ??
+    questionError(parsed.positional, parsed.fileLast);
+
+  if (usageError !== undefined) {
+    fail(usageError);
+
+    return;
+  }
+
   const colors = terminalColors(process.env);
   const animated = canAnimate(process.stderr.isTTY === true, process.env);
   const sink = createAgentProgressSink(
@@ -393,50 +508,9 @@ export async function main(): Promise<void> {
   );
 
   try {
-    const config = await loadSyncConfig(join(repoRoot, "sync.json"), homedir());
-    const rawDir =
-      values.get("--raw-dir") ?? resolveRawDir(config.dataRoot, repoRoot);
-
-    if (fileLast) {
-      const result = await fileLastQuery({
-        artifactPath: join(outputsDir, LAST_QUERY_FILE),
-        dataRoot: dirname(rawDir),
-      });
-
-      console.log(colors.bold(`Filed: ${result.pagePath}`));
-
-      if (result.warning !== undefined) {
-        console.error(result.warning);
-      }
-
-      return;
-    }
-
-    const result = await runWikiQuery({
-      settingsPath: values.get("--settings") ?? join(repoRoot, "settings.yml"),
-      rawDir,
-      promptsDir: join(repoRoot, "prompts"),
-      outputsDir,
-      question,
-      timeoutMs:
-        timeoutArg === undefined ? undefined : Number(timeoutArg) * 1000,
-      heartbeatMs: animated ? 100 : undefined,
-      onProgress: sink.render,
-    });
-
-    sink.end();
-
-    console.log(result.answer);
-    console.error();
-    console.error(colors.dim(`To file this answer: wiki-query --file-last`));
+    await dispatchStage(parsed, colors, animated, sink);
   } catch (error) {
-    sink.end();
-    console.error(
-      colors.red(
-        `wiki-query: ${error instanceof Error ? error.message : String(error)}`,
-      ),
-    );
-    process.exitCode = 1;
+    reportFailure(sink, colors, error);
   }
 }
 

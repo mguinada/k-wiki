@@ -1,12 +1,21 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { createColors } from "picocolors";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { runGit } from "../src/data/git.ts";
+import type { PreRunState } from "../src/ingest/guardrails.ts";
 import {
   type AgentRunner,
   type AgentSettings,
@@ -29,6 +38,7 @@ import {
   runWikiIngest,
   spawnAgent,
   warnTrackedIgnored,
+  wikiPages,
 } from "../src/ingest/wiki-ingest.ts";
 import {
   emptyManifest,
@@ -75,6 +85,20 @@ describe("parseSettings", () => {
       command: "pi",
       model: "GLM-5.2",
       reasoning: "high",
+      provider: undefined,
+    });
+  });
+
+  it("skips any number of indented comment lines", () => {
+    expect(
+      parseSettings(
+        "command: pi\n  # first note\n  # second note\nmodel: M\nreasoning: low\n",
+        "settings.yml",
+      ),
+    ).toEqual({
+      command: "pi",
+      model: "M",
+      reasoning: "low",
       provider: undefined,
     });
   });
@@ -1767,6 +1791,38 @@ function optionsFor(h: Harness) {
     runAgent: h.runAgent,
     now: () => new Date("2026-08-20T18:00:00.000Z"),
   };
+}
+
+/** The file names currently under `dir`, or [] when it does not exist. */
+async function runFiles(dir: string): Promise<string[]> {
+  const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+
+  return entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => entry.name)
+    .sort();
+}
+
+/** Undo a test's forced `process.stderr.isTTY`. */
+function restoreStderrTty(prior: PropertyDescriptor | undefined): void {
+  if (prior === undefined) {
+    delete (process.stderr as { isTTY?: boolean }).isTTY;
+
+    return;
+  }
+
+  Object.defineProperty(process.stderr, "isTTY", prior);
+}
+
+/** Undo a test's NO_COLOR override. */
+function restoreNoColor(prior: string | undefined): void {
+  if (prior === undefined) {
+    delete process.env.NO_COLOR;
+
+    return;
+  }
+
+  process.env.NO_COLOR = prior;
 }
 
 /** The recorded invocation at `index`; fails loudly when absent. */
@@ -4436,6 +4492,101 @@ console.log("stub report");
     );
     expect(process.exitCode).toBe(1);
   });
+
+  it("writes the run digest into the --outputs directory it was given", async () => {
+    const h = await makeCliHarness();
+    const runsDir = join(h.outputsDir, "runs");
+    const before = await runFiles(runsDir);
+
+    await runCli(cliArgs(h));
+
+    const after = await runFiles(runsDir);
+
+    expect(after.length).toBe(before.length + 1);
+  });
+
+  it("defaults --outputs to the repo's outputs directory", async () => {
+    const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+    const runsDir = join(repoRoot, "outputs", "runs");
+    const before = await runFiles(runsDir);
+    const h = await makeCliHarness();
+
+    await runCli(["--settings", h.settingsPath, join(h.dataRoot, "raw")]);
+
+    const after = await runFiles(runsDir);
+
+    expect(after.length).toBeGreaterThan(before.length);
+  });
+
+  it("defaults --settings to the repo settings.yml", async () => {
+    const noManifest = await mkdtemp(join(tmpdir(), "k-wiki-nomanifest-"));
+
+    tempDirs.push(noManifest);
+
+    const { err } = await runCli([join(noManifest, "raw")]);
+
+    expect(err).toContain("no manifest at");
+  });
+
+  it("renders progress straight to stderr when stderr is a TTY", async () => {
+    const h = await makeCliHarness();
+    const priorTty = Object.getOwnPropertyDescriptor(process.stderr, "isTTY");
+    const priorNoColor = process.env.NO_COLOR;
+    const writeSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+
+    Object.defineProperty(process.stderr, "isTTY", {
+      value: true,
+      configurable: true,
+    });
+    delete process.env.NO_COLOR;
+
+    let raw = "";
+
+    try {
+      await runCli(cliArgs(h));
+      raw = writeSpy.mock.calls.map((call) => String(call[0])).join("");
+    } finally {
+      writeSpy.mockRestore();
+      restoreStderrTty(priorTty);
+      restoreNoColor(priorNoColor);
+    }
+
+    expect(raw).toContain("wiki-ingest: raw dir");
+  });
+
+  it("keeps progress off the raw stderr writer under NO_COLOR on a TTY", async () => {
+    const h = await makeCliHarness();
+    const priorTty = Object.getOwnPropertyDescriptor(process.stderr, "isTTY");
+    const priorNoColor = process.env.NO_COLOR;
+    const writeSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+
+    Object.defineProperty(process.stderr, "isTTY", {
+      value: true,
+      configurable: true,
+    });
+    process.env.NO_COLOR = "1";
+
+    let captured: { out: string; err: string };
+    let raw = "";
+
+    try {
+      captured = await runCli(cliArgs(h));
+      raw = writeSpy.mock.calls.map((call) => String(call[0])).join("");
+    } finally {
+      writeSpy.mockRestore();
+      restoreStderrTty(priorTty);
+      restoreNoColor(priorNoColor);
+    }
+
+    expect({
+      errHasRender: captured.err.includes("wiki-ingest: raw dir"),
+      rawHasRender: raw.includes("wiki-ingest: raw dir"),
+    }).toEqual({ errHasRender: true, rawHasRender: false });
+  });
 });
 
 describe("formatDigest structure", () => {
@@ -4713,5 +4864,56 @@ describe("runWikiIngest dashboard hook (issue #73)", () => {
     const result = await runWikiIngest(optionsFor(h));
 
     expect(result.status).toBe("ran");
+  });
+
+  it("stamps the regenerated dashboard with the run's clock", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      now: () => new Date("2031-03-04T05:06:07.000Z"),
+    });
+
+    const html = await readFile(join(h.dataRoot, "dashboard.html"), "utf8");
+
+    expect(html).toContain("generated 2031-03-04 05:06 UTC");
+  });
+
+  it("warns on the progress sink when the dashboard refresh fails", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const progress: string[] = [];
+
+    await mkdir(join(h.dataRoot, "dashboard.html"));
+    await runWikiIngest({
+      ...optionsFor(h),
+      onProgress: (message) => progress.push(message),
+    });
+
+    expect(progress.join("\n")).toContain("dashboard refresh failed");
+  });
+});
+
+describe("wikiPages vanished untracked detection", () => {
+  it("counts only vanished untracked markdown pages as deleted, in sorted order", async () => {
+    const dataRoot = await makeDataRepo({ "a.md": "a" });
+
+    await writeFile(join(dataRoot, "wiki", "z.md"), "# Z\n");
+    await commitAll(dataRoot, "add z");
+    await runGit(dataRoot, ["rm", "--quiet", "wiki/z.md"], process.env);
+
+    const pre: PreRunState = {
+      commit: "0123456789abcdef0123456789abcdef01234567",
+      status: [
+        { code: " M", path: "wiki/m.md", origin: undefined },
+        { code: "??", path: "wiki/b.txt", origin: undefined },
+        { code: "??", path: "wiki/a.md", origin: undefined },
+      ],
+      hashes: new Map<string, string>(),
+      contents: new Map<string, Buffer | null>(),
+    };
+
+    const pages = await wikiPages(dataRoot, process.env, "wiki", pre);
+
+    expect(pages.deleted).toEqual(["wiki/a.md", "wiki/z.md"]);
   });
 });

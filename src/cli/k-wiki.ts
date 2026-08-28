@@ -70,6 +70,37 @@ export interface KWikiBinding {
 const BINDING_SHAPE =
   'a single JSON object: { "checkout": "<k-wiki checkout>", "settings": "<optional settings file>" }';
 
+/** Reject any key beyond checkout and settings (the one-wiki shape). */
+function rejectUnknownKeys(
+  parsed: Record<string, unknown>,
+  source: string,
+): void {
+  for (const key of Object.keys(parsed)) {
+    if (key !== "checkout" && key !== "settings") {
+      throw new Error(
+        `invalid binding at ${source}: unknown key ${JSON.stringify(key)}; expected ${BINDING_SHAPE}`,
+      );
+    }
+  }
+}
+
+/** Validate the optional settings field: absent, or a non-empty string. */
+function parseSettingsField(
+  settings: unknown,
+  source: string,
+): string | undefined {
+  if (
+    settings !== undefined &&
+    (typeof settings !== "string" || settings.length === 0)
+  ) {
+    throw new Error(
+      `invalid binding at ${source}: "settings" must be a non-empty string`,
+    );
+  }
+
+  return settings as string | undefined;
+}
+
 /**
  * Parse and validate a binding file. The schema deliberately rejects
  * every list or multi-wiki form: one project binds exactly one wiki
@@ -94,13 +125,7 @@ export function parseBinding(
     );
   }
 
-  for (const key of Object.keys(parsed)) {
-    if (key !== "checkout" && key !== "settings") {
-      throw new Error(
-        `invalid binding at ${source}: unknown key ${JSON.stringify(key)}; expected ${BINDING_SHAPE}`,
-      );
-    }
-  }
+  rejectUnknownKeys(parsed, source);
 
   const checkout = parsed.checkout;
 
@@ -110,18 +135,10 @@ export function parseBinding(
     );
   }
 
-  const settings = parsed.settings;
-
-  if (
-    settings !== undefined &&
-    (typeof settings !== "string" || settings.length === 0)
-  ) {
-    throw new Error(
-      `invalid binding at ${source}: "settings" must be a non-empty string`,
-    );
-  }
-
-  return { checkout: expandHome(checkout, home), settings };
+  return {
+    checkout: expandHome(checkout, home),
+    settings: parseSettingsField(parsed.settings, source),
+  };
 }
 
 async function isFile(path: string): Promise<boolean> {
@@ -373,6 +390,66 @@ const PLURAL: Record<string, string> = {
   comparison: "comparisons",
 };
 
+/** One 'slug — title' line per page of one type filter. */
+function filteredLines(
+  pages: readonly ListedPage[],
+  typeFilter: string,
+): string[] {
+  return pages
+    .filter((page) => page.type === typeFilter)
+    .map((page) => `${page.slug} — ${page.title ?? page.slug}`);
+}
+
+/** Group the pages by frontmatter type; pages without one go to "untyped". */
+function groupPages(pages: readonly ListedPage[]): Map<string, ListedPage[]> {
+  const groups = new Map<string, ListedPage[]>();
+
+  for (const page of pages) {
+    const key = page.type ?? "untyped";
+    const bucket = groups.get(key);
+
+    if (bucket === undefined) {
+      groups.set(key, [page]);
+    } else {
+      bucket.push(page);
+    }
+  }
+
+  return groups;
+}
+
+/** Section order: known types in index.md order, then unknown types
+ *  sorted, then untyped last. */
+function sectionOrder(groups: ReadonlyMap<string, ListedPage[]>) {
+  return [
+    ...PAGE_TYPES.filter((type) => groups.has(type)).map((type) => ({
+      key: type,
+      header: PLURAL[type],
+    })),
+    ...[...groups.keys()]
+      .filter((key) => !PAGE_TYPES.includes(key as never) && key !== "untyped")
+      .sort()
+      .map((key) => ({ key, header: `${key}s` })),
+    ...(groups.has("untyped") ? [{ key: "untyped", header: "untyped" }] : []),
+  ];
+}
+
+/** Render the grouped listing: a '## header' line per section and one
+ *  'slug — title' line per page under it. */
+function groupedLines(groups: ReadonlyMap<string, ListedPage[]>): string[] {
+  const lines: string[] = [];
+
+  for (const section of sectionOrder(groups)) {
+    lines.push(`## ${section.header}`);
+
+    for (const page of groups.get(section.key) ?? []) {
+      lines.push(`${page.slug} — ${page.title ?? page.slug}`);
+    }
+  }
+
+  return lines;
+}
+
 /** Print the structured wiki listing, grouped (or filtered) by type. */
 async function runList(
   wikiDir: string,
@@ -389,49 +466,12 @@ async function runList(
   const pages = await listablePages(wikiDir);
 
   if (typeFilter !== undefined) {
-    const lines = pages
-      .filter((page) => page.type === typeFilter)
-      .map((page) => `${page.slug} — ${page.title ?? page.slug}`);
-
-    console.log(lines.join("\n"));
+    console.log(filteredLines(pages, typeFilter).join("\n"));
 
     return;
   }
 
-  const groups = new Map<string, ListedPage[]>();
-
-  for (const page of pages) {
-    const bucket = groups.get(page.type ?? "untyped");
-
-    if (bucket === undefined) {
-      groups.set(page.type ?? "untyped", [page]);
-    } else {
-      bucket.push(page);
-    }
-  }
-
-  const sections = [
-    ...PAGE_TYPES.filter((type) => groups.has(type)).map((type) => ({
-      key: type,
-      header: PLURAL[type],
-    })),
-    ...[...groups.keys()]
-      .filter((key) => !PAGE_TYPES.includes(key as never) && key !== "untyped")
-      .sort()
-      .map((key) => ({ key, header: `${key}s` })),
-    ...(groups.has("untyped") ? [{ key: "untyped", header: "untyped" }] : []),
-  ];
-  const lines: string[] = [];
-
-  for (const section of sections) {
-    lines.push(`## ${section.header}`);
-
-    for (const page of groups.get(section.key) ?? []) {
-      lines.push(`${page.slug} — ${page.title ?? page.slug}`);
-    }
-  }
-
-  console.log(lines.join("\n"));
+  console.log(groupedLines(groupPages(pages)).join("\n"));
 }
 
 /** Print one wiki page verbatim, resolved by file name. */
@@ -491,6 +531,237 @@ async function runHealth(rawDir: string, failOnStale: boolean): Promise<void> {
   }
 }
 
+/** The argv shape main consumes after util.parseArgs. */
+interface CliArguments {
+  readonly values: {
+    checkout?: string;
+    timeout?: string;
+    "fail-on-stale"?: boolean;
+  };
+  readonly positionals: string[];
+}
+
+/** One uniform error message for any thrown value. */
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** Parse argv; undefined (already failed) when the syntax is invalid. */
+function parseCliArguments(args: string[]): CliArguments | undefined {
+  try {
+    return parseArgs({
+      args,
+      allowPositionals: true,
+      options: {
+        checkout: { type: "string" },
+        timeout: { type: "string" },
+        "fail-on-stale": { type: "boolean" },
+      },
+    });
+  } catch (error) {
+    fail(errorMessage(error));
+
+    return undefined;
+  }
+}
+
+/** Usage error for an invalid --timeout, undefined when it is valid. */
+function timeoutErrorFor(timeout: string | undefined): string | undefined {
+  if (timeout !== undefined && !/^[1-9][0-9]*$/.test(timeout)) {
+    return "--timeout needs a positive integer number of seconds";
+  }
+
+  return undefined;
+}
+
+/** Usage error for k-wiki read's argument count, undefined when valid. */
+function readArityError(rest: readonly string[]): string | undefined {
+  if (rest.length === 0) {
+    return "a <slug> is required: k-wiki read <slug>";
+  }
+
+  if (rest.length > 1) {
+    return "k-wiki read takes exactly one <slug> argument";
+  }
+
+  return undefined;
+}
+
+/** Usage error for a command's argument count, undefined when valid. */
+function arityErrorFor(
+  command: string,
+  rest: readonly string[],
+): string | undefined {
+  if ((command === "status" || command === "health") && rest.length > 0) {
+    return `k-wiki ${command} takes no arguments (got ${JSON.stringify(rest[0])})`;
+  }
+
+  if (command === "list" && rest.length > 1) {
+    return "k-wiki list takes at most one <type> argument";
+  }
+
+  if (command === "read") {
+    return readArityError(rest);
+  }
+
+  return undefined;
+}
+
+/** Usage error for k-wiki query's question, undefined when valid. */
+function queryUsageError(rest: readonly string[]): string | undefined {
+  const question = rest[0] ?? "";
+
+  if (question.trim() === "") {
+    return 'a question is required: k-wiki query "<question>"';
+  }
+
+  if (rest.length > 1) {
+    return `expected exactly one <question> argument, got ${rest.length}`;
+  }
+
+  return undefined;
+}
+
+/** Usage error for the command and its arguments, undefined when valid. */
+function commandUsageError(
+  command: string | undefined,
+  rest: readonly string[],
+): string | undefined {
+  if (command === undefined) {
+    return `a command is required: ${COMMANDS.map((c) => `k-wiki ${c}`).join(" | ")}`;
+  }
+
+  if (!COMMANDS.includes(command as never)) {
+    return `unknown command ${JSON.stringify(command)}; the commands are: ${COMMANDS.join(", ")}`;
+  }
+
+  const arityError = arityErrorFor(command, rest);
+
+  if (arityError !== undefined) {
+    return arityError;
+  }
+
+  if (command === "query") {
+    return queryUsageError(rest);
+  }
+
+  return undefined;
+}
+
+/** Resolve the checkout; undefined (already failed) when it throws. */
+async function resolveCheckoutOrFail(input: {
+  readonly flag: string | undefined;
+  readonly env: NodeJS.ProcessEnv;
+  readonly cwd: string;
+  readonly home: string;
+}): Promise<CheckoutResolution | undefined> {
+  try {
+    return await resolveCheckout(input);
+  } catch (error) {
+    fail(errorMessage(error));
+
+    return undefined;
+  }
+}
+
+/** The bound data repo's raw and wiki dirs, from the checkout's sync.json. */
+async function checkoutPaths(
+  resolution: CheckoutResolution,
+  home: string,
+): Promise<{ readonly rawDir: string; readonly wikiDir: string }> {
+  const config = await loadSyncConfig(
+    join(resolution.checkout, "sync.json"),
+    home,
+  );
+  const rawDir = resolveRawDir(config.dataRoot, resolution.checkout);
+
+  return { rawDir, wikiDir: join(dirname(rawDir), "wiki") };
+}
+
+/** Run status, list, read, or health; true when one of them ran. */
+async function runReadOnlyCommand(
+  command: string | undefined,
+  rest: readonly string[],
+  resolution: CheckoutResolution,
+  paths: { readonly rawDir: string; readonly wikiDir: string },
+  failOnStale: boolean,
+): Promise<boolean> {
+  if (command === "status") {
+    await runStatus(resolution, paths);
+
+    return true;
+  }
+
+  if (command === "list") {
+    await runList(paths.wikiDir, rest[0]);
+
+    return true;
+  }
+
+  if (command === "read") {
+    await runRead(paths.wikiDir, rest[0] ?? "");
+
+    return true;
+  }
+
+  if (command === "health") {
+    await runHealth(paths.rawDir, failOnStale);
+
+    return true;
+  }
+
+  return false;
+}
+
+/** Run the one LLM command: query — the answer plus the filing hint. */
+async function runQueryCommand(
+  resolution: CheckoutResolution,
+  paths: { readonly rawDir: string; readonly wikiDir: string },
+  timeoutArg: string | undefined,
+  rest: readonly string[],
+): Promise<void> {
+  const colors = terminalColors(process.env);
+  const animated = canAnimate(process.stderr.isTTY === true, process.env);
+  const sink = createAgentProgressSink(
+    (text) => process.stderr.write(text),
+    (text) => console.error(text),
+    animated,
+    colors,
+    QUERY_HEARTBEAT_PREFIX,
+  );
+
+  try {
+    const result = await runWikiQuery({
+      settingsPath: join(
+        resolution.checkout,
+        resolution.settings ?? "settings.yml",
+      ),
+      rawDir: paths.rawDir,
+      promptsDir: join(resolution.checkout, "prompts"),
+      outputsDir: join(resolution.checkout, "outputs"),
+      question: rest[0] ?? "",
+      timeoutMs:
+        timeoutArg === undefined ? undefined : Number(timeoutArg) * 1000,
+      heartbeatMs: animated ? 100 : undefined,
+      onProgress: sink.render,
+    });
+
+    sink.end();
+
+    console.log(result.answer);
+    console.error();
+    console.error(
+      colors.dim(
+        "To file this answer (human step): wiki-query --file-last, run inside the checkout",
+      ),
+    );
+  } catch (error) {
+    sink.end();
+    console.error(colors.red(`k-wiki: ${errorMessage(error)}`));
+    process.exitCode = 1;
+  }
+}
+
 /** k-wiki entry point: `k-wiki [-h | --help] | k-wiki <command> [<args>]` — query, status, list, read, health. */
 export async function main(cwd: string = process.cwd()): Promise<void> {
   const args = process.argv.slice(2);
@@ -501,193 +772,58 @@ export async function main(cwd: string = process.cwd()): Promise<void> {
     return;
   }
 
-  let parsed: {
-    values: { checkout?: string; timeout?: string; "fail-on-stale"?: boolean };
-    positionals: string[];
-  };
+  const cli = parseCliArguments(args);
 
-  try {
-    parsed = parseArgs({
-      args,
-      allowPositionals: true,
-      options: {
-        checkout: { type: "string" },
-        timeout: { type: "string" },
-        "fail-on-stale": { type: "boolean" },
-      },
-    });
-  } catch (error) {
-    fail(error instanceof Error ? error.message : String(error));
+  if (cli === undefined) {
+    return;
+  }
+
+  const timeoutError = timeoutErrorFor(cli.values.timeout);
+
+  if (timeoutError !== undefined) {
+    fail(timeoutError);
 
     return;
   }
 
-  const timeoutArg = parsed.values.timeout;
+  const rest = cli.positionals.slice(1);
+  const usageError = commandUsageError(cli.positionals[0], rest);
 
-  if (timeoutArg !== undefined && !/^[1-9][0-9]*$/.test(timeoutArg)) {
-    fail("--timeout needs a positive integer number of seconds");
-
-    return;
-  }
-
-  const command = parsed.positionals[0];
-
-  if (command === undefined) {
-    fail(
-      `a command is required: ${COMMANDS.map((c) => `k-wiki ${c}`).join(" | ")}`,
-    );
-
-    return;
-  }
-
-  if (!COMMANDS.includes(command as never)) {
-    fail(
-      `unknown command ${JSON.stringify(command)}; the commands are: ${COMMANDS.join(", ")}`,
-    );
-
-    return;
-  }
-
-  const rest = parsed.positionals.slice(1);
-
-  if ((command === "status" || command === "health") && rest.length > 0) {
-    fail(
-      `k-wiki ${command} takes no arguments (got ${JSON.stringify(rest[0])})`,
-    );
-
-    return;
-  }
-
-  if (command === "list" && rest.length > 1) {
-    fail("k-wiki list takes at most one <type> argument");
-
-    return;
-  }
-
-  if (command === "read") {
-    if (rest.length === 0) {
-      fail("a <slug> is required: k-wiki read <slug>");
-
-      return;
-    }
-
-    if (rest.length > 1) {
-      fail("k-wiki read takes exactly one <slug> argument");
-
-      return;
-    }
-  }
-
-  const question = rest[0] ?? "";
-
-  if (command === "query" && question.trim() === "") {
-    fail('a question is required: k-wiki query "<question>"');
-
-    return;
-  }
-
-  if (command === "query" && rest.length > 1) {
-    fail(`expected exactly one <question> argument, got ${rest.length}`);
+  if (usageError !== undefined) {
+    fail(usageError);
 
     return;
   }
 
   const home = homedir();
+  const resolution = await resolveCheckoutOrFail({
+    flag: cli.values.checkout,
+    env: process.env,
+    cwd,
+    home,
+  });
 
-  let resolution: CheckoutResolution;
-
-  try {
-    resolution = await resolveCheckout({
-      flag: parsed.values.checkout,
-      env: process.env,
-      cwd,
-      home,
-    });
-  } catch (error) {
-    fail(error instanceof Error ? error.message : String(error));
-
+  if (resolution === undefined) {
     return;
   }
 
-  const colors = terminalColors(process.env);
-
   try {
-    const config = await loadSyncConfig(
-      join(resolution.checkout, "sync.json"),
-      home,
-    );
-    const rawDir = resolveRawDir(config.dataRoot, resolution.checkout);
-    const wikiDir = join(dirname(rawDir), "wiki");
-
-    if (command === "status") {
-      await runStatus(resolution, { rawDir, wikiDir });
-
-      return;
-    }
-
-    if (command === "list") {
-      await runList(wikiDir, rest[0]);
-
-      return;
-    }
-
-    if (command === "read") {
-      await runRead(wikiDir, rest[0] ?? "");
-
-      return;
-    }
-
-    if (command === "health") {
-      await runHealth(rawDir, parsed.values["fail-on-stale"] === true);
-
-      return;
-    }
-
-    const animated = canAnimate(process.stderr.isTTY === true, process.env);
-    const sink = createAgentProgressSink(
-      (text) => process.stderr.write(text),
-      (text) => console.error(text),
-      animated,
-      colors,
-      QUERY_HEARTBEAT_PREFIX,
+    const paths = await checkoutPaths(resolution, home);
+    const handled = await runReadOnlyCommand(
+      cli.positionals[0],
+      rest,
+      resolution,
+      paths,
+      cli.values["fail-on-stale"] === true,
     );
 
-    try {
-      const result = await runWikiQuery({
-        settingsPath: join(
-          resolution.checkout,
-          resolution.settings ?? "settings.yml",
-        ),
-        rawDir,
-        promptsDir: join(resolution.checkout, "prompts"),
-        outputsDir: join(resolution.checkout, "outputs"),
-        question,
-        timeoutMs:
-          timeoutArg === undefined ? undefined : Number(timeoutArg) * 1000,
-        heartbeatMs: animated ? 100 : undefined,
-        onProgress: sink.render,
-      });
-
-      sink.end();
-
-      console.log(result.answer);
-      console.error();
-      console.error(
-        colors.dim(
-          "To file this answer (human step): wiki-query --file-last, run inside the checkout",
-        ),
-      );
-    } catch (error) {
-      sink.end();
-      console.error(
-        colors.red(
-          `k-wiki: ${error instanceof Error ? error.message : String(error)}`,
-        ),
-      );
-      process.exitCode = 1;
+    if (handled) {
+      return;
     }
+
+    await runQueryCommand(resolution, paths, cli.values.timeout, rest);
   } catch (error) {
-    fail(error instanceof Error ? error.message : String(error));
+    fail(errorMessage(error));
   }
 }
 

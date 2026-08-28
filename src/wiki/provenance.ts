@@ -11,6 +11,7 @@ import {
 import {
   isUnmigratableSelfCitation,
   loadSourceHubIndex,
+  type SourceHubIndex,
   stem,
   wikilinkFor,
 } from "./source-hubs.ts";
@@ -58,6 +59,74 @@ export async function assertRawDir(rawDir: string): Promise<void> {
   }
 }
 
+/** Check one `sources` wikilink entry: it must resolve to an
+ *  existing page whose hub index type is `source`. */
+function checkWikilinkEntry(
+  page: string,
+  entry: string,
+  index: ReadonlyMap<string, string>,
+  hubs: SourceHubIndex,
+  problems: string[],
+): void {
+  const target = wikilinkTarget(entry);
+
+  if (!index.has(target)) {
+    problems.push(`${page} -> ${entry} (missing source page)`);
+
+    return;
+  }
+
+  if (hubs.fields.get(target)?.type !== "source") {
+    problems.push(`${page} -> ${entry} (does not cite a type: source page)`);
+  }
+}
+
+/** Check one `sources` path entry: it must exist under `raw/` and
+ *  must not be a path a hub covers — a covered path has a clickable
+ *  wikilink, and citing the raw path instead is dead-provenance
+ *  drift. */
+async function checkPathEntry(
+  page: string,
+  fileStem: string,
+  entry: string,
+  hubs: SourceHubIndex,
+  rawDir: string,
+  problems: string[],
+): Promise<void> {
+  try {
+    await stat(join(rawDir, normalizeRawPath(entry)));
+  } catch {
+    problems.push(`${page} -> sources ${entry} (missing under raw/)`);
+
+    return;
+  }
+
+  const mapped = wikilinkFor(entry, hubs);
+
+  if (
+    "wikilink" in mapped &&
+    !isUnmigratableSelfCitation(fileStem, entry, hubs)
+  ) {
+    problems.push(
+      `${page} -> sources ${entry} (path has hub ${mapped.wikilink} — use the wikilink)`,
+    );
+  }
+}
+
+/** Check a page's `origin` raw path exists under `raw/`. */
+async function checkOrigin(
+  page: string,
+  origin: string,
+  rawDir: string,
+  problems: string[],
+): Promise<void> {
+  try {
+    await stat(join(rawDir, normalizeRawPath(origin)));
+  } catch {
+    problems.push(`${page} -> origin ${origin} (missing under raw/)`);
+  }
+}
+
 /**
  * Check every wiki page under `wikiDirInput` against the raw projection
  * at `rawDirInput`, reporting problems with paths relative to the wiki
@@ -98,53 +167,18 @@ export async function checkWikiProvenance(
       sources++;
 
       if (isWikilinkEntry(entry)) {
-        const target = wikilinkTarget(entry);
-
-        if (!index.has(target)) {
-          problems.push(`${page} -> ${entry} (missing source page)`);
-
-          continue;
-        }
-
-        if (hubs.fields.get(target)?.type !== "source") {
-          problems.push(
-            `${page} -> ${entry} (does not cite a type: source page)`,
-          );
-        }
+        checkWikilinkEntry(page, entry, index, hubs, problems);
 
         continue;
       }
 
-      try {
-        await stat(join(rawDir, normalizeRawPath(entry)));
-      } catch {
-        problems.push(`${page} -> sources ${entry} (missing under raw/)`);
-
-        continue;
-      }
-
-      const mapped = wikilinkFor(entry, hubs);
-
-      if (
-        "wikilink" in mapped &&
-        !isUnmigratableSelfCitation(stem(file), entry, hubs)
-      ) {
-        problems.push(
-          `${page} -> sources ${entry} (path has hub ${mapped.wikilink} — use the wikilink)`,
-        );
-      }
+      await checkPathEntry(page, stem(file), entry, hubs, rawDir, problems);
     }
 
     if (fields.origin !== undefined) {
       origins++;
 
-      try {
-        await stat(join(rawDir, normalizeRawPath(fields.origin)));
-      } catch {
-        problems.push(
-          `${page} -> origin ${fields.origin} (missing under raw/)`,
-        );
-      }
+      await checkOrigin(page, fields.origin, rawDir, problems);
     }
   }
 

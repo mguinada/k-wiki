@@ -30,6 +30,11 @@ export interface QueryArtifact {
 
 const BAD_ARTIFACT = "not a wiki-query artifact";
 
+/** The strict-parse failure for every malformed artifact. */
+function headerError(why: string): Error {
+  return new Error(`${BAD_ARTIFACT}: ${why}`);
+}
+
 /**
  * Render the artifact: a frontmatter block (single-line JSON values,
  * so any question round-trips) and the answer as the body.
@@ -47,6 +52,56 @@ export function renderQueryArtifact(artifact: QueryArtifact): string {
   ].join("\n");
 }
 
+/** One frontmatter header line split into its key and JSON value. */
+function parseHeaderLine(line: string): { key: string; value: string } {
+  const match = /^(question|timestamp|pages): (.+)$/.exec(line);
+
+  if (match === null) {
+    throw headerError(`malformed header line ${JSON.stringify(line)}`);
+  }
+
+  return { key: match[1] ?? "", value: match[2] ?? "" };
+}
+
+/** The header line's JSON value; malformed JSON is a malformed line. */
+function parseHeaderValue(line: string, value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    throw headerError(`malformed header line ${JSON.stringify(line)}`);
+  }
+}
+
+/** The three header values found in the frontmatter block, if any. */
+function readHeaders(lines: readonly string[]): {
+  question: string | undefined;
+  timestamp: string | undefined;
+  pages: readonly string[] | undefined;
+} {
+  let question: string | undefined;
+  let timestamp: string | undefined;
+  let pages: readonly string[] | undefined;
+
+  for (const line of lines) {
+    const { key, value } = parseHeaderLine(line);
+    const parsed = parseHeaderValue(line, value);
+
+    if (key === "question" && typeof parsed === "string") {
+      question = parsed;
+    } else if (key === "timestamp" && typeof parsed === "string") {
+      timestamp = parsed;
+    } else if (
+      key === "pages" &&
+      Array.isArray(parsed) &&
+      parsed.every((page) => typeof page === "string")
+    ) {
+      pages = parsed;
+    }
+  }
+
+  return { question, timestamp, pages };
+}
+
 /**
  * Parse the artifact text. Strict: exactly the three header keys with
  * JSON values, a closed frontmatter block, and the answer as the body
@@ -55,58 +110,29 @@ export function renderQueryArtifact(artifact: QueryArtifact): string {
  */
 export function parseQueryArtifact(text: string): QueryArtifact {
   const lines = text.split("\n");
-  const bad = (why: string): Error => new Error(`${BAD_ARTIFACT}: ${why}`);
 
   if (lines[0] !== "---") {
-    throw bad("no frontmatter block");
+    throw headerError("no frontmatter block");
   }
 
   const close = lines.indexOf("---", 1);
 
   if (close === -1) {
-    throw bad("unterminated frontmatter block");
+    throw headerError("unterminated frontmatter block");
   }
 
-  let question: string | undefined;
-  let timestamp: string | undefined;
-  let pages: readonly string[] | undefined;
-
-  for (const line of lines.slice(1, close)) {
-    const match = /^(question|timestamp|pages): (.+)$/.exec(line);
-
-    if (match === null) {
-      throw bad(`malformed header line ${JSON.stringify(line)}`);
-    }
-
-    try {
-      const value = JSON.parse(match[2] ?? "");
-
-      if (match[1] === "question" && typeof value === "string") {
-        question = value;
-      } else if (match[1] === "timestamp" && typeof value === "string") {
-        timestamp = value;
-      } else if (
-        match[1] === "pages" &&
-        Array.isArray(value) &&
-        value.every((page) => typeof page === "string")
-      ) {
-        pages = value;
-      }
-    } catch {
-      throw bad(`malformed header line ${JSON.stringify(line)}`);
-    }
-  }
+  const { question, timestamp, pages } = readHeaders(lines.slice(1, close));
 
   if (
     question === undefined ||
     timestamp === undefined ||
     pages === undefined
   ) {
-    throw bad("missing question, timestamp, or pages header");
+    throw headerError("missing question, timestamp, or pages header");
   }
 
   if (Number.isNaN(Date.parse(timestamp))) {
-    throw bad(`timestamp ${JSON.stringify(timestamp)} is not a date`);
+    throw headerError(`timestamp ${JSON.stringify(timestamp)} is not a date`);
   }
 
   const answer = lines
@@ -313,49 +339,46 @@ function appendLogEntry(logText: string, entry: string): string {
   return `${prefix}\n${entry}\n`;
 }
 
-/**
- * The drift warning for a filing (issue #72): `raw/` or `wiki/` was
- * committed after the answer was saved, or carries uncommitted
- * changes whose worktree mtime post-dates the save (wiki-ingest
- * leaves the wiki dirty until wiki-sync commits), so pages the
- * answer cites may have moved. Undefined when git cannot report or
- * nothing moved.
- */
-export async function driftWarning(
+/** Warning when a commit touched raw/ or wiki/ after the save.
+ *  Throws when git log fails — the caller aborts the whole check,
+ *  matching the pre-extraction semantics. */
+async function committedAfterSave(
   dataRoot: string,
   env: NodeJS.ProcessEnv,
-  savedTimestamp: string,
+  savedAt: number,
 ): Promise<string | undefined> {
-  const savedAt = Date.parse(savedTimestamp);
-  let stdout: string;
-
-  try {
-    ({ stdout } = await runGit(
-      dataRoot,
-      ["log", "-1", "--format=%cI", "--", "raw", "wiki"],
-      env,
-    ));
-  } catch {
-    return undefined;
-  }
+  const { stdout } = await runGit(
+    dataRoot,
+    ["log", "-1", "--format=%cI", "--", "raw", "wiki"],
+    env,
+  );
 
   const last = stdout.trim();
 
-  if (last !== "") {
-    const changedAt = Date.parse(last);
-
-    if (
-      !Number.isNaN(changedAt) &&
-      !Number.isNaN(savedAt) &&
-      changedAt > savedAt
-    ) {
-      return `warning: the data repo changed after the saved answer (${last} touched raw/ or wiki/); pages it cites may have moved`;
-    }
-  }
-
-  if (Number.isNaN(savedAt)) {
+  if (last === "") {
     return undefined;
   }
+
+  const changedAt = Date.parse(last);
+
+  if (
+    !Number.isNaN(changedAt) &&
+    !Number.isNaN(savedAt) &&
+    changedAt > savedAt
+  ) {
+    return `warning: the data repo changed after the saved answer (${last} touched raw/ or wiki/); pages it cites may have moved`;
+  }
+
+  return undefined;
+}
+
+/** Warning when uncommitted changes under raw/ or wiki/ are newer than the save. */
+async function uncommittedAfterSave(
+  dataRoot: string,
+  env: NodeJS.ProcessEnv,
+  savedAt: number,
+): Promise<string | undefined> {
+  let stdout: string;
 
   try {
     ({ stdout } = await runGit(
@@ -400,6 +423,40 @@ export async function driftWarning(
   }
 
   return undefined;
+}
+
+/**
+ * The drift warning for a filing (issue #72): `raw/` or `wiki/` was
+ * committed after the answer was saved, or carries uncommitted
+ * changes whose worktree mtime post-dates the save (wiki-ingest
+ * leaves the wiki dirty until wiki-sync commits), so pages the
+ * answer cites may have moved. Undefined when git cannot report or
+ * nothing moved.
+ */
+export async function driftWarning(
+  dataRoot: string,
+  env: NodeJS.ProcessEnv,
+  savedTimestamp: string,
+): Promise<string | undefined> {
+  const savedAt = Date.parse(savedTimestamp);
+
+  let committed: string | undefined;
+
+  try {
+    committed = await committedAfterSave(dataRoot, env, savedAt);
+  } catch {
+    return undefined;
+  }
+
+  if (committed !== undefined) {
+    return committed;
+  }
+
+  if (Number.isNaN(savedAt)) {
+    return undefined;
+  }
+
+  return uncommittedAfterSave(dataRoot, env, savedAt);
 }
 
 export interface FileLastOptions {

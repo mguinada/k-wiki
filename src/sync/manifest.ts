@@ -38,10 +38,55 @@ export async function readManifestText(
   }
 }
 
-/**
- * Parse manifest text. Throw with the origin path in the message when the
- * text is not valid JSON or not the multi-vault manifest shape.
- */
+/** Validate and copy one vault namespace's note map. */
+function parseVaultNotes(
+  vaultName: string,
+  notes: unknown,
+  origin: string,
+): VaultNotes {
+  if (!isPlainObject(notes)) {
+    throw new Error(
+      `invalid manifest at ${origin}: vault ${JSON.stringify(vaultName)} must map note paths to entries`,
+    );
+  }
+
+  const vault: VaultNotes = {};
+
+  for (const [relPath, entry] of Object.entries(notes)) {
+    vault[relPath] = parseEntry(vaultName, relPath, entry, origin);
+  }
+
+  return vault;
+}
+
+/** Validate and copy one manifest entry. */
+function parseEntry(
+  vaultName: string,
+  relPath: string,
+  entry: unknown,
+  origin: string,
+): ManifestEntry {
+  if (RESERVED_NAMES.has(relPath)) {
+    throw new Error(
+      `invalid manifest at ${origin}: vault ${JSON.stringify(vaultName)} has reserved note path ${JSON.stringify(relPath)}`,
+    );
+  }
+
+  if (
+    !isPlainObject(entry) ||
+    typeof entry.hash !== "string" ||
+    typeof entry.last_synced !== "string"
+  ) {
+    throw new Error(
+      `invalid manifest at ${origin}: entry ${JSON.stringify(relPath)} needs string "hash" and "last_synced"`,
+    );
+  }
+
+  return { hash: entry.hash, last_synced: entry.last_synced };
+}
+
+/** Parse manifest text, throwing with the origin path in the
+ *  message on invalid JSON or shape. */
 export function parseManifest(text: string, origin: string): Manifest {
   let parsed: unknown;
 
@@ -68,35 +113,7 @@ export function parseManifest(text: string, origin: string): Manifest {
       );
     }
 
-    if (!isPlainObject(notes)) {
-      throw new Error(
-        `invalid manifest at ${origin}: vault ${JSON.stringify(vaultName)} must map note paths to entries`,
-      );
-    }
-
-    const vault: VaultNotes = {};
-
-    for (const [relPath, entry] of Object.entries(notes)) {
-      if (RESERVED_NAMES.has(relPath)) {
-        throw new Error(
-          `invalid manifest at ${origin}: vault ${JSON.stringify(vaultName)} has reserved note path ${JSON.stringify(relPath)}`,
-        );
-      }
-
-      if (
-        !isPlainObject(entry) ||
-        typeof entry.hash !== "string" ||
-        typeof entry.last_synced !== "string"
-      ) {
-        throw new Error(
-          `invalid manifest at ${origin}: entry ${JSON.stringify(relPath)} needs string "hash" and "last_synced"`,
-        );
-      }
-
-      vault[relPath] = { hash: entry.hash, last_synced: entry.last_synced };
-    }
-
-    vaults[vaultName] = vault;
+    vaults[vaultName] = parseVaultNotes(vaultName, notes, origin);
   }
 
   return { vaults };
