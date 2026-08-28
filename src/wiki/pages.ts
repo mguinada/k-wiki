@@ -1,6 +1,10 @@
-import { readdir, readFile, stat } from "node:fs/promises";
-import { basename, join } from "node:path";
-import { buildPageIndex, wikilinkBodyTarget } from "../wiki-links.ts";
+import { readFile, stat } from "node:fs/promises";
+import { basename } from "node:path";
+import {
+  buildPageIndex,
+  listFiles,
+  wikilinkBodyTarget,
+} from "../wiki-links.ts";
 
 export { buildPageIndex };
 
@@ -176,27 +180,6 @@ export function parsePageFields(text: string): PageFields {
   }
 
   return parseFrontmatterBody(lines.slice(1));
-}
-
-/** Recursively list every wiki-relative markdown path under `dir`. */
-async function listFiles(
-  dir: string,
-  prefix = "",
-  files: string[] = [],
-): Promise<string[]> {
-  const entries = await readdir(dir, { withFileTypes: true });
-
-  for (const entry of entries) {
-    const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
-
-    if (entry.isDirectory()) {
-      await listFiles(join(dir, entry.name), rel, files);
-    } else {
-      files.push(rel);
-    }
-  }
-
-  return files;
 }
 
 /** Operating-contract files: never wiki pages (issue #74 adds the

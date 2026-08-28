@@ -11,6 +11,7 @@ import {
   readManifestText,
   type VaultNotes,
 } from "../sync/manifest.ts";
+import { listFiles } from "../wiki-links.ts";
 
 /**
  * raw/ health check: a read-only, vault-free coherence check of the
@@ -97,38 +98,14 @@ async function resolvesToDirectory(path: string): Promise<boolean> {
 async function scanNamespace(
   namespaceRoot: string,
 ): Promise<string[] | undefined> {
-  const files: string[] = [];
-
   try {
-    await walkFiles(namespaceRoot, "", files);
+    return (await listFiles(namespaceRoot)).sort();
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       return undefined;
     }
 
     throw error;
-  }
-
-  files.sort();
-
-  return files;
-}
-
-async function walkFiles(
-  dir: string,
-  prefix: string,
-  files: string[],
-): Promise<void> {
-  const entries = await readdir(dir, { withFileTypes: true });
-
-  for (const entry of entries) {
-    const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
-
-    if (entry.isDirectory()) {
-      await walkFiles(join(dir, entry.name), rel, files);
-    } else {
-      files.push(rel);
-    }
   }
 }
 
