@@ -64,6 +64,20 @@ export function closingFence(lines: readonly string[]): number {
   return lines.findIndex((line, index) => index > 0 && line.trim() === "---");
 }
 
+/** The text after a closed frontmatter block; the full text when the
+ *  note opens with no frontmatter or the fence never closes. */
+export function bodyAfterFrontmatter(text: string): string {
+  const lines = text.split("\n");
+
+  if (lines[0] !== "---") {
+    return text;
+  }
+
+  const end = closingFence(lines);
+
+  return end === -1 ? text : lines.slice(end + 1).join("\n");
+}
+
 /** Whether a `sources` entry is a wikilink (bracketed) or a raw path. */
 export function isWikilinkEntry(entry: string): boolean {
   return entry.startsWith("[[") && entry.endsWith("]]");

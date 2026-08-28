@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
 import {
+  bodyAfterFrontmatter,
   kebab,
   listWikiPages,
   normalizeRawPath,
@@ -77,23 +78,6 @@ const TRAILING_STOPWORDS = new Set([
   "info",
   "site",
 ]);
-
-/** The body after a closed frontmatter block; the full text when the
- *  page opens with no frontmatter. The closing fence matches
- *  `parsePageFields` (whitespace-trimmed) so one page parses one way. */
-function bodyAfterFrontmatter(text: string): string {
-  const lines = text.split("\n");
-
-  if (lines[0] !== "---") {
-    return text;
-  }
-
-  const end = lines.findIndex(
-    (line, index) => index > 0 && line.trim() === "---",
-  );
-
-  return end === -1 ? text : lines.slice(end + 1).join("\n");
-}
 
 /** A dotted token is a config key when every segment is at least two
  *  characters and the trailing segment is not a stopword (`e.g` and

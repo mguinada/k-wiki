@@ -28,6 +28,7 @@ import {
   writeManifest,
 } from "../sync/manifest.ts";
 import {
+  bodyAfterFrontmatter,
   buildPageIndex,
   isWikilinkEntry,
   listWikiPages,
@@ -387,24 +388,9 @@ function extractRenames(
   };
 }
 
-/** The text after a closed frontmatter block; the full text when the
- *  note opens with no frontmatter or the fence never closes. Mirrors
- *  `parsePageFields`' whitespace-trimmed closing fence (and fidelity's
- *  private `bodyAfterFrontmatter`) without coupling this layer to the
- *  fidelity core. */
-function bodyAfterFrontmatter(text: string): string {
-  const lines = text.split("\n");
-
-  if (lines[0] !== "---") {
-    return text;
-  }
-
-  const end = lines.findIndex(
-    (line, index) => index > 0 && line.trim() === "---",
-  );
-
-  return end === -1 ? text : lines.slice(end + 1).join("\n");
-}
+/** The text after a closed frontmatter block: exported by
+ *  wiki/pages.ts (beside closingFence) so the ingest rename pairing
+ *  (issue #143) and the fidelity core share one fence rule. */
 
 /** SHA-256 of a note's text after the frontmatter fence. */
 function bodyHash(content: string): string {
