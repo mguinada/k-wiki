@@ -356,9 +356,13 @@ describe("runGuardrails — check 1, immutability", () => {
       await writeFile(join(root, "raw", "notes", "src.md"), "# tampered\n");
     });
 
-    expect(post.failure?.check).toBe(1);
-    expect(post.failure?.name).toBe("immutability");
-    expect(post.failure?.problems[0]).toContain("raw/notes/src.md");
+    expect(post.failure).toMatchObject({
+      check: 1,
+      name: "immutability",
+      problems: expect.arrayContaining([
+        expect.stringContaining("raw/notes/src.md"),
+      ]),
+    });
   });
 
   it("trips when the run creates a file outside the whitelist", async () => {
@@ -367,8 +371,12 @@ describe("runGuardrails — check 1, immutability", () => {
       await writeFile(join(root, "settings.yml.bak"), "command: evil\n");
     });
 
-    expect(post.failure?.check).toBe(1);
-    expect(post.failure?.problems[0]).toContain("settings.yml.bak");
+    expect(post.failure).toMatchObject({
+      check: 1,
+      problems: expect.arrayContaining([
+        expect.stringContaining("settings.yml.bak"),
+      ]),
+    });
   });
 
   it("trips when the run creates the second-brain identity marker", async () => {
@@ -377,8 +385,12 @@ describe("runGuardrails — check 1, immutability", () => {
       await writeFile(join(root, ".second-brain"), "");
     });
 
-    expect(post.failure?.check).toBe(1);
-    expect(post.failure?.problems[0]).toContain(".second-brain");
+    expect(post.failure).toMatchObject({
+      check: 1,
+      problems: expect.arrayContaining([
+        expect.stringContaining(".second-brain"),
+      ]),
+    });
   });
 
   it("trips when the run creates a second-brain identity marker hidden from git status", async () => {
@@ -393,8 +405,12 @@ describe("runGuardrails — check 1, immutability", () => {
       );
     });
 
-    expect(post.failure?.check).toBe(1);
-    expect(post.failure?.problems.join("\n")).toContain(".second-brain");
+    expect(post.failure).toMatchObject({
+      check: 1,
+      problems: expect.arrayContaining([
+        expect.stringContaining(".second-brain"),
+      ]),
+    });
   });
 
   it("trips when the run edits an already-dirty raw note", async () => {
@@ -408,8 +424,12 @@ describe("runGuardrails — check 1, immutability", () => {
 
     const post = await runGuardrails(dataRoot, process.env, pre);
 
-    expect(post.failure?.check).toBe(1);
-    expect(post.failure?.problems.join("\n")).toContain("raw/notes/src.md");
+    expect(post.failure).toMatchObject({
+      check: 1,
+      problems: expect.arrayContaining([
+        expect.stringContaining("raw/notes/src.md"),
+      ]),
+    });
   });
 
   it("passes over a pre-run dirty wiki page the run leaves untouched", async () => {
@@ -437,8 +457,12 @@ describe("runGuardrails — check 1, immutability", () => {
 
     const post = await runGuardrails(dataRoot, process.env, pre);
 
-    expect(post.failure?.check).toBe(1);
-    expect(post.failure?.problems.join("\n")).toContain("settings.yml");
+    expect(post.failure).toMatchObject({
+      check: 1,
+      problems: expect.arrayContaining([
+        expect.stringContaining("settings.yml"),
+      ]),
+    });
   });
 
   it("trips when the run renames a raw note into outputs/", async () => {
@@ -450,8 +474,12 @@ describe("runGuardrails — check 1, immutability", () => {
       });
     });
 
-    expect(post.failure?.check).toBe(1);
-    expect(post.failure?.problems[0]).toContain("raw/notes/src.md");
+    expect(post.failure).toMatchObject({
+      check: 1,
+      problems: expect.arrayContaining([
+        expect.stringContaining("raw/notes/src.md"),
+      ]),
+    });
   });
 
   it("trips when the run renames a raw note onto a pre-run rename target", async () => {
@@ -468,8 +496,12 @@ describe("runGuardrails — check 1, immutability", () => {
       });
     });
 
-    expect(post.failure?.check).toBe(1);
-    expect(post.failure?.problems.join("\n")).toContain("raw/notes/src.md");
+    expect(post.failure).toMatchObject({
+      check: 1,
+      problems: expect.arrayContaining([
+        expect.stringContaining("raw/notes/src.md"),
+      ]),
+    });
   });
 
   it("passes a run that writes the target of a rename staged before the run", async () => {
@@ -532,8 +564,12 @@ describe("runGuardrails — check 1, immutability", () => {
       });
     });
 
-    expect(post.failure?.check).toBe(1);
-    expect(post.failure?.problems.join("\n")).toContain("raw/notes/src.md");
+    expect(post.failure).toMatchObject({
+      check: 1,
+      problems: expect.arrayContaining([
+        expect.stringContaining("raw/notes/src.md"),
+      ]),
+    });
   });
 
   it("trips when the run rewrites the wiki/AGENTS.md contract", async () => {
@@ -542,9 +578,13 @@ describe("runGuardrails — check 1, immutability", () => {
       await writeFile(join(root, "wiki", "AGENTS.md"), "rogue contract\n");
     });
 
-    expect(post.failure?.check).toBe(1);
-    expect(post.failure?.name).toBe("immutability");
-    expect(post.failure?.problems[0]).toContain("wiki/AGENTS.md");
+    expect(post.failure).toMatchObject({
+      check: 1,
+      name: "immutability",
+      problems: expect.arrayContaining([
+        expect.stringContaining("wiki/AGENTS.md"),
+      ]),
+    });
   });
 
   it("trips when the run edits a non-ASCII-named untracked file", async () => {
@@ -558,8 +598,10 @@ describe("runGuardrails — check 1, immutability", () => {
 
     const post = await runGuardrails(dataRoot, process.env, pre);
 
-    expect(post.failure?.check).toBe(1);
-    expect(post.failure?.problems.join("\n")).toContain("ノート.md");
+    expect(post.failure).toMatchObject({
+      check: 1,
+      problems: expect.arrayContaining([expect.stringContaining("ノート.md")]),
+    });
   });
 
   it("trips when the run edits a pre-run-dirty note whose name contains ' -> '", async () => {
@@ -579,10 +621,12 @@ describe("runGuardrails — check 1, immutability", () => {
 
     const post = await runGuardrails(dataRoot, process.env, pre);
 
-    expect(post.failure?.check).toBe(1);
-    expect(post.failure?.problems.join("\n")).toContain(
-      "raw/notes/draft -> final.md",
-    );
+    expect(post.failure).toMatchObject({
+      check: 1,
+      problems: expect.arrayContaining([
+        expect.stringContaining("raw/notes/draft -> final.md"),
+      ]),
+    });
   });
 
   it("passes a run that creates a wiki page with a space in its name", async () => {
@@ -601,8 +645,10 @@ describe("runGuardrails — check 1, immutability", () => {
       await commit(root, "rogue");
     });
 
-    expect(post.failure?.check).toBe(1);
-    expect(post.failure?.problems.join("\n")).toContain("HEAD moved");
+    expect(post.failure).toMatchObject({
+      check: 1,
+      problems: expect.arrayContaining([expect.stringContaining("HEAD moved")]),
+    });
   });
 });
 
@@ -613,10 +659,14 @@ describe("runGuardrails — check 2, frontmatter", () => {
       await writeFile(join(root, "wiki", "plain.md"), "no frontmatter\n");
     });
 
-    expect(post.failure?.check).toBe(2);
-    expect(post.failure?.name).toBe("frontmatter");
-    expect(post.failure?.problems[0]).toContain("wiki/plain.md");
-    expect(post.failure?.problems[0]).toContain("no frontmatter block");
+    expect(post.failure).toMatchObject({
+      check: 2,
+      name: "frontmatter",
+      problems: expect.arrayContaining([
+        expect.stringContaining("wiki/plain.md"),
+        expect.stringContaining("no frontmatter block"),
+      ]),
+    });
   });
 
   it("names the missing required field of a changed page", async () => {
@@ -628,10 +678,12 @@ describe("runGuardrails — check 2, frontmatter", () => {
       );
     });
 
-    expect(post.failure?.check).toBe(2);
-    expect(post.failure?.problems[0]).toContain(
-      'missing required frontmatter field "tags"',
-    );
+    expect(post.failure).toMatchObject({
+      check: 2,
+      problems: expect.arrayContaining([
+        expect.stringContaining('missing required frontmatter field "tags"'),
+      ]),
+    });
   });
 
   it("does not check a wiki page the run deleted", async () => {
@@ -716,10 +768,14 @@ describe("runGuardrails — check 2, sources entry format", () => {
       );
     });
 
-    expect(post.failure?.check).toBe(2);
-    expect(post.failure?.problems[0]).toContain(
-      'wiki/cites.md: sources entry "notes/src.md" cites a path that has a hub — use "[[src]]"',
-    );
+    expect(post.failure).toMatchObject({
+      check: 2,
+      problems: expect.arrayContaining([
+        expect.stringContaining(
+          'wiki/cites.md: sources entry "notes/src.md" cites a path that has a hub — use "[[src]]"',
+        ),
+      ]),
+    });
   });
 
   it("trips when a changed page cites a raw path covered by a hub's own sources", async () => {
@@ -746,10 +802,14 @@ describe("runGuardrails — check 2, sources entry format", () => {
       );
     });
 
-    expect(post.failure?.check).toBe(2);
-    expect(post.failure?.problems[0]).toContain(
-      'cites a path that has a hub — use "[[sdn|04. Rate Limiter]]"',
-    );
+    expect(post.failure).toMatchObject({
+      check: 2,
+      problems: expect.arrayContaining([
+        expect.stringContaining(
+          'cites a path that has a hub — use "[[sdn|04. Rate Limiter]]"',
+        ),
+      ]),
+    });
   });
 
   it("trips when a changed page cites a chapter path of a migrated multi-part hub", async () => {
@@ -777,10 +837,14 @@ describe("runGuardrails — check 2, sources entry format", () => {
       );
     });
 
-    expect(post.failure?.check).toBe(2);
-    expect(post.failure?.problems[0]).toContain(
-      'cites a path that has a hub — use "[[sdn|04. Rate Limiter]]"',
-    );
+    expect(post.failure).toMatchObject({
+      check: 2,
+      problems: expect.arrayContaining([
+        expect.stringContaining(
+          'cites a path that has a hub — use "[[sdn|04. Rate Limiter]]"',
+        ),
+      ]),
+    });
   });
 
   it("passes a path-form entry whose raw path has no hub", async () => {
@@ -804,10 +868,14 @@ describe("runGuardrails — check 2, sources entry format", () => {
       );
     });
 
-    expect(post.failure?.check).toBe(2);
-    expect(post.failure?.problems[0]).toContain(
-      "wiki/cites.md: sources entry [[index]] does not cite a type: source page",
-    );
+    expect(post.failure).toMatchObject({
+      check: 2,
+      problems: expect.arrayContaining([
+        expect.stringContaining(
+          "wiki/cites.md: sources entry [[index]] does not cite a type: source page",
+        ),
+      ]),
+    });
   });
 
   it("trips when a sources wikilink targets a missing page", async () => {
@@ -819,10 +887,14 @@ describe("runGuardrails — check 2, sources entry format", () => {
       );
     });
 
-    expect(post.failure?.check).toBe(2);
-    expect(post.failure?.problems[0]).toContain(
-      "sources entry [[missing]] does not cite a type: source page",
-    );
+    expect(post.failure).toMatchObject({
+      check: 2,
+      problems: expect.arrayContaining([
+        expect.stringContaining(
+          "sources entry [[missing]] does not cite a type: source page",
+        ),
+      ]),
+    });
   });
 
   it("trips when a sources wikilink is a cross-wiki target", async () => {
@@ -834,10 +906,14 @@ describe("runGuardrails — check 2, sources entry format", () => {
       );
     });
 
-    expect(post.failure?.check).toBe(2);
-    expect(post.failure?.problems[0]).toContain(
-      "sources entry [[engineering/hub]] is a cross-wiki target",
-    );
+    expect(post.failure).toMatchObject({
+      check: 2,
+      problems: expect.arrayContaining([
+        expect.stringContaining(
+          "sources entry [[engineering/hub]] is a cross-wiki target",
+        ),
+      ]),
+    });
   });
 
   it("trips when a sources wikilink has no page target", async () => {
@@ -849,10 +925,14 @@ describe("runGuardrails — check 2, sources entry format", () => {
       );
     });
 
-    expect(post.failure?.check).toBe(2);
-    expect(post.failure?.problems[0]).toContain(
-      "wiki/cites.md: sources entry [[|alias]] has no page target",
-    );
+    expect(post.failure).toMatchObject({
+      check: 2,
+      problems: expect.arrayContaining([
+        expect.stringContaining(
+          "wiki/cites.md: sources entry [[|alias]] has no page target",
+        ),
+      ]),
+    });
   });
 
   it("does not check the sources format of a changed type: source page", async () => {
@@ -915,8 +995,10 @@ describe("runGuardrails — check 3, wikilinks", () => {
       );
     });
 
-    expect(post.failure?.check).toBe(3);
-    expect(post.failure?.name).toBe("wikilinks");
+    expect(post.failure).toMatchObject({
+      check: 3,
+      name: "wikilinks",
+    });
   });
 
   it("accepts a cross-wiki link in a second brain marked by an uncommitted marker", async () => {
@@ -948,8 +1030,10 @@ describe("runGuardrails — check 3, wikilinks", () => {
       );
     });
 
-    expect(post.failure?.check).toBe(3);
-    expect(post.failure?.name).toBe("wikilinks");
+    expect(post.failure).toMatchObject({
+      check: 3,
+      name: "wikilinks",
+    });
   });
 
   it("passes the wikilinks check when the run deletes every wiki page", async () => {
@@ -970,11 +1054,13 @@ describe("runGuardrails — check 3, wikilinks", () => {
       );
     });
 
-    expect(post.failure?.check).toBe(3);
-    expect(post.failure?.name).toBe("wikilinks");
-    expect(post.failure?.problems[0]).toMatch(
-      /^wiki\/new\.md:\d+ -> \[\[Does Not Exist\]\]$/,
-    );
+    expect(post.failure).toMatchObject({
+      check: 3,
+      name: "wikilinks",
+      problems: expect.arrayContaining([
+        expect.stringMatching(/^wiki\/new\.md:\d+ -> \[\[Does Not Exist\]\]$/),
+      ]),
+    });
   });
 
   it("accepts a wikilink to an existing page", async () => {
@@ -1028,10 +1114,12 @@ describe("runGuardrails — check 3, wikilinks", () => {
       await rm(join(root, "wiki", "target.md"));
     });
 
-    expect(post.failure?.check).toBe(3);
-    expect(post.failure?.problems[0]).toMatch(
-      /^wiki\/linker\.md:\d+ -> \[\[target\]\]$/,
-    );
+    expect(post.failure).toMatchObject({
+      check: 3,
+      problems: expect.arrayContaining([
+        expect.stringMatching(/^wiki\/linker\.md:\d+ -> \[\[target\]\]$/),
+      ]),
+    });
   });
 
   it("trips when the run deletes an untracked page other pages link to", async () => {
@@ -1047,10 +1135,12 @@ describe("runGuardrails — check 3, wikilinks", () => {
       await rm(join(root, "wiki", "target.md"));
     });
 
-    expect(post.failure?.check).toBe(3);
-    expect(post.failure?.problems[0]).toMatch(
-      /^wiki\/linker\.md:\d+ -> \[\[target\]\]$/,
-    );
+    expect(post.failure).toMatchObject({
+      check: 3,
+      problems: expect.arrayContaining([
+        expect.stringMatching(/^wiki\/linker\.md:\d+ -> \[\[target\]\]$/),
+      ]),
+    });
   });
 
   it("passes a deleted page whose name still resolves to a surviving page", async () => {
@@ -1096,10 +1186,12 @@ describe("runGuardrails — check 3, wikilinks", () => {
       });
     });
 
-    expect(post.failure?.check).toBe(3);
-    expect(post.failure?.problems[0]).toMatch(
-      /^wiki\/linker\.md:\d+ -> \[\[target\]\]$/,
-    );
+    expect(post.failure).toMatchObject({
+      check: 3,
+      problems: expect.arrayContaining([
+        expect.stringMatching(/^wiki\/linker\.md:\d+ -> \[\[target\]\]$/),
+      ]),
+    });
   });
 
   it("passes a legitimate run after a rename was staged before the run", async () => {
@@ -1320,8 +1412,10 @@ describe("statusSince", () => {
       "wiki",
     );
 
-    expect(changed).toEqual(["wiki/queries/q.md"]);
-    expect(entries).toEqual([{ code: "??", path: "wiki/queries/q.md" }]);
+    expect({ changed, entries }).toEqual({
+      changed: ["wiki/queries/q.md"],
+      entries: [{ code: "??", path: "wiki/queries/q.md" }],
+    });
   });
 
   it("reports a committed wiki file modified during the run", async () => {
@@ -1422,8 +1516,7 @@ describe("statusSince", () => {
 
     const result = await statusSince(dataRoot, process.env, pre, "wiki");
 
-    expect(result.changed).toEqual([]);
-    expect(result.headMoved).toBe(false);
+    expect(result).toMatchObject({ changed: [], headMoved: false });
   });
 
   it("reports headMoved when the run commits", async () => {
@@ -1435,8 +1528,7 @@ describe("statusSince", () => {
 
     const result = await statusSince(dataRoot, process.env, pre, "wiki");
 
-    expect(result.changed).toEqual([]);
-    expect(result.headMoved).toBe(true);
+    expect(result).toMatchObject({ changed: [], headMoved: true });
   });
 
   it("returns the full post-run entries, not only the prefix", async () => {
