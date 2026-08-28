@@ -659,6 +659,46 @@ describe("wiki-ingest --sources e2e", () => {
     expect(snapshotAfterScoped).toBe(snapshotAfterFirst);
   });
 
+  it("holds a pending change back from the snapshot for the next ordinary run", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag" });
+    const first = await ingest(repo);
+
+    expect(first.code).toBe(0);
+
+    await setNotes(repo, { "AI/RAG.md": "rag v2", "AI/NEW.md": "new" });
+
+    const scoped = await ingestSources(repo, "Engineering/AI/RAG.md");
+
+    expect(scoped.code).toBe(0);
+
+    const snapshot = JSON.parse(
+      await readFile(snapshotAt(repo.dataRoot), "utf8"),
+    ) as {
+      vaults: Record<
+        string,
+        Record<string, { hash: string } | undefined> | undefined
+      >;
+    };
+
+    expect(snapshot.vaults.Engineering?.["AI/NEW.md"]).toBeUndefined();
+    expect(snapshot.vaults.Engineering?.["AI/RAG.md"]?.hash).toBe(
+      hashOf("rag v2"),
+    );
+
+    await rm(join(repo.dataRoot, "outputs", "stub-prompt.txt"));
+
+    const pending = await ingest(repo);
+
+    expect(pending.code).toBe(0);
+
+    const prompt = await readFile(
+      join(repo.dataRoot, "outputs", "stub-prompt.txt"),
+      "utf8",
+    );
+
+    expect(prompt).toContain("+ Engineering/AI/NEW.md");
+  });
+
   it("exits 1 on an unknown --sources path and writes nothing", async () => {
     const repo = await makeRepo({ "AI/RAG.md": "rag" });
     const first = await ingest(repo);

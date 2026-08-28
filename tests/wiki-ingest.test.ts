@@ -4648,20 +4648,159 @@ describe("runWikiIngest --sources", () => {
     expect(prompt).not.toContain("new.md");
   });
 
-  it("keeps manifest changes pending after a scoped run", async () => {
+  it("holds a manifest-only added note out of the merged snapshot", async () => {
     const h = await makeHarness({
-      "a.md": "a",
+      "a.md": "a v2",
       "new.md": "added since snapshot",
     });
     await seedSnapshot(h, { "a.md": "a" });
-    const before = await readFile(h.snapshotPath, "utf8");
 
     await runWikiIngest({
       ...optionsFor(h),
       sources: ["Engineering/a.md"],
     });
 
-    expect(await readFile(h.snapshotPath, "utf8")).toBe(before);
+    const snapshot = parseManifest(
+      await readFile(h.snapshotPath, "utf8"),
+      h.snapshotPath,
+    );
+
+    expect(snapshot.vaults.Engineering?.["new.md"]).toBeUndefined();
+    expect(snapshot.vaults.Engineering?.["a.md"]).toEqual(entry("a v2"));
+  });
+
+  it("reports the full held-back counts on the progress line", async () => {
+    const h = await makeHarness({
+      "a.md": "a v2",
+      "b.md": "b v2",
+      "new.md": "added since snapshot",
+    });
+    await seedSnapshot(h, { "a.md": "a", "b.md": "b" });
+    const messages: string[] = [];
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md"],
+      onProgress: (message) => messages.push(message),
+    });
+
+    expect(
+      messages.find((message) => message.startsWith("wiki-ingest: scoped run")),
+    ).toBe(
+      "wiki-ingest: scoped run held back pending changes outside --sources (1 added, 1 changed) — the merged snapshot leaves them for the next ordinary run",
+    );
+  });
+
+  it("stays silent when the scoped run covers every pending change", async () => {
+    const h = await makeHarness({ "a.md": "a v2", "new.md": "added" });
+    await seedSnapshot(h, { "a.md": "a" });
+    const messages: string[] = [];
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md", "Engineering/new.md"],
+      onProgress: (message) => messages.push(message),
+    });
+
+    expect(
+      messages.find((message) => message.startsWith("wiki-ingest: scoped run")),
+    ).toBeUndefined();
+  });
+
+  it("counts a pending rename outside the sources as held back", async () => {
+    const h = await makeHarness({
+      "a.md": "a v2",
+      "b.md": "b v2",
+      "moved.md": "moved",
+    });
+    await seedSnapshot(h, {
+      "a.md": "a",
+      "b.md": "b",
+      "old.md": "moved",
+    });
+    const messages: string[] = [];
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md"],
+      onProgress: (message) => messages.push(message),
+    });
+
+    expect(
+      messages.find((message) => message.startsWith("wiki-ingest: scoped run")),
+    ).toBe(
+      "wiki-ingest: scoped run held back pending changes outside --sources (1 changed, 1 renamed) — the merged snapshot leaves them for the next ordinary run",
+    );
+  });
+
+  it("does not count a rename the sources cover", async () => {
+    const h = await makeHarness({ "moved.md": "moved", "b.md": "b v2" });
+    await seedSnapshot(h, { "old.md": "moved", "b.md": "b" });
+    const messages: string[] = [];
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/moved.md"],
+      onProgress: (message) => messages.push(message),
+    });
+
+    expect(
+      messages.find((message) => message.startsWith("wiki-ingest: scoped run")),
+    ).toBe(
+      "wiki-ingest: scoped run held back pending changes outside --sources (1 changed) — the merged snapshot leaves them for the next ordinary run",
+    );
+  });
+
+  it("counts a pending removal as held back", async () => {
+    const h = await makeHarness({ "a.md": "a", "doomed.md": "doomed" });
+    await seedSnapshot(h, { "a.md": "a", "doomed.md": "doomed" });
+    await rm(join(h.dataRoot, "raw", "notes", "Engineering", "doomed.md"));
+    await writeFile(
+      join(h.dataRoot, "raw", "manifest.json"),
+      serializeManifest(manifestWith("Engineering", { "a.md": entry("a") })),
+    );
+    const messages: string[] = [];
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md"],
+      onProgress: (message) => messages.push(message),
+    });
+
+    expect(
+      messages.find((message) => message.startsWith("wiki-ingest: scoped run")),
+    ).toBe(
+      "wiki-ingest: scoped run held back pending changes outside --sources (1 removed) — the merged snapshot leaves them for the next ordinary run",
+    );
+  });
+
+  it("keeps a pending removal in the merged snapshot for the next expunge run", async () => {
+    const h = await makeHarness({ "a.md": "a", "doomed.md": "doomed" });
+    await seedSnapshot(h, { "a.md": "a", "doomed.md": "doomed" });
+
+    // A sync removed the note: raw file gone, manifest updated, the
+    // snapshot (and the expunge it routes to) still ahead.
+    await rm(join(h.dataRoot, "raw", "notes", "Engineering", "doomed.md"));
+    await writeFile(
+      join(h.dataRoot, "raw", "manifest.json"),
+      serializeManifest(manifestWith("Engineering", { "a.md": entry("a") })),
+    );
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md"],
+    });
+
+    const snapshot = parseManifest(
+      await readFile(h.snapshotPath, "utf8"),
+      h.snapshotPath,
+    );
+
+    expect(snapshot.vaults.Engineering?.["doomed.md"]).toBeDefined();
+
+    const pending = await runWikiIngest(optionsFor(h));
+
+    expect(pending).toMatchObject({ status: "ran", mode: "expunge" });
   });
 
   it("still ingests manifest changes pending behind a scoped run", async () => {
@@ -4769,7 +4908,7 @@ describe("runWikiIngest --sources", () => {
     expect(result.status).toBe("ran");
   });
 
-  it("leaves the snapshot untouched on a successful scoped run", async () => {
+  it("rewrites the snapshot idempotently when it matches the manifest", async () => {
     const h = await makeHarness({ "a.md": "a" });
     await seedSnapshot(h, { "a.md": "a" });
     const before = await readFile(h.snapshotPath, "utf8");
