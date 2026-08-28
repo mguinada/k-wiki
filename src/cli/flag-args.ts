@@ -1,3 +1,17 @@
+/** Usage error for an invalid `--timeout` value, undefined when it
+ *  is valid. `undefined` counts as invalid: the caller must only
+ *  invoke this for a `--timeout` that was actually passed (keep the
+ *  error string byte-identical; tests pin it across CLIs). */
+export function timeoutArgError(
+  timeout: string | undefined,
+): string | undefined {
+  if (timeout === undefined || !/^[1-9][0-9]*$/.test(timeout)) {
+    return "--timeout needs a positive integer number of seconds";
+  }
+
+  return undefined;
+}
+
 /** The first usage error among the CLI flag values, or undefined
  *  when they are valid: every path flag needs a value (`--timeout`
  *  excepted), optional `--sources` values must all be present, and
@@ -22,13 +36,8 @@ export function flagValueError(
     return "--sources needs a path value";
   }
 
-  const timeoutArg = values.get("--timeout");
-
-  if (
-    values.has("--timeout") &&
-    (timeoutArg === undefined || !/^[1-9][0-9]*$/.test(timeoutArg))
-  ) {
-    return "--timeout needs a positive integer number of seconds";
+  if (values.has("--timeout")) {
+    return timeoutArgError(values.get("--timeout"));
   }
 
   return undefined;

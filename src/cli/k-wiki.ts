@@ -17,6 +17,7 @@ import {
   resolveRawDir,
 } from "../sync/config.ts";
 import { listWikiPages, readPageFields } from "../wiki/pages.ts";
+import { timeoutArgError } from "./flag-args.ts";
 import { refuseDirectExecution } from "./is-main.ts";
 
 /**
@@ -565,15 +566,6 @@ function parseCliArguments(args: string[]): CliArguments | undefined {
   }
 }
 
-/** Usage error for an invalid --timeout, undefined when it is valid. */
-function timeoutErrorFor(timeout: string | undefined): string | undefined {
-  if (timeout !== undefined && !/^[1-9][0-9]*$/.test(timeout)) {
-    return "--timeout needs a positive integer number of seconds";
-  }
-
-  return undefined;
-}
-
 /** Usage error for k-wiki read's argument count, undefined when valid. */
 function readArityError(rest: readonly string[]): string | undefined {
   if (rest.length === 0) {
@@ -778,7 +770,9 @@ export async function main(cwd: string = process.cwd()): Promise<void> {
     return;
   }
 
-  const timeoutError = timeoutErrorFor(cli.values.timeout);
+  const timeout = cli.values.timeout;
+  const timeoutError =
+    timeout === undefined ? undefined : timeoutArgError(timeout);
 
   if (timeoutError !== undefined) {
     fail(timeoutError);
