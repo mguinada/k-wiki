@@ -585,7 +585,9 @@ async function commitSummaryOf(
 
 /** Stage 1 (issue #145 dispatch): load the config, refuse mixed
  *  source kinds, then run the sync-repo core for a repo-typed
- *  config and the sync-vault core otherwise. */
+ *  config (the meta instance, in-process over that config) and the
+ *  sync-vault core otherwise — same cycle, same
+ *  lint → verification → commit flow, whatever the source kind. */
 async function runSyncStage(
   options: WikiSyncOptions,
   env: NodeJS.ProcessEnv,

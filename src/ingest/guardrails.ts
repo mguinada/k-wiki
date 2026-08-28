@@ -752,6 +752,8 @@ function changedPageLinkProblems(
 
   for (const [path, text] of texts) {
     for (const link of extractWikilinks(text)) {
+      // Cross-wiki links (issue #81) are external by design — but
+      // only in a second brain; elsewhere they never resolve.
       if (secondBrain && crossWikiTarget(link.target) !== undefined) {
         continue;
       }
