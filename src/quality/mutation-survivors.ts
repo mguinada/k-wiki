@@ -106,11 +106,26 @@ export function parseReport(text: string): Report {
   return parsed as Report;
 }
 
-export function main(): void {
-  const args = process.argv.slice(2);
+/** The report file's text, or undefined when it cannot be read. */
+function readReportFile(): string | undefined {
+  try {
+    return readFileSync(REPORT_PATH, "utf8");
+  } catch {
+    return undefined;
+  }
+}
 
-  if (args.includes("-h") || args.includes("--help")) {
-    console.log(HELP);
+/** Print the actionable mutants of one report file's text (or the
+ *  missing-report hint for undefined); exported for in-process
+ *  tests — spawned CLI children cannot exercise this branch under
+ *  mutation. Always leaves the exit code at 0 when a report was
+ *  readable: mutation testing is advisory (issue #21). */
+export function printSurvivors(text: string | undefined): void {
+  if (text === undefined) {
+    console.error(
+      `No report at ${REPORT_PATH} — run npm run mutation:changed first.`,
+    );
+    process.exitCode = 1;
 
     return;
   }
@@ -118,7 +133,7 @@ export function main(): void {
   let report: Report;
 
   try {
-    report = parseReport(readFileSync(REPORT_PATH, "utf8"));
+    report = parseReport(text);
   } catch (cause) {
     if (cause instanceof Error && cause.message.includes("unexpected shape")) {
       console.error(
@@ -150,6 +165,18 @@ export function main(): void {
   for (const line of lines) {
     console.log(`  ${line}`);
   }
+}
+
+export function main(): void {
+  const args = process.argv.slice(2);
+
+  if (args.includes("-h") || args.includes("--help")) {
+    console.log(HELP);
+
+    return;
+  }
+
+  printSurvivors(readReportFile());
 }
 
 /* v8 ignore next: covered only under direct `node src/quality/mutation-survivors.ts` runs */
