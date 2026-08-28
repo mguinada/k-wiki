@@ -126,10 +126,31 @@ describe("writeDashboard", () => {
     });
 
     expect(path).toBe(join(dataRoot, "dashboard.html"));
+  });
 
-    const html = await readFile(path, "utf8");
+  it("starts the dashboard with a DOCTYPE", async () => {
+    const dataRoot = await makeDataRepo();
+
+    const html = await readFile(
+      await writeDashboard(dataRoot, {
+        now: () => new Date("2026-09-01T12:00:00.000Z"),
+      }),
+      "utf8",
+    );
 
     expect(html.startsWith("<!DOCTYPE html>")).toBe(true);
+  });
+
+  it("keeps the dashboard self-contained with a color-scheme preference", async () => {
+    const dataRoot = await makeDataRepo();
+
+    const html = await readFile(
+      await writeDashboard(dataRoot, {
+        now: () => new Date("2026-09-01T12:00:00.000Z"),
+      }),
+      "utf8",
+    );
+
     expect(html).toContain("prefers-color-scheme");
   });
 
@@ -176,6 +197,18 @@ describe("writeDashboard", () => {
     );
 
     expect(html).toContain("needs-review");
+  });
+
+  it("renders the flagged page from the review KPIs", async () => {
+    const dataRoot = await makeDataRepo();
+
+    const html = await readFile(
+      await writeDashboard(dataRoot, {
+        now: () => new Date("2026-09-01T12:00:00.000Z"),
+      }),
+      "utf8",
+    );
+
     expect(html).toContain("beginner-roadmap.md");
   });
 
@@ -252,6 +285,32 @@ describe("writeDashboard", () => {
     );
 
     expect(html).toContain("Query funnel");
+  });
+
+  it("stamps the last query date into the funnel", async () => {
+    const dataRoot = await makeDataRepo();
+
+    await writeFile(
+      join(dataRoot, "outputs", "last-query.md"),
+      [
+        "---",
+        'question: "Why eval?"',
+        'timestamp: "2026-08-30T10:00:00.000Z"',
+        "pages: []",
+        "---",
+        "",
+        "Because.",
+        "",
+      ].join("\n"),
+    );
+
+    const html = await readFile(
+      await writeDashboard(dataRoot, {
+        now: () => new Date("2026-09-01T12:00:00.000Z"),
+      }),
+      "utf8",
+    );
+
     expect(html).toContain("2026-08-30");
   });
 
@@ -554,10 +613,15 @@ describe("dashboard CLI", () => {
     process.exitCode = undefined;
   });
 
-  it("rejects an unknown option naming it, exit 1", async () => {
+  it("names an unknown option in the error", async () => {
     const { err } = await runMain(["--bogus"]);
 
     expect(err).toContain('unknown option "--bogus"');
+  });
+
+  it("exits 1 for an unknown option", async () => {
+    await runMain(["--bogus"]);
+
     expect(process.exitCode).toBe(1);
   });
 
@@ -565,6 +629,11 @@ describe("dashboard CLI", () => {
     const { err } = await runMain(["/tmp", "/tmp"]);
 
     expect(err).toContain("expected at most one <data-repo>");
+  });
+
+  it("exits 1 for too many data-repo arguments", async () => {
+    await runMain(["/tmp", "/tmp"]);
+
     expect(process.exitCode).toBe(1);
   });
 
@@ -572,10 +641,27 @@ describe("dashboard CLI", () => {
     const { err } = await runMain([join(tmpdir(), "k-wiki-dash-nonexistent")]);
 
     expect(err).toContain("dashboard: ");
+  });
+
+  it("exits 1 when the data repo does not exist", async () => {
+    await runMain([join(tmpdir(), "k-wiki-dash-nonexistent")]);
+
     expect(process.exitCode).toBe(1);
   });
 
-  it("prints help for --help without side effects", async () => {
+  it("prints help for --help", async () => {
+    const { out } = await runMain(["--help"]);
+
+    expect(out).toContain("Usage: dashboard");
+  });
+
+  it("leaves the exit code unset for --help", async () => {
+    await runMain(["--help"]);
+
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("writes nothing for --help", async () => {
     const dataRoot = await makeDataRepo();
 
     const htmlBefore = await readFile(
@@ -585,10 +671,7 @@ describe("dashboard CLI", () => {
       "utf8",
     );
 
-    const { out } = await runMain(["--help"]);
-
-    expect(out).toContain("Usage: dashboard");
-    expect(process.exitCode).toBeUndefined();
+    await runMain(["--help"]);
 
     const htmlAfter = await readFile(join(dataRoot, "dashboard.html"), "utf8");
 
