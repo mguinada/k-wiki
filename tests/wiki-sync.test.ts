@@ -2546,10 +2546,12 @@ describe("runWikiSync failure reporting", () => {
 
     h.lintAgent = rogueLintAgent();
 
-    await runWikiSync({
-      ...optionsFor(h),
-      onProgress: (message) => progress.push(message),
-    }).catch(() => {});
+    await expect(
+      runWikiSync({
+        ...optionsFor(h),
+        onProgress: (message) => progress.push(message),
+      }),
+    ).rejects.toThrow("guardrail check 2 (frontmatter)");
 
     expect(progress).toContainEqual(
       expect.stringMatching(

@@ -3989,7 +3989,9 @@ describe("runWikiIngest", () => {
 
     await rm(join(h.dataRoot, ".git"), { recursive: true });
 
-    await runWikiIngest(optionsFor(h)).catch(() => undefined);
+    await expect(runWikiIngest(optionsFor(h))).rejects.toThrow(
+      "no commit to revert to",
+    );
 
     expect(h.invocations).toHaveLength(0);
   });
@@ -4244,7 +4246,7 @@ describe("runWikiIngest", () => {
       recursive: true,
     });
 
-    await runWikiIngest(optionsFor(h)).catch(() => undefined);
+    await expect(runWikiIngest(optionsFor(h))).rejects.toThrow();
 
     const { readFile } = await import("node:fs/promises");
 
@@ -4611,10 +4613,12 @@ describe("runWikiIngest --sources", () => {
   it("omits the sources-selected marker from an ordinary failure digest", async () => {
     const h = await makeHarness({ "a.md": "a" });
 
-    await runWikiIngest({
-      ...optionsFor(h),
-      runAgent: frontmatterSaboteur("bad.md"),
-    }).catch(() => {});
+    await expect(
+      runWikiIngest({
+        ...optionsFor(h),
+        runAgent: frontmatterSaboteur("bad.md"),
+      }),
+    ).rejects.toThrow("guardrail check 2 (frontmatter)");
 
     const digest = await readFile(
       join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"),
@@ -4734,11 +4738,13 @@ describe("runWikiIngest --sources", () => {
     const h = await makeHarness({ "a.md": "a" });
     await seedSnapshot(h, { "a.md": "a" });
 
-    await runWikiIngest({
-      ...optionsFor(h),
-      sources: ["Engineering/a.md"],
-      runAgent: frontmatterSaboteur("bad.md"),
-    }).catch(() => {});
+    await expect(
+      runWikiIngest({
+        ...optionsFor(h),
+        sources: ["Engineering/a.md"],
+        runAgent: frontmatterSaboteur("bad.md"),
+      }),
+    ).rejects.toThrow("guardrail check 2 (frontmatter)");
 
     const digest = await readFile(
       join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"),
@@ -4814,11 +4820,13 @@ describe("runWikiIngest --sources", () => {
       throw new Error("agent exited with code 1");
     };
 
-    await runWikiIngest({
-      ...optionsFor(h),
-      sources: ["Engineering/a.md"],
-      runAgent: failing,
-    }).catch(() => {});
+    await expect(
+      runWikiIngest({
+        ...optionsFor(h),
+        sources: ["Engineering/a.md"],
+        runAgent: failing,
+      }),
+    ).rejects.toThrow("agent exited with code 1");
 
     expect(await readFile(h.snapshotPath, "utf8")).toBe(before);
   });
@@ -4840,11 +4848,13 @@ describe("runWikiIngest --sources", () => {
     const h = await makeHarness({ "a.md": "a" });
     await seedSnapshot(h, { "a.md": "a" });
 
-    await runWikiIngest({
-      ...optionsFor(h),
-      sources: ["Engineering/a.md"],
-      runAgent: frontmatterSaboteur("bad.md"),
-    }).catch(() => {});
+    await expect(
+      runWikiIngest({
+        ...optionsFor(h),
+        sources: ["Engineering/a.md"],
+        runAgent: frontmatterSaboteur("bad.md"),
+      }),
+    ).rejects.toThrow("guardrail check 2 (frontmatter)");
 
     await expect(
       readFile(join(h.dataRoot, "wiki", "bad.md"), "utf8"),
@@ -4856,11 +4866,13 @@ describe("runWikiIngest --sources", () => {
     await seedSnapshot(h, { "a.md": "a" });
     const before = await readFile(h.snapshotPath, "utf8");
 
-    await runWikiIngest({
-      ...optionsFor(h),
-      sources: ["Engineering/a.md"],
-      runAgent: frontmatterSaboteur("bad.md"),
-    }).catch(() => {});
+    await expect(
+      runWikiIngest({
+        ...optionsFor(h),
+        sources: ["Engineering/a.md"],
+        runAgent: frontmatterSaboteur("bad.md"),
+      }),
+    ).rejects.toThrow("guardrail check 2 (frontmatter)");
 
     expect(await readFile(h.snapshotPath, "utf8")).toBe(before);
   });
@@ -4904,10 +4916,12 @@ describe("runWikiIngest guardrails", () => {
   it("removes the offending page when the frontmatter guardrail trips", async () => {
     const h = await makeHarness({ "a.md": "a" });
 
-    await runWikiIngest({
-      ...optionsFor(h),
-      runAgent: frontmatterSaboteur("bad.md"),
-    }).catch(() => {});
+    await expect(
+      runWikiIngest({
+        ...optionsFor(h),
+        runAgent: frontmatterSaboteur("bad.md"),
+      }),
+    ).rejects.toThrow("guardrail check 2 (frontmatter)");
 
     await expect(
       readFile(join(h.dataRoot, "wiki", "bad.md"), "utf8"),
@@ -4917,10 +4931,12 @@ describe("runWikiIngest guardrails", () => {
   it("leaves no snapshot when the frontmatter guardrail trips", async () => {
     const h = await makeHarness({ "a.md": "a" });
 
-    await runWikiIngest({
-      ...optionsFor(h),
-      runAgent: frontmatterSaboteur("bad.md"),
-    }).catch(() => {});
+    await expect(
+      runWikiIngest({
+        ...optionsFor(h),
+        runAgent: frontmatterSaboteur("bad.md"),
+      }),
+    ).rejects.toThrow("guardrail check 2 (frontmatter)");
 
     await expect(readFile(h.snapshotPath, "utf8")).rejects.toMatchObject({
       code: "ENOENT",
@@ -4941,10 +4957,12 @@ describe("runWikiIngest guardrails", () => {
   it("writes a failure digest naming the tripped check", async () => {
     const h = await makeHarness({ "a.md": "a" });
 
-    await runWikiIngest({
-      ...optionsFor(h),
-      runAgent: frontmatterSaboteur("bad.md"),
-    }).catch(() => {});
+    await expect(
+      runWikiIngest({
+        ...optionsFor(h),
+        runAgent: frontmatterSaboteur("bad.md"),
+      }),
+    ).rejects.toThrow();
 
     const digest = await readFile(digestPath(h), "utf8");
 
@@ -4954,10 +4972,12 @@ describe("runWikiIngest guardrails", () => {
   it("names the offending page in the failure digest", async () => {
     const h = await makeHarness({ "a.md": "a" });
 
-    await runWikiIngest({
-      ...optionsFor(h),
-      runAgent: frontmatterSaboteur("bad.md"),
-    }).catch(() => {});
+    await expect(
+      runWikiIngest({
+        ...optionsFor(h),
+        runAgent: frontmatterSaboteur("bad.md"),
+      }),
+    ).rejects.toThrow();
 
     const digest = await readFile(digestPath(h), "utf8");
 
@@ -4967,10 +4987,12 @@ describe("runWikiIngest guardrails", () => {
   it("embeds the agent report in the failure digest", async () => {
     const h = await makeHarness({ "a.md": "a" });
 
-    await runWikiIngest({
-      ...optionsFor(h),
-      runAgent: frontmatterSaboteur("bad.md"),
-    }).catch(() => {});
+    await expect(
+      runWikiIngest({
+        ...optionsFor(h),
+        runAgent: frontmatterSaboteur("bad.md"),
+      }),
+    ).rejects.toThrow();
 
     const digest = await readFile(digestPath(h), "utf8");
 
@@ -6286,14 +6308,13 @@ describe("runWikiIngest failure reporting detail", () => {
     const h = await makeHarness({ "a.md": "a" });
     const progress: string[] = [];
 
-    await runWikiIngest({
-      ...optionsFor(h),
-      runAgent: frontmatterSaboteur("bad.md"),
-      onProgress: (message) => progress.push(message),
-    }).then(
-      () => undefined,
-      () => undefined,
-    );
+    await expect(
+      runWikiIngest({
+        ...optionsFor(h),
+        runAgent: frontmatterSaboteur("bad.md"),
+        onProgress: (message) => progress.push(message),
+      }),
+    ).rejects.toThrow("guardrail check 2 (frontmatter)");
 
     expect(progress.join("\n")).toMatch(
       /^wiki-ingest: guardrail check 2 \(frontmatter\) failed — reverting to [0-9a-f]{8}$/m,
@@ -6352,13 +6373,12 @@ describe("runWikiIngest failure reporting detail", () => {
   it("states the mode in the failure digest", async () => {
     const h = await makeHarness({ "a.md": "a" });
 
-    await runWikiIngest({
-      ...optionsFor(h),
-      runAgent: frontmatterSaboteur("bad.md"),
-    }).then(
-      () => undefined,
-      () => undefined,
-    );
+    await expect(
+      runWikiIngest({
+        ...optionsFor(h),
+        runAgent: frontmatterSaboteur("bad.md"),
+      }),
+    ).rejects.toThrow();
 
     const digest = await readFile(
       join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"),
@@ -6371,13 +6391,12 @@ describe("runWikiIngest failure reporting detail", () => {
   it("names the prompt file in the failure digest", async () => {
     const h = await makeHarness({ "a.md": "a" });
 
-    await runWikiIngest({
-      ...optionsFor(h),
-      runAgent: frontmatterSaboteur("bad.md"),
-    }).then(
-      () => undefined,
-      () => undefined,
-    );
+    await expect(
+      runWikiIngest({
+        ...optionsFor(h),
+        runAgent: frontmatterSaboteur("bad.md"),
+      }),
+    ).rejects.toThrow();
 
     const digest = await readFile(
       join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"),
@@ -6390,13 +6409,12 @@ describe("runWikiIngest failure reporting detail", () => {
   it("reports the wiki pages as unavailable in the failure digest", async () => {
     const h = await makeHarness({ "a.md": "a" });
 
-    await runWikiIngest({
-      ...optionsFor(h),
-      runAgent: frontmatterSaboteur("bad.md"),
-    }).then(
-      () => undefined,
-      () => undefined,
-    );
+    await expect(
+      runWikiIngest({
+        ...optionsFor(h),
+        runAgent: frontmatterSaboteur("bad.md"),
+      }),
+    ).rejects.toThrow();
 
     const digest = await readFile(
       join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"),
@@ -6415,14 +6433,13 @@ describe("runWikiIngest failure reporting detail", () => {
       throw new Error("agent exited with code 9");
     };
 
-    await runWikiIngest({
-      ...optionsFor(h),
-      runAgent: failing,
-      onProgress: (message) => progress.push(message),
-    }).then(
-      () => undefined,
-      () => undefined,
-    );
+    await expect(
+      runWikiIngest({
+        ...optionsFor(h),
+        runAgent: failing,
+        onProgress: (message) => progress.push(message),
+      }),
+    ).rejects.toThrow("agent exited with code 9");
 
     expect(progress).toContain(
       "wiki-ingest: agent failed — guardrails passed, changes kept",
