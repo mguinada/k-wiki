@@ -526,16 +526,19 @@ describe("mutation-survivors main in-process", () => {
     run: () => void,
   ): Promise<string> => {
     const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutsurv-cwd-"));
-    const cwd = process.cwd();
+
+    // Faked, not chdir'd: process.chdir throws in the worker threads
+    // Stryker's vitest runner uses, which killed every mutation dry
+    // run once this suite landed.
+    const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue(dir);
 
     tempDirs.push(dir);
     await plantReport(dir);
-    process.chdir(dir);
 
     try {
       run();
     } finally {
-      process.chdir(cwd);
+      cwdSpy.mockRestore();
     }
 
     return dir;
