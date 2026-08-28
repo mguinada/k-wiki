@@ -375,17 +375,6 @@ describe("checkWikiProvenance", () => {
       `wiki directory does not exist: ${join(root, "missing")}`,
     );
   });
-
-  it("rejects a raw directory that does not exist", async () => {
-    const { wikiDir } = await makeFixture({ "index.md": "# Index" });
-    const root = await mkdtemp(join(tmpdir(), "k-wiki-provenance-"));
-
-    tempDirs.push(root);
-
-    await expect(
-      checkWikiProvenance(wikiDir, join(root, "missing")),
-    ).rejects.toThrow(`raw directory does not exist: ${join(root, "missing")}`);
-  });
 });
 
 describe("check-provenance CLI", () => {

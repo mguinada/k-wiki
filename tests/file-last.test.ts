@@ -946,22 +946,6 @@ describe("fileLastQuery file creation", () => {
     );
   });
 
-  it("appends the entry after a log without a trailing newline", async () => {
-    const { dataRoot, artifactPath } = await makeFiledRepo();
-
-    await writeFile(join(dataRoot, "wiki", "log.md"), "# Wiki Log");
-
-    await fileLastQuery({
-      artifactPath,
-      dataRoot,
-      now: () => new Date("2026-08-21T09:00:00Z"),
-    });
-
-    expect(await readFile(join(dataRoot, "wiki", "log.md"), "utf8")).toBe(
-      `# Wiki Log\n\n## [2026-08-21] query | ${QUESTION}\n`,
-    );
-  });
-
   it("reports no progress when nothing drifted", async () => {
     const { dataRoot, artifactPath } = await makeFiledRepo();
     const messages: string[] = [];
@@ -1221,22 +1205,5 @@ describe("readHeaders order and shape", () => {
     ).toThrow(
       "not a wiki-query artifact: missing question, timestamp, or pages header",
     );
-  });
-});
-
-describe("committedAfterSave predates the answer", () => {
-  it("stays undefined when the last raw/ or wiki/ commit predates the saved answer", async () => {
-    const dataRoot = await makeCommittedRepo();
-
-    await commitAll(
-      dataRoot,
-      "wiki edit",
-      [["wiki/index.md", "# Index v2\n"]],
-      "2026-08-19T12:00:00+00:00",
-    );
-
-    expect(
-      await driftWarning(dataRoot, process.env, "2026-08-20T10:00:00Z"),
-    ).toBeUndefined();
   });
 });

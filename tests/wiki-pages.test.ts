@@ -293,6 +293,12 @@ describe("buildPageIndex", () => {
       ]),
     );
   });
+
+  it("lets later files win when two pages share one name", () => {
+    expect(buildPageIndex(["concepts/temp.md", "sources/temp.md"])).toEqual(
+      new Map([["temp", "sources/temp.md"]]),
+    );
+  });
 });
 
 describe("listWikiPages", () => {
