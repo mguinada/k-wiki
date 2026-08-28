@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
+import { parseReport } from "../src/quality/mutation-survivors.ts";
 import { actionableLines } from "../src/quality/mutation-survivors.ts";
 
 const tempDirs: string[] = [];
@@ -52,6 +53,29 @@ const report = {
     },
   },
 };
+
+describe("parseReport", () => {
+  it("parses a well-formed report into its files map", () => {
+    const parsed = parseReport(JSON.stringify(report));
+
+    expect(Object.keys(parsed.files)).toEqual([
+      "src/sync/config.ts",
+      "src/sync/scan.ts",
+    ]);
+  });
+
+  it("throws a named shape error for a valid-JSON report whose shape drifted", () => {
+    expect(() => parseReport('{"config": {}}')).toThrow(
+      /unexpected shape/,
+    );
+  });
+
+  it("throws the shape error when a file entry lacks its mutants array", () => {
+    expect(() => parseReport('{"files": {"src/a.ts": {}}}')).toThrow(
+      /unexpected shape/,
+    );
+  });
+});
 
 describe("actionableLines", () => {
   it("lists exactly the survived and no-coverage mutants as file:line entries sorted by file and line", () => {

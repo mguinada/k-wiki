@@ -63,6 +63,41 @@ export function actionableLines(report: Report): string[] {
   return entries.map((e) => `${e.status}  ${e.file}:${e.line}  ${e.mutator}`);
 }
 
+/** Parse and shape-check a Stryker report: every `files` entry
+ *  must carry a `mutants` array — a Stryker upgrade that drifts the
+ *  shape gets a diagnosable error, not a raw TypeError from deep in
+ *  actionableLines. Throws on invalid JSON with the parse cause. */
+export function parseReport(text: string): Report {
+  const parsed: unknown = JSON.parse(text);
+
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    !("files" in parsed) ||
+    typeof parsed.files !== "object" ||
+    parsed.files === null
+  ) {
+    throw new Error("mutation report has an unexpected shape (no files)");
+  }
+
+  for (const entry of Object.values(
+    parsed.files as Record<string, unknown>,
+  )) {
+    if (
+      typeof entry !== "object" ||
+      entry === null ||
+      !("mutants" in entry) ||
+      !Array.isArray((entry as { mutants: unknown }).mutants)
+    ) {
+      throw new Error(
+        "mutation report has an unexpected shape (a file entry lacks its mutants array)",
+      );
+    }
+  }
+
+  return parsed as Report;
+}
+
 export function main(): void {
   const args = process.argv.slice(2);
 
@@ -75,11 +110,17 @@ export function main(): void {
   let report: Report;
 
   try {
-    report = JSON.parse(readFileSync(REPORT_PATH, "utf8")) as Report;
-  } catch {
-    console.error(
-      `No report at ${REPORT_PATH} — run npm run mutation:changed first.`,
-    );
+    report = parseReport(readFileSync(REPORT_PATH, "utf8"));
+  } catch (cause) {
+    if (cause instanceof Error && cause.message.includes("unexpected shape")) {
+      console.error(
+        `The report at ${REPORT_PATH} has an unexpected shape — a Stryker upgrade changed the report format; ${cause.message}`,
+      );
+    } else {
+      console.error(
+        `No report at ${REPORT_PATH} — run npm run mutation:changed first.`,
+      );
+    }
 
     process.exitCode = 1;
 
