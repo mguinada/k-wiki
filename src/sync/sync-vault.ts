@@ -93,23 +93,30 @@ export interface ProjectedNote {
   readonly hash: string;
 }
 
-async function assertDirectory(vault: VaultSourceConfig): Promise<void> {
+/** Verify a configured source root (vault or repo) is an accessible
+ *  directory; `kind` names it in the error. */
+export async function assertSourceDirectory(
+  kind: string,
+  name: string,
+  root: string,
+): Promise<void> {
   let info: Stats;
 
   try {
-    info = await stat(vault.root);
+    info = await stat(root);
   } catch (cause) {
-    throw new Error(
-      `vault root for "${vault.name}" is not accessible: ${vault.root}`,
-      { cause },
-    );
+    throw new Error(`${kind} root for "${name}" is not accessible: ${root}`, {
+      cause,
+    });
   }
 
   if (!info.isDirectory()) {
-    throw new Error(
-      `vault root for "${vault.name}" is not a directory: ${vault.root}`,
-    );
+    throw new Error(`${kind} root for "${name}" is not a directory: ${root}`);
   }
+}
+
+async function assertDirectory(vault: VaultSourceConfig): Promise<void> {
+  await assertSourceDirectory("vault", vault.name, vault.root);
 }
 
 function toAbsolute(root: string, relPath: string): string {

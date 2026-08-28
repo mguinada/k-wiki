@@ -21,6 +21,7 @@ import {
   writeManifest,
 } from "./manifest.ts";
 import {
+  assertSourceDirectory,
   formatReport,
   listNamespaceDirs,
   type ProjectedNote,
@@ -354,26 +355,6 @@ async function projectRepo(
   };
 }
 
-/** Verify the source repo root is an accessible directory. */
-async function assertRepoDirectory(source: RepoSourceConfig): Promise<void> {
-  let info: Stats;
-
-  try {
-    info = await stat(source.root);
-  } catch (cause) {
-    throw new Error(
-      `source root for "${source.name}" is not accessible: ${source.root}`,
-      { cause },
-    );
-  }
-
-  if (!info.isDirectory()) {
-    throw new Error(
-      `source root for "${source.name}" is not a directory: ${source.root}`,
-    );
-  }
-}
-
 /** Run one repo projection pass and return the run report. */
 export async function runRepoSync(
   options: RepoSyncOptions,
@@ -387,7 +368,7 @@ export async function runRepoSync(
 
   const source = await theRepoSource(options.configPath, home);
 
-  await assertRepoDirectory(source);
+  await assertSourceDirectory("source", source.name, source.root);
 
   await assertCommittedTree(source.root, env);
 
