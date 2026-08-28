@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
-import { flagValueError } from "../cli/flag-args.ts";
+import { flagValueError, readFlagValues } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { formatDuration } from "../cli/progress.ts";
 import { checkCrossWikiLinks } from "../crosslinks.ts";
@@ -1016,18 +1016,10 @@ interface ParsedArgs {
 /** Pull the three value flags and the positionals out of argv,
  *  rejecting unknown options and more than two positionals. */
 function parseCliArgs(args: readonly string[]): ParsedArgs {
-  const values = new Map<string, string | undefined>();
-  const consumed = new Set<number>();
-
-  for (const flag of ["--settings", "--outputs", "--timeout"]) {
-    const index = args.indexOf(flag);
-
-    if (index !== -1) {
-      values.set(flag, args[index + 1]);
-      consumed.add(index);
-      consumed.add(index + 1);
-    }
-  }
+  const { values, consumed } = readFlagValues(
+    ["--settings", "--outputs", "--timeout"],
+    args,
+  );
 
   const positional: string[] = [];
 

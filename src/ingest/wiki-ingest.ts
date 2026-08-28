@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
-import { flagValueError } from "../cli/flag-args.ts";
+import { flagValueError, readFlagValues as sharedReadFlagValues } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import {
   createProgressRenderer,
@@ -2208,20 +2208,10 @@ function readFlagValues(args: readonly string[]): {
   values: Map<string, string | undefined>;
   consumed: Set<number>;
 } {
-  const values = new Map<string, string | undefined>();
-  const consumed = new Set<number>();
-
-  for (const flag of ["--settings", "--outputs", "--timeout"]) {
-    const index = args.indexOf(flag);
-
-    if (index !== -1) {
-      values.set(flag, args[index + 1]);
-      consumed.add(index);
-      consumed.add(index + 1);
-    }
-  }
-
-  return { values, consumed };
+  return sharedReadFlagValues(
+    ["--settings", "--outputs", "--timeout"],
+    args,
+  );
 }
 
 /** Every `--sources <path>` pair's value (a missing final value

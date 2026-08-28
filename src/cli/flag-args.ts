@@ -1,3 +1,30 @@
+/** The value-taking flags in `flags`, each with its value and the
+ *  argument indexes it consumed (a missing final value surfaces as
+ *  undefined and fails validation). Shared by the wiki-ingest and
+ *  wiki-sync CLIs. */
+export function readFlagValues(
+  flags: readonly string[],
+  args: readonly string[],
+): {
+  values: Map<string, string | undefined>;
+  consumed: Set<number>;
+} {
+  const values = new Map<string, string | undefined>();
+  const consumed = new Set<number>();
+
+  for (const flag of flags) {
+    const index = args.indexOf(flag);
+
+    if (index !== -1) {
+      values.set(flag, args[index + 1]);
+      consumed.add(index);
+      consumed.add(index + 1);
+    }
+  }
+
+  return { values, consumed };
+}
+
 /** Usage error for an invalid `--timeout` value, undefined when it
  *  is valid. `undefined` counts as invalid: the caller must only
  *  invoke this for a `--timeout` that was actually passed (keep the
