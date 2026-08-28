@@ -20,6 +20,9 @@ describe("formatDuration", () => {
 
   it("switches to minute format exactly at sixty seconds", () => {
     expect(formatDuration(60_000)).toBe("1m00s");
+  });
+
+  it("keeps second format one tick below sixty seconds", () => {
     expect(formatDuration(59_999)).toBe("59s");
   });
 
@@ -142,7 +145,25 @@ describe("createProgressRenderer", () => {
     renderer.event("agent finished");
 
     expect(written[0]).toBe("\r⠋ running (1s)");
+  });
+
+  it("clears the live line when an event lands", async () => {
+    const written: string[] = [];
+    const renderer = createProgressRenderer((text) => written.push(text), 5);
+
+    renderer.live("running (1s)");
+    renderer.event("agent finished");
+
     expect(written[1]).toMatch(/^\r\s+\r$/);
+  });
+
+  it("prints the event after clearing the live line", async () => {
+    const written: string[] = [];
+    const renderer = createProgressRenderer((text) => written.push(text), 5);
+
+    renderer.live("running (1s)");
+    renderer.event("agent finished");
+
     expect(written[2]).toBe("agent finished\n");
   });
 
@@ -155,6 +176,16 @@ describe("createProgressRenderer", () => {
     renderer.live("running (2s)");
 
     expect(written).toHaveLength(2);
+  });
+
+  it("redraws the live line with the newest frame", async () => {
+    const written: string[] = [];
+    const renderer = createProgressRenderer((text) => written.push(text), 5);
+
+    renderer.live("running (1s)");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    renderer.live("running (2s)");
+
     expect(written[1]).toMatch(/^\r⠙ running \(2s\)$/);
   });
 
@@ -198,6 +229,12 @@ describe("createProgressRenderer", () => {
     const renderer = createProgressRenderer(write);
 
     expect(renderer).toBeDefined();
+  });
+
+  it("leaves the console untouched at construction", () => {
+    const write = vi.fn();
+    createProgressRenderer(write);
+
     expect(write).not.toHaveBeenCalled();
   });
 });

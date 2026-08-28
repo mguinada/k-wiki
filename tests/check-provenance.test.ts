@@ -124,6 +124,22 @@ describe("checkWikiProvenance", () => {
     const report = await checkWikiProvenance(wikiDir, rawDir);
 
     expect(report.problems).toEqual([]);
+  });
+
+  it("counts the fixture's sources, origins, and pages", async () => {
+    const { wikiDir, rawDir } = await makeFixture(
+      {
+        "sources/Temp research.md":
+          "---\ntitle: Temp research\ntype: source\norigin: raw/notes/V/Scratch/temp.md\n---\nbody",
+        "concepts/cites.md":
+          '---\ntitle: Cites\nsources:\n  - "[[Temp research]]"\n---\nbody',
+        "index.md": "# Index",
+      },
+      { "notes/V/Scratch/temp.md": "temp body" },
+    );
+
+    const report = await checkWikiProvenance(wikiDir, rawDir);
+
     expect(`${report.sources}/${report.origins}/${report.pages}`).toBe("1/1/3");
   });
 
@@ -315,6 +331,17 @@ describe("checkWikiProvenance", () => {
     const report = await checkWikiProvenance(wikiDir, rawDir);
 
     expect(report.problems).toEqual([]);
+  });
+
+  it("does not count AGENTS.md as a page", async () => {
+    const { wikiDir, rawDir } = await makeFixture({
+      "AGENTS.md":
+        '---\nsources:\n  - "[[Missing]]"\norigin: raw/notes/V/gone.md\n---\n',
+      "index.md": "# Index",
+    });
+
+    const report = await checkWikiProvenance(wikiDir, rawDir);
+
     expect(report.pages).toBe(1);
   });
 
@@ -361,6 +388,13 @@ describe("checkWikiProvenance", () => {
     const report = await checkWikiProvenance(wikiDir, rawDir);
 
     expect(report.problems).toEqual([]);
+  });
+
+  it("counts no sources or origins on an empty wiki", async () => {
+    const { wikiDir, rawDir } = await makeFixture({ "index.md": "# Index" });
+
+    const report = await checkWikiProvenance(wikiDir, rawDir);
+
     expect(`${report.sources}/${report.origins}`).toBe("0/0");
   });
 
@@ -418,7 +452,7 @@ describe("check-provenance CLI", () => {
   });
 
   it("defaults the raw dir to the sibling of the given wiki dir", async () => {
-    const { wikiDir, rawDir } = await makeFixture(
+    const { wikiDir } = await makeFixture(
       {
         "sources/S.md":
           "---\ntype: source\norigin: raw/notes/V/s.md\n---\nbody",
@@ -429,7 +463,30 @@ describe("check-provenance CLI", () => {
     const result = await runNode([wikiDir]);
 
     expect(result.code).toBe(0);
+  });
+
+  it("reports the existing origin count with the sibling raw dir", async () => {
+    const { wikiDir } = await makeFixture(
+      {
+        "sources/S.md":
+          "---\ntype: source\norigin: raw/notes/V/s.md\n---\nbody",
+      },
+      { "notes/V/s.md": "s" },
+    );
+
+    const result = await runNode([wikiDir]);
+
     expect(result.out).toContain("1 origin exists");
+  });
+
+  it("fails when the sibling raw dir loses the origin file", async () => {
+    const { wikiDir, rawDir } = await makeFixture(
+      {
+        "sources/S.md":
+          "---\ntype: source\norigin: raw/notes/V/s.md\n---\nbody",
+      },
+      { "notes/V/s.md": "s" },
+    );
 
     await rm(rawDir, { recursive: true, force: true });
 
