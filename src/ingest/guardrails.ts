@@ -552,6 +552,18 @@ function outsidePaths(entry: StatusEntry): string[] {
   return outside;
 }
 
+/** The rename origins of a status snapshot: the set of `origin`
+ *  paths pre-run renames recorded. */
+function renameOriginsOf(
+  status: readonly StatusEntry[],
+): Set<string> {
+  return new Set(
+    status.flatMap((entry) =>
+      entry.origin === undefined ? [] : [entry.origin],
+    ),
+  );
+}
+
 /**
  * Guardrail 1: no path outside the whitelist changed by status code
  * or by content, and HEAD did not move. Compares the post-run status
@@ -565,11 +577,7 @@ async function checkImmutability(
 ): Promise<GuardrailFailure | undefined> {
   const before = statusIndex(pre.status);
   const problems = new Set<string>();
-  const preRunOrigins = new Set(
-    pre.status.flatMap((entry) =>
-      entry.origin === undefined ? [] : [entry.origin],
-    ),
-  );
+  const preRunOrigins = renameOriginsOf(pre.status);
 
   for (const entry of entries) {
     for (const outside of outsidePaths(entry)) {
@@ -1031,11 +1039,7 @@ export async function statusSince(
 }> {
   const entries = await porcelainStatus(dataRoot, env);
   const before = statusIndex(pre.status);
-  const preRunOrigins = new Set(
-    pre.status.flatMap((entry) =>
-      entry.origin === undefined ? [] : [entry.origin],
-    ),
-  );
+  const preRunOrigins = renameOriginsOf(pre.status);
   const under = (path: string): boolean => path.startsWith(`${prefix}/`);
   const changed = [
     ...(await changedRenameOrigins(
