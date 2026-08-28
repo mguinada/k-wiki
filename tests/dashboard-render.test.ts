@@ -222,6 +222,24 @@ describe("renderDashboard", () => {
     expect(html).toContain("a&lt;b&gt;&amp;c.md");
     expect(html).not.toContain("a<b>&c.md");
   });
+
+  it("lists dead links as source-to-target pairs when any exist", () => {
+    const kpis = fixtureKpis();
+    const withDeadLinks = {
+      ...kpis,
+      deadLinks: [
+        { source: "concepts/agent-evals.md", target: "missing-page" },
+      ],
+    };
+
+    const html = renderDashboard(withDeadLinks, {
+      generatedAt: NOW,
+      head: "abee7c4",
+      dataRoot: "~/Lab/k-wiki-data",
+    });
+
+    expect(html).toContain("concepts/agent-evals.md → missing-page");
+  });
 });
 
 describe("renderDashboard glossary and added KPIs", () => {

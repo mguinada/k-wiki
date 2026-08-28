@@ -449,6 +449,14 @@ describe("collectData", () => {
     ]);
   });
 
+  it("rejects when last-query.md exists but is not readable as a file", async () => {
+    const dataRoot = await makeManifestRepo(orderedVaults);
+
+    await mkdir(join(dataRoot, "outputs", "last-query.md"));
+
+    await expect(collectData(dataRoot)).rejects.toThrow(/EISDIR/);
+  });
+
   it("reports no lastSync when the raw manifest is missing", async () => {
     const dataRoot = await makeDataRepo();
 
