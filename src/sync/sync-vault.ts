@@ -119,7 +119,7 @@ async function assertDirectory(vault: VaultSourceConfig): Promise<void> {
   await assertSourceDirectory("vault", vault.name, vault.root);
 }
 
-function toAbsolute(root: string, relPath: string): string {
+export function toAbsolute(root: string, relPath: string): string {
   return join(root, ...relPath.split("/"));
 }
 
@@ -633,21 +633,22 @@ function colors() {
 }
 
 /** Color a progress line at the render boundary: WARNING severity
- *  renders yellow, vault names render bold. */
-export function colorizeProgress(message: string): string {
+ *  renders yellow, the `noun`-labelled source name renders bold
+ *  ("vault" for vault sync, "repo" for repo sync). */
+export function colorizeProgress(message: string, noun = "vault"): string {
   if (isWarning(message)) {
     return colors().yellow(message);
   }
 
-  const name = /^vault "([^"]*)":/.exec(message)?.[1];
+  const name = new RegExp(`^${noun} "([^"]*)":`).exec(message)?.[1];
 
   if (name === undefined) {
     return message;
   }
 
   return message.replace(
-    `vault "${name}":`,
-    () => `vault ${colors().bold(`"${name}"`)}:`,
+    `${noun} "${name}":`,
+    () => `${noun} ${colors().bold(`"${name}"`)}:`,
   );
 }
 

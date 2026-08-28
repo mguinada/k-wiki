@@ -1,4 +1,3 @@
-import type { Stats } from "node:fs";
 import { mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -22,11 +21,13 @@ import {
 } from "./manifest.ts";
 import {
   assertSourceDirectory,
+  colorizeProgress,
   formatReport,
   listNamespaceDirs,
   type ProjectedNote,
   projectNotes,
   reportColors,
+  toAbsolute,
 } from "./sync-vault.ts";
 
 /**
@@ -203,7 +204,7 @@ export async function selectRepoFiles(
   for (const relPath of exactFiles) {
     candidates++;
 
-    if (await isFile(join(root, ...relPath.split("/")))) {
+    if (await isFile(toAbsolute(root, relPath))) {
       selected.add(relPath);
     }
   }
@@ -328,7 +329,7 @@ async function projectRepo(
   const selectedNotes: ProjectedNote[] = [];
 
   for (const relPath of selected) {
-    const bytes = await readFile(join(source.root, ...relPath.split("/")));
+    const bytes = await readFile(toAbsolute(source.root, relPath));
 
     selectedNotes.push({ relPath, bytes, hash: sha256(bytes) });
   }
@@ -463,8 +464,7 @@ export async function main(): Promise<void> {
     const report = await runRepoSync({
       configPath,
       rawDir,
-      onProgress: (message) =>
-        console.error(colorizeProgressRepo(message, colors)),
+      onProgress: (message) => console.error(colorizeProgress(message, "repo")),
     });
 
     console.log(
@@ -496,22 +496,6 @@ export async function main(): Promise<void> {
     );
     process.exitCode = 1;
   }
-}
-
-/** Bold the repo name of a progress message, mirroring
- *  sync-vault's colorizeProgress for vaults. */
-function colorizeProgressRepo(
-  message: string,
-  colors: ReturnType<typeof createColors>,
-): string {
-  const name = /^repo "([^"]*)":/.exec(message)?.[1];
-
-  return name === undefined
-    ? message
-    : message.replace(
-        `repo "${name}":`,
-        () => `repo ${colors.bold(`"${name}"`)}:`,
-      );
 }
 
 /* v8 ignore next: covered only under direct `node src/sync/sync-repo.ts` runs */
