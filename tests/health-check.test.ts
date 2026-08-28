@@ -520,6 +520,13 @@ describe("health CLI", () => {
     return { out: out.join("\n"), err: err.join("\n") };
   }
 
+  it("rejects an unknown option instead of treating it as the raw dir", async () => {
+    const { err } = await runHealth(["--bogus"]);
+
+    expect(err).toContain('check-raw: unknown option "--bogus"');
+    expect(process.exitCode).toBe(1);
+  });
+
   it("prints the usage line for --help", async () => {
     const { out } = await runHealth(["--help"]);
 

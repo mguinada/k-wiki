@@ -440,6 +440,17 @@ export async function main(): Promise<void> {
 
   const failOnStale = args.includes("--fail-on-stale");
   const positional = args.filter((arg) => arg !== "--fail-on-stale");
+  const unknown = positional.find((arg) => arg.startsWith("-"));
+
+  if (unknown !== undefined) {
+    console.error(
+      colors().red(`check-raw: unknown option ${JSON.stringify(unknown)}`),
+    );
+    process.exitCode = 1;
+
+    return;
+  }
+
   const rawDir = positional[0] ?? join(repoRoot, "raw");
 
   try {
