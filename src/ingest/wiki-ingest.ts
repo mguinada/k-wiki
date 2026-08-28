@@ -1719,18 +1719,27 @@ function resolveRunMode(
   return { mode, removedCount };
 }
 
+/** What composeRunPrompt needs: the resolved run mode with its
+ *  prompt text, and the run's coordinates. */
+interface PromptComposition {
+  readonly mode: "full" | "incremental" | "expunge";
+  readonly removedCount: number;
+  readonly promptText: string;
+  readonly promptsDir: string;
+  readonly dataRoot: string;
+  readonly diff: ManifestDiff;
+  readonly env: NodeJS.ProcessEnv;
+  readonly onProgress: (message: string) => void;
+}
+
 /** Compose the agent message and, for an expunge run, its
  *  deterministic direct set. */
 async function composeRunPrompt(
-  mode: "full" | "incremental" | "expunge",
-  removedCount: number,
-  promptText: string,
-  promptsDir: string,
-  dataRoot: string,
-  diff: ManifestDiff,
-  env: NodeJS.ProcessEnv,
-  onProgress: (message: string) => void,
+  run: PromptComposition,
 ): Promise<{ composed: string; directSet: readonly string[] | undefined }> {
+  const { mode, removedCount, promptText, promptsDir, dataRoot, diff, env } =
+    run;
+
   if (mode !== "expunge") {
     return {
       composed: composePrompt(
@@ -1764,7 +1773,7 @@ async function composeRunPrompt(
     incrementalText,
   );
 
-  onProgress(
+  run.onProgress(
     `wiki-ingest: expunge — ${removedCount} removed source${removedCount === 1 ? "" : "s"}; direct set: ${directSet.map((page) => `wiki/${page}`).join(", ")}`,
   );
 
@@ -1919,16 +1928,16 @@ export async function runWikiIngest(
   const { mode, removedCount } = resolveRunMode(previous, diff);
   const promptFile = promptFileFor(mode);
   const promptText = await readPrompt(join(options.promptsDir, promptFile));
-  const { composed, directSet } = await composeRunPrompt(
+  const { composed, directSet } = await composeRunPrompt({
     mode,
     removedCount,
     promptText,
-    options.promptsDir,
+    promptsDir: options.promptsDir,
     dataRoot,
     diff,
     env,
     onProgress,
-  );
+  });
 
   const args = agentArgs(settings, composed);
   const runAgent = options.runAgent ?? spawnAgent;
