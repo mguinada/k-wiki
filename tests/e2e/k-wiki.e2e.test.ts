@@ -377,6 +377,8 @@ describe("k-wiki read-only commands e2e", () => {
     });
 
     expect(result.code).toBe(0);
-    expect(result.out).toContain("healthy");
+    expect(result.out.trim()).toBe(
+      "healthy: empty projection (no manifest entries, no projected notes)",
+    );
   });
 });
