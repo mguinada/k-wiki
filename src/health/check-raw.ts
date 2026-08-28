@@ -189,11 +189,6 @@ async function checkFreshness(
   };
 }
 
-/**
- * Check the coherence of the projection at `rawDirInput`. Throws when
- * the raw directory itself is missing or not a directory; a projection
- * with no manifest entries and no projected notes is healthy-empty.
- */
 /** Parse the manifest's vault entries; a manifest that fails to
  *  parse yields no entries and reports its message as a problem. */
 async function loadVaultEntries(
@@ -325,6 +320,11 @@ async function compareVaultProjections(
   return { matched, activeVaults };
 }
 
+/**
+ * Check the coherence of the projection at `rawDirInput`. Throws when
+ * the raw directory itself is missing or not a directory; a projection
+ * with no manifest entries and no projected notes is healthy-empty.
+ */
 export async function checkRaw(
   rawDirInput: string,
   options: { env?: NodeJS.ProcessEnv } = {},

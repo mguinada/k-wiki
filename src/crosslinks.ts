@@ -74,12 +74,6 @@ async function loadDomainWiki(dirInput: string): Promise<DomainWiki> {
   return { dir, files, vaults, pages: buildPageIndex(files) };
 }
 
-/**
- * Audit the cross-wiki discipline of `wikiDirInput` against one or
- * more domain wikis, reporting problems with paths relative to each
- * wiki root's parent directory. Throws when a directory is missing or
- * a domain wiki has no sibling manifest.
- */
 /** Audit the audited wiki's outgoing links: every cross-wiki link
  *  must name a known domain vault and resolve to that domain's page. */
 async function auditWikiLinks(
@@ -145,6 +139,12 @@ async function auditDomainLinks(
   return problems;
 }
 
+/**
+ * Audit the cross-wiki discipline of `wikiDirInput` against one or
+ * more domain wikis, reporting problems with paths relative to each
+ * wiki root's parent directory. Throws when a directory is missing or
+ * a domain wiki has no sibling manifest.
+ */
 export async function checkCrossWikiLinks(
   wikiDirInput: string,
   ...domainDirInputs: string[]

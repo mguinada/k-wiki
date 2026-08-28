@@ -67,8 +67,11 @@ One semantic difference, accepted and documented: the engine reports
 arrows, class methods). Nested functions — a closure or generator
 inside a function — are neither folded into the parent's score nor
 reported as separate entries. ESLint counts each nested function
-separately; `checkCrossWikiLinks` in `src/crosslinks.ts` reads 11 here
-where ESLint reads 24 for the nested generator inside it. The gate is
+separately; at calibration time `checkCrossWikiLinks` in
+`src/crosslinks.ts` read 11 here where ESLint read 24 for the nested
+generator inside it (since extracted to a module-scope helper by the
+issue #179 debt refactor — inline callbacks inside a function remain
+invisible to the engine). The gate is
 therefore slightly looser than "ESLint complexity 10" on nested-heavy
 code; the threshold stays 10.
 

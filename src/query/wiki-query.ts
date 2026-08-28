@@ -97,12 +97,6 @@ export interface QueryResult {
   readonly artifactPath: string;
 }
 
-/**
- * One headless answer-only query run: capture the pre-run state,
- * compose, invoke, then verify mechanically that wiki/ did not move
- * (git status is the truth — a wiki agent that writes despite the
- * prompt is caught, reverted, and failed) before persisting the run.
- */
 /** The agent CLI argument list for one answer-only run. */
 function queryAgentArgs(settings: AgentSettings, composed: string): string[] {
   return [
@@ -165,6 +159,12 @@ async function assertWikiUnchanged(
   }
 }
 
+/**
+ * One headless answer-only query run: capture the pre-run state,
+ * compose, invoke, then verify mechanically that wiki/ did not move
+ * (git status is the truth — a wiki agent that writes despite the
+ * prompt is caught, reverted, and failed) before persisting the run.
+ */
 export async function runWikiQuery(
   options: QueryOptions,
 ): Promise<QueryResult> {

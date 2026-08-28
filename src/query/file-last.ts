@@ -52,12 +52,6 @@ export function renderQueryArtifact(artifact: QueryArtifact): string {
   ].join("\n");
 }
 
-/**
- * Parse the artifact text. Strict: exactly the three header keys with
- * JSON values, a closed frontmatter block, and the answer as the body
- * (one blank line stripped after the block, one trailing newline
- * stripped). Everything else is `not a wiki-query artifact`.
- */
 /** One frontmatter header line split into its key and JSON value. */
 function parseHeaderLine(line: string): { key: string; value: string } {
   const match = /^(question|timestamp|pages): (.+)$/.exec(line);
@@ -108,6 +102,12 @@ function readHeaders(lines: readonly string[]): {
   return { question, timestamp, pages };
 }
 
+/**
+ * Parse the artifact text. Strict: exactly the three header keys with
+ * JSON values, a closed frontmatter block, and the answer as the body
+ * (one blank line stripped after the block, one trailing newline
+ * stripped). Everything else is `not a wiki-query artifact`.
+ */
 export function parseQueryArtifact(text: string): QueryArtifact {
   const lines = text.split("\n");
 
@@ -339,14 +339,6 @@ function appendLogEntry(logText: string, entry: string): string {
   return `${prefix}\n${entry}\n`;
 }
 
-/**
- * The drift warning for a filing (issue #72): `raw/` or `wiki/` was
- * committed after the answer was saved, or carries uncommitted
- * changes whose worktree mtime post-dates the save (wiki-ingest
- * leaves the wiki dirty until wiki-sync commits), so pages the
- * answer cites may have moved. Undefined when git cannot report or
- * nothing moved.
- */
 /** Warning when a commit touched raw/ or wiki/ after the save.
  *  Throws when git log fails — the caller aborts the whole check,
  *  matching the pre-extraction semantics. */
@@ -433,6 +425,14 @@ async function uncommittedAfterSave(
   return undefined;
 }
 
+/**
+ * The drift warning for a filing (issue #72): `raw/` or `wiki/` was
+ * committed after the answer was saved, or carries uncommitted
+ * changes whose worktree mtime post-dates the save (wiki-ingest
+ * leaves the wiki dirty until wiki-sync commits), so pages the
+ * answer cites may have moved. Undefined when git cannot report or
+ * nothing moved.
+ */
 export async function driftWarning(
   dataRoot: string,
   env: NodeJS.ProcessEnv,

@@ -1251,16 +1251,6 @@ export function spawnAgent(
   });
 }
 
-/**
- * Wiki pages created, updated, and deleted by the run, from the data
- * repo's git status: untracked or added paths count as created,
- * modified paths as updated, deleted paths (staged or not) as deleted.
- * Deleting a page that was still untracked leaves no status entry at
- * all, so with the pre-run state those pages count as deleted when
- * their file is gone; a deletion that predates the run (already `D`
- * pre-run) is not the run's doing. When git cannot report, the digest
- * says so instead of failing a run that did update the wiki.
- */
 /** Bucket the post-run status entries: created (added or
  *  untracked), updated (modified), deleted (deleted now but not
  *  already deleted pre-run). */
@@ -1308,6 +1298,16 @@ function vanishedUntracked(
   return deleted;
 }
 
+/**
+ * Wiki pages created, updated, and deleted by the run, from the data
+ * repo's git status: untracked or added paths count as created,
+ * modified paths as updated, deleted paths (staged or not) as deleted.
+ * Deleting a page that was still untracked leaves no status entry at
+ * all, so with the pre-run state those pages count as deleted when
+ * their file is gone; a deletion that predates the run (already `D`
+ * pre-run) is not the run's doing. When git cannot report, the digest
+ * says so instead of failing a run that did update the wiki.
+ */
 export async function wikiPages(
   dataRoot: string,
   env: NodeJS.ProcessEnv,
