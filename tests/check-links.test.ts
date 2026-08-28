@@ -467,11 +467,21 @@ describe("check-links CLI", () => {
     expect(err).toBe("wiki/index.md:1 -> [[missing]]\n");
   });
 
-  it("prints help before validating the wiki path", async () => {
+  it("exits 0 for --help before validating the wiki path", async () => {
     const result = await runNode(["--help", "/no/such/wiki"]);
 
     expect(result.code).toBe(0);
+  });
+
+  it("warns nothing for --help", async () => {
+    const result = await runNode(["--help", "/no/such/wiki"]);
+
     expect(result.err).toBe("");
+  });
+
+  it("prints usage for --help even with a bad wiki path", async () => {
+    const result = await runNode(["--help", "/no/such/wiki"]);
+
     expect(result.out).toContain("Usage: check-links");
   });
 });

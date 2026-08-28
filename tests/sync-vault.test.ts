@@ -375,6 +375,20 @@ describe("runSync edit detection", () => {
     const notes = (await readManifestOf(ws)).vaults[VAULT_NAME];
 
     expect(notes?.["AI/rag-evaluation-notes.md"]?.last_synced).toBe(T2);
+  });
+
+  it("keeps last_synced for the untouched note", async () => {
+    const ws = await makeWorkspace();
+
+    await run(ws, T1);
+    await writeFile(
+      sourcePath(ws, "AI/rag-evaluation-notes.md"),
+      "---\nwiki: true\n---\n\n# RAG evaluation notes\n\nEdited body.\n",
+    );
+    await run(ws, T2);
+
+    const notes = (await readManifestOf(ws)).vaults[VAULT_NAME];
+
     expect(notes?.["AI/RAG.md"]?.last_synced).toBe(T1);
   });
 });
@@ -629,6 +643,19 @@ describe("runSync progress", () => {
     });
 
     expect(messages).toContain(`vault "${VAULT_NAME}": 1/9 read, 1 selected`);
+  });
+
+  it("emits a read heartbeat after the second file when progressEvery is 1", async () => {
+    const ws = await makeWorkspace();
+    const messages: string[] = [];
+
+    await runSync({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+      progressEvery: 1,
+      onProgress: (message) => messages.push(message),
+    });
+
     expect(messages).toContain(`vault "${VAULT_NAME}": 2/9 read, 2 selected`);
   });
 
@@ -682,11 +709,18 @@ describe("createSyncProgressSink", () => {
   }
 
   it("appends plain lines when not animated", () => {
-    const { sink, written, lines } = makeSink(false);
+    const { sink, written } = makeSink(false);
 
     sink.render(`vault "${VAULT_NAME}": 1/9 read, 1 selected`);
 
     expect(written).toEqual([]);
+  });
+
+  it("appends the rendered line to the log when not animated", () => {
+    const { sink, lines } = makeSink(false);
+
+    sink.render(`vault "${VAULT_NAME}": 1/9 read, 1 selected`);
+
     expect(lines).toEqual([`[vault "${VAULT_NAME}": 1/9 read, 1 selected]`]);
   });
 

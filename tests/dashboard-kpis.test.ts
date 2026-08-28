@@ -11,6 +11,7 @@ import {
   provenanceBuckets,
   runsPerWeek,
   sourceRotBuckets,
+  sourcesPerRun,
   stalenessBuckets,
   statusCounts,
   typeCounts,
@@ -309,6 +310,28 @@ describe("computeKpis link graph", () => {
 
     expect(kpis.hubs).toHaveLength(5);
   });
+
+  it("orders tied hubs alphabetically by path", () => {
+    const kpis = computeKpis({
+      now: NOW,
+      head: "abc1234",
+      pages: [
+        page({ path: "zeta.md" }),
+        page({ path: "alpha.md" }),
+        page({ path: "middle.md", outbound: ["zeta", "alpha"] }),
+      ],
+      rawNoteKeys: [],
+      ingestedKeys: [],
+      lastSync: null,
+      rawNoteSyncDates: [],
+      statusFlips: [],
+      commits: [],
+      firstAdded: [],
+      lastQuery: null,
+    });
+
+    expect(kpis.hubs.map((hub) => hub.path)).toEqual(["alpha.md", "zeta.md"]);
+  });
 });
 
 describe("typeCounts", () => {
@@ -405,6 +428,18 @@ describe("growthSeries", () => {
     );
 
     expect(series[series.length - 1]?.count).toBe(3);
+  });
+
+  it("carries the previous cumulative count into the earlier week", () => {
+    const series = growthSeries(
+      [
+        { path: "a.md", date: "2026-08-20" },
+        { path: "b.md", date: "2026-08-27" },
+        { path: "c.md", date: "2026-09-01" },
+      ],
+      NOW,
+    );
+
     expect(series[series.length - 2]?.count).toBe(2);
   });
 
@@ -697,6 +732,37 @@ describe("ingestCadence", () => {
   });
 });
 
+describe("sourcesPerRun", () => {
+  it("reports the mean sources across runs that report a count", () => {
+    expect(
+      sourcesPerRun([
+        {
+          date: "2026-08-30",
+          subject: "wiki-sync: 1 source processed, 2 pages touched",
+        },
+        {
+          date: "2026-08-28",
+          subject: "wiki-sync: 3 sources processed, 3 pages touched",
+        },
+      ]),
+    ).toBe(2);
+  });
+
+  it("counts the singular one-source form", () => {
+    expect(
+      sourcesPerRun([
+        { date: "2026-08-30", subject: "wiki-sync: 1 source processed" },
+      ]),
+    ).toBe(1);
+  });
+
+  it("is null when no run reports a count", () => {
+    expect(
+      sourcesPerRun([{ date: "2026-08-30", subject: "sweep: rename pages" }]),
+    ).toBeNull();
+  });
+});
+
 describe("needsReviewChurn", () => {
   it("buckets status-flip commits per week over the trailing weeks", () => {
     const weeks = needsReviewChurn(
@@ -709,6 +775,18 @@ describe("needsReviewChurn", () => {
     );
 
     expect(weeks[weeks.length - 1]?.count).toBe(2);
+  });
+
+  it("carries an older week's flip count into the trailing window", () => {
+    const weeks = needsReviewChurn(
+      [
+        { date: "2026-08-31", subject: "anything" },
+        { date: "2026-08-31", subject: "anything" },
+        { date: "2026-08-20", subject: "anything" },
+      ],
+      NOW,
+    );
+
     expect(weeks[weeks.length - 3]?.count).toBe(1);
   });
 

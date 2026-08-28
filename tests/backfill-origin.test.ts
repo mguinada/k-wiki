@@ -78,7 +78,7 @@ function sourcePage(
 const NOTE = "notes/V/gpu-memory-math.md";
 
 describe("backfillOrigins", () => {
-  it("writes the single verifiable raw path as origin and bumps updated", async () => {
+  it("reports the single verifiable raw path as a backfilled pair", async () => {
     const f = await makeFixture(
       { "sources/gpu-memory-math.md": sourcePage([NOTE]) },
       { [NOTE]: "note body" },
@@ -94,6 +94,16 @@ describe("backfillOrigins", () => {
         origin: `raw/${NOTE}`,
       },
     ]);
+  });
+
+  it("writes the derived origin into the page", async () => {
+    const f = await makeFixture(
+      { "sources/gpu-memory-math.md": sourcePage([NOTE]) },
+      { [NOTE]: "note body" },
+    );
+
+    await backfillOrigins(f.wikiDir, f.rawDir, { date: "2026-08-23" });
+
     expect(
       await readFile(join(f.wikiDir, "sources/gpu-memory-math.md"), "utf8"),
     ).toContain(`origin: raw/${NOTE}`);
@@ -227,7 +237,7 @@ describe("backfillOrigins", () => {
     ).toContain(`origin: raw/${NOTE}`);
   });
 
-  it("skips and reports a page with two verifiable raw paths", async () => {
+  it("reports a page with two verifiable raw paths for judgment", async () => {
     const f = await makeFixture(
       { "sources/multi.md": sourcePage([NOTE, "notes/V/b.md"]) },
       { [NOTE]: "a", "notes/V/b.md": "b" },
@@ -238,6 +248,16 @@ describe("backfillOrigins", () => {
     });
 
     expect(report.needsJudgment[0]?.reason).toContain("2 verifiable");
+  });
+
+  it("leaves a two-verifiable page without an origin line", async () => {
+    const f = await makeFixture(
+      { "sources/multi.md": sourcePage([NOTE, "notes/V/b.md"]) },
+      { [NOTE]: "a", "notes/V/b.md": "b" },
+    );
+
+    await backfillOrigins(f.wikiDir, f.rawDir, { date: "2026-08-23" });
+
     expect(
       await readFile(join(f.wikiDir, "sources/multi.md"), "utf8"),
     ).not.toContain("origin:");
@@ -269,7 +289,7 @@ describe("backfillOrigins", () => {
     expect(report.needsJudgment[0]?.reason).toContain("0 verifiable");
   });
 
-  it("skips and reports a page whose title shares no tokens with the note name", async () => {
+  it("reports a title-mismatched page with a corroboration reason", async () => {
     const f = await makeFixture(
       {
         "sources/mismatch.md": sourcePage(["notes/V/unrelated-thing.md"], {
@@ -284,6 +304,20 @@ describe("backfillOrigins", () => {
     });
 
     expect(report.needsJudgment[0]?.reason).toContain("does not corroborate");
+  });
+
+  it("leaves a title-mismatched page without an origin line", async () => {
+    const f = await makeFixture(
+      {
+        "sources/mismatch.md": sourcePage(["notes/V/unrelated-thing.md"], {
+          title: "Gpu memory math",
+        }),
+      },
+      { "notes/V/unrelated-thing.md": "different note" },
+    );
+
+    await backfillOrigins(f.wikiDir, f.rawDir, { date: "2026-08-23" });
+
     expect(
       await readFile(join(f.wikiDir, "sources/mismatch.md"), "utf8"),
     ).not.toContain("origin:");
@@ -306,7 +340,22 @@ describe("backfillOrigins", () => {
     expect(report.backfilled).toHaveLength(1);
   });
 
-  it("leaves a page that already has an origin byte-identical", async () => {
+  it("counts a page that already has an origin as untouched", async () => {
+    const f = await makeFixture(
+      {
+        "sources/done.md": sourcePage([NOTE], { extra: `origin: raw/${NOTE}` }),
+      },
+      { [NOTE]: "note body" },
+    );
+
+    const report = await backfillOrigins(f.wikiDir, f.rawDir, {
+      date: "2026-08-23",
+    });
+
+    expect(report.untouched).toBe(1);
+  });
+
+  it("leaves an already-origined page byte-identical", async () => {
     const f = await makeFixture(
       {
         "sources/done.md": sourcePage([NOTE], { extra: `origin: raw/${NOTE}` }),
@@ -315,17 +364,14 @@ describe("backfillOrigins", () => {
     );
 
     const before = await readFile(join(f.wikiDir, "sources/done.md"), "utf8");
-    const report = await backfillOrigins(f.wikiDir, f.rawDir, {
-      date: "2026-08-23",
-    });
+    await backfillOrigins(f.wikiDir, f.rawDir, { date: "2026-08-23" });
 
-    expect(report.untouched).toBe(1);
     expect(await readFile(join(f.wikiDir, "sources/done.md"), "utf8")).toBe(
       before,
     );
   });
 
-  it("ignores pages that are not type source", async () => {
+  it("backfills nothing for pages that are not type source", async () => {
     const f = await makeFixture(
       {
         "concepts/x.md": [
@@ -346,12 +392,46 @@ describe("backfillOrigins", () => {
     });
 
     expect(report.backfilled).toEqual([]);
+  });
+
+  it("leaves a non-source page without an origin line", async () => {
+    const f = await makeFixture(
+      {
+        "concepts/x.md": [
+          "---",
+          'title: "Gpu memory math"',
+          "type: concept",
+          "sources:",
+          `  - "${NOTE}"`,
+          "---",
+          "body",
+        ].join("\n"),
+      },
+      { [NOTE]: "note body" },
+    );
+
+    await backfillOrigins(f.wikiDir, f.rawDir, { date: "2026-08-23" });
+
     expect(
       await readFile(join(f.wikiDir, "concepts/x.md"), "utf8"),
     ).not.toContain("origin:");
   });
 
-  it("writes nothing on a second run over the same tree", async () => {
+  it("reports no backfills on a second run over the same tree", async () => {
+    const f = await makeFixture(
+      { "sources/gpu-memory-math.md": sourcePage([NOTE]) },
+      { [NOTE]: "note body" },
+    );
+
+    await backfillOrigins(f.wikiDir, f.rawDir, { date: "2026-08-23" });
+    const report = await backfillOrigins(f.wikiDir, f.rawDir, {
+      date: "2026-08-24",
+    });
+
+    expect(report.backfilled).toEqual([]);
+  });
+
+  it("leaves the page byte-identical on a second run", async () => {
     const f = await makeFixture(
       { "sources/gpu-memory-math.md": sourcePage([NOTE]) },
       { [NOTE]: "note body" },
@@ -362,11 +442,8 @@ describe("backfillOrigins", () => {
       join(f.wikiDir, "sources/gpu-memory-math.md"),
       "utf8",
     );
-    const report = await backfillOrigins(f.wikiDir, f.rawDir, {
-      date: "2026-08-24",
-    });
+    await backfillOrigins(f.wikiDir, f.rawDir, { date: "2026-08-24" });
 
-    expect(report.backfilled).toEqual([]);
     expect(
       await readFile(join(f.wikiDir, "sources/gpu-memory-math.md"), "utf8"),
     ).toBe(after);
@@ -387,7 +464,21 @@ describe("backfillOrigins", () => {
     ).toBe(true);
   });
 
-  it("writes no file and no log entry on a dry run", async () => {
+  it("reports the planned backfill on a dry run", async () => {
+    const f = await makeFixture(
+      { "sources/gpu-memory-math.md": sourcePage([NOTE]) },
+      { [NOTE]: "note body" },
+    );
+
+    const report = await backfillOrigins(f.wikiDir, f.rawDir, {
+      date: "2026-08-23",
+      dryRun: true,
+    });
+
+    expect(report.backfilled).toHaveLength(1);
+  });
+
+  it("leaves the page file unchanged on a dry run", async () => {
     const f = await makeFixture(
       { "sources/gpu-memory-math.md": sourcePage([NOTE]) },
       { [NOTE]: "note body" },
@@ -397,15 +488,27 @@ describe("backfillOrigins", () => {
       "utf8",
     );
 
-    const report = await backfillOrigins(f.wikiDir, f.rawDir, {
+    await backfillOrigins(f.wikiDir, f.rawDir, {
       date: "2026-08-23",
       dryRun: true,
     });
 
-    expect(report.backfilled).toHaveLength(1);
     expect(
       await readFile(join(f.wikiDir, "sources/gpu-memory-math.md"), "utf8"),
     ).toBe(before);
+  });
+
+  it("creates no log.md on a dry run", async () => {
+    const f = await makeFixture(
+      { "sources/gpu-memory-math.md": sourcePage([NOTE]) },
+      { [NOTE]: "note body" },
+    );
+
+    await backfillOrigins(f.wikiDir, f.rawDir, {
+      date: "2026-08-23",
+      dryRun: true,
+    });
+
     await expect(
       readFile(join(f.wikiDir, "log.md"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
@@ -497,15 +600,25 @@ describe("backfill-origin CLI", () => {
     expect(out).toMatch(/Usage: backfill-origin/);
   });
 
-  it("documents --dry-run, --date, and the log entry in the help text", async () => {
+  it("documents --dry-run in the help text", async () => {
     const { out } = await runCli(["--help"]);
 
     expect(out).toContain("--dry-run");
+  });
+
+  it("documents --date in the help text", async () => {
+    const { out } = await runCli(["--help"]);
+
     expect(out).toContain("--date");
+  });
+
+  it("documents the log entry in the help text", async () => {
+    const { out } = await runCli(["--help"]);
+
     expect(out).toContain("log.md");
   });
 
-  it("runs on a wiki outside git after warning about the missing safety net", async () => {
+  it("exits 0 on a wiki outside git", async () => {
     const f = await makeFixture(
       { "sources/gpu-memory-math.md": sourcePage([NOTE]) },
       { [NOTE]: "note body" },
@@ -514,14 +627,44 @@ describe("backfill-origin CLI", () => {
     const result = await runCli(["--date", "2026-08-23", f.wikiDir, f.rawDir]);
 
     expect(result.code).toBe(0);
+  });
+
+  it("warns about the missing safety net on a wiki outside git", async () => {
+    const f = await makeFixture(
+      { "sources/gpu-memory-math.md": sourcePage([NOTE]) },
+      { [NOTE]: "note body" },
+    );
+
+    const result = await runCli(["--date", "2026-08-23", f.wikiDir, f.rawDir]);
+
     expect(result.err).toContain("no git repo");
+  });
+
+  it("reports the backfill on stdout for a wiki outside git", async () => {
+    const f = await makeFixture(
+      { "sources/gpu-memory-math.md": sourcePage([NOTE]) },
+      { [NOTE]: "note body" },
+    );
+
+    const result = await runCli(["--date", "2026-08-23", f.wikiDir, f.rawDir]);
+
     expect(result.out).toContain("1 backfilled");
+  });
+
+  it("writes the origin into the page for a wiki outside git", async () => {
+    const f = await makeFixture(
+      { "sources/gpu-memory-math.md": sourcePage([NOTE]) },
+      { [NOTE]: "note body" },
+    );
+
+    await runCli(["--date", "2026-08-23", f.wikiDir, f.rawDir]);
+
     expect(
       await readFile(join(f.wikiDir, "sources/gpu-memory-math.md"), "utf8"),
     ).toContain(`origin: raw/${NOTE}`);
   });
 
-  it("honors positional dirs without --date (regression: index 0 was consumed)", async () => {
+  it("exits 0 when directories are positional without --date", async () => {
     const f = await makeFixture(
       { "sources/gpu-memory-math.md": sourcePage([NOTE]) },
       { [NOTE]: "note body" },
@@ -530,6 +673,16 @@ describe("backfill-origin CLI", () => {
     const result = await runCli([f.wikiDir, f.rawDir]);
 
     expect(result.code).toBe(0);
+  });
+
+  it("prints the backfilled pair when directories are positional without --date", async () => {
+    const f = await makeFixture(
+      { "sources/gpu-memory-math.md": sourcePage([NOTE]) },
+      { [NOTE]: "note body" },
+    );
+
+    const result = await runCli([f.wikiDir, f.rawDir]);
+
     expect(result.out).toContain(
       `wiki/sources/gpu-memory-math.md -> raw/${NOTE}`,
     );
@@ -552,10 +705,26 @@ describe("backfill-origin CLI", () => {
     expect(result.out).toContain(
       `wiki/sources/gpu-memory-math.md -> raw/${NOTE}`,
     );
+  });
+
+  it("prints the dry-run notice on stdout", async () => {
+    const f = await makeFixture(
+      { "sources/gpu-memory-math.md": sourcePage([NOTE]) },
+      { [NOTE]: "note body" },
+    );
+
+    const result = await runCli([
+      "--dry-run",
+      "--date",
+      "2026-08-23",
+      f.wikiDir,
+      f.rawDir,
+    ]);
+
     expect(result.out).toContain("dry run — nothing written");
   });
 
-  it("refuses to write when the wiki tree has uncommitted changes", async () => {
+  it("exits 1 when the wiki tree has uncommitted changes", async () => {
     const f = await makeFixture(
       { "sources/gpu-memory-math.md": sourcePage([NOTE]) },
       { [NOTE]: "note body" },
@@ -583,13 +752,71 @@ describe("backfill-origin CLI", () => {
     const result = await runCli(["--date", "2026-08-23", f.wikiDir, f.rawDir]);
 
     expect(result.code).toBe(1);
+  });
+
+  it("reports the uncommitted-dirty error on stderr", async () => {
+    const f = await makeFixture(
+      { "sources/gpu-memory-math.md": sourcePage([NOTE]) },
+      { [NOTE]: "note body" },
+    );
+
+    await run("git", ["-C", f.wikiDir, "init", "--quiet"]);
+    await run("git", ["-C", f.wikiDir, "add", "-A"]);
+    await run("git", [
+      "-C",
+      f.wikiDir,
+      "-c",
+      "user.email=t@t",
+      "-c",
+      "user.name=t",
+      "commit",
+      "--quiet",
+      "-m",
+      "init",
+    ]);
+    await writeFile(
+      join(f.wikiDir, "sources/gpu-memory-math.md"),
+      sourcePage([NOTE]).replace("body", "edited body"),
+    );
+
+    const result = await runCli(["--date", "2026-08-23", f.wikiDir, f.rawDir]);
+
     expect(result.err).toContain("uncommitted");
+  });
+
+  it("leaves the page unwritten when the wiki tree has uncommitted changes", async () => {
+    const f = await makeFixture(
+      { "sources/gpu-memory-math.md": sourcePage([NOTE]) },
+      { [NOTE]: "note body" },
+    );
+
+    await run("git", ["-C", f.wikiDir, "init", "--quiet"]);
+    await run("git", ["-C", f.wikiDir, "add", "-A"]);
+    await run("git", [
+      "-C",
+      f.wikiDir,
+      "-c",
+      "user.email=t@t",
+      "-c",
+      "user.name=t",
+      "commit",
+      "--quiet",
+      "-m",
+      "init",
+    ]);
+    await writeFile(
+      join(f.wikiDir, "sources/gpu-memory-math.md"),
+      sourcePage([NOTE]).replace("body", "edited body"),
+    );
+
+    await runCli(["--date", "2026-08-23", f.wikiDir, f.rawDir]);
+
     expect(
       await readFile(join(f.wikiDir, "sources/gpu-memory-math.md"), "utf8"),
     ).not.toContain("origin:");
   });
 
-  it("refuses to write when the wiki dir is a subdir of a dirty repo (real data-repo layout)", async () => {
+  it("exits 1 when the wiki dir is a subdir of a dirty repo", async () => {
     const root = await mkdtemp(join(tmpdir(), "k-wiki-backfill-sub-"));
 
     tempDirs.push(root);
@@ -629,7 +856,89 @@ describe("backfill-origin CLI", () => {
     ]);
 
     expect(result.code).toBe(1);
+  });
+
+  it("reports the uncommitted-dirty error when the wiki dir is a subdir of a dirty repo", async () => {
+    const root = await mkdtemp(join(tmpdir(), "k-wiki-backfill-sub-"));
+
+    tempDirs.push(root);
+
+    await mkdir(join(root, "wiki", "sources"), { recursive: true });
+    await mkdir(join(root, "raw", "notes/V"), { recursive: true });
+    await writeFile(
+      join(root, "wiki", "sources/gpu-memory-math.md"),
+      sourcePage([NOTE]),
+    );
+    await writeFile(join(root, "raw", NOTE), "note body");
+
+    await run("git", ["-C", root, "init", "--quiet"]);
+    await run("git", ["-C", root, "add", "-A"]);
+    await run("git", [
+      "-C",
+      root,
+      "-c",
+      "user.email=t@t",
+      "-c",
+      "user.name=t",
+      "commit",
+      "--quiet",
+      "-m",
+      "init",
+    ]);
+    await writeFile(
+      join(root, "wiki", "sources/gpu-memory-math.md"),
+      sourcePage([NOTE]).replace("body", "edited body"),
+    );
+
+    const result = await runCli([
+      "--date",
+      "2026-08-23",
+      join(root, "wiki"),
+      join(root, "raw"),
+    ]);
+
     expect(result.err).toContain("uncommitted");
+  });
+
+  it("leaves the page unwritten when the wiki dir is a subdir of a dirty repo", async () => {
+    const root = await mkdtemp(join(tmpdir(), "k-wiki-backfill-sub-"));
+
+    tempDirs.push(root);
+
+    await mkdir(join(root, "wiki", "sources"), { recursive: true });
+    await mkdir(join(root, "raw", "notes/V"), { recursive: true });
+    await writeFile(
+      join(root, "wiki", "sources/gpu-memory-math.md"),
+      sourcePage([NOTE]),
+    );
+    await writeFile(join(root, "raw", NOTE), "note body");
+
+    await run("git", ["-C", root, "init", "--quiet"]);
+    await run("git", ["-C", root, "add", "-A"]);
+    await run("git", [
+      "-C",
+      root,
+      "-c",
+      "user.email=t@t",
+      "-c",
+      "user.name=t",
+      "commit",
+      "--quiet",
+      "-m",
+      "init",
+    ]);
+    await writeFile(
+      join(root, "wiki", "sources/gpu-memory-math.md"),
+      sourcePage([NOTE]).replace("body", "edited body"),
+    );
+
+    await runCli([
+      "--date",
+      "2026-08-23",
+      join(root, "wiki"),
+      join(root, "raw"),
+    ]);
+
     expect(
       await readFile(join(root, "wiki", "sources/gpu-memory-math.md"), "utf8"),
     ).not.toContain("origin:");

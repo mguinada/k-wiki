@@ -227,20 +227,39 @@ describe("citedSourcePages", () => {
 });
 
 describe("templateQueryPage", () => {
-  it("carries the guide §9 frontmatter fields for a query page", () => {
-    const page = templateQueryPage(ARTIFACT, {
+  const queryPage = () =>
+    templateQueryPage(ARTIFACT, {
       created: "2026-08-21",
       updated: "2026-08-21",
       sources: ["retrieval-augmented-generation"],
     });
 
-    expect(page).toContain("type: query");
-    expect(page).toContain(`question: ${JSON.stringify(QUESTION)}`);
-    expect(page).toContain("created: 2026-08-21");
-    expect(page).toContain("updated: 2026-08-21");
-    expect(page).toContain("  - query");
-    expect(page).toContain('  - "[[retrieval-augmented-generation]]"');
-    expect(page).toContain(`title: ${JSON.stringify(QUESTION)}`);
+  it("types the query page as query", () => {
+    expect(queryPage()).toContain("type: query");
+  });
+
+  it("carries the question in the frontmatter", () => {
+    expect(queryPage()).toContain(`question: ${JSON.stringify(QUESTION)}`);
+  });
+
+  it("stamps the created date", () => {
+    expect(queryPage()).toContain("created: 2026-08-21");
+  });
+
+  it("stamps the updated date", () => {
+    expect(queryPage()).toContain("updated: 2026-08-21");
+  });
+
+  it("tags the query page as query", () => {
+    expect(queryPage()).toContain("  - query");
+  });
+
+  it("lists the cited source as a wikilink", () => {
+    expect(queryPage()).toContain('  - "[[retrieval-augmented-generation]]"');
+  });
+
+  it("titles the page with the question", () => {
+    expect(queryPage()).toContain(`title: ${JSON.stringify(QUESTION)}`);
   });
 
   it("contains the answer byte-exactly", () => {
@@ -328,6 +347,14 @@ describe("driftWarning", () => {
 
     expect(
       await driftWarning(dataRoot, process.env, "2026-08-20T10:00:00Z"),
+    ).toBeUndefined();
+  });
+
+  it("is undefined when the saved-at timestamp is unparseable", async () => {
+    const dataRoot = await makeCommittedRepo();
+
+    expect(
+      await driftWarning(dataRoot, process.env, "not-a-timestamp"),
     ).toBeUndefined();
   });
 
@@ -440,7 +467,7 @@ describe("driftWarning", () => {
 });
 
 describe("fileLastQuery", () => {
-  it("files the saved answer byte-exactly with index and log entries", async () => {
+  it("files the page at the slug path", async () => {
     const { dataRoot, artifactPath } = await makeFiledRepo();
 
     const result = await fileLastQuery({
@@ -452,16 +479,46 @@ describe("fileLastQuery", () => {
     expect(result.pagePath).toBe(
       "wiki/queries/when-should-i-prefer-rag-over-fine-tuning.md",
     );
+  });
+
+  it("embeds the answer in the filed page", async () => {
+    const { dataRoot, artifactPath } = await makeFiledRepo();
+
+    const result = await fileLastQuery({
+      artifactPath,
+      dataRoot,
+      now: () => new Date("2026-08-21T09:00:00Z"),
+    });
 
     const page = await readFile(join(dataRoot, result.pagePath), "utf8");
 
     expect(page).toContain(ANSWER);
+  });
+
+  it("links the filed page from the index", async () => {
+    const { dataRoot, artifactPath } = await makeFiledRepo();
+
+    await fileLastQuery({
+      artifactPath,
+      dataRoot,
+      now: () => new Date("2026-08-21T09:00:00Z"),
+    });
 
     const index = await readFile(join(dataRoot, "wiki", "index.md"), "utf8");
 
     expect(index).toContain(
       `- [[when-should-i-prefer-rag-over-fine-tuning]] — ${QUESTION}`,
     );
+  });
+
+  it("heads the log entry with the query", async () => {
+    const { dataRoot, artifactPath } = await makeFiledRepo();
+
+    await fileLastQuery({
+      artifactPath,
+      dataRoot,
+      now: () => new Date("2026-08-21T09:00:00Z"),
+    });
 
     const log = await readFile(join(dataRoot, "wiki", "log.md"), "utf8");
 
@@ -480,6 +537,19 @@ describe("fileLastQuery", () => {
     const page = await readFile(join(dataRoot, result.pagePath), "utf8");
 
     expect(page).toContain('  - "[[retrieval-augmented-generation]]"');
+  });
+
+  it("lists no uncited sources", async () => {
+    const { dataRoot, artifactPath } = await makeFiledRepo();
+
+    const result = await fileLastQuery({
+      artifactPath,
+      dataRoot,
+      now: () => new Date("2026-08-21T09:00:00Z"),
+    });
+
+    const page = await readFile(join(dataRoot, result.pagePath), "utf8");
+
     expect(page).not.toContain("[[chunking]]");
   });
 
@@ -538,6 +608,27 @@ describe("fileLastQuery", () => {
     });
 
     expect(result.warning).toMatch(/^warning: the data repo changed/);
+  });
+
+  it("reports the drift warning on progress", async () => {
+    const { dataRoot, artifactPath } = await makeFiledRepo();
+
+    await commitAll(
+      dataRoot,
+      "wiki edit",
+      [["wiki/index.md", "# Index v2\n"]],
+      "2026-08-22T12:00:00+00:00",
+    );
+
+    const messages: string[] = [];
+
+    await fileLastQuery({
+      artifactPath,
+      dataRoot,
+      now: () => new Date("2026-08-23T09:00:00Z"),
+      onProgress: (message) => messages.push(message),
+    });
+
     expect(messages).toEqual(
       expect.arrayContaining([
         expect.stringMatching(/^warning: the data repo changed/),
@@ -933,15 +1024,13 @@ describe("fileLastQuery file creation", () => {
     expect(await readFile(join(dataRoot, "wiki", "index.md"), "utf8")).toBe(
       `# Wiki Index\n\n## Queries\n\n- [[when-should-i-prefer-rag-over-fine-tuning]] — ${QUESTION}\n`,
     );
-    expect(await readFile(join(dataRoot, "wiki", "log.md"), "utf8")).toBe(
-      `# Wiki Log\n\n## [2026-08-21] query | ${QUESTION}\n`,
-    );
   });
 
-  it("appends the entry after a log without a trailing newline", async () => {
+  it("creates log.md with the query entry when absent", async () => {
     const { dataRoot, artifactPath } = await makeFiledRepo();
 
-    await writeFile(join(dataRoot, "wiki", "log.md"), "# Wiki Log");
+    await rm(join(dataRoot, "wiki", "index.md"));
+    await rm(join(dataRoot, "wiki", "log.md"));
 
     await fileLastQuery({
       artifactPath,
@@ -1213,22 +1302,5 @@ describe("readHeaders order and shape", () => {
     ).toThrow(
       "not a wiki-query artifact: missing question, timestamp, or pages header",
     );
-  });
-});
-
-describe("committedAfterSave predates the answer", () => {
-  it("stays undefined when the last raw/ or wiki/ commit predates the saved answer", async () => {
-    const dataRoot = await makeCommittedRepo();
-
-    await commitAll(
-      dataRoot,
-      "wiki edit",
-      [["wiki/index.md", "# Index v2\n"]],
-      "2026-08-19T12:00:00+00:00",
-    );
-
-    expect(
-      await driftWarning(dataRoot, process.env, "2026-08-20T10:00:00Z"),
-    ).toBeUndefined();
   });
 });

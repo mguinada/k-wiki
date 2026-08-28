@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   flagValueError,
   isIsoDate,
@@ -50,6 +50,12 @@ describe("flagValueError", () => {
   });
 
   it("rejects --timeout with leading junk", () => {
+    expect(flagValueError(values([["--timeout", "+5"]]))).toBe(
+      "--timeout needs a positive integer number of seconds",
+    );
+  });
+
+  it("rejects --timeout with trailing junk", () => {
     expect(flagValueError(values([["--timeout", "5s"]]))).toBe(
       "--timeout needs a positive integer number of seconds",
     );
@@ -130,7 +136,14 @@ describe("timeoutArgError", () => {
 
 describe("readDateFlag", () => {
   it("defaults to today's calendar date when the flag is absent", () => {
-    expect(readDateFlag(["wiki"]).date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-28T12:00:00.000Z"));
+
+    try {
+      expect(readDateFlag(["wiki"]).date).toBe("2026-08-28");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("consumes nothing when the flag is absent", () => {

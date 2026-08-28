@@ -10,7 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { afterAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { collectData } from "../src/dashboard/collect.ts";
 import { writeDashboard } from "../src/dashboard/generate.ts";
 
@@ -126,10 +126,31 @@ describe("writeDashboard", () => {
     });
 
     expect(path).toBe(join(dataRoot, "dashboard.html"));
+  });
 
-    const html = await readFile(path, "utf8");
+  it("starts the dashboard with a DOCTYPE", async () => {
+    const dataRoot = await makeDataRepo();
+
+    const html = await readFile(
+      await writeDashboard(dataRoot, {
+        now: () => new Date("2026-09-01T12:00:00.000Z"),
+      }),
+      "utf8",
+    );
 
     expect(html.startsWith("<!DOCTYPE html>")).toBe(true);
+  });
+
+  it("keeps the dashboard self-contained with a color-scheme preference", async () => {
+    const dataRoot = await makeDataRepo();
+
+    const html = await readFile(
+      await writeDashboard(dataRoot, {
+        now: () => new Date("2026-09-01T12:00:00.000Z"),
+      }),
+      "utf8",
+    );
+
     expect(html).toContain("prefers-color-scheme");
   });
 
@@ -176,6 +197,18 @@ describe("writeDashboard", () => {
     );
 
     expect(html).toContain("needs-review");
+  });
+
+  it("renders the flagged page from the review KPIs", async () => {
+    const dataRoot = await makeDataRepo();
+
+    const html = await readFile(
+      await writeDashboard(dataRoot, {
+        now: () => new Date("2026-09-01T12:00:00.000Z"),
+      }),
+      "utf8",
+    );
+
     expect(html).toContain("beginner-roadmap.md");
   });
 
@@ -252,6 +285,32 @@ describe("writeDashboard", () => {
     );
 
     expect(html).toContain("Query funnel");
+  });
+
+  it("stamps the last query date into the funnel", async () => {
+    const dataRoot = await makeDataRepo();
+
+    await writeFile(
+      join(dataRoot, "outputs", "last-query.md"),
+      [
+        "---",
+        'question: "Why eval?"',
+        'timestamp: "2026-08-30T10:00:00.000Z"',
+        "pages: []",
+        "---",
+        "",
+        "Because.",
+        "",
+      ].join("\n"),
+    );
+
+    const html = await readFile(
+      await writeDashboard(dataRoot, {
+        now: () => new Date("2026-09-01T12:00:00.000Z"),
+      }),
+      "utf8",
+    );
+
     expect(html).toContain("2026-08-30");
   });
 
@@ -299,7 +358,9 @@ describe("writeDashboard", () => {
       "utf8",
     );
 
-    expect(html).toContain("1"); // b.md pending
+    expect(html).toContain(
+      '<span class="stat-value">1</span><span class="stat-label">un-ingested sources',
+    ); // b.md pending
   });
 
   it("still generates when the wiki directory is missing", async () => {
@@ -355,9 +416,7 @@ describe("writeDashboard", () => {
       now: () => new Date("2026-09-01T12:00:00.000Z"),
     });
 
-    expect((await readFile(path, "utf8")).startsWith("<!DOCTYPE html>")).toBe(
-      true,
-    );
+    expect(await readFile(path, "utf8")).toContain("2 raw notes total");
   });
 
   it("treats an unparseable snapshot as absent", async () => {
@@ -449,6 +508,14 @@ describe("collectData", () => {
     ]);
   });
 
+  it("rejects when last-query.md exists but is not readable as a file", async () => {
+    const dataRoot = await makeManifestRepo(orderedVaults);
+
+    await mkdir(join(dataRoot, "outputs", "last-query.md"));
+
+    await expect(collectData(dataRoot)).rejects.toThrow(/EISDIR/);
+  });
+
   it("reports no lastSync when the raw manifest is missing", async () => {
     const dataRoot = await makeDataRepo();
 
@@ -503,83 +570,98 @@ describe("collectData", () => {
   });
 });
 
-describe("dashboard CLI", () => {
-  it("rejects an unknown option naming it, exit 1", async () => {
-    const { main } = await import("../src/dashboard/generate.ts");
-    const argv = process.argv;
-    const err: string[] = [];
-
-    process.argv = [...argv.slice(0, 2), "--bogus"];
-
-    const errorSpy = vi
+/** Run the dashboard CLI's main() with argv (and optionally PATH)
+ *  stubbed; capture the console. */
+async function runMain(
+  args: readonly string[],
+  pathPrefix?: string,
+): Promise<{ out: string; err: string }> {
+  const { main } = await import("../src/dashboard/generate.ts");
+  const argv = process.argv;
+  const pathEnv = process.env.PATH;
+  const out: string[] = [];
+  const err: string[] = [];
+  const spies = [
+    vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => out.push(parts.join(" "))),
+    vi
       .spyOn(console, "error")
-      .mockImplementation((...parts: unknown[]) => err.push(parts.join(" ")));
+      .mockImplementation((...parts: unknown[]) => err.push(parts.join(" "))),
+  ];
 
-    try {
-      await main();
-    } finally {
-      process.argv = argv;
-      errorSpy.mockRestore();
-    }
+  process.argv = [...argv.slice(0, 2), ...args];
 
-    expect(err.join("\n")).toContain('unknown option "--bogus"');
-    expect(process.exitCode).toBe(1);
+  if (pathPrefix !== undefined) {
+    process.env.PATH = `${pathPrefix}:${pathEnv}`;
+  }
 
+  try {
+    await main();
+  } finally {
+    process.argv = argv;
+    process.env.PATH = pathEnv;
+
+    for (const spy of spies) spy.mockRestore();
+  }
+
+  return { out: out.join("\n"), err: err.join("\n") };
+}
+
+describe("dashboard CLI", () => {
+  afterEach(() => {
     process.exitCode = undefined;
+  });
+
+  it("names an unknown option in the error", async () => {
+    const { err } = await runMain(["--bogus"]);
+
+    expect(err).toContain('unknown option "--bogus"');
+  });
+
+  it("exits 1 for an unknown option", async () => {
+    await runMain(["--bogus"]);
+
+    expect(process.exitCode).toBe(1);
   });
 
   it("rejects more than one data-repo argument", async () => {
-    const { main } = await import("../src/dashboard/generate.ts");
-    const argv = process.argv;
-    const err: string[] = [];
+    const { err } = await runMain(["/tmp", "/tmp"]);
 
-    process.argv = [...argv.slice(0, 2), "/tmp", "/tmp"];
+    expect(err).toContain("expected at most one <data-repo>");
+  });
 
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation((...parts: unknown[]) => err.push(parts.join(" ")));
+  it("exits 1 for too many data-repo arguments", async () => {
+    await runMain(["/tmp", "/tmp"]);
 
-    try {
-      await main();
-    } finally {
-      process.argv = argv;
-      errorSpy.mockRestore();
-    }
-
-    expect(err.join("\n")).toContain("expected at most one <data-repo>");
     expect(process.exitCode).toBe(1);
-
-    process.exitCode = undefined;
   });
 
   it("fails red on a data repo that does not exist", async () => {
-    const { main } = await import("../src/dashboard/generate.ts");
-    const argv = process.argv;
-    const err: string[] = [];
+    const { err } = await runMain([join(tmpdir(), "k-wiki-dash-nonexistent")]);
 
-    process.argv = [
-      ...argv.slice(0, 2),
-      join(tmpdir(), "k-wiki-dash-nonexistent"),
-    ];
-
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation((...parts: unknown[]) => err.push(parts.join(" ")));
-
-    try {
-      await main();
-    } finally {
-      process.argv = argv;
-      errorSpy.mockRestore();
-    }
-
-    expect(err.join("\n")).toContain("dashboard: ");
-    expect(process.exitCode).toBe(1);
-
-    process.exitCode = undefined;
+    expect(err).toContain("dashboard: ");
   });
 
-  it("prints help for --help without side effects", async () => {
+  it("exits 1 when the data repo does not exist", async () => {
+    await runMain([join(tmpdir(), "k-wiki-dash-nonexistent")]);
+
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("prints help for --help", async () => {
+    const { out } = await runMain(["--help"]);
+
+    expect(out).toContain("Usage: dashboard");
+  });
+
+  it("leaves the exit code unset for --help", async () => {
+    await runMain(["--help"]);
+
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("writes nothing for --help", async () => {
     const dataRoot = await makeDataRepo();
 
     const htmlBefore = await readFile(
@@ -589,30 +671,7 @@ describe("dashboard CLI", () => {
       "utf8",
     );
 
-    const { main } = await import("../src/dashboard/generate.ts");
-    const argv = process.argv;
-    const out: string[] = [];
-    const err: string[] = [];
-
-    process.argv = [...argv.slice(0, 2), "--help"];
-
-    const logSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
-    const errorSpy = vi
-      .spyOn(console, "error")
-      .mockImplementation((...parts: unknown[]) => err.push(parts.join(" ")));
-
-    try {
-      await main();
-    } finally {
-      process.argv = argv;
-      logSpy.mockRestore();
-      errorSpy.mockRestore();
-    }
-
-    expect(out.join("\n")).toContain("Usage: dashboard");
-    expect(process.exitCode).toBeUndefined();
+    await runMain(["--help"]);
 
     const htmlAfter = await readFile(join(dataRoot, "dashboard.html"), "utf8");
 
@@ -621,6 +680,10 @@ describe("dashboard CLI", () => {
 });
 
 describe("dashboard CLI --open", () => {
+  afterEach(() => {
+    process.exitCode = undefined;
+  });
+
   /** A PATH-stub opener that records its argument to a log file,
    *  named after the command `openerFor` actually invokes on this
    *  platform (`open` on macOS, `xdg-open` on Linux) — a stub named
@@ -658,66 +721,11 @@ describe("dashboard CLI --open", () => {
     return stubDir;
   }
 
-  /** Run main() with argv (and optionally PATH) stubbed; capture
-   *  console output. */
-  async function runMain(
-    args: readonly string[],
-    pathPrefix?: string,
-  ): Promise<{ out: string; err: string }> {
-    const { main } = await import("../src/dashboard/generate.ts");
-    const argv = process.argv;
-    const pathEnv = process.env.PATH;
-    const out: string[] = [];
-    const err: string[] = [];
-    const spies = [
-      vi
-        .spyOn(console, "log")
-        .mockImplementation((...parts: unknown[]) => out.push(parts.join(" "))),
-      vi
-        .spyOn(console, "error")
-        .mockImplementation((...parts: unknown[]) => err.push(parts.join(" "))),
-    ];
-
-    process.argv = [...argv.slice(0, 2), ...args];
-
-    if (pathPrefix !== undefined) {
-      process.env.PATH = `${pathPrefix}:${pathEnv}`;
-    }
-
-    try {
-      await main();
-    } finally {
-      process.argv = argv;
-      process.env.PATH = pathEnv;
-
-      for (const spy of spies) spy.mockRestore();
-    }
-
-    return { out: out.join("\n"), err: err.join("\n") };
-  }
-
   it("opens the generated dashboard file with -o", async () => {
     const dataRoot = await makeDataRepo();
     const { stubDir, log } = await makeOpenStub();
-    const { main } = await import("../src/dashboard/generate.ts");
-    const argv = process.argv;
-    const pathEnv = process.env.PATH;
-    const spies = [
-      vi.spyOn(console, "log").mockImplementation(() => {}),
-      vi.spyOn(console, "error").mockImplementation(() => {}),
-    ];
 
-    process.argv = [...argv.slice(0, 2), "-o", dataRoot];
-    process.env.PATH = `${stubDir}:${pathEnv}`;
-
-    try {
-      await main();
-    } finally {
-      process.argv = argv;
-      process.env.PATH = pathEnv;
-
-      for (const spy of spies) spy.mockRestore();
-    }
+    await runMain(["-o", dataRoot], stubDir);
 
     expect(await readFile(log, "utf8")).toBe(join(dataRoot, "dashboard.html"));
   });
@@ -756,8 +764,6 @@ describe("dashboard CLI --open", () => {
     await runMain(["-o", dataRoot], stubDir);
 
     expect(process.exitCode).toBe(1);
-
-    process.exitCode = undefined;
   });
 
   it("keeps the written dashboard when the opener fails", async () => {
@@ -772,24 +778,9 @@ describe("dashboard CLI --open", () => {
   });
 
   it("documents --open in the help text", async () => {
-    const { main } = await import("../src/dashboard/generate.ts");
-    const argv = process.argv;
-    const out: string[] = [];
+    const { out } = await runMain(["--help"]);
 
-    process.argv = [...argv.slice(0, 2), "--help"];
-
-    const logSpy = vi
-      .spyOn(console, "log")
-      .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
-
-    try {
-      await main();
-    } finally {
-      process.argv = argv;
-      logSpy.mockRestore();
-    }
-
-    expect(out.join("\n")).toContain("--open");
+    expect(out).toContain("--open");
   });
 });
 

@@ -254,8 +254,7 @@ describe("generate CLI", () => {
       [target],
     );
 
-    expect(out).toBe("");
-    expect(err).toBe("");
+    expect({ out, err }).toEqual({ out: "", err: "" });
   });
 });
 

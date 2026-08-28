@@ -133,6 +133,45 @@ async function runCli(args: readonly string[]): Promise<RunResult> {
 }
 
 describe("open-origin CLI", () => {
+  it("exits 1 with a clean message on bad arguments", async () => {
+    const { configPath } = await makeInstance(
+      "temp-research",
+      "notes/Engineering/Scratch/temp-research.md",
+      [{ name: "Engineering", root: "~/vaults/eng" }],
+    );
+
+    const result = await runCli(["--print", "--config", configPath]);
+
+    expect(`${result.code}: ${result.err}`).toContain(
+      "1: open-origin: bad arguments",
+    );
+  });
+
+  it("names both pages when the hub stem is ambiguous", async () => {
+    const { configPath, wikiDir } = await makeInstance(
+      "temp-research",
+      "notes/Engineering/Scratch/temp-research.md",
+      [{ name: "Engineering", root: "~/vaults/eng" }],
+    );
+
+    await mkdir(join(wikiDir, "concepts"), { recursive: true });
+    await writeFile(
+      join(wikiDir, "concepts", "temp-research.md"),
+      "---\ntype: concept\n---\nbody\n",
+    );
+
+    const result = await runCli([
+      "--print",
+      "--config",
+      configPath,
+      "temp-research",
+    ]);
+
+    expect(result.err).toContain(
+      '"temp-research" is ambiguous: wiki/concepts/temp-research.md, wiki/sources/temp-research.md',
+    );
+  });
+
   it("prints the obsidian URI for a hub named by page name", async () => {
     const { configPath } = await makeInstance(
       "temp-research",
@@ -167,6 +206,22 @@ describe("open-origin CLI", () => {
     ]);
 
     expect(result.code).toBe(0);
+  });
+
+  it("opens the resolved vault for a wiki-relative hub path", async () => {
+    const { configPath } = await makeInstance(
+      "temp-research",
+      "notes/Engineering/Scratch/temp-research.md",
+      [{ name: "Engineering", root: "~/vaults/eng" }],
+    );
+
+    const result = await runCli([
+      "--print",
+      "--config",
+      configPath,
+      "sources/temp-research.md",
+    ]);
+
     expect(result.out).toContain("obsidian://open?vault=Engineering");
   });
 

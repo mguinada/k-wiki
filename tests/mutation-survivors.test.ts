@@ -144,7 +144,23 @@ describe("mutation-survivors CLI", () => {
     tempDirs.push(dir);
 
     expect(result.code).toBe(0);
+  });
+
+  it("warns nothing for --help with no report present", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutsurv-"));
+    const result = await runNode(["--help"], dir);
+
+    tempDirs.push(dir);
+
     expect(result.err).toBe("");
+  });
+
+  it("prints usage with no report present", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutsurv-"));
+    const result = await runNode(["--help"], dir);
+
+    tempDirs.push(dir);
+
     expect(result.out).toContain("Usage: mutation-survivors");
   });
 
@@ -161,6 +177,20 @@ describe("mutation-survivors CLI", () => {
     const result = await runNode([], dir);
 
     expect(result.code).toBe(1);
+  });
+
+  it("names the drifted shape in the error", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutsurv-"));
+
+    tempDirs.push(dir);
+    await mkdir(join(dir, "reports", "mutation"), { recursive: true });
+    await writeFile(
+      join(dir, "reports", "mutation", "mutation.json"),
+      '{"config": {}}',
+    );
+
+    const result = await runNode([], dir);
+
     expect(result.err).toContain("unexpected shape");
   });
 });
@@ -369,6 +399,67 @@ describe("printSurvivors", () => {
       logSpy.mockRestore();
     }
   });
+
+  it("prints the nothing-actionable line for a report whose mutants are all killed", () => {
+    const out: string[] = [];
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+
+    process.exitCode = undefined;
+
+    try {
+      printSurvivors(
+        JSON.stringify({
+          files: {
+            "src/a.ts": {
+              mutants: [
+                {
+                  mutatorName: "StringLiteral",
+                  status: "Killed",
+                  location: { start: { line: 3 } },
+                },
+              ],
+            },
+          },
+        }),
+      );
+      expect(out.join("\n")).toContain(
+        "No actionable mutants — nothing survived, nothing uncovered.",
+      );
+    } finally {
+      process.exitCode = undefined;
+      logSpy.mockRestore();
+    }
+  });
+
+  it("keeps the exit code unset for a report whose mutants are all killed", () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    process.exitCode = undefined;
+
+    try {
+      printSurvivors(
+        JSON.stringify({
+          files: {
+            "src/a.ts": {
+              mutants: [
+                {
+                  mutatorName: "StringLiteral",
+                  status: "Killed",
+                  location: { start: { line: 3 } },
+                },
+              ],
+            },
+          },
+        }),
+      );
+      expect(process.exitCode).toBeUndefined();
+    } finally {
+      process.exitCode = undefined;
+      logSpy.mockRestore();
+    }
+  });
 });
 
 describe("actionableLines file grouping", () => {
@@ -397,9 +488,116 @@ describe("actionableLines file grouping", () => {
       "Survived  src/a.ts:20  Second",
     ]);
   });
+
+  it("orders files by ascending path regardless of insertion order", () => {
+    const lines = actionableLines({
+      files: {
+        "src/z.ts": {
+          mutants: [
+            {
+              mutatorName: "Zed",
+              status: "Survived",
+              location: { start: { line: 1 } },
+            },
+          ],
+        },
+        "src/a.ts": {
+          mutants: [
+            {
+              mutatorName: "Ay",
+              status: "Survived",
+              location: { start: { line: 1 } },
+            },
+          ],
+        },
+      },
+    });
+
+    expect(lines).toEqual([
+      "Survived  src/a.ts:1  Ay",
+      "Survived  src/z.ts:1  Zed",
+    ]);
+  });
 });
 
 describe("mutation-survivors main in-process", () => {
+  const withTempCwd = async (
+    plantReport: (dir: string) => Promise<void>,
+    run: () => void,
+  ): Promise<string> => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutsurv-cwd-"));
+    const cwd = process.cwd();
+
+    tempDirs.push(dir);
+    await plantReport(dir);
+    process.chdir(dir);
+
+    try {
+      run();
+    } finally {
+      process.chdir(cwd);
+    }
+
+    return dir;
+  };
+
+  it("reads and prints the report from the working directory for a bare run", async () => {
+    const out: string[] = [];
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+    const argv = process.argv;
+
+    process.argv = [...argv.slice(0, 2)];
+    process.exitCode = undefined;
+
+    try {
+      await withTempCwd(
+        (dir) =>
+          mkdir(join(dir, "reports", "mutation"), { recursive: true }).then(
+            () =>
+              writeFile(
+                join(dir, "reports", "mutation", "mutation.json"),
+                JSON.stringify(report),
+              ),
+          ),
+        () => main(),
+      );
+      expect(out.join("\n")).toContain(
+        "Survived  src/sync/config.ts:7  ConditionalExpression",
+      );
+    } finally {
+      process.argv = argv;
+      process.exitCode = undefined;
+      logSpy.mockRestore();
+    }
+  });
+
+  it("prints the missing-report hint and exits 1 for a bare run without a report", async () => {
+    const errors: string[] = [];
+    const spy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) =>
+        errors.push(parts.join(" ")),
+      );
+    const argv = process.argv;
+
+    process.argv = [...argv.slice(0, 2)];
+    process.exitCode = undefined;
+
+    try {
+      await withTempCwd(
+        async () => {},
+        () => main(),
+      );
+      expect(`${errors[0]}|${process.exitCode}`).toMatch(/No report at.*\|1$/);
+    } finally {
+      process.argv = argv;
+      process.exitCode = undefined;
+      spy.mockRestore();
+    }
+  });
+
   it("prints help for --help without reading any report", () => {
     const argv = process.argv;
     const out: string[] = [];

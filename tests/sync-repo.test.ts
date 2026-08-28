@@ -9,7 +9,7 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { runGit } from "../src/data/git.ts";
 import { loadSyncConfig } from "../src/sync/config.ts";
 import { parseManifest } from "../src/sync/manifest.ts";
@@ -18,6 +18,7 @@ import {
   runRepoSync,
   selectRepoFiles,
 } from "../src/sync/sync-repo.ts";
+import { collectFiles } from "./e2e/helpers.ts";
 
 /**
  * sync-repo unit tests (issue #74): the repo-as-source adapter. A real
@@ -152,68 +153,103 @@ async function head(root: string): Promise<string> {
   return stdout.trim();
 }
 
-/** Every file below a directory, POSIX-style, sorted. */
-async function collectFiles(root: string, prefix = ""): Promise<string[]> {
-  const entries = await readdir(root, { withFileTypes: true });
-  const files: string[] = [];
-
-  for (const entry of entries) {
-    const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
-
-    if (entry.isDirectory()) {
-      files.push(...(await collectFiles(join(root, entry.name), rel)));
-    } else if (entry.isFile()) {
-      files.push(rel);
-    }
-  }
-
-  return files.sort();
-}
+/** Every file below a directory, POSIX-style, sorted — shared with
+ *  the e2e suite via tests/e2e/helpers.ts. */
 
 describe("compileAllowlistPattern", () => {
-  it("matches an exact path pattern only at that path", () => {
+  it("matches an exact path pattern at that path", () => {
     const pattern = compileAllowlistPattern("README.md");
 
     expect(pattern.test("README.md")).toBe(true);
+  });
+
+  it("does not match an exact path pattern deeper in the tree", () => {
+    const pattern = compileAllowlistPattern("README.md");
+
     expect(pattern.test("docs/README.md")).toBe(false);
+  });
+
+  it("does not match a filename that merely starts with the pattern", () => {
+    const pattern = compileAllowlistPattern("README.md");
+
     expect(pattern.test("README.md2")).toBe(false);
   });
 
-  it("escapes regex metacharacters in a pattern", () => {
+  it("treats regex metacharacters in a pattern as literals", () => {
     const pattern = compileAllowlistPattern("package.json");
 
     expect(pattern.test("package.json")).toBe(true);
+  });
+
+  it("does not let a literal dot match a substituted character", () => {
+    const pattern = compileAllowlistPattern("package.json");
+
     expect(pattern.test("packageXjson")).toBe(false);
   });
 
-  it("matches a single star within one path segment only", () => {
+  it("matches a single star inside one path segment", () => {
     const pattern = compileAllowlistPattern("docs/*.md");
 
     expect(pattern.test("docs/a.md")).toBe(true);
+  });
+
+  it("does not let a single star cross into deeper segments", () => {
+    const pattern = compileAllowlistPattern("docs/*.md");
+
     expect(pattern.test("docs/sub/a.md")).toBe(false);
+  });
+
+  it("does not let a single star change the literal segment", () => {
+    const pattern = compileAllowlistPattern("docs/*.md");
+
     expect(pattern.test("docsX/a.md")).toBe(false);
   });
 
-  it("matches a double star across path segments", () => {
+  it("matches a double star across zero path segments", () => {
     const pattern = compileAllowlistPattern("src/**/*.ts");
 
     expect(pattern.test("src/a.ts")).toBe(true);
+  });
+
+  it("matches a double star across several path segments", () => {
+    const pattern = compileAllowlistPattern("src/**/*.ts");
+
     expect(pattern.test("src/x/y/a.ts")).toBe(true);
+  });
+
+  it("does not let a double star change the literal segment", () => {
+    const pattern = compileAllowlistPattern("src/**/*.ts");
+
     expect(pattern.test("srcx/a.ts")).toBe(false);
   });
 
-  it("matches a leading double star at every depth", () => {
+  it("matches a leading double star at the top level", () => {
     const pattern = compileAllowlistPattern("**/*.md");
 
     expect(pattern.test("a.md")).toBe(true);
+  });
+
+  it("matches a leading double star at any depth", () => {
+    const pattern = compileAllowlistPattern("**/*.md");
+
     expect(pattern.test("x/y/a.md")).toBe(true);
   });
 
-  it("matches a trailing double star for everything below a prefix", () => {
+  it("matches a trailing double star directly below the prefix", () => {
     const pattern = compileAllowlistPattern("docs/**");
 
     expect(pattern.test("docs/a.md")).toBe(true);
+  });
+
+  it("matches a trailing double star at deeper nesting", () => {
+    const pattern = compileAllowlistPattern("docs/**");
+
     expect(pattern.test("docs/x/b.ts")).toBe(true);
+  });
+
+  it("does not let a trailing double star change the prefix segment", () => {
+    const pattern = compileAllowlistPattern("docs/**");
+
     expect(pattern.test("docsX/a.md")).toBe(false);
   });
 });
@@ -263,7 +299,7 @@ describe("runRepoSync first run", () => {
     );
   });
 
-  it("excludes unlisted subtrees and files from the projection", async () => {
+  it("excludes unlisted test files from the projection", async () => {
     const ws = await makeWorkspace();
 
     await runRepoSync({
@@ -277,7 +313,37 @@ describe("runRepoSync first run", () => {
     );
 
     expect(projected).not.toContain("tests/unit.test.ts");
+  });
+
+  it("excludes dependency subtrees from the projection", async () => {
+    const ws = await makeWorkspace();
+
+    await runRepoSync({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+      env: GIT_ENV,
+    });
+
+    const projected = (await collectFiles(join(ws.rawDir, "notes", NAME))).join(
+      "\n",
+    );
+
     expect(projected).not.toContain("node_modules");
+  });
+
+  it("excludes an unlisted subtree from the projection", async () => {
+    const ws = await makeWorkspace();
+
+    await runRepoSync({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+      env: GIT_ENV,
+    });
+
+    const projected = (await collectFiles(join(ws.rawDir, "notes", NAME))).join(
+      "\n",
+    );
+
     expect(projected).not.toContain("docs/extra/deep.md");
   });
 
@@ -331,7 +397,7 @@ describe("runRepoSync first run", () => {
     expect(manifest.source_root).toBe(ws.sourceRoot);
   });
 
-  it("reports the namespace, the commit, and per-file counts", async () => {
+  it("names the projected namespace in the run report", async () => {
     const ws = await makeWorkspace();
 
     const report = await runRepoSync({
@@ -341,16 +407,71 @@ describe("runRepoSync first run", () => {
     });
 
     expect(report.source).toBe(NAME);
+  });
+
+  it("stamps the source commit in the run report", async () => {
+    const ws = await makeWorkspace();
+
+    const report = await runRepoSync({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+      env: GIT_ENV,
+    });
+
     expect(report.commit).toBe(await head(ws.sourceRoot));
+  });
+
+  it("counts every candidate file in the run report", async () => {
+    const ws = await makeWorkspace();
+
+    const report = await runRepoSync({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+      env: GIT_ENV,
+    });
+
     expect(report.candidates).toBe(8);
+  });
+
+  it("counts the selected files in the run report", async () => {
+    const ws = await makeWorkspace();
+
+    const report = await runRepoSync({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+      env: GIT_ENV,
+    });
+
     expect(report.selected).toBe(SELECTED.length);
+  });
+
+  it("lists the copied files in the run report", async () => {
+    const ws = await makeWorkspace();
+
+    const report = await runRepoSync({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+      env: GIT_ENV,
+    });
+
     expect([...report.copied].sort()).toEqual(SELECTED);
+  });
+
+  it("lists no removed files in the first run report", async () => {
+    const ws = await makeWorkspace();
+
+    const report = await runRepoSync({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+      env: GIT_ENV,
+    });
+
     expect(report.removed).toEqual([]);
   });
 });
 
 describe("runRepoSync second run", () => {
-  it("copies nothing when neither the tree nor the commit changed", async () => {
+  it("copies no files when neither the tree nor the commit changed", async () => {
     const ws = await makeWorkspace();
 
     await runRepoSync({
@@ -365,7 +486,39 @@ describe("runRepoSync second run", () => {
     });
 
     expect(second.copied).toEqual([]);
+  });
+
+  it("removes no files when neither the tree nor the commit changed", async () => {
+    const ws = await makeWorkspace();
+
+    await runRepoSync({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+      env: GIT_ENV,
+    });
+    const second = await runRepoSync({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+      env: GIT_ENV,
+    });
+
     expect(second.removed).toEqual([]);
+  });
+
+  it("keeps every projection unchanged when neither the tree nor the commit changed", async () => {
+    const ws = await makeWorkspace();
+
+    await runRepoSync({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+      env: GIT_ENV,
+    });
+    const second = await runRepoSync({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+      env: GIT_ENV,
+    });
+
     expect([...second.unchanged].sort()).toEqual(SELECTED);
   });
 
@@ -389,6 +542,27 @@ describe("runRepoSync second run", () => {
     });
 
     expect(second.copied).toEqual(["src/a.ts"]);
+  });
+
+  it("writes the new bytes of a changed file into the projection", async () => {
+    const ws = await makeWorkspace();
+
+    await runRepoSync({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+      env: GIT_ENV,
+    });
+
+    await writeFile(join(ws.sourceRoot, "src/a.ts"), "export const a = 2;\n");
+    await runGit(ws.sourceRoot, ["add", "-A"], GIT_ENV);
+    await runGit(ws.sourceRoot, ["commit", "--quiet", "-m", "edit"], GIT_ENV);
+
+    await runRepoSync({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+      env: GIT_ENV,
+    });
+
     expect(
       await readFile(join(ws.rawDir, "notes", NAME, "src/a.ts"), "utf8"),
     ).toBe("export const a = 2;\n");
@@ -440,6 +614,27 @@ describe("runRepoSync second run", () => {
     });
 
     expect(second.removed).toEqual(["src/deep/b.ts"]);
+  });
+
+  it("deletes the projected file on disk when its source was deleted", async () => {
+    const ws = await makeWorkspace();
+
+    await runRepoSync({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+      env: GIT_ENV,
+    });
+
+    await rm(join(ws.sourceRoot, "src/deep/b.ts"));
+    await runGit(ws.sourceRoot, ["add", "-A"], GIT_ENV);
+    await runGit(ws.sourceRoot, ["commit", "--quiet", "-m", "delete"], GIT_ENV);
+
+    await runRepoSync({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+      env: GIT_ENV,
+    });
+
     expect(await collectFiles(join(ws.rawDir, "notes", NAME))).not.toContain(
       "src/deep/b.ts",
     );
@@ -494,6 +689,30 @@ describe("runRepoSync second run", () => {
     expect([...second.removed].sort()).toEqual(
       SELECTED.filter((path) => !path.startsWith("src/")),
     );
+  });
+
+  it("keeps only the still-allowlisted files after the allowlist narrows", async () => {
+    const ws = await makeWorkspace();
+
+    await runRepoSync({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+      env: GIT_ENV,
+    });
+
+    const narrowed = await writeConfig(ws.dir, {
+      source: "repo",
+      name: NAME,
+      root: ws.sourceRoot,
+      include: ["src/**/*.ts"],
+    });
+
+    await runRepoSync({
+      configPath: narrowed,
+      rawDir: ws.rawDir,
+      env: GIT_ENV,
+    });
+
     expect(await collectFiles(join(ws.rawDir, "notes", NAME))).toEqual([
       "src/a.ts",
       "src/deep/b.ts",
@@ -570,6 +789,25 @@ describe("runRepoSync guardrails", () => {
     ).rejects.toThrow(/not a git repository|no commit/);
   });
 
+  it("rejects a source repository whose HEAD cannot be read", async () => {
+    const dir = await makeTempDir();
+    const commitless = join(dir, "commitless");
+
+    await mkdir(commitless, { recursive: true });
+    await runGit(commitless, ["init", "--quiet"], GIT_ENV);
+
+    const configPath = await writeConfig(dir, {
+      source: "repo",
+      name: NAME,
+      root: commitless,
+      include: ["README.md"],
+    });
+
+    await expect(
+      runRepoSync({ configPath, rawDir: join(dir, "raw"), env: GIT_ENV }),
+    ).rejects.toThrow(/cannot read HEAD of source repo/);
+  });
+
   it("rejects a source repository with an uncommitted working tree", async () => {
     const dir = await makeTempDir();
     const sourceRoot = await makeSourceRepo(dir);
@@ -590,7 +828,7 @@ describe("runRepoSync guardrails", () => {
 });
 
 describe("sync-repo CLI help", () => {
-  it("prints usage and exits 0 without side effects", async () => {
+  it("prints usage for --help", async () => {
     const { main } = await import("../src/sync/sync-repo.ts");
     const argv = process.argv;
     const out: string[] = [];
@@ -609,6 +847,26 @@ describe("sync-repo CLI help", () => {
     }
 
     expect(out.join("\n")).toContain("Usage: sync-repo");
+  });
+
+  it("leaves the exit code unset for --help", async () => {
+    const { main } = await import("../src/sync/sync-repo.ts");
+    const argv = process.argv;
+    const out: string[] = [];
+
+    process.argv = [...argv.slice(0, 2), "--help"];
+
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+
+    try {
+      await main();
+    } finally {
+      process.argv = argv;
+      logSpy.mockRestore();
+    }
+
     expect(process.exitCode).toBeUndefined();
   });
 });
@@ -616,18 +874,34 @@ describe("sync-repo CLI help", () => {
 describe("shipped sync-meta.json (issue #74)", () => {
   const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-  it("parses as one repo source for the k-wiki namespace", async () => {
+  it("parses sync-meta.json as a single vault entry", async () => {
     const config = await loadSyncConfig(
       join(repoRoot, "sync-meta.json"),
       homedir(),
     );
 
     expect(config.vaults).toHaveLength(1);
+  });
+
+  it("parses the shipped source as a repo source", async () => {
+    const config = await loadSyncConfig(
+      join(repoRoot, "sync-meta.json"),
+      homedir(),
+    );
+
     expect(config.vaults[0]?.kind).toBe("repo");
+  });
+
+  it("parses the shipped repo source for the k-wiki namespace", async () => {
+    const config = await loadSyncConfig(
+      join(repoRoot, "sync-meta.json"),
+      homedir(),
+    );
+
     expect(config.vaults[0]?.name).toBe("k-wiki");
   });
 
-  it("selects the implementation tree and excludes tests, scripts, and dependencies", async () => {
+  it("accepts the implementation tree paths", async () => {
     const { vaults } = await loadSyncConfig(
       join(repoRoot, "sync-meta.json"),
       homedir(),
@@ -639,27 +913,68 @@ describe("shipped sync-meta.json (issue #74)", () => {
     }
 
     const matchers = source.include.map(compileAllowlistPattern);
-    const matches = (path: string) =>
+    const includes = (path: string) =>
       matchers.some((matcher) => matcher.test(path));
 
-    expect(matches("src/sync/sync-vault.ts")).toBe(true);
-    expect(matches("wiki/AGENTS.md")).toBe(true);
-    expect(matches("prompts/ingest.md")).toBe(true);
-    expect(matches("docs/karpathy_wiki_implementation_guide.md")).toBe(true);
-    expect(matches("package.json")).toBe(true);
-    expect(matches("tests/sync-repo.test.ts")).toBe(false);
-    expect(matches("scripts/check-links.ts")).toBe(false);
-    expect(matches("node_modules/vitest/index.js")).toBe(false);
-    expect(matches("k-wiki-meta-data/wiki/index.md")).toBe(false);
+    expect(
+      [
+        "src/sync/sync-vault.ts",
+        "wiki/AGENTS.md",
+        "prompts/ingest.md",
+        "docs/karpathy_wiki_implementation_guide.md",
+        "package.json",
+      ].filter(includes),
+    ).toEqual([
+      "src/sync/sync-vault.ts",
+      "wiki/AGENTS.md",
+      "prompts/ingest.md",
+      "docs/karpathy_wiki_implementation_guide.md",
+      "package.json",
+    ]);
+  });
+
+  it("excludes tests, scripts, and dependencies from the shipped include set", async () => {
+    const { vaults } = await loadSyncConfig(
+      join(repoRoot, "sync-meta.json"),
+      homedir(),
+    );
+    const source = vaults[0];
+
+    if (source?.kind !== "repo") {
+      throw new Error("sync-meta.json must hold one repo source");
+    }
+
+    const matchers = source.include.map(compileAllowlistPattern);
+    const includes = (path: string) =>
+      matchers.some((matcher) => matcher.test(path));
+
+    expect(
+      [
+        "tests/sync-repo.test.ts",
+        "scripts/check-links.ts",
+        "node_modules/vitest/index.js",
+        "k-wiki-meta-data/wiki/index.md",
+      ].filter(includes),
+    ).toEqual([]);
   });
 });
 
 describe("compileAllowlistPattern multi-segment literals", () => {
-  it("matches a two-segment exact pattern only at that path", () => {
+  it("matches a two-segment exact pattern at that path", () => {
     const pattern = compileAllowlistPattern("docs/guide.md");
 
     expect(pattern.test("docs/guide.md")).toBe(true);
+  });
+
+  it("does not let a two-segment exact pattern flatten into one segment", () => {
+    const pattern = compileAllowlistPattern("docs/guide.md");
+
     expect(pattern.test("docsguide.md")).toBe(false);
+  });
+
+  it("does not let a two-segment exact pattern match a longer extension", () => {
+    const pattern = compileAllowlistPattern("docs/guide.md");
+
     expect(pattern.test("docs/guide.mdx")).toBe(false);
   });
 });
@@ -691,7 +1006,7 @@ describe("selectRepoFiles walker gaps", () => {
     expect(selected).toEqual(["README.md"]);
   });
 
-  it("skips .git and node_modules during a repository-root walk", async () => {
+  it("skips .git and node_modules while keeping every other markdown file", async () => {
     const dir = await makeTempDir();
     const root = await makeSourceRepo(dir);
 
@@ -701,14 +1016,16 @@ describe("selectRepoFiles walker gaps", () => {
 
     const { selected } = await selectRepoFiles(root, ["**/*.md"]);
 
-    expect(selected).toContain("README.md");
-    expect(selected).toContain("AGENTS.md");
-    expect(selected).toContain("docs/guide.md");
-    expect(selected).toContain("loose.md");
-    expect(selected.some((path) => path.startsWith("node_modules/"))).toBe(
-      false,
-    );
-    expect(selected.some((path) => path.startsWith(".git/"))).toBe(false);
+    for (const [path, present] of [
+      ["README.md", true],
+      ["AGENTS.md", true],
+      ["docs/guide.md", true],
+      ["loose.md", true],
+      ["node_modules/x/hidden.md", false],
+      [".git/HEAD.md", false],
+    ] as const) {
+      expect(selected.includes(path)).toBe(present);
+    }
   });
 });
 
@@ -766,6 +1083,10 @@ describe("runRepoSync mixed-source configs", () => {
 });
 
 describe("sync-repo CLI main", () => {
+  afterEach(() => {
+    process.exitCode = undefined;
+  });
+
   interface Captured {
     out: string;
     err: string;
@@ -806,7 +1127,7 @@ describe("sync-repo CLI main", () => {
     return { out: out.join("\n"), err: err.join("\n") };
   }
 
-  it("resolves the raw dir from the config dataRoot when the arg is absent", async () => {
+  it("reports sync complete with the raw dir resolved from the config dataRoot", async () => {
     const ws = await makeWorkspace();
     const dataRoot = join(ws.dir, "meta-data");
     const configPath = join(ws.dir, "sync-dataroot.json");
@@ -830,24 +1151,68 @@ describe("sync-repo CLI main", () => {
     const result = await runMainCli([configPath]);
 
     expect(result.out).toContain("sync complete");
+  });
+
+  it("writes the manifest under the config dataRoot when the raw dir arg is absent", async () => {
+    const ws = await makeWorkspace();
+    const dataRoot = join(ws.dir, "meta-data");
+    const configPath = join(ws.dir, "sync-dataroot.json");
+
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        dataRoot,
+        vaults: [
+          {
+            source: "repo",
+            name: NAME,
+            root: ws.sourceRoot,
+            include: ALLOWLIST,
+          },
+        ],
+      }),
+      "utf8",
+    );
+
+    await runMainCli([configPath]);
+
     expect(
       await readFile(join(dataRoot, "raw", "manifest.json"), "utf8"),
     ).toContain("source_commit");
   });
 
-  it("prints the projection report with the source commit on success", async () => {
+  it("reports the source repo commit of the projection", async () => {
     const ws = await makeWorkspace();
     const result = await runMainCli([ws.configPath, ws.rawDir]);
 
     expect(result.out).toContain("source repo at commit ");
+  });
+
+  it("reports the per-namespace selected, copied, unchanged, and removed counts", async () => {
+    const ws = await makeWorkspace();
+    const result = await runMainCli([ws.configPath, ws.rawDir]);
+
     expect(result.out).toContain(
       `vault "k-wiki": 7 selected, 7 copied, 0 unchanged, 0 removed`,
     );
+  });
+
+  it("reports the total copied count on success", async () => {
+    const ws = await makeWorkspace();
+    const result = await runMainCli([ws.configPath, ws.rawDir]);
+
     expect(result.out).toContain("sync complete: 7 copied");
+  });
+
+  it("leaves the exit code unset on success", async () => {
+    const ws = await makeWorkspace();
+
+    await runMainCli([ws.configPath, ws.rawDir]);
+
     expect(process.exitCode).toBeUndefined();
   });
 
-  it("exits 1 with a red error line when the config holds no repo source", async () => {
+  it("prefixes the error line with sync-repo when the config holds no repo source", async () => {
     const dir = await makeTempDir();
     const configPath = join(dir, "sync.json");
 
@@ -862,9 +1227,40 @@ describe("sync-repo CLI main", () => {
     const result = await runMainCli([configPath, join(dir, "raw")]);
 
     expect(result.err).toContain("sync-repo:");
+  });
+
+  it("names the offending vault source in the error line", async () => {
+    const dir = await makeTempDir();
+    const configPath = join(dir, "sync.json");
+
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        vaults: [{ name: "Engineering", root: dir, exclude: "wiki:false" }],
+      }),
+      "utf8",
+    );
+
+    const result = await runMainCli([configPath, join(dir, "raw")]);
+
     expect(result.err).toContain("sync-vault");
+  });
+
+  it("exits 1 when the config holds no repo source", async () => {
+    const dir = await makeTempDir();
+    const configPath = join(dir, "sync.json");
+
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        vaults: [{ name: "Engineering", root: dir, exclude: "wiki:false" }],
+      }),
+      "utf8",
+    );
+
+    await runMainCli([configPath, join(dir, "raw")]);
+
     expect(process.exitCode).toBe(1);
-    process.exitCode = undefined;
   });
 
   it("bolds the repo name of progress lines at the render boundary", async () => {
@@ -910,7 +1306,7 @@ describe("selectRepoFiles error paths", () => {
 
     await expect(
       selectRepoFiles(root, ["docs/guide.md/**/*.md"]),
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({ code: "ENOTDIR" });
   });
 });
 
@@ -934,7 +1330,7 @@ describe("runRepoSync manifest entry carry-forward", () => {
   const T1 = "2026-08-23T10:00:00.000Z";
   const T2 = "2026-08-23T12:00:00.000Z";
 
-  it("advances last_synced only for the changed file, keeping it for untouched ones", async () => {
+  it("advances last_synced for the changed file", async () => {
     const ws = await makeWorkspace();
 
     await runRepoSync({
@@ -962,6 +1358,35 @@ describe("runRepoSync manifest entry carry-forward", () => {
     ).vaults[NAME];
 
     expect(notes?.["src/a.ts"]?.last_synced).toBe(T2);
+  });
+
+  it("keeps last_synced for an untouched file", async () => {
+    const ws = await makeWorkspace();
+
+    await runRepoSync({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+      env: GIT_ENV,
+      now: () => new Date(T1),
+    });
+
+    await put(ws.sourceRoot, "src/a.ts", "export const a = 2;\n");
+    await runGit(ws.sourceRoot, ["add", "-A"], GIT_ENV);
+    await runGit(ws.sourceRoot, ["commit", "--quiet", "-m", "edit"], GIT_ENV);
+
+    await runRepoSync({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+      env: GIT_ENV,
+      now: () => new Date(T2),
+    });
+
+    const manifestPath = join(ws.rawDir, "manifest.json");
+    const notes = parseManifest(
+      await readFile(manifestPath, "utf8"),
+      manifestPath,
+    ).vaults[NAME];
+
     expect(notes?.["src/deep/b.ts"]?.last_synced).toBe(T1);
   });
 });

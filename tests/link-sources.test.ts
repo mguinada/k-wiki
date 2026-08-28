@@ -182,6 +182,26 @@ describe("linkSources", () => {
         replacement: "[[system-design-interview-notes|04. Rate Limiter]]",
       },
     ]);
+  });
+
+  it("counts a migrated hub's already-linked cites", async () => {
+    const wikiDir = await makeWiki({
+      "sources/system-design-interview-notes.md": hub(
+        "System design interview notes",
+        "notes/Books/SDN/Readme.md",
+        [
+          "[[system-design-interview-notes]]",
+          "[[system-design-interview-notes|04. Rate Limiter]]",
+        ],
+      ),
+      "concepts/rate-limiting.md": citing([CHAPTER]),
+    });
+
+    const report = await linkSources(wikiDir, {
+      write: true,
+      date: "2026-08-26",
+    });
+
     expect(report.alreadyLinked).toBe(2);
   });
 
@@ -207,23 +227,24 @@ describe("linkSources", () => {
     });
   });
 
-  it("skips and reports a no-origin hub's own chapter cite while migrating the citing page", async () => {
-    const noOriginHub = [
-      "---",
-      'title: "System design interview notes"',
-      "type: source",
-      "created: 2026-08-20",
-      "updated: 2026-08-20",
-      "tags:",
-      "  - source",
-      "sources:",
-      `  - "${CHAPTER}"`,
-      "---",
-      "",
-      "digest",
-      "",
-    ].join("\n");
+  const NO_ORIGIN_HUB = [
+    "---",
+    'title: "System design interview notes"',
+    "type: source",
+    "created: 2026-08-20",
+    "updated: 2026-08-20",
+    "tags:",
+    "  - source",
+    "sources:",
+    `  - "${CHAPTER}"`,
+    "---",
+    "",
+    "digest",
+    "",
+  ].join("\n");
 
+  it("skips and reports a no-origin hub's own chapter cite while migrating the citing page", async () => {
+    const noOriginHub = NO_ORIGIN_HUB;
     const wikiDir = await makeWiki({
       "sources/sdn.md": noOriginHub,
       "concepts/rate-limiting.md": citing([CHAPTER]),
@@ -241,6 +262,19 @@ describe("linkSources", () => {
         reason: "hub has no origin to anchor its own chapter coverage",
       },
     ]);
+  });
+
+  it("migrates the citing page past a no-origin hub", async () => {
+    const wikiDir = await makeWiki({
+      "sources/sdn.md": NO_ORIGIN_HUB,
+      "concepts/rate-limiting.md": citing([CHAPTER]),
+    });
+
+    const report = await linkSources(wikiDir, {
+      write: true,
+      date: "2026-08-26",
+    });
+
     expect(report.rewrites).toEqual([
       {
         page: "concepts/rate-limiting.md",
@@ -248,8 +282,21 @@ describe("linkSources", () => {
         replacement: "[[sdn|04. Rate Limiter]]",
       },
     ]);
+  });
+
+  it("leaves the no-origin hub untouched", async () => {
+    const wikiDir = await makeWiki({
+      "sources/sdn.md": NO_ORIGIN_HUB,
+      "concepts/rate-limiting.md": citing([CHAPTER]),
+    });
+
+    await linkSources(wikiDir, {
+      write: true,
+      date: "2026-08-26",
+    });
+
     expect(await readFile(join(wikiDir, "sources", "sdn.md"), "utf8")).toBe(
-      noOriginHub,
+      NO_ORIGIN_HUB,
     );
   });
 
@@ -275,6 +322,18 @@ describe("linkSources", () => {
         replacement: "[[system-design-interview-notes|04. Rate Limiter]]",
       },
     ]);
+  });
+
+  it("skips nothing when the hub has an origin", async () => {
+    const wikiDir = await makeWiki({
+      "sources/system-design-interview-notes.md": MULTIPART_HUB,
+    });
+
+    const report = await linkSources(wikiDir, {
+      write: true,
+      date: "2026-08-26",
+    });
+
     expect(report.skipped).toEqual([]);
   });
 
@@ -414,6 +473,17 @@ describe("linkSources", () => {
     expect(log).toContain(
       "## [2026-08-26] sources-wikilink-migration | 1 page",
     );
+  });
+
+  it("lists the rewrite in the audit entry", async () => {
+    const wikiDir = await makeWiki({
+      "sources/gpu-memory-math.md": SIMPLE_HUB,
+      "concepts/cites.md": citing(["notes/V/gpu-memory-math.md"]),
+    });
+
+    await linkSources(wikiDir, { write: true, date: "2026-08-26" });
+    const log = await readFile(join(wikiDir, "log.md"), "utf8");
+
     expect(log).toContain(
       '- wiki/concepts/cites.md: "notes/V/gpu-memory-math.md" -> "[[gpu-memory-math]]"',
     );
@@ -485,9 +555,29 @@ describe("link-sources CLI", () => {
     const result = await runCli([wikiDir]);
 
     expect(`${result.code}: ${result.out.includes("--write")}`).toBe("0: true");
+  });
+
+  it("prints the planned rewrite without --write", async () => {
+    const wikiDir = await makeWiki({
+      "sources/gpu-memory-math.md": SIMPLE_HUB,
+      "concepts/cites.md": citing(["notes/V/gpu-memory-math.md"]),
+    });
+
+    const result = await runCli([wikiDir]);
+
     expect(result.out).toContain(
       'wiki/concepts/cites.md: "notes/V/gpu-memory-math.md" -> "[[gpu-memory-math]]"',
     );
+  });
+
+  it("leaves the citing page unwritten without --write", async () => {
+    const wikiDir = await makeWiki({
+      "sources/gpu-memory-math.md": SIMPLE_HUB,
+      "concepts/cites.md": citing(["notes/V/gpu-memory-math.md"]),
+    });
+
+    await runCli([wikiDir]);
+
     expect(await readFile(join(wikiDir, "concepts", "cites.md"), "utf8")).toBe(
       citing(["notes/V/gpu-memory-math.md"]),
     );
@@ -502,6 +592,16 @@ describe("link-sources CLI", () => {
     const result = await runCli([wikiDir, "--write"]);
 
     expect(result.code).toBe(0);
+  });
+
+  it("rewrites the citing page with --write", async () => {
+    const wikiDir = await makeWiki({
+      "sources/gpu-memory-math.md": SIMPLE_HUB,
+      "concepts/cites.md": citing(["notes/V/gpu-memory-math.md"]),
+    });
+
+    await runCli([wikiDir, "--write"]);
+
     expect(await readFile(join(wikiDir, "concepts", "cites.md"), "utf8")).toBe(
       citing(["[[gpu-memory-math]]"]),
     );

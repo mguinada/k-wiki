@@ -204,6 +204,18 @@ describe("serializeManifest", () => {
     expect(lines.indexOf('    "alpha": {')).toBeLessThan(
       lines.indexOf('    "zeta": {'),
     );
+  });
+
+  it("sorts note keys within a vault", () => {
+    const manifest: Manifest = {
+      vaults: {
+        zeta: { "b.md": ONE_ENTRY, "a.md": ONE_ENTRY },
+        alpha: { "y.md": ONE_ENTRY },
+      },
+    };
+
+    const lines = serializeManifest(manifest).split("\n");
+
     expect(lines.indexOf('      "a.md": {')).toBeLessThan(
       lines.indexOf('      "b.md": {'),
     );

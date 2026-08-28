@@ -33,6 +33,12 @@ describe("k-wiki skill (issue #77)", () => {
     );
 
     expect(referenced.length).toBeGreaterThan(0);
+  });
+
+  it("names no commands outside the k-wiki CLI", async () => {
+    const referenced = [...(await skillText()).matchAll(/`k-wiki (\w+)/g)].map(
+      (match) => match[1],
+    );
 
     const unknown = referenced.filter(
       (word) => !COMMANDS.includes(word as never),
@@ -44,11 +50,15 @@ describe("k-wiki skill (issue #77)", () => {
   it("carries all five content sections of the #77 spec", async () => {
     const text = await skillText();
 
-    expect(text).toMatch(/^## Where/m);
-    expect(text).toMatch(/^## When/m);
-    expect(text).toMatch(/^## How/m);
-    expect(text).toMatch(/^## Trust rules/m);
-    expect(text).toMatch(/^## What it is not/m);
+    for (const section of [
+      "Where",
+      "When",
+      "How",
+      "Trust rules",
+      "What it is not",
+    ]) {
+      expect(text).toMatch(new RegExp(`^## ${section}`, "m"));
+    }
   });
 
   it("states code-is-truth for code tasks", async () => {
@@ -59,6 +69,11 @@ describe("k-wiki skill (issue #77)", () => {
     const text = await skillText();
 
     expect(text).toContain("log.md");
+  });
+
+  it("documents the repo SHA freshness mode", async () => {
+    const text = await skillText();
+
     expect(text).toContain("health");
   });
 
@@ -66,6 +81,11 @@ describe("k-wiki skill (issue #77)", () => {
     const text = await skillText();
 
     expect(text).not.toContain("/Users/");
+  });
+
+  it("contains no home-relative paths", async () => {
+    const text = await skillText();
+
     expect(text).not.toMatch(/~\/[A-Za-z]/);
   });
 
@@ -73,7 +93,17 @@ describe("k-wiki skill (issue #77)", () => {
     const text = await skillText();
 
     expect(text).toContain("Install");
+  });
+
+  it("documents the binding file", async () => {
+    const text = await skillText();
+
     expect(text).toContain(".k-wiki.json");
+  });
+
+  it("guides the binding gitignore entry", async () => {
+    const text = await skillText();
+
     expect(text).toMatch(/gitignore/i);
   });
 });
