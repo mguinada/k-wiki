@@ -1008,6 +1008,16 @@ describe("checkRaw freshness edges (issue #74)", () => {
     expect(report.problems).toEqual([
       'invalid manifest at manifest.json: expected an object with a "vaults" object',
     ]);
+  });
+
+  it("skips freshness for a non-object manifest", async () => {
+    const rawDir = await makeRawDir();
+
+    await mkdir(join(rawDir, "notes"), { recursive: true });
+    await writeFile(join(rawDir, "manifest.json"), "null");
+
+    const report = await checkRaw(rawDir, { env: GIT_ENV });
+
     expect(report.warnings).toEqual([]);
   });
 
@@ -1020,6 +1030,26 @@ describe("checkRaw freshness edges (issue #74)", () => {
 
     expect(out).toContain("healthy: empty projection");
     expect(err).toBe("");
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("warns nothing for a projection without a manifest", async () => {
+    const rawDir = await makeRawDir();
+
+    await mkdir(join(rawDir, "notes"), { recursive: true });
+
+    const { err } = await runHealthCli(["--fail-on-stale", rawDir]);
+
+    expect(err).toBe("");
+  });
+
+  it("stays exit 0 without a manifest under --fail-on-stale", async () => {
+    const rawDir = await makeRawDir();
+
+    await mkdir(join(rawDir, "notes"), { recursive: true });
+
+    await runHealthCli(["--fail-on-stale", rawDir]);
+
     expect(process.exitCode).toBeUndefined();
   });
 
@@ -1036,10 +1066,44 @@ describe("checkRaw freshness edges (issue #74)", () => {
       serializeManifest({ vaults: { Engineering: notes } }),
     );
 
-    const { out, err } = await runHealthCli(["--fail-on-stale", rawDir]);
+    const { out } = await runHealthCli(["--fail-on-stale", rawDir]);
 
     expect(out).toContain("healthy:");
+  });
+
+  it("warns nothing for an unstamped vault manifest", async () => {
+    const rawDir = await makeRawDir();
+    const notes: VaultNotes = {
+      "note.md": { hash: hashOf(NOTE), last_synced: "2026-08-20T00:00:00Z" },
+    };
+
+    await mkdir(join(rawDir, "notes", "Engineering"), { recursive: true });
+    await writeFile(join(rawDir, "notes", "Engineering", "note.md"), NOTE);
+    await writeFile(
+      join(rawDir, "manifest.json"),
+      serializeManifest({ vaults: { Engineering: notes } }),
+    );
+
+    const { err } = await runHealthCli(["--fail-on-stale", rawDir]);
+
     expect(err).toBe("");
+  });
+
+  it("stays exit 0 for an unstamped vault manifest", async () => {
+    const rawDir = await makeRawDir();
+    const notes: VaultNotes = {
+      "note.md": { hash: hashOf(NOTE), last_synced: "2026-08-20T00:00:00Z" },
+    };
+
+    await mkdir(join(rawDir, "notes", "Engineering"), { recursive: true });
+    await writeFile(join(rawDir, "notes", "Engineering", "note.md"), NOTE);
+    await writeFile(
+      join(rawDir, "manifest.json"),
+      serializeManifest({ vaults: { Engineering: notes } }),
+    );
+
+    await runHealthCli(["--fail-on-stale", rawDir]);
+
     expect(process.exitCode).toBeUndefined();
   });
 
@@ -1062,6 +1126,26 @@ describe("checkRaw freshness edges (issue #74)", () => {
     const { err } = await runHealthCli(["--fail-on-stale", rawDir]);
 
     expect(err).toContain("cannot verify freshness");
+  });
+
+  it("stays exit 0 when freshness cannot be verified", async () => {
+    const rawDir = await makeRawDir();
+    const notes: VaultNotes = {
+      "note.md": { hash: hashOf(NOTE), last_synced: "2026-08-20T00:00:00Z" },
+    };
+
+    await mkdir(join(rawDir, "notes", "k-wiki"), { recursive: true });
+    await writeFile(join(rawDir, "notes", "k-wiki", "note.md"), NOTE);
+    await writeFile(
+      join(rawDir, "manifest.json"),
+      serializeManifest(
+        { vaults: { "k-wiki": notes } },
+        { source_commit: "a".repeat(40), source_root: join(rawDir, "gone") },
+      ),
+    );
+
+    await runHealthCli(["--fail-on-stale", rawDir]);
+
     expect(process.exitCode).toBeUndefined();
   });
 
@@ -1094,6 +1178,36 @@ describe("checkRaw freshness edges (issue #74)", () => {
     const report = await checkRaw(rawDir, { env: GIT_ENV });
 
     expect(report.warnings[0]).toContain(commit.slice(0, 8));
+  });
+
+  it("tells the user to re-run sync-repo when stale", async () => {
+    const rawDir = await makeRawDir();
+    const sourceRoot = join(rawDir, "source");
+
+    await mkdir(sourceRoot, { recursive: true });
+    await writeFile(join(sourceRoot, "note.md"), "body\n");
+    await runGit(sourceRoot, ["init", "--quiet"], GIT_ENV);
+    await runGit(sourceRoot, ["add", "-A"], GIT_ENV);
+    await runGit(sourceRoot, ["commit", "--quiet", "-m", "one"], GIT_ENV);
+    const { stdout } = await runGit(sourceRoot, ["rev-parse", "HEAD"], GIT_ENV);
+    const commit = stdout.trim();
+
+    const notes: VaultNotes = {
+      "note.md": { hash: hashOf(NOTE), last_synced: "2026-08-20T00:00:00Z" },
+    };
+
+    await mkdir(join(rawDir, "notes", "k-wiki"), { recursive: true });
+    await writeFile(join(rawDir, "notes", "k-wiki", "note.md"), NOTE);
+    await writeFile(
+      join(rawDir, "manifest.json"),
+      serializeManifest(
+        { vaults: { "k-wiki": notes } },
+        { source_commit: staleSha(commit), source_root: sourceRoot },
+      ),
+    );
+
+    const report = await checkRaw(rawDir, { env: GIT_ENV });
+
     expect(report.warnings[0]).toContain("re-run sync-repo");
   });
 

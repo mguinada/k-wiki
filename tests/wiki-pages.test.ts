@@ -129,6 +129,13 @@ describe("parsePageFields", () => {
     );
 
     expect(fields.sources).toEqual([]);
+  });
+
+  it("sets no origin from other keys", () => {
+    const fields = parsePageFields(
+      '---\nrelated:\n  - "[[A]]"\nauthor: someone\n---\n',
+    );
+
     expect(fields.origin).toBeUndefined();
   });
   it("does not read origin from the page body", () => {
@@ -254,19 +261,31 @@ describe("parsePageFields", () => {
 });
 
 describe("wikilink classification", () => {
-  it("classifies bracketed entries as wikilinks", () => {
+  it("classifies a bracketed entry as a wikilink", () => {
     expect(isWikilinkEntry("[[Temp research]]")).toBe(true);
+  });
+
+  it("classifies a path entry as not a wikilink", () => {
     expect(isWikilinkEntry("notes/V/a.md")).toBe(false);
   });
 
-  it("rejects an entry with only an opening or closing bracket", () => {
+  it("rejects an entry with only an opening bracket", () => {
     expect(isWikilinkEntry("[[partial")).toBe(false);
+  });
+
+  it("rejects an entry with only a closing bracket", () => {
     expect(isWikilinkEntry("partial]]")).toBe(false);
   });
 
-  it("keeps only the page name of an aliased or anchored link", () => {
+  it("keeps only the page name of an aliased link", () => {
     expect(wikilinkTarget("[[vector-database|my db]]")).toBe("vector-database");
+  });
+
+  it("keeps only the page name of an anchored link", () => {
     expect(wikilinkTarget("[[RAG#Why]]")).toBe("RAG");
+  });
+
+  it("keeps the page name of a plain link", () => {
     expect(wikilinkTarget("[[Temp research]]")).toBe("Temp research");
   });
 
@@ -276,8 +295,11 @@ describe("wikilink classification", () => {
 });
 
 describe("normalizeRawPath", () => {
-  it("strips only a leading raw/ prefix", () => {
+  it("strips a leading raw/ prefix", () => {
     expect(normalizeRawPath("raw/notes/V/a.md")).toBe("notes/V/a.md");
+  });
+
+  it("keeps an inner raw/ segment", () => {
     expect(normalizeRawPath("notes/raw/a.md")).toBe("notes/raw/a.md");
   });
 });
