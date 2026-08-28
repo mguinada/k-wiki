@@ -110,12 +110,19 @@ describe("data:init CLI help", () => {
     expect(process.exitCode).toBeUndefined();
   });
 
-  it("prints the failure and sets the exit code when the config is missing", async () => {
+  it("prints the config-read failure", async () => {
     const dir = await makeTempDir();
 
     const { err } = await runInitCli([join(dir, "nope.json")]);
 
     expect(err).toContain("cannot read sync config");
+  });
+
+  it("exits 1 when the config is missing", async () => {
+    const dir = await makeTempDir();
+
+    const { err: _err } = await runInitCli([join(dir, "nope.json")]);
+
     expect(process.exitCode).toBe(1);
   });
 
@@ -132,6 +139,20 @@ describe("data:init CLI help", () => {
     const { out } = await runInitCli([configPath]);
 
     expect(out).toBe(`data:init: ${dataRoot} already seeded`);
+  }, 20000);
+
+  it("leaves the exit code unset when already seeded", async () => {
+    const dataRoot = await makeTempDir();
+    const configPath = await writeConfig(dataRoot);
+
+    await seedDataRepo({
+      configPath,
+      repoRoot: await makeCodeRepoFixture(),
+      env: GIT_ENV,
+    });
+
+    await runInitCli([configPath]);
+
     expect(process.exitCode).toBeUndefined();
   }, 20000);
 });
@@ -187,7 +208,7 @@ async function makeCodeRepoFixture(): Promise<string> {
 }
 
 describe("seedDataRepo", () => {
-  it("seeds the skeleton, README, and an initial commit at the data root", async () => {
+  it("seeds the wiki contract at the data root", async () => {
     const dataRoot = await makeTempDir();
 
     await seedDataRepo({
@@ -197,9 +218,52 @@ describe("seedDataRepo", () => {
     });
 
     expect(existsSync(join(dataRoot, "wiki/AGENTS.md"))).toBe(true);
+  }, 20000);
+
+  it("seeds the wiki index at the data root", async () => {
+    const dataRoot = await makeTempDir();
+
+    await seedDataRepo({
+      configPath: await writeConfig(dataRoot),
+      repoRoot: await makeCodeRepoFixture(),
+      env: GIT_ENV,
+    });
+
     expect(existsSync(join(dataRoot, "wiki/index.md"))).toBe(true);
+  }, 20000);
+
+  it("seeds the raw skeleton at the data root", async () => {
+    const dataRoot = await makeTempDir();
+
+    await seedDataRepo({
+      configPath: await writeConfig(dataRoot),
+      repoRoot: await makeCodeRepoFixture(),
+      env: GIT_ENV,
+    });
+
     expect(existsSync(join(dataRoot, "raw/notes/.gitkeep"))).toBe(true);
+  }, 20000);
+
+  it("writes the README at the data root", async () => {
+    const dataRoot = await makeTempDir();
+
+    await seedDataRepo({
+      configPath: await writeConfig(dataRoot),
+      repoRoot: await makeCodeRepoFixture(),
+      env: GIT_ENV,
+    });
+
     expect(existsSync(join(dataRoot, "README.md"))).toBe(true);
+  }, 20000);
+
+  it("makes an initial commit at the data root", async () => {
+    const dataRoot = await makeTempDir();
+
+    await seedDataRepo({
+      configPath: await writeConfig(dataRoot),
+      repoRoot: await makeCodeRepoFixture(),
+      env: GIT_ENV,
+    });
 
     const { stdout } = await git(dataRoot, "rev-parse", "HEAD");
 
@@ -225,17 +289,28 @@ describe("seedDataRepo", () => {
 
     await seedDataRepo({ configPath, repoRoot, env: GIT_ENV });
 
+    const result = await seedDataRepo({ configPath, repoRoot, env: GIT_ENV });
+
+    expect(result).toBe("already-seeded");
+  }, 20000);
+
+  it("makes no new commit when already seeded", async () => {
+    const dataRoot = await makeTempDir();
+    const configPath = await writeConfig(dataRoot);
+    const repoRoot = await makeCodeRepoFixture();
+
+    await seedDataRepo({ configPath, repoRoot, env: GIT_ENV });
+
     const before = (
       await git(dataRoot, "rev-list", "--count", "HEAD")
     ).stdout.trim();
 
-    const result = await seedDataRepo({ configPath, repoRoot, env: GIT_ENV });
+    await seedDataRepo({ configPath, repoRoot, env: GIT_ENV });
 
     const after = (
       await git(dataRoot, "rev-list", "--count", "HEAD")
     ).stdout.trim();
 
-    expect(result).toBe("already-seeded");
     expect(after).toBe(before);
   }, 20000);
 
@@ -266,6 +341,18 @@ describe("seedDataRepo", () => {
     });
 
     expect(result).toBe("seeded");
+  });
+
+  it("writes the README into the new data root", async () => {
+    const dir = await makeTempDir();
+    const dataRoot = join(dir, "nested", "data");
+
+    await seedDataRepo({
+      configPath: await writeConfig(dataRoot),
+      repoRoot: await makeCodeRepoFixture(),
+      env: GIT_ENV,
+    });
+
     expect(existsSync(join(dataRoot, "README.md"))).toBe(true);
   });
 
@@ -504,6 +591,14 @@ describe("data:init bin launcher", () => {
     const { out } = await importWithArgv(modulePath, ["--second-brain"]);
 
     expect(out).toBe(`data:init: seeded ${join(repo, "data")}`);
+  });
+
+  it("creates the marker file from the --second-brain flag", async () => {
+    const repo = await stageRepo();
+    const modulePath = join(repo, "bin", "init-data-repo.ts");
+
+    await importWithArgv(modulePath, ["--second-brain"]);
+
     expect(existsSync(join(repo, "data", ".second-brain"))).toBe(true);
   });
 });
