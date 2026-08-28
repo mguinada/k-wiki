@@ -1,7 +1,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createColors } from "picocolors";
+import { terminalColors as colors, errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { runGit } from "../data/git.ts";
 import { isPlainObject } from "../sync/config.ts";
@@ -35,12 +35,6 @@ export interface HealthReport {
 }
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-
-/** Colors at the render boundary: green = healthy, red = problems;
- *  NO_COLOR yields plain text. */
-function colors() {
-  return createColors(!process.env.NO_COLOR);
-}
 
 /**
  * The display path for an absolute path: repo-relative when it lies
@@ -182,9 +176,7 @@ async function loadVaultEntries(
     return parseManifest(manifestText, displayPath(manifestPath, rawDir))
       .vaults;
   } catch (cause) {
-    problems.push(
-      cause instanceof Error ? cause.message : String(cause),
-    );
+    problems.push(cause instanceof Error ? cause.message : String(cause));
 
     return {};
   }
@@ -456,11 +448,7 @@ export async function main(): Promise<void> {
   try {
     printReport(await checkRaw(rawDir), failOnStale);
   } catch (error) {
-    console.error(
-      colors().red(
-        `check-raw: ${error instanceof Error ? error.message : String(error)}`,
-      ),
-    );
+    console.error(colors().red(`check-raw: ${errorMessage(error)}`));
     process.exitCode = 1;
   }
 }

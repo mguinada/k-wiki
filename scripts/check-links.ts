@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
+import { terminalColors as colors, errorMessage } from "../src/cli/colors.ts";
 import { refuseDirectExecution } from "../src/cli/is-main.ts";
 import { listWikiPages } from "../src/wiki/pages.ts";
 import {
@@ -32,12 +33,6 @@ export interface LinkReport {
 }
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-
-/** Colors at the render boundary: green = ok, red = broken/error;
- *  NO_COLOR yields plain text. */
-function colors() {
-  return createColors(!process.env.NO_COLOR);
-}
 
 /**
  * Check every wikilink under `wikiDirInput`, reporting broken links
@@ -136,11 +131,7 @@ export async function main(): Promise<void> {
 
     process.exitCode = 1;
   } catch (error) {
-    console.error(
-      colors().red(
-        `check-links: ${error instanceof Error ? error.message : String(error)}`,
-      ),
-    );
+    console.error(colors().red(`check-links: ${errorMessage(error)}`));
     process.exitCode = 1;
   }
 }

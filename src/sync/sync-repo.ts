@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
+import { errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { runGit } from "../data/git.ts";
 import {
@@ -24,9 +25,9 @@ import {
   colorizeProgress,
   formatReport,
   listNamespaceDirs,
-  pruneNamespaces,
   type ProjectedNote,
   projectNotes,
+  pruneNamespaces,
   reportColors,
   toAbsolute,
 } from "./sync-vault.ts";
@@ -488,11 +489,7 @@ export async function main(): Promise<void> {
       ].join("\n"),
     );
   } catch (error) {
-    console.error(
-      colors.red(
-        `sync-repo: ${error instanceof Error ? error.message : String(error)}`,
-      ),
-    );
+    console.error(colors.red(`sync-repo: ${errorMessage(error)}`));
     process.exitCode = 1;
   }
 }

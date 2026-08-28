@@ -12,6 +12,11 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
+import {
+  canAnimate,
+  terminalColors as colors,
+  errorMessage,
+} from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import {
   createProgressRenderer,
@@ -140,10 +145,7 @@ async function readSourceNote(
 }
 
 /** Remove now-empty parent directories of a deleted projection. */
-async function pruneEmptyDirs(
-  dir: string,
-  stopAt: string,
-): Promise<void> {
+async function pruneEmptyDirs(dir: string, stopAt: string): Promise<void> {
   let current = dir;
 
   while (current.startsWith(stopAt) && current !== stopAt) {
@@ -630,11 +632,6 @@ export function formatDryRunReport(
   return lines.join("\n");
 }
 
-/** Colors on by default (piped included); NO_COLOR disables them. */
-function colors() {
-  return createColors(!process.env.NO_COLOR);
-}
-
 /** Color a progress line at the render boundary: WARNING severity
  *  renders yellow, the `noun`-labelled source name renders bold
  *  ("vault" for vault sync, "repo" for repo sync). */
@@ -737,7 +734,7 @@ export async function main(): Promise<void> {
   const dryRun = args.includes("--dry-run");
   const [configArg, rawArg] = args.filter((arg) => arg !== "--dry-run");
   const configPath = configArg ?? join(repoRoot, "sync.json");
-  const animated = process.stderr.isTTY === true && !process.env.NO_COLOR;
+  const animated = canAnimate(process.stderr.isTTY === true, process.env);
   const sink = createSyncProgressSink(
     (text) => process.stderr.write(text),
     (text) => console.error(text),
@@ -780,11 +777,7 @@ export async function main(): Promise<void> {
     console.log(formatReport({ ...report, elapsedMs }, colors));
   } catch (error) {
     sink.end();
-    console.error(
-      colorizeError(
-        `sync-vault: ${error instanceof Error ? error.message : String(error)}`,
-      ),
-    );
+    console.error(colorizeError(`sync-vault: ${errorMessage(error)}`));
     process.exitCode = 1;
   }
 }

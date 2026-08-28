@@ -3,8 +3,16 @@ import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createColors } from "picocolors";
-import { flagValueError, readFlagValues as sharedReadFlagValues } from "../cli/flag-args.ts";
+import {
+  canAnimate,
+  cliFail,
+  terminalColors as colors,
+  errorMessage,
+} from "../cli/colors.ts";
+import {
+  flagValueError,
+  readFlagValues as sharedReadFlagValues,
+} from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import {
   createProgressRenderer,
@@ -1875,7 +1883,7 @@ async function refreshDashboard(
     onProgress(`wiki-ingest: dashboard refreshed at ${dashboardPath}`);
   } catch (error) {
     onProgress(
-      `wiki-ingest: WARNING — dashboard refresh failed (${error instanceof Error ? error.message : String(error)}); the previous dashboard stays`,
+      `wiki-ingest: WARNING — dashboard refresh failed (${errorMessage(error)}); the previous dashboard stays`,
     );
   }
 }
@@ -2148,14 +2156,9 @@ exceeds the timeout still runs the guardrails, exits 1, and leaves
 the snapshot untouched, so the next run retries the same sources. Live progress
 goes to stderr; the digest goes to stdout. Scheduling is #14.`;
 
-function colors() {
-  return createColors(!process.env.NO_COLOR);
-}
-
 /** Print one CLI usage error red on stderr and set the exit code. */
 function fail(message: string): void {
-  console.error(colors().red(`wiki-ingest: ${message}`));
-  process.exitCode = 1;
+  cliFail("wiki-ingest", message);
 }
 
 /** A stderr progress surface: plain lines, or one animated line. */
@@ -2217,10 +2220,7 @@ function readFlagValues(args: readonly string[]): {
   values: Map<string, string | undefined>;
   consumed: Set<number>;
 } {
-  return sharedReadFlagValues(
-    ["--settings", "--outputs", "--timeout"],
-    args,
-  );
+  return sharedReadFlagValues(["--settings", "--outputs", "--timeout"], args);
 }
 
 /** Every `--sources <path>` pair's value (a missing final value
@@ -2307,11 +2307,7 @@ async function runCliIngest(parsed: {
     console.log(result.digest);
   } catch (error) {
     parsed.sink.end();
-    console.error(
-      colors().red(
-        `wiki-ingest: ${error instanceof Error ? error.message : String(error)}`,
-      ),
-    );
+    console.error(colors().red(`wiki-ingest: ${errorMessage(error)}`));
     process.exitCode = 1;
   }
 }
@@ -2353,7 +2349,7 @@ export async function main(): Promise<void> {
   const settingsPath =
     values.get("--settings") ?? join(repoRoot, "settings.yml");
 
-  const animated = process.stderr.isTTY === true && !process.env.NO_COLOR;
+  const animated = canAnimate(process.stderr.isTTY === true, process.env);
   const sink = createAgentProgressSink(
     (text) => process.stderr.write(text),
     (text) => console.error(text),

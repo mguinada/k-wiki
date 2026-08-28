@@ -180,9 +180,10 @@ function topCounts(
 
 /** Sort bars by count desc, then label asc — the deterministic order. */
 function sortedBars(counts: Map<string, number>): KpiBar[] {
-  return topCounts(counts, Number.POSITIVE_INFINITY).map(
-    ({ key, count }) => ({ label: key, count }),
-  );
+  return topCounts(counts, Number.POSITIVE_INFINITY).map(({ key, count }) => ({
+    label: key,
+    count,
+  }));
 }
 
 /** Count pages by a per-page label, as sorted bars. */

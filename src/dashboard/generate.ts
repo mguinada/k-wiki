@@ -4,7 +4,11 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { createColors } from "picocolors";
+import {
+  cliFail,
+  terminalColors as colors,
+  errorMessage,
+} from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { loadSyncConfig, resolveRawDir } from "../sync/config.ts";
 import { collectData } from "./collect.ts";
@@ -119,10 +123,6 @@ What it writes:
     every run (also refreshed automatically after every successful
     wiki-ingest run). Nothing else.`;
 
-function colors() {
-  return createColors(!process.env.NO_COLOR);
-}
-
 /** How to invoke the platform's default-app opener. */
 export interface OpenerSpec {
   readonly command: string;
@@ -171,9 +171,7 @@ function parseArgs(args: readonly string[]): {
 
 /** One red `dashboard: …` error line, plus exit code 1. */
 function fail(message: string): void {
-  console.error(colors().red(`dashboard: ${message}`));
-
-  process.exitCode = 1;
+  cliFail("dashboard", message);
 }
 
 /** Open the written dashboard; an opener failure prints an error and
@@ -182,9 +180,7 @@ async function openWrittenDashboard(path: string): Promise<void> {
   try {
     await openInBrowser(path);
   } catch (error) {
-    fail(
-      `wrote ${path} but could not open it: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    fail(`wrote ${path} but could not open it: ${errorMessage(error)}`);
   }
 }
 
@@ -228,7 +224,7 @@ export async function main(): Promise<void> {
       await openWrittenDashboard(path);
     }
   } catch (error) {
-    fail(error instanceof Error ? error.message : String(error));
+    fail(errorMessage(error));
   }
 }
 

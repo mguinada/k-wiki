@@ -1,4 +1,5 @@
 import { createColors } from "picocolors";
+import { terminalColors as colors, errorMessage } from "../src/cli/colors.ts";
 import { refuseDirectExecution } from "../src/cli/is-main.ts";
 import { checkCrossWikiLinks } from "../src/crosslinks.ts";
 
@@ -13,12 +14,6 @@ import { checkCrossWikiLinks } from "../src/crosslinks.ts";
  */
 
 export { checkCrossWikiLinks } from "../src/crosslinks.ts";
-
-/** Colors at the render boundary: green = ok, red = broken/error;
- *  NO_COLOR yields plain text. */
-function colors() {
-  return createColors(!process.env.NO_COLOR);
-}
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
 const HELP = `Usage: check-crosslinks [-h | --help] <wiki-dir> <domain-wiki-dir> [<domain-wiki-dir>...]
@@ -88,11 +83,7 @@ export async function main(): Promise<void> {
 
     process.exitCode = 1;
   } catch (error) {
-    console.error(
-      colors().red(
-        `check-crosslinks: ${error instanceof Error ? error.message : String(error)}`,
-      ),
-    );
+    console.error(colors().red(`check-crosslinks: ${errorMessage(error)}`));
     process.exitCode = 1;
   }
 }

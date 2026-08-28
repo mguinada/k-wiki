@@ -2,6 +2,7 @@ import { readFile, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
+import { terminalColors as colors, errorMessage } from "../src/cli/colors.ts";
 import { isIsoDate, readDateFlag } from "../src/cli/flag-args.ts";
 import { refuseDirectExecution } from "../src/cli/is-main.ts";
 import { assertCleanTree } from "../src/data/git.ts";
@@ -57,11 +58,6 @@ export interface BackfillOptions {
 }
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-
-/** Colors at the render boundary; NO_COLOR yields plain text. */
-function colors() {
-  return createColors(!process.env.NO_COLOR);
-}
 
 const STOPWORDS = new Set([
   "the",
@@ -390,11 +386,7 @@ export async function main(): Promise<void> {
       `backfill: ${report.backfilled.length} backfilled, ${report.needsJudgment.length} need judgment, ${report.untouched} already had origin${dry}`,
     );
   } catch (error) {
-    console.error(
-      colors().red(
-        `backfill-origin: ${error instanceof Error ? error.message : String(error)}`,
-      ),
-    );
+    console.error(colors().red(`backfill-origin: ${errorMessage(error)}`));
     process.exitCode = 1;
   }
 }

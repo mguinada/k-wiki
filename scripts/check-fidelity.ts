@@ -1,6 +1,7 @@
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
+import { terminalColors as colors } from "../src/cli/colors.ts";
 import { refuseDirectExecution } from "../src/cli/is-main.ts";
 import { checkWikiFidelity, summarizeFidelity } from "../src/wiki/fidelity.ts";
 import { printBackfillWarning, runChecker } from "./check-provenance.ts";
@@ -19,12 +20,6 @@ import { printBackfillWarning, runChecker } from "./check-provenance.ts";
  */
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-
-/** Colors at the render boundary: green = ok, yellow = warning, red =
- *  problem/error; NO_COLOR yields plain text. */
-function colors() {
-  return createColors(!process.env.NO_COLOR);
-}
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
 const HELP = `Usage: check-fidelity [-h | --help] [<wiki-dir> [<raw-dir>]]

@@ -1,6 +1,7 @@
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
+import { terminalColors as colors, errorMessage } from "../src/cli/colors.ts";
 import { refuseDirectExecution } from "../src/cli/is-main.ts";
 import {
   checkWikiProvenance,
@@ -18,12 +19,6 @@ import {
  */
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-
-/** Colors at the render boundary: green = ok, yellow = warning, red =
- *  problem/error; NO_COLOR yields plain text. */
-function colors() {
-  return createColors(!process.env.NO_COLOR);
-}
 
 /** The missing-origin warning (issue #92): a signal, not a gate — the
  *  exit code stays 0. Names the exact backfill commands with the paths
@@ -76,15 +71,15 @@ signal, not a gate; the exit code stays 0. NO_COLOR disables color.`;
  *  rendering are identical; the check, summary, and warning-count
  *  deltas parameterize it. Prints one red problem line each and
  *  exits 1; ok exits 0. */
-export async function runChecker<T extends { problems: readonly string[] }>(
-  options: {
-    readonly name: string;
-    readonly help: string;
-    readonly check: (wikiDir: string, rawDir: string) => Promise<T>;
-    readonly summarize: (report: T) => string;
-    readonly warnCount: (report: T) => number;
-  },
-): Promise<void> {
+export async function runChecker<
+  T extends { problems: readonly string[] },
+>(options: {
+  readonly name: string;
+  readonly help: string;
+  readonly check: (wikiDir: string, rawDir: string) => Promise<T>;
+  readonly summarize: (report: T) => string;
+  readonly warnCount: (report: T) => number;
+}): Promise<void> {
   const args = process.argv.slice(2);
 
   if (args.includes("-h") || args.includes("--help")) {
@@ -126,11 +121,7 @@ export async function runChecker<T extends { problems: readonly string[] }>(
 
     process.exitCode = 1;
   } catch (error) {
-    console.error(
-      colors().red(
-        `${options.name}: ${error instanceof Error ? error.message : String(error)}`,
-      ),
-    );
+    console.error(colors().red(`${options.name}: ${errorMessage(error)}`));
     process.exitCode = 1;
   }
 }

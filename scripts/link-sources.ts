@@ -2,8 +2,9 @@ import { readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
-import { refuseDirectExecution } from "../src/cli/is-main.ts";
+import { terminalColors as colors, errorMessage } from "../src/cli/colors.ts";
 import { isIsoDate, readDateFlag } from "../src/cli/flag-args.ts";
+import { refuseDirectExecution } from "../src/cli/is-main.ts";
 import { assertCleanTree } from "../src/data/git.ts";
 import {
   appendWikiLog,
@@ -72,11 +73,6 @@ export interface LinkOptions {
 }
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-
-/** Colors at the render boundary; NO_COLOR yields plain text. */
-function colors() {
-  return createColors(!process.env.NO_COLOR);
-}
 
 /** Rewrite every coverable path item of one page's `sources` list,
  *  in place, only inside the frontmatter block; body text, other
@@ -315,11 +311,7 @@ export async function main(): Promise<void> {
       `link-sources: ${report.rewrites.length} rewrite${report.rewrites.length === 1 ? "" : "s"}, ${report.skipped.length} skipped, ${report.alreadyLinked} already wikilinks${dry}`,
     );
   } catch (error) {
-    console.error(
-      colors().red(
-        `link-sources: ${error instanceof Error ? error.message : String(error)}`,
-      ),
-    );
+    console.error(colors().red(`link-sources: ${errorMessage(error)}`));
     process.exitCode = 1;
   }
 }

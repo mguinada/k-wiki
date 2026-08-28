@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { basename, join } from "node:path";
 import { createColors } from "picocolors";
+import { terminalColors as colors, errorMessage } from "../src/cli/colors.ts";
 import { refuseDirectExecution } from "../src/cli/is-main.ts";
 import { openerFor } from "../src/dashboard/generate.ts";
 import { loadSyncConfig } from "../src/sync/config.ts";
@@ -15,11 +16,6 @@ import { listWikiPages, readPageFields } from "../src/wiki/pages.ts";
  * written to wiki data, and the URI is never stored (machine-bound
  * derived data; `raw/` is the provenance anchor by contract).
  */
-
-/** Colors at the render boundary; NO_COLOR yields plain text. */
-function colors() {
-  return createColors(!process.env.NO_COLOR);
-}
 
 /** The vault and in-vault file path of an `origin` projection path;
  *  throws when the origin is not `notes/<vault>/<rest>`. */
@@ -192,11 +188,7 @@ export async function main(): Promise<void> {
       }).unref();
     }
   } catch (error) {
-    console.error(
-      colors().red(
-        `open-origin: ${error instanceof Error ? error.message : String(error)}`,
-      ),
-    );
+    console.error(colors().red(`open-origin: ${errorMessage(error)}`));
     process.exitCode = 1;
   }
 }

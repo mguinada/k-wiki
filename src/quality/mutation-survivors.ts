@@ -63,6 +63,27 @@ export function actionableLines(report: Report): string[] {
   return entries.map((e) => `${e.status}  ${e.file}:${e.line}  ${e.mutator}`);
 }
 
+/** Whether the parsed report root carries a `files` object. */
+function isFilesMap(value: unknown): value is { files: object } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "files" in value &&
+    typeof value.files === "object" &&
+    value.files !== null
+  );
+}
+
+/** Whether one `files` entry carries its `mutants` array. */
+function entryHasMutants(entry: unknown): boolean {
+  return (
+    typeof entry === "object" &&
+    entry !== null &&
+    "mutants" in entry &&
+    Array.isArray((entry as { mutants: unknown }).mutants)
+  );
+}
+
 /** Parse and shape-check a Stryker report: every `files` entry
  *  must carry a `mutants` array — a Stryker upgrade that drifts the
  *  shape gets a diagnosable error, not a raw TypeError from deep in
@@ -70,25 +91,12 @@ export function actionableLines(report: Report): string[] {
 export function parseReport(text: string): Report {
   const parsed: unknown = JSON.parse(text);
 
-  if (
-    typeof parsed !== "object" ||
-    parsed === null ||
-    !("files" in parsed) ||
-    typeof parsed.files !== "object" ||
-    parsed.files === null
-  ) {
+  if (!isFilesMap(parsed)) {
     throw new Error("mutation report has an unexpected shape (no files)");
   }
 
-  for (const entry of Object.values(
-    parsed.files as Record<string, unknown>,
-  )) {
-    if (
-      typeof entry !== "object" ||
-      entry === null ||
-      !("mutants" in entry) ||
-      !Array.isArray((entry as { mutants: unknown }).mutants)
-    ) {
+  for (const entry of Object.values(parsed.files)) {
+    if (!entryHasMutants(entry)) {
       throw new Error(
         "mutation report has an unexpected shape (a file entry lacks its mutants array)",
       );

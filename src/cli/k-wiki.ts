@@ -2,6 +2,7 @@ import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { errorMessage } from "../cli/colors.ts";
 import { checkRaw } from "../health/check-raw.ts";
 import { createAgentProgressSink } from "../ingest/wiki-ingest.ts";
 import {
@@ -17,6 +18,7 @@ import {
   resolveRawDir,
 } from "../sync/config.ts";
 import { listWikiPages, readPageFields } from "../wiki/pages.ts";
+import { cliFail } from "./colors.ts";
 import { timeoutArgError } from "./flag-args.ts";
 import { refuseDirectExecution } from "./is-main.ts";
 
@@ -340,8 +342,7 @@ If you are an AI agent, follow these instructions:
 
 /** Print one CLI usage error red on stderr and set the exit code. */
 function fail(message: string): void {
-  console.error(terminalColors(process.env).red(`k-wiki: ${message}`));
-  process.exitCode = 1;
+  cliFail("k-wiki", message);
 }
 
 /** Print the resolved binding: origin, checkout, paths (issue #76). */
@@ -549,11 +550,6 @@ interface CliArguments {
     "fail-on-stale"?: boolean;
   };
   readonly positionals: string[];
-}
-
-/** One uniform error message for any thrown value. */
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 /** Parse argv; undefined (already failed) when the syntax is invalid. */

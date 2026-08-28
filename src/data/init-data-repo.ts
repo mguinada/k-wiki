@@ -8,6 +8,7 @@ import {
 } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { loadSyncConfig } from "../sync/config.ts";
 import { runGit } from "./git.ts";
@@ -261,9 +262,7 @@ export async function main(): Promise<void> {
         : `data:init: ${config.dataRoot} already seeded`,
     );
   } catch (error) {
-    console.error(
-      `data:init: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    console.error(`data:init: ${errorMessage(error)}`);
 
     process.exitCode = 1;
   }
