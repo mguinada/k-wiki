@@ -9,7 +9,7 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { runGit } from "../src/data/git.ts";
 import { loadSyncConfig } from "../src/sync/config.ts";
 import { parseManifest } from "../src/sync/manifest.ts";
@@ -18,6 +18,7 @@ import {
   runRepoSync,
   selectRepoFiles,
 } from "../src/sync/sync-repo.ts";
+import { collectFiles } from "./e2e/helpers.ts";
 
 /**
  * sync-repo unit tests (issue #74): the repo-as-source adapter. A real
@@ -152,23 +153,8 @@ async function head(root: string): Promise<string> {
   return stdout.trim();
 }
 
-/** Every file below a directory, POSIX-style, sorted. */
-async function collectFiles(root: string, prefix = ""): Promise<string[]> {
-  const entries = await readdir(root, { withFileTypes: true });
-  const files: string[] = [];
-
-  for (const entry of entries) {
-    const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
-
-    if (entry.isDirectory()) {
-      files.push(...(await collectFiles(join(root, entry.name), rel)));
-    } else if (entry.isFile()) {
-      files.push(rel);
-    }
-  }
-
-  return files.sort();
-}
+/** Every file below a directory, POSIX-style, sorted — shared with
+ *  the e2e suite via tests/e2e/helpers.ts. */
 
 describe("compileAllowlistPattern", () => {
   it("matches an exact path pattern only at that path", () => {
@@ -570,6 +556,25 @@ describe("runRepoSync guardrails", () => {
     ).rejects.toThrow(/not a git repository|no commit/);
   });
 
+  it("rejects a source repository whose HEAD cannot be read", async () => {
+    const dir = await makeTempDir();
+    const commitless = join(dir, "commitless");
+
+    await mkdir(commitless, { recursive: true });
+    await runGit(commitless, ["init", "--quiet"], GIT_ENV);
+
+    const configPath = await writeConfig(dir, {
+      source: "repo",
+      name: NAME,
+      root: commitless,
+      include: ["README.md"],
+    });
+
+    await expect(
+      runRepoSync({ configPath, rawDir: join(dir, "raw"), env: GIT_ENV }),
+    ).rejects.toThrow(/cannot read HEAD of source repo/);
+  });
+
   it("rejects a source repository with an uncommitted working tree", async () => {
     const dir = await makeTempDir();
     const sourceRoot = await makeSourceRepo(dir);
@@ -766,6 +771,10 @@ describe("runRepoSync mixed-source configs", () => {
 });
 
 describe("sync-repo CLI main", () => {
+  afterEach(() => {
+    process.exitCode = undefined;
+  });
+
   interface Captured {
     out: string;
     err: string;
@@ -864,7 +873,6 @@ describe("sync-repo CLI main", () => {
     expect(result.err).toContain("sync-repo:");
     expect(result.err).toContain("sync-vault");
     expect(process.exitCode).toBe(1);
-    process.exitCode = undefined;
   });
 
   it("bolds the repo name of progress lines at the render boundary", async () => {
@@ -910,7 +918,7 @@ describe("selectRepoFiles error paths", () => {
 
     await expect(
       selectRepoFiles(root, ["docs/guide.md/**/*.md"]),
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({ code: "ENOTDIR" });
   });
 });
 
