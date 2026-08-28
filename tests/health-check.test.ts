@@ -520,6 +520,13 @@ describe("health CLI", () => {
     return { out: out.join("\n"), err: err.join("\n") };
   }
 
+  it("rejects an unknown option instead of treating it as the raw dir", async () => {
+    const { err } = await runHealth(["--bogus"]);
+
+    expect(err).toContain('check-raw: unknown option "--bogus"');
+    expect(process.exitCode).toBe(1);
+  });
+
   it("prints the usage line for --help", async () => {
     const { out } = await runHealth(["--help"]);
 
@@ -1115,5 +1122,21 @@ describe("checkRaw freshness edges (issue #74)", () => {
     const endings = [`${"a".repeat(39)}0`, `${"a".repeat(39)}1`];
 
     expect(endings.map((sha) => staleSha(sha) !== sha)).toEqual([true, true]);
+  });
+});
+
+describe("orphan scan ordering", () => {
+  it("lists orphans sorted by path regardless of directory read order", async () => {
+    const rawDir = await makeRawDir();
+
+    await projectNote(rawDir, "Documents", "zz-last.md", NOTE);
+    await projectNote(rawDir, "Documents", "aa-first.md", NOTE);
+    await projectNote(rawDir, "Documents", "mm-middle.md", NOTE);
+
+    expect((await checkRaw(rawDir)).problems).toEqual([
+      "notes/Documents/aa-first.md: orphan (no manifest entry)",
+      "notes/Documents/mm-middle.md: orphan (no manifest entry)",
+      "notes/Documents/zz-last.md: orphan (no manifest entry)",
+    ]);
   });
 });

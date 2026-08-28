@@ -8,6 +8,7 @@ import {
 } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { loadSyncConfig } from "../sync/config.ts";
 import { runGit } from "./git.ts";
@@ -125,13 +126,14 @@ export async function seedStandingIgnores(dataRoot: string): Promise<void> {
 }
 
 /** Copy the skeleton and commit it as the data repo's first commit. */
-async function seed(
-  dataRoot: string,
-  repoRoot: string,
-  env: NodeJS.ProcessEnv,
-  secondBrain: boolean,
-  meta: boolean,
-): Promise<void> {
+async function seed(options: {
+  readonly dataRoot: string;
+  readonly repoRoot: string;
+  readonly env: NodeJS.ProcessEnv;
+  readonly secondBrain: boolean;
+  readonly meta: boolean;
+}): Promise<void> {
+  const { dataRoot, repoRoot, env } = options;
   await mkdir(dataRoot, { recursive: true });
   await runGit(dataRoot, ["init", "--quiet"], env);
 
@@ -144,11 +146,11 @@ async function seed(
 
   await writeFile(join(dataRoot, "README.md"), DATA_README);
 
-  if (secondBrain) {
+  if (options.secondBrain) {
     await writeFile(join(dataRoot, ".second-brain"), "");
   }
 
-  if (meta) {
+  if (options.meta) {
     await copyFile(
       join(repoRoot, META_CONTRACT),
       join(dataRoot, "wiki", "AGENTS.md"),
@@ -191,13 +193,13 @@ export async function seedDataRepo(
     }
   }
 
-  await seed(
-    config.dataRoot,
+  await seed({
+    dataRoot: config.dataRoot,
     repoRoot,
     env,
-    options.secondBrain === true,
-    options.meta === true,
-  );
+    secondBrain: options.secondBrain === true,
+    meta: options.meta === true,
+  });
 
   return "seeded";
 }
@@ -260,9 +262,7 @@ export async function main(): Promise<void> {
         : `data:init: ${config.dataRoot} already seeded`,
     );
   } catch (error) {
-    console.error(
-      `data:init: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    console.error(`data:init: ${errorMessage(error)}`);
 
     process.exitCode = 1;
   }

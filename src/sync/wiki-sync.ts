@@ -2,8 +2,13 @@ import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createColors } from "picocolors";
-import { flagValueError } from "../cli/flag-args.ts";
+import {
+  canAnimate,
+  cliFail,
+  terminalColors as colors,
+  errorMessage,
+} from "../cli/colors.ts";
+import { flagValueError, readFlagValues } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { formatDuration } from "../cli/progress.ts";
 import { checkCrossWikiLinks } from "../crosslinks.ts";
@@ -995,14 +1000,9 @@ the commit hash, and the full ingest digest — plus git log -1 in the
 data repo tell the whole story of the run. Live progress goes to stderr.
 Scheduling is #14; publish/mirror is #15.`;
 
-function colors() {
-  return createColors(!process.env.NO_COLOR);
-}
-
 /** Print one CLI usage error red on stderr and set the exit code. */
 function fail(message: string): void {
-  console.error(colors().red(`wiki-sync: ${message}`));
-  process.exitCode = 1;
+  cliFail("wiki-sync", message);
 }
 
 /** The parsed command line: the flag values and positionals, or the
@@ -1016,18 +1016,10 @@ interface ParsedArgs {
 /** Pull the three value flags and the positionals out of argv,
  *  rejecting unknown options and more than two positionals. */
 function parseCliArgs(args: readonly string[]): ParsedArgs {
-  const values = new Map<string, string | undefined>();
-  const consumed = new Set<number>();
-
-  for (const flag of ["--settings", "--outputs", "--timeout"]) {
-    const index = args.indexOf(flag);
-
-    if (index !== -1) {
-      values.set(flag, args[index + 1]);
-      consumed.add(index);
-      consumed.add(index + 1);
-    }
-  }
+  const { values, consumed } = readFlagValues(
+    ["--settings", "--outputs", "--timeout"],
+    args,
+  );
 
   const positional: string[] = [];
 
@@ -1109,7 +1101,7 @@ export async function main(): Promise<void> {
     return;
   }
 
-  const animated = process.stderr.isTTY === true && !process.env.NO_COLOR;
+  const animated = canAnimate(process.stderr.isTTY === true, process.env);
   const sink = createAgentProgressSink(
     (text) => process.stderr.write(text),
     (text) => console.error(text),
@@ -1125,11 +1117,7 @@ export async function main(): Promise<void> {
     console.log(formatFinalDigest(result));
   } catch (error) {
     sink.end();
-    console.error(
-      colors().red(
-        `wiki-sync: ${error instanceof Error ? error.message : String(error)}`,
-      ),
-    );
+    console.error(colors().red(`wiki-sync: ${errorMessage(error)}`));
     process.exitCode = 1;
   }
 }

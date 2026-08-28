@@ -1,9 +1,6 @@
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { createColors } from "picocolors";
 import { refuseDirectExecution } from "../src/cli/is-main.ts";
 import { checkWikiFidelity, summarizeFidelity } from "../src/wiki/fidelity.ts";
-import { printBackfillWarning } from "./check-provenance.ts";
+import { runChecker } from "./check-provenance.ts";
 
 /**
  * Citation-fidelity checker CLI (issue #125): the deterministic tier of
@@ -17,14 +14,6 @@ import { printBackfillWarning } from "./check-provenance.ts";
  * when the wiki is faithful. Relational misquotes (right tokens, wrong
  * containment) stay with the lint prompt (tier 2) and §19 review.
  */
-
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-
-/** Colors at the render boundary: green = ok, yellow = warning, red =
- *  problem/error; NO_COLOR yields plain text. */
-function colors() {
-  return createColors(!process.env.NO_COLOR);
-}
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
 const HELP = `Usage: check-fidelity [-h | --help] [<wiki-dir> [<raw-dir>]]
@@ -54,53 +43,14 @@ dry run first — a signal, not a gate; the exit code stays 0. NO_COLOR
 disables color.`;
 
 /** check-fidelity entry point: `check-fidelity [-h | --help] [<wiki-dir> [<raw-dir>]]` (defaults: repo wiki/, sibling raw/). */
-export async function main(): Promise<void> {
-  const args = process.argv.slice(2);
-
-  if (args.includes("-h") || args.includes("--help")) {
-    console.log(HELP);
-
-    return;
-  }
-
-  if (args.length > 2) {
-    console.error(
-      colors().red("check-fidelity: expected at most two arguments"),
-    );
-    process.exitCode = 1;
-
-    return;
-  }
-
-  const wikiDir = args[0] ?? join(repoRoot, "wiki");
-  const rawDir = args[1] ?? join(dirname(wikiDir), "raw");
-
-  try {
-    const report = await checkWikiFidelity(wikiDir, rawDir);
-
-    if (report.problems.length === 0) {
-      console.log(colors().green(`ok: ${summarizeFidelity(report)}`));
-
-      if (report.skipped > 0) {
-        printBackfillWarning(report.skipped, wikiDir, rawDir);
-      }
-
-      return;
-    }
-
-    for (const line of report.problems) {
-      console.error(colors().red(line));
-    }
-
-    process.exitCode = 1;
-  } catch (error) {
-    console.error(
-      colors().red(
-        `check-fidelity: ${error instanceof Error ? error.message : String(error)}`,
-      ),
-    );
-    process.exitCode = 1;
-  }
+export function main(): Promise<void> {
+  return runChecker({
+    name: "check-fidelity",
+    help: HELP,
+    check: checkWikiFidelity,
+    summarize: summarizeFidelity,
+    warnCount: (report) => report.skipped,
+  });
 }
 
 /* v8 ignore next: covered only under direct `node scripts/check-fidelity.ts` runs */

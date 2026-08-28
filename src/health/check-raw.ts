@@ -1,7 +1,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createColors } from "picocolors";
+import { terminalColors as colors, errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { runGit } from "../data/git.ts";
 import { isPlainObject } from "../sync/config.ts";
@@ -11,6 +11,7 @@ import {
   readManifestText,
   type VaultNotes,
 } from "../sync/manifest.ts";
+import { listFiles } from "../wiki-links.ts";
 
 /**
  * raw/ health check: a read-only, vault-free coherence check of the
@@ -34,12 +35,6 @@ export interface HealthReport {
 }
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-
-/** Colors at the render boundary: green = healthy, red = problems;
- *  NO_COLOR yields plain text. */
-function colors() {
-  return createColors(!process.env.NO_COLOR);
-}
 
 /**
  * The display path for an absolute path: repo-relative when it lies
@@ -97,38 +92,14 @@ async function resolvesToDirectory(path: string): Promise<boolean> {
 async function scanNamespace(
   namespaceRoot: string,
 ): Promise<string[] | undefined> {
-  const files: string[] = [];
-
   try {
-    await walkFiles(namespaceRoot, "", files);
+    return (await listFiles(namespaceRoot)).sort();
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       return undefined;
     }
 
     throw error;
-  }
-
-  files.sort();
-
-  return files;
-}
-
-async function walkFiles(
-  dir: string,
-  prefix: string,
-  files: string[],
-): Promise<void> {
-  const entries = await readdir(dir, { withFileTypes: true });
-
-  for (const entry of entries) {
-    const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
-
-    if (entry.isDirectory()) {
-      await walkFiles(join(dir, entry.name), rel, files);
-    } else {
-      files.push(rel);
-    }
   }
 }
 
@@ -205,7 +176,7 @@ async function loadVaultEntries(
     return parseManifest(manifestText, displayPath(manifestPath, rawDir))
       .vaults;
   } catch (cause) {
-    problems.push((cause as Error).message);
+    problems.push(cause instanceof Error ? cause.message : String(cause));
 
     return {};
   }
@@ -461,16 +432,23 @@ export async function main(): Promise<void> {
 
   const failOnStale = args.includes("--fail-on-stale");
   const positional = args.filter((arg) => arg !== "--fail-on-stale");
+  const unknown = positional.find((arg) => arg.startsWith("-"));
+
+  if (unknown !== undefined) {
+    console.error(
+      colors().red(`check-raw: unknown option ${JSON.stringify(unknown)}`),
+    );
+    process.exitCode = 1;
+
+    return;
+  }
+
   const rawDir = positional[0] ?? join(repoRoot, "raw");
 
   try {
     printReport(await checkRaw(rawDir), failOnStale);
   } catch (error) {
-    console.error(
-      colors().red(
-        `check-raw: ${error instanceof Error ? error.message : String(error)}`,
-      ),
-    );
+    console.error(colors().red(`check-raw: ${errorMessage(error)}`));
     process.exitCode = 1;
   }
 }

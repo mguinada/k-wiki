@@ -1,10 +1,12 @@
 import { stat } from "node:fs/promises";
-import { join, relative, resolve } from "node:path";
+import { join, resolve } from "node:path";
+import { stem } from "../wiki-links.ts";
 import {
   buildPageIndex,
   isWikilinkEntry,
   listWikiPages,
   normalizeRawPath,
+  pageReportPath,
   readPageFields,
   wikilinkTarget,
 } from "./pages.ts";
@@ -12,7 +14,6 @@ import {
   isUnmigratableSelfCitation,
   loadSourceHubIndex,
   type SourceHubIndex,
-  stem,
   wikilinkFor,
 } from "./source-hubs.ts";
 
@@ -157,7 +158,7 @@ export async function checkWikiProvenance(
 
   for (const file of files) {
     const fields = await readPageFields(join(wikiDir, file));
-    const page = relative(resolve(wikiDir, ".."), join(wikiDir, file));
+    const page = pageReportPath(wikiDir, file);
 
     if (fields.type === "source" && fields.origin === undefined) {
       missingOrigins++;

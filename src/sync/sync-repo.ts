@@ -1,9 +1,9 @@
-import type { Stats } from "node:fs";
-import { mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
+import { errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { runGit } from "../data/git.ts";
 import {
@@ -21,11 +21,15 @@ import {
   writeManifest,
 } from "./manifest.ts";
 import {
+  assertSourceDirectory,
+  colorizeProgress,
   formatReport,
   listNamespaceDirs,
   type ProjectedNote,
   projectNotes,
+  pruneNamespaces,
   reportColors,
+  toAbsolute,
 } from "./sync-vault.ts";
 
 /**
@@ -202,7 +206,7 @@ export async function selectRepoFiles(
   for (const relPath of exactFiles) {
     candidates++;
 
-    if (await isFile(join(root, ...relPath.split("/")))) {
+    if (await isFile(toAbsolute(root, relPath))) {
       selected.add(relPath);
     }
   }
@@ -327,7 +331,7 @@ async function projectRepo(
   const selectedNotes: ProjectedNote[] = [];
 
   for (const relPath of selected) {
-    const bytes = await readFile(join(source.root, ...relPath.split("/")));
+    const bytes = await readFile(toAbsolute(source.root, relPath));
 
     selectedNotes.push({ relPath, bytes, hash: sha256(bytes) });
   }
@@ -354,26 +358,6 @@ async function projectRepo(
   };
 }
 
-/** Verify the source repo root is an accessible directory. */
-async function assertRepoDirectory(source: RepoSourceConfig): Promise<void> {
-  let info: Stats;
-
-  try {
-    info = await stat(source.root);
-  } catch (cause) {
-    throw new Error(
-      `source root for "${source.name}" is not accessible: ${source.root}`,
-      { cause },
-    );
-  }
-
-  if (!info.isDirectory()) {
-    throw new Error(
-      `source root for "${source.name}" is not a directory: ${source.root}`,
-    );
-  }
-}
-
 /** Run one repo projection pass and return the run report. */
 export async function runRepoSync(
   options: RepoSyncOptions,
@@ -387,7 +371,7 @@ export async function runRepoSync(
 
   const source = await theRepoSource(options.configPath, home);
 
-  await assertRepoDirectory(source);
+  await assertSourceDirectory("source", source.name, source.root);
 
   await assertCommittedTree(source.root, env);
 
@@ -406,15 +390,13 @@ export async function runRepoSync(
     ]),
   ].filter((name) => name !== source.name);
   const nextManifest: Manifest = { vaults: { ...manifest.vaults } };
-  const prunedNamespaces: string[] = [];
-
-  for (const name of staleNames) {
-    delete nextManifest.vaults[name];
-
-    await rm(join(notesRoot, name), { recursive: true, force: true });
-    onProgress(`repo "${name}": removed stale namespace (not configured)`);
-    prunedNamespaces.push(name);
-  }
+  const prunedNamespaces = await pruneNamespaces(
+    staleNames,
+    nextManifest,
+    notesRoot,
+    "repo",
+    onProgress,
+  );
 
   const { notes, report } = await projectRepo(
     source,
@@ -482,8 +464,7 @@ export async function main(): Promise<void> {
     const report = await runRepoSync({
       configPath,
       rawDir,
-      onProgress: (message) =>
-        console.error(colorizeProgressRepo(message, colors)),
+      onProgress: (message) => console.error(colorizeProgress(message, "repo")),
     });
 
     console.log(
@@ -508,29 +489,9 @@ export async function main(): Promise<void> {
       ].join("\n"),
     );
   } catch (error) {
-    console.error(
-      colors.red(
-        `sync-repo: ${error instanceof Error ? error.message : String(error)}`,
-      ),
-    );
+    console.error(colors.red(`sync-repo: ${errorMessage(error)}`));
     process.exitCode = 1;
   }
-}
-
-/** Bold the repo name of a progress message, mirroring
- *  sync-vault's colorizeProgress for vaults. */
-function colorizeProgressRepo(
-  message: string,
-  colors: ReturnType<typeof createColors>,
-): string {
-  const name = /^repo "([^"]*)":/.exec(message)?.[1];
-
-  return name === undefined
-    ? message
-    : message.replace(
-        `repo "${name}":`,
-        () => `repo ${colors.bold(`"${name}"`)}:`,
-      );
 }
 
 /* v8 ignore next: covered only under direct `node src/sync/sync-repo.ts` runs */

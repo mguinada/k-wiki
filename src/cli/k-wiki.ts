@@ -2,6 +2,7 @@ import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { errorMessage } from "../cli/colors.ts";
 import { checkRaw } from "../health/check-raw.ts";
 import { createAgentProgressSink } from "../ingest/wiki-ingest.ts";
 import {
@@ -17,6 +18,8 @@ import {
   resolveRawDir,
 } from "../sync/config.ts";
 import { listWikiPages, readPageFields } from "../wiki/pages.ts";
+import { cliFail } from "./colors.ts";
+import { timeoutArgError } from "./flag-args.ts";
 import { refuseDirectExecution } from "./is-main.ts";
 
 /**
@@ -36,7 +39,7 @@ export const BINDING_FILE = ".k-wiki.json";
 export const CHECKOUT_ENV = "K_WIKI_CHECKOUT";
 
 /** The wiki page types (guide §9), listed in index.md order (guide §11). */
-export const PAGE_TYPES = [
+const PAGE_TYPES = [
   "concept",
   "entity",
   "source",
@@ -46,6 +49,10 @@ export const PAGE_TYPES = [
 
 /** Navigation pages: listed by neither `list` nor typed, readable by name. */
 const NAV_PAGES = new Set(["index.md", "log.md", "overview.md"]);
+
+/** The type/command vocabularies widened to strings for membership
+ *  checks on runtime input (cast the receiver, never the argument). */
+const PAGE_TYPE_NAMES = PAGE_TYPES as readonly string[];
 
 /** Human phrase for each checkout resolution origin. */
 const ORIGIN_LABELS = {
@@ -58,6 +65,10 @@ const ORIGIN_LABELS = {
 /** The k-wiki command vocabulary (drift-guarded against the
  *  k-wiki skill by tests/k-wiki-skill.test.ts). */
 export const COMMANDS = ["query", "status", "list", "read", "health"] as const;
+
+/** COMMANDS widened to strings for membership checks on runtime
+ *  input (cast the receiver, never the argument). */
+const COMMAND_NAMES = COMMANDS as readonly string[];
 
 /** One parsed binding: exactly one wiki (issue #76's 1:1 rule). */
 export interface KWikiBinding {
@@ -89,16 +100,17 @@ function parseSettingsField(
   settings: unknown,
   source: string,
 ): string | undefined {
-  if (
-    settings !== undefined &&
-    (typeof settings !== "string" || settings.length === 0)
-  ) {
+  if (typeof settings === "string" && settings.length > 0) {
+    return settings;
+  }
+
+  if (settings !== undefined) {
     throw new Error(
       `invalid binding at ${source}: "settings" must be a non-empty string`,
     );
   }
 
-  return settings as string | undefined;
+  return undefined;
 }
 
 /**
@@ -330,8 +342,7 @@ If you are an AI agent, follow these instructions:
 
 /** Print one CLI usage error red on stderr and set the exit code. */
 function fail(message: string): void {
-  console.error(terminalColors(process.env).red(`k-wiki: ${message}`));
-  process.exitCode = 1;
+  cliFail("k-wiki", message);
 }
 
 /** Print the resolved binding: origin, checkout, paths (issue #76). */
@@ -427,7 +438,7 @@ function sectionOrder(groups: ReadonlyMap<string, ListedPage[]>) {
       header: PLURAL[type],
     })),
     ...[...groups.keys()]
-      .filter((key) => !PAGE_TYPES.includes(key as never) && key !== "untyped")
+      .filter((key) => !PAGE_TYPE_NAMES.includes(key) && key !== "untyped")
       .sort()
       .map((key) => ({ key, header: `${key}s` })),
     ...(groups.has("untyped") ? [{ key: "untyped", header: "untyped" }] : []),
@@ -455,7 +466,7 @@ async function runList(
   wikiDir: string,
   typeFilter: string | undefined,
 ): Promise<void> {
-  if (typeFilter !== undefined && !PAGE_TYPES.includes(typeFilter as never)) {
+  if (typeFilter !== undefined && !PAGE_TYPE_NAMES.includes(typeFilter)) {
     fail(
       `unknown type ${JSON.stringify(typeFilter)}; valid types: ${PAGE_TYPES.join("|")}`,
     );
@@ -541,11 +552,6 @@ interface CliArguments {
   readonly positionals: string[];
 }
 
-/** One uniform error message for any thrown value. */
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 /** Parse argv; undefined (already failed) when the syntax is invalid. */
 function parseCliArguments(args: string[]): CliArguments | undefined {
   try {
@@ -563,15 +569,6 @@ function parseCliArguments(args: string[]): CliArguments | undefined {
 
     return undefined;
   }
-}
-
-/** Usage error for an invalid --timeout, undefined when it is valid. */
-function timeoutErrorFor(timeout: string | undefined): string | undefined {
-  if (timeout !== undefined && !/^[1-9][0-9]*$/.test(timeout)) {
-    return "--timeout needs a positive integer number of seconds";
-  }
-
-  return undefined;
 }
 
 /** Usage error for k-wiki read's argument count, undefined when valid. */
@@ -631,7 +628,7 @@ function commandUsageError(
     return `a command is required: ${COMMANDS.map((c) => `k-wiki ${c}`).join(" | ")}`;
   }
 
-  if (!COMMANDS.includes(command as never)) {
+  if (!COMMAND_NAMES.includes(command)) {
     return `unknown command ${JSON.stringify(command)}; the commands are: ${COMMANDS.join(", ")}`;
   }
 
@@ -778,7 +775,9 @@ export async function main(cwd: string = process.cwd()): Promise<void> {
     return;
   }
 
-  const timeoutError = timeoutErrorFor(cli.values.timeout);
+  const timeout = cli.values.timeout;
+  const timeoutError =
+    timeout === undefined ? undefined : timeoutArgError(timeout);
 
   if (timeoutError !== undefined) {
     fail(timeoutError);

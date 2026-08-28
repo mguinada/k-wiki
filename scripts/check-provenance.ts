@@ -1,6 +1,6 @@
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createColors } from "picocolors";
+import { terminalColors as colors, errorMessage } from "../src/cli/colors.ts";
 import { refuseDirectExecution } from "../src/cli/is-main.ts";
 import {
   checkWikiProvenance,
@@ -18,12 +18,6 @@ import {
  */
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-
-/** Colors at the render boundary: green = ok, yellow = warning, red =
- *  problem/error; NO_COLOR yields plain text. */
-function colors() {
-  return createColors(!process.env.NO_COLOR);
-}
 
 /** The missing-origin warning (issue #92): a signal, not a gate — the
  *  exit code stays 0. Names the exact backfill commands with the paths
@@ -71,19 +65,31 @@ pages lack \`origin\`, a yellow warning block below the ok summary
 names the exact backfill-origin commands to run, dry run first — a
 signal, not a gate; the exit code stays 0. NO_COLOR disables color.`;
 
-/** check-provenance entry point: `check-provenance [-h | --help] [<wiki-dir> [<raw-dir>]]` (defaults: repo wiki/, sibling raw/). */
-export async function main(): Promise<void> {
+/** The shared checker-CLI shape (check-provenance, check-fidelity,
+ *  and any future checker): help, arity, wiki/raw defaults, and
+ *  rendering are identical; the check, summary, and warning-count
+ *  deltas parameterize it. Prints one red problem line each and
+ *  exits 1; ok exits 0. */
+export async function runChecker<
+  T extends { problems: readonly string[] },
+>(options: {
+  readonly name: string;
+  readonly help: string;
+  readonly check: (wikiDir: string, rawDir: string) => Promise<T>;
+  readonly summarize: (report: T) => string;
+  readonly warnCount: (report: T) => number;
+}): Promise<void> {
   const args = process.argv.slice(2);
 
   if (args.includes("-h") || args.includes("--help")) {
-    console.log(HELP);
+    console.log(options.help);
 
     return;
   }
 
   if (args.length > 2) {
     console.error(
-      colors().red("check-provenance: expected at most two arguments"),
+      colors().red(`${options.name}: expected at most two arguments`),
     );
     process.exitCode = 1;
 
@@ -94,13 +100,15 @@ export async function main(): Promise<void> {
   const rawDir = args[1] ?? join(dirname(wikiDir), "raw");
 
   try {
-    const report = await checkWikiProvenance(wikiDir, rawDir);
+    const report = await options.check(wikiDir, rawDir);
 
     if (report.problems.length === 0) {
-      console.log(colors().green(`ok: ${summarizeProvenance(report)}`));
+      console.log(colors().green(`ok: ${options.summarize(report)}`));
 
-      if (report.missingOrigins > 0) {
-        printBackfillWarning(report.missingOrigins, wikiDir, rawDir);
+      const warnCount = options.warnCount(report);
+
+      if (warnCount > 0) {
+        printBackfillWarning(warnCount, wikiDir, rawDir);
       }
 
       return;
@@ -112,13 +120,20 @@ export async function main(): Promise<void> {
 
     process.exitCode = 1;
   } catch (error) {
-    console.error(
-      colors().red(
-        `check-provenance: ${error instanceof Error ? error.message : String(error)}`,
-      ),
-    );
+    console.error(colors().red(`${options.name}: ${errorMessage(error)}`));
     process.exitCode = 1;
   }
+}
+
+/** check-provenance entry point: `check-provenance [-h | --help] [<wiki-dir> [<raw-dir>]]` (defaults: repo wiki/, sibling raw/). */
+export function main(): Promise<void> {
+  return runChecker({
+    name: "check-provenance",
+    help: HELP,
+    check: checkWikiProvenance,
+    summarize: summarizeProvenance,
+    warnCount: (report) => report.missingOrigins,
+  });
 }
 
 /* v8 ignore next: covered only under direct `node scripts/check-provenance.ts` runs */

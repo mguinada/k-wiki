@@ -12,6 +12,11 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
+import {
+  canAnimate,
+  terminalColors as colors,
+  errorMessage,
+} from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import {
   createProgressRenderer,
@@ -93,26 +98,33 @@ export interface ProjectedNote {
   readonly hash: string;
 }
 
-async function assertDirectory(vault: VaultSourceConfig): Promise<void> {
+/** Verify a configured source root (vault or repo) is an accessible
+ *  directory; `kind` names it in the error. */
+export async function assertSourceDirectory(
+  kind: string,
+  name: string,
+  root: string,
+): Promise<void> {
   let info: Stats;
 
   try {
-    info = await stat(vault.root);
+    info = await stat(root);
   } catch (cause) {
-    throw new Error(
-      `vault root for "${vault.name}" is not accessible: ${vault.root}`,
-      { cause },
-    );
+    throw new Error(`${kind} root for "${name}" is not accessible: ${root}`, {
+      cause,
+    });
   }
 
   if (!info.isDirectory()) {
-    throw new Error(
-      `vault root for "${vault.name}" is not a directory: ${vault.root}`,
-    );
+    throw new Error(`${kind} root for "${name}" is not a directory: ${root}`);
   }
 }
 
-function toAbsolute(root: string, relPath: string): string {
+async function assertDirectory(vault: VaultSourceConfig): Promise<void> {
+  await assertSourceDirectory("vault", vault.name, vault.root);
+}
+
+export function toAbsolute(root: string, relPath: string): string {
   return join(root, ...relPath.split("/"));
 }
 
@@ -133,10 +145,7 @@ async function readSourceNote(
 }
 
 /** Remove now-empty parent directories of a deleted projection. */
-export async function pruneEmptyDirs(
-  dir: string,
-  stopAt: string,
-): Promise<void> {
+async function pruneEmptyDirs(dir: string, stopAt: string): Promise<void> {
   let current = dir;
 
   while (current.startsWith(stopAt) && current !== stopAt) {
@@ -184,7 +193,7 @@ export const PROGRESS_EVERY = 500;
 /** Wrong-pairing guard (issue #74): sync-vault syncs vault sources
  *  only; a repo source in the config fails loudly, pointing at
  *  sync-repo, instead of silently skipping or mis-projecting it. */
-export function vaultSourcesOnly(
+function vaultSourcesOnly(
   sources: readonly SourceConfig[],
 ): readonly VaultSourceConfig[] {
   const vaults: VaultSourceConfig[] = [];
@@ -377,25 +386,25 @@ export interface VaultDryRunReport {
   readonly wouldIngest: readonly string[];
 }
 
-/** Remove namespaces that left the config — unless the vault list is
- *  empty: an empty list is a misconfigured run (truncated sync.json),
- *  never "prune everything". */
-async function pruneStaleNamespaces(
+/** Remove stale namespaces from the manifest and disk, reporting
+ *  each. The caller owns the staleness computation and the
+ *  empty-config safety (a misconfigured empty list must compute no
+ *  stale names, never "everything"). Shared by the vault and repo
+ *  adapters. */
+export async function pruneNamespaces(
   staleNames: readonly string[],
-  vaults: readonly VaultSourceConfig[],
   nextManifest: Manifest,
   notesRoot: string,
+  noun: "vault" | "repo",
   onProgress: (message: string) => void,
 ): Promise<string[]> {
   const prunedNamespaces: string[] = [];
 
-  if (vaults.length > 0) {
-    for (const name of staleNames) {
-      delete nextManifest.vaults[name];
-      await rm(join(notesRoot, name), { recursive: true, force: true });
-      onProgress(`vault "${name}": removed stale namespace (not configured)`);
-      prunedNamespaces.push(name);
-    }
+  for (const name of staleNames) {
+    delete nextManifest.vaults[name];
+    await rm(join(notesRoot, name), { recursive: true, force: true });
+    onProgress(`${noun} "${name}": removed stale namespace (not configured)`);
+    prunedNamespaces.push(name);
   }
 
   return prunedNamespaces;
@@ -421,17 +430,20 @@ export async function runSync(options: SyncOptions): Promise<SyncReport> {
   const nextManifest: Manifest = { vaults: { ...manifest.vaults } };
   const notesRoot = join(options.rawDir, "notes");
   const configuredNames = new Set(vaults.map((vault) => vault.name));
-  const staleNames = [
-    ...new Set([
-      ...Object.keys(manifest.vaults),
-      ...(await listNamespaceDirs(notesRoot)),
-    ]),
-  ].filter((name) => !configuredNames.has(name));
-  const prunedNamespaces = await pruneStaleNamespaces(
+  const staleNames =
+    vaults.length > 0
+      ? [
+          ...new Set([
+            ...Object.keys(manifest.vaults),
+            ...(await listNamespaceDirs(notesRoot)),
+          ]),
+        ].filter((name) => !configuredNames.has(name))
+      : [];
+  const prunedNamespaces = await pruneNamespaces(
     staleNames,
-    vaults,
     nextManifest,
     notesRoot,
+    "vault",
     onProgress,
   );
 
@@ -620,27 +632,23 @@ export function formatDryRunReport(
   return lines.join("\n");
 }
 
-/** Colors on by default (piped included); NO_COLOR disables them. */
-function colors() {
-  return createColors(!process.env.NO_COLOR);
-}
-
 /** Color a progress line at the render boundary: WARNING severity
- *  renders yellow, vault names render bold. */
-export function colorizeProgress(message: string): string {
+ *  renders yellow, the `noun`-labelled source name renders bold
+ *  ("vault" for vault sync, "repo" for repo sync). */
+export function colorizeProgress(message: string, noun = "vault"): string {
   if (isWarning(message)) {
     return colors().yellow(message);
   }
 
-  const name = /^vault "([^"]*)":/.exec(message)?.[1];
+  const name = new RegExp(`^${noun} "([^"]*)":`).exec(message)?.[1];
 
   if (name === undefined) {
     return message;
   }
 
   return message.replace(
-    `vault "${name}":`,
-    () => `vault ${colors().bold(`"${name}"`)}:`,
+    `${noun} "${name}":`,
+    () => `${noun} ${colors().bold(`"${name}"`)}:`,
   );
 }
 
@@ -673,7 +681,7 @@ place; piped, redirected, CI, or NO_COLOR runs get plain appended
 lines instead (read heartbeat every 500 files by default).`;
 
 /** Live status patterns: the read heartbeat and the scan-walk heartbeat. */
-export const LIVE_PROGRESS =
+const LIVE_PROGRESS =
   /^[^:]+: (\d+\/\d+ read, \d+ selected|scanning \([^)]* dirs\))$/;
 
 /** A stderr progress surface: plain lines, or one animated line. */
@@ -726,7 +734,7 @@ export async function main(): Promise<void> {
   const dryRun = args.includes("--dry-run");
   const [configArg, rawArg] = args.filter((arg) => arg !== "--dry-run");
   const configPath = configArg ?? join(repoRoot, "sync.json");
-  const animated = process.stderr.isTTY === true && !process.env.NO_COLOR;
+  const animated = canAnimate(process.stderr.isTTY === true, process.env);
   const sink = createSyncProgressSink(
     (text) => process.stderr.write(text),
     (text) => console.error(text),
@@ -769,11 +777,7 @@ export async function main(): Promise<void> {
     console.log(formatReport({ ...report, elapsedMs }, colors));
   } catch (error) {
     sink.end();
-    console.error(
-      colorizeError(
-        `sync-vault: ${error instanceof Error ? error.message : String(error)}`,
-      ),
-    );
+    console.error(colorizeError(`sync-vault: ${errorMessage(error)}`));
     process.exitCode = 1;
   }
 }

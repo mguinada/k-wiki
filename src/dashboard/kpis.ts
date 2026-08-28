@@ -163,35 +163,53 @@ export function backlogFrom(
 // computeKpis: the page-name index reuses buildPageIndex, so link
 // resolution matches check-links exactly.
 
+/** Sort (key, count) entries by count desc, then key asc — the
+ *  deterministic order — keeping the top N. */
+function topCounts(
+  counts: ReadonlyMap<string, number>,
+  topN: number,
+): { key: string; count: number }[] {
+  return [...counts.entries()]
+    .map(([key, count]) => ({ key, count }))
+    .sort(
+      (a, b) =>
+        b.count - a.count || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0),
+    )
+    .slice(0, topN);
+}
+
 /** Sort bars by count desc, then label asc — the deterministic order. */
 function sortedBars(counts: Map<string, number>): KpiBar[] {
-  return [...counts.entries()]
-    .map(([label, count]) => ({ label, count }))
-    .sort((a, b) => b.count - a.count || (a.label < b.label ? -1 : 1));
+  return topCounts(counts, Number.POSITIVE_INFINITY).map(({ key, count }) => ({
+    label: key,
+    count,
+  }));
 }
 
-/** Count pages per frontmatter `type`. */
-export function typeCounts(pages: readonly PageSnapshot[]): KpiBar[] {
+/** Count pages by a per-page label, as sorted bars. */
+function countPagesBy(
+  pages: readonly PageSnapshot[],
+  labelOf: (page: PageSnapshot) => string,
+): KpiBar[] {
   const counts = new Map<string, number>();
 
   for (const page of pages) {
-    counts.set(page.type, (counts.get(page.type) ?? 0) + 1);
-  }
-
-  return sortedBars(counts);
-}
-
-/** Count pages per frontmatter `status`; null becomes `unset`. */
-export function statusCounts(pages: readonly PageSnapshot[]): KpiBar[] {
-  const counts = new Map<string, number>();
-
-  for (const page of pages) {
-    const label = page.status ?? "unset";
+    const label = labelOf(page);
 
     counts.set(label, (counts.get(label) ?? 0) + 1);
   }
 
   return sortedBars(counts);
+}
+
+/** Count pages per frontmatter `type`. */
+export function typeCounts(pages: readonly PageSnapshot[]): KpiBar[] {
+  return countPagesBy(pages, (page) => page.type);
+}
+
+/** Count pages per frontmatter `status`; null becomes `unset`. */
+export function statusCounts(pages: readonly PageSnapshot[]): KpiBar[] {
+  return countPagesBy(pages, (page) => page.status ?? "unset");
 }
 
 /** The Monday of the week containing `date`, `YYYY-MM-DD`. */
@@ -222,20 +240,6 @@ function trailingWeeks(now: Date, weeks: number): string[] {
 /** A commit is an ingest run when its subject says so. */
 function isIngestRun(subject: string): boolean {
   return /^(wiki-sync|wiki-ingest)\b/.test(subject);
-}
-
-/** Count entries sorted by count desc, then key asc, top N kept. */
-function topCounts(
-  counts: ReadonlyMap<string, number>,
-  topN: number,
-): { key: string; count: number }[] {
-  return [...counts.entries()]
-    .map(([key, count]) => ({ key, count }))
-    .sort(
-      (a, b) =>
-        b.count - a.count || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0),
-    )
-    .slice(0, topN);
 }
 
 /** Commit facts per week, oldest first over the trailing weeks; only
@@ -393,6 +397,23 @@ export function mostCitedSources(
   }));
 }
 
+/** The dead-link targets most wanted: how many links point at each
+ *  missing page. */
+function missingPages(
+  deadLinks: readonly { source: string; target: string }[],
+): { target: string; wantedBy: number }[] {
+  const counts = new Map<string, number>();
+
+  for (const link of deadLinks) {
+    counts.set(link.target, (counts.get(link.target) ?? 0) + 1);
+  }
+
+  return topCounts(counts, 5).map(({ key, count }) => ({
+    target: key,
+    wantedBy: count,
+  }));
+}
+
 /** Mean days between ingest runs; null without at least two. */
 export function ingestCadence(commits: readonly CommitFact[]): number | null {
   const dates = commits
@@ -525,18 +546,7 @@ export function computeKpis(input: DashboardInput): DashboardKpis {
       )
       .slice(0, 5),
     statusCounts: statusCounts(input.pages),
-    missingPages: (() => {
-      const counts = new Map<string, number>();
-
-      for (const link of deadLinks) {
-        counts.set(link.target, (counts.get(link.target) ?? 0) + 1);
-      }
-
-      return topCounts(counts, 5).map(({ key, count }) => ({
-        target: key,
-        wantedBy: count,
-      }));
-    })(),
+    missingPages: missingPages(deadLinks),
     sourceRot: sourceRotBuckets(input.rawNoteSyncDates, input.now),
     mostCited: mostCitedSources(input.pages),
     cadenceDays: ingestCadence(input.commits),

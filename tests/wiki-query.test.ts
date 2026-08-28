@@ -772,7 +772,7 @@ console.log("Prefer RAG when the knowledge base changes often. See [[retrieval-a
     const h = await makeCliHarness();
     const { err } = await runCli([...queryArgs(h), "--bogus"]);
 
-    expect(err).toContain("unknown option");
+    expect(err).toContain("wiki-query: unknown option");
     expect(process.exitCode).toBe(1);
   });
 

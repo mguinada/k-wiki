@@ -1,10 +1,12 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createColors } from "picocolors";
+import { terminalColors as colors, errorMessage } from "../src/cli/colors.ts";
+import { isIsoDate, readDateFlag } from "../src/cli/flag-args.ts";
 import { refuseDirectExecution } from "../src/cli/is-main.ts";
 import { assertCleanTree } from "../src/data/git.ts";
 import {
+  appendWikiLog,
   closingFence,
   isWikilinkEntry,
   listWikiPages,
@@ -13,9 +15,9 @@ import {
 import {
   isUnmigratableSelfCitation,
   loadSourceHubIndex,
-  stem,
   wikilinkFor,
 } from "../src/wiki/source-hubs.ts";
+import { stem } from "../src/wiki-links.ts";
 
 /**
  * One-shot `sources` wikilink migration (issue #126, Part A): every
@@ -70,11 +72,6 @@ export interface LinkOptions {
 }
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-
-/** Colors at the render boundary; NO_COLOR yields plain text. */
-function colors() {
-  return createColors(!process.env.NO_COLOR);
-}
 
 /** Rewrite every coverable path item of one page's `sources` list,
  *  in place, only inside the frontmatter block; body text, other
@@ -161,12 +158,11 @@ async function appendLogEntry(
   try {
     prior = await readFile(logPath, "utf8");
   } catch {
-    prior = "# Wiki Log\n";
+    prior = "";
   }
 
   const pages = new Set(rewrites.map((rewrite) => rewrite.page)).size;
   const entry = [
-    "",
     `## [${date}] sources-wikilink-migration | ${pages} page${pages === 1 ? "" : "s"}`,
     "",
     ...rewrites.map(
@@ -175,10 +171,7 @@ async function appendLogEntry(
     ),
   ].join("\n");
 
-  await writeFile(
-    logPath,
-    `${prior}${prior.endsWith("\n") ? "" : "\n"}${entry}\n`,
-  );
+  await writeFile(logPath, appendWikiLog(prior, entry));
 }
 
 /**
@@ -266,14 +259,7 @@ export async function main(): Promise<void> {
   }
 
   const write = args.includes("--write");
-  const dateIndex = args.indexOf("--date");
-  const date =
-    dateIndex === -1
-      ? new Date().toISOString().slice(0, 10)
-      : args[dateIndex + 1];
-  const consumed = new Set<number>(
-    dateIndex === -1 ? [] : [dateIndex, dateIndex + 1],
-  );
+  const { date, consumed } = readDateFlag(args);
   const positional: string[] = [];
 
   for (const [index, arg] of args.entries()) {
@@ -287,8 +273,7 @@ export async function main(): Promise<void> {
   if (
     positional.length > 1 ||
     (positional.length > 0 && positional[0]?.startsWith("--")) ||
-    date === undefined ||
-    !/^\d{4}-\d{2}-\d{2}$/.test(date)
+    !isIsoDate(date)
   ) {
     console.error(colors().red("link-sources: bad arguments (see --help)"));
     process.exitCode = 1;
@@ -325,11 +310,7 @@ export async function main(): Promise<void> {
       `link-sources: ${report.rewrites.length} rewrite${report.rewrites.length === 1 ? "" : "s"}, ${report.skipped.length} skipped, ${report.alreadyLinked} already wikilinks${dry}`,
     );
   } catch (error) {
-    console.error(
-      colors().red(
-        `link-sources: ${error instanceof Error ? error.message : String(error)}`,
-      ),
-    );
+    console.error(colors().red(`link-sources: ${errorMessage(error)}`));
     process.exitCode = 1;
   }
 }

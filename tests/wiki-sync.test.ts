@@ -1405,7 +1405,7 @@ describe("wiki-sync CLI", () => {
     const h = await makeCliHarness();
     const { err } = await runCli([...cycleArgs(h), "--nope"]);
 
-    expect(err).toContain('unknown option "--nope"');
+    expect(err).toContain('wiki-sync: unknown option "--nope"');
     expect(process.exitCode).toBe(1);
   });
 

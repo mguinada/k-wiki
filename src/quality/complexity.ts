@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createColors } from "picocolors";
+import { terminalColors as colors } from "../cli/colors.ts";
 import { type FileDiff, mergeRanges } from "./mutation-scope.ts";
 
 // Cyclomatic complexity gate (issue #178): pure library, no main() and
@@ -177,12 +177,6 @@ export function gateChanged(
   }
 
   return { violations, warnings, filesChecked, functionsGated };
-}
-
-/** Colors at the render boundary: red = violations, yellow = warnings,
- *  green = clean, dim = summary; NO_COLOR yields plain text. */
-function colors() {
-  return createColors(!process.env.NO_COLOR);
 }
 
 const REFACTOR_ADVICE =

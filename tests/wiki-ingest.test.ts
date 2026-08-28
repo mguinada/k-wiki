@@ -4380,7 +4380,7 @@ console.log("stub report");
     const h = await makeCliHarness();
     const { err } = await runCli([...cliArgs(h), "--bogus"]);
 
-    expect(err).toContain("unknown option");
+    expect(err).toContain("wiki-ingest: unknown option");
     expect(process.exitCode).toBe(1);
   });
 
@@ -4915,5 +4915,88 @@ describe("wikiPages vanished untracked detection", () => {
     const pages = await wikiPages(dataRoot, process.env, "wiki", pre);
 
     expect(pages.deleted).toEqual(["wiki/a.md", "wiki/z.md"]);
+  });
+});
+
+describe("gitignore guard progress", () => {
+  it("reports each ignore entry the run appended", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const messages: string[] = [];
+    const options = {
+      ...optionsFor(h),
+      onProgress: (m: string) => messages.push(m),
+    };
+
+    await runWikiIngest(options);
+
+    expect(
+      messages.some((m) =>
+        m.includes("ignoring outputs/last-ingested-manifest.json"),
+      ),
+    ).toBe(true);
+    expect(messages.some((m) => m.includes("ignoring dashboard.html"))).toBe(
+      true,
+    );
+  });
+
+  it("stays silent about entries a previous run already appended", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    await runWikiIngest(optionsFor(h));
+
+    const messages: string[] = [];
+    const options = {
+      ...optionsFor(h),
+      onProgress: (m: string) => messages.push(m),
+    };
+
+    await runWikiIngest(options);
+
+    expect(messages.some((m) => m.includes("ignoring dashboard.html"))).toBe(
+      false,
+    );
+  });
+});
+
+describe("pairBodyIdenticalRenames multibyte bodies", () => {
+  it("pairs a moved note whose multibyte body is byte-identical under utf8", async () => {
+    const oldNote = "---\ntitle: A\n---\n\nCafé — 中身 body.\n";
+    const newNote = "---\ntitle: B\n---\n\nCafé — 中身 body.\n";
+    const diffOf = (
+      before: Record<string, string>,
+      after: Record<string, string>,
+    ) =>
+      diffManifests(
+        {
+          vaults: {
+            Engineering: Object.fromEntries(
+              Object.entries(before).map(([path, content]) => [
+                path,
+                entry(content),
+              ]),
+            ),
+          },
+        },
+        {
+          vaults: {
+            Engineering: Object.fromEntries(
+              Object.entries(after).map(([path, content]) => [
+                path,
+                entry(content),
+              ]),
+            ),
+          },
+        },
+      );
+
+    const diff = await pairBodyIdenticalRenames(
+      diffOf({ "old.md": oldNote }, { "new.md": newNote }),
+      (_vault: string, path: string) =>
+        path === "old.md" ? oldNote : undefined,
+      (_vault: string, path: string) =>
+        path === "new.md" ? newNote : undefined,
+    );
+
+    expect(diff.vaults[0]?.renamed).toEqual([{ from: "old.md", to: "new.md" }]);
   });
 });

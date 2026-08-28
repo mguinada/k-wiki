@@ -327,15 +327,7 @@ export async function capturePreRunState(
     );
   }
 
-  const status = parseStatus(
-    (
-      await runGit(
-        dataRoot,
-        ["-c", "core.quotePath=false", "status", "--porcelain", "-uall"],
-        env,
-      )
-    ).stdout,
-  );
+  const status = await porcelainStatus(dataRoot, env);
   const contents = new Map<string, Buffer | null>();
   const hashes = new Map<string, string>();
 
@@ -375,8 +367,7 @@ async function changedWikiPages(
 
     const isDirty =
       !isPreExisting(before.get(entry.path), entry) ||
-      (await hashPath(join(dataRoot, entry.path))) !==
-        pre.hashes.get(entry.path);
+      !(await hashMatches(dataRoot, entry.path, pre.hashes.get(entry.path)));
 
     if (isDirty) {
       changed.push(entry.path);
@@ -384,6 +375,16 @@ async function changedWikiPages(
   }
 
   return changed;
+}
+
+/** Whether the file's current content hash still equals the
+ *  pre-run snapshot value. */
+async function hashMatches(
+  dataRoot: string,
+  path: string,
+  expected: string | undefined,
+): Promise<boolean> {
+  return (await hashPath(join(dataRoot, path))) === expected;
 }
 
 /** Read each changed wiki page; checks 2 and 3 share the texts. */
@@ -489,10 +490,7 @@ const EMPTY_HUBS: SourceHubIndex = {
  * rule (second brains cite repo-as-source code files that have no
  * hub, and those stay legal).
  */
-export function checkSourcesEntries(
-  text: string,
-  hubs: SourceHubIndex,
-): string[] {
+function checkSourcesEntries(text: string, hubs: SourceHubIndex): string[] {
   const fields = parsePageFields(text);
 
   if (fields.type === "source") {
@@ -560,6 +558,16 @@ function outsidePaths(entry: StatusEntry): string[] {
   return outside;
 }
 
+/** The rename origins of a status snapshot: the set of `origin`
+ *  paths pre-run renames recorded. Exported as a direct test seam. */
+export function renameOriginsOf(status: readonly StatusEntry[]): Set<string> {
+  return new Set(
+    status.flatMap((entry) =>
+      entry.origin === undefined ? [] : [entry.origin],
+    ),
+  );
+}
+
 /**
  * Guardrail 1: no path outside the whitelist changed by status code
  * or by content, and HEAD did not move. Compares the post-run status
@@ -573,11 +581,7 @@ async function checkImmutability(
 ): Promise<GuardrailFailure | undefined> {
   const before = statusIndex(pre.status);
   const problems = new Set<string>();
-  const preRunOrigins = new Set(
-    pre.status.flatMap((entry) =>
-      entry.origin === undefined ? [] : [entry.origin],
-    ),
-  );
+  const preRunOrigins = renameOriginsOf(pre.status);
 
   for (const entry of entries) {
     for (const outside of outsidePaths(entry)) {
@@ -593,7 +597,7 @@ async function checkImmutability(
   }
 
   for (const [path, was] of pre.hashes) {
-    if (!isAllowed(path) && (await hashPath(join(dataRoot, path))) !== was) {
+    if (!isAllowed(path) && !(await hashMatches(dataRoot, path, was))) {
       problems.add(`${path} changed by the run`);
     }
   }
@@ -948,8 +952,7 @@ async function changedRenameOrigins(
 
     const untouched =
       preRunOrigins.has(entry.origin) &&
-      (await hashPath(join(dataRoot, entry.origin))) ===
-        hashes.get(entry.origin);
+      (await hashMatches(dataRoot, entry.origin, hashes.get(entry.origin)));
 
     if (!untouched) {
       changed.push(entry.origin);
@@ -979,7 +982,7 @@ async function changedStatusPaths(
 
     const untouched =
       isPreExisting(before.get(entry.path), entry) &&
-      (await hashPath(join(dataRoot, entry.path))) === hashes.get(entry.path);
+      (await hashMatches(dataRoot, entry.path, hashes.get(entry.path)));
 
     if (!untouched) {
       changed.push(entry.path);
@@ -1000,10 +1003,7 @@ async function vanishedPreRunPaths(
   const changed: string[] = [];
 
   for (const path of hashes.keys()) {
-    if (
-      under(path) &&
-      (await hashPath(join(dataRoot, path))) !== hashes.get(path)
-    ) {
+    if (under(path) && !(await hashMatches(dataRoot, path, hashes.get(path)))) {
       changed.push(path);
     }
   }
@@ -1039,11 +1039,7 @@ export async function statusSince(
 }> {
   const entries = await porcelainStatus(dataRoot, env);
   const before = statusIndex(pre.status);
-  const preRunOrigins = new Set(
-    pre.status.flatMap((entry) =>
-      entry.origin === undefined ? [] : [entry.origin],
-    ),
-  );
+  const preRunOrigins = renameOriginsOf(pre.status);
   const under = (path: string): boolean => path.startsWith(`${prefix}/`);
   const changed = [
     ...(await changedRenameOrigins(

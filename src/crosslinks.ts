@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { parseManifest, readManifestText } from "./sync/manifest.ts";
-import { listWikiPages } from "./wiki/pages.ts";
+import { listWikiPages, pageReportPath } from "./wiki/pages.ts";
 import {
   buildPageIndex,
   crossWikiTarget,
@@ -78,7 +78,6 @@ async function loadDomainWiki(dirInput: string): Promise<DomainWiki> {
  *  must name a known domain vault and resolve to that domain's page. */
 async function auditWikiLinks(
   wikiDir: string,
-  displayRoot: string,
   files: readonly string[],
   domains: readonly DomainWiki[],
 ): Promise<{ problems: string[]; external: number }> {
@@ -97,7 +96,7 @@ async function auditWikiLinks(
 
       external++;
 
-      const where = `${relative(displayRoot, join(wikiDir, file))}:${link.line} -> ${link.raw}`;
+      const where = `${pageReportPath(wikiDir, file)}:${link.line} -> ${link.raw}`;
       const domain = domains.find((wiki) =>
         wiki.vaults.has(target.vault.toLowerCase()),
       );
@@ -150,7 +149,6 @@ export async function checkCrossWikiLinks(
   ...domainDirInputs: string[]
 ): Promise<CrossLinkReport> {
   const wikiDir = resolve(wikiDirInput);
-  const displayRoot = resolve(wikiDir, "..");
   const files = await listWikiPages(wikiDirInput);
   const domains = [];
 
@@ -158,7 +156,7 @@ export async function checkCrossWikiLinks(
     domains.push(await loadDomainWiki(dirInput));
   }
 
-  const audited = await auditWikiLinks(wikiDir, displayRoot, files, domains);
+  const audited = await auditWikiLinks(wikiDir, files, domains);
   const domainProblems = await auditDomainLinks(domains);
 
   return {

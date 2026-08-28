@@ -1,11 +1,16 @@
 import { spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, describe, expect, it } from "vitest";
-import { actionableLines } from "../src/quality/mutation-survivors.ts";
+import { afterAll, describe, expect, it, vi } from "vitest";
+import {
+  actionableLines,
+  main,
+  parseReport,
+  printSurvivors,
+} from "../src/quality/mutation-survivors.ts";
 
 const tempDirs: string[] = [];
 
@@ -52,6 +57,27 @@ const report = {
     },
   },
 };
+
+describe("parseReport", () => {
+  it("parses a well-formed report into its files map", () => {
+    const parsed = parseReport(JSON.stringify(report));
+
+    expect(Object.keys(parsed.files)).toEqual([
+      "src/sync/config.ts",
+      "src/sync/scan.ts",
+    ]);
+  });
+
+  it("throws a named shape error for a valid-JSON report whose shape drifted", () => {
+    expect(() => parseReport('{"config": {}}')).toThrow(/unexpected shape/);
+  });
+
+  it("throws the shape error when a file entry lacks its mutants array", () => {
+    expect(() => parseReport('{"files": {"src/a.ts": {}}}')).toThrow(
+      /unexpected shape/,
+    );
+  });
+});
 
 describe("actionableLines", () => {
   it("lists exactly the survived and no-coverage mutants as file:line entries sorted by file and line", () => {
@@ -120,5 +146,294 @@ describe("mutation-survivors CLI", () => {
     expect(result.code).toBe(0);
     expect(result.err).toBe("");
     expect(result.out).toContain("Usage: mutation-survivors");
+  });
+
+  it("exits 1 naming the drifted shape when the report is valid JSON but not a Stryker report", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutsurv-"));
+
+    tempDirs.push(dir);
+    await mkdir(join(dir, "reports", "mutation"), { recursive: true });
+    await writeFile(
+      join(dir, "reports", "mutation", "mutation.json"),
+      '{"config": {}}',
+    );
+
+    const result = await runNode([], dir);
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("unexpected shape");
+  });
+});
+
+describe("parseReport shape edges", () => {
+  it("rejects a null report root naming the missing files", () => {
+    expect(() => parseReport("null")).toThrow(
+      "mutation report has an unexpected shape (no files)",
+    );
+  });
+
+  it("rejects a primitive report root naming the missing files", () => {
+    expect(() => parseReport("42")).toThrow(
+      "mutation report has an unexpected shape (no files)",
+    );
+  });
+
+  it("rejects a report whose files value is null", () => {
+    expect(() => parseReport('{"files": null}')).toThrow(
+      "mutation report has an unexpected shape (no files)",
+    );
+  });
+
+  it("rejects a report whose files value is not an object", () => {
+    expect(() => parseReport('{"files": "x"}')).toThrow(
+      "mutation report has an unexpected shape (no files)",
+    );
+  });
+
+  it("rejects a file entry that is null", () => {
+    expect(() => parseReport('{"files": {"src/a.ts": null}}')).toThrow(
+      "mutation report has an unexpected shape (a file entry lacks its mutants array)",
+    );
+  });
+
+  it("rejects a file entry that is not an object", () => {
+    expect(() => parseReport('{"files": {"src/a.ts": 42}}')).toThrow(
+      "mutation report has an unexpected shape (a file entry lacks its mutants array)",
+    );
+  });
+
+  it("rejects a file entry whose mutants is not an array", () => {
+    expect(() =>
+      parseReport('{"files": {"src/a.ts": {"mutants": "x"}}}'),
+    ).toThrow(
+      "mutation report has an unexpected shape (a file entry lacks its mutants array)",
+    );
+  });
+});
+
+describe("printSurvivors", () => {
+  it("prints the shape-drift hint and exits 1 for a valid-JSON non-report", () => {
+    const errors: string[] = [];
+    const spy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) =>
+        errors.push(parts.join(" ")),
+      );
+
+    process.exitCode = undefined;
+
+    try {
+      printSurvivors('{"config": {}}');
+      expect(errors[0]).toContain("unexpected shape");
+    } finally {
+      process.exitCode = undefined;
+      spy.mockRestore();
+    }
+  });
+
+  it("exits 1 for a drifted-shape report", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    process.exitCode = undefined;
+
+    try {
+      printSurvivors('{"config": {}}');
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = undefined;
+      spy.mockRestore();
+    }
+  });
+
+  it("prints the missing-report hint for text that is not valid JSON", () => {
+    const errors: string[] = [];
+    const spy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) =>
+        errors.push(parts.join(" ")),
+      );
+
+    process.exitCode = undefined;
+
+    try {
+      printSurvivors("{not json");
+      expect(errors[0]).toContain("No report at");
+    } finally {
+      process.exitCode = undefined;
+      spy.mockRestore();
+    }
+  });
+
+  it("exits 1 for text that is not valid JSON", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    process.exitCode = undefined;
+
+    try {
+      printSurvivors("{not json");
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = undefined;
+      spy.mockRestore();
+    }
+  });
+
+  it("prints the missing-report hint and exits 1 without a report text", () => {
+    const errors: string[] = [];
+    const spy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) =>
+        errors.push(parts.join(" ")),
+      );
+
+    process.exitCode = undefined;
+
+    try {
+      printSurvivors(undefined);
+      expect(errors[0]).toContain("No report at");
+    } finally {
+      process.exitCode = undefined;
+      spy.mockRestore();
+    }
+  });
+
+  it("exits 1 without a report text", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    process.exitCode = undefined;
+
+    try {
+      printSurvivors(undefined);
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = undefined;
+      spy.mockRestore();
+    }
+  });
+
+  it("prints the actionable lines and keeps the exit code unset for a healthy report", () => {
+    const out: string[] = [];
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+
+    process.exitCode = undefined;
+
+    try {
+      printSurvivors(
+        JSON.stringify({
+          files: {
+            "src/a.ts": {
+              mutants: [
+                {
+                  mutatorName: "StringLiteral",
+                  status: "Survived",
+                  location: { start: { line: 3 } },
+                },
+              ],
+            },
+          },
+        }),
+      );
+      expect(out.join("\n")).toContain("Survived  src/a.ts:3  StringLiteral");
+    } finally {
+      process.exitCode = undefined;
+      logSpy.mockRestore();
+    }
+  });
+
+  it("keeps the exit code unset for a healthy report", () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    process.exitCode = undefined;
+
+    try {
+      printSurvivors(
+        JSON.stringify({
+          files: {
+            "src/a.ts": {
+              mutants: [
+                {
+                  mutatorName: "StringLiteral",
+                  status: "Survived",
+                  location: { start: { line: 3 } },
+                },
+              ],
+            },
+          },
+        }),
+      );
+      expect(process.exitCode).toBeUndefined();
+    } finally {
+      process.exitCode = undefined;
+      logSpy.mockRestore();
+    }
+  });
+});
+
+describe("actionableLines file grouping", () => {
+  it("orders same-file mutants by ascending line", () => {
+    const lines = actionableLines({
+      files: {
+        "src/a.ts": {
+          mutants: [
+            {
+              mutatorName: "Second",
+              status: "Survived",
+              location: { start: { line: 20 } },
+            },
+            {
+              mutatorName: "First",
+              status: "Survived",
+              location: { start: { line: 5 } },
+            },
+          ],
+        },
+      },
+    });
+
+    expect(lines).toEqual([
+      "Survived  src/a.ts:5  First",
+      "Survived  src/a.ts:20  Second",
+    ]);
+  });
+});
+
+describe("mutation-survivors main in-process", () => {
+  it("prints help for --help without reading any report", () => {
+    const argv = process.argv;
+    const out: string[] = [];
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+
+    process.argv = [...argv.slice(0, 2), "--help"];
+    process.exitCode = undefined;
+
+    try {
+      main();
+      expect(out[0]).toContain("Usage: mutation-survivors");
+    } finally {
+      process.argv = argv;
+      process.exitCode = undefined;
+      logSpy.mockRestore();
+    }
+  });
+
+  it("leaves the exit code unset for --help", () => {
+    const argv = process.argv;
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    process.argv = [...argv.slice(0, 2), "--help"];
+    process.exitCode = undefined;
+
+    try {
+      main();
+      expect(process.exitCode).toBeUndefined();
+    } finally {
+      process.argv = argv;
+      process.exitCode = undefined;
+      logSpy.mockRestore();
+    }
   });
 });

@@ -1,7 +1,12 @@
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createColors } from "picocolors";
+import {
+  canAnimate,
+  cliFail,
+  errorMessage,
+  terminalColors,
+} from "../cli/colors.ts";
 import { flagValueError } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { formatDuration } from "../cli/progress.ts";
@@ -289,20 +294,14 @@ in place; piped, redirected, CI, or NO_COLOR runs get one plain
 heartbeat line per 60 seconds instead. Live progress goes to stderr;
 the answer and the Filed line go to stdout.`;
 
-/** Colors honoring NO_COLOR, like every CLI in this repo. */
-export function terminalColors(env: NodeJS.ProcessEnv) {
-  return createColors(env.NO_COLOR === undefined);
-}
-
-/** True when the stderr surface may animate: a TTY with color on. */
-export function canAnimate(isTTY: boolean, env: NodeJS.ProcessEnv): boolean {
-  return isTTY && !env.NO_COLOR;
-}
+/** Colors honoring NO_COLOR, like every CLI in this repo — moved to
+ *  the shared presentation kit (src/cli/colors.ts) and re-exported
+ *  here for the query surface's existing importers. */
+export { canAnimate, terminalColors } from "../cli/colors.ts";
 
 /** Print one CLI usage error red on stderr and set the exit code. */
 function fail(message: string): void {
-  console.error(terminalColors(process.env).red(`wiki-query: ${message}`));
-  process.exitCode = 1;
+  cliFail("wiki-query", message);
 }
 
 /** What parseArgs lifted out of argv: switch values, positionals, mode. */
@@ -461,11 +460,7 @@ function reportFailure(
   error: unknown,
 ): void {
   sink.end();
-  console.error(
-    colors.red(
-      `wiki-query: ${error instanceof Error ? error.message : String(error)}`,
-    ),
-  );
+  console.error(colors.red(`wiki-query: ${errorMessage(error)}`));
   process.exitCode = 1;
 }
 

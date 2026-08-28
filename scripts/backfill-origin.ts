@@ -1,15 +1,17 @@
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createColors } from "picocolors";
+import { terminalColors as colors, errorMessage } from "../src/cli/colors.ts";
+import { isIsoDate, readDateFlag } from "../src/cli/flag-args.ts";
 import { refuseDirectExecution } from "../src/cli/is-main.ts";
 import { assertCleanTree } from "../src/data/git.ts";
 import {
+  appendWikiLog,
   closingFence,
   isWikilinkEntry,
   listWikiPages,
   normalizeRawPath,
-  unquote,
+  parsePageFields,
 } from "../src/wiki/pages.ts";
 
 /**
@@ -56,11 +58,6 @@ export interface BackfillOptions {
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-/** Colors at the render boundary; NO_COLOR yields plain text. */
-function colors() {
-  return createColors(!process.env.NO_COLOR);
-}
-
 const STOPWORDS = new Set([
   "the",
   "a",
@@ -104,63 +101,6 @@ function corroboratesTitle(pageTitle: string, noteName: string): boolean {
   );
 
   return shared.length >= 2 || shared.some((token) => token.length >= 7);
-}
-
-/** Parse a closed frontmatter block; undefined when there is none. */
-function frontmatterLines(text: string): string[] | undefined {
-  const lines = text.split("\n");
-
-  if (lines[0] !== "---") {
-    return undefined;
-  }
-
-  const closing = closingFence(lines);
-
-  return closing === -1 ? undefined : lines.slice(1, closing);
-}
-
-/** The scalar value of one frontmatter key, unquoted; undefined when
- *  absent — or bare, like `origin:` with nothing after the colon — so
- *  an empty-value line counts as lacking the field, matching the
- *  shared parser in src/wiki/pages.ts. */
-function scalarValue(fm: readonly string[], key: string): string | undefined {
-  const line = fm.find((l) => l.startsWith(`${key}:`));
-
-  if (line === undefined) {
-    return undefined;
-  }
-
-  const raw = line.slice(key.length + 1).trim();
-
-  return raw === "" ? undefined : unquote(raw);
-}
-
-/** Path-style `sources` entries (wikilinks excluded), unquoted, in order. */
-function sourcePaths(fm: readonly string[]): string[] {
-  const start = fm.findIndex((l) => l.startsWith("sources:"));
-  const entries: string[] = [];
-
-  if (start === -1) {
-    return entries;
-  }
-
-  for (const line of fm.slice(start + 1)) {
-    if (/^\S/.test(line)) {
-      break;
-    }
-
-    const item = /^\s+-\s+(.+)$/.exec(line)?.[1];
-
-    if (item !== undefined) {
-      const entry = unquote(item.trim());
-
-      if (!isWikilinkEntry(entry)) {
-        entries.push(entry);
-      }
-    }
-  }
-
-  return entries;
 }
 
 /**
@@ -237,21 +177,17 @@ async function appendLogEntry(
   try {
     prior = await readFile(logPath, "utf8");
   } catch {
-    prior = "# Wiki Log\n";
+    prior = "";
   }
 
   const count = pairs.length;
   const entry = [
-    "",
     `## [${date}] origin-backfill | ${count} page${count === 1 ? "" : "s"}`,
     "",
     ...pairs.map((pair) => `- wiki/${pair.page} -> ${pair.origin}`),
   ].join("\n");
 
-  await writeFile(
-    logPath,
-    `${prior}${prior.endsWith("\n") ? "" : "\n"}${entry}\n`,
-  );
+  await writeFile(logPath, appendWikiLog(prior, entry));
 }
 
 /**
@@ -278,13 +214,13 @@ export async function backfillOrigins(
   for (const file of files.sort()) {
     const pagePath = join(wikiDir, file);
     const text = await readFile(pagePath, "utf8");
-    const fm = frontmatterLines(text);
+    const fields = parsePageFields(text);
 
-    if (fm === undefined || scalarValue(fm, "type") !== "source") {
+    if (fields.type !== "source") {
       continue;
     }
 
-    if (scalarValue(fm, "origin") !== undefined) {
+    if (fields.origin !== undefined) {
       untouched++;
 
       continue;
@@ -292,8 +228,11 @@ export async function backfillOrigins(
 
     const verifiable: string[] = [];
 
-    for (const entry of sourcePaths(fm)) {
-      if (await exists(join(rawDir, normalizeRawPath(entry)))) {
+    for (const entry of fields.sources) {
+      if (
+        !isWikilinkEntry(entry) &&
+        (await exists(join(rawDir, normalizeRawPath(entry))))
+      ) {
         verifiable.push(normalizeRawPath(entry));
       }
     }
@@ -309,7 +248,7 @@ export async function backfillOrigins(
 
     const rawPath = verifiable[0] ?? "";
 
-    if (!corroboratesTitle(scalarValue(fm, "title") ?? "", basename(rawPath))) {
+    if (!corroboratesTitle(fields.title ?? "", basename(rawPath))) {
       needsJudgment.push({
         page: file,
         reason: `title does not corroborate note name ${JSON.stringify(basename(rawPath))}`,
@@ -397,14 +336,7 @@ export async function main(): Promise<void> {
   }
 
   const dryRun = args.includes("--dry-run");
-  const dateIndex = args.indexOf("--date");
-  const date =
-    dateIndex === -1
-      ? new Date().toISOString().slice(0, 10)
-      : args[dateIndex + 1];
-  const consumed = new Set<number>(
-    dateIndex === -1 ? [] : [dateIndex, dateIndex + 1],
-  );
+  const { date, consumed } = readDateFlag(args);
   const positional: string[] = [];
 
   for (const [index, arg] of args.entries()) {
@@ -418,8 +350,7 @@ export async function main(): Promise<void> {
   if (
     positional.length > 2 ||
     (positional.length > 0 && positional.some((arg) => arg.startsWith("--"))) ||
-    date === undefined ||
-    !/^\d{4}-\d{2}-\d{2}$/.test(date)
+    !isIsoDate(date)
   ) {
     console.error(colors().red("backfill-origin: bad arguments (see --help)"));
     process.exitCode = 1;
@@ -454,11 +385,7 @@ export async function main(): Promise<void> {
       `backfill: ${report.backfilled.length} backfilled, ${report.needsJudgment.length} need judgment, ${report.untouched} already had origin${dry}`,
     );
   } catch (error) {
-    console.error(
-      colors().red(
-        `backfill-origin: ${error instanceof Error ? error.message : String(error)}`,
-      ),
-    );
+    console.error(colors().red(`backfill-origin: ${errorMessage(error)}`));
     process.exitCode = 1;
   }
 }

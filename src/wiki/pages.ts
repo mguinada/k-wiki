@@ -1,6 +1,10 @@
-import { readdir, readFile, stat } from "node:fs/promises";
-import { basename, join } from "node:path";
-import { buildPageIndex, wikilinkBodyTarget } from "../wiki-links.ts";
+import { readFile, stat } from "node:fs/promises";
+import { basename, join, relative, resolve } from "node:path";
+import {
+  buildPageIndex,
+  listFiles,
+  wikilinkBodyTarget,
+} from "../wiki-links.ts";
 
 export { buildPageIndex };
 
@@ -58,6 +62,20 @@ export function unquote(value: string): string {
  *  page's lines, or -1 when the block never closes. */
 export function closingFence(lines: readonly string[]): number {
   return lines.findIndex((line, index) => index > 0 && line.trim() === "---");
+}
+
+/** The text after a closed frontmatter block; the full text when the
+ *  note opens with no frontmatter or the fence never closes. */
+export function bodyAfterFrontmatter(text: string): string {
+  const lines = text.split("\n");
+
+  if (lines[0] !== "---") {
+    return text;
+  }
+
+  const end = closingFence(lines);
+
+  return end === -1 ? text : lines.slice(end + 1).join("\n");
 }
 
 /** Whether a `sources` entry is a wikilink (bracketed) or a raw path. */
@@ -178,27 +196,6 @@ export function parsePageFields(text: string): PageFields {
   return parseFrontmatterBody(lines.slice(1));
 }
 
-/** Recursively list every wiki-relative markdown path under `dir`. */
-async function listFiles(
-  dir: string,
-  prefix = "",
-  files: string[] = [],
-): Promise<string[]> {
-  const entries = await readdir(dir, { withFileTypes: true });
-
-  for (const entry of entries) {
-    const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
-
-    if (entry.isDirectory()) {
-      await listFiles(join(dir, entry.name), rel, files);
-    } else {
-      files.push(rel);
-    }
-  }
-
-  return files;
-}
-
 /** Operating-contract files: never wiki pages (issue #74 adds the
  *  meta contract template that lives in the code repo's skeleton). */
 export const CONTRACT_FILES = new Set(["AGENTS.md", "AGENTS.meta.md"]);
@@ -236,4 +233,20 @@ export async function readPageFields(path: string): Promise<PageFields> {
   } catch {
     return EMPTY_FIELDS;
   }
+}
+
+/** A wiki page's report path: relative to the wiki root's parent —
+ *  the convention every checker's problem lines use. */
+export function pageReportPath(wikiDir: string, file: string): string {
+  return relative(resolve(wikiDir, ".."), join(wikiDir, file));
+}
+
+/** Append one audit entry to wiki/log.md content: the standing
+ *  `# Wiki Log` header is created when the log is absent, and a
+ *  blank line separates entries (guide §12). */
+export function appendWikiLog(prior: string, entry: string): string {
+  const prefix =
+    prior === "" ? "# Wiki Log\n" : prior.endsWith("\n") ? prior : `${prior}\n`;
+
+  return `${prefix}\n${entry}\n`;
 }

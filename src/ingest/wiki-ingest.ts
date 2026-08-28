@@ -3,8 +3,16 @@ import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createColors } from "picocolors";
-import { flagValueError } from "../cli/flag-args.ts";
+import {
+  canAnimate,
+  cliFail,
+  terminalColors as colors,
+  errorMessage,
+} from "../cli/colors.ts";
+import {
+  flagValueError,
+  readFlagValues as sharedReadFlagValues,
+} from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import {
   createProgressRenderer,
@@ -28,12 +36,14 @@ import {
   writeManifest,
 } from "../sync/manifest.ts";
 import {
+  bodyAfterFrontmatter,
   buildPageIndex,
   isWikilinkEntry,
   listWikiPages,
   normalizeRawPath,
   type PageFields,
   readPageFields,
+  unquote,
   wikilinkTarget,
 } from "../wiki/pages.ts";
 import {
@@ -88,14 +98,6 @@ const DOMAIN_KEY = "secondBrain.domains";
 const SETTING_KEYS = [...REQUIRED_KEYS, ...OPTIONAL_KEYS] as const;
 
 type SettingKey = (typeof SETTING_KEYS)[number];
-
-function unquote(value: string): string {
-  const quote = value[0];
-
-  return quote === '"' || quote === "'"
-    ? value.slice(1, value.length - 1)
-    : value;
-}
 
 /** The dirs of a `secondBrain.domains` value: an optional `[...]`
  *  wrapper, then comma-separated paths (each optionally quoted).
@@ -284,7 +286,7 @@ export function parseSettings(text: string, origin: string): AgentSettings {
  *  discovery), extensions, skills — so a spawned run cannot inherit
  *  globally installed persona, tools, or prompts. Available since
  *  pi 0.67.4. */
-export const ISOLATION_FLAGS = [
+const ISOLATION_FLAGS = [
   "--no-context-files",
   "--no-extensions",
   "--no-skills",
@@ -394,28 +396,72 @@ function extractRenames(
   };
 }
 
-/** The text after a closed frontmatter block; the full text when the
- *  note opens with no frontmatter or the fence never closes. Mirrors
- *  `parsePageFields`' whitespace-trimmed closing fence (and fidelity's
- *  private `bodyAfterFrontmatter`) without coupling this layer to the
- *  fidelity core. */
-function bodyAfterFrontmatter(text: string): string {
-  const lines = text.split("\n");
-
-  if (lines[0] !== "---") {
-    return text;
-  }
-
-  const end = lines.findIndex(
-    (line, index) => index > 0 && line.trim() === "---",
-  );
-
-  return end === -1 ? text : lines.slice(end + 1).join("\n");
-}
+/** The text after a closed frontmatter block: exported by
+ *  wiki/pages.ts (beside closingFence) so the ingest rename pairing
+ *  (issue #143) and the fidelity core share one fence rule. */
 
 /** SHA-256 of a note's text after the frontmatter fence. */
 function bodyHash(content: string): string {
   return sha256(Buffer.from(bodyAfterFrontmatter(content), "utf8"));
+}
+
+/** Pair one vault's leftover removed+added notes whose body hashes
+ *  match as renames (issue #143's per-vault step). */
+async function pairVaultBodyRenames(
+  vault: VaultSourceChange,
+  readRemoved: (
+    vault: string,
+    path: string,
+  ) => string | undefined | Promise<string | undefined>,
+  readAdded: (
+    vault: string,
+    path: string,
+  ) => string | undefined | Promise<string | undefined>,
+): Promise<VaultSourceChange> {
+  if (vault.removed.length === 0 || vault.added.length === 0) {
+    return vault;
+  }
+
+  const removedHashes = new Map<string, string>();
+  const taken = new Set<string>();
+  const renamed = [...vault.renamed];
+
+  for (const path of vault.removed) {
+    const content = await readRemoved(vault.vault, path);
+
+    if (content !== undefined) {
+      removedHashes.set(path, bodyHash(content));
+    }
+  }
+
+  const added: string[] = [];
+
+  for (const to of vault.added) {
+    const content = await readAdded(vault.vault, to);
+    const hash = content === undefined ? undefined : bodyHash(content);
+    const from =
+      hash === undefined
+        ? undefined
+        : vault.removed.find(
+            (path) => !taken.has(path) && removedHashes.get(path) === hash,
+          );
+
+    if (from === undefined) {
+      added.push(to);
+
+      continue;
+    }
+
+    taken.add(from);
+    renamed.push({ from, to });
+  }
+
+  return {
+    ...vault,
+    added,
+    renamed,
+    removed: vault.removed.filter((path) => !taken.has(path)),
+  };
 }
 
 /**
@@ -441,52 +487,9 @@ export async function pairBodyIdenticalRenames(
   ) => string | undefined | Promise<string | undefined>,
 ): Promise<ManifestDiff> {
   const vaults = await Promise.all(
-    diff.vaults.map(async (vault) => {
-      if (vault.removed.length === 0 || vault.added.length === 0) {
-        return vault;
-      }
-
-      const removedHashes = new Map<string, string>();
-      const taken = new Set<string>();
-      const renamed = [...vault.renamed];
-
-      for (const path of vault.removed) {
-        const content = await readRemoved(vault.vault, path);
-
-        if (content !== undefined) {
-          removedHashes.set(path, bodyHash(content));
-        }
-      }
-
-      const added: string[] = [];
-
-      for (const to of vault.added) {
-        const content = await readAdded(vault.vault, to);
-        const hash = content === undefined ? undefined : bodyHash(content);
-        const from =
-          hash === undefined
-            ? undefined
-            : vault.removed.find(
-                (path) => !taken.has(path) && removedHashes.get(path) === hash,
-              );
-
-        if (from === undefined) {
-          added.push(to);
-
-          continue;
-        }
-
-        taken.add(from);
-        renamed.push({ from, to });
-      }
-
-      return {
-        ...vault,
-        added,
-        renamed,
-        removed: vault.removed.filter((path) => !taken.has(path)),
-      };
-    }),
+    diff.vaults.map((vault) =>
+      pairVaultBodyRenames(vault, readRemoved, readAdded),
+    ),
   );
 
   return { vaults, empty: vaults.length === 0 };
@@ -545,6 +548,35 @@ export function diffManifests(
   return { vaults, empty: vaults.length === 0 };
 }
 
+/** The most specific decomposition of one `--sources` path: the
+ *  manifest entry whose vault name is the longest matching
+ *  prefix. */
+function longestVaultMatch(
+  manifest: Manifest,
+  source: string,
+): { vault: string; path: string } | undefined {
+  let match: { vault: string; path: string } | undefined;
+
+  for (const [vault, notes] of Object.entries(manifest.vaults)) {
+    const prefix = `${vault}/`;
+
+    if (!source.startsWith(prefix)) {
+      continue;
+    }
+
+    const path = source.slice(prefix.length);
+
+    if (
+      notes[path] !== undefined &&
+      (match === undefined || vault.length > match.vault.length)
+    ) {
+      match = { vault, path };
+    }
+  }
+
+  return match;
+}
+
 /** The synthetic changed-source set of an explicit `--sources` run
  *  (issue #133): every listed path must name one manifest entry and
  *  renders as a `~` (changed) line, so the composed prompt and the
@@ -562,24 +594,7 @@ export function explicitSourceDiff(
   const unknown: string[] = [];
 
   for (const source of sources) {
-    let match: { vault: string; path: string } | undefined;
-
-    for (const [vault, notes] of Object.entries(manifest.vaults)) {
-      const prefix = `${vault}/`;
-
-      if (!source.startsWith(prefix)) {
-        continue;
-      }
-
-      const path = source.slice(prefix.length);
-
-      if (
-        notes[path] !== undefined &&
-        (match === undefined || vault.length > match.vault.length)
-      ) {
-        match = { vault, path };
-      }
-    }
+    const match = longestVaultMatch(manifest, source);
 
     if (match === undefined) {
       unknown.push(source);
@@ -1155,7 +1170,7 @@ export type AgentRunner = (
 ) => Promise<{ stdout: string; stderr: string }>;
 
 /** The agent gets 30 minutes by default; a hung run must not hang the wrapper. */
-export const AGENT_TIMEOUT_MS = 30 * 60_000;
+const AGENT_TIMEOUT_MS = 30 * 60_000;
 
 /** Interval for the progress-sink liveness line while the agent
  *  runs (see AGENT_HEARTBEAT_PREFIX for the line's wording). */
@@ -1494,35 +1509,54 @@ async function readSnapshot(
 
 const SNAPSHOT_FILENAME = "last-ingested-manifest.json";
 
+/** Append `entry` under `comment` to the data repo's .gitignore;
+ *  false when an accepted form of the entry is already present.
+ *  Shared by the snapshot and dashboard ignore guards. */
+async function appendGitignoreEntry(
+  dataRoot: string,
+  entry: string,
+  accepted: readonly string[],
+  comment: string,
+): Promise<boolean> {
+  const ignorePath = join(dataRoot, ".gitignore");
+  const existing = (await readManifestText(ignorePath)) ?? "";
+
+  if (existing.split("\n").some((line) => accepted.includes(line.trim()))) {
+    return false;
+  }
+
+  const body =
+    existing === "" || existing.endsWith("\n") ? existing : `${existing}\n`;
+
+  await writeFile(ignorePath, `${body}${comment}\n${entry}\n`, "utf8");
+
+  return true;
+}
+
 /**
- * Keep the snapshot out of the data repo's history (issue #112): it
- * is per-instance state stamped with this machine's data root, and
- * the sync cycle's commit stages outputs/ wholesale. Appends the
- * ignore entry when the data repo's .gitignore lacks it.
+ * Keep the manifest snapshot out of the data repo's history (issue
+ * #112): the snapshot is per-instance state, and a commit or clean
+ * must never take it. Appends the ignore entry when the data repo's
+ * .gitignore lacks it.
  */
 async function ensureSnapshotIgnored(
   dataRoot: string,
   onProgress: (message: string) => void,
 ): Promise<void> {
   const entry = `outputs/${SNAPSHOT_FILENAME}`;
-  const ignorePath = join(dataRoot, ".gitignore");
-  const existing = (await readManifestText(ignorePath)) ?? "";
 
-  if (existing.split("\n").some((line) => line.trim() === entry)) {
-    return;
+  if (
+    await appendGitignoreEntry(
+      dataRoot,
+      entry,
+      [entry],
+      "# wiki-ingest manifest snapshot: per-instance state, never committed (issue #112)",
+    )
+  ) {
+    onProgress(
+      `wiki-ingest: ignoring ${entry} in the data repo (${join(dataRoot, ".gitignore")}) so no commit or clean can take the snapshot`,
+    );
   }
-
-  const body =
-    existing === "" || existing.endsWith("\n") ? existing : `${existing}\n`;
-
-  await writeFile(
-    ignorePath,
-    `${body}# wiki-ingest manifest snapshot: per-instance state, never committed (issue #112)\n${entry}\n`,
-    "utf8",
-  );
-  onProgress(
-    `wiki-ingest: ignoring ${entry} in the data repo (${ignorePath}) so no commit or clean can take the snapshot`,
-  );
 }
 
 /**
@@ -1536,26 +1570,19 @@ async function ensureDashboardIgnored(
   onProgress: (message: string) => void,
 ): Promise<void> {
   const entry = "dashboard.html";
-  const ignorePath = join(dataRoot, ".gitignore");
-  const existing = (await readManifestText(ignorePath)) ?? "";
 
   if (
-    existing
-      .split("\n")
-      .some((line) => line.trim() === entry || line.trim() === `/${entry}`)
+    await appendGitignoreEntry(
+      dataRoot,
+      entry,
+      [entry, `/${entry}`],
+      "# static dashboard: regenerated per checkout, never committed (issue #73)",
+    )
   ) {
-    return;
+    onProgress(
+      `wiki-ingest: ignoring ${entry} in the data repo (${join(dataRoot, ".gitignore")})`,
+    );
   }
-
-  const body =
-    existing === "" || existing.endsWith("\n") ? existing : `${existing}\n`;
-
-  await writeFile(
-    ignorePath,
-    `${body}# static dashboard: regenerated per checkout, never committed (issue #73)\n${entry}\n`,
-    "utf8",
-  );
-  onProgress(`wiki-ingest: ignoring ${entry} in the data repo (${ignorePath})`);
 }
 
 /**
@@ -1728,18 +1755,27 @@ function resolveRunMode(
   return { mode, removedCount };
 }
 
+/** What composeRunPrompt needs: the resolved run mode with its
+ *  prompt text, and the run's coordinates. */
+interface PromptComposition {
+  readonly mode: "full" | "incremental" | "expunge";
+  readonly removedCount: number;
+  readonly promptText: string;
+  readonly promptsDir: string;
+  readonly dataRoot: string;
+  readonly diff: ManifestDiff;
+  readonly env: NodeJS.ProcessEnv;
+  readonly onProgress: (message: string) => void;
+}
+
 /** Compose the agent message and, for an expunge run, its
  *  deterministic direct set. */
 async function composeRunPrompt(
-  mode: "full" | "incremental" | "expunge",
-  removedCount: number,
-  promptText: string,
-  promptsDir: string,
-  dataRoot: string,
-  diff: ManifestDiff,
-  env: NodeJS.ProcessEnv,
-  onProgress: (message: string) => void,
+  run: PromptComposition,
 ): Promise<{ composed: string; directSet: readonly string[] | undefined }> {
+  const { mode, removedCount, promptText, promptsDir, dataRoot, diff, env } =
+    run;
+
   if (mode !== "expunge") {
     return {
       composed: composePrompt(
@@ -1773,7 +1809,7 @@ async function composeRunPrompt(
     incrementalText,
   );
 
-  onProgress(
+  run.onProgress(
     `wiki-ingest: expunge — ${removedCount} removed source${removedCount === 1 ? "" : "s"}; direct set: ${directSet.map((page) => `wiki/${page}`).join(", ")}`,
   );
 
@@ -1875,7 +1911,7 @@ async function refreshDashboard(
     onProgress(`wiki-ingest: dashboard refreshed at ${dashboardPath}`);
   } catch (error) {
     onProgress(
-      `wiki-ingest: WARNING — dashboard refresh failed (${error instanceof Error ? error.message : String(error)}); the previous dashboard stays`,
+      `wiki-ingest: WARNING — dashboard refresh failed (${errorMessage(error)}); the previous dashboard stays`,
     );
   }
 }
@@ -1928,16 +1964,16 @@ export async function runWikiIngest(
   const { mode, removedCount } = resolveRunMode(previous, diff);
   const promptFile = promptFileFor(mode);
   const promptText = await readPrompt(join(options.promptsDir, promptFile));
-  const { composed, directSet } = await composeRunPrompt(
+  const { composed, directSet } = await composeRunPrompt({
     mode,
     removedCount,
     promptText,
-    options.promptsDir,
+    promptsDir: options.promptsDir,
     dataRoot,
     diff,
     env,
     onProgress,
-  );
+  });
 
   const args = agentArgs(settings, composed);
   const runAgent = options.runAgent ?? spawnAgent;
@@ -2148,14 +2184,9 @@ exceeds the timeout still runs the guardrails, exits 1, and leaves
 the snapshot untouched, so the next run retries the same sources. Live progress
 goes to stderr; the digest goes to stdout. Scheduling is #14.`;
 
-function colors() {
-  return createColors(!process.env.NO_COLOR);
-}
-
 /** Print one CLI usage error red on stderr and set the exit code. */
 function fail(message: string): void {
-  console.error(colors().red(`wiki-ingest: ${message}`));
-  process.exitCode = 1;
+  cliFail("wiki-ingest", message);
 }
 
 /** A stderr progress surface: plain lines, or one animated line. */
@@ -2217,20 +2248,7 @@ function readFlagValues(args: readonly string[]): {
   values: Map<string, string | undefined>;
   consumed: Set<number>;
 } {
-  const values = new Map<string, string | undefined>();
-  const consumed = new Set<number>();
-
-  for (const flag of ["--settings", "--outputs", "--timeout"]) {
-    const index = args.indexOf(flag);
-
-    if (index !== -1) {
-      values.set(flag, args[index + 1]);
-      consumed.add(index);
-      consumed.add(index + 1);
-    }
-  }
-
-  return { values, consumed };
+  return sharedReadFlagValues(["--settings", "--outputs", "--timeout"], args);
 }
 
 /** Every `--sources <path>` pair's value (a missing final value
@@ -2317,11 +2335,7 @@ async function runCliIngest(parsed: {
     console.log(result.digest);
   } catch (error) {
     parsed.sink.end();
-    console.error(
-      colors().red(
-        `wiki-ingest: ${error instanceof Error ? error.message : String(error)}`,
-      ),
-    );
+    console.error(colors().red(`wiki-ingest: ${errorMessage(error)}`));
     process.exitCode = 1;
   }
 }
@@ -2363,7 +2377,7 @@ export async function main(): Promise<void> {
   const settingsPath =
     values.get("--settings") ?? join(repoRoot, "settings.yml");
 
-  const animated = process.stderr.isTTY === true && !process.env.NO_COLOR;
+  const animated = canAnimate(process.stderr.isTTY === true, process.env);
   const sink = createAgentProgressSink(
     (text) => process.stderr.write(text),
     (text) => console.error(text),

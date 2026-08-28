@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import {
+  bodyAfterFrontmatter,
   buildPageIndex,
   isWikilinkEntry,
   kebab,
@@ -382,5 +383,29 @@ describe("readPageFields", () => {
     await expect(readPageFields(page)).resolves.toMatchObject({
       origin: "raw/notes/V/a.md",
     });
+  });
+});
+
+describe("bodyAfterFrontmatter", () => {
+  it("returns the full text when the note opens with no frontmatter", () => {
+    expect(bodyAfterFrontmatter("plain body\n")).toBe("plain body\n");
+  });
+
+  it("returns the body after a closed fence", () => {
+    expect(bodyAfterFrontmatter("---\ntype: concept\n---\nbody\n")).toBe(
+      "body\n",
+    );
+  });
+
+  it("returns the full text when the fence never closes", () => {
+    expect(bodyAfterFrontmatter("---\ntype: concept\nbody\n")).toBe(
+      "---\ntype: concept\nbody\n",
+    );
+  });
+
+  it("accepts a whitespace-padded closing fence", () => {
+    expect(bodyAfterFrontmatter("---\ntype: concept\n --- \nbody\n")).toBe(
+      "body\n",
+    );
   });
 });

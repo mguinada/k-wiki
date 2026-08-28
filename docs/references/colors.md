@@ -1,11 +1,12 @@
 # CLI color convention
 
 All CLIs render color with `picocolors`, honor `NO_COLOR` (plain text
-everywhere), and apply color at the **render boundary** — the stderr
-sink or `colorize*` helper that turns an uncolored message into output
-bytes. Call sites never embed escape codes: the `onProgress` contract
-is *uncolored messages*, and severity is detected at the sink via the
-shared predicate `isWarning` (`src/cli/progress.ts`).
+when set to a non-empty value), and apply color at the **render
+boundary** — the stderr sink or `colorize*` helper that turns an
+uncolored message into output bytes. Call sites never embed escape
+codes: the `onProgress` contract is *uncolored messages*, and severity
+is detected at the sink via the shared predicate `isWarning`
+(`src/cli/progress.ts`).
 
 ## Color semantics
 
@@ -33,5 +34,8 @@ urgency of an error.
 - `colorizeProgress` (`src/sync/sync-vault.ts`) applies the same rule
   for its self-built sink, plus `bold` vault names; a WARNING message
   renders yellow even when it names a vault.
-- `NO_COLOR` produces plain text: `picocolors` is constructed with
-  colors disabled, so every styling call is the identity.
+- `NO_COLOR` set to a non-empty value produces plain text: colors are
+  built with `picocolors` disabled — `terminalColors`
+  (`src/cli/colors.ts`) is the shared construction helper — so every
+  styling call is the identity. An empty `NO_COLOR` keeps colors on
+  (the no-color.org rule).

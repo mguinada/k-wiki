@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
+import { stem } from "../wiki-links.ts";
 import {
   isWikilinkEntry,
   listWikiPages,
@@ -49,11 +50,6 @@ export interface SelfCitation {
   readonly hub: string;
   readonly originDir: string;
   readonly alias: string;
-}
-
-/** The page-name stem of a wiki-relative path. */
-export function stem(file: string): string {
-  return basename(file, ".md");
 }
 
 /** The alias a hub-sources citation rewrites to: the parent
