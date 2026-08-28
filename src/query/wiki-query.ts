@@ -2,6 +2,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
+import { flagValueError } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { formatDuration } from "../cli/progress.ts";
 import {
@@ -356,32 +357,6 @@ function parseArgs(args: readonly string[]): ParsedArgs {
   return { values, positional, fileLast, error };
 }
 
-/** The first usage error in the switch values, if any. */
-function switchError(
-  values: Map<string, string | undefined>,
-): string | undefined {
-  for (const [flag, value] of values) {
-    if (flag === "--timeout") {
-      continue;
-    }
-
-    if (value === undefined) {
-      return `${flag} needs a path value`;
-    }
-  }
-
-  const timeoutArg = values.get("--timeout");
-
-  if (
-    values.has("--timeout") &&
-    (timeoutArg === undefined || !/^[1-9][0-9]*$/.test(timeoutArg))
-  ) {
-    return "--timeout needs a positive integer number of seconds";
-  }
-
-  return undefined;
-}
-
 /** The first usage error in the positional question, if any. */
 function questionError(
   positional: readonly string[],
@@ -513,7 +488,7 @@ export async function main(): Promise<void> {
   }
 
   const usageError =
-    switchError(parsed.values) ??
+    flagValueError(parsed.values) ??
     questionError(parsed.positional, parsed.fileLast);
 
   if (usageError !== undefined) {

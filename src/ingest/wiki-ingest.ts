@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
+import { flagValueError } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import {
   createProgressRenderer,
@@ -2277,38 +2278,6 @@ function collectPositional(
   return { positional, error: undefined };
 }
 
-/** The first usage error among flag values, --sources values, and
- *  --timeout, or undefined when the arguments are valid. */
-function cliUsageError(
-  values: Map<string, string | undefined>,
-  sourcesRaw: readonly (string | undefined)[],
-): string | undefined {
-  for (const [flag, value] of values) {
-    if (flag === "--timeout") {
-      continue;
-    }
-
-    if (value === undefined) {
-      return `${flag} needs a path value`;
-    }
-  }
-
-  if (sourcesRaw.some((value) => value === undefined)) {
-    return "--sources needs a path value";
-  }
-
-  const timeoutArg = values.get("--timeout");
-
-  if (
-    values.has("--timeout") &&
-    (timeoutArg === undefined || !/^[1-9][0-9]*$/.test(timeoutArg))
-  ) {
-    return "--timeout needs a positive integer number of seconds";
-  }
-
-  return undefined;
-}
-
 /** Run the ingest with the parsed CLI state and print the outcome;
  *  errors print red and set the exit code. */
 async function runCliIngest(parsed: {
@@ -2383,7 +2352,7 @@ export async function main(): Promise<void> {
     return;
   }
 
-  const usageError = cliUsageError(values, sourcesRaw);
+  const usageError = flagValueError(values, sourcesRaw);
 
   if (usageError !== undefined) {
     fail(usageError);

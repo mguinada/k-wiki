@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
+import { flagValueError } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { formatDuration } from "../cli/progress.ts";
 import { checkCrossWikiLinks } from "../crosslinks.ts";
@@ -1057,33 +1058,6 @@ function parseCliArgs(args: readonly string[]): ParsedArgs {
   return { error: undefined, positional, values };
 }
 
-/** Validate the parsed flags: every path flag needs a value, and
- *  --timeout a positive integer number of seconds. */
-function validateFlagValues(
-  values: Map<string, string | undefined>,
-): string | undefined {
-  for (const [flag, value] of values) {
-    if (flag === "--timeout") {
-      continue;
-    }
-
-    if (value === undefined) {
-      return `${flag} needs a path value`;
-    }
-  }
-
-  const timeoutArg = values.get("--timeout");
-
-  if (
-    values.has("--timeout") &&
-    (timeoutArg === undefined || !/^[1-9][0-9]*$/.test(timeoutArg))
-  ) {
-    return "--timeout needs a positive integer number of seconds";
-  }
-
-  return undefined;
-}
-
 /** Run the whole cycle for the parsed arguments and return its
  *  result for the digest. */
 async function runCycle(
@@ -1127,7 +1101,7 @@ export async function main(): Promise<void> {
     return;
   }
 
-  const flagError = validateFlagValues(parsed.values);
+  const flagError = flagValueError(parsed.values);
 
   if (flagError !== undefined) {
     fail(flagError);
