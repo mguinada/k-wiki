@@ -1064,3 +1064,52 @@ describe("runRepoSync stale namespace pruning", () => {
     );
   });
 });
+
+describe("runRepoSync caller-provided context", () => {
+  it("announces the raw dir on the first progress line", async () => {
+    const ws = await makeWorkspace();
+    const progress: string[] = [];
+
+    await runRepoSync({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+      env: GIT_ENV,
+      onProgress: (message) => progress.push(message),
+    });
+
+    expect(progress).toContain(`sync-repo: raw dir ${ws.rawDir}`);
+  });
+
+  it("expands a leading ~ in the source root against the given home", async () => {
+    const ws = await makeWorkspace();
+    const configPath = await writeConfig(ws.dir, {
+      source: "repo",
+      name: NAME,
+      root: "~/source",
+      include: ALLOWLIST,
+    });
+
+    await runRepoSync({
+      configPath,
+      rawDir: ws.rawDir,
+      home: ws.dir,
+      env: GIT_ENV,
+    });
+
+    expect(await collectFiles(join(ws.rawDir, "notes", NAME))).toEqual(
+      SELECTED,
+    );
+  });
+
+  it("runs its git commands with the caller's environment", async () => {
+    const ws = await makeWorkspace();
+
+    await expect(
+      runRepoSync({
+        configPath: ws.configPath,
+        rawDir: ws.rawDir,
+        env: { ...GIT_ENV, GIT_DIR: join(ws.dir, "no-such-git-dir") },
+      }),
+    ).rejects.toThrow("not a git repository");
+  });
+});
