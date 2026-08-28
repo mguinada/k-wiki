@@ -358,7 +358,7 @@ export function renderDashboard(
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>k-wiki dashboard</title>
 <style>
-${STYLESHEET}
+${STYLESHEET.trim()}
 </style>
 </head>
 <body>
