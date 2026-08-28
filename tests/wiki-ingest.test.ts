@@ -4192,35 +4192,21 @@ describe("runWikiIngest", () => {
     ).rejects.toThrow("code 1");
   });
 
-  it("leaves no snapshot when the agent fails", async () => {
+  it("leaves no snapshot and no digest when the agent fails", async () => {
     const h = await makeHarness({ "a.md": "a" });
     const failing: AgentRunner = async () => {
       throw new Error("agent exited with code 1");
     };
 
-    await runWikiIngest({ ...optionsFor(h), runAgent: failing }).catch(
-      () => undefined,
-    );
+    await expect(
+      runWikiIngest({ ...optionsFor(h), runAgent: failing }),
+    ).rejects.toThrow();
 
     const { readFile } = await import("node:fs/promises");
 
     await expect(readFile(h.snapshotPath, "utf8")).rejects.toMatchObject({
       code: "ENOENT",
     });
-  });
-
-  it("leaves no digest when the agent fails", async () => {
-    const h = await makeHarness({ "a.md": "a" });
-    const failing: AgentRunner = async () => {
-      throw new Error("agent exited with code 1");
-    };
-
-    await runWikiIngest({ ...optionsFor(h), runAgent: failing }).catch(
-      () => undefined,
-    );
-
-    const { readFile } = await import("node:fs/promises");
-
     await expect(
       readFile(
         join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"),
@@ -5011,21 +4997,6 @@ describe("runWikiIngest guardrails", () => {
     await expect(
       runWikiIngest({ ...optionsFor(h), runAgent: saboteur }),
     ).rejects.toThrow("guardrail check 1 (immutability)");
-  });
-
-  it("removes the out-of-whitelist file when the guardrail trips", async () => {
-    const h = await makeHarness({ "a.md": "a" });
-    const saboteur: AgentRunner = async (_command, _args, options) => {
-      await mkdir(join(options.cwd, "raw", "notes"), { recursive: true });
-      await writeFile(join(options.cwd, "raw", "notes", "rogue.md"), "x\n");
-
-      return { stdout: "rogue report", stderr: "" };
-    };
-
-    await runWikiIngest({ ...optionsFor(h), runAgent: saboteur }).catch(
-      () => {},
-    );
-
     await expect(
       readFile(join(h.dataRoot, "raw", "notes", "rogue.md"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
@@ -5043,37 +5014,9 @@ describe("runWikiIngest guardrails", () => {
     await expect(
       runWikiIngest({ ...optionsFor(h), runAgent: saboteur }),
     ).rejects.toThrow("guardrail check 1 (immutability)");
-  });
-
-  it("removes the tampered raw file when the guardrail trips", async () => {
-    const h = await makeHarness({ "a.md": "a" });
-    const saboteur: AgentRunner = async (_command, _args, options) => {
-      await mkdir(join(options.cwd, "raw", "notes"), { recursive: true });
-      await writeFile(join(options.cwd, "raw", "notes", "rogue.md"), "x\n");
-
-      throw new Error("agent exited with code 1");
-    };
-
-    await runWikiIngest({ ...optionsFor(h), runAgent: saboteur }).catch(
-      () => {},
-    );
-
     await expect(
       readFile(join(h.dataRoot, "raw", "notes", "rogue.md"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
-  });
-
-  it("propagates the agent failure when guardrails pass", async () => {
-    const h = await makeHarness({ "a.md": "a" });
-    const failing: AgentRunner = async (_command, _args, options) => {
-      await writeFile(join(options.cwd, "wiki", "ok.md"), wikiPage("Kept"));
-
-      throw new Error("agent exited with code 1");
-    };
-
-    await expect(
-      runWikiIngest({ ...optionsFor(h), runAgent: failing }),
-    ).rejects.toThrow("code 1");
   });
 
   it("keeps valid changes when the agent fails and guardrails pass", async () => {
@@ -5084,10 +5027,9 @@ describe("runWikiIngest guardrails", () => {
       throw new Error("agent exited with code 1");
     };
 
-    await runWikiIngest({ ...optionsFor(h), runAgent: failing }).catch(
-      () => {},
-    );
-
+    await expect(
+      runWikiIngest({ ...optionsFor(h), runAgent: failing }),
+    ).rejects.toThrow("code 1");
     expect(await readFile(join(h.dataRoot, "wiki", "ok.md"), "utf8")).toContain(
       "Kept",
     );
@@ -5107,23 +5049,6 @@ describe("runWikiIngest guardrails", () => {
     await expect(
       runWikiIngest({ ...optionsFor(h), runAgent: saboteur }),
     ).rejects.toThrow("guardrail check 3 (wikilinks)");
-  });
-
-  it("removes the dangling page when the wikilink guardrail trips", async () => {
-    const h = await makeHarness({ "a.md": "a" });
-    const saboteur: AgentRunner = async (_command, _args, options) => {
-      await writeFile(
-        join(options.cwd, "wiki", "dangling.md"),
-        wikiPage("See [[Nowhere]]."),
-      );
-
-      return { stdout: "rogue report", stderr: "" };
-    };
-
-    await runWikiIngest({ ...optionsFor(h), runAgent: saboteur }).catch(
-      () => {},
-    );
-
     await expect(
       readFile(join(h.dataRoot, "wiki", "dangling.md"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
