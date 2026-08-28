@@ -140,7 +140,7 @@ async function readSourceNote(
 }
 
 /** Remove now-empty parent directories of a deleted projection. */
-export async function pruneEmptyDirs(
+async function pruneEmptyDirs(
   dir: string,
   stopAt: string,
 ): Promise<void> {
@@ -191,7 +191,7 @@ export const PROGRESS_EVERY = 500;
 /** Wrong-pairing guard (issue #74): sync-vault syncs vault sources
  *  only; a repo source in the config fails loudly, pointing at
  *  sync-repo, instead of silently skipping or mis-projecting it. */
-export function vaultSourcesOnly(
+function vaultSourcesOnly(
   sources: readonly SourceConfig[],
 ): readonly VaultSourceConfig[] {
   const vaults: VaultSourceConfig[] = [];
@@ -681,7 +681,7 @@ place; piped, redirected, CI, or NO_COLOR runs get plain appended
 lines instead (read heartbeat every 500 files by default).`;
 
 /** Live status patterns: the read heartbeat and the scan-walk heartbeat. */
-export const LIVE_PROGRESS =
+const LIVE_PROGRESS =
   /^[^:]+: (\d+\/\d+ read, \d+ selected|scanning \([^)]* dirs\))$/;
 
 /** A stderr progress surface: plain lines, or one animated line. */

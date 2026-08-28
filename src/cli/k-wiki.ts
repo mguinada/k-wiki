@@ -37,7 +37,7 @@ export const BINDING_FILE = ".k-wiki.json";
 export const CHECKOUT_ENV = "K_WIKI_CHECKOUT";
 
 /** The wiki page types (guide §9), listed in index.md order (guide §11). */
-export const PAGE_TYPES = [
+const PAGE_TYPES = [
   "concept",
   "entity",
   "source",

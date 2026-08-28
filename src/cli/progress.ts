@@ -7,7 +7,7 @@
  */
 
 /** Braille spinner frames, in animation order. */
-export const SPINNER_FRAMES = [
+const SPINNER_FRAMES = [
   "⠋",
   "⠙",
   "⠹",

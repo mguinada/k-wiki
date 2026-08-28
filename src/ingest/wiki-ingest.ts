@@ -278,7 +278,7 @@ export function parseSettings(text: string, origin: string): AgentSettings {
  *  discovery), extensions, skills — so a spawned run cannot inherit
  *  globally installed persona, tools, or prompts. Available since
  *  pi 0.67.4. */
-export const ISOLATION_FLAGS = [
+const ISOLATION_FLAGS = [
   "--no-context-files",
   "--no-extensions",
   "--no-skills",
@@ -1134,7 +1134,7 @@ export type AgentRunner = (
 ) => Promise<{ stdout: string; stderr: string }>;
 
 /** The agent gets 30 minutes by default; a hung run must not hang the wrapper. */
-export const AGENT_TIMEOUT_MS = 30 * 60_000;
+const AGENT_TIMEOUT_MS = 30 * 60_000;
 
 /** Interval for the progress-sink liveness line while the agent
  *  runs (see AGENT_HEARTBEAT_PREFIX for the line's wording). */

@@ -490,7 +490,7 @@ const EMPTY_HUBS: SourceHubIndex = {
  * rule (second brains cite repo-as-source code files that have no
  * hub, and those stay legal).
  */
-export function checkSourcesEntries(
+function checkSourcesEntries(
   text: string,
   hubs: SourceHubIndex,
 ): string[] {
