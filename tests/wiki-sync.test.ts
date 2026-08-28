@@ -43,16 +43,26 @@ const SETTINGS_YML = "command: pi\nmodel: GLM-5.2\nreasoning: high\n";
  *  (check-fidelity must pass; `index` callers rely on the structural
  *  exemption). */
 function wikiPage(body: string, title = "Page"): string {
+  return frontmatterPage(title, "concept", ["sources:", '  - "[[src]]"'], body);
+}
+
+/** A wiki page whose frontmatter carries the given type plus extra
+ *  fields — the shape the fidelity/provenance failure fixtures build. */
+function frontmatterPage(
+  title: string,
+  type: string,
+  extra: readonly string[],
+  body: string,
+): string {
   return [
     "---",
     `title: "${title}"`,
-    "type: concept",
+    `type: ${type}`,
     "created: 2026-08-20",
     "updated: 2026-08-20",
     "tags:",
     "  - llm",
-    "sources:",
-    '  - "[[src]]"',
+    ...extra,
     "---",
     "",
     body,
@@ -133,6 +143,10 @@ function committedDataRepoTemplate(): Promise<string> {
 
     await mkdir(join(template, "raw"), { recursive: true });
     await mkdir(join(template, "wiki", "sources"), { recursive: true });
+    await writeFile(
+      join(template, ".gitignore"),
+      "# Obsidian UI state: never part of the wiki (external writer; guardrail 1 hazard)\n.obsidian/\nwiki/.obsidian/\n\n# wiki-ingest manifest snapshot: per-instance state, never committed (issue #112)\noutputs/last-ingested-manifest.json\n",
+    );
     await writeFile(
       join(template, "raw", "manifest.json"),
       serializeManifest({ vaults: {} }),
@@ -357,6 +371,28 @@ describe("runWikiSync", () => {
     expect(result.commit.status).toBe("committed");
   });
 
+  it("excludes the ignored ingest snapshot from the cycle commit", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    h.lintAgent = async () => ({
+      stdout: "lint: 149 pages audited, 0 problems",
+      stderr: "",
+    });
+
+    await runWikiSync(optionsFor(h));
+
+    const { stdout: names } = await run("git", [
+      "-C",
+      h.dataRoot,
+      "show",
+      "--name-only",
+      "--pretty=format:",
+      "HEAD",
+    ]);
+
+    expect(names).not.toContain("outputs/last-ingested-manifest.json");
+  });
+
   it("runs no agent and commits nothing when nothing changed", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 
@@ -443,6 +479,12 @@ describe("runWikiSync ingest pre-flight (issue #146)", () => {
    *  UI state first, add the ignore rule afterwards — gitignore does
    *  not apply to tracked files. */
   async function trackIgnoredObsidianState(h: Harness): Promise<void> {
+    // Start from a .gitignore without the Obsidian rule, so the UI
+    // state is trackable; the rule lands only after the commit.
+    await writeFile(
+      join(h.dataRoot, ".gitignore"),
+      "outputs/last-ingested-manifest.json\n",
+    );
     await mkdir(join(h.dataRoot, ".obsidian"), { recursive: true });
     await writeFile(join(h.dataRoot, ".obsidian", "workspace.json"), "{}");
     await run("git", ["-C", h.dataRoot, "add", "-A"]);
@@ -1013,20 +1055,12 @@ describe("runVerificationStage", () => {
     );
     await writeFile(
       join(root, "wiki", "sources", "misquote.md"),
-      [
-        "---",
-        'title: "Misquote"',
-        "type: source",
-        "created: 2026-08-20",
-        "updated: 2026-08-20",
-        "tags:",
-        "  - llm",
-        "origin: notes/Engineering/AI/RAG.md",
-        "---",
-        "",
+      frontmatterPage(
+        "Misquote",
+        "source",
+        ["origin: notes/Engineering/AI/RAG.md"],
         "Run `npm run build`.",
-        "",
-      ].join("\n"),
+      ),
     );
 
     await expect(
@@ -1044,38 +1078,21 @@ describe("runVerificationStage", () => {
     await mkdir(join(root, "wiki", "sources"), { recursive: true });
     await writeFile(
       join(root, "wiki", "sources", "dead-origin.md"),
-      [
-        "---",
-        'title: "Dead Origin"',
-        "type: source",
-        "created: 2026-08-20",
-        "updated: 2026-08-20",
-        "tags:",
-        "  - llm",
-        "origin: notes/Engineering/gone.md",
-        "---",
-        "",
+      frontmatterPage(
+        "Dead Origin",
+        "source",
+        ["origin: notes/Engineering/gone.md"],
         "body without artifacts",
-        "",
-      ].join("\n"),
+      ),
     );
     await writeFile(
       join(root, "wiki", "sources", "dead-link.md"),
-      [
-        "---",
-        'title: "Dead Link"',
-        "type: concept",
-        "created: 2026-08-20",
-        "updated: 2026-08-20",
-        "tags:",
-        "  - llm",
-        "sources:",
-        '  - "[[gone-page]]"',
-        "---",
-        "",
+      frontmatterPage(
+        "Dead Link",
+        "concept",
+        ["sources:", '  - "[[gone-page]]"'],
         "body",
-        "",
-      ].join("\n"),
+      ),
     );
 
     await expect(
@@ -1200,20 +1217,12 @@ describe("runWikiSync verification stage", () => {
       await mkdir(join(options.cwd, "wiki", "sources"), { recursive: true });
       await writeFile(
         join(options.cwd, "wiki", "sources", "dead-origin.md"),
-        [
-          "---",
-          'title: "Dead Origin"',
-          "type: source",
-          "created: 2026-08-20",
-          "updated: 2026-08-20",
-          "tags:",
-          "  - llm",
-          "origin: notes/Engineering/gone.md",
-          "---",
-          "",
+        frontmatterPage(
+          "Dead Origin",
+          "source",
+          ["origin: notes/Engineering/gone.md"],
           "body without artifacts",
-          "",
-        ].join("\n"),
+        ),
       );
 
       return result;
@@ -1248,17 +1257,50 @@ describe("runWikiSync verification stage", () => {
 describe("runWikiSync lint stage", () => {
   it("captures its own pre-run state when the caller passes none", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const saboteur: AgentRunner = async (_command, args, options) => {
+      const prompt = args[args.indexOf("--print") + 1] ?? "";
+      const reportPath = /outputs\/lint-\d{4}-\d{2}-\d{2}\.md/.exec(
+        prompt,
+      )?.[0];
+
+      if (reportPath !== undefined) {
+        await mkdir(join(options.cwd, "outputs"), { recursive: true });
+        await writeFile(join(options.cwd, reportPath), "# Lint report\n");
+      }
+
+      await writeFile(
+        join(options.cwd, "wiki", "broken.md"),
+        "no frontmatter\n",
+      );
+
+      return { stdout: "lint done", stderr: "" };
+    };
+
+    await expect(
+      runLintStage({
+        settingsPath: h.settingsPath,
+        rawDir: join(h.dataRoot, "raw"),
+        promptsDir: h.promptsDir,
+        env: optionsFor(h).env,
+        now: NOW,
+        runAgent: saboteur,
+      }),
+    ).rejects.toThrow(/lint guardrail check 2 \(frontmatter\)/);
+  });
+
+  it("derives the report path from the real clock when the caller passes none", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const expectedPath = `outputs/lint-${new Date().toISOString().slice(0, 10)}.md`;
 
     const result = await runLintStage({
       settingsPath: h.settingsPath,
       rawDir: join(h.dataRoot, "raw"),
       promptsDir: h.promptsDir,
       env: optionsFor(h).env,
-      now: NOW,
       runAgent: lintStub,
     });
 
-    expect(result.reportWritten).toBe(true);
+    expect(result.reportPath).toBe(expectedPath);
   });
   it("reports an unwritten lint report", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
@@ -1268,6 +1310,16 @@ describe("runWikiSync lint stage", () => {
     const result = await runWikiSync(optionsFor(h));
 
     expect(result.lint?.reportWritten).toBe(false);
+  });
+
+  it("commits the cycle even when the lint agent wrote no outputs report", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    h.lintAgent = async () => ({ stdout: "lint done", stderr: "" });
+
+    const result = await runWikiSync(optionsFor(h));
+
+    expect(result.commit.status).toBe("committed");
   });
 
   it("rejects with the agent error when the lint agent fails but guardrails pass", async () => {
@@ -1997,6 +2049,35 @@ describe("formatFinalDigest sections", () => {
     expect(digest).toContain(
       "- **Crosslinks:** ok — 1 cross-wiki link against 12 domain pages",
     );
+  });
+
+  it("aggregates copied and removed counts across multiple vaults", () => {
+    const digest = formatFinalDigest({
+      ...ranResult({}),
+      sync: {
+        vaults: [
+          {
+            vault: "Engineering",
+            candidates: 2,
+            selected: 2,
+            copied: ["a1.md", "a2.md"],
+            unchanged: [],
+            removed: [],
+          },
+          {
+            vault: "Research",
+            candidates: 1,
+            selected: 1,
+            copied: [],
+            unchanged: [],
+            removed: ["b1.md"],
+          },
+        ],
+        prunedNamespaces: [],
+      },
+    });
+
+    expect(digest).toContain("2 sources copied, 1 source removed");
   });
 
   it("states plainly when the cycle ended with nothing to commit", () => {
