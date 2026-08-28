@@ -3,6 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
 import { refuseDirectExecution } from "../src/cli/is-main.ts";
+import { isIsoDate, readDateFlag } from "../src/cli/flag-args.ts";
 import { assertCleanTree } from "../src/data/git.ts";
 import {
   appendWikiLog,
@@ -263,14 +264,7 @@ export async function main(): Promise<void> {
   }
 
   const write = args.includes("--write");
-  const dateIndex = args.indexOf("--date");
-  const date =
-    dateIndex === -1
-      ? new Date().toISOString().slice(0, 10)
-      : args[dateIndex + 1];
-  const consumed = new Set<number>(
-    dateIndex === -1 ? [] : [dateIndex, dateIndex + 1],
-  );
+  const { date, consumed } = readDateFlag(args);
   const positional: string[] = [];
 
   for (const [index, arg] of args.entries()) {
@@ -284,8 +278,7 @@ export async function main(): Promise<void> {
   if (
     positional.length > 1 ||
     (positional.length > 0 && positional[0]?.startsWith("--")) ||
-    date === undefined ||
-    !/^\d{4}-\d{2}-\d{2}$/.test(date)
+    !isIsoDate(date)
   ) {
     console.error(colors().red("link-sources: bad arguments (see --help)"));
     process.exitCode = 1;

@@ -39,6 +39,32 @@ export function timeoutArgError(
   return undefined;
 }
 
+/** The `--date` flag's value (today when the flag is absent,
+ *  undefined when it ends argv), plus the argument indexes it
+ *  consumed so the value is never read as a positional. Shared by
+ *  the migration scripts. */
+export function readDateFlag(args: readonly string[]): {
+  date: string | undefined;
+  consumed: ReadonlySet<number>;
+} {
+  const dateIndex = args.indexOf("--date");
+
+  return {
+    date:
+      dateIndex === -1
+        ? new Date().toISOString().slice(0, 10)
+        : args[dateIndex + 1],
+    consumed: new Set<number>(
+      dateIndex === -1 ? [] : [dateIndex, dateIndex + 1],
+    ),
+  };
+}
+
+/** Whether a `--date` value is calendar-shaped (YYYY-MM-DD). */
+export function isIsoDate(value: string | undefined): value is string {
+  return value !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
 /** The first usage error among the CLI flag values, or undefined
  *  when they are valid: every path flag needs a value (`--timeout`
  *  excepted), optional `--sources` values must all be present, and
