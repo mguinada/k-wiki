@@ -1464,11 +1464,15 @@ async function collectRemovedNotes(
  * against it would silently mis-shape the change set (worst case a
  * spurious expunge), so warn loudly and return undefined; the caller
  * falls back to the full mode. Missing file: first run, no warning.
+ * A scoped `--sources` run (`scoped`) never gets that fallback — the
+ * caller rejects instead — so the warning must not promise it
+ * (issue #151).
  */
 async function readSnapshot(
   snapshotPath: string,
   dataRoot: string,
   onProgress: (message: string) => void,
+  scoped: boolean,
 ): Promise<Manifest | undefined> {
   const text = await readManifestText(snapshotPath);
 
@@ -1497,8 +1501,12 @@ async function readSnapshot(
         ? "has no instance stamp"
         : `is stamped for ${snapshotFor}`;
 
+    const fallback = scoped
+      ? ""
+      : " and falling back to a full run; the next successful ingest rewrites the snapshot, so this warning will not repeat";
+
     onProgress(
-      `wiki-ingest: WARNING — snapshot ${snapshotPath} ${origin}, not this instance (${dataRoot}); ignoring it and falling back to a full run; the next successful ingest rewrites the snapshot, so this warning will not repeat`,
+      `wiki-ingest: WARNING — snapshot ${snapshotPath} ${origin}, not this instance (${dataRoot}); ignoring it${fallback}`,
     );
 
     return undefined;
@@ -1943,7 +1951,12 @@ export async function runWikiIngest(
   await adoptLegacySnapshot(legacySnapshotPath, snapshotPath, onProgress);
   await warnTrackedIgnored(dataRoot, env, onProgress);
 
-  const previous = await readSnapshot(snapshotPath, dataRoot, onProgress);
+  const previous = await readSnapshot(
+    snapshotPath,
+    dataRoot,
+    onProgress,
+    (options.sources?.length ?? 0) > 0,
+  );
   const { diff, explicitDiff } = await computeRunDiff(
     current,
     previous,
