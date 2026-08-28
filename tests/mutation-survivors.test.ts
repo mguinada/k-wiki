@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import {
   actionableLines,
+  main,
   parseReport,
   printSurvivors,
 } from "../src/quality/mutation-survivors.ts";
@@ -231,6 +232,24 @@ describe("printSurvivors", () => {
     }
   });
 
+  it("prints the missing-report hint for text that is not valid JSON", () => {
+    const errors: string[] = [];
+    const spy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) => errors.push(parts.join(" ")));
+
+    process.exitCode = undefined;
+
+    try {
+      printSurvivors("{not json");
+      expect(errors[0]).toContain("No report at");
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = undefined;
+      spy.mockRestore();
+    }
+  });
+
   it("prints the missing-report hint and exits 1 without a report text", () => {
     const errors: string[] = [];
     const spy = vi
@@ -307,5 +326,29 @@ describe("actionableLines file grouping", () => {
       "Survived  src/a.ts:5  First",
       "Survived  src/a.ts:20  Second",
     ]);
+  });
+});
+
+
+describe("mutation-survivors main in-process", () => {
+  it("prints help for --help without reading any report", () => {
+    const argv = process.argv;
+    const out: string[] = [];
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+
+    process.argv = [...argv.slice(0, 2), "--help"];
+    process.exitCode = undefined;
+
+    try {
+      main();
+      expect(out[0]).toContain("Usage: mutation-survivors");
+      expect(process.exitCode).toBeUndefined();
+    } finally {
+      process.argv = argv;
+      process.exitCode = undefined;
+      logSpy.mockRestore();
+    }
   });
 });

@@ -728,10 +728,10 @@ describe("needsReviewChurn", () => {
 describe("typeCounts tie order", () => {
   it("orders equal-count types by label ascending", () => {
     const counts = typeCounts([
-      page({ type: "source" }),
       page({ type: "query" }),
-      page({ type: "entity" }),
       page({ type: "concept" }),
+      page({ type: "source" }),
+      page({ type: "entity" }),
     ]);
 
     expect(counts.map((bar) => bar.label)).toEqual([
@@ -746,10 +746,10 @@ describe("typeCounts tie order", () => {
 describe("topCounts tie order", () => {
   it("orders equal-count entries by key ascending", () => {
     const cited = mostCitedSources([
-      page({ path: "concepts/z.md", sources: ["raw/notes/z.md"] }),
-      page({ path: "concepts/y.md", sources: ["raw/notes/y.md"] }),
       page({ path: "concepts/b.md", sources: ["raw/notes/b.md"] }),
+      page({ path: "concepts/z.md", sources: ["raw/notes/z.md"] }),
       page({ path: "concepts/a.md", sources: ["raw/notes/a.md"] }),
+      page({ path: "concepts/y.md", sources: ["raw/notes/y.md"] }),
     ]);
 
     expect(cited.map((entry) => entry.entry)).toEqual([
