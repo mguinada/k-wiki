@@ -530,10 +530,15 @@ describe("displayPath", () => {
 });
 
 describe("health CLI", () => {
-  it("rejects an unknown option instead of treating it as the raw dir", async () => {
+  it("reports an unknown option instead of treating it as the raw dir", async () => {
     const { err } = await runHealthCli(["--bogus"]);
 
     expect(err).toContain('check-raw: unknown option "--bogus"');
+  });
+
+  it("exits 1 for an unknown option", async () => {
+    await runHealthCli(["--bogus"]);
+
     expect(process.exitCode).toBe(1);
   });
 
@@ -767,7 +772,7 @@ describe("checkRaw freshness (repo-as-source)", () => {
     return { rawDir, sourceRoot };
   }
 
-  it("warns when the recorded commit is behind the source HEAD", async () => {
+  it("stays healthy when the recorded commit is behind the source HEAD", async () => {
     const { rawDir, sourceRoot } = await makeStaleWorkspace();
 
     await writeFile(join(sourceRoot, "note.md"), "body v2\n");
@@ -777,8 +782,28 @@ describe("checkRaw freshness (repo-as-source)", () => {
     const report = await checkRaw(rawDir, { env: GIT_ENV });
 
     expect(report.healthy).toBe(true);
-    expect(report.warnings.length).toBe(1);
-    expect(report.warnings[0]).toMatch(/stale projection.*behind source HEAD/);
+  });
+
+  it("warns when the recorded commit is behind the source HEAD", async () => {
+    const { rawDir, sourceRoot } = await makeStaleWorkspace();
+
+    await writeFile(join(sourceRoot, "note.md"), "body v2\n");
+    await runGit(sourceRoot, ["add", "-A"], GIT_ENV);
+    await runGit(sourceRoot, ["commit", "--quiet", "-m", "two"], GIT_ENV);
+
+    const report = await checkRaw(rawDir, { env: GIT_ENV });
+
+    expect(report.warnings).toEqual([
+      expect.stringMatching(/stale projection.*behind source HEAD/),
+    ]);
+  });
+
+  it("stays healthy when the recorded commit equals the source HEAD", async () => {
+    const { rawDir } = await makeStaleWorkspace();
+
+    const report = await checkRaw(rawDir, { env: GIT_ENV });
+
+    expect(report.healthy).toBe(true);
   });
 
   it("stays silent when the recorded commit equals the source HEAD", async () => {
@@ -786,7 +811,6 @@ describe("checkRaw freshness (repo-as-source)", () => {
 
     const report = await checkRaw(rawDir, { env: GIT_ENV });
 
-    expect(report.healthy).toBe(true);
     expect(report.warnings).toEqual([]);
   });
 
@@ -808,7 +832,7 @@ describe("checkRaw freshness (repo-as-source)", () => {
     expect(report.warnings).toEqual([]);
   });
 
-  it("warns when the source repo can no longer be read", async () => {
+  it("stays healthy when the source repo can no longer be read", async () => {
     const { rawDir } = await makeStaleWorkspace();
 
     await rm(join(rawDir, "source"), { recursive: true, force: true });
@@ -816,11 +840,21 @@ describe("checkRaw freshness (repo-as-source)", () => {
     const report = await checkRaw(rawDir, { env: GIT_ENV });
 
     expect(report.healthy).toBe(true);
-    expect(report.warnings.length).toBe(1);
-    expect(report.warnings[0]).toMatch(/cannot verify freshness/);
   });
 
-  it("prints a stale warning on stderr while staying exit 0", async () => {
+  it("warns when the source repo can no longer be read", async () => {
+    const { rawDir } = await makeStaleWorkspace();
+
+    await rm(join(rawDir, "source"), { recursive: true, force: true });
+
+    const report = await checkRaw(rawDir, { env: GIT_ENV });
+
+    expect(report.warnings).toEqual([
+      expect.stringMatching(/cannot verify freshness/),
+    ]);
+  });
+
+  it("prints a stale warning on stderr for a stale projection", async () => {
     const { rawDir, sourceRoot } = await makeStaleWorkspace();
 
     await writeFile(join(sourceRoot, "note.md"), "body v2\n");
@@ -830,6 +864,17 @@ describe("checkRaw freshness (repo-as-source)", () => {
     const { err } = await runHealthCli([rawDir]);
 
     expect(err).toContain("check-raw: stale projection");
+  });
+
+  it("stays exit 0 when the projection is stale", async () => {
+    const { rawDir, sourceRoot } = await makeStaleWorkspace();
+
+    await writeFile(join(sourceRoot, "note.md"), "body v2\n");
+    await runGit(sourceRoot, ["add", "-A"], GIT_ENV);
+    await runGit(sourceRoot, ["commit", "--quiet", "-m", "two"], GIT_ENV);
+
+    await runHealthCli([rawDir]);
+
     expect(process.exitCode).toBeUndefined();
   });
 
@@ -845,12 +890,19 @@ describe("checkRaw freshness (repo-as-source)", () => {
     expect(process.exitCode).toBe(1);
   });
 
-  it("stays exit 0 under --fail-on-stale when the projection is current", async () => {
+  it("prints healthy under --fail-on-stale when the projection is current", async () => {
     const { rawDir } = await makeStaleWorkspace();
 
     const { out } = await runHealthCli(["--fail-on-stale", rawDir]);
 
     expect(out).toContain("healthy:");
+  });
+
+  it("stays exit 0 under --fail-on-stale when the projection is current", async () => {
+    const { rawDir } = await makeStaleWorkspace();
+
+    await runHealthCli(["--fail-on-stale", rawDir]);
+
     expect(process.exitCode).toBeUndefined();
   });
 });
@@ -879,6 +931,26 @@ describe("checkRaw freshness edges (issue #74)", () => {
     const report = await checkRaw(rawDir, { env: GIT_ENV });
 
     expect(report.warnings).toEqual([]);
+  });
+
+  it("does not flag the projection as stale when the manifest stamps a commit but no root", async () => {
+    const rawDir = await makeRawDir();
+    const notes: VaultNotes = {
+      "note.md": { hash: hashOf(NOTE), last_synced: "2026-08-20T00:00:00Z" },
+    };
+
+    await mkdir(join(rawDir, "notes", "k-wiki"), { recursive: true });
+    await writeFile(join(rawDir, "notes", "k-wiki", "note.md"), NOTE);
+    await writeFile(
+      join(rawDir, "manifest.json"),
+      serializeManifest(
+        { vaults: { "k-wiki": notes } },
+        { source_commit: "a".repeat(40) },
+      ),
+    );
+
+    const report = await checkRaw(rawDir, { env: GIT_ENV });
+
     expect(report.stale).toBe(false);
   });
 
@@ -903,7 +975,7 @@ describe("checkRaw freshness edges (issue #74)", () => {
     expect(report.warnings).toEqual([]);
   });
 
-  it("skips freshness when the manifest is not valid JSON", async () => {
+  it("marks the projection unhealthy when the manifest is not valid JSON", async () => {
     const rawDir = await makeRawDir();
 
     await mkdir(join(rawDir, "notes"), { recursive: true });
@@ -912,6 +984,16 @@ describe("checkRaw freshness edges (issue #74)", () => {
     const report = await checkRaw(rawDir, { env: GIT_ENV });
 
     expect(report.healthy).toBe(false);
+  });
+
+  it("skips freshness warnings when the manifest is not valid JSON", async () => {
+    const rawDir = await makeRawDir();
+
+    await mkdir(join(rawDir, "notes"), { recursive: true });
+    await writeFile(join(rawDir, "manifest.json"), "{ not json");
+
+    const report = await checkRaw(rawDir, { env: GIT_ENV });
+
     expect(report.warnings).toEqual([]);
   });
 
