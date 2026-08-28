@@ -4494,7 +4494,7 @@ describe("runWikiIngest --sources", () => {
     expect(result.status).toBe("ran");
   });
 
-  it("forces the incremental prompt, never full or expunge", async () => {
+  it("runs a scoped selection in incremental mode", async () => {
     const h = await makeHarness({ "a.md": "a" });
     await seedSnapshot(h, { "a.md": "a", "gone.md": "gone" });
 
@@ -4504,6 +4504,17 @@ describe("runWikiIngest --sources", () => {
     });
 
     expect(result).toMatchObject({ status: "ran", mode: "incremental" });
+  });
+
+  it("forces the incremental prompt, never full or expunge", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    await seedSnapshot(h, { "a.md": "a", "gone.md": "gone" });
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md"],
+    });
+
     expect(invocation(h, 0).args.at(-1)).toContain("INCREMENTAL PROMPT");
   });
 
@@ -4522,7 +4533,7 @@ describe("runWikiIngest --sources", () => {
     });
   });
 
-  it("renders one ~ line per explicit source, deduped and sorted", async () => {
+  it("renders one ~ line per explicit source, deduped", async () => {
     const h = await makeHarness({ "a.md": "a", "b.md": "b" });
     await seedSnapshot(h, { "a.md": "a", "b.md": "b" });
 
@@ -4533,24 +4544,44 @@ describe("runWikiIngest --sources", () => {
 
     const prompt = invocation(h, 0).args.at(-1) ?? "";
 
-    expect(prompt.split("~ Engineering/a.md").length - 1).toBe(1);
-    expect(prompt.split("~ Engineering/b.md").length - 1).toBe(1);
-    expect(prompt.indexOf("~ Engineering/a.md")).toBeLessThan(
-      prompt.indexOf("~ Engineering/b.md"),
-    );
+    expect(["a.md", "b.md"].map((f) => prompt.split("~ Engineering/" + f).length - 1)).toEqual([1, 1]);
+  });
+
+  it("sorts explicit-source ~ lines in manifest order", async () => {
+    const h = await makeHarness({ "a.md": "a", "b.md": "b" });
+    await seedSnapshot(h, { "a.md": "a", "b.md": "b" });
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/b.md", "Engineering/a.md", "Engineering/b.md"],
+    });
+
+    const prompt = invocation(h, 0).args.at(-1) ?? "";
+
+    expect(prompt.indexOf("~ Engineering/a.md")).toBeLessThan(prompt.indexOf("~ Engineering/b.md"));
+  });
+
+  it("announces changed sources since the previous ingestion", async () => {
+    const h = await makeHarness({ "a.md": "a", "b.md": "b" });
+    await seedSnapshot(h, { "a.md": "a", "b.md": "b" });
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/b.md", "Engineering/a.md", "Engineering/b.md"],
+    });
+
+    const prompt = invocation(h, 0).args.at(-1) ?? "";
+
     expect(prompt).toContain("Changed sources since the previous ingestion:");
   });
 
   it("marks the digest Mode line with sources selected explicitly", async () => {
     const h = await makeHarness({ "a.md": "a" });
     await seedSnapshot(h, { "a.md": "a" });
-
-    const result = await runWikiIngest({
+    await runWikiIngest({
       ...optionsFor(h),
       sources: ["Engineering/a.md"],
     });
-
-    expect(result.status).toBe("ran");
 
     const digest = await readFile(
       join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"),
@@ -4560,7 +4591,7 @@ describe("runWikiIngest --sources", () => {
     expect(digest).toContain("sources selected explicitly");
   });
 
-  it("omits the sources-selected marker from an ordinary failure digest", async () => {
+  it("runs the run to a guardrail failure", async () => {
     const h = await makeHarness({ "a.md": "a" });
 
     await expect(
@@ -4569,6 +4600,15 @@ describe("runWikiIngest --sources", () => {
         runAgent: frontmatterSaboteur("bad.md"),
       }),
     ).rejects.toThrow("guardrail check 2 (frontmatter)");
+  });
+
+  it("omits the sources-selected marker from an ordinary failure digest", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: frontmatterSaboteur("bad.md"),
+    }).catch(() => {});
 
     const digest = await readFile(
       join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"),
@@ -4578,6 +4618,23 @@ describe("runWikiIngest --sources", () => {
     expect(digest).not.toContain("sources selected explicitly");
   });
 
+  it('lists the explicitly named source in a scoped prompt', async () => {
+    const h = await makeHarness({
+      "a.md": "a",
+      "new.md": "added since snapshot",
+    });
+    await seedSnapshot(h, { "a.md": "a" });
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md"],
+    });
+
+    const prompt = invocation(h, 0).args.at(-1) ?? "";
+
+    expect(prompt).toContain("~ Engineering/a.md");
+  });
+
   it("hides manifest changes the explicit list does not name", async () => {
     const h = await makeHarness({
       "a.md": "a",
@@ -4585,16 +4642,13 @@ describe("runWikiIngest --sources", () => {
     });
     await seedSnapshot(h, { "a.md": "a" });
 
-    const result = await runWikiIngest({
+    await runWikiIngest({
       ...optionsFor(h),
       sources: ["Engineering/a.md"],
     });
 
-    expect(result.status).toBe("ran");
-
     const prompt = invocation(h, 0).args.at(-1) ?? "";
 
-    expect(prompt).toContain("~ Engineering/a.md");
     expect(prompt).not.toContain("new.md");
   });
 
@@ -4606,12 +4660,11 @@ describe("runWikiIngest --sources", () => {
     await seedSnapshot(h, { "a.md": "a" });
     const before = await readFile(h.snapshotPath, "utf8");
 
-    const result = await runWikiIngest({
+    await runWikiIngest({
       ...optionsFor(h),
       sources: ["Engineering/a.md"],
     });
 
-    expect(result.status).toBe("ran");
     expect(await readFile(h.snapshotPath, "utf8")).toBe(before);
   });
 
@@ -4622,16 +4675,30 @@ describe("runWikiIngest --sources", () => {
     });
     await seedSnapshot(h, { "a.md": "a" });
 
-    const scoped = await runWikiIngest({
+    await runWikiIngest({
       ...optionsFor(h),
       sources: ["Engineering/a.md"],
     });
 
-    expect(scoped.status).toBe("ran");
-
     const pending = await runWikiIngest(optionsFor(h));
 
     expect(pending.status).toBe("ran");
+  });
+
+  it("pairs the pending manifest change into the follow-up prompt", async () => {
+    const h = await makeHarness({
+      "a.md": "a",
+      "new.md": "added since snapshot",
+    });
+    await seedSnapshot(h, { "a.md": "a" });
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md"],
+    });
+
+    await runWikiIngest(optionsFor(h));
+
     expect(invocation(h, 1).args.at(-1)).toContain("+ Engineering/new.md");
   });
 
@@ -4661,13 +4728,11 @@ describe("runWikiIngest --sources", () => {
     const h = await makeHarness({ "a.md": "a" });
     await seedSnapshot(h, { "a.md": "a" });
 
-    await expect(
-      runWikiIngest({
-        ...optionsFor(h),
-        sources: ["Engineering/a.md"],
-        runAgent: frontmatterSaboteur("bad.md"),
-      }),
-    ).rejects.toThrow("guardrail check 2 (frontmatter)");
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md"],
+      runAgent: frontmatterSaboteur("bad.md"),
+    }).catch(() => {});
 
     const digest = await readFile(
       join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"),
@@ -4694,10 +4759,9 @@ describe("runWikiIngest --sources", () => {
     ).rejects.toThrow(/run a full ingest first/);
   });
 
-  it("leaves the snapshot untouched on a successful scoped run", async () => {
+  it("completes a successful scoped run", async () => {
     const h = await makeHarness({ "a.md": "a" });
     await seedSnapshot(h, { "a.md": "a" });
-    const before = await readFile(h.snapshotPath, "utf8");
 
     const result = await runWikiIngest({
       ...optionsFor(h),
@@ -4705,13 +4769,24 @@ describe("runWikiIngest --sources", () => {
     });
 
     expect(result.status).toBe("ran");
-    expect(await readFile(h.snapshotPath, "utf8")).toBe(before);
   });
 
-  it("leaves the snapshot untouched when the scoped agent run fails", async () => {
+  it("leaves the snapshot untouched on a successful scoped run", async () => {
     const h = await makeHarness({ "a.md": "a" });
     await seedSnapshot(h, { "a.md": "a" });
     const before = await readFile(h.snapshotPath, "utf8");
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md"],
+    });
+
+    expect(await readFile(h.snapshotPath, "utf8")).toBe(before);
+  });
+
+  it("propagates the failing scoped agent error", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    await seedSnapshot(h, { "a.md": "a" });
     const failing: AgentRunner = async () => {
       throw new Error("agent exited with code 1");
     };
@@ -4723,14 +4798,28 @@ describe("runWikiIngest --sources", () => {
         runAgent: failing,
       }),
     ).rejects.toThrow("agent exited with code 1");
+  });
+
+  it("leaves the snapshot untouched when the scoped agent run fails", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    await seedSnapshot(h, { "a.md": "a" });
+    const before = await readFile(h.snapshotPath, "utf8");
+    const failing: AgentRunner = async () => {
+      throw new Error("agent exited with code 1");
+    };
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md"],
+      runAgent: failing,
+    }).catch(() => {});
 
     expect(await readFile(h.snapshotPath, "utf8")).toBe(before);
   });
 
-  it("auto-reverts and leaves the snapshot when a guardrail trips on a scoped run", async () => {
+  it("surfaces the guardrail failure on a scoped run", async () => {
     const h = await makeHarness({ "a.md": "a" });
     await seedSnapshot(h, { "a.md": "a" });
-    const before = await readFile(h.snapshotPath, "utf8");
 
     await expect(
       runWikiIngest({
@@ -4739,10 +4828,34 @@ describe("runWikiIngest --sources", () => {
         runAgent: frontmatterSaboteur("bad.md"),
       }),
     ).rejects.toThrow("guardrail check 2 (frontmatter)");
+  });
+
+  it("auto-reverts the offending page when a guardrail trips on a scoped run", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    await seedSnapshot(h, { "a.md": "a" });
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md"],
+      runAgent: frontmatterSaboteur("bad.md"),
+    }).catch(() => {});
 
     await expect(
       readFile(join(h.dataRoot, "wiki", "bad.md"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("leaves the snapshot when a guardrail trips on a scoped run", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    await seedSnapshot(h, { "a.md": "a" });
+    const before = await readFile(h.snapshotPath, "utf8");
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md"],
+      runAgent: frontmatterSaboteur("bad.md"),
+    }).catch(() => {});
+
     expect(await readFile(h.snapshotPath, "utf8")).toBe(before);
   });
 });
@@ -4751,11 +4864,17 @@ describe("runWikiIngest guardrails", () => {
   const digestPath = (h: Harness) =>
     join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md");
 
-  it("keeps the agent's changes on a clean run", async () => {
+  it("completes a clean run", async () => {
     const h = await makeHarness({ "a.md": "a" });
     const result = await runWikiIngest(optionsFor(h));
 
     expect(result.status).toBe("ran");
+  });
+
+  it("keeps the agent's changes on a clean run", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    await runWikiIngest(optionsFor(h));
 
     const page = await readFile(
       join(h.dataRoot, "wiki", "concepts", "new.md"),
@@ -4774,15 +4893,35 @@ describe("runWikiIngest guardrails", () => {
         runAgent: frontmatterSaboteur("bad.md"),
       }),
     ).rejects.toThrow("guardrail check 2 (frontmatter)");
+  });
+
+  it("removes the offending page when the frontmatter guardrail trips", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: frontmatterSaboteur("bad.md"),
+    }).catch(() => {});
+
     await expect(
       readFile(join(h.dataRoot, "wiki", "bad.md"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("leaves no snapshot when the frontmatter guardrail trips", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: frontmatterSaboteur("bad.md"),
+    }).catch(() => {});
+
     await expect(readFile(h.snapshotPath, "utf8")).rejects.toMatchObject({
       code: "ENOENT",
     });
   });
 
-  it("writes a failure digest naming the tripped check", async () => {
+  it("fails the run when the frontmatter guardrail trips", async () => {
     const h = await makeHarness({ "a.md": "a" });
 
     await expect(
@@ -4791,11 +4930,44 @@ describe("runWikiIngest guardrails", () => {
         runAgent: frontmatterSaboteur("bad.md"),
       }),
     ).rejects.toThrow();
+  });
+
+  it("writes a failure digest naming the tripped check", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: frontmatterSaboteur("bad.md"),
+    }).catch(() => {});
 
     const digest = await readFile(digestPath(h), "utf8");
 
     expect(digest).toContain("Check 2 (frontmatter)");
+  });
+
+  it("names the offending page in the failure digest", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: frontmatterSaboteur("bad.md"),
+    }).catch(() => {});
+
+    const digest = await readFile(digestPath(h), "utf8");
+
     expect(digest).toContain("wiki/bad.md");
+  });
+
+  it("embeds the agent report in the failure digest", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: frontmatterSaboteur("bad.md"),
+    }).catch(() => {});
+
+    const digest = await readFile(digestPath(h), "utf8");
+
     expect(digest).toContain("rogue report");
   });
 
@@ -4811,6 +4983,21 @@ describe("runWikiIngest guardrails", () => {
     await expect(
       runWikiIngest({ ...optionsFor(h), runAgent: saboteur }),
     ).rejects.toThrow("guardrail check 1 (immutability)");
+  });
+
+  it("removes the out-of-whitelist file when the guardrail trips", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const saboteur: AgentRunner = async (_command, _args, options) => {
+      await mkdir(join(options.cwd, "raw", "notes"), { recursive: true });
+      await writeFile(join(options.cwd, "raw", "notes", "rogue.md"), "x\n");
+
+      return { stdout: "rogue report", stderr: "" };
+    };
+
+    await runWikiIngest({ ...optionsFor(h), runAgent: saboteur }).catch(
+      () => {},
+    );
+
     await expect(
       readFile(join(h.dataRoot, "raw", "notes", "rogue.md"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
@@ -4828,12 +5015,27 @@ describe("runWikiIngest guardrails", () => {
     await expect(
       runWikiIngest({ ...optionsFor(h), runAgent: saboteur }),
     ).rejects.toThrow("guardrail check 1 (immutability)");
+  });
+
+  it("removes the tampered raw file when the guardrail trips", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const saboteur: AgentRunner = async (_command, _args, options) => {
+      await mkdir(join(options.cwd, "raw", "notes"), { recursive: true });
+      await writeFile(join(options.cwd, "raw", "notes", "rogue.md"), "x\n");
+
+      throw new Error("agent exited with code 1");
+    };
+
+    await runWikiIngest({ ...optionsFor(h), runAgent: saboteur }).catch(
+      () => {},
+    );
+
     await expect(
       readFile(join(h.dataRoot, "raw", "notes", "rogue.md"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("keeps valid changes when the agent fails and guardrails pass", async () => {
+  it("propagates the agent failure when guardrails pass", async () => {
     const h = await makeHarness({ "a.md": "a" });
     const failing: AgentRunner = async (_command, _args, options) => {
       await writeFile(join(options.cwd, "wiki", "ok.md"), wikiPage("Kept"));
@@ -4844,6 +5046,20 @@ describe("runWikiIngest guardrails", () => {
     await expect(
       runWikiIngest({ ...optionsFor(h), runAgent: failing }),
     ).rejects.toThrow("code 1");
+  });
+
+  it("keeps valid changes when the agent fails and guardrails pass", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const failing: AgentRunner = async (_command, _args, options) => {
+      await writeFile(join(options.cwd, "wiki", "ok.md"), wikiPage("Kept"));
+
+      throw new Error("agent exited with code 1");
+    };
+
+    await runWikiIngest({ ...optionsFor(h), runAgent: failing }).catch(
+      () => {},
+    );
+
     expect(await readFile(join(h.dataRoot, "wiki", "ok.md"), "utf8")).toContain(
       "Kept",
     );
@@ -4863,6 +5079,23 @@ describe("runWikiIngest guardrails", () => {
     await expect(
       runWikiIngest({ ...optionsFor(h), runAgent: saboteur }),
     ).rejects.toThrow("guardrail check 3 (wikilinks)");
+  });
+
+  it("removes the dangling page when the wikilink guardrail trips", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const saboteur: AgentRunner = async (_command, _args, options) => {
+      await writeFile(
+        join(options.cwd, "wiki", "dangling.md"),
+        wikiPage("See [[Nowhere]]."),
+      );
+
+      return { stdout: "rogue report", stderr: "" };
+    };
+
+    await runWikiIngest({ ...optionsFor(h), runAgent: saboteur }).catch(
+      () => {},
+    );
+
     await expect(
       readFile(join(h.dataRoot, "wiki", "dangling.md"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
@@ -5039,12 +5272,19 @@ describe("createAgentProgressSink", () => {
     return { sink, written, lines };
   }
 
-  it("appends plain lines when not animated", () => {
-    const { sink, written, lines } = makeSink(false);
+  it("keeps the animated channel quiet when not animated", () => {
+    const { sink, written } = makeSink(false);
 
     sink.render("wiki-ingest: agent finished");
 
     expect(written).toEqual([]);
+  });
+
+  it("appends plain lines when not animated", () => {
+    const { sink, lines } = makeSink(false);
+
+    sink.render("wiki-ingest: agent finished");
+
     expect(lines).toEqual(["<wiki-ingest: agent finished>"]);
   });
 
@@ -5114,7 +5354,7 @@ describe("createAgentProgressSink", () => {
 });
 
 describe("runGit reuse sanity", () => {
-  it("reports git status for a wiki change in the temp data repo", async () => {
+  it("reports an untracked wiki file in git status", async () => {
     const dataRoot = await makeDataRepo({ "a.md": "a" });
 
     await writeFile(join(dataRoot, "wiki", "index.md"), "# Index v2\n");
@@ -5129,6 +5369,20 @@ describe("runGit reuse sanity", () => {
     const lines = stdout.split("\n").filter(Boolean);
 
     expect(lines).toContain("?? wiki/concepts/x.md");
+  });
+
+  it("reports a modified wiki page in git status", async () => {
+    const dataRoot = await makeDataRepo({ "a.md": "a" });
+
+    await writeFile(join(dataRoot, "wiki", "index.md"), "# Index v2\n");
+
+    const { stdout } = await runGit(
+      dataRoot,
+      ["status", "--porcelain", "-uall", "--", "wiki"],
+      process.env,
+    );
+    const lines = stdout.split("\n").filter(Boolean);
+
     expect(lines).toContain(" M wiki/index.md");
   });
 });
@@ -5224,20 +5478,45 @@ console.log("stub report");
     expect((await runCli(["-h"])).out).toBe((await runCli(["--help"])).out);
   });
 
-  it("documents the switches and defaults in the help text", async () => {
+  it("documents the --settings switch in the help text", async () => {
     const out = (await runCli(["--help"])).out;
 
     expect(out).toContain("--settings");
+  });
+
+  it("documents the --outputs switch in the help text", async () => {
+    const out = (await runCli(["--help"])).out;
+
     expect(out).toContain("--outputs");
+  });
+
+  it("documents the <raw-dir> positional in the help text", async () => {
+    const out = (await runCli(["--help"])).out;
+
     expect(out).toContain("<raw-dir>");
+  });
+
+  it("documents the switch defaults in the help text", async () => {
+    const out = (await runCli(["--help"])).out;
+
     expect(out).toContain("Default");
   });
 
-  it("documents --sources with the exact-path rule and snapshot precondition", async () => {
+  it("documents --sources with the <vault/path> syntax", async () => {
     const out = (await runCli(["--help"])).out;
 
     expect(out).toContain("--sources <vault/path>");
+  });
+
+  it("documents the exact-path rule for --sources", async () => {
+    const out = (await runCli(["--help"])).out;
+
     expect(out).toContain("exact manifest paths");
+  });
+
+  it("documents the snapshot precondition of --sources", async () => {
+    const out = (await runCli(["--help"])).out;
+
     expect(out).toContain("run a full ingest first");
   });
 
