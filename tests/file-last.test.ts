@@ -331,6 +331,14 @@ describe("driftWarning", () => {
     ).toBeUndefined();
   });
 
+  it("is undefined when the saved-at timestamp is unparseable", async () => {
+    const dataRoot = await makeCommittedRepo();
+
+    expect(
+      await driftWarning(dataRoot, process.env, "not-a-timestamp"),
+    ).toBeUndefined();
+  });
+
   it("is undefined when the last raw/ or wiki/ commit predates the answer", async () => {
     const dataRoot = await makeCommittedRepo();
 
