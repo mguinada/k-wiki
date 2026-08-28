@@ -1,11 +1,12 @@
 import { readFile } from "node:fs/promises";
-import { join, relative, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { stem } from "../wiki-links.ts";
 import {
   bodyAfterFrontmatter,
   kebab,
   listWikiPages,
   normalizeRawPath,
+  pageReportPath,
   parsePageFields,
 } from "./pages.ts";
 import { assertRawDir } from "./provenance.ts";
@@ -226,7 +227,7 @@ async function checkPageFidelity(
 ): Promise<void> {
   const text = await readFile(join(wikiDir, file), "utf8");
   const fields = parsePageFields(text);
-  const page = relative(resolve(wikiDir, ".."), join(wikiDir, file));
+  const page = pageReportPath(wikiDir, file);
 
   checkTitle(page, stem(file), fields.title, problems, counters);
 

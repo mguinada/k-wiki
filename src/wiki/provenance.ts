@@ -5,6 +5,7 @@ import {
   isWikilinkEntry,
   listWikiPages,
   normalizeRawPath,
+  pageReportPath,
   readPageFields,
   wikilinkTarget,
 } from "./pages.ts";
@@ -157,7 +158,7 @@ export async function checkWikiProvenance(
 
   for (const file of files) {
     const fields = await readPageFields(join(wikiDir, file));
-    const page = relative(resolve(wikiDir, ".."), join(wikiDir, file));
+    const page = pageReportPath(wikiDir, file);
 
     if (fields.type === "source" && fields.origin === undefined) {
       missingOrigins++;

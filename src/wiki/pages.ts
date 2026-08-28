@@ -1,5 +1,5 @@
 import { readFile, stat } from "node:fs/promises";
-import { basename } from "node:path";
+import { basename, join, relative, resolve } from "node:path";
 import {
   buildPageIndex,
   listFiles,
@@ -233,4 +233,10 @@ export async function readPageFields(path: string): Promise<PageFields> {
   } catch {
     return EMPTY_FIELDS;
   }
+}
+
+/** A wiki page's report path: relative to the wiki root's parent —
+ *  the convention every checker's problem lines use. */
+export function pageReportPath(wikiDir: string, file: string): string {
+  return relative(resolve(wikiDir, ".."), join(wikiDir, file));
 }
