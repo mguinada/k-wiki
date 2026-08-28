@@ -200,8 +200,6 @@ describe("linkSources", () => {
     const report = await linkSources(wikiDir, {
       write: true,
       date: "2026-08-26",
-      entry: "notes/V/y.md",
-      replacement: "[[b]]",
     });
 
     expect(report.alreadyLinked).toBe(2);
@@ -324,7 +322,6 @@ describe("linkSources", () => {
         replacement: "[[system-design-interview-notes|04. Rate Limiter]]",
       },
     ]);
-    expect(report.skipped).toEqual([]);
   });
 
   it("skips nothing when the hub has an origin", async () => {

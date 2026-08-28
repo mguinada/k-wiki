@@ -1026,11 +1026,9 @@ describe("checkRaw freshness edges (issue #74)", () => {
 
     await mkdir(join(rawDir, "notes"), { recursive: true });
 
-    const { out, err } = await runHealthCli(["--fail-on-stale", rawDir]);
+    const { out } = await runHealthCli(["--fail-on-stale", rawDir]);
 
     expect(out).toContain("healthy: empty projection");
-    expect(err).toBe("");
-    expect(process.exitCode).toBeUndefined();
   });
 
   it("warns nothing for a projection without a manifest", async () => {

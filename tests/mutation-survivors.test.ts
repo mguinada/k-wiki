@@ -144,6 +144,14 @@ describe("mutation-survivors CLI", () => {
     tempDirs.push(dir);
 
     expect(result.code).toBe(0);
+  });
+
+  it("warns nothing for --help with no report present", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutsurv-"));
+    const result = await runNode(["--help"], dir);
+
+    tempDirs.push(dir);
+
     expect(result.err).toBe("");
   });
 
@@ -169,6 +177,20 @@ describe("mutation-survivors CLI", () => {
     const result = await runNode([], dir);
 
     expect(result.code).toBe(1);
+  });
+
+  it("names the drifted shape in the error", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutsurv-"));
+
+    tempDirs.push(dir);
+    await mkdir(join(dir, "reports", "mutation"), { recursive: true });
+    await writeFile(
+      join(dir, "reports", "mutation", "mutation.json"),
+      '{"config": {}}',
+    );
+
+    const result = await runNode([], dir);
+
     expect(result.err).toContain("unexpected shape");
   });
 });

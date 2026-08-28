@@ -2763,10 +2763,26 @@ describe("runWikiSync commit contents", () => {
       throw new Error("expected a committed cycle");
     }
 
-    expect(result.commit.message).toContain(
-      "- sources: 0 copied, 0 removed by sync (no ingest)",
+    expect(result.commit.message).toMatch(
+      /- sources: 0 copied, 0 removed by sync \(no ingest\)[\s\S]*- pages: 0 created, 1 updated/,
     );
-    expect(result.commit.message).toContain("- pages: 0 created, 1 updated");
+  });
+
+  it("announces the skipped lint stage on a no-ingest cycle", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const progress: string[] = [];
+
+    await runWikiSync(optionsFor(h));
+    await writeFile(
+      join(h.dataRoot, "wiki", "index.md"),
+      wikiPage("# Index hand-edited"),
+    );
+
+    await runWikiSync({
+      ...optionsFor(h),
+      onProgress: (message) => progress.push(message),
+    });
+
     expect(progress).toContain(
       "wiki-sync: stage 3/5 — lint skipped (no ingest ran)",
     );
