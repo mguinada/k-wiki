@@ -405,6 +405,65 @@ function bodyHash(content: string): string {
   return sha256(Buffer.from(bodyAfterFrontmatter(content), "utf8"));
 }
 
+/** Pair one vault's leftover removed+added notes whose body hashes
+ *  match as renames (issue #143's per-vault step). */
+async function pairVaultBodyRenames(
+  vault: VaultSourceChange,
+  readRemoved: (
+    vault: string,
+    path: string,
+  ) => string | undefined | Promise<string | undefined>,
+  readAdded: (
+    vault: string,
+    path: string,
+  ) => string | undefined | Promise<string | undefined>,
+): Promise<VaultSourceChange> {
+  if (vault.removed.length === 0 || vault.added.length === 0) {
+    return vault;
+  }
+
+  const removedHashes = new Map<string, string>();
+  const taken = new Set<string>();
+  const renamed = [...vault.renamed];
+
+  for (const path of vault.removed) {
+    const content = await readRemoved(vault.vault, path);
+
+    if (content !== undefined) {
+      removedHashes.set(path, bodyHash(content));
+    }
+  }
+
+  const added: string[] = [];
+
+  for (const to of vault.added) {
+    const content = await readAdded(vault.vault, to);
+    const hash = content === undefined ? undefined : bodyHash(content);
+    const from =
+      hash === undefined
+        ? undefined
+        : vault.removed.find(
+            (path) => !taken.has(path) && removedHashes.get(path) === hash,
+          );
+
+    if (from === undefined) {
+      added.push(to);
+
+      continue;
+    }
+
+    taken.add(from);
+    renamed.push({ from, to });
+  }
+
+  return {
+    ...vault,
+    added,
+    renamed,
+    removed: vault.removed.filter((path) => !taken.has(path)),
+  };
+}
+
 /**
  * Reclassify leftover removed+added pairs whose bodies (text after
  * the frontmatter fence) hash equal as renames (issue #143): a move
@@ -428,52 +487,9 @@ export async function pairBodyIdenticalRenames(
   ) => string | undefined | Promise<string | undefined>,
 ): Promise<ManifestDiff> {
   const vaults = await Promise.all(
-    diff.vaults.map(async (vault) => {
-      if (vault.removed.length === 0 || vault.added.length === 0) {
-        return vault;
-      }
-
-      const removedHashes = new Map<string, string>();
-      const taken = new Set<string>();
-      const renamed = [...vault.renamed];
-
-      for (const path of vault.removed) {
-        const content = await readRemoved(vault.vault, path);
-
-        if (content !== undefined) {
-          removedHashes.set(path, bodyHash(content));
-        }
-      }
-
-      const added: string[] = [];
-
-      for (const to of vault.added) {
-        const content = await readAdded(vault.vault, to);
-        const hash = content === undefined ? undefined : bodyHash(content);
-        const from =
-          hash === undefined
-            ? undefined
-            : vault.removed.find(
-                (path) => !taken.has(path) && removedHashes.get(path) === hash,
-              );
-
-        if (from === undefined) {
-          added.push(to);
-
-          continue;
-        }
-
-        taken.add(from);
-        renamed.push({ from, to });
-      }
-
-      return {
-        ...vault,
-        added,
-        renamed,
-        removed: vault.removed.filter((path) => !taken.has(path)),
-      };
-    }),
+    diff.vaults.map((vault) =>
+      pairVaultBodyRenames(vault, readRemoved, readAdded),
+    ),
   );
 
   return { vaults, empty: vaults.length === 0 };
@@ -541,6 +557,35 @@ export function diffManifests(
  *  offender, never a guess. A path that decomposes two ways (vault
  *  "A" holding "B/c.md" and vault "A/B" holding "c.md") resolves to
  *  the longest vault name — the most specific decomposition. */
+/** The most specific decomposition of one `--sources` path: the
+ *  manifest entry whose vault name is the longest matching
+ *  prefix. */
+function longestVaultMatch(
+  manifest: Manifest,
+  source: string,
+): { vault: string; path: string } | undefined {
+  let match: { vault: string; path: string } | undefined;
+
+  for (const [vault, notes] of Object.entries(manifest.vaults)) {
+    const prefix = `${vault}/`;
+
+    if (!source.startsWith(prefix)) {
+      continue;
+    }
+
+    const path = source.slice(prefix.length);
+
+    if (
+      notes[path] !== undefined &&
+      (match === undefined || vault.length > match.vault.length)
+    ) {
+      match = { vault, path };
+    }
+  }
+
+  return match;
+}
+
 export function explicitSourceDiff(
   manifest: Manifest,
   sources: readonly string[],
@@ -549,24 +594,7 @@ export function explicitSourceDiff(
   const unknown: string[] = [];
 
   for (const source of sources) {
-    let match: { vault: string; path: string } | undefined;
-
-    for (const [vault, notes] of Object.entries(manifest.vaults)) {
-      const prefix = `${vault}/`;
-
-      if (!source.startsWith(prefix)) {
-        continue;
-      }
-
-      const path = source.slice(prefix.length);
-
-      if (
-        notes[path] !== undefined &&
-        (match === undefined || vault.length > match.vault.length)
-      ) {
-        match = { vault, path };
-      }
-    }
+    const match = longestVaultMatch(manifest, source);
 
     if (match === undefined) {
       unknown.push(source);
