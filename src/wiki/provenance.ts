@@ -12,9 +12,9 @@ import {
   isUnmigratableSelfCitation,
   loadSourceHubIndex,
   type SourceHubIndex,
-  stem,
   wikilinkFor,
 } from "./source-hubs.ts";
+import { stem } from "../wiki-links.ts";
 
 /**
  * Dead-provenance core (issue #65): the deterministic backstop that

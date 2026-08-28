@@ -1,6 +1,12 @@
 import { readdir } from "node:fs/promises";
 import { basename, join } from "node:path";
 
+/** The page-name stem of a wiki-relative path: the file name without
+ *  the .md suffix — the name a [[wikilink]] targets. */
+export function stem(file: string): string {
+  return basename(file, ".md");
+}
+
 /**
  * Wikilink primitives shared by `scripts/check-links.ts` (the lint a
  * human runs) and the ingest guardrails (issue #12, check 3): extract
@@ -108,7 +114,7 @@ export function buildPageIndex(files: readonly string[]): Map<string, string> {
 
   for (const file of files) {
     if (file.endsWith(".md")) {
-      index.set(basename(file, ".md"), file);
+      index.set(stem(file), file);
     }
   }
 

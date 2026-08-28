@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
-import { basename, join, relative, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
+import { stem } from "../wiki-links.ts";
 import {
   bodyAfterFrontmatter,
   kebab,
@@ -227,7 +228,7 @@ async function checkPageFidelity(
   const fields = parsePageFields(text);
   const page = relative(resolve(wikiDir, ".."), join(wikiDir, file));
 
-  checkTitle(page, basename(file, ".md"), fields.title, problems, counters);
+  checkTitle(page, stem(file), fields.title, problems, counters);
 
   if (fields.type !== "source" || fields.origin === undefined) {
     if (fields.type === "source") {
