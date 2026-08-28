@@ -391,11 +391,6 @@ interface Harness {
   readonly checkout: string;
   readonly project: string;
   readonly outputsDir: string;
-  readonly invocations: {
-    command: string;
-    args: readonly string[];
-    cwd: string;
-  }[];
 }
 
 /** A git-tracked data repo with a stub agent, as in wiki-query tests. */
@@ -495,14 +490,11 @@ async function makeBoundProject(
     await writeFile(join(project, BINDING_FILE), text);
   }
 
-  const invocations: Harness["invocations"] = [];
-
   return {
     dataRoot,
     checkout,
     project,
     outputsDir: join(checkout, "outputs"),
-    invocations,
   };
 }
 
@@ -807,6 +799,26 @@ describe("k-wiki query", () => {
     expect(process.exitCode).toBeUndefined();
   });
 
+  it("kills a stalled agent at the --timeout deadline", async () => {
+    const h = await makeBoundProject();
+
+    await writeFile(
+      join(h.dataRoot, "stub-agent.mjs"),
+      "#!/usr/bin/env node\nsetTimeout(() => {}, 60000);\n",
+      { mode: 0o755 },
+    );
+
+    const { err } = await runKWiki(join(h.project, "nested"), [
+      "query",
+      "--timeout",
+      "1",
+      QUESTION,
+    ]);
+
+    expect(err).toMatch(/timed out after 1 second/);
+    expect(process.exitCode).toBe(1);
+  });
+
   it("animates the progress line on a TTY", async () => {
     const h = await makeBoundProject();
     // The stub must outlive the 100 ms heartbeat interval (2.5×
@@ -824,33 +836,12 @@ describe("k-wiki query", () => {
       `command: ${slowStub}\nmodel: M\nreasoning: low\n`,
     );
 
-    const writeSpy = vi
-      .spyOn(process.stderr, "write")
-      .mockImplementation(() => true);
-    const tty = Object.getOwnPropertyDescriptor(process.stderr, "isTTY");
-    const priorNoColor = process.env.NO_COLOR;
+    const { written } = await runKWikiAnimated(join(h.project, "nested"), [
+      "query",
+      QUESTION,
+    ]);
 
-    Object.defineProperty(process.stderr, "isTTY", { value: true });
-    delete process.env.NO_COLOR;
-
-    try {
-      await runKWiki(join(h.project, "nested"), ["query", QUESTION]);
-
-      const written = writeSpy.mock.calls
-        .map((call) => String(call[0]))
-        .join("");
-
-      expect(written).toContain("\r");
-    } finally {
-      writeSpy.mockRestore();
-      Object.defineProperty(process.stderr, "isTTY", tty ?? {});
-
-      if (priorNoColor === undefined) {
-        delete process.env.NO_COLOR;
-      } else {
-        process.env.NO_COLOR = priorNoColor;
-      }
-    }
+    expect(written).toContain("\r");
   });
 
   it("exits 1 with a clear error for a multi-wiki binding", async () => {
@@ -1014,7 +1005,9 @@ describe("k-wiki status", () => {
     const h = await makeBoundProject();
     await runKWiki(join(h.project, "nested"), ["status"]);
 
-    expect(h.invocations).toEqual([]);
+    await expect(
+      readFile(join(h.dataRoot, "stub-prompt.txt")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
 
     await expect(
       readFile(join(h.outputsDir, "last-query.md")),
@@ -1205,7 +1198,7 @@ describe("k-wiki list", () => {
     await runKWiki(join(h.project, "nested"), ["list"]);
 
     await expect(
-      readFile(join(h.outputsDir, "last-query.md")),
+      readFile(join(h.dataRoot, "stub-prompt.txt")),
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 });
@@ -1340,6 +1333,16 @@ describe("k-wiki read", () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it("suggests the existing page when the asked slug extends it", async () => {
+    const h = await makeBoundProject();
+    const { err } = await runKWiki(join(h.project, "nested"), [
+      "read",
+      "attention-is-all-you-need-extra",
+    ]);
+
+    expect(err).toContain("near matches: attention");
+  });
+
   it("exits 1 plainly when no near match exists", async () => {
     const h = await makeBoundProject();
     const { err } = await runKWiki(join(h.project, "nested"), [
@@ -1393,7 +1396,7 @@ describe("k-wiki read", () => {
     await runKWiki(join(h.project, "nested"), ["read", "rag"]);
 
     await expect(
-      readFile(join(h.outputsDir, "last-query.md")),
+      readFile(join(h.dataRoot, "stub-prompt.txt")),
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 });
@@ -1431,7 +1434,7 @@ describe("k-wiki health", () => {
     await runKWiki(join(h.project, "nested"), ["health"]);
 
     await expect(
-      readFile(join(h.outputsDir, "last-query.md")),
+      readFile(join(h.dataRoot, "stub-prompt.txt")),
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 });
