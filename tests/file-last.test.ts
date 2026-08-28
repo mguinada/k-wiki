@@ -1194,6 +1194,26 @@ describe("readHeaders order and shape", () => {
       "not a wiki-query artifact: missing question, timestamp, or pages header",
     );
   });
+
+  it("does not let a string pages line stand in for the timestamp header", () => {
+    expect(() =>
+      parseQueryArtifact(
+        '---\nquestion: "q"\npages: "oops"\npages: ["p"]\n---\n\nA.\n',
+      ),
+    ).toThrow(
+      "not a wiki-query artifact: missing question, timestamp, or pages header",
+    );
+  });
+
+  it("does not let an array question line stand in for the pages header", () => {
+    expect(() =>
+      parseQueryArtifact(
+        `---\nquestion: ["q"]\nquestion: "q"\ntimestamp: "${ARTIFACT.timestamp}"\n---\n\nA.\n`,
+      ),
+    ).toThrow(
+      "not a wiki-query artifact: missing question, timestamp, or pages header",
+    );
+  });
 });
 
 describe("committedAfterSave predates the answer", () => {

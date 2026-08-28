@@ -1016,6 +1016,40 @@ console.log("An answer.");
     );
   });
 
+  it("files the saved answer from the checkout's default outputs directory when --outputs is omitted", async () => {
+    const h = await makeCliHarness();
+
+    await runCli(queryArgs(h));
+
+    const cliOutputs = join(repoRoot, "outputs");
+    const defaultArtifact = join(cliOutputs, "last-query.md");
+    const previous = await readFile(defaultArtifact).catch(() => null);
+
+    await mkdir(cliOutputs, { recursive: true });
+    await writeFile(
+      defaultArtifact,
+      await readFile(join(h.outputsDir, "last-query.md")),
+    );
+
+    try {
+      const { out } = await runCli([
+        "--file-last",
+        "--raw-dir",
+        join(h.dataRoot, "raw"),
+      ]);
+
+      expect(out).toContain(
+        "Filed: wiki/queries/when-should-i-prefer-rag-over-fine-tuning.md",
+      );
+    } finally {
+      if (previous === null) {
+        await rm(defaultArtifact, { force: true });
+      } else {
+        await writeFile(defaultArtifact, previous);
+      }
+    }
+  });
+
   it("bolds the Filed line", async () => {
     const h = await makeCliHarness();
 
@@ -1399,6 +1433,51 @@ describe("runWikiQuery HEAD-only move", () => {
 
     expect(message).toBe(
       `answer-only run moved the data repo's HEAD; reverted to ${sha.trim().slice(0, 8)} — the answer was saved nowhere; rerun the question`,
+    );
+  });
+});
+
+describe("runWikiQuery combined violations", () => {
+  /** An agent that writes wiki/ and moves the HEAD: two violations. */
+  function rogueWriterAndHeadMover(): AgentRunner {
+    return async (_command, _args, options) => {
+      await writeFile(join(options.cwd, "wiki", "rogue.md"), "# Rogue\n");
+      await writeFile(join(options.cwd, "NOTES.md"), "note\n");
+      await run("git", ["add", "NOTES.md"], { cwd: options.cwd });
+      await run(
+        "git",
+        [
+          "-c",
+          "user.email=t@t",
+          "-c",
+          "user.name=t",
+          "commit",
+          "--quiet",
+          "-m",
+          "rogue write and move",
+        ],
+        { cwd: options.cwd },
+      );
+
+      return { stdout: "An answer.", stderr: "" };
+    };
+  }
+
+  it("joins both violations with and in the failure message", async () => {
+    const h = await makeHarness();
+    let message = "";
+
+    try {
+      await runWikiQuery({
+        ...optionsFor(h),
+        runAgent: rogueWriterAndHeadMover(),
+      });
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(message).toContain(
+      "wrote to wiki/ (wiki/rogue.md) and moved the data repo's HEAD",
     );
   });
 });
