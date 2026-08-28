@@ -1,6 +1,5 @@
 import { spawn } from "node:child_process";
 import { basename, join } from "node:path";
-import { createColors } from "picocolors";
 import { terminalColors as colors, errorMessage } from "../src/cli/colors.ts";
 import { refuseDirectExecution } from "../src/cli/is-main.ts";
 import { openerFor } from "../src/dashboard/generate.ts";

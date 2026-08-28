@@ -1526,7 +1526,21 @@ describe("k-wiki help with the read-only commands", () => {
 });
 
 describe("k-wiki list custom sections", () => {
-  it("groups pages of an unknown type under a pluralized header after the known types", async () => {
+  it("groups pages of an unknown type under a pluralized header", async () => {
+    const h = await makeBoundProject();
+    await mkdir(join(h.dataRoot, "wiki", "essays"), { recursive: true });
+    await writeFile(
+      join(h.dataRoot, "wiki", "essays", "on-tools.md"),
+      "---\ntype: essay\ntitle: On Tools\n---\nEssay body.\n",
+    );
+    await run("git", ["-C", h.dataRoot, "add", "-A"]);
+
+    expect((await runKWiki(join(h.project, "nested"), ["list"])).out).toContain(
+      "## essays",
+    );
+  });
+
+  it("lists the unknown-type pages under their pluralized header after the known types", async () => {
     const h = await makeBoundProject();
     await mkdir(join(h.dataRoot, "wiki", "essays"), { recursive: true });
     await writeFile(
@@ -1539,13 +1553,41 @@ describe("k-wiki list custom sections", () => {
     const queries = out.indexOf("## queries");
     const essays = out.indexOf("## essays");
 
-    expect(out).toContain("on-tools — On Tools");
-    expect(essays).toBeGreaterThan(-1);
     expect(essays).toBeGreaterThan(queries);
+  });
+
+  it("prints each known type's section exactly once alongside a custom type", async () => {
+    const h = await makeBoundProject();
+    await mkdir(join(h.dataRoot, "wiki", "essays"), { recursive: true });
+    await writeFile(
+      join(h.dataRoot, "wiki", "essays", "on-tools.md"),
+      "---\ntype: essay\ntitle: On Tools\n---\nEssay body.\n",
+    );
+    await run("git", ["-C", h.dataRoot, "add", "-A"]);
+    const { out } = await runKWiki(join(h.project, "nested"), ["list"]);
+
     expect(out.match(/## concepts/g)?.length).toBe(1);
   });
 
-  it("lists pages without a type under an untyped section last", async () => {
+  it("lists pages without a type under an untyped section", async () => {
+    const h = await makeBoundProject();
+    await mkdir(join(h.dataRoot, "wiki", "limbo"), { recursive: true });
+    await mkdir(join(h.dataRoot, "wiki", "essays"), { recursive: true });
+    await writeFile(
+      join(h.dataRoot, "wiki", "limbo", "loose.md"),
+      "---\ntitle: Loose Page\n---\nBody.\n",
+    );
+    await writeFile(
+      join(h.dataRoot, "wiki", "essays", "on-tools.md"),
+      "---\ntype: essay\ntitle: On Tools\n---\nEssay body.\n",
+    );
+
+    expect((await runKWiki(join(h.project, "nested"), ["list"])).out).toContain(
+      "loose — Loose Page",
+    );
+  });
+
+  it("orders the untyped section after custom type sections", async () => {
     const h = await makeBoundProject();
     await mkdir(join(h.dataRoot, "wiki", "limbo"), { recursive: true });
     await mkdir(join(h.dataRoot, "wiki", "essays"), { recursive: true });
@@ -1559,13 +1601,21 @@ describe("k-wiki list custom sections", () => {
     );
     const { out } = await runKWiki(join(h.project, "nested"), ["list"]);
 
-    const essays = out.indexOf("## essays");
-    const untyped = out.indexOf("## untyped");
+    expect(out.indexOf("## untyped")).toBeGreaterThan(out.indexOf("## essays"));
+  });
 
-    expect(out).toContain("loose — Loose Page");
-    expect(untyped).toBeGreaterThan(-1);
-    expect(untyped).toBeGreaterThan(essays);
-    expect(out).not.toContain("## untypeds");
-    expect(out.match(/## untyped/g)?.length).toBe(1);
+  it("never pluralizes the untyped header", async () => {
+    const h = await makeBoundProject();
+    await mkdir(join(h.dataRoot, "wiki", "limbo"), { recursive: true });
+    await writeFile(
+      join(h.dataRoot, "wiki", "limbo", "loose.md"),
+      "---\ntitle: Loose Page\n---\nBody.\n",
+    );
+
+    expect(
+      (await runKWiki(join(h.project, "nested"), ["list"])).out.includes(
+        "## untypeds",
+      ),
+    ).toBe(false);
   });
 });

@@ -1,10 +1,6 @@
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { createColors } from "picocolors";
-import { terminalColors as colors } from "../src/cli/colors.ts";
 import { refuseDirectExecution } from "../src/cli/is-main.ts";
 import { checkWikiFidelity, summarizeFidelity } from "../src/wiki/fidelity.ts";
-import { printBackfillWarning, runChecker } from "./check-provenance.ts";
+import { runChecker } from "./check-provenance.ts";
 
 /**
  * Citation-fidelity checker CLI (issue #125): the deterministic tier of
@@ -18,8 +14,6 @@ import { printBackfillWarning, runChecker } from "./check-provenance.ts";
  * when the wiki is faithful. Relational misquotes (right tokens, wrong
  * containment) stay with the lint prompt (tier 2) and §19 review.
  */
-
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
 const HELP = `Usage: check-fidelity [-h | --help] [<wiki-dir> [<raw-dir>]]

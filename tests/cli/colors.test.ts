@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { canAnimate, cliFail, errorMessage, terminalColors } from "../../src/cli/colors.ts";
+import {
+  canAnimate,
+  cliFail,
+  errorMessage,
+  terminalColors,
+} from "../../src/cli/colors.ts";
 
 /** The shared CLI presentation kit: one NO_COLOR policy point and one
  *  usage-error rule for every CLI (docs/references/colors.md). */
@@ -19,9 +24,15 @@ describe("terminalColors", () => {
 });
 
 describe("canAnimate", () => {
-  it("is true only for a TTY with colors on", () => {
+  it("is true for a TTY with colors on", () => {
     expect(canAnimate(true, {})).toBe(true);
+  });
+
+  it("is false without a TTY", () => {
     expect(canAnimate(false, {})).toBe(false);
+  });
+
+  it("is false for a TTY with colors off", () => {
     expect(canAnimate(true, { NO_COLOR: "1" })).toBe(false);
   });
 });
@@ -31,23 +42,46 @@ describe("errorMessage", () => {
     expect(errorMessage(new Error("boom"))).toBe("boom");
   });
 
-  it("stringifies a thrown non-Error", () => {
+  it("stringifies a thrown string", () => {
     expect(errorMessage("plain")).toBe("plain");
+  });
+
+  it("stringifies a thrown number", () => {
     expect(errorMessage(42)).toBe("42");
   });
 });
 
-describe("cliFail", () => {
-  it("prints '<name>: <message>' red on stderr and sets exit code 1", () => {
-    const errors: string[] = [];
-    const spy = vi.spyOn(console, "error").mockImplementation((...parts: unknown[]) => {
+/** One cliFail run's captured stderr and exit code. */
+function runCliFail(): { errors: string[] } {
+  const errors: string[] = [];
+  const spy = vi
+    .spyOn(console, "error")
+    .mockImplementation((...parts: unknown[]) => {
       errors.push(parts.join(" "));
     });
+  const priorExit = process.exitCode;
+
+  try {
+    cliFail("check-raw", "bad input");
+  } finally {
+    process.exitCode = priorExit;
+    spy.mockRestore();
+  }
+
+  return { errors };
+}
+
+describe("cliFail", () => {
+  it("prints '<name>: <message>' on stderr", () => {
+    expect(runCliFail().errors[0]).toContain("check-raw: bad input");
+  });
+
+  it("sets the exit code to 1", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const priorExit = process.exitCode;
 
     try {
       cliFail("check-raw", "bad input");
-      expect(errors[0]).toContain("check-raw: bad input");
       expect(process.exitCode).toBe(1);
     } finally {
       process.exitCode = priorExit;

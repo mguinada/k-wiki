@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
 import { stem } from "../wiki-links.ts";
 import {
   isWikilinkEntry,

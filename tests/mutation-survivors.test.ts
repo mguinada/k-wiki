@@ -69,9 +69,7 @@ describe("parseReport", () => {
   });
 
   it("throws a named shape error for a valid-JSON report whose shape drifted", () => {
-    expect(() => parseReport('{"config": {}}')).toThrow(
-      /unexpected shape/,
-    );
+    expect(() => parseReport('{"config": {}}')).toThrow(/unexpected shape/);
   });
 
   it("throws the shape error when a file entry lacks its mutants array", () => {
@@ -218,13 +216,28 @@ describe("printSurvivors", () => {
     const errors: string[] = [];
     const spy = vi
       .spyOn(console, "error")
-      .mockImplementation((...parts: unknown[]) => errors.push(parts.join(" ")));
+      .mockImplementation((...parts: unknown[]) =>
+        errors.push(parts.join(" ")),
+      );
 
     process.exitCode = undefined;
 
     try {
       printSurvivors('{"config": {}}');
       expect(errors[0]).toContain("unexpected shape");
+    } finally {
+      process.exitCode = undefined;
+      spy.mockRestore();
+    }
+  });
+
+  it("exits 1 for a drifted-shape report", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    process.exitCode = undefined;
+
+    try {
+      printSurvivors('{"config": {}}');
       expect(process.exitCode).toBe(1);
     } finally {
       process.exitCode = undefined;
@@ -236,13 +249,28 @@ describe("printSurvivors", () => {
     const errors: string[] = [];
     const spy = vi
       .spyOn(console, "error")
-      .mockImplementation((...parts: unknown[]) => errors.push(parts.join(" ")));
+      .mockImplementation((...parts: unknown[]) =>
+        errors.push(parts.join(" ")),
+      );
 
     process.exitCode = undefined;
 
     try {
       printSurvivors("{not json");
       expect(errors[0]).toContain("No report at");
+    } finally {
+      process.exitCode = undefined;
+      spy.mockRestore();
+    }
+  });
+
+  it("exits 1 for text that is not valid JSON", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    process.exitCode = undefined;
+
+    try {
+      printSurvivors("{not json");
       expect(process.exitCode).toBe(1);
     } finally {
       process.exitCode = undefined;
@@ -254,13 +282,28 @@ describe("printSurvivors", () => {
     const errors: string[] = [];
     const spy = vi
       .spyOn(console, "error")
-      .mockImplementation((...parts: unknown[]) => errors.push(parts.join(" ")));
+      .mockImplementation((...parts: unknown[]) =>
+        errors.push(parts.join(" ")),
+      );
 
     process.exitCode = undefined;
 
     try {
       printSurvivors(undefined);
       expect(errors[0]).toContain("No report at");
+    } finally {
+      process.exitCode = undefined;
+      spy.mockRestore();
+    }
+  });
+
+  it("exits 1 without a report text", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    process.exitCode = undefined;
+
+    try {
+      printSurvivors(undefined);
       expect(process.exitCode).toBe(1);
     } finally {
       process.exitCode = undefined;
@@ -293,6 +336,33 @@ describe("printSurvivors", () => {
         }),
       );
       expect(out.join("\n")).toContain("Survived  src/a.ts:3  StringLiteral");
+    } finally {
+      process.exitCode = undefined;
+      logSpy.mockRestore();
+    }
+  });
+
+  it("keeps the exit code unset for a healthy report", () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    process.exitCode = undefined;
+
+    try {
+      printSurvivors(
+        JSON.stringify({
+          files: {
+            "src/a.ts": {
+              mutants: [
+                {
+                  mutatorName: "StringLiteral",
+                  status: "Survived",
+                  location: { start: { line: 3 } },
+                },
+              ],
+            },
+          },
+        }),
+      );
       expect(process.exitCode).toBeUndefined();
     } finally {
       process.exitCode = undefined;
@@ -329,7 +399,6 @@ describe("actionableLines file grouping", () => {
   });
 });
 
-
 describe("mutation-survivors main in-process", () => {
   it("prints help for --help without reading any report", () => {
     const argv = process.argv;
@@ -344,6 +413,22 @@ describe("mutation-survivors main in-process", () => {
     try {
       main();
       expect(out[0]).toContain("Usage: mutation-survivors");
+    } finally {
+      process.argv = argv;
+      process.exitCode = undefined;
+      logSpy.mockRestore();
+    }
+  });
+
+  it("leaves the exit code unset for --help", () => {
+    const argv = process.argv;
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    process.argv = [...argv.slice(0, 2), "--help"];
+    process.exitCode = undefined;
+
+    try {
+      main();
       expect(process.exitCode).toBeUndefined();
     } finally {
       process.argv = argv;

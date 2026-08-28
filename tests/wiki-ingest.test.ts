@@ -4922,7 +4922,10 @@ describe("gitignore guard progress", () => {
   it("reports each ignore entry the run appended", async () => {
     const h = await makeHarness({ "a.md": "a" });
     const messages: string[] = [];
-    const options = { ...optionsFor(h), onProgress: (m: string) => messages.push(m) };
+    const options = {
+      ...optionsFor(h),
+      onProgress: (m: string) => messages.push(m),
+    };
 
     await runWikiIngest(options);
 
@@ -4942,13 +4945,16 @@ describe("gitignore guard progress", () => {
     await runWikiIngest(optionsFor(h));
 
     const messages: string[] = [];
-    const options = { ...optionsFor(h), onProgress: (m: string) => messages.push(m) };
+    const options = {
+      ...optionsFor(h),
+      onProgress: (m: string) => messages.push(m),
+    };
 
     await runWikiIngest(options);
 
-    expect(
-      messages.some((m) => m.includes("ignoring dashboard.html")),
-    ).toBe(false);
+    expect(messages.some((m) => m.includes("ignoring dashboard.html"))).toBe(
+      false,
+    );
   });
 });
 
@@ -4956,7 +4962,10 @@ describe("pairBodyIdenticalRenames multibyte bodies", () => {
   it("pairs a moved note whose multibyte body is byte-identical under utf8", async () => {
     const oldNote = "---\ntitle: A\n---\n\nCafé — 中身 body.\n";
     const newNote = "---\ntitle: B\n---\n\nCafé — 中身 body.\n";
-    const diffOf = (before: Record<string, string>, after: Record<string, string>) =>
+    const diffOf = (
+      before: Record<string, string>,
+      after: Record<string, string>,
+    ) =>
       diffManifests(
         {
           vaults: {
@@ -4982,9 +4991,9 @@ describe("pairBodyIdenticalRenames multibyte bodies", () => {
 
     const diff = await pairBodyIdenticalRenames(
       diffOf({ "old.md": oldNote }, { "new.md": newNote }),
-      (vault: string, path: string) =>
+      (_vault: string, path: string) =>
         path === "old.md" ? oldNote : undefined,
-      (vault: string, path: string) =>
+      (_vault: string, path: string) =>
         path === "new.md" ? newNote : undefined,
     );
 

@@ -548,15 +548,6 @@ export function diffManifests(
   return { vaults, empty: vaults.length === 0 };
 }
 
-/** The synthetic changed-source set of an explicit `--sources` run
- *  (issue #133): every listed path must name one manifest entry and
- *  renders as a `~` (changed) line, so the composed prompt and the
- *  digest read exactly like an incremental run over those sources.
- *  Paths are exact manifest paths — no globbing, no substring
- *  matching: a path naming no entry is an error listing every
- *  offender, never a guess. A path that decomposes two ways (vault
- *  "A" holding "B/c.md" and vault "A/B" holding "c.md") resolves to
- *  the longest vault name — the most specific decomposition. */
 /** The most specific decomposition of one `--sources` path: the
  *  manifest entry whose vault name is the longest matching
  *  prefix. */
@@ -586,6 +577,15 @@ function longestVaultMatch(
   return match;
 }
 
+/** The synthetic changed-source set of an explicit `--sources` run
+ *  (issue #133): every listed path must name one manifest entry and
+ *  renders as a `~` (changed) line, so the composed prompt and the
+ *  digest read exactly like an incremental run over those sources.
+ *  Paths are exact manifest paths — no globbing, no substring
+ *  matching: a path naming no entry is an error listing every
+ *  offender, never a guess. A path that decomposes two ways (vault
+ *  "A" holding "B/c.md" and vault "A/B" holding "c.md") resolves to
+ *  the longest vault name — the most specific decomposition. */
 export function explicitSourceDiff(
   manifest: Manifest,
   sources: readonly string[],

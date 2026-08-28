@@ -130,29 +130,31 @@ describe("timeoutArgError", () => {
 
 describe("readDateFlag", () => {
   it("defaults to today's calendar date when the flag is absent", () => {
-    const { date, consumed } = readDateFlag(["wiki"]);
-
-    expect(date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect([...consumed]).toEqual([]);
+    expect(readDateFlag(["wiki"]).date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
-  it("reads the flag's value and marks both indexes consumed", () => {
-    const { date, consumed } = readDateFlag([
-      "wiki",
-      "--date",
-      "2026-08-28",
-      "raw",
-    ]);
+  it("consumes nothing when the flag is absent", () => {
+    expect([...readDateFlag(["wiki"]).consumed]).toEqual([]);
+  });
 
-    expect(date).toBe("2026-08-28");
-    expect([...consumed]).toEqual([1, 2]);
+  it("reads the flag's value", () => {
+    expect(readDateFlag(["wiki", "--date", "2026-08-28", "raw"]).date).toBe(
+      "2026-08-28",
+    );
+  });
+
+  it("marks the flag and its value indexes consumed", () => {
+    expect([
+      ...readDateFlag(["wiki", "--date", "2026-08-28", "raw"]).consumed,
+    ]).toEqual([1, 2]);
   });
 
   it("yields an undefined date when the flag ends argv", () => {
-    const { date, consumed } = readDateFlag(["--date"]);
+    expect(readDateFlag(["--date"]).date).toBeUndefined();
+  });
 
-    expect(date).toBeUndefined();
-    expect([...consumed]).toEqual([0, 1]);
+  it("still consumes both indexes when the flag ends argv", () => {
+    expect([...readDateFlag(["--date"]).consumed]).toEqual([0, 1]);
   });
 });
 

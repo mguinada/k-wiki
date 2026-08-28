@@ -1,4 +1,3 @@
-import { createColors } from "picocolors";
 import { terminalColors as colors, errorMessage } from "../src/cli/colors.ts";
 import { refuseDirectExecution } from "../src/cli/is-main.ts";
 import { checkCrossWikiLinks } from "../src/crosslinks.ts";

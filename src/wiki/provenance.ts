@@ -1,5 +1,5 @@
 import { stat } from "node:fs/promises";
-import { join, relative, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { stem } from "../wiki-links.ts";
 import {
   buildPageIndex,
