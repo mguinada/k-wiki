@@ -1,7 +1,7 @@
 import { realpathSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { assertCleanTree, gitRepoRoot, runGit } from "../src/data/git.ts";
 
@@ -121,7 +121,9 @@ describe("gitRepoRoot", () => {
   it("returns undefined outside any git repository", async () => {
     const dir = await makeTempDir();
 
-    await expect(gitRepoRoot(dir, GIT_ENV)).resolves.toBeUndefined();
+    await expect(
+      gitRepoRoot(dir, { ...GIT_ENV, GIT_CEILING_DIRECTORIES: dirname(dir) }),
+    ).resolves.toBeUndefined();
   });
 });
 

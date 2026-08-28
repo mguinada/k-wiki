@@ -458,6 +458,36 @@ describe("actionableLines file grouping", () => {
       "Survived  src/a.ts:20  Second",
     ]);
   });
+
+  it("orders files by ascending path regardless of insertion order", () => {
+    const lines = actionableLines({
+      files: {
+        "src/z.ts": {
+          mutants: [
+            {
+              mutatorName: "Zed",
+              status: "Survived",
+              location: { start: { line: 1 } },
+            },
+          ],
+        },
+        "src/a.ts": {
+          mutants: [
+            {
+              mutatorName: "Ay",
+              status: "Survived",
+              location: { start: { line: 1 } },
+            },
+          ],
+        },
+      },
+    });
+
+    expect(lines).toEqual([
+      "Survived  src/a.ts:1  Ay",
+      "Survived  src/z.ts:1  Zed",
+    ]);
+  });
 });
 
 describe("mutation-survivors main in-process", () => {
