@@ -118,8 +118,8 @@ function readReportFile(): string | undefined {
 /** Print the actionable mutants of one report file's text (or the
  *  missing-report hint for undefined); exported for in-process
  *  tests — spawned CLI children cannot exercise this branch under
- *  mutation. Always leaves the exit code at 0 when a report was
- *  readable: mutation testing is advisory (issue #21). */
+ *  mutation. Always leaves the exit code at 0 when a report parses:
+ *  mutation testing is advisory (issue #21). */
 export function printSurvivors(text: string | undefined): void {
   if (text === undefined) {
     console.error(
