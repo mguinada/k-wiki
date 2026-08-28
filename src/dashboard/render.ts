@@ -265,26 +265,10 @@ function provenanceSection(kpis: DashboardKpis): string {
   );
 }
 
-/** The full page. Pure: KPIs in, HTML string out. */
-export function renderDashboard(
-  kpis: DashboardKpis,
-  meta: DashboardMeta,
-): string {
-  const generated = meta.generatedAt.toISOString();
-  const stamp = `generated ${generated.slice(0, 10)} ${generated.slice(11, 16)} UTC from ${esc(meta.head === "" ? "no git history" : meta.head)}`;
-  const coverage = coverageSection(kpis);
-  const structure = structureSection(kpis);
-  const activity = activitySection(kpis);
-  const funnel = funnelSection(kpis);
-  const provenance = provenanceSection(kpis);
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>k-wiki dashboard</title>
-<style>
+/** The full page's stylesheet: palette variables plus every
+ *  component rule; module-level so renderDashboard reads as
+ *  structure, not bulk CSS. */
+const STYLESHEET = `
 :root {
   --black: ${PALETTE.black}; --ink: ${PALETTE.ink}; --mid: ${PALETTE.mid};
   --mist: ${PALETTE.mist}; --paper: ${PALETTE.paper}; --white: ${PALETTE.white};
@@ -352,6 +336,29 @@ ul.ticks li:last-child { border-bottom: none; }
 #theme-toggle:hover { border-color: var(--accent); color: var(--accent); }
 footer { margin-top: 4rem; border-top: 1px solid var(--line); padding-top: 1rem; font-family: var(--mono); font-size: 0.7rem; color: var(--soft); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; }
 @media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+`;
+
+/** The full page. Pure: KPIs in, HTML string out. */
+export function renderDashboard(
+  kpis: DashboardKpis,
+  meta: DashboardMeta,
+): string {
+  const generated = meta.generatedAt.toISOString();
+  const stamp = `generated ${generated.slice(0, 10)} ${generated.slice(11, 16)} UTC from ${esc(meta.head === "" ? "no git history" : meta.head)}`;
+  const coverage = coverageSection(kpis);
+  const structure = structureSection(kpis);
+  const activity = activitySection(kpis);
+  const funnel = funnelSection(kpis);
+  const provenance = provenanceSection(kpis);
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>k-wiki dashboard</title>
+<style>
+${STYLESHEET}
 </style>
 </head>
 <body>
