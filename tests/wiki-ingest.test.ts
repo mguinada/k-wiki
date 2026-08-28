@@ -1477,6 +1477,21 @@ describe("removedNoteContent", () => {
     ).resolves.toBeUndefined();
   });
 
+  it("returns undefined for an expected hash outside a git repository", async () => {
+    const dataRoot = await makeDataRepo({ "a.md": "a" });
+
+    await rm(join(dataRoot, ".git"), { recursive: true });
+
+    await expect(
+      removedNoteContent(
+        dataRoot,
+        "raw/notes/Engineering/a.md",
+        process.env,
+        hashOf("a"),
+      ),
+    ).resolves.toBeUndefined();
+  });
+
   it("returns the blob matching the expected hash, skipping newer committed edits", async () => {
     const dataRoot = await makeDataRepo({ "a.md": "first body" });
 
@@ -1709,6 +1724,17 @@ interface Harness {
 }
 
 /** A wiki page body with valid §9 frontmatter (guardrail 2 must pass). */
+/** The guardrail-2 saboteur: writes frontmatter-free pages, reports success. */
+function frontmatterSaboteur(...pages: string[]): AgentRunner {
+  return async (_command, _args, options) => {
+    for (const page of pages) {
+      await writeFile(join(options.cwd, "wiki", page), "no frontmatter\n");
+    }
+
+    return { stdout: "rogue report", stderr: "" };
+  };
+}
+
 function wikiPage(body: string): string {
   return [
     "---",
@@ -2958,7 +2984,7 @@ describe("runWikiIngest", () => {
     await rm(join(h.promptsDir, "ingest.md"));
 
     await expect(runWikiIngest(optionsFor(h))).rejects.toThrow(
-      "cannot read prompt",
+      /cannot read prompt at .*ingest\.md/,
     );
   });
 
@@ -3475,14 +3501,12 @@ describe("runWikiIngest --sources", () => {
 
   it("omits the sources-selected marker from an ordinary failure digest", async () => {
     const h = await makeHarness({ "a.md": "a" });
-    const saboteur: AgentRunner = async (_command, _args, options) => {
-      await writeFile(join(options.cwd, "wiki", "bad.md"), "no frontmatter\n");
-
-      return { stdout: "rogue report", stderr: "" };
-    };
 
     await expect(
-      runWikiIngest({ ...optionsFor(h), runAgent: saboteur }),
+      runWikiIngest({
+        ...optionsFor(h),
+        runAgent: frontmatterSaboteur("bad.md"),
+      }),
     ).rejects.toThrow("guardrail check 2 (frontmatter)");
 
     const digest = await readFile(
@@ -3575,17 +3599,12 @@ describe("runWikiIngest --sources", () => {
   it("records sources selected explicitly on the failure digest of a reverted scoped run", async () => {
     const h = await makeHarness({ "a.md": "a" });
     await seedSnapshot(h, { "a.md": "a" });
-    const saboteur: AgentRunner = async (_command, _args, options) => {
-      await writeFile(join(options.cwd, "wiki", "bad.md"), "no frontmatter\n");
-
-      return { stdout: "rogue report", stderr: "" };
-    };
 
     await expect(
       runWikiIngest({
         ...optionsFor(h),
         sources: ["Engineering/a.md"],
-        runAgent: saboteur,
+        runAgent: frontmatterSaboteur("bad.md"),
       }),
     ).rejects.toThrow("guardrail check 2 (frontmatter)");
 
@@ -3651,17 +3670,12 @@ describe("runWikiIngest --sources", () => {
     const h = await makeHarness({ "a.md": "a" });
     await seedSnapshot(h, { "a.md": "a" });
     const before = await readFile(h.snapshotPath, "utf8");
-    const saboteur: AgentRunner = async (_command, _args, options) => {
-      await writeFile(join(options.cwd, "wiki", "bad.md"), "no frontmatter\n");
-
-      return { stdout: "rogue report", stderr: "" };
-    };
 
     await expect(
       runWikiIngest({
         ...optionsFor(h),
         sources: ["Engineering/a.md"],
-        runAgent: saboteur,
+        runAgent: frontmatterSaboteur("bad.md"),
       }),
     ).rejects.toThrow("guardrail check 2 (frontmatter)");
 
@@ -3692,14 +3706,12 @@ describe("runWikiIngest guardrails", () => {
 
   it("reverts and fails the run when a changed page has broken frontmatter", async () => {
     const h = await makeHarness({ "a.md": "a" });
-    const saboteur: AgentRunner = async (_command, _args, options) => {
-      await writeFile(join(options.cwd, "wiki", "bad.md"), "no frontmatter\n");
-
-      return { stdout: "rogue report", stderr: "" };
-    };
 
     await expect(
-      runWikiIngest({ ...optionsFor(h), runAgent: saboteur }),
+      runWikiIngest({
+        ...optionsFor(h),
+        runAgent: frontmatterSaboteur("bad.md"),
+      }),
     ).rejects.toThrow("guardrail check 2 (frontmatter)");
     await expect(
       readFile(join(h.dataRoot, "wiki", "bad.md"), "utf8"),
@@ -3711,14 +3723,12 @@ describe("runWikiIngest guardrails", () => {
 
   it("writes a failure digest naming the tripped check", async () => {
     const h = await makeHarness({ "a.md": "a" });
-    const saboteur: AgentRunner = async (_command, _args, options) => {
-      await writeFile(join(options.cwd, "wiki", "bad.md"), "no frontmatter\n");
-
-      return { stdout: "rogue report", stderr: "" };
-    };
 
     await expect(
-      runWikiIngest({ ...optionsFor(h), runAgent: saboteur }),
+      runWikiIngest({
+        ...optionsFor(h),
+        runAgent: frontmatterSaboteur("bad.md"),
+      }),
     ).rejects.toThrow();
 
     const digest = await readFile(digestPath(h), "utf8");
@@ -4638,15 +4648,10 @@ describe("runWikiIngest failure reporting detail", () => {
   it("names the check, the revert target, and the problems in the error", async () => {
     const h = await makeHarness({ "a.md": "a" });
     const progress: string[] = [];
-    const saboteur: AgentRunner = async (_command, _args, options) => {
-      await writeFile(join(options.cwd, "wiki", "bad.md"), "no frontmatter\n");
-
-      return { stdout: "rogue report", stderr: "" };
-    };
 
     const error = await runWikiIngest({
       ...optionsFor(h),
-      runAgent: saboteur,
+      runAgent: frontmatterSaboteur("bad.md"),
       onProgress: (message) => progress.push(message),
     }).then(
       () => undefined,
@@ -4665,22 +4670,10 @@ describe("runWikiIngest failure reporting detail", () => {
 
   it("joins multiple guardrail problems with a semicolon in the error", async () => {
     const h = await makeHarness({ "a.md": "a" });
-    const saboteur: AgentRunner = async (_command, _args, options) => {
-      await writeFile(
-        join(options.cwd, "wiki", "bad-1.md"),
-        "no frontmatter\n",
-      );
-      await writeFile(
-        join(options.cwd, "wiki", "bad-2.md"),
-        "no frontmatter\n",
-      );
-
-      return { stdout: "rogue report", stderr: "" };
-    };
 
     const error = await runWikiIngest({
       ...optionsFor(h),
-      runAgent: saboteur,
+      runAgent: frontmatterSaboteur("bad-1.md", "bad-2.md"),
     }).then(
       () => undefined,
       (cause: unknown) => cause,
@@ -4715,14 +4708,12 @@ describe("runWikiIngest failure reporting detail", () => {
 
   it("states the mode and prompt file in the failure digest", async () => {
     const h = await makeHarness({ "a.md": "a" });
-    const saboteur: AgentRunner = async (_command, _args, options) => {
-      await writeFile(join(options.cwd, "wiki", "bad.md"), "no frontmatter\n");
-
-      return { stdout: "rogue report", stderr: "" };
-    };
 
     await expect(
-      runWikiIngest({ ...optionsFor(h), runAgent: saboteur }),
+      runWikiIngest({
+        ...optionsFor(h),
+        runAgent: frontmatterSaboteur("bad.md"),
+      }),
     ).rejects.toThrow();
 
     const digest = await readFile(
@@ -4829,14 +4820,11 @@ describe("runWikiIngest dashboard hook (issue #73)", () => {
 
     await writeFile(join(h.dataRoot, "dashboard.html"), "STALE\n");
 
-    const saboteur: AgentRunner = async (_command, _args, options) => {
-      await writeFile(join(options.cwd, "wiki", "bad.md"), "no frontmatter\n");
-
-      return { stdout: "rogue report", stderr: "" };
-    };
-
     await expect(
-      runWikiIngest({ ...optionsFor(h), runAgent: saboteur }),
+      runWikiIngest({
+        ...optionsFor(h),
+        runAgent: frontmatterSaboteur("bad.md"),
+      }),
     ).rejects.toThrow("guardrail check 2 (frontmatter)");
 
     const html = await readFile(join(h.dataRoot, "dashboard.html"), "utf8");
@@ -4915,6 +4903,16 @@ describe("wikiPages vanished untracked detection", () => {
     const pages = await wikiPages(dataRoot, process.env, "wiki", pre);
 
     expect(pages.deleted).toEqual(["wiki/a.md", "wiki/z.md"]);
+  });
+
+  it("reports git as unavailable outside a repository instead of throwing", async () => {
+    const dataRoot = await makeDataRepo({ "a.md": "a" });
+
+    await rm(join(dataRoot, ".git"), { recursive: true });
+
+    const pages = await wikiPages(dataRoot, process.env);
+
+    expect(pages.unavailable).toMatch(/not a git repository/);
   });
 });
 
