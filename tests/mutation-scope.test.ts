@@ -7,6 +7,7 @@ import {
   main,
   mergeRanges,
   parseNewRanges,
+  runGitText,
 } from "../src/quality/mutation-scope.ts";
 
 const HUNK_FILE = [
@@ -204,5 +205,31 @@ describe("mutation-scope CLI", () => {
     } finally {
       log.mockRestore();
     }
+  });
+
+  it("prints the collected patterns for a changed src file", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const git: GitText = (args) =>
+      args[0] === "diff"
+        ? [
+            "diff --git a/src/a.ts b/src/a.ts",
+            "--- a/src/a.ts",
+            "+++ b/src/a.ts",
+            "@@ -1,1 +12,9 @@",
+            "+x",
+          ].join("\n")
+        : "";
+
+    try {
+      main([], git);
+
+      expect(log.mock.calls[0]?.[0]).toBe("src/a.ts:12-20");
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("runs the real git binary through the production seam", () => {
+    expect(runGitText(["--version"])).toMatch(/^git version /);
   });
 });
