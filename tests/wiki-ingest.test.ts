@@ -4733,7 +4733,7 @@ describe("runWikiIngest --sources", () => {
     );
   });
 
-  it("does not count a rename the sources cover", async () => {
+  it("counts a covered rename's source path as a held-back removal", async () => {
     const h = await makeHarness({ "moved.md": "moved", "b.md": "b v2" });
     await seedSnapshot(h, { "old.md": "moved", "b.md": "b" });
     const messages: string[] = [];
@@ -4747,8 +4747,48 @@ describe("runWikiIngest --sources", () => {
     expect(
       messages.find((message) => message.startsWith("wiki-ingest: scoped run")),
     ).toBe(
-      "wiki-ingest: scoped run held back pending changes outside --sources (1 changed) — the merged snapshot leaves them for the next ordinary run",
+      "wiki-ingest: scoped run held back pending changes outside --sources (1 changed, 1 removed) — the merged snapshot leaves them for the next ordinary run",
     );
+  });
+
+  it("announces a held-back removal when a covered rename is the only pending change", async () => {
+    const h = await makeHarness({ "moved.md": "moved" });
+    await seedSnapshot(h, { "old.md": "moved" });
+    const messages: string[] = [];
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/moved.md"],
+      onProgress: (message) => messages.push(message),
+    });
+
+    expect(
+      messages.find((message) => message.startsWith("wiki-ingest: scoped run")),
+    ).toBe(
+      "wiki-ingest: scoped run held back pending changes outside --sources (1 removed) — the merged snapshot leaves them for the next ordinary run",
+    );
+  });
+
+  it("expunges a covered rename's source path on the next ordinary run", async () => {
+    const h = await makeHarness({ "moved.md": "moved" });
+    await seedSnapshot(h, { "old.md": "moved" });
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/moved.md"],
+    });
+
+    const snapshot = parseManifest(
+      await readFile(h.snapshotPath, "utf8"),
+      h.snapshotPath,
+    );
+
+    expect(snapshot.vaults.Engineering?.["old.md"]).toBeDefined();
+    expect(snapshot.vaults.Engineering?.["moved.md"]).toBeDefined();
+
+    const pending = await runWikiIngest(optionsFor(h));
+
+    expect(pending).toMatchObject({ status: "ran", mode: "expunge" });
   });
 
   it("counts a pending removal as held back", async () => {

@@ -1936,10 +1936,12 @@ function heldBackMessage(
     counts.changed += vault.changed.filter(
       (path) => !explicit.has(`${vault.vault}/${path}`),
     ).length;
-    counts.renamed += vault.renamed.filter(
-      (rename) => !explicit.has(`${vault.vault}/${rename.to}`),
-    ).length;
-    counts.removed += vault.removed.length;
+    const covered = vault.renamed.filter((rename) =>
+      explicit.has(`${vault.vault}/${rename.to}`),
+    );
+
+    counts.renamed += vault.renamed.length - covered.length;
+    counts.removed += vault.removed.length + covered.length;
   }
 
   const parts = Object.entries(counts)
