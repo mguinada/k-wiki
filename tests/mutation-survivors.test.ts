@@ -4,9 +4,12 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, describe, expect, it } from "vitest";
-import { parseReport } from "../src/quality/mutation-survivors.ts";
-import { actionableLines } from "../src/quality/mutation-survivors.ts";
+import { afterAll, describe, expect, it, vi } from "vitest";
+import {
+  actionableLines,
+  main,
+  parseReport,
+} from "../src/quality/mutation-survivors.ts";
 
 const tempDirs: string[] = [];
 
@@ -164,30 +167,83 @@ describe("mutation-survivors CLI", () => {
 });
 
 describe("parseReport shape edges", () => {
+  it("rejects a null report root naming the missing files", () => {
+    expect(() => parseReport("null")).toThrow(
+      "mutation report has an unexpected shape (no files)",
+    );
+  });
+
+  it("rejects a primitive report root naming the missing files", () => {
+    expect(() => parseReport("42")).toThrow(
+      "mutation report has an unexpected shape (no files)",
+    );
+  });
+
   it("rejects a report whose files value is null", () => {
-    expect(() => parseReport('{"files": null}')).toThrow(/unexpected shape/);
+    expect(() => parseReport('{"files": null}')).toThrow(
+      "mutation report has an unexpected shape (no files)",
+    );
   });
 
   it("rejects a report whose files value is not an object", () => {
-    expect(() => parseReport('{"files": "x"}')).toThrow(/unexpected shape/);
+    expect(() => parseReport('{"files": "x"}')).toThrow(
+      "mutation report has an unexpected shape (no files)",
+    );
   });
 
   it("rejects a file entry that is null", () => {
     expect(() => parseReport('{"files": {"src/a.ts": null}}')).toThrow(
-      /unexpected shape/,
+      "mutation report has an unexpected shape (a file entry lacks its mutants array)",
     );
   });
 
   it("rejects a file entry that is not an object", () => {
     expect(() => parseReport('{"files": {"src/a.ts": 42}}')).toThrow(
-      /unexpected shape/,
+      "mutation report has an unexpected shape (a file entry lacks its mutants array)",
     );
   });
 
   it("rejects a file entry whose mutants is not an array", () => {
     expect(() =>
       parseReport('{"files": {"src/a.ts": {"mutants": "x"}}}'),
-    ).toThrow(/unexpected shape/);
+    ).toThrow(
+      "mutation report has an unexpected shape (a file entry lacks its mutants array)",
+    );
+  });
+});
+
+describe("mutation-survivors main with a drifted report", () => {
+  it("prints the shape-drift message in-process when the report is not a Stryker report", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutsurv-"));
+
+    tempDirs.push(dir);
+    await mkdir(join(dir, "reports", "mutation"), { recursive: true });
+    await writeFile(
+      join(dir, "reports", "mutation", "mutation.json"),
+      '{"config": {}}',
+    );
+
+    const argv = process.argv;
+    const cwd = process.cwd();
+    const errors: string[] = [];
+    const spy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) => errors.push(parts.join(" ")));
+
+    process.argv = [...argv.slice(0, 2)];
+    process.exitCode = undefined;
+
+    try {
+      process.chdir(dir);
+      await main();
+      expect(errors[0]).toContain("unexpected shape");
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.chdir(cwd);
+      process.argv = argv;
+      process.exitCode = undefined;
+      spy.mockRestore();
+    }
   });
 });
 

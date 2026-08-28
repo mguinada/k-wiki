@@ -176,4 +176,12 @@ describe("isIsoDate", () => {
   it("rejects a short year", () => {
     expect(isIsoDate("26-08-28")).toBe(false);
   });
+
+  it("rejects trailing text after the date", () => {
+    expect(isIsoDate("2026-08-28x")).toBe(false);
+  });
+
+  it("rejects leading text before the date", () => {
+    expect(isIsoDate("x2026-08-28")).toBe(false);
+  });
 });

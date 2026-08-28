@@ -729,13 +729,15 @@ describe("typeCounts tie order", () => {
   it("orders equal-count types by label ascending", () => {
     const counts = typeCounts([
       page({ type: "source" }),
-      page({ type: "concept" }),
+      page({ type: "query" }),
       page({ type: "entity" }),
+      page({ type: "concept" }),
     ]);
 
     expect(counts.map((bar) => bar.label)).toEqual([
       "concept",
       "entity",
+      "query",
       "source",
     ]);
   });
@@ -745,13 +747,15 @@ describe("topCounts tie order", () => {
   it("orders equal-count entries by key ascending", () => {
     const cited = mostCitedSources([
       page({ path: "concepts/z.md", sources: ["raw/notes/z.md"] }),
+      page({ path: "concepts/y.md", sources: ["raw/notes/y.md"] }),
+      page({ path: "concepts/b.md", sources: ["raw/notes/b.md"] }),
       page({ path: "concepts/a.md", sources: ["raw/notes/a.md"] }),
-      page({ path: "concepts/m.md", sources: ["raw/notes/m.md"] }),
     ]);
 
     expect(cited.map((entry) => entry.entry)).toEqual([
       "raw/notes/a.md",
-      "raw/notes/m.md",
+      "raw/notes/b.md",
+      "raw/notes/y.md",
       "raw/notes/z.md",
     ]);
   });
