@@ -240,6 +240,16 @@ describe("parsePageFields", () => {
 
     expect(fields.sources).toEqual(["notes/V/a.md"]);
   });
+
+  it("does not read a title from a key line ending in a carriage return", () => {
+    expect(parsePageFields("---\ntitle: T\r\n---\n").title).toBe(undefined);
+  });
+
+  it("does not collect a sources item ending in a carriage return", () => {
+    expect(
+      parsePageFields("---\nsources:\n  - alpha\r\n---\n").sources,
+    ).toEqual([]);
+  });
 });
 
 describe("wikilink classification", () => {
