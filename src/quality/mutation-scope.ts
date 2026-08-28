@@ -143,6 +143,10 @@ function parseFileDiffs(diffText: string): FileDiff[] {
   return files;
 }
 
+/** The mutation scope's pathspec: the two git invocations below
+ *  must agree on it exactly. */
+const SRC_PATHSPEC = "src/*.ts";
+
 /** The changed src/ files — hunk-ranged, whole, or absent when deleted. */
 export function collectChangedFiles(git: GitText): FileDiff[] {
   const diffText = git([
@@ -151,7 +155,7 @@ export function collectChangedFiles(git: GitText): FileDiff[] {
     "--diff-filter=ACMRT",
     "origin/main",
     "--",
-    "src/*.ts",
+    SRC_PATHSPEC,
   ]);
 
   const untracked = git([
@@ -159,7 +163,7 @@ export function collectChangedFiles(git: GitText): FileDiff[] {
     "--others",
     "--exclude-standard",
     "--",
-    "src/*.ts",
+    SRC_PATHSPEC,
   ]);
 
   const files = parseFileDiffs(diffText);
