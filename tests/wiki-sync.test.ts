@@ -518,11 +518,7 @@ describe("runWikiSync", () => {
 
     const headBefore = await headOf(h.dataRoot);
 
-    try {
-      await runWikiSync(optionsFor(h));
-    } catch {
-      // expected: the failure is pinned by the "fails the cycle" sibling it
-    }
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow("agent exploded");
 
     expect(await headOf(h.dataRoot)).toBe(headBefore);
   });
@@ -560,11 +556,9 @@ describe("runWikiSync", () => {
 
     const headBefore = await headOf(h.dataRoot);
 
-    try {
-      await runWikiSync(optionsFor(h));
-    } catch {
-      // expected: the failure is pinned by the "fails the cycle" sibling it
-    }
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow(
+      "guardrail check 2 (frontmatter)",
+    );
 
     expect(await headOf(h.dataRoot)).toBe(headBefore);
   });
@@ -582,11 +576,9 @@ describe("runWikiSync", () => {
       return { stdout: "rogue lint", stderr: "" };
     };
 
-    try {
-      await runWikiSync(optionsFor(h));
-    } catch {
-      // expected: the failure is pinned by the "fails the cycle" sibling it
-    }
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow(
+      "guardrail check 2 (frontmatter)",
+    );
 
     await expect(
       readFile(join(h.dataRoot, "wiki", "concepts", "broken.md"), "utf8"),
@@ -606,11 +598,9 @@ describe("runWikiSync", () => {
       return { stdout: "rogue lint", stderr: "" };
     };
 
-    try {
-      await runWikiSync(optionsFor(h));
-    } catch {
-      // expected: the failure is pinned by the "fails the cycle" sibling it
-    }
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow(
+      "guardrail check 2 (frontmatter)",
+    );
 
     await expect(
       readFile(join(h.dataRoot, "wiki", "concepts", "new.md"), "utf8"),
@@ -624,11 +614,7 @@ describe("runWikiSync", () => {
       throw new Error("agent exploded");
     };
 
-    try {
-      await runWikiSync(optionsFor(h));
-    } catch {
-      // expected: the failure is pinned by the "fails the cycle" sibling it
-    }
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow("agent exploded");
 
     h.ingestAgent = ingestStub;
 
@@ -644,11 +630,7 @@ describe("runWikiSync", () => {
       throw new Error("agent exploded");
     };
 
-    try {
-      await runWikiSync(optionsFor(h));
-    } catch {
-      // expected: the failure is pinned by the "fails the cycle" sibling it
-    }
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow("agent exploded");
 
     h.ingestAgent = ingestStub;
 
@@ -664,11 +646,7 @@ describe("runWikiSync", () => {
       throw new Error("agent exploded");
     };
 
-    try {
-      await runWikiSync(optionsFor(h));
-    } catch {
-      // expected: the failure is pinned by the "fails the cycle" sibling it
-    }
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow("agent exploded");
 
     h.ingestAgent = ingestStub;
 
@@ -684,11 +662,7 @@ describe("runWikiSync", () => {
       throw new Error("agent exploded");
     };
 
-    try {
-      await runWikiSync(optionsFor(h));
-    } catch {
-      // expected: the failure is pinned by the "fails the cycle" sibling it
-    }
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow("agent exploded");
 
     h.ingestAgent = ingestStub;
 
@@ -1260,11 +1234,7 @@ describe("runWikiSync crosslinks stage", () => {
 
     const before = await headOf(h.dataRoot);
 
-    try {
-      await runWikiSync(optionsFor(h));
-    } catch {
-      // expected: the failure is pinned by the "fails the cycle" sibling it
-    }
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow();
 
     expect(await headOf(h.dataRoot)).toBe(before);
   });
@@ -1599,11 +1569,7 @@ describe("runWikiSync verification stage", () => {
 
     const headBefore = await headOf(h.dataRoot);
 
-    try {
-      await runWikiSync(optionsFor(h));
-    } catch {
-      // expected: the failure is pinned by the "fails the cycle" sibling it
-    }
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow();
 
     expect(await headOf(h.dataRoot)).toBe(headBefore);
   });
@@ -1616,11 +1582,9 @@ describe("runWikiSync verification stage", () => {
     const headBefore = await headOf(h.dataRoot);
     const progress: string[] = [];
 
-    try {
-      await runWikiSync({ ...optionsFor(h), onProgress: (m) => progress.push(m) });
-    } catch {
-      // expected: the failure is pinned by the "fails the cycle" sibling it
-    }
+    await expect(
+      runWikiSync({ ...optionsFor(h), onProgress: (m) => progress.push(m) }),
+    ).rejects.toThrow();
 
     expect(progress).toContain(
       `wiki-sync: verification failed — reverting lint edits to ${headBefore.slice(0, 8)} (ingest edits kept)`,
@@ -1632,11 +1596,7 @@ describe("runWikiSync verification stage", () => {
 
     h.lintAgent = fidelityDriftLintAgent();
 
-    try {
-      await runWikiSync(optionsFor(h));
-    } catch {
-      // expected: the failure is pinned by the "fails the cycle" sibling it
-    }
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow();
 
     await expect(
       readFile(join(h.dataRoot, "outputs", "lint-2026-08-20.md"), "utf8"),
@@ -1648,11 +1608,7 @@ describe("runWikiSync verification stage", () => {
 
     h.lintAgent = fidelityDriftLintAgent();
 
-    try {
-      await runWikiSync(optionsFor(h));
-    } catch {
-      // expected: the failure is pinned by the "fails the cycle" sibling it
-    }
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow();
 
     await expect(
       readFile(join(h.dataRoot, "wiki", "concepts", "drifted.md"), "utf8"),
@@ -1664,11 +1620,7 @@ describe("runWikiSync verification stage", () => {
 
     h.lintAgent = fidelityDriftLintAgent();
 
-    try {
-      await runWikiSync(optionsFor(h));
-    } catch {
-      // expected: the failure is pinned by the "fails the cycle" sibling it
-    }
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow();
 
     await expect(
       readFile(join(h.dataRoot, "wiki", "concepts", "new.md"), "utf8"),
@@ -1713,11 +1665,7 @@ describe("runWikiSync verification stage", () => {
 
     const headBefore = await headOf(h.dataRoot);
 
-    try {
-      await runWikiSync(optionsFor(h));
-    } catch {
-      // expected: the failure is pinned by the "fails the cycle" sibling it
-    }
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow();
 
     expect(await headOf(h.dataRoot)).toBe(headBefore);
   });
@@ -1727,11 +1675,7 @@ describe("runWikiSync verification stage", () => {
 
     h.lintAgent = deadOriginLintAgent();
 
-    try {
-      await runWikiSync(optionsFor(h));
-    } catch {
-      // expected: the failure is pinned by the "fails the cycle" sibling it
-    }
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow();
 
     await expect(
       readFile(join(h.dataRoot, "wiki", "sources", "dead-origin.md"), "utf8"),
