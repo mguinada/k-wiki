@@ -367,8 +367,7 @@ async function changedWikiPages(
 
     const isDirty =
       !isPreExisting(before.get(entry.path), entry) ||
-      (await hashPath(join(dataRoot, entry.path))) !==
-        pre.hashes.get(entry.path);
+      !(await hashMatches(dataRoot, entry.path, pre.hashes.get(entry.path)));
 
     if (isDirty) {
       changed.push(entry.path);
@@ -376,6 +375,16 @@ async function changedWikiPages(
   }
 
   return changed;
+}
+
+/** Whether the file's current content hash still equals the
+ *  pre-run snapshot value. */
+async function hashMatches(
+  dataRoot: string,
+  path: string,
+  expected: string | undefined,
+): Promise<boolean> {
+  return (await hashPath(join(dataRoot, path))) === expected;
 }
 
 /** Read each changed wiki page; checks 2 and 3 share the texts. */
@@ -554,9 +563,7 @@ function outsidePaths(entry: StatusEntry): string[] {
 
 /** The rename origins of a status snapshot: the set of `origin`
  *  paths pre-run renames recorded. */
-function renameOriginsOf(
-  status: readonly StatusEntry[],
-): Set<string> {
+function renameOriginsOf(status: readonly StatusEntry[]): Set<string> {
   return new Set(
     status.flatMap((entry) =>
       entry.origin === undefined ? [] : [entry.origin],
@@ -593,7 +600,7 @@ async function checkImmutability(
   }
 
   for (const [path, was] of pre.hashes) {
-    if (!isAllowed(path) && (await hashPath(join(dataRoot, path))) !== was) {
+    if (!isAllowed(path) && !(await hashMatches(dataRoot, path, was))) {
       problems.add(`${path} changed by the run`);
     }
   }
@@ -948,8 +955,7 @@ async function changedRenameOrigins(
 
     const untouched =
       preRunOrigins.has(entry.origin) &&
-      (await hashPath(join(dataRoot, entry.origin))) ===
-        hashes.get(entry.origin);
+      (await hashMatches(dataRoot, entry.origin, hashes.get(entry.origin)));
 
     if (!untouched) {
       changed.push(entry.origin);
@@ -979,7 +985,7 @@ async function changedStatusPaths(
 
     const untouched =
       isPreExisting(before.get(entry.path), entry) &&
-      (await hashPath(join(dataRoot, entry.path))) === hashes.get(entry.path);
+      (await hashMatches(dataRoot, entry.path, hashes.get(entry.path)));
 
     if (!untouched) {
       changed.push(entry.path);
@@ -1000,10 +1006,7 @@ async function vanishedPreRunPaths(
   const changed: string[] = [];
 
   for (const path of hashes.keys()) {
-    if (
-      under(path) &&
-      (await hashPath(join(dataRoot, path))) !== hashes.get(path)
-    ) {
+    if (under(path) && !(await hashMatches(dataRoot, path, hashes.get(path)))) {
       changed.push(path);
     }
   }
