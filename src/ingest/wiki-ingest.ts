@@ -1708,6 +1708,11 @@ function removedContentReader(
     );
 }
 
+/** Whether the run carries explicit `--sources` paths: a scoped run. */
+function hasExplicitSources(options: IngestOptions): boolean {
+  return (options.sources?.length ?? 0) > 0;
+}
+
 /** The manifest diff this run ingests: the explicit `--sources` set
  *  when given (which requires a valid snapshot), else snapshot vs
  *  current — with body-identical remove+add pairs paired as renames. */
@@ -1719,10 +1724,9 @@ async function computeRunDiff(
   env: NodeJS.ProcessEnv,
   snapshotPath: string,
 ): Promise<{ diff: ManifestDiff; explicitDiff: ManifestDiff | undefined }> {
-  const explicitSources =
-    options.sources !== undefined && options.sources.length > 0
-      ? [...new Set(options.sources)]
-      : undefined;
+  const explicitSources = hasExplicitSources(options)
+    ? [...new Set(options.sources)]
+    : undefined;
   const explicitDiff =
     explicitSources === undefined
       ? undefined
@@ -1955,7 +1959,7 @@ export async function runWikiIngest(
     snapshotPath,
     dataRoot,
     onProgress,
-    (options.sources?.length ?? 0) > 0,
+    hasExplicitSources(options),
   );
   const { diff, explicitDiff } = await computeRunDiff(
     current,
