@@ -11,6 +11,7 @@ import {
   provenanceBuckets,
   runsPerWeek,
   sourceRotBuckets,
+  sourcesPerRun,
   stalenessBuckets,
   statusCounts,
   typeCounts,
@@ -308,6 +309,28 @@ describe("computeKpis link graph", () => {
     });
 
     expect(kpis.hubs).toHaveLength(5);
+  });
+
+  it("orders tied hubs alphabetically by path", () => {
+    const kpis = computeKpis({
+      now: NOW,
+      head: "abc1234",
+      pages: [
+        page({ path: "zeta.md" }),
+        page({ path: "alpha.md" }),
+        page({ path: "middle.md", outbound: ["zeta", "alpha"] }),
+      ],
+      rawNoteKeys: [],
+      ingestedKeys: [],
+      lastSync: null,
+      rawNoteSyncDates: [],
+      statusFlips: [],
+      commits: [],
+      firstAdded: [],
+      lastQuery: null,
+    });
+
+    expect(kpis.hubs.map((hub) => hub.path)).toEqual(["alpha.md", "zeta.md"]);
   });
 });
 
@@ -693,6 +716,37 @@ describe("ingestCadence", () => {
         { date: "2026-08-30", subject: "sweep: rename pages" },
         { date: "2026-08-25", subject: "wiki-sync: x" },
       ]),
+    ).toBeNull();
+  });
+});
+
+describe("sourcesPerRun", () => {
+  it("reports the mean sources across runs that report a count", () => {
+    expect(
+      sourcesPerRun([
+        {
+          date: "2026-08-30",
+          subject: "wiki-sync: 1 source processed, 2 pages touched",
+        },
+        {
+          date: "2026-08-28",
+          subject: "wiki-sync: 3 sources processed, 3 pages touched",
+        },
+      ]),
+    ).toBe(2);
+  });
+
+  it("counts the singular one-source form", () => {
+    expect(
+      sourcesPerRun([
+        { date: "2026-08-30", subject: "wiki-sync: 1 source processed" },
+      ]),
+    ).toBe(1);
+  });
+
+  it("is null when no run reports a count", () => {
+    expect(
+      sourcesPerRun([{ date: "2026-08-30", subject: "sweep: rename pages" }]),
     ).toBeNull();
   });
 });

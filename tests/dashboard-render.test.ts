@@ -166,7 +166,9 @@ describe("renderDashboard", () => {
       dataRoot: "~/Lab/k-wiki-data",
     });
 
-    expect(html).toContain("1"); // backlog
+    expect(html).toContain(
+      '<span class="stat-value">1</span><span class="stat-label">un-ingested sources',
+    );
     expect(html).toContain("needs-review");
     expect(html).toContain("concepts/agent-evals.md");
   });
@@ -239,6 +241,22 @@ describe("renderDashboard", () => {
     });
 
     expect(html).toContain("concepts/agent-evals.md → missing-page");
+  });
+
+  it("escapes HTML metacharacters in dead-link pairs", () => {
+    const kpis = fixtureKpis();
+    const poisoned = {
+      ...kpis,
+      deadLinks: [{ source: "concepts/a<b>&c.md", target: "T&g" }],
+    };
+
+    const html = renderDashboard(poisoned, {
+      generatedAt: NOW,
+      head: "abee7c4",
+      dataRoot: "~/Lab/k-wiki-data",
+    });
+
+    expect(html).toContain("a&lt;b&gt;&amp;c.md → T&amp;g");
   });
 });
 
