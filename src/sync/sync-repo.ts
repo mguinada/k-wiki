@@ -24,6 +24,7 @@ import {
   colorizeProgress,
   formatReport,
   listNamespaceDirs,
+  pruneNamespaces,
   type ProjectedNote,
   projectNotes,
   reportColors,
@@ -388,15 +389,13 @@ export async function runRepoSync(
     ]),
   ].filter((name) => name !== source.name);
   const nextManifest: Manifest = { vaults: { ...manifest.vaults } };
-  const prunedNamespaces: string[] = [];
-
-  for (const name of staleNames) {
-    delete nextManifest.vaults[name];
-
-    await rm(join(notesRoot, name), { recursive: true, force: true });
-    onProgress(`repo "${name}": removed stale namespace (not configured)`);
-    prunedNamespaces.push(name);
-  }
+  const prunedNamespaces = await pruneNamespaces(
+    staleNames,
+    nextManifest,
+    notesRoot,
+    "repo",
+    onProgress,
+  );
 
   const { notes, report } = await projectRepo(
     source,

@@ -384,25 +384,25 @@ export interface VaultDryRunReport {
   readonly wouldIngest: readonly string[];
 }
 
-/** Remove namespaces that left the config — unless the vault list is
- *  empty: an empty list is a misconfigured run (truncated sync.json),
- *  never "prune everything". */
-async function pruneStaleNamespaces(
+/** Remove stale namespaces from the manifest and disk, reporting
+ *  each. The caller owns the staleness computation and the
+ *  empty-config safety (a misconfigured empty list must compute no
+ *  stale names, never "everything"). Shared by the vault and repo
+ *  adapters. */
+export async function pruneNamespaces(
   staleNames: readonly string[],
-  vaults: readonly VaultSourceConfig[],
   nextManifest: Manifest,
   notesRoot: string,
+  noun: "vault" | "repo",
   onProgress: (message: string) => void,
 ): Promise<string[]> {
   const prunedNamespaces: string[] = [];
 
-  if (vaults.length > 0) {
-    for (const name of staleNames) {
-      delete nextManifest.vaults[name];
-      await rm(join(notesRoot, name), { recursive: true, force: true });
-      onProgress(`vault "${name}": removed stale namespace (not configured)`);
-      prunedNamespaces.push(name);
-    }
+  for (const name of staleNames) {
+    delete nextManifest.vaults[name];
+    await rm(join(notesRoot, name), { recursive: true, force: true });
+    onProgress(`${noun} "${name}": removed stale namespace (not configured)`);
+    prunedNamespaces.push(name);
   }
 
   return prunedNamespaces;
@@ -428,17 +428,20 @@ export async function runSync(options: SyncOptions): Promise<SyncReport> {
   const nextManifest: Manifest = { vaults: { ...manifest.vaults } };
   const notesRoot = join(options.rawDir, "notes");
   const configuredNames = new Set(vaults.map((vault) => vault.name));
-  const staleNames = [
-    ...new Set([
-      ...Object.keys(manifest.vaults),
-      ...(await listNamespaceDirs(notesRoot)),
-    ]),
-  ].filter((name) => !configuredNames.has(name));
-  const prunedNamespaces = await pruneStaleNamespaces(
+  const staleNames =
+    vaults.length > 0
+      ? [
+          ...new Set([
+            ...Object.keys(manifest.vaults),
+            ...(await listNamespaceDirs(notesRoot)),
+          ]),
+        ].filter((name) => !configuredNames.has(name))
+      : [];
+  const prunedNamespaces = await pruneNamespaces(
     staleNames,
-    vaults,
     nextManifest,
     notesRoot,
+    "vault",
     onProgress,
   );
 
