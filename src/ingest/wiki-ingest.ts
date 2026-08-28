@@ -34,6 +34,7 @@ import {
   normalizeRawPath,
   type PageFields,
   readPageFields,
+  unquote,
   wikilinkTarget,
 } from "../wiki/pages.ts";
 import {
@@ -88,14 +89,6 @@ const DOMAIN_KEY = "secondBrain.domains";
 const SETTING_KEYS = [...REQUIRED_KEYS, ...OPTIONAL_KEYS] as const;
 
 type SettingKey = (typeof SETTING_KEYS)[number];
-
-function unquote(value: string): string {
-  const quote = value[0];
-
-  return quote === '"' || quote === "'"
-    ? value.slice(1, value.length - 1)
-    : value;
-}
 
 /** The dirs of a `secondBrain.domains` value: an optional `[...]`
  *  wrapper, then comma-separated paths (each optionally quoted).
