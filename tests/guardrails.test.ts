@@ -113,6 +113,24 @@ describe("parseStatus", () => {
     ]);
   });
 
+  it("decodes octal escapes byte-wise in a quoted rename origin", () => {
+    expect(parseStatus('R  "wiki/caf\xc3\xa9.md" -> wiki/c.md\n')).toEqual([
+      { code: "R ", path: "wiki/c.md", origin: "wiki/caf\u00c3\u00a9.md" },
+    ]);
+  });
+
+  it("keeps an unknown escaped character as its bare character in a rename origin", () => {
+    expect(parseStatus('R  "wiki/a\\qb.md" -> wiki/c.md\n')).toEqual([
+      { code: "R ", path: "wiki/c.md", origin: "wiki/aqb.md" },
+    ]);
+  });
+
+  it("treats a rename line without a separator as a plain path with no origin", () => {
+    expect(parseStatus("R  wiki/lonely.md\n")).toEqual([
+      { code: "R ", path: "wiki/lonely.md" },
+    ]);
+  });
+
   it("returns no entries for empty output", () => {
     expect(parseStatus("")).toEqual([]);
   });
@@ -392,6 +410,20 @@ describe("runGuardrails — check 1, immutability", () => {
 
     expect(post.failure?.check).toBe(1);
     expect(post.failure?.problems.join("\n")).toContain("raw/notes/src.md");
+  });
+
+  it("passes over a pre-run dirty wiki page the run leaves untouched", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(join(dataRoot, "wiki", "index.md"), "no frontmatter\n");
+
+    const pre = await capturePreRunState(dataRoot, process.env);
+
+    await writeFile(join(dataRoot, "wiki", "sources", "new.md"), hubPage());
+
+    const post = await runGuardrails(dataRoot, process.env, pre);
+
+    expect(post.failure).toBeUndefined();
   });
 
   it("trips when the run edits a pre-run untracked file", async () => {
