@@ -143,6 +143,64 @@ function parseInclude(value: unknown): readonly string[] {
   return value;
 }
 
+/** Parse one `source: "repo"` vault entry: an `include` allowlist,
+ *  never `exclude`. */
+function parseRepoSource(
+  entry: Record<string, unknown>,
+  name: string,
+  root: string,
+  home: string,
+): SourceConfig {
+  if (Object.hasOwn(entry, "exclude")) {
+    throw new Error('repo source takes "include", not "exclude"');
+  }
+
+  if (!Object.hasOwn(entry, "include")) {
+    throw new Error('repo source needs an "include" allowlist');
+  }
+
+  const include = parseInclude(entry.include);
+
+  if (include.length === 0) {
+    throw new Error('repo source needs an "include" allowlist');
+  }
+
+  return {
+    kind: "repo",
+    name,
+    root: expandHome(root, home),
+    include,
+  };
+}
+
+/** Parse one vault-source entry (the default kind): an `exclude`
+ *  pattern, never `include`. */
+function parseVaultSource(
+  entry: Record<string, unknown>,
+  name: string,
+  root: string,
+  home: string,
+): SourceConfig {
+  if (Object.hasOwn(entry, "include")) {
+    throw new Error('vault source takes "exclude", not "include"');
+  }
+
+  if (Object.hasOwn(entry, "select")) {
+    throw new Error('"select" was replaced by "exclude"; remove "select"');
+  }
+
+  if (typeof entry.exclude !== "string") {
+    throw new Error('"exclude" must be a string');
+  }
+
+  return {
+    kind: "vault",
+    name,
+    root: expandHome(root, home),
+    exclude: parseExclude(entry.exclude),
+  };
+}
+
 function parseVaults(value: unknown, home: string): SourceConfig[] {
   if (!Array.isArray(value)) {
     throw new Error('"vaults" must be an array');
@@ -177,49 +235,11 @@ function parseVaults(value: unknown, home: string): SourceConfig[] {
         );
       }
 
-      if (entry.source === "repo") {
-        if (Object.hasOwn(entry, "exclude")) {
-          throw new Error('repo source takes "include", not "exclude"');
-        }
-
-        if (!Object.hasOwn(entry, "include")) {
-          throw new Error('repo source needs an "include" allowlist');
-        }
-
-        const include = parseInclude(entry.include);
-
-        if (include.length === 0) {
-          throw new Error('repo source needs an "include" allowlist');
-        }
-
-        sources.push({
-          kind: "repo",
-          name,
-          root: expandHome(entry.root, home),
-          include,
-        });
-      } else {
-        if (Object.hasOwn(entry, "include")) {
-          throw new Error('vault source takes "exclude", not "include"');
-        }
-
-        if (Object.hasOwn(entry, "select")) {
-          throw new Error(
-            '"select" was replaced by "exclude"; remove "select"',
-          );
-        }
-
-        if (typeof entry.exclude !== "string") {
-          throw new Error('"exclude" must be a string');
-        }
-
-        sources.push({
-          kind: "vault",
-          name,
-          root: expandHome(entry.root, home),
-          exclude: parseExclude(entry.exclude),
-        });
-      }
+      sources.push(
+        entry.source === "repo"
+          ? parseRepoSource(entry, name, entry.root, home)
+          : parseVaultSource(entry, name, entry.root, home),
+      );
 
       seen.add(name);
     } catch (cause) {
