@@ -428,6 +428,18 @@ describe("growthSeries", () => {
     );
 
     expect(series[series.length - 1]?.count).toBe(3);
+  });
+
+  it("carries the previous cumulative count into the earlier week", () => {
+    const series = growthSeries(
+      [
+        { path: "a.md", date: "2026-08-20" },
+        { path: "b.md", date: "2026-08-27" },
+        { path: "c.md", date: "2026-09-01" },
+      ],
+      NOW,
+    );
+
     expect(series[series.length - 2]?.count).toBe(2);
   });
 
@@ -763,6 +775,18 @@ describe("needsReviewChurn", () => {
     );
 
     expect(weeks[weeks.length - 1]?.count).toBe(2);
+  });
+
+  it("carries an older week's flip count into the trailing window", () => {
+    const weeks = needsReviewChurn(
+      [
+        { date: "2026-08-31", subject: "anything" },
+        { date: "2026-08-31", subject: "anything" },
+        { date: "2026-08-20", subject: "anything" },
+      ],
+      NOW,
+    );
+
     expect(weeks[weeks.length - 3]?.count).toBe(1);
   });
 

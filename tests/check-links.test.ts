@@ -472,6 +472,11 @@ describe("check-links CLI", () => {
 
     expect(result.code).toBe(0);
     expect(result.err).toBe("");
+  });
+
+  it("prints usage for --help even with a bad wiki path", async () => {
+    const result = await runNode(["--help", "/no/such/wiki"]);
+
     expect(result.out).toContain("Usage: check-links");
   });
 });

@@ -126,6 +126,22 @@ describe("loadSourceHubIndex", () => {
     const index = await loadSourceHubIndex(wikiDir);
 
     expect(index.byOrigin.has("notes/V/note.md")).toBe(false);
+  });
+
+  it("does not map an ambiguous raw path by origin", async () => {
+    const wikiDir = await makeWiki({
+      "sources/one.md": page(
+        { title: "One", type: "source", origin: "raw/notes/V/note.md" },
+        [],
+      ),
+      "sources/two.md": page(
+        { title: "Two", type: "source", origin: "raw/notes/V/note.md" },
+        [],
+      ),
+    });
+
+    const index = await loadSourceHubIndex(wikiDir);
+
     expect(index.ambiguous.has("notes/V/note.md")).toBe(true);
   });
 
@@ -142,6 +158,20 @@ describe("loadSourceHubIndex", () => {
     const index = await loadSourceHubIndex(wikiDir);
 
     expect(index.byCitation.has("notes/V/chapter.md")).toBe(false);
+  });
+
+  it("does not map an ambiguous raw path by citation", async () => {
+    const wikiDir = await makeWiki({
+      "sources/one.md": page({ title: "One", type: "source" }, [
+        "notes/V/chapter.md",
+      ]),
+      "sources/two.md": page({ title: "Two", type: "source" }, [
+        "notes/V/chapter.md",
+      ]),
+    });
+
+    const index = await loadSourceHubIndex(wikiDir);
+
     expect(index.ambiguous.has("notes/V/chapter.md")).toBe(true);
   });
 
@@ -154,6 +184,16 @@ describe("loadSourceHubIndex", () => {
     const index = await loadSourceHubIndex(wikiDir);
 
     expect(index.fields.get("hub")?.type).toBe("source");
+  });
+
+  it("exposes a concept page's type by page name", async () => {
+    const wikiDir = await makeWiki({
+      "sources/hub.md": page({ title: "Hub", type: "source" }, []),
+      "concepts/cite.md": page({ title: "Cite", type: "concept" }, ["[[hub]]"]),
+    });
+
+    const index = await loadSourceHubIndex(wikiDir);
+
     expect(index.fields.get("cite")?.type).toBe("concept");
   });
 

@@ -206,6 +206,22 @@ describe("open-origin CLI", () => {
     ]);
 
     expect(result.code).toBe(0);
+  });
+
+  it("opens the resolved vault for a wiki-relative hub path", async () => {
+    const { configPath } = await makeInstance(
+      "temp-research",
+      "notes/Engineering/Scratch/temp-research.md",
+      [{ name: "Engineering", root: "~/vaults/eng" }],
+    );
+
+    const result = await runCli([
+      "--print",
+      "--config",
+      configPath,
+      "sources/temp-research.md",
+    ]);
+
     expect(result.out).toContain("obsidian://open?vault=Engineering");
   });
 

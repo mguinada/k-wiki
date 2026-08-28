@@ -145,6 +145,14 @@ describe("mutation-survivors CLI", () => {
 
     expect(result.code).toBe(0);
     expect(result.err).toBe("");
+  });
+
+  it("prints usage with no report present", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutsurv-"));
+    const result = await runNode(["--help"], dir);
+
+    tempDirs.push(dir);
+
     expect(result.out).toContain("Usage: mutation-survivors");
   });
 
