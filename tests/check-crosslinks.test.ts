@@ -114,10 +114,27 @@ describe("checkCrossWikiLinks", () => {
     );
 
     expect(report.problems).toEqual([]);
+  });
+
+  it("counts the resolved external link", async () => {
+    const brain = await makeWiki("brain", {
+      "decision-fast-tests.md": "Backed by [[engineering/stub]].\n",
+    });
+    const engineering = await makeWiki(
+      "engineering",
+      { "concepts/stub.md": "# Stub\n" },
+      "Engineering",
+    );
+
+    const report = await checkCrossWikiLinks(
+      join(brain, "brain"),
+      join(engineering, "engineering"),
+    );
+
     expect(report.external).toBe(1);
   });
 
-  it("matches the vault name case-insensitively", async () => {
+  it("resolves a link whose vault name case differs", async () => {
     const brain = await makeWiki("brain", {
       "index.md": "See [[Engineering/stub]].\n",
     });
@@ -133,6 +150,23 @@ describe("checkCrossWikiLinks", () => {
     );
 
     expect(report.problems).toEqual([]);
+  });
+
+  it("counts the case-insensitive external link", async () => {
+    const brain = await makeWiki("brain", {
+      "index.md": "See [[Engineering/stub]].\n",
+    });
+    const engineering = await makeWiki(
+      "engineering",
+      { "entities/stub.md": "# Stub\n" },
+      "Engineering",
+    );
+
+    const report = await checkCrossWikiLinks(
+      join(brain, "brain"),
+      join(engineering, "engineering"),
+    );
+
     expect(report.external).toBe(1);
   });
 
@@ -158,8 +192,77 @@ describe("checkCrossWikiLinks", () => {
     );
 
     expect(report.problems).toEqual([]);
+  });
+
+  it("counts one external link per domain wiki", async () => {
+    const brain = await makeWiki("brain", {
+      "index.md": "See [[engineering/stub]] and [[anthropology/kinship]].\n",
+    });
+    const engineering = await makeWiki(
+      "engineering",
+      { "concepts/stub.md": "# Stub\n" },
+      "Engineering",
+    );
+    const anthropology = await makeWiki(
+      "anthropology",
+      { "entities/kinship.md": "# Kinship\n" },
+      "Anthropology",
+    );
+
+    const report = await checkCrossWikiLinks(
+      join(brain, "brain"),
+      join(engineering, "engineering"),
+      join(anthropology, "anthropology"),
+    );
+
     expect(report.external).toBe(2);
+  });
+
+  it("audits the single brain page", async () => {
+    const brain = await makeWiki("brain", {
+      "index.md": "See [[engineering/stub]] and [[anthropology/kinship]].\n",
+    });
+    const engineering = await makeWiki(
+      "engineering",
+      { "concepts/stub.md": "# Stub\n" },
+      "Engineering",
+    );
+    const anthropology = await makeWiki(
+      "anthropology",
+      { "entities/kinship.md": "# Kinship\n" },
+      "Anthropology",
+    );
+
+    const report = await checkCrossWikiLinks(
+      join(brain, "brain"),
+      join(engineering, "engineering"),
+      join(anthropology, "anthropology"),
+    );
+
     expect(report.auditedPages).toBe(1);
+  });
+
+  it("sees both domain wiki pages", async () => {
+    const brain = await makeWiki("brain", {
+      "index.md": "See [[engineering/stub]] and [[anthropology/kinship]].\n",
+    });
+    const engineering = await makeWiki(
+      "engineering",
+      { "concepts/stub.md": "# Stub\n" },
+      "Engineering",
+    );
+    const anthropology = await makeWiki(
+      "anthropology",
+      { "entities/kinship.md": "# Kinship\n" },
+      "Anthropology",
+    );
+
+    const report = await checkCrossWikiLinks(
+      join(brain, "brain"),
+      join(engineering, "engineering"),
+      join(anthropology, "anthropology"),
+    );
+
     expect(report.domainPages).toBe(2);
   });
 
@@ -237,6 +340,23 @@ describe("checkCrossWikiLinks", () => {
     );
 
     expect(report.problems).toEqual([]);
+  });
+
+  it("does not count protocol links as external", async () => {
+    const brain = await makeWiki("brain", {
+      "index.md": "Plain URL wikilink [[https://example.com/page]].\n",
+    });
+    const engineering = await makeWiki(
+      "engineering",
+      { "index.md": "# Engineering\n" },
+      "Engineering",
+    );
+
+    const report = await checkCrossWikiLinks(
+      join(brain, "brain"),
+      join(engineering, "engineering"),
+    );
+
     expect(report.external).toBe(0);
   });
 
@@ -256,7 +376,41 @@ describe("checkCrossWikiLinks", () => {
     );
 
     expect(report.problems).toEqual([]);
+  });
+
+  it("does not audit AGENTS.md", async () => {
+    const brain = await makeWiki("brain", {
+      "AGENTS.md": "Contract mentions [[engineering/missing]].\n",
+    });
+    const engineering = await makeWiki(
+      "engineering",
+      { "AGENTS.md": "Self [[engineering/missing]].\n", "index.md": "# E\n" },
+      "Engineering",
+    );
+
+    const report = await checkCrossWikiLinks(
+      join(brain, "brain"),
+      join(engineering, "engineering"),
+    );
+
     expect(report.auditedPages).toBe(0);
+  });
+
+  it("still counts the domain wiki's pages", async () => {
+    const brain = await makeWiki("brain", {
+      "AGENTS.md": "Contract mentions [[engineering/missing]].\n",
+    });
+    const engineering = await makeWiki(
+      "engineering",
+      { "AGENTS.md": "Self [[engineering/missing]].\n", "index.md": "# E\n" },
+      "Engineering",
+    );
+
+    const report = await checkCrossWikiLinks(
+      join(brain, "brain"),
+      join(engineering, "engineering"),
+    );
+
     expect(report.domainPages).toBe(1);
   });
 
@@ -363,6 +517,22 @@ describe("check-crosslinks CLI", () => {
     ]);
 
     expect(result.code).toBe(1);
+  });
+
+  it("prints the broken cross-wiki link with its location", async () => {
+    const brain = await makeWiki("brain", {
+      "decision.md": "Points at [[engineering/missing]].\n",
+    });
+    const engineering = await makeWiki(
+      "engineering",
+      { "concepts/stub.md": "# Stub\n" },
+      "Engineering",
+    );
+    const result = await runNode([
+      join(brain, "brain"),
+      join(engineering, "engineering"),
+    ]);
+
     expect(result.err).toContain(
       "brain/decision.md:1 -> [[engineering/missing]]",
     );
@@ -383,6 +553,22 @@ describe("check-crosslinks CLI", () => {
     ]);
 
     expect(result.code).toBe(1);
+  });
+
+  it("names the unknown domain wiki in the error", async () => {
+    const brain = await makeWiki("brain", {
+      "index.md": "Points at [[history/foo]].\n",
+    });
+    const engineering = await makeWiki(
+      "engineering",
+      { "index.md": "# Engineering\n" },
+      "Engineering",
+    );
+    const result = await runNode([
+      join(brain, "brain"),
+      join(engineering, "engineering"),
+    ]);
+
     expect(result.err).toContain('unknown domain wiki "history"');
   });
 
@@ -399,6 +585,20 @@ describe("check-crosslinks CLI", () => {
     ]);
 
     expect(result.code).toBe(1);
+  });
+
+  it("prints the self-referencing page path", async () => {
+    const brain = await makeWiki("brain", { "index.md": "# Brain\n" });
+    const engineering = await makeWiki(
+      "engineering",
+      { "entities/leaky.md": "[[brain/decision]]\n" },
+      "Engineering",
+    );
+    const result = await runNode([
+      join(brain, "brain"),
+      join(engineering, "engineering"),
+    ]);
+
     expect(result.err).toContain("engineering/entities/leaky.md:1");
   });
 
@@ -407,6 +607,12 @@ describe("check-crosslinks CLI", () => {
     const result = await runNode([join(root, "brain"), join(root, "nope")]);
 
     expect(result.code).toBe(1);
+  });
+
+  it("explains that the wiki directory does not exist", async () => {
+    const root = await makeWiki("brain", { "index.md": "# P\n" });
+    const result = await runNode([join(root, "brain"), join(root, "nope")]);
+
     expect(result.err).toContain("wiki directory does not exist");
   });
 
@@ -415,6 +621,12 @@ describe("check-crosslinks CLI", () => {
     const result = await runNode([join(root, "brain")]);
 
     expect(result.code).toBe(1);
+  });
+
+  it("explains the required arguments", async () => {
+    const root = await makeWiki("brain", { "index.md": "# P\n" });
+    const result = await runNode([join(root, "brain")]);
+
     expect(result.err).toContain(
       "expected <wiki-dir> and at least one <domain-wiki-dir>",
     );
