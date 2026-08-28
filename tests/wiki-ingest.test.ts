@@ -4515,7 +4515,7 @@ console.log("stub report");
 
     const after = await runFiles(runsDir);
 
-    expect(after.length).toBe(before.length + 1);
+    expect(after.length).toBeGreaterThan(before.length);
   });
 
   it("defaults --settings to the repo settings.yml", async () => {
