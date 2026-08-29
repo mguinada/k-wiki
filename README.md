@@ -4,6 +4,22 @@ An LLM-maintained knowledge wiki, derived from a human-owned Obsidian vault.
 
 `k-wiki` implements the [Karpathy-style LLM wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) pattern: a personal Obsidian vault remains the human-owned source of truth. Notes sync into an immutable `raw/` projection unless they opt out with `wiki: false`; an LLM agent then builds and maintains a structured, interlinked wiki under `wiki/`. Both trees are disposable derived data — versioned in a separate data repo placed by `sync.json`'s `dataRoot` (guide §19), auditable by diff, and publishable to all devices as a read-only mirror. This repository holds the pipeline and the directory skeleton only; the contents of `raw/` and `wiki/` are gitignored here.
 
+## Contents
+
+- [Core invariant](#core-invariant)
+- [Status](#status)
+- [In this repository](#in-this-repository)
+- [Working in this repo](#working-in-this-repo-humans-and-agents)
+- [The pipeline](#the-pipeline)
+- [Quick start](#quick-start)
+- [Usage models](#usage-models)
+- [Tooling](#tooling)
+- [Running the sync](#running-the-sync)
+- [Running the wiki agent](#running-the-wiki-agent-wiki-ingest)
+- [Running the full cycle](#running-the-full-cycle-wiki-sync)
+- [Running queries](#running-queries-wiki-query)
+- [Querying from any project](#querying-from-any-project-k-wiki)
+
 ## Core invariant
 
 ```text
@@ -71,6 +87,47 @@ reads the data repo's wiki, manifests, and git history — read-only —
 and writes a self-contained `<data-repo>/dashboard.html` (gitignored;
 opens offline via `file://`) with coverage, structure, activity, and
 provenance KPIs in dark and light themes.
+
+## Quick start
+
+From a fresh clone to the first committed wiki cycle — one vault, one
+wiki ([model 1](#1-one-vault--one-wiki-baseline)). Prerequisites:
+
+- **Node ≥ 22.18** — runs the `.ts` sources directly; there is no
+  build step.
+- **An agent CLI with model credentials** — `pi` by default
+  (`settings.yml` names the command, provider, and model). Without
+  working credentials the ingest step cannot run.
+- **An Obsidian vault with notes** — a small test vault is enough.
+  Notes opt out only via `wiki: false` frontmatter.
+
+```sh
+git clone git@github.com:mguinada/k-wiki.git && cd k-wiki && npm install
+# edit sync.json: set vaults[].root to your vault, dataRoot to your data repo location
+npm run data:init
+npm run wiki-sync
+```
+
+`data:init` seeds the data repo at `dataRoot` — git init, skeleton,
+first commit, idempotent. `wiki-sync` then runs the whole cycle and
+commits the data repo. Leave the `sync.json` edits uncommitted: vault
+paths are private
+([operator rule 8](#8-operator-rules-that-keep-instances-safe)).
+
+Two pointers to know before the first run:
+
+- **A first full ingest takes hours** — about one minute per note at
+  the measured rate, and the 1800 s timeout default fits only
+  incremental runs. Give the first run an explicit budget:
+  `npm run wiki-sync -- --timeout 14400`
+  ([timeout budgeting](#running-the-wiki-agent-wiki-ingest)).
+- **Review every run** — read the digest printed on stdout (also saved
+  to `outputs/runs/<timestamp>.md`), then what it committed in the data
+  repo (`git log -1`)
+  ([the cycle](#running-the-full-cycle-wiki-sync)).
+
+Everything after the first cycle — checks, failure semantics, further
+instances — is documented in the sections below.
 
 ## Usage models
 
