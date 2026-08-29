@@ -151,6 +151,23 @@ describe("runPublishStage", () => {
     await expect(stat(emptyDir)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("keeps the mirror root when pruning with a trailing-slash mirror path", async () => {
+    const tree = await makeTree();
+
+    await mkdir(join(tree.mirror, "wiki"), { recursive: true });
+    await writeFile(join(tree.mirror, "wiki", "gone.md"), "stale\n");
+
+    await runPublishStage({
+      dataRoot: tree.dataRoot,
+      mirror: `${tree.mirror}/`,
+      include: ["absent/**"],
+    });
+
+    await expect(stat(tree.mirror)).resolves.toMatchObject({
+      isDirectory: expect.any(Function),
+    });
+  });
+
   it("skips .obsidian and .DS_Store on the wiki side", async () => {
     const tree = await makeTree();
 

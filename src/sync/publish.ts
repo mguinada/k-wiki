@@ -6,7 +6,7 @@ import {
   rm,
   rmdir,
 } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { compileAllowlistPattern } from "./sync-repo.ts";
 
 /**
@@ -155,6 +155,7 @@ export async function runPublishStage(
   options: PublishOptions,
 ): Promise<PublishResult> {
   const onProgress = options.onProgress ?? (() => {});
+  const mirror = resolve(options.mirror);
   const matchers = options.include.map(compileAllowlistPattern);
   const all = new Map<string, string>();
 
@@ -167,12 +168,12 @@ export async function runPublishStage(
   );
 
   onProgress(
-    `wiki-sync: publish — ${selected.size} files selected for ${options.mirror}`,
+    `wiki-sync: publish — ${selected.size} files selected for ${mirror}`,
   );
 
-  await mkdir(options.mirror, { recursive: true });
-  const removed = await removeStale(options.mirror, selected);
-  const copied = await copySelected(selected, options.mirror);
+  await mkdir(mirror, { recursive: true });
+  const removed = await removeStale(mirror, selected);
+  const copied = await copySelected(selected, mirror);
 
   onProgress(`wiki-sync: publish — ${copied} copied, ${removed} removed`);
 

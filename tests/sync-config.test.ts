@@ -321,7 +321,7 @@ describe("loadSyncConfig", () => {
 
     await expect(
       loadSyncConfig(await writeConfig(bad), "/home/alice"),
-    ).rejects.toThrow(/publish "include" must be an array of strings/);
+    ).rejects.toThrow(/include" must be an array of non-empty strings/);
   });
 
   it("keeps the read error as the cause when the config file is missing", async () => {
@@ -438,7 +438,28 @@ describe("loadSyncConfig", () => {
 
     await expect(
       loadSyncConfig(await writeConfig(bad), "/home/alice"),
-    ).rejects.toThrow(/publish "include" must be an array of strings/);
+    ).rejects.toThrow(/include" must be an array of non-empty strings/);
+  });
+
+  it("rejects an empty publish include list", async () => {
+    const bad = { ...ONE_VAULT, publish: { mirror: "/mirror", include: [] } };
+
+    await expect(
+      loadSyncConfig(await writeConfig(bad), "/home/alice"),
+    ).rejects.toThrow(
+      /publish "include" must list at least one pattern/,
+    );
+  });
+
+  it("rejects a publish include pattern with an empty path segment", async () => {
+    const bad = {
+      ...ONE_VAULT,
+      publish: { mirror: "/mirror", include: ["wiki//**"] },
+    };
+
+    await expect(
+      loadSyncConfig(await writeConfig(bad), "/home/alice"),
+    ).rejects.toThrow(/empty path segment/);
   });
 });
 
