@@ -416,7 +416,6 @@ git-diff flow.
 
 These modes are documented when their issue lands, not before:
 
-- **Read-only mirror publish** — the iPhone/iPad reading copy (#15).
 - **Scheduled unattended operation** (#14).
 - **`--batch N` for `wiki-ingest`** — batch construction stops
   being snapshot surgery; deferred from #13 until batched runs
@@ -591,7 +590,9 @@ edit the snapshot by hand.
 `sync.json` at the repo root is the human-owned placement configuration:
 which vaults to sync, where the data repo lives (`dataRoot`), and where to
 publish the mirror (guide §26). The
-`publish` section is parsed but unused until the mirror lands. Sync state —
+`publish` section activates the mirror publish step: a `mirror` path
+(the iCloud Obsidian container's `KWiki` folder) plus the include
+patterns selecting what to publish (default `"wiki/**"`). Sync state —
 hashes and timestamps — lives in `raw/manifest.json`, keyed per vault
 namespace (guide §25). Sync is idempotent: a run with no source changes
 copies, removes, and writes nothing.
@@ -873,10 +874,23 @@ It chains the proven pieces and adds no capability of its own:
 6. **commit** — one data-repo commit staging `wiki/`, `raw/`, and
    `outputs/`, with a message summarizing sources processed, pages
    touched, and the lint report.
+7. **publish** — only for configs whose `sync.json` carries a
+   `publish` section (guide §26, issue #15): copy the data repo's
+   include-matched files (default `"wiki/**"`) verbatim into the
+   mirror vault — an iCloud-served disposable reading copy that
+   iPhone and iPad open in Obsidian. Deletions included: a page gone
+   from the wiki leaves the mirror on the next run; the mirror's own
+   `.obsidian/` device state is never touched; byte-identical files
+   are never rewritten, so a second run over an intact mirror changes
+   nothing. Runs after the commit, every cycle — a mirror the
+   transport mangled is healed by the next run. A publish failure
+   fails the cycle (exit 1) after the commit has landed; the next run
+   retries the copy.
 
 The final digest on stdout — sync summary, lint summary, the
 crosslink audit result (configured instances), the fidelity and
-provenance results, the commit hash, then the full ingest digest —
+provenance results, the publish summary (configured mirror), the
+commit hash, then the full ingest digest —
 plus `git log -1` in the data repo tell the whole story of the run
 without opening any other file.
 
@@ -897,7 +911,7 @@ default the repo's `outputs/`; the ingest snapshot always lives in the
 data repo's `outputs/`, issue #112),
 `--timeout <secs>` (default 1800, applies to both agent stages), plus
 the `<sync.json>` and `<raw-dir>` positionals — `-h` documents them
-all. Scheduling is #14; the publish step joins with #15.
+all. Scheduling is #14.
 
 ## Running queries (`wiki-query`)
 

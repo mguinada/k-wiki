@@ -45,7 +45,14 @@ import {
   type ProvenanceReport,
   summarizeProvenance,
 } from "../wiki/provenance.ts";
-import { expandHome, loadSyncConfig, resolveRawDir } from "./config.ts";
+import {
+  expandHome,
+  loadSyncConfig,
+  type PublishConfig,
+  resolveRawDir,
+  type SyncConfig,
+} from "./config.ts";
+import { runPublishStage, type PublishResult } from "./publish.ts";
 import { type RepoSyncReport, runRepoSync } from "./sync-repo.ts";
 import { runSync, type SyncReport } from "./sync-vault.ts";
 
@@ -82,6 +89,15 @@ import { runSync, type SyncReport } from "./sync-vault.ts";
  * before the commit: the lint edits are reverted (the ingest edits
  * stay, uncommitted, as the fix surface), mirroring the lint stage's
  * own failure semantics.
+ *
+ * The publish stage (guide §26, issue #15) copies the data repo's
+ * include-matched files verbatim into the configured mirror vault —
+ * the iCloud-served reading copy for iPhone and iPad. It runs after
+ * the commit, every cycle, so a mirror the transport mangled is
+ * healed by the next run; deletions included, the device-side
+ * `.obsidian/` state preserved, byte-identical files never rewritten
+ * (idempotent). A publish failure fails the cycle after the commit
+ * has landed; the next run retries the copy.
  */
 
 /** Liveness line while the lint agent runs (one animated line on a TTY). */
@@ -502,6 +518,8 @@ export interface WikiSyncResult {
   /** The fidelity + provenance reports; the checks run every cycle. */
   readonly verification: VerificationResult;
   readonly commit: CommitResult;
+  /** Undefined when the config has no `publish` section (issue #15). */
+  readonly publish?: PublishResult | undefined;
 }
 
 export interface WikiSyncOptions {
@@ -589,19 +607,19 @@ async function commitSummaryOf(
   };
 }
 
-/** Stage 1 (issue #145 dispatch): load the config, refuse mixed
+/** Stage 1 (issue #145 dispatch): refuse mixed
  *  source kinds, then run the sync-repo core for a repo-typed
  *  config (the meta instance, in-process over that config) and the
  *  sync-vault core otherwise — same cycle, same
  *  lint → verification → commit flow, whatever the source kind. */
 async function runSyncStage(
+  config: SyncConfig,
   options: WikiSyncOptions,
   env: NodeJS.ProcessEnv,
   now: () => Date,
   onProgress: (message: string) => void,
   total: number,
 ): Promise<SyncReport | RepoSyncReport> {
-  const config = await loadSyncConfig(options.configPath, homedir());
   const repoSourced = config.vaults.some((source) => source.kind === "repo");
 
   if (repoSourced && config.vaults.some((source) => source.kind === "vault")) {
@@ -718,9 +736,32 @@ async function runVerificationWithRevert(
   }
 }
 
+/** The final stage (issue #15): copy the wiki into the configured
+ *  mirror vault — every cycle, after the commit; skipped outright
+ *  when the config has no publish section. */
+async function runPublishOrSkip(
+  options: WikiSyncOptions,
+  publish: PublishConfig | undefined,
+  onProgress: (message: string) => void,
+  total: number,
+): Promise<PublishResult | undefined> {
+  if (publish === undefined) {
+    return undefined;
+  }
+
+  onProgress(`wiki-sync: stage ${total}/${total} — publish`);
+
+  return await runPublishStage({
+    dataRoot: dirname(options.rawDir),
+    mirror: publish.mirror,
+    include: publish.include,
+    onProgress,
+  });
+}
+
 /**
  * One full cycle: sync → ingest → lint → crosslinks → verification →
- * commit. Stage 1 dispatches on the config's source kinds (issue
+ * commit → publish. Stage 1 dispatches on the config's source kinds (issue
  * #145): vault sources run the sync-vault core, a repo-typed source
  * (the meta instance) runs the sync-repo core in-process — mixed
  * configs refuse. Any stage failure stops the chain and rejects (the
@@ -734,6 +775,11 @@ async function runVerificationWithRevert(
  * ingest skip also keys on the manifest snapshot, so a run whose
  * agent failed (snapshot untouched) is retried by the next cycle
  * even when sync then reports no changes.
+ *
+ * The publish stage (issue #15) runs after the commit, every cycle:
+ * a mirror the transport mangled is healed by the next run. A
+ * publish failure fails the cycle after the commit has landed — the
+ * next run retries the copy.
  */
 export async function runWikiSync(
   options: WikiSyncOptions,
@@ -745,8 +791,12 @@ export async function runWikiSync(
   const { secondBrainDomains: domains } = await loadAgentSettings(
     options.settingsPath,
   );
-  const total = domains === undefined ? 5 : 6;
-  const sync = await runSyncStage(options, env, now, onProgress, total);
+  const config = await loadSyncConfig(options.configPath, homedir());
+  const total =
+    5 +
+    (domains === undefined ? 0 : 1) +
+    (config.publish === undefined ? 0 : 1);
+  const sync = await runSyncStage(config, options, env, now, onProgress, total);
 
   onProgress(`wiki-sync: stage 2/${total} — wiki-ingest`);
 
@@ -792,7 +842,9 @@ export async function runWikiSync(
     total,
   );
 
-  onProgress(`wiki-sync: stage ${total}/${total} — commit`);
+  onProgress(
+    `wiki-sync: stage ${config.publish === undefined ? total : total - 1}/${total} — commit`,
+  );
 
   const summary = await commitSummaryOf(sync, ingest, lint, dataRoot, env);
 
@@ -803,6 +855,7 @@ export async function runWikiSync(
     crosslinks,
     verification,
     commit: await commitDataRepo(dataRoot, env, formatCommitMessage(summary)),
+    publish: await runPublishOrSkip(options, config.publish, onProgress, total),
   };
 }
 
@@ -836,11 +889,19 @@ function crosslinksLine(crosslinks: CrosslinksResult): string {
 }
 
 /** The one-line digest of a no-op cycle — nothing to commit after
- *  a skipped ingest; undefined whenever the cycle did real work. */
+ *  a skipped ingest, and publish (when configured) copied and removed
+ *  nothing; undefined whenever the cycle did real work. */
 function nothingToDoLine(result: WikiSyncResult): string | undefined {
-  const { commit, crosslinks, ingest } = result;
+  const { commit, crosslinks, ingest, publish } = result;
 
   if (commit.status !== "nothing-to-commit" || ingest.status !== "skipped") {
+    return undefined;
+  }
+
+  if (
+    publish !== undefined &&
+    publish.copied + publish.removed > 0
+  ) {
     return undefined;
   }
 
@@ -902,6 +963,12 @@ export function formatFinalDigest(result: WikiSyncResult): string {
     lines.push("- **Commit:** nothing to commit");
   }
 
+  if (result.publish !== undefined) {
+    lines.push(
+      `- **Publish:** ok — ${pluralized(result.publish.copied, "file")} copied, ${pluralized(result.publish.removed, "file")} removed`,
+    );
+  }
+
   if (lint !== undefined) {
     lines.push("", "## Lint summary", "", lint.summary.trimEnd());
   }
@@ -923,8 +990,9 @@ sync (sync-vault for vault sources, sync-repo for repo sources,
 issue #145) → wiki-ingest → headless lint (prompts/lint.md) →
 crosslink audit (configured second brains) → verification
 (check-fidelity + check-provenance, issue #138) → one data-repo
-commit. Every stage stays independently runnable for debugging; this
-command only chains them.
+commit → mirror publish (issue #15, configs with a publish
+section). Every stage stays independently runnable for debugging;
+this command only chains them.
 
   --settings <path>  Agent settings file (command, model, provider,
                      reasoning) for both agent stages — ingest and
@@ -984,6 +1052,19 @@ What it does, stage by stage:
   6. commit — stage wiki/, raw/, and outputs/ in the data repo and
      commit with a message summarizing sources processed and pages
      touched.
+  7. publish — only for configs whose sync.json carries a publish
+     section (guide §26, issue #15): copy the data repo's
+     include-matched files (default ["wiki/**"]) verbatim into the
+     mirror vault — an iCloud-served disposable reading copy for
+     iPhone and iPad. Deletions included: a page gone from the wiki
+     is removed from the mirror; the mirror's own .obsidian/ device
+     state is never touched; byte-identical files are never
+     rewritten, so a second run over an intact mirror changes
+     nothing (idempotent). Runs after the commit, every cycle —
+     a mirror the transport mangled is healed by the next run. A
+     publish failure fails the cycle (exit 1) after the commit has
+     landed; the next run retries the copy. Instances without the
+     publish section skip the stage.
 
 With no changed sources the agent stages skip (cost scales with
 activity, not the clock), a clean data repo commits nothing, and the
@@ -996,9 +1077,9 @@ and a verification failure has reverted the lint edits.
 
 The final digest on stdout — sync summary, lint summary, the crosslink
 audit (configured second brains), the fidelity and provenance results,
-the commit hash, and the full ingest digest — plus git log -1 in the
-data repo tell the whole story of the run. Live progress goes to stderr.
-Scheduling is #14; publish/mirror is #15.`;
+the publish summary (configured mirror), the commit hash, and the full
+ingest digest — plus git log -1 in the data repo tell the whole story
+of the run. Live progress goes to stderr. Scheduling is #14.`;
 
 /** Print one CLI usage error red on stderr and set the exit code. */
 function fail(message: string): void {

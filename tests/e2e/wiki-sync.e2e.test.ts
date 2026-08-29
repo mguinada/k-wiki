@@ -230,6 +230,7 @@ if (prompt.startsWith("Audit the wiki")) {
 
 interface Repo {
   readonly dataRoot: string;
+  readonly vaultRoot: string;
   readonly configPath: string;
   readonly settingsPath: string;
   readonly outputsDir: string;
@@ -304,7 +305,13 @@ async function makeRepo(): Promise<Repo> {
     `command: ${join(dataRoot, "stub-agent.mjs")}\nmodel: E2E-MODEL\nreasoning: low\n`,
   );
 
-  return { dataRoot, configPath, settingsPath, outputsDir };
+  return {
+    dataRoot,
+    vaultRoot,
+    configPath,
+    settingsPath,
+    outputsDir,
+  };
 }
 
 function runCycle(repo: Repo, extraEnv: NodeJS.ProcessEnv = {}) {
@@ -383,7 +390,14 @@ async function makeRepoSourcedRepo(): Promise<
     `command: ${join(dataRoot, "stub-agent.mjs")}\nmodel: E2E-MODEL\nreasoning: low\n`,
   );
 
-  return { dataRoot, configPath, settingsPath, outputsDir, sourceRoot };
+  return {
+    dataRoot,
+    vaultRoot: "",
+    configPath,
+    settingsPath,
+    outputsDir,
+    sourceRoot,
+  };
 }
 
 describe("wiki-sync e2e", () => {
@@ -631,5 +645,65 @@ describe("wiki-sync e2e", () => {
     });
 
     expect(headAfter).toBe(head);
+  });
+
+  it("publishes the wiki into the mirror vault across cycles", async () => {
+    const repo = await makeRepo();
+    const mirror = await mkdtemp(join(tmpdir(), "k-wiki-mirror-e2e-"));
+
+    tempDirs.push(mirror);
+
+    // Activate publish (guide §26): the config makeRepo wrote carries
+    // only vaults; rewrite it with the mirror section.
+    await writeFile(
+      repo.configPath,
+      JSON.stringify({
+        vaults: [
+          { name: VAULT_NAME, root: repo.vaultRoot, exclude: "wiki:false" },
+        ],
+        publish: { mirror, include: ["wiki/**"] },
+      }),
+    );
+
+    const first = await runCycle(repo);
+
+    expect(first.code).toBe(0);
+    expect(first.out).toMatch(
+      /^- \*\*Publish:\*\* ok — \d+ files copied, 0 files removed$/m,
+    );
+    await expect(
+      readFile(join(mirror, "wiki", "index.md"), "utf8"),
+    ).resolves.toContain("Index v2");
+    await expect(
+      readFile(join(mirror, "wiki", "concepts", "stub.md"), "utf8"),
+    ).resolves.toContain("stub body");
+
+    // Idempotent: a no-change rerun publishes nothing and the mirror
+    // stays byte-identical (the digest keeps its nothing-to-do line).
+    const second = await runCycle(repo);
+
+    expect(second.code).toBe(0);
+    expect(second.out).toContain("nothing to do");
+    await expect(
+      readFile(join(mirror, "wiki", "index.md"), "utf8"),
+    ).resolves.toContain("Index v2");
+
+    // A wiki page deleted on the Mac leaves the mirror on the next
+    // publish; a mirror file the transport mangled is healed.
+    await rm(join(repo.dataRoot, "wiki", "concepts", "stub.md"));
+    await rm(join(mirror, "wiki", "index.md"));
+
+    const third = await runCycle(repo);
+
+    expect(third.code).toBe(0);
+    expect(third.out).toMatch(
+      /^- \*\*Publish:\*\* ok — 1 file copied, 1 file removed$/m,
+    );
+    await expect(
+      readFile(join(mirror, "wiki", "concepts", "stub.md"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(
+      readFile(join(mirror, "wiki", "index.md"), "utf8"),
+    ).resolves.toContain("Index v2");
   });
 });
