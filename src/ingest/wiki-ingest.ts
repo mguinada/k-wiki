@@ -2485,7 +2485,7 @@ function noteArgError(
 ): string | undefined {
   const note = values.get("--note");
 
-  if (values.has("--note") && note === undefined) {
+  if (values.has("--note") && (note === undefined || note.trim() === "")) {
     return "--note needs a value";
   }
 

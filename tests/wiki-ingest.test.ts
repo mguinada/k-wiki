@@ -5890,6 +5890,15 @@ console.log("stub report");
     expect(process.exitCode).toBe(1);
   });
 
+  it("exits 1 when --note has a blank value", async () => {
+    const h = await makeCliHarness();
+
+    const { err } = await runCli([...cliArgs(h), "--note", ""]);
+
+    expect(err).toContain("--note needs a value");
+    expect(process.exitCode).toBe(1);
+  });
+
   it("exits 1 when --note runs without --sources", async () => {
     const h = await makeCliHarness();
 
