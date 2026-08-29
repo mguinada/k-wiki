@@ -631,7 +631,7 @@ export function explicitSourceDiff(
  *  carries when the operator gave no `--note` (issue #149): the
  *  intent channel always exists, so unchanged content never reads
  *  as a no-op and filing decisions are re-adjudicated. */
-export const DEFAULT_OPERATOR_NOTE =
+const DEFAULT_OPERATOR_NOTE =
   "Sources re-opened by the operator: unchanged content does not imply a no-op; re-adjudicate filing decisions; if declining, state per concept why its treatment fails the page bar.";
 
 /** Render the changed-source list appended below incremental and expunge prompts. */
