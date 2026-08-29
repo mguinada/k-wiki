@@ -8,7 +8,7 @@
     }
   ],
   "publish": {
-    "mirror": "~/Library/Mobile Documents/iCloud~md~obsidian/KWiki",
+    "mirror": "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/KWiki",
     "include": ["wiki/**"]
   }
 }
