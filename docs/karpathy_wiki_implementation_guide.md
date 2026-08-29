@@ -1515,7 +1515,8 @@ All placement knowledge lives in one human-owned file at the `k-wiki` root:
   ],
   "publish": {
     "mirror": "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/KWiki",
-    "include": ["wiki/**"]
+    "include": ["wiki/**"],
+    "root": "wiki"
   }
 }
 ```
@@ -1531,10 +1532,12 @@ All placement knowledge lives in one human-owned file at the `k-wiki` root:
 Append one step to `wiki-sync`:
 
 ```text
-sync → ingest → lint → verification → git commit → publish (copy wiki/ → mirror vault)
+sync → ingest → lint → verification → git commit → publish (mirror vault, wiki contents at vault root)
 ```
 
 The mirror is derived data, like the wiki itself: if the transport ever mangles it, re-copying heals it. Devices only read the mirror; edits belong upstream in the source vault. The publish step ships `wiki/AGENTS.md` along with the pages — harmless, and it doubles as human-readable documentation of the wiki's rules on every device.
+
+With `publish.root` set (as in the config above), the selected files' mirror paths are re-based by stripping that top-level segment: `wiki/index.md` publishes as `index.md`, so opening the mirror vault in Obsidian shows `index.md`, `log.md`, and the taxonomy folders (`concepts/`, `sources/`, …) at vault root — no `wiki/` husk to tap through first (issue #203). Wiki links are name-based wikilinks, so the strip breaks nothing. The mirror's own `.obsidian/` device state is never touched, and a mirror published in the old verbatim layout heals on the next run: the stale `wiki/` tree is pruned with its emptied directories. Without `publish.root`, the copy is verbatim (source path = mirror path).
 
 A publish failure fails the cycle after the commit has landed; the next run retries the copy.
 

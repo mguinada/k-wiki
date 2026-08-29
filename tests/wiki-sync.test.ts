@@ -948,6 +948,23 @@ describe("runWikiSync publish stage (issue #15)", () => {
     ).resolves.toContain("New page");
   });
 
+  it("re-roots the mirror when the config sets publish.root", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const mirror = join(dirname(h.dataRoot), "KWiki");
+
+    const config = JSON.parse(await readFile(h.configPath, "utf8"));
+
+    config.publish = { mirror, include: ["wiki/**"], root: "wiki" };
+    await writeFile(h.configPath, `${JSON.stringify(config, null, 2)}\n`);
+
+    const result = await runWikiSync(optionsFor(h));
+
+    expect(result.publish).toBeDefined();
+    await expect(
+      readFile(join(mirror, "concepts", "new.md"), "utf8"),
+    ).resolves.toContain("New page");
+  });
+
   it("skips publish when the config has no publish section", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
     const result = await runWikiSync(optionsFor(h));

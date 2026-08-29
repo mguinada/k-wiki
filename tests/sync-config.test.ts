@@ -140,6 +140,30 @@ describe("loadSyncConfig", () => {
     expect(config.publish?.include).toEqual(["wiki/**"]);
   });
 
+  it("parses the publish re-root segment", async () => {
+    const config = await loadSyncConfig(
+      await writeConfig({
+        ...ONE_VAULT,
+        publish: { mirror: "/mirror", include: ["wiki/**"], root: "wiki" },
+      }),
+      "/home/alice",
+    );
+
+    expect(config.publish?.root).toBe("wiki");
+  });
+
+  it("leaves the publish re-root undefined when the config omits it", async () => {
+    const config = await loadSyncConfig(
+      await writeConfig({
+        ...ONE_VAULT,
+        publish: { mirror: "/mirror", include: ["wiki/**"] },
+      }),
+      "/home/alice",
+    );
+
+    expect(config.publish?.root).toBeUndefined();
+  });
+
   it("allows a config without a publish section", async () => {
     const config = await loadSyncConfig(
       await writeConfig(ONE_VAULT),
@@ -447,6 +471,56 @@ describe("loadSyncConfig", () => {
     await expect(
       loadSyncConfig(await writeConfig(bad), "/home/alice"),
     ).rejects.toThrow(/publish "include" must list at least one pattern/);
+  });
+
+  it("rejects a publish root that is not a non-empty string", async () => {
+    const bad = {
+      ...ONE_VAULT,
+      publish: { mirror: "/mirror", include: ["wiki/**"], root: "" },
+    };
+
+    await expect(
+      loadSyncConfig(await writeConfig(bad), "/home/alice"),
+    ).rejects.toThrow(/publish "root" must be a non-empty string/);
+  });
+
+  it("rejects a publish root that is not a single path segment", async () => {
+    const bad = {
+      ...ONE_VAULT,
+      publish: { mirror: "/mirror", include: ["wiki/**"], root: "wiki/sub" },
+    };
+
+    await expect(
+      loadSyncConfig(await writeConfig(bad), "/home/alice"),
+    ).rejects.toThrow(
+      /publish "root" must be a non-empty string naming a single top-level path segment/,
+    );
+  });
+
+  it("rejects a publish root the include patterns do not match", async () => {
+    const bad = {
+      ...ONE_VAULT,
+      publish: { mirror: "/mirror", include: ["other/**"], root: "wiki" },
+    };
+
+    await expect(
+      loadSyncConfig(await writeConfig(bad), "/home/alice"),
+    ).rejects.toThrow(/must match the include patterns/);
+  });
+
+  it("rejects a publish root only some include patterns match", async () => {
+    const bad = {
+      ...ONE_VAULT,
+      publish: {
+        mirror: "/mirror",
+        include: ["wiki/**", "other/**"],
+        root: "wiki",
+      },
+    };
+
+    await expect(
+      loadSyncConfig(await writeConfig(bad), "/home/alice"),
+    ).rejects.toThrow(/must match the include patterns/);
   });
 
   it("rejects a publish include pattern with an empty path segment", async () => {

@@ -755,6 +755,7 @@ async function runPublishOrSkip(
     dataRoot: dirname(options.rawDir),
     mirror: publish.mirror,
     include: publish.include,
+    root: publish.root,
     onProgress,
   });
 }

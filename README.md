@@ -651,7 +651,10 @@ publish the mirror (guide §26). The
 (the `KWiki` folder inside the iCloud Obsidian container's `Documents`
 folder — the one iCloud Drive shows as Obsidian) plus the required
 include patterns selecting what to publish (`["wiki/**"]` in the
-shipped config). Sync state —
+shipped config). The optional `root` knob (`"wiki"` in the shipped
+config) re-bases the selected files' mirror paths by stripping that
+top-level segment, so the wiki tree sits at the mirror vault's root
+instead of under a `KWiki/wiki/` husk (issue #203). Sync state —
 hashes and timestamps — lives in `raw/manifest.json`, keyed per vault
 namespace (guide §25). Sync is idempotent: a run with no source changes
 copies, removes, and writes nothing.
@@ -946,8 +949,12 @@ It chains the proven pieces and adds no capability of its own:
 7. **publish** — only for configs whose `sync.json` carries a
    `publish` section (guide §26, issue #15): copy the data repo's
    include-matched files (`["wiki/**"]` in the shipped config)
-   verbatim into the mirror vault — an iCloud-served disposable
-   reading copy that iPhone and iPad open in Obsidian. Deletions
+   into the mirror vault — an iCloud-served disposable
+   reading copy that iPhone and iPad open in Obsidian. With
+   `publish.root` set (`"wiki"` in the shipped config, issue #203)
+   the top-level segment is stripped from every mirror path, so the
+   wiki tree appears at the vault root; without it the copy is
+   verbatim. Deletions
    included: a page gone
    from the wiki leaves the mirror on the next run; the mirror's own
    `.obsidian/` device state is never touched; byte-identical files

@@ -35,6 +35,11 @@ export interface PublishOptions {
   readonly mirror: string;
   /** Allowlist patterns (`*` within, `**` across path segments). */
   readonly include: readonly string[];
+  /** Top-level source segment stripped from every selected file's
+   *  mirror target path (issue #203): `wiki/index.md` publishes as
+   *  `index.md`, so the mirror vault shows the wiki tree at root.
+   *  Undefined = verbatim copy (the issue #15 behavior). */
+  readonly root?: string | undefined;
   /** Progress sink (uncolored messages); default: silent. */
   readonly onProgress?: (message: string) => void;
 }
@@ -123,6 +128,17 @@ async function removeStale(
   return removed;
 }
 
+/** The mirror-target path for one selected source file: the source
+ *  path with the configured root segment stripped (issue #203); files
+ *  without the prefix pass through unchanged. */
+function rebase(relPath: string, root: string | undefined): string {
+  if (root === undefined || !relPath.startsWith(`${root}/`)) {
+    return relPath;
+  }
+
+  return relPath.slice(root.length + 1);
+}
+
 /** Copy every selected source file into the mirror — but only those
  *  missing there or holding different bytes. */
 async function copySelected(
@@ -162,9 +178,9 @@ export async function runPublishStage(
   await walkFiles(options.dataRoot, "", all);
 
   const selected = new Map(
-    [...all].filter(([relPath]) =>
-      matchers.some((matcher) => matcher.test(relPath)),
-    ),
+    [...all]
+      .filter(([relPath]) => matchers.some((matcher) => matcher.test(relPath)))
+      .map(([relPath, absPath]) => [rebase(relPath, options.root), absPath]),
   );
 
   onProgress(

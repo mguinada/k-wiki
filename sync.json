@@ -9,6 +9,7 @@
   ],
   "publish": {
     "mirror": "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/KWiki",
-    "include": ["wiki/**"]
+    "include": ["wiki/**"],
+    "root": "wiki"
   }
 }
