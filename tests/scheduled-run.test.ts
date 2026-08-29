@@ -1,16 +1,32 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   acquireLock,
+  appendLog,
   buildScheduledEnv,
   LOCK_STALE_MS,
   lockData,
   releaseLock,
+  resolveDataRoot,
   runScheduledCycle,
   type ScheduledRunOptions,
 } from "../src/schedule/scheduled-run.ts";
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+
+  return {
+    ...actual,
+    rm: vi.fn(
+      async (
+        path: string | URL,
+        options?: { force?: boolean; recursive?: boolean },
+      ) => actual.rm(path, options),
+    ),
+  };
+});
 
 async function tempDir(): Promise<string> {
   return await mkdtemp(join(tmpdir(), "k-wiki-sched-"));
@@ -65,6 +81,35 @@ describe("acquireLock", () => {
     await writeFile(lockPath, "");
 
     expect(await acquireLock(lockPath)).toBe("took-over");
+
+    await releaseLock(lockPath);
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("reports busy when a racing acquirer recreates the lock during takeover", async () => {
+    const dir = await tempDir();
+    const lockPath = join(dir, "scheduled-run.lock");
+    const realFs =
+      await vi.importActual<typeof import("node:fs/promises")>(
+        "node:fs/promises",
+      );
+
+    await writeFile(
+      lockPath,
+      `${JSON.stringify({ pid: 1, takenAt: "2020-01-01T00:00:00Z" })}\n`,
+    );
+    vi.mocked(rm).mockImplementationOnce(async (path, options) => {
+      await realFs.rm(path, options);
+
+      if (path === lockPath) {
+        await realFs.writeFile(
+          lockPath,
+          `${JSON.stringify({ pid: 4242, takenAt: new Date().toISOString() })}\n`,
+        );
+      }
+    });
+
+    expect(await acquireLock(lockPath)).toBe("busy");
 
     await releaseLock(lockPath);
     await rm(dir, { recursive: true, force: true });
@@ -325,5 +370,59 @@ describe("runScheduledCycle", () => {
 describe("LOCK_STALE_MS", () => {
   it("gives a run two hours before its lock goes stale", () => {
     expect(LOCK_STALE_MS).toBe(2 * 60 * 60 * 1000);
+  });
+});
+
+describe("resolveDataRoot", () => {
+  it("derives the data repo from the raw-dir positional like wiki-sync", async () => {
+    expect(await resolveDataRoot("/no/sync.json", "/other/raw")).toBe("/other");
+  });
+
+  it("reads the config's dataRoot when no raw-dir positional is given", async () => {
+    const dir = await tempDir();
+    const configPath = join(dir, "sync.json");
+
+    await writeFile(
+      configPath,
+      JSON.stringify({ vaults: [], dataRoot: "/data/repo" }),
+    );
+
+    expect(await resolveDataRoot(configPath, undefined)).toBe("/data/repo");
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("fails loud when the config has no dataRoot", async () => {
+    const dir = await tempDir();
+    const configPath = join(dir, "sync.json");
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await writeFile(configPath, JSON.stringify({ vaults: [] }));
+
+    try {
+      expect(await resolveDataRoot(configPath, undefined)).toBeUndefined();
+    } finally {
+      errors.mockRestore();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("appendLog", () => {
+  it("never rejects when the log path is unwritable", async () => {
+    const dir = await tempDir();
+    const blocker = join(dir, "blocker");
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await writeFile(blocker, "not a dir");
+
+    try {
+      await expect(
+        appendLog(join(blocker, "nested", "run.log"), "line"),
+      ).resolves.toBeUndefined();
+    } finally {
+      errors.mockRestore();
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

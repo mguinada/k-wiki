@@ -128,10 +128,10 @@ export async function acquireLock(
     return "busy";
   }
 
-  await rm(lockPath);
-  await acquireLock(lockPath, options);
+  await rm(lockPath, { force: true });
+  const reacquired = await acquireLock(lockPath, options);
 
-  return "took-over";
+  return reacquired === "busy" ? "busy" : "took-over";
 }
 
 /** Release the lock; an absent one is fine (a takeover released it
@@ -378,11 +378,16 @@ export async function rotateLogIfNeeded(
   }
 }
 
-/** Append one line to the run log, rotating first. */
-async function appendLog(logPath: string, line: string): Promise<void> {
-  await rotateLogIfNeeded(logPath);
-  await mkdir(dirname(logPath), { recursive: true });
-  await appendFileLine(logPath, line);
+/** Append one line to the run log, rotating first. Best-effort: a
+ *  failed log write reports to stderr and never fails the cycle. */
+export async function appendLog(logPath: string, line: string): Promise<void> {
+  try {
+    await rotateLogIfNeeded(logPath);
+    await mkdir(dirname(logPath), { recursive: true });
+    await appendFileLine(logPath, line);
+  } catch (error) {
+    console.error(`scheduled-run: log write failed — ${errorMessage(error)}`);
+  }
 }
 
 async function appendFileLine(logPath: string, line: string): Promise<void> {
@@ -487,12 +492,19 @@ function parseCliArgs(args: readonly string[]): ParsedArgs {
   return { error: undefined, positional, values };
 }
 
-/** The data repo for the cycle: the config's expanded dataRoot, or
+/** The data repo for the cycle — the same one wiki-sync resolves
+ *  for the forwarded arguments: dirname(<raw-dir>) when the raw-dir
+ *  positional is passed, else the config's expanded dataRoot.
  *  undefined after printing the fail-loud reason (no config, no
  *  dataRoot). */
-async function resolveDataRoot(
+export async function resolveDataRoot(
   configPath: string,
+  rawDir: string | undefined,
 ): Promise<string | undefined> {
+  if (rawDir !== undefined) {
+    return dirname(rawDir);
+  }
+
   let config: Awaited<ReturnType<typeof loadSyncConfig>>;
 
   try {
@@ -558,6 +570,7 @@ export async function main(): Promise<void> {
 
   const dataRoot = await resolveDataRoot(
     parsed.positional[0] ?? join(repoRoot, "sync.json"),
+    parsed.positional[1],
   );
 
   if (dataRoot === undefined) {

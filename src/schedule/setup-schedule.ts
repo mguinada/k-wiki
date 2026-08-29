@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { errorMessage } from "../cli/colors.ts";
+import { readFlagValues } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 
 /**
@@ -154,9 +155,9 @@ backends are follow-up issues and fail loud here.
                          Default: 30minutes (launchd StartInterval
                          1800). Re-running with a new interval
                          replaces the registration.
-  --print                Print the scheduler artifact for this OS to
-                         stdout without installing or loading
-                         anything — human-inspectable, works where
+  --print                Print the macOS launchd plist to stdout
+                         without installing or loading anything —
+                         works on every OS, for inspection where
                          auto-install lacks permissions.
   --uninstall            Remove the registration: bootout the launchd
                          job and delete its plist.
@@ -183,20 +184,47 @@ interface ParsedArgs {
   readonly error: string | undefined;
 }
 
-/** Pull the installer's flags out of argv; --interval value errors
- *  surface here. */
-function parseCliArgs(args: readonly string[]): ParsedArgs {
-  const intervalIndex = args.indexOf("--interval");
-  const intervalText =
-    intervalIndex === -1 ? undefined : args[intervalIndex + 1];
+/** A usage-error result: nothing parsed, the first error message. */
+function usageError(message: string): ParsedArgs {
+  return {
+    interval: DEFAULT_INTERVAL_SECONDS,
+    print: false,
+    uninstall: false,
+    error: message,
+  };
+}
 
-  if (intervalIndex !== -1 && intervalText === undefined) {
-    return {
-      interval: DEFAULT_INTERVAL_SECONDS,
-      print: false,
-      uninstall: false,
-      error: "--interval needs a duration value (e.g. 15minutes)",
-    };
+/** The first argument that is neither a known flag nor an --interval
+ *  value, as a usage error; undefined when argv holds only knowns. */
+function unknownArgError(
+  args: readonly string[],
+  consumed: ReadonlySet<number>,
+): string | undefined {
+  for (const [index, arg] of args.entries()) {
+    if (!consumed.has(index) && arg !== "--print" && arg !== "--uninstall") {
+      return arg.startsWith("-")
+        ? `unknown option ${JSON.stringify(arg)}`
+        : `unexpected argument ${JSON.stringify(arg)} — setup-schedule takes no positionals`;
+    }
+  }
+
+  return undefined;
+}
+
+/** Pull the installer's flags out of argv; any other option or a
+ *  positional is a usage error, as are --interval value errors. */
+export function parseCliArgs(args: readonly string[]): ParsedArgs {
+  const { values, consumed } = readFlagValues(["--interval"], args);
+  const unknown = unknownArgError(args, consumed);
+
+  if (unknown !== undefined) {
+    return usageError(unknown);
+  }
+
+  const intervalText = values.get("--interval");
+
+  if (values.has("--interval") && intervalText === undefined) {
+    return usageError("--interval needs a duration value (e.g. 15minutes)");
   }
 
   const interval =
@@ -205,12 +233,9 @@ function parseCliArgs(args: readonly string[]): ParsedArgs {
       : parseIntervalDuration(intervalText);
 
   if (interval === undefined) {
-    return {
-      interval: DEFAULT_INTERVAL_SECONDS,
-      print: false,
-      uninstall: false,
-      error: `invalid --interval value ${JSON.stringify(intervalText)} — use <n><unit> with unit seconds|minutes|hours (e.g. 15minutes)`,
-    };
+    return usageError(
+      `invalid --interval value ${JSON.stringify(intervalText)} — use <n><unit> with unit seconds|minutes|hours (e.g. 15minutes)`,
+    );
   }
 
   return {
@@ -228,13 +253,6 @@ export async function main(
 ): Promise<void> {
   if (argv.includes("-h") || argv.includes("--help")) {
     console.log(HELP);
-
-    return;
-  }
-
-  if (platform !== "darwin") {
-    console.error(`setup-schedule: ${schedulerUnsupportedError(platform)}`);
-    process.exitCode = 1;
 
     return;
   }
@@ -259,6 +277,13 @@ export async function main(
 
   if (parsed.print) {
     console.log(plist.trimEnd());
+
+    return;
+  }
+
+  if (platform !== "darwin") {
+    console.error(`setup-schedule: ${schedulerUnsupportedError(platform)}`);
+    process.exitCode = 1;
 
     return;
   }
