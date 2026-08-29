@@ -62,6 +62,15 @@ export function plistPath(home: string): string {
   return join(home, "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`);
 }
 
+/** Escape XML text content — the interpolated paths come from the
+ *  environment and may contain &, <, or >. */
+function escapeXmlText(text: string): string {
+  return text
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
 /** The launchd plist for one registration: absolute node + script
  *  paths, explicit HOME, minimal PATH, fixed-interval trigger, and
  *  launchd-level output capture beside the wrapper's own log. */
@@ -82,8 +91,8 @@ export function launchdPlist(options: {
     <string>${LAUNCHD_LABEL}</string>
     <key>ProgramArguments</key>
     <array>
-        <string>${nodePath}</string>
-        <string>${scriptPath}</string>
+        <string>${escapeXmlText(nodePath)}</string>
+        <string>${escapeXmlText(scriptPath)}</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -92,14 +101,14 @@ export function launchdPlist(options: {
     <key>EnvironmentVariables</key>
     <dict>
         <key>HOME</key>
-        <string>${home}</string>
+        <string>${escapeXmlText(home)}</string>
         <key>PATH</key>
         <string>/usr/bin:/bin:/usr/sbin:/sbin</string>
     </dict>
     <key>StandardOutPath</key>
-    <string>${join(logDir, "launchd-stdout.log")}</string>
+    <string>${escapeXmlText(join(logDir, "launchd-stdout.log"))}</string>
     <key>StandardErrorPath</key>
-    <string>${join(logDir, "launchd-stderr.log")}</string>
+    <string>${escapeXmlText(join(logDir, "launchd-stderr.log"))}</string>
 </dict>
 </plist>
 `;

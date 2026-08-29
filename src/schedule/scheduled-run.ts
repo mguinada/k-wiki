@@ -134,10 +134,19 @@ export async function acquireLock(
   return reacquired === "busy" ? "busy" : "took-over";
 }
 
-/** Release the lock; an absent one is fine (a takeover released it
- *  before this run's release, or the run never held it). */
-export async function releaseLock(lockPath: string): Promise<void> {
-  await rm(lockPath, { force: true });
+/** Release the lock only when its recorded pid is this process's:
+ *  a run whose stale lock was taken over must not delete its
+ *  successor's fresh lock (mutual exclusion survives takeovers). An
+ *  absent or foreign lock is left alone. */
+export async function releaseLock(
+  lockPath: string,
+  pid: number = process.pid,
+): Promise<void> {
+  const existing = lockData(await readFile(lockPath, "utf8").catch(() => ""));
+
+  if (existing?.pid === pid) {
+    await rm(lockPath, { force: true });
+  }
 }
 
 /** The PATH a scheduled run gets: node's bin dir first (the wrapper
@@ -185,6 +194,8 @@ export interface ScheduledRunOptions {
   readonly args?: readonly string[];
   /** Log sink; default: silent (the CLI main wires the log file). */
   readonly log?: (line: string) => void;
+  /** The PID recorded in the lockfile; defaults to process.pid. */
+  readonly pid?: number;
   /** Clock for log timestamps and lock staleness. */
   readonly now?: () => Date;
   /** Git step runner; defaults to the real runGit. Injected in tests. */
@@ -209,25 +220,25 @@ export async function runScheduledCycle(
 ): Promise<CycleOutcome> {
   const log = options.log ?? (() => {});
   const now = options.now ?? (() => new Date());
+  const pid = options.pid ?? process.pid;
   const runGitStep =
     options.runGitStep ??
-    (async (dir: string, gitArgs: readonly string[]) => {
-      await runGit(dir, gitArgs, process.env);
-    });
+    (async (dir: string, gitArgs: readonly string[]) =>
+      runGit(dir, gitArgs, process.env));
 
   const stamp = (): string => now().toISOString();
 
   const fail = async (error: string): Promise<CycleOutcome> => {
     log(`scheduled-run: ALERT ${error}`);
 
-    await releaseLock(options.lockPath);
+    await releaseLock(options.lockPath, pid);
 
     return { status: "failed", error };
   };
 
   await mkdir(dirname(options.lockPath), { recursive: true });
 
-  const lock = await acquireLock(options.lockPath, { now });
+  const lock = await acquireLock(options.lockPath, { now, pid });
 
   if (lock === "busy") {
     return {
@@ -252,7 +263,7 @@ export async function runScheduledCycle(
     return await fail(errorMessage(error));
   }
 
-  await releaseLock(options.lockPath);
+  await releaseLock(options.lockPath, pid);
   log(`scheduled-run: ${stamp()} — cycle complete`);
 
   return { status: "ok" };
@@ -268,9 +279,7 @@ async function runPipelineStages(
   log: (line: string) => void,
 ): Promise<void> {
   await runGitStep(options.dataRoot, ["remote", "get-url", "origin"]);
-  log("scheduled-run: git pull --rebase (data repo)");
-
-  await runGitStep(options.dataRoot, ["pull", "--rebase"]);
+  await pullWhenClean(options.dataRoot, runGitStep, log);
   log("scheduled-run: wiki-sync starting");
 
   const runSync =
@@ -281,6 +290,50 @@ async function runPipelineStages(
 
   await runSync(options.args ?? []);
   log("scheduled-run: wiki-sync finished — pushing");
+}
+
+/** The git step's stdout, empty when the runner reports none. */
+async function gitStdout(
+  runGitStep: NonNullable<ScheduledRunOptions["runGitStep"]>,
+  dir: string,
+  args: readonly string[],
+): Promise<string> {
+  const result = await runGitStep(dir, args);
+
+  return typeof result === "object" && result !== null && "stdout" in result
+    ? String(result.stdout)
+    : "";
+}
+
+/** The pre-run pull, skipped over a dirty tree: a failed or killed
+ *  sync deliberately leaves its ingest edits uncommitted (the fix
+ *  surface), and a rebase refuses such a tree — skipping the pull
+ *  keeps the next interval's recovery reachable; divergence is then
+ *  owned by the push-rejection path, which runs after a clean
+ *  commit. Untracked files do not count: they never block a rebase,
+ *  and the run's own lockfile is one. */
+async function pullWhenClean(
+  dataRoot: string,
+  runGitStep: NonNullable<ScheduledRunOptions["runGitStep"]>,
+  log: (line: string) => void,
+): Promise<void> {
+  const status = await gitStdout(runGitStep, dataRoot, [
+    "status",
+    "--porcelain",
+    "--untracked-files=no",
+  ]);
+
+  if (status.trim() !== "") {
+    log(
+      "scheduled-run: tree dirty — skipping the pre-run pull (wiki-sync's recovery owns a dirty tree)",
+    );
+
+    return;
+  }
+
+  log("scheduled-run: git pull --rebase (data repo)");
+
+  await runGitStep(dataRoot, ["pull", "--rebase"]);
 }
 
 /** The push stage with its one recovery (issue #14 decision 5): a
@@ -440,6 +493,11 @@ Behavior, failure mode by failure mode (issue #14):
     reverted the run — the wiki stays at the last good commit, the
     error and digest land in the log, exit 1. The next interval is
     the recovery (no retry/backoff, guide §26).
+  - Dirty tree: a failed or killed sync leaves its edits uncommitted
+    on purpose (the fix surface). The next tick skips its pre-run
+    pull — a rebase refuses a dirty tree — so that recovery stays
+    reachable; the push-rejection path owns any divergence that
+    follows.
   - Logs: ~/Library/Logs/k-wiki/scheduled-run.log (rotated at 5 MiB,
     one previous generation kept); wiki-sync's digest and progress
     stream into the same file. KWIKI_SCHEDULED_LOG overrides the log

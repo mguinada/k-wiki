@@ -140,6 +140,25 @@ describe("releaseLock", () => {
 
     await rm(dir, { recursive: true, force: true });
   });
+
+  it("keeps a successor's lock whose recorded pid is not this process's", async () => {
+    const dir = await tempDir();
+    const lockPath = join(dir, "scheduled-run.lock");
+
+    await writeFile(
+      lockPath,
+      `${JSON.stringify({ pid: 4242, takenAt: new Date().toISOString() })}\n`,
+    );
+    await releaseLock(lockPath, 1111);
+
+    await expect(readFile(lockPath, "utf8")).resolves.toContain("4242");
+
+    await releaseLock(lockPath, 4242);
+
+    await expect(readFile(lockPath, "utf8")).rejects.toThrow();
+
+    await rm(dir, { recursive: true, force: true });
+  });
 });
 
 describe("lockData", () => {
@@ -175,7 +194,11 @@ describe("buildScheduledEnv", () => {
 /** A fake git step runner recording every call in order. */
 interface FakeGit {
   readonly calls: string[][];
-  respond?: (args: readonly string[], calls: readonly string[][]) => void;
+  status?: string;
+  respond?: (
+    args: readonly string[],
+    calls: readonly string[][],
+  ) => void | Promise<void>;
 }
 
 function fakeGit(respond?: FakeGit["respond"]): {
@@ -191,7 +214,12 @@ function fakeGit(respond?: FakeGit["respond"]): {
     // recorded sequence, so tests can count prior pushes.
     runGitStep: async (_dir, args) => {
       git.calls.push([...args]);
-      git.respond?.(args, git.calls);
+
+      if (args[0] === "status") {
+        return { stdout: git.status ?? "" };
+      }
+
+      await git.respond?.(args, git.calls);
     },
   };
 }
@@ -222,6 +250,7 @@ describe("runScheduledCycle", () => {
     expect(outcome).toEqual({ status: "ok" });
     expect(git.calls).toEqual([
       ["remote", "get-url", "origin"],
+      ["status", "--porcelain", "--untracked-files=no"],
       ["pull", "--rebase"],
       ["wiki-sync", "--settings", "/x/settings.yml"],
       ["push"],
@@ -244,7 +273,7 @@ describe("runScheduledCycle", () => {
       args: ["--settings", "/x/settings.yml"],
     });
 
-    expect(git.calls[2]?.[1]).toBe("--settings");
+    expect(git.calls[3]?.[1]).toBe("--settings");
 
     await rm(dir, { recursive: true, force: true });
   });
@@ -319,6 +348,7 @@ describe("runScheduledCycle", () => {
     expect(outcome).toEqual({ status: "failed", error: "lint failed" });
     expect(git.calls).toEqual([
       ["remote", "get-url", "origin"],
+      ["status", "--porcelain", "--untracked-files=no"],
       ["pull", "--rebase"],
     ]);
     expect(lines.join("\n")).toContain("lint failed");
@@ -349,6 +379,7 @@ describe("runScheduledCycle", () => {
     expect(outcome).toEqual({ status: "ok" });
     expect(git.calls).toEqual([
       ["remote", "get-url", "origin"],
+      ["status", "--porcelain", "--untracked-files=no"],
       ["pull", "--rebase"],
       ["wiki-sync"],
       ["push"],
@@ -382,6 +413,56 @@ describe("runScheduledCycle", () => {
       error: expect.stringContaining("! [rejected] fetch first"),
     });
     expect(lines.join("\n")).toContain("ALERT");
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("skips the pre-run pull over a dirty tree and still completes the cycle", async () => {
+    const dir = await tempDir();
+    const { git, runGitStep } = fakeGit();
+    const lines: string[] = [];
+
+    git.status = " M wiki/concepts/stub.md\n";
+
+    const outcome = await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      log: (line) => lines.push(line),
+    });
+
+    expect(outcome).toEqual({ status: "ok" });
+    expect(git.calls).toEqual([
+      ["remote", "get-url", "origin"],
+      ["status", "--porcelain", "--untracked-files=no"],
+      ["wiki-sync"],
+      ["push"],
+    ]);
+    expect(lines.join("\n")).toContain("skipping the pre-run pull");
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("never releases a lock a successor re-acquired mid-run", async () => {
+    const dir = await tempDir();
+    const lockPath = join(dir, ".scheduled-run.lock");
+    const successorLock = `${JSON.stringify({ pid: 4242, takenAt: new Date().toISOString() })}\n`;
+    const { git, runGitStep } = fakeGit(async () => {
+      await writeFile(lockPath, successorLock);
+    });
+
+    const outcome = await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath,
+      runGitStep,
+      runSync: syncRecorder(git),
+    });
+
+    expect(outcome).toEqual({ status: "ok" });
+    await expect(readFile(lockPath, "utf8")).resolves.toBe(successorLock);
 
     await rm(dir, { recursive: true, force: true });
   });

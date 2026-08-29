@@ -50,6 +50,15 @@ type PlistToken =
 
 const PLIST_ELEMENTS = "dict|array|key|string|integer|true|false|plist";
 
+/** Decode the entities the generator escapes, so parsed values are
+ *  the semantic paths — not the escaped serialization. */
+function decodeXmlEntities(text: string): string {
+  return text
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&amp;", "&");
+}
+
 function tokenizePlist(source: string): readonly PlistToken[] {
   const pattern = new RegExp(
     `<!DOCTYPE[^>]*>|<\\?[^?]*\\?>|<(/?)(${PLIST_ELEMENTS})([^>]*)>|([^<]+)`,
@@ -69,7 +78,7 @@ function tokenizePlist(source: string): readonly PlistToken[] {
         tokens.push({ kind: "close", name: match[2] });
       }
     } else if (match[4] !== undefined && match[4].trim() !== "") {
-      tokens.push({ kind: "text", text: match[4] });
+      tokens.push({ kind: "text", text: decodeXmlEntities(match[4]) });
     }
 
     match = pattern.exec(source);
@@ -267,6 +276,30 @@ describe("launchdPlist", () => {
   it("redirects launchd stderr into the log dir", () => {
     expect(plist.StandardErrorPath).toBe(
       "/Users/me/Library/Logs/k-wiki/launchd-stderr.log",
+    );
+  });
+
+  it("escapes XML-significant characters in the interpolated paths", () => {
+    const weird = parsePlistDict(
+      launchdPlist({
+        nodePath: "/opt/a<b>&c/node",
+        scriptPath: "/Users/me&Lab/k-wiki/bin/scheduled-run.ts",
+        home: "/Users/me<home>",
+        logDir: "/Users/me/Library&Logs/k-wiki",
+        intervalSeconds: 1800,
+      }),
+    );
+
+    expect(arrayOf(weird.ProgramArguments)).toEqual([
+      "/opt/a<b>&c/node",
+      "/Users/me&Lab/k-wiki/bin/scheduled-run.ts",
+    ]);
+    expect(dictOf(weird.EnvironmentVariables).HOME).toBe("/Users/me<home>");
+    expect(weird.StandardOutPath).toBe(
+      "/Users/me/Library&Logs/k-wiki/launchd-stdout.log",
+    );
+    expect(weird.StandardErrorPath).toBe(
+      "/Users/me/Library&Logs/k-wiki/launchd-stderr.log",
     );
   });
 });

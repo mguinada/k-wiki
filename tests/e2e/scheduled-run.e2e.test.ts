@@ -310,4 +310,22 @@ describe("scheduled-run e2e", () => {
     // reached upstream.
     expect(await upstreamHead(repo)).toBe("init");
   });
+
+  it("completes the next tick over a dirty tree instead of wedging the schedule", async () => {
+    const repo = await makeRepo();
+
+    // A failed sync's leftover fix surface: tracked, uncommitted.
+    await writeFile(
+      join(repo.dataRoot, "wiki", "index.md"),
+      "# Index (leftover edit)\n",
+    );
+
+    const result = await runScheduled(repo);
+
+    expect(result.code).toBe(0);
+    expect(await upstreamHead(repo)).toMatch(/^wiki-sync:/);
+    await expect(
+      readFile(join(repo.tmp, "scheduled-run.log"), "utf8"),
+    ).resolves.toContain("skipping the pre-run pull");
+  });
 });
