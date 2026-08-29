@@ -87,7 +87,7 @@ cycle above. Run the cycle with one command, then review and run the
 standing checks:
 
 ```sh
-npm run wiki-sync   # sync → ingest → lint → crosslinks (configured) → verification → commit
+npm run wiki-sync   # sync → ingest → lint → crosslinks (configured) → verification → commit → publish (configured)
 # review: the printed digest, git log -1 in the data repo
 npm run check-links -- ~/Lab/k-wiki-data/wiki   # every [[wikilink]] resolves
 npm run check-provenance -- ~/Lab/k-wiki-data/wiki  # every sources entry and origin is alive
@@ -416,7 +416,6 @@ git-diff flow.
 
 These modes are documented when their issue lands, not before:
 
-- **Read-only mirror publish** — the iPhone/iPad reading copy (#15).
 - **Scheduled unattended operation** (#14).
 - **`--batch N` for `wiki-ingest`** — batch construction stops
   being snapshot surgery; deferred from #13 until batched runs
@@ -448,7 +447,7 @@ sources directly, so there is no build step — install dependencies with
 | `npm run sync-vault -- [--dry-run] [<sync.json>] [<raw-dir>]` | sync CLI | Ingest every note not blocked by the vault's exclusion rule into `raw/notes/` (deterministic, no LLM; [details below](#running-the-sync)) |
 | `npm run sync-repo -- [-h \| --help] [<config>] [<raw-dir>]` | repo sync CLI | Project the allowlisted files of a committed source repository verbatim into `raw/notes/<name>/`, recording the source HEAD commit in the manifest (deterministic, no LLM; the meta-wiki adapter, [§9](#9-the-meta-wiki-a-repository-as-source)) |
 | `npm run wiki-ingest -- [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [<raw-dir>]` | ingest wrapper | Run the wiki agent headless over the sources that changed since the last ingest and write the per-run digest (reads `settings.yml`; [details below](#running-the-wiki-agent-wiki-ingest)) |
-| `npm run wiki-sync -- [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<sync.json>] [<raw-dir>]` | cycle orchestrator | Run the whole cycle — sync (sync-vault for vault sources, sync-repo for repo-sourced configs, [§9](#9-the-meta-wiki-a-repository-as-source)) → ingest → lint → crosslink audit (configured second brains) → verification (check-fidelity + check-provenance) → one data-repo commit — and print the digest (reads `settings.yml`, including its optional `secondBrain.domains` list; [details below](#running-the-full-cycle-wiki-sync)) |
+| `npm run wiki-sync -- [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<sync.json>] [<raw-dir>]` | cycle orchestrator | Run the whole cycle — sync (sync-vault for vault sources, sync-repo for repo-sourced configs, [§9](#9-the-meta-wiki-a-repository-as-source)) → ingest → lint → crosslink audit (configured second brains) → verification (check-fidelity + check-provenance) → one data-repo commit → mirror publish (configured `publish` section) — and print the digest (reads `settings.yml`, including its optional `secondBrain.domains` list; [details below](#running-the-full-cycle-wiki-sync)) |
 | `npm run wiki-query -- [-h \| --help] [--file-last] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>` | query wrapper | Ask the built wiki one question headless: print the answer, save it for review (stage 1, default); `--file-last` files the reviewed answer deterministically (stage 2; reads `settings.yml` in stage 1; [details below](#running-queries-wiki-query)) |
 | `node <checkout>/bin/k-wiki.ts query "<question>"` (also `npm run k-wiki -- …` inside the checkout) | agent-facing CLI | Ask the wiki bound to the current project from any cwd — zero flags once `.k-wiki.json` binds it; plus four read-only commands: `status` (binding + paths), `list [<type>]` (pages by type), `read <slug>` (one page verbatim), `health` (projection check); answer-only, no filing passthrough ([details below](#querying-from-any-project-k-wiki)) |
 | `npm run data:init -- [--second-brain] [--meta] [<sync.json>]` | data repo seeder | Create and seed the data repo at `sync.json`'s `dataRoot`: git init, copy the `raw/`+`wiki/` skeleton from the code repo, write the standing `.gitignore` (Obsidian UI state, ingest snapshot — issue #146), first commit; idempotent; `--second-brain` also writes the `.second-brain` identity marker ([§5](#5-the-second-brain)); `--meta` seeds the meta contract (`wiki/AGENTS.meta.md`) as the data repo's `wiki/AGENTS.md` ([§9](#9-the-meta-wiki-a-repository-as-source)) |
@@ -591,7 +590,10 @@ edit the snapshot by hand.
 `sync.json` at the repo root is the human-owned placement configuration:
 which vaults to sync, where the data repo lives (`dataRoot`), and where to
 publish the mirror (guide §26). The
-`publish` section is parsed but unused until the mirror lands. Sync state —
+`publish` section activates the mirror publish step: a `mirror` path
+(the iCloud Obsidian container's `KWiki` folder) plus the required
+include patterns selecting what to publish (`["wiki/**"]` in the
+shipped config). Sync state —
 hashes and timestamps — lives in `raw/manifest.json`, keyed per vault
 namespace (guide §25). Sync is idempotent: a run with no source changes
 copies, removes, and writes nothing.
@@ -827,7 +829,7 @@ missed purge surfaces as a dead link, not as silent contamination.
 ## Running the full cycle (`wiki-sync`)
 
 ```sh
-npm run wiki-sync   # sync → ingest → lint → crosslinks (configured) → verification → commit
+npm run wiki-sync   # sync → ingest → lint → crosslinks (configured) → verification → commit → publish (configured)
 ```
 
 `wiki-sync` is the one-command orchestrator (guide §18, issue #13).
@@ -873,10 +875,24 @@ It chains the proven pieces and adds no capability of its own:
 6. **commit** — one data-repo commit staging `wiki/`, `raw/`, and
    `outputs/`, with a message summarizing sources processed, pages
    touched, and the lint report.
+7. **publish** — only for configs whose `sync.json` carries a
+   `publish` section (guide §26, issue #15): copy the data repo's
+   include-matched files (`["wiki/**"]` in the shipped config)
+   verbatim into the mirror vault — an iCloud-served disposable
+   reading copy that iPhone and iPad open in Obsidian. Deletions
+   included: a page gone
+   from the wiki leaves the mirror on the next run; the mirror's own
+   `.obsidian/` device state is never touched; byte-identical files
+   are never rewritten, so a second run over an intact mirror changes
+   nothing. Runs after the commit, every cycle — a mirror the
+   transport mangled is healed by the next run. A publish failure
+   fails the cycle (exit 1) after the commit has landed; the next run
+   retries the copy.
 
 The final digest on stdout — sync summary, lint summary, the
 crosslink audit result (configured instances), the fidelity and
-provenance results, the commit hash, then the full ingest digest —
+provenance results, the commit hash, the publish summary (configured
+mirror), then the full ingest digest —
 plus `git log -1` in the data repo tell the whole story of the run
 without opening any other file.
 
@@ -897,7 +913,7 @@ default the repo's `outputs/`; the ingest snapshot always lives in the
 data repo's `outputs/`, issue #112),
 `--timeout <secs>` (default 1800, applies to both agent stages), plus
 the `<sync.json>` and `<raw-dir>` positionals — `-h` documents them
-all. Scheduling is #14; the publish step joins with #15.
+all. Scheduling is #14.
 
 ## Running queries (`wiki-query`)
 

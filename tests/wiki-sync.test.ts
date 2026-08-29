@@ -926,6 +926,106 @@ describe("runWikiSync repo-sourced instances", () => {
   });
 });
 
+describe("runWikiSync publish stage (issue #15)", () => {
+  /** Point the harness's config at a mirror vault (guide §26). */
+  async function configurePublish(h: Harness, mirror: string): Promise<void> {
+    const config = JSON.parse(await readFile(h.configPath, "utf8"));
+
+    config.publish = { mirror, include: ["wiki/**"] };
+    await writeFile(h.configPath, `${JSON.stringify(config, null, 2)}\n`);
+  }
+
+  it("publishes the wiki into the configured mirror after the commit", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const mirror = join(dirname(h.dataRoot), "KWiki");
+
+    await configurePublish(h, mirror);
+    const result = await runWikiSync(optionsFor(h));
+
+    expect(result.publish).toBeDefined();
+    await expect(
+      readFile(join(mirror, "wiki", "concepts", "new.md"), "utf8"),
+    ).resolves.toContain("New page");
+  });
+
+  it("skips publish when the config has no publish section", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const result = await runWikiSync(optionsFor(h));
+
+    expect(result.publish).toBeUndefined();
+  });
+
+  it("digests the publish summary", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const mirror = join(dirname(h.dataRoot), "KWiki");
+
+    await configurePublish(h, mirror);
+    const result = await runWikiSync(optionsFor(h));
+
+    expect(formatFinalDigest(result)).toMatch(
+      /^- \*\*Publish:\*\* ok — \d+ files? copied, \d+ files? removed/m,
+    );
+  });
+
+  it("heals a mangled mirror on a no-change cycle", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const mirror = join(dirname(h.dataRoot), "KWiki");
+
+    await configurePublish(h, mirror);
+    await runWikiSync(optionsFor(h));
+    await rm(join(mirror, "wiki", "concepts", "new.md"));
+
+    const second = await runWikiSync(optionsFor(h));
+
+    await expect(
+      readFile(join(mirror, "wiki", "concepts", "new.md"), "utf8"),
+    ).resolves.toContain("New page");
+    expect(second.publish).toEqual({ copied: 1, removed: 0 });
+  });
+
+  it("numbers the publish stage after the commit", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const mirror = join(dirname(h.dataRoot), "KWiki");
+    const progress: string[] = [];
+
+    await configurePublish(h, mirror);
+    await runWikiSync({
+      ...optionsFor(h),
+      onProgress: (m) => progress.push(m),
+    });
+
+    expect(progress).toContainEqual("wiki-sync: stage 5/6 — commit");
+    expect(progress).toContainEqual("wiki-sync: stage 6/6 — publish");
+  });
+
+  it("withholds the nothing-to-do digest when publish did work", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const mirror = join(dirname(h.dataRoot), "KWiki");
+
+    await configurePublish(h, mirror);
+    await runWikiSync(optionsFor(h));
+    await writeFile(join(mirror, "wiki", "stray.md"), "mangled\n");
+
+    const second = await runWikiSync(optionsFor(h));
+
+    expect(second.publish).toEqual({ copied: 0, removed: 1 });
+    expect(formatFinalDigest(second)).not.toMatch(/^wiki-sync: nothing to do/);
+  });
+
+  it("keeps the nothing-to-do digest over a quiet mirror", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const mirror = join(dirname(h.dataRoot), "KWiki");
+
+    await configurePublish(h, mirror);
+    await runWikiSync(optionsFor(h));
+
+    const second = await runWikiSync(optionsFor(h));
+
+    expect(second.publish).toEqual({ copied: 0, removed: 0 });
+    expect(formatFinalDigest(second)).toMatch(/^wiki-sync: nothing to do/);
+  });
+});
+
 describe("formatFinalDigest", () => {
   it("states nothing to do when the cycle was a no-op", () => {
     const digest = formatFinalDigest({

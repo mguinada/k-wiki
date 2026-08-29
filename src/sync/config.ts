@@ -265,16 +265,15 @@ function parsePublish(value: unknown, home: string): PublishConfig | undefined {
     throw new Error('publish "mirror" must be a non-empty string');
   }
 
-  if (
-    !Array.isArray(value.include) ||
-    !value.include.every((item): item is string => typeof item === "string")
-  ) {
-    throw new Error('publish "include" must be an array of strings');
+  const include = parseInclude(value.include);
+
+  if (include.length === 0) {
+    throw new Error('publish "include" must list at least one pattern');
   }
 
   return {
     mirror: expandHome(value.mirror, home),
-    include: value.include,
+    include,
   };
 }
 
