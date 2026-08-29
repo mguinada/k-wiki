@@ -990,6 +990,86 @@ data repo's `outputs/`, issue #112),
 the `<sync.json>` and `<raw-dir>` positionals — `-h` documents them
 all. Scheduling is #14.
 
+## Scheduling the pipeline (launchd)
+
+```sh
+npm run setup-schedule                        # install: every 30 minutes
+npm run setup-schedule -- --interval 15minutes  # re-register with a new interval
+npm run setup-schedule -- --print             # emit the plist, install nothing
+npm run setup-schedule -- --uninstall         # bootout the job and remove the plist
+```
+
+`setup-schedule` registers the pipeline with launchd (issue #14):
+the job runs `node bin/scheduled-run.ts` on a fixed interval —
+`StartInterval 1800` by default, `RunAtLoad` — from the checkout you
+installed it from, with absolute node + script paths, an explicit
+`HOME`, and a minimal `PATH` (the wrapper builds the rest). The plist
+lands at `~/Library/LaunchAgents/com.kwiki.scheduled-run.plist` and is
+verified with `launchctl print` before the installer reports success.
+After installing, one manual kick proves the whole path:
+
+```sh
+launchctl kickstart gui/$(id -u)/com.kwiki.scheduled-run
+```
+
+`scheduled-run` wraps the manual cycle with exactly what unattended
+operation needs and nothing else:
+
+1. **lockfile** — an atomic `O_EXCL` lockfile (PID + timestamp) at
+   `<dataRoot>/.scheduled-run.lock` prevents concurrent runs on the
+   same machine; a lock older than two hours is taken over, so a
+   killed run never wedges the schedule. It lives outside
+   `wiki-sync`'s commit pathspecs so the sync can never stage it.
+2. **`git pull --rebase`** — the run starts on a fresh base; any
+   overlap that slipped through (lock stolen, human ran by hand,
+   second machine) surfaces as a rejected push, never silently
+   diverged history.
+3. **`wiki-sync`** — unchanged: the full gated cycle ending in a
+   local commit. `wiki-sync` stays commit-only; nothing in an
+   interactive run pushes.
+4. **`git push`** — unattended pushing is consented to here and only
+   here, after the guardrails and checks have passed. A rejection
+   gets one `git pull --rebase` + retry; a second failure logs an
+   `ALERT` line and exits 1. The data repo must have an `origin`
+   remote — the wrapper fails loud without one.
+
+Every failure other than the push retry waits for the next interval
+by design — no retry/backoff (guide §26). The guardrails and
+verification have already reverted a broken run, so the wiki stays at
+the last good commit and the log tells the story.
+
+**Logs:** `~/Library/Logs/k-wiki/scheduled-run.log`, rotated at 5 MiB
+(one previous generation kept). The log carries the run's progress,
+wiki-sync's digest, and any error. launchd's own captures land beside
+it (`launchd-stdout.log`, `launchd-stderr.log`) for failures before
+Node even starts. `KWIKI_SCHEDULED_LOG` overrides the location.
+
+**Behavioral edges:**
+
+- **Mac asleep** — launchd coalesces missed intervals: one run at
+  wake, never a pile-up. iCloud lag is the same story — a note still
+  in flight lands on the next run; never retry.
+- **First run after boot/login** — `RunAtLoad` runs the job once at
+  load, deterministically.
+- **iCloud lag** — manifests make sync idempotent; the next interval
+  catches up. Event triggers (`fswatch`, `WatchPaths`) are rejected
+  by design: iCloud materializes files lazily, so file events fire
+  late, in bursts, or only on download.
+- **Push rejection** — pull --rebase + retry once, then alert (log
+  `ALERT`, exit 1, launchd records the non-zero exit).
+
+**Multi-machine rule:** enable the scheduler on exactly one machine
+— the source vault lives in iCloud, so only macOS can run the
+pipeline anyway. Other machines pull read-only (`k-wiki query` on a
+clone of the data repo) or run manual gated `wiki-sync` cycles. The
+lockfile prevents same-machine overlap; cross-machine overlap is made
+recoverable by the pull --rebase + rejected-push sequence, not
+prevented. If a second machine ever needs a scheduled sync, the known
+upgrade is a lease lock as a git ref in the data repo — deliberately
+deferred until then. Linux (systemd timer) and Windows (Task
+Scheduler) backends are follow-up issues: `setup-schedule` fails loud
+on non-macOS platforms, and the platform switch keeps them additive.
+
 ## Running queries (`wiki-query`)
 
 ```sh

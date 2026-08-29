@@ -28,6 +28,8 @@
     "sync-repo": "node bin/sync-repo.ts",
     "wiki-ingest": "node bin/wiki-ingest.ts",
     "wiki-sync": "node bin/wiki-sync.ts",
+    "scheduled-run": "node bin/scheduled-run.ts",
+    "setup-schedule": "node bin/setup-schedule.ts",
     "wiki-query": "node bin/wiki-query.ts",
     "k-wiki": "node bin/k-wiki.ts",
     "data:init": "node bin/init-data-repo.ts",
