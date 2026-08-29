@@ -425,4 +425,24 @@ describe("appendLog", () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  it("rotates a log that has reached 5 MiB to .1 before appending", async () => {
+    const dir = await tempDir();
+    const logPath = join(dir, "scheduled-run.log");
+
+    await writeFile(logPath, "x".repeat(5 * 1024 * 1024 + 1));
+    await appendLog(logPath, "fresh line");
+
+    const [rotated, fresh] = await Promise.all([
+      readFile(`${logPath}.1`, "utf8"),
+      readFile(logPath, "utf8"),
+    ]);
+
+    expect([rotated.length, fresh]).toEqual([
+      5 * 1024 * 1024 + 1,
+      "fresh line\n",
+    ]);
+
+    await rm(dir, { recursive: true, force: true });
+  });
 });

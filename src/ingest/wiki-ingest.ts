@@ -69,7 +69,8 @@ import {
  * the data repo root, runs the post-run guardrails (issue #12:
  * immutability, frontmatter, wikilinks — auto-reverting to the
  * pre-run commit on failure, expunge runs included), and writes a
- * digest the human can review in under a minute. Scheduling is #14.
+ * digest the human can review in under a minute. Scheduling the
+ * cycle unattended is `setup-schedule` (issue #14).
  */
 
 export interface AgentSettings {
@@ -2359,7 +2360,8 @@ rewritten in place; piped, redirected, CI, or NO_COLOR runs get one
 plain heartbeat line per 60 seconds instead. A run that fails or
 exceeds the timeout still runs the guardrails, exits 1, and leaves
 the snapshot untouched, so the next run retries the same sources. Live progress
-goes to stderr; the digest goes to stdout. Scheduling is #14.`;
+goes to stderr; the digest goes to stdout. Unattended scheduling is
+setup-schedule (issue #14).`;
 
 /** Print one CLI usage error red on stderr and set the exit code. */
 function fail(message: string): void {

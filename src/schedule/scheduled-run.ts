@@ -177,7 +177,9 @@ export interface ScheduledRunOptions {
   readonly dataRoot: string;
   /** The code repo checkout the wrapper runs from. */
   readonly repoRoot: string;
-  /** Where the lockfile lives (the data repo's outputs/). */
+  /** Where the lockfile lives (the data repo root — outside
+   *  wiki-sync's wiki/raw/outputs commit pathspecs, so the sync can
+   *  never stage it). */
   readonly lockPath: string;
   /** Args forwarded verbatim to the wiki-sync invocation. */
   readonly args?: readonly string[];

@@ -972,7 +972,11 @@ Suggested schedule:
 - every 6 hours for normal use;
 - daily if the wiki is mostly reference material.
 
-Start manually until the pipeline is reliable, then schedule it.
+Start manually until the pipeline is reliable, then schedule it. The
+shipped scheduler is `setup-schedule` + `scheduled-run` (issue #14):
+launchd runs the wrapper on a fixed interval — lockfile, pre-run
+pull --rebase, `wiki-sync`, push. The README's Scheduling the
+pipeline section documents the wrapper's contract.
 
 ### Ingest modes
 
@@ -1569,8 +1573,9 @@ Never run two transports on the same mirror vault. Publishing two independent mi
 4. Vault renames are pipeline events: folder name = vault name = namespace key. Update `sync.json` and re-sync deliberately.
 5. Skip `.obsidian/`, `.trash/`, and `.DS_Store` when scanning.
 6. iOS/iPadOS devices consume only; the pipeline runs on the Mac.
-7. Near-real-time is bounded by pipeline cadence, not transport: schedule every 15–60 minutes, or trigger on file events (e.g. `fswatch` on the source vault).
+7. Near-real-time is bounded by pipeline cadence, not transport: schedule every 15–60 minutes (`setup-schedule`, issue #14). File-event triggers (`fswatch`, launchd `WatchPaths`) are rejected by design — iCloud materializes files lazily, so events fire late, in bursts, or only on download.
 8. `raw/` and `wiki/` contents are versioned by the data repo only. If generated files appear under the code repo's trees, git ignores them — that is the safety property, not a bug.
+9. A failed scheduled run waits for the next interval — no retry, no backoff: the guardrails have already reverted the failed run, so the wiki stays at the last good commit. The one exception is the scheduled push: a rejected push gets a single `git pull --rebase` + retry, then a loud alert (issue #14).
 
 ---
 

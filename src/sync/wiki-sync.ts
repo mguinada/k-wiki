@@ -1083,7 +1083,8 @@ The final digest on stdout — sync summary, lint summary, the crosslink
 audit (configured second brains), the fidelity and provenance results,
 the commit hash, the publish summary (configured mirror), and the full
 ingest digest — plus git log -1 in the data repo tell the whole story
-of the run. Live progress goes to stderr. Scheduling is #14.`;
+of the run. Live progress goes to stderr. Unattended scheduling is
+setup-schedule (issue #14).`;
 
 /** Print one CLI usage error red on stderr and set the exit code. */
 function fail(message: string): void {

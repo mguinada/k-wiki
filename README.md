@@ -79,7 +79,8 @@ Obsidian vault            sync-vault                wiki-ingest               re
 ([details](#running-the-full-cycle-wiki-sync)); the separate commands
 stay available for debugging, and `wiki-ingest` already runs the
 post-run guardrails — checks and auto-revert — after every agent run.
-Scheduling is #14.
+Unattended scheduling is [`setup-schedule`](#scheduling-the-pipeline-launchd)
+(#14).
 
 After every successful ingest the pipeline also regenerates the
 static KPI dashboard (issue #73): `npm run dashboard [-- <data-repo>]`
@@ -473,7 +474,6 @@ git-diff flow.
 
 These modes are documented when their issue lands, not before:
 
-- **Scheduled unattended operation** (#14).
 - **`--batch N` for `wiki-ingest`** — batch construction stops
   being snapshot surgery; deferred from #13 until batched runs
   become the standing procedure for large backlogs.
@@ -491,7 +491,7 @@ sources directly, so there is no build step — install dependencies with
 | `npm run format` | Biome | Rewrite files to the canonical format — the fix command for lint findings, not a gate |
 | `npm test` | vitest | Run the unit test suite |
 | `npm run test:coverage` | vitest | Run the unit tests and fail below the 90% coverage thresholds — what CI runs |
-| `npm run e2e` | vitest | Run the end-to-end suite (`tests/e2e/`): real CLI child processes — sync-vault through a full vault lifecycle (first run, no-op re-run, edit, delete, block flip, multi-vault) against the synthetic fixture vault in temp workspaces under `.e2e-tmp/` (gitignored), wiki-ingest through first-run, incremental, expunge, rename, skip, failure, timeout, scoped `--sources` (operator `--note` and the default note included), tracked-but-ignored warning, and guardrail auto-revert runs against a stub agent in temp data repos, the second brain through profile-layer ingest, cross-wiki link validation, the reverted domain→second-brain leak, and a health-checked second-brain sync, sync-repo through verbatim projection, commit stamping, unchanged re-run, dirty-source and wrong-config failures, and health freshness runs in temp source repos, and wiki-sync through full-cycle, no-change rerun, failure, guardrail-revert, configured crosslink-audit (pass and fail), reverted fidelity-failure, and repo-source cycle (the meta flow) runs |
+| `npm run e2e` | vitest | Run the end-to-end suite (`tests/e2e/`): real CLI child processes — sync-vault through a full vault lifecycle (first run, no-op re-run, edit, delete, block flip, multi-vault) against the synthetic fixture vault in temp workspaces under `.e2e-tmp/` (gitignored), wiki-ingest through first-run, incremental, expunge, rename, skip, failure, timeout, scoped `--sources` (operator `--note` and the default note included), tracked-but-ignored warning, and guardrail auto-revert runs against a stub agent in temp data repos, the second brain through profile-layer ingest, cross-wiki link validation, the reverted domain→second-brain leak, and a health-checked second-brain sync, sync-repo through verbatim projection, commit stamping, unchanged re-run, dirty-source and wrong-config failures, and health freshness runs in temp source repos, and wiki-sync through full-cycle, no-change rerun, failure, guardrail-revert, configured crosslink-audit (pass and fail), reverted fidelity-failure, and repo-source cycle (the meta flow) runs, and scheduled-run through full-cycle, no-op re-run, lock-skip, push-rejection retry, and double-push-failure alert runs in temp data repos with an upstream remote |
 | `npm run health [-- <raw-dir>] [--fail-on-stale]` | health CLI | Check the coherence of a `raw/` projection (default: the repo's `raw/`): every `raw/notes/<vault>/` file matches its `manifest.json` sha-256, with no orphans and no missing entries; a repo-sourced projection (sync-repo) is also freshness-checked — a recorded source commit behind the source repo's HEAD warns, and `--fail-on-stale` (after the `--`) makes it exit 1; read-only, no vault access; exit 0 = coherent (including healthy-empty), exit 1 = one line per problem |
 | `npm run check-links [-- <wiki-dir>]` | wikilink checker | Check that every `[[wikilink]]` under `wiki/` (default) resolves to an existing page by file name, skipping external slashed `[[<vault>/<page>]]` cross-wiki targets; exit 0 = all links resolve, exit 1 = one `file:line -> [[link]]` line per broken link |
 | `npm run check-crosslinks <wiki-dir> <domain-wiki-dir> [<domain-wiki-dir>…]` | cross-wiki link checker | Check the one-way link discipline between a wiki and its domain wikis: every slashed `[[<vault>/<page>]]` link names a vault of a passed domain wiki (validated against its `raw/manifest.json`, case-insensitive) and resolves to an existing page there, and the domain wikis carry no cross-wiki links; exit 0 = discipline holds, exit 1 = one `file:line -> [[link]]` line per problem |
@@ -505,6 +505,8 @@ sources directly, so there is no build step — install dependencies with
 | `npm run sync-repo -- [-h \| --help] [<config>] [<raw-dir>]` | repo sync CLI | Project the allowlisted files of a committed source repository verbatim into `raw/notes/<name>/`, recording the source HEAD commit in the manifest (deterministic, no LLM; the meta-wiki adapter, [§9](#9-the-meta-wiki-a-repository-as-source)) |
 | `npm run wiki-ingest -- [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [--note <text>] [<raw-dir>]` | ingest wrapper | Run the wiki agent headless over the sources that changed since the last ingest and write the per-run digest (reads `settings.yml`; [details below](#running-the-wiki-agent-wiki-ingest)) |
 | `npm run wiki-sync -- [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<sync.json>] [<raw-dir>]` | cycle orchestrator | Run the whole cycle — sync (sync-vault for vault sources, sync-repo for repo-sourced configs, [§9](#9-the-meta-wiki-a-repository-as-source)) → ingest → lint → crosslink audit (configured second brains) → verification (check-fidelity + check-provenance) → one data-repo commit → mirror publish (configured `publish` section) — and print the digest (reads `settings.yml`, including its optional `secondBrain.domains` list; [details below](#running-the-full-cycle-wiki-sync)) |
+| `npm run setup-schedule -- [-h \| --help] [--interval <duration>] [--print] [--uninstall]` | launchd installer | Register the pipeline with launchd (issue #14): write `~/Library/LaunchAgents/com.kwiki.scheduled-run.plist` — absolute node + script paths, explicit `HOME`, minimal `PATH`, `StartInterval` (`30minutes` default) + `RunAtLoad` — then bootstrap and verify with `launchctl print`; `--interval` re-registers, `--print` emits the plist without installing (any OS), `--uninstall` boots out and removes it ([details below](#scheduling-the-pipeline-launchd)) |
+| `npm run scheduled-run -- [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<config>] [<raw-dir>]` | scheduled cycle wrapper | Run one unattended cycle — the command the launchd job executes: O_EXCL lockfile (PID + timestamp, two-hour stale takeover) at `<dataRoot>/.scheduled-run.lock` → `git pull --rebase` → `wiki-sync` (commit-only) → `git push` (one pull --rebase + retry on rejection, then alert); fails loud without an `origin` remote ([details below](#scheduling-the-pipeline-launchd)) |
 | `npm run wiki-query -- [-h \| --help] [--file-last] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>` | query wrapper | Ask the built wiki one question headless: print the answer, save it for review (stage 1, default); `--file-last` files the reviewed answer deterministically (stage 2; reads `settings.yml` in stage 1; [details below](#running-queries-wiki-query)) |
 | `node <checkout>/bin/k-wiki.ts query "<question>"` (also `npm run k-wiki -- …` inside the checkout) | agent-facing CLI | Ask the wiki bound to the current project from any cwd — zero flags once `.k-wiki.json` binds it; plus four read-only commands: `status` (binding + paths), `list [<type>]` (pages by type), `read <slug>` (one page verbatim), `health` (projection check); answer-only, no filing passthrough ([details below](#querying-from-any-project-k-wiki)) |
 | `npm run data:init -- [--second-brain] [--meta] [<sync.json>]` | data repo seeder | Create and seed the data repo at `sync.json`'s `dataRoot`: git init, copy the `raw/`+`wiki/` skeleton from the code repo, write the standing `.gitignore` (Obsidian UI state, ingest snapshot — issue #146), first commit; idempotent; `--second-brain` also writes the `.second-brain` identity marker ([§5](#5-the-second-brain)); `--meta` seeds the meta contract (`wiki/AGENTS.meta.md`) as the data repo's `wiki/AGENTS.md` ([§9](#9-the-meta-wiki-a-repository-as-source)) |
@@ -536,7 +538,8 @@ Verification has three layers:
 
 The e2e suites drive the real CLIs — sync-vault against the synthetic
 fixture vault, wiki-ingest and wiki-sync against a stub agent in temp
-data repos; the health check verifies that a `raw/` projection is
+data repos, scheduled-run against a stub agent with an upstream
+remote; the health check verifies that a `raw/` projection is
 internally consistent without the real vault. Both are deterministic and fast, so
 they gate CI like the unit tests do — unlike mutation testing, whose
 runtime grows with the suite.
@@ -793,8 +796,9 @@ data repo (immutability, frontmatter, wikilinks — guide §1, §7, §9):
 check (it carries none by design); a tripped check auto-reverts the data repo to its pre-run state (the
 pre-run commit plus the uncommitted work that preceded the run),
 writes a failure digest naming the check, and exits 1; the
-one-command orchestration is [`wiki-sync`](#running-the-full-cycle-wiki-sync),
-scheduling #14.
+one-command orchestration is [`wiki-sync`](#running-the-full-cycle-wiki-sync);
+unattended scheduling is
+[`setup-schedule`](#scheduling-the-pipeline-launchd) (#14).
 
 **Timeout budgeting:** the 1800 s default fits the steady state —
 incremental runs measured at 1–2 minutes (about one minute per note,
@@ -988,7 +992,8 @@ default the repo's `outputs/`; the ingest snapshot always lives in the
 data repo's `outputs/`, issue #112),
 `--timeout <secs>` (default 1800, applies to both agent stages), plus
 the `<sync.json>` and `<raw-dir>` positionals — `-h` documents them
-all. Scheduling is #14.
+all. Unattended scheduling is `setup-schedule` —
+[next section](#scheduling-the-pipeline-launchd).
 
 ## Scheduling the pipeline (launchd)
 
@@ -1067,8 +1072,9 @@ recoverable by the pull --rebase + rejected-push sequence, not
 prevented. If a second machine ever needs a scheduled sync, the known
 upgrade is a lease lock as a git ref in the data repo — deliberately
 deferred until then. Linux (systemd timer) and Windows (Task
-Scheduler) backends are follow-up issues: `setup-schedule` fails loud
-on non-macOS platforms, and the platform switch keeps them additive.
+Scheduler) backends are follow-up issues: the installer fails loud
+on non-macOS platforms (`--print` still emits the macOS plist
+everywhere), and the platform switch keeps them additive.
 
 ## Running queries (`wiki-query`)
 
