@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_INTERVAL_SECONDS,
@@ -374,5 +377,250 @@ describe("schedulerUnsupportedError", () => {
 
     expect(message).toContain("win32");
     expect(message).toContain("Task Scheduler");
+  });
+});
+
+describe("parseIntervalDuration killers", () => {
+  it("rejects a zero interval", () => {
+    expect(parseIntervalDuration("0minutes")).toBeUndefined();
+  });
+
+  it("rejects a bare number", () => {
+    expect(parseIntervalDuration("15")).toBeUndefined();
+  });
+
+  it("rejects a fractional interval", () => {
+    expect(parseIntervalDuration("1.5hours")).toBeUndefined();
+  });
+
+  it("parses units case-insensitively", () => {
+    expect(parseIntervalDuration("15MINUTES")).toBe(900);
+  });
+
+  it("parses a singular hour", () => {
+    expect(parseIntervalDuration("1hour")).toBe(3600);
+  });
+
+  it("parses plural seconds", () => {
+    expect(parseIntervalDuration("45seconds")).toBe(45);
+  });
+});
+
+describe("schedulerUnsupportedError backends", () => {
+  it("does not name systemd for win32", () => {
+    expect(schedulerUnsupportedError("win32")).not.toContain("systemd");
+  });
+
+  it("does not name Task Scheduler for linux", () => {
+    expect(schedulerUnsupportedError("linux")).not.toContain("Task Scheduler");
+  });
+
+  it("falls back to naming the platform for an unknown OS", () => {
+    expect(schedulerUnsupportedError("solaris")).toContain(
+      "a solaris scheduler",
+    );
+  });
+});
+
+describe("setup-schedule help", () => {
+  async function runMain(
+    args: readonly string[],
+    platform: NodeJS.Platform = "darwin",
+    runLaunchctl?: (args: readonly string[]) => Promise<void>,
+  ): Promise<{ out: string; err: string; exitCode: string }> {
+    const argv = process.argv;
+    const out: string[] = [];
+    const err: string[] = [];
+
+    process.argv = [...argv.slice(0, 2), ...args];
+    process.exitCode = undefined;
+
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) => err.push(parts.join(" ")));
+
+    try {
+      await main(args, platform, runLaunchctl);
+    } finally {
+      process.argv = argv;
+      logSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
+
+    return {
+      out: out.join("\n"),
+      err: err.join("\n"),
+      exitCode: process.exitCode === undefined ? "0" : String(process.exitCode),
+    };
+  }
+
+  it("prints the usage line for --help", async () => {
+    const { out, exitCode } = await runMain(["--help"]);
+
+    expect(`${exitCode}|${out.split("\n")[0]}`).toBe(
+      "0|Usage: setup-schedule [-h | --help] [--interval <duration>] [--print] [--uninstall]",
+    );
+  });
+
+  it("documents the interval default in the help text", async () => {
+    const { out } = await runMain(["--help"]);
+
+    expect(out).toContain("Default: 30minutes");
+  });
+
+  it("documents the non-installing --print mode in the help text", async () => {
+    const { out } = await runMain(["--help"]);
+
+    expect(out).toContain("without installing or loading");
+  });
+});
+
+describe("setup-schedule main: install and uninstall", () => {
+  async function tempHome(): Promise<string> {
+    return await mkdtemp(join(tmpdir(), "k-wiki-setup-"));
+  }
+
+  it("writes the plist, registers it, and verifies it from the clean launchd view", async () => {
+    const home = await tempHome();
+    const recorded: string[][] = [];
+    const { out, exitCode } = await (async () => {
+      const argv = process.argv;
+      const out: string[] = [];
+      const logSpy = vi
+        .spyOn(console, "log")
+        .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+
+      try {
+        await main(
+          [],
+          "darwin",
+          async (args) => {
+            recorded.push([...args]);
+          },
+          home,
+        );
+      } finally {
+        process.argv = argv;
+        logSpy.mockRestore();
+      }
+
+      return { out: out.join("\n"), exitCode: "0" };
+    })();
+
+    const plist = await readFile(
+      join(home, "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`),
+      "utf8",
+    );
+    const domain = `gui/${process.getuid?.() ?? 501}`;
+
+    expect(recorded).toEqual([
+      [
+        "bootout",
+        domain,
+        join(home, "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`),
+      ],
+      [
+        "bootstrap",
+        domain,
+        join(home, "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`),
+      ],
+      ["print", `${domain}/${LAUNCHD_LABEL}`],
+    ]);
+    expect(plist).toContain(`<string>${LAUNCHD_LABEL}</string>`);
+    expect(out).toContain("installed");
+    expect(exitCode).toBe("0");
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("fails loud when launchctl cannot bootstrap the job", async () => {
+    const home = await tempHome();
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      await expect(
+        main(
+          [],
+          "darwin",
+          async (args) => {
+            if (args[0] === "bootstrap") {
+              throw new Error("bootstrap refused");
+            }
+          },
+          home,
+        ),
+      ).rejects.toThrow("bootstrap refused");
+    } finally {
+      errors.mockRestore();
+    }
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("removes the plist and boots the job out on --uninstall", async () => {
+    const home = await tempHome();
+    const target = join(
+      home,
+      "Library",
+      "LaunchAgents",
+      `${LAUNCHD_LABEL}.plist`,
+    );
+    const recorded: string[][] = [];
+    const outs: string[] = [];
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => outs.push(parts.join(" ")));
+
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(target, "<plist/>");
+
+    try {
+      await main(
+        ["--uninstall"],
+        "darwin",
+        async (args) => {
+          recorded.push([...args]);
+        },
+        home,
+      );
+    } finally {
+      logSpy.mockRestore();
+    }
+
+    await expect(readFile(target, "utf8")).rejects.toThrow();
+    expect(recorded).toEqual([
+      ["bootout", `gui/${process.getuid?.() ?? 501}`, target],
+    ]);
+    expect(outs.join("\n")).toContain("uninstalled");
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("tolerates a failed bootout during uninstall (nothing was installed)", async () => {
+    const home = await tempHome();
+    const outs: string[] = [];
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => outs.push(parts.join(" ")));
+
+    try {
+      await main(
+        ["--uninstall"],
+        "darwin",
+        async () => {
+          throw new Error("no such job");
+        },
+        home,
+      );
+    } finally {
+      logSpy.mockRestore();
+    }
+
+    expect(outs.join("\n")).toContain("uninstalled");
+
+    await rm(home, { recursive: true, force: true });
   });
 });

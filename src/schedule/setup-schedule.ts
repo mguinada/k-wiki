@@ -246,10 +246,14 @@ export function parseCliArgs(args: readonly string[]): ParsedArgs {
   };
 }
 
-/** setup-schedule entry point. */
+/** setup-schedule entry point. `runLaunchctl` and `home` are
+ *  injectable so tests can record the registration commands and write
+ *  the plist into a temp dir instead of touching operator state. */
 export async function main(
   argv: readonly string[] = process.argv.slice(2),
   platform: NodeJS.Platform = process.platform,
+  runLaunchctl: (args: readonly string[]) => Promise<void> = launchctl,
+  home: string = homedir(),
 ): Promise<void> {
   if (argv.includes("-h") || argv.includes("--help")) {
     console.log(HELP);
@@ -266,7 +270,6 @@ export async function main(
     return;
   }
 
-  const home = homedir();
   const plist = launchdPlist({
     nodePath: process.execPath,
     scriptPath: join(repoRoot, "bin", "scheduled-run.ts"),
@@ -291,7 +294,7 @@ export async function main(
   const target = plistPath(home);
 
   if (parsed.uninstall) {
-    await launchctl(["bootout", guiDomain(), target]).catch(() => {});
+    await runLaunchctl(["bootout", guiDomain(), target]).catch(() => {});
     await unlink(target).catch(() => {});
     console.log(
       `setup-schedule: uninstalled — ${target} removed and booted out`,
@@ -302,15 +305,15 @@ export async function main(
 
   // Replace any previous registration first: a re-run with a new
   // --interval must update, not duplicate (issue #14 scope).
-  await launchctl(["bootout", guiDomain(), target]).catch(() => {});
+  await runLaunchctl(["bootout", guiDomain(), target]).catch(() => {});
 
   await mkdir(dirname(target), { recursive: true });
   await writeFile(target, plist, { mode: 0o644 });
-  await launchctl(["bootstrap", guiDomain(), target]);
+  await runLaunchctl(["bootstrap", guiDomain(), target]);
 
   // Verify from the same clean launchd view the job will run in —
   // a loaded job answers print.
-  await launchctl(["print", `${guiDomain()}/${LAUNCHD_LABEL}`]);
+  await runLaunchctl(["print", `${guiDomain()}/${LAUNCHD_LABEL}`]);
 
   console.log(
     `setup-schedule: installed — ${target} (every ${parsed.interval}s, RunAtLoad); logs in ${logDirFor(home)}`,

@@ -357,8 +357,11 @@ async function spawnWikiSync(
 
 /** The log file for this machine: `~/Library/Logs/k-wiki/` on macOS
  *  (the only scheduled platform today), the XDG state dir elsewhere. */
-export function scheduledLogPath(home = homedir()): string {
-  return process.platform === "darwin"
+export function scheduledLogPath(
+  home = homedir(),
+  platform: NodeJS.Platform = process.platform,
+): string {
+  return platform === "darwin"
     ? join(home, "Library", "Logs", "k-wiki", "scheduled-run.log")
     : join(home, ".local", "state", "k-wiki", "logs", "scheduled-run.log");
 }
@@ -582,16 +585,20 @@ export async function main(): Promise<void> {
   }
 
   const logPath = process.env.KWIKI_SCHEDULED_LOG ?? scheduledLogPath();
+  const pendingWrites: Promise<void>[] = [];
   const outcome = await runScheduledCycle({
     dataRoot,
     repoRoot,
     lockPath: join(dataRoot, ".scheduled-run.lock"),
     args,
     log: (line) => {
-      void appendLog(logPath, line);
+      pendingWrites.push(appendLog(logPath, line));
     },
   });
 
+  // Flush the log before reporting: an exit must never outrun its own
+  // audit trail.
+  await Promise.all(pendingWrites);
   reportOutcome(outcome);
 }
 
