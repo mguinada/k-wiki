@@ -163,6 +163,11 @@ infrastructure, free to use for any unit or e2e work; the snapshot at
 
 - Put exactly one expectation in each `it` block.
 - Name each `it` block after the fact that its expectation verifies.
+- Test code never calls `process.chdir()`: Stryker's dry run executes
+  the suite in worker threads, where `chdir` throws and kills every
+  mutation run (issue #193). Mock `process.cwd` or spawn a child
+  process instead; `tests/quality/no-process-chdir.test.ts` enforces
+  it in CI.
 
 ### CLI scripts
 
