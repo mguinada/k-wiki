@@ -755,10 +755,12 @@ that is complete but under-filed. Paths are exact manifest paths
 matching — an unknown path is an error naming it; duplicates dedupe
 and the list sorts. The explicit list replaces the manifest diff
 (every path a `~` changed line) and routes to `prompts/incremental.md`
-even when nothing changed. A scoped run never advances the snapshot —
-pending manifest changes stay pending for the next ordinary run, so
-the scoped run stays repeatable — and it needs a valid snapshot: with
-none, run a full ingest first (`-h` documents the switch in full).
+even when nothing changed. On success a scoped run writes a merged
+snapshot — the previous snapshot plus the explicit paths' current
+entries — so pending manifest changes outside the list stay pending
+for the next ordinary run (issue #150). It needs a valid snapshot:
+with none, run a full ingest first (`-h` documents the switch in
+full).
 The digest's Mode line records `sources selected explicitly`.
 
 ### Unverified frontier in the digest

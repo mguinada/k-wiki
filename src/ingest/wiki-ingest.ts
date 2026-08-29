@@ -1400,8 +1400,10 @@ export interface IngestOptions {
    *  the no-change skip; mode resolves to incremental (the snapshot
    *  precondition below guarantees a previous manifest, and the
    *  synthetic diff carries no removals). An empty list behaves as
-   *  an absent flag. A scoped run never advances the snapshot: it
-   *  does not claim the manifest diff was processed. */
+   *  an absent flag. On success the run records its processing in
+   *  a merged snapshot (the previous snapshot plus the explicit
+   *  paths' current entries, issue #150): pending manifest changes
+   *  outside the list survive for the next ordinary run. */
   readonly sources?: readonly string[] | undefined;
 }
 
@@ -1875,20 +1877,119 @@ async function writeFailureDigest(
   );
 }
 
-/** Advance the manifest snapshot — never for a scoped `--sources`
- *  run, whose manifest diff stays pending. */
+/** The snapshot a successful scoped `--sources` run writes (issue
+ *  #150): the previous snapshot with every explicit path's current
+ *  entry merged in — the scoped run's processing is recorded, while
+ *  pending changes outside the explicit set survive for the next
+ *  ordinary run. Rewriting the full current manifest instead would
+ *  mark those changes processed without the agent ever seeing them. */
+function mergedSnapshot(
+  previous: Manifest,
+  current: Manifest,
+  explicitDiff: ManifestDiff,
+): Manifest {
+  const vaults: Record<string, VaultNotes> = {};
+
+  for (const [vault, notes] of Object.entries(previous.vaults)) {
+    vaults[vault] = { ...notes };
+  }
+
+  for (const change of explicitDiff.vaults) {
+    const currentNotes = current.vaults[change.vault] ?? {};
+    const merged = vaults[change.vault] ?? {};
+
+    for (const path of change.changed) {
+      const entry = currentNotes[path];
+
+      if (entry !== undefined) {
+        merged[path] = entry;
+      }
+    }
+
+    vaults[change.vault] = merged;
+  }
+
+  return { vaults };
+}
+
+/** The held-back progress line of a successful scoped run (issue
+ *  #150), or undefined when nothing outside `--sources` is pending:
+ *  the snapshot-vs-current change counts the merged snapshot leaves
+ *  for the next ordinary run. */
+function heldBackMessage(
+  previous: Manifest,
+  current: Manifest,
+  explicitDiff: ManifestDiff,
+): string | undefined {
+  const explicit = new Set(
+    explicitDiff.vaults.flatMap((change) =>
+      change.changed.map((path) => `${change.vault}/${path}`),
+    ),
+  );
+  const pending = diffManifests(previous, current);
+  const counts = { added: 0, changed: 0, renamed: 0, removed: 0 };
+
+  for (const vault of pending.vaults) {
+    counts.added += vault.added.filter(
+      (path) => !explicit.has(`${vault.vault}/${path}`),
+    ).length;
+    counts.changed += vault.changed.filter(
+      (path) => !explicit.has(`${vault.vault}/${path}`),
+    ).length;
+    const covered = vault.renamed.filter((rename) =>
+      explicit.has(`${vault.vault}/${rename.to}`),
+    );
+
+    counts.renamed += vault.renamed.length - covered.length;
+    counts.removed += vault.removed.length + covered.length;
+  }
+
+  const parts = Object.entries(counts)
+    .filter(([, count]) => count > 0)
+    .map(([kind, count]) => `${count} ${kind}`);
+
+  if (parts.length === 0) {
+    return undefined;
+  }
+
+  return `wiki-ingest: scoped run held back pending changes outside --sources (${parts.join(", ")}) — the merged snapshot leaves them for the next ordinary run`;
+}
+
+/** Advance the manifest snapshot after a successful run (issue
+ *  #150): an ordinary run records the full current manifest; a
+ *  scoped `--sources` run writes a merged snapshot — the previous
+ *  snapshot plus the explicit paths' current entries — so its
+ *  processing is recorded while pending changes outside the list
+ *  survive for the next ordinary run, announced with a held-back
+ *  progress line when any are skipped. */
 async function writeSnapshotIfNeeded(
   explicitDiff: ManifestDiff | undefined,
+  previous: Manifest | undefined,
   snapshotPath: string,
   current: Manifest,
   dataRoot: string,
+  onProgress: (message: string) => void,
 ): Promise<void> {
-  if (explicitDiff !== undefined) {
+  await mkdir(dirname(snapshotPath), { recursive: true });
+
+  if (explicitDiff === undefined) {
+    await writeManifest(snapshotPath, current, { snapshotFor: dataRoot });
+
     return;
   }
 
-  await mkdir(dirname(snapshotPath), { recursive: true });
-  await writeManifest(snapshotPath, current, { snapshotFor: dataRoot });
+  const base = previous ?? emptyManifest();
+  const message = heldBackMessage(base, current, explicitDiff);
+
+  if (message !== undefined) {
+    onProgress(message);
+  }
+
+  await writeManifest(
+    snapshotPath,
+    mergedSnapshot(base, current, explicitDiff),
+    { snapshotFor: dataRoot },
+  );
 }
 
 /** Post-run hook (issue #73): refresh the static dashboard after the
@@ -1918,10 +2019,11 @@ async function refreshDashboard(
 
 /**
  * One headless ingest run. The snapshot is written only after a
- * successful agent run without --sources, so a failure retries the
- * same sources next time instead of silently skipping them; a
- * scoped run never writes it, so pending manifest changes stay
- * pending. A manifest diff with removed
+ * successful agent run, so a failure retries the same sources next
+ * time instead of silently skipping them. An ordinary run records
+ * the full current manifest; a scoped run writes a merged snapshot
+ * (issue #150) that keeps pending manifest changes outside
+ * `--sources` pending. A manifest diff with removed
  * entries routes to the expunge flow (issue #65); removed entries that
  * pair with an addition by equal full-file hash or identical body
  * text are renames and never route there (issue #143).
@@ -2072,7 +2174,14 @@ export async function runWikiIngest(
   const digest = formatDigest(run);
 
   await writeFile(digestPath, digest, "utf8");
-  await writeSnapshotIfNeeded(explicitDiff, snapshotPath, current, dataRoot);
+  await writeSnapshotIfNeeded(
+    explicitDiff,
+    previous,
+    snapshotPath,
+    current,
+    dataRoot,
+    onProgress,
+  );
   await refreshDashboard(dataRoot, env, now, onProgress);
 
   return { status: "ran", mode, digestPath, digest, pages, diff };
@@ -2135,10 +2244,12 @@ Switches and arguments:
                      Duplicates dedupe; the list sorts. The explicit
                      list replaces the manifest diff (every path a \`~\`
                      changed line), forces prompts/incremental.md, and
-                     bypasses the no-change skip. Never advances the
-                     snapshot: the manifest diff stays pending for the
-                     next ordinary run, so the scoped run stays
-                     repeatable. Requires a valid
+                     bypasses the no-change skip. On success the run
+                     writes a merged snapshot — the previous snapshot
+                     plus the explicit paths' current entries — so the
+                     pending manifest diff outside the list stays
+                     pending for the next ordinary run (issue #150).
+                     Requires a valid
                      manifest snapshot for this data root; a missing or
                      foreign-stamped snapshot is an error:
                      run a full ingest first. Never touches raw/ or
@@ -2151,8 +2262,9 @@ Switches and arguments:
 What it writes:
   - wiki pages, by the agent, in the data repo (never raw/);
   - <dataRoot>/outputs/last-ingested-manifest.json — the manifest
-    snapshot the next run diffs against (only after a successful
-    agent run without --sources), stamped with its data repo root: a snapshot stamped
+    snapshot the next run diffs against (written after a successful
+    agent run; a --sources run writes a merged snapshot that keeps
+    pending changes outside the list pending), stamped with its data repo root: a snapshot stamped
     for another instance — or an unstamped legacy one — is ignored
     with a loud warning and the run falls back to full mode (issue
     #95). A pre-#112 snapshot in this repo's outputs/ is adopted
