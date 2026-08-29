@@ -1056,7 +1056,7 @@ What it does, stage by stage:
      touched.
   7. publish — only for configs whose sync.json carries a publish
      section (guide §26, issue #15): copy the data repo's
-     include-matched files (default ["wiki/**"]) verbatim into the
+     include-matched files (["wiki/**"] in the shipped config) verbatim into the
      mirror vault — an iCloud-served disposable reading copy for
      iPhone and iPad. Deletions included: a page gone from the wiki
      is removed from the mirror; the mirror's own .obsidian/ device
@@ -1079,7 +1079,7 @@ and a verification failure has reverted the lint edits.
 
 The final digest on stdout — sync summary, lint summary, the crosslink
 audit (configured second brains), the fidelity and provenance results,
-the publish summary (configured mirror), the commit hash, and the full
+the commit hash, the publish summary (configured mirror), and the full
 ingest digest — plus git log -1 in the data repo tell the whole story
 of the run. Live progress goes to stderr. Scheduling is #14.`;
 
