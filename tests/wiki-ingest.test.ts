@@ -2542,6 +2542,33 @@ describe("runWikiIngest", () => {
     ).toBe(true);
   });
 
+  it("promises a self-healing full-run fallback in the foreign-snapshot warning of an unscoped run", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const messages: string[] = [];
+
+    await mkdir(dirname(h.snapshotPath), { recursive: true });
+    await writeFile(
+      h.snapshotPath,
+      serializeManifest(
+        manifestWith("Engineering", { "gone.md": entry("gone") }),
+        { snapshotFor: "/foreign/data-root" },
+      ),
+    );
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      onProgress: (message) => messages.push(message),
+    });
+
+    expect(
+      messages.some(
+        (message) =>
+          message.includes("falling back to a full run") &&
+          message.includes("this warning will not repeat"),
+      ),
+    ).toBe(true);
+  });
+
   it("runs a full ingest on an unstamped legacy snapshot", async () => {
     const h = await makeHarness({ "a.md": "a" });
 
@@ -4934,6 +4961,40 @@ describe("runWikiIngest --sources", () => {
     await expect(
       runWikiIngest({ ...optionsFor(h), sources: ["Engineering/a.md"] }),
     ).rejects.toThrow(/run a full ingest first/);
+  });
+
+  it("promises no full-run fallback in the foreign-snapshot warning of a scoped run", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    await seedSnapshot(h, { "a.md": "a" }, "/foreign/data-root");
+    const messages: string[] = [];
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md"],
+      onProgress: (message) => messages.push(message),
+    }).catch(() => undefined);
+
+    expect(
+      messages.some((message) =>
+        message.includes("falling back to a full run"),
+      ),
+    ).toBe(false);
+  });
+
+  it("ends the scoped foreign-snapshot warning at the ignore clause", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    await seedSnapshot(h, { "a.md": "a" }, "/foreign/data-root");
+    const messages: string[] = [];
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md"],
+      onProgress: (message) => messages.push(message),
+    }).catch(() => undefined);
+
+    const warning = messages.find((message) => message.includes("WARNING"));
+
+    expect(warning?.endsWith("ignoring it")).toBe(true);
   });
 
   it("completes a successful scoped run", async () => {

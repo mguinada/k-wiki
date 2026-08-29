@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 
 // Printer over the last Stryker JSON report (issue #21 advisory signal).
@@ -107,9 +108,9 @@ export function parseReport(text: string): Report {
 }
 
 /** The report file's text, or undefined when it cannot be read. */
-function readReportFile(): string | undefined {
+function readReportFile(baseDir: string): string | undefined {
   try {
-    return readFileSync(REPORT_PATH, "utf8");
+    return readFileSync(join(baseDir, REPORT_PATH), "utf8");
   } catch {
     return undefined;
   }
@@ -167,7 +168,7 @@ export function printSurvivors(text: string | undefined): void {
   }
 }
 
-export function main(): void {
+export function main(baseDir: string = process.cwd()): void {
   const args = process.argv.slice(2);
 
   if (args.includes("-h") || args.includes("--help")) {
@@ -176,7 +177,7 @@ export function main(): void {
     return;
   }
 
-  printSurvivors(readReportFile());
+  printSurvivors(readReportFile(baseDir));
 }
 
 /* v8 ignore next: covered only under direct `node src/quality/mutation-survivors.ts` runs */
