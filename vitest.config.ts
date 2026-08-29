@@ -6,9 +6,12 @@ export default defineConfig({
     // progress) spawn real child processes and wait real intervals;
     // under heavy machine load (e.g. endpoint-security scanning) the
     // defaults starve them. The run output showed ingest tests at
-    // 24-30 s under full-suite load, so 60 s leaves headroom. The e2e
-    // config sets 30 s for the CLI suites for the same reason.
-    testTimeout: 60_000,
+    // 24-30 s under full-suite load, so 60 s left headroom — but the
+    // mixed-expunge ingest tests (two full ingest cycles each) and a
+    // repo-sourced wiki-sync test still crossed it in a 20-minute
+    // full-coverage run (issue #149 gate), so the ceiling is 120 s.
+    // The e2e config sets 30 s for the CLI suites for the same reason.
+    testTimeout: 120_000,
     // afterAll cleanup rm's many git-heavy temp dirs; under load the
     // 10 s default kills the hook (guardrails flake, issue #145 run).
     // Same value the heaviest suites already declare per-file.

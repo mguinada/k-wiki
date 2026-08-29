@@ -627,6 +627,13 @@ export function explicitSourceDiff(
   return { vaults, empty: vaults.length === 0 };
 }
 
+/** The static operator-intent line every scoped `--sources` run
+ *  carries when the operator gave no `--note` (issue #149): the
+ *  intent channel always exists, so unchanged content never reads
+ *  as a no-op and filing decisions are re-adjudicated. */
+const DEFAULT_OPERATOR_NOTE =
+  "Sources re-opened by the operator: unchanged content does not imply a no-op; re-adjudicate filing decisions; if declining, state per concept why its treatment fails the page bar.";
+
 /** Render the changed-source list appended below incremental and expunge prompts. */
 function changedSourceLines(diff: ManifestDiff): string[] {
   const lines: string[] = [];
@@ -657,23 +664,33 @@ function changedSourceLines(diff: ManifestDiff): string[] {
 /**
  * Compose the agent message: the prompt file text, plus the explicit
  * changed-source list for an incremental run (the prompt restricts the
- * agent to those files). A full ingest gets the prompt unmodified.
+ * agent to those files). A full ingest gets the prompt unmodified. A
+ * scoped run's operator note (issue #149) rides below the list under
+ * an `Operator note:` heading — verbatim, beside the prompt exactly as
+ * the list does, so prompts/*.md stay untouched (#133).
  */
 export function composePrompt(
   promptText: string,
   diff: ManifestDiff | undefined,
+  note?: string,
 ): string {
   if (diff === undefined) {
     return promptText;
   }
 
-  return [
+  const lines = [
     promptText,
     "",
     "Changed sources since the previous ingestion:",
     "",
     ...changedSourceLines(diff),
-  ].join("\n");
+  ];
+
+  if (note !== undefined) {
+    lines.push("", "Operator note:", "", note);
+  }
+
+  return lines.join("\n");
 }
 
 /** A removed source note: its identity plus its last synced content. */
@@ -1405,6 +1422,12 @@ export interface IngestOptions {
    *  paths' current entries, issue #150): pending manifest changes
    *  outside the list survive for the next ordinary run. */
   readonly sources?: readonly string[] | undefined;
+  /** Operator intent for a scoped run (issue #149): appended verbatim
+   *  below the changed-source list under an `Operator note:` heading —
+   *  scoped runs only; never on ordinary incremental, expunge, or
+   *  full runs. Undefined with `--sources` present means the default
+   *  line (DEFAULT_OPERATOR_NOTE). */
+  readonly note?: string | undefined;
 }
 
 export type IngestResult =
@@ -1715,6 +1738,15 @@ function hasExplicitSources(options: IngestOptions): boolean {
   return (options.sources?.length ?? 0) > 0;
 }
 
+/** The operator note a scoped run carries (issue #149): the explicit
+ *  `--note` text, or the default line when `--sources` runs without
+ *  one — never on an unscoped run. */
+function scopedNote(options: IngestOptions): string | undefined {
+  return hasExplicitSources(options)
+    ? (options.note ?? DEFAULT_OPERATOR_NOTE)
+    : undefined;
+}
+
 /** The manifest diff this run ingests: the explicit `--sources` set
  *  when given (which requires a valid snapshot), else snapshot vs
  *  current — with body-identical remove+add pairs paired as renames. */
@@ -1780,6 +1812,7 @@ interface PromptComposition {
   readonly diff: ManifestDiff;
   readonly env: NodeJS.ProcessEnv;
   readonly onProgress: (message: string) => void;
+  readonly note: string | undefined;
 }
 
 /** Compose the agent message and, for an expunge run, its
@@ -1795,6 +1828,7 @@ async function composeRunPrompt(
       composed: composePrompt(
         promptText,
         mode === "incremental" ? diff : undefined,
+        run.note,
       ),
       directSet: undefined,
     };
@@ -2092,6 +2126,7 @@ export async function runWikiIngest(
     diff,
     env,
     onProgress,
+    note: scopedNote(options),
   });
 
   const args = agentArgs(settings, composed);
@@ -2207,7 +2242,7 @@ export async function runWikiIngest(
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
-const HELP = `Usage: wiki-ingest [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [<raw-dir>]
+const HELP = `Usage: wiki-ingest [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [--note <text>] [<raw-dir>]
 
 Run the wiki agent headless over the sources that changed since the
 last ingest, then write a per-run digest (guide §18, issue #11).
@@ -2271,6 +2306,19 @@ Switches and arguments:
                      foreign-stamped snapshot is an error:
                      run a full ingest first. Never touches raw/ or
                      the vault.
+  --note <text>      Operator intent for a scoped --sources run
+                     (issue #149): appended verbatim below the
+                     changed-source list under an "Operator note:"
+                     heading, so a re-opened set re-adjudicates filing
+                     decisions instead of re-applying the no-change
+                     precedent. Single flag; requires --sources, and
+                     never lands on ordinary incremental, expunge, or
+                     full runs. Default when --sources is present
+                     without --note: a static line stating that
+                     unchanged content does not imply a no-op and
+                     asking the agent to re-adjudicate filing
+                     decisions (if declining, to state per concept why
+                     its treatment fails the page bar).
   -h, --help         Print this help and exit; no side effects.
   <raw-dir>          raw/ directory holding manifest.json. Default:
                      <dataRoot>/raw from sync.json, otherwise the
@@ -2371,13 +2419,16 @@ export function createAgentProgressSink(
   };
 }
 
-/** The value-taking flags (`--settings`, `--outputs`, `--timeout`)
- *  with their consumed argument indexes. */
+/** The value-taking flags (`--settings`, `--outputs`, `--timeout`,
+ *  `--note`) with their consumed argument indexes. */
 function readFlagValues(args: readonly string[]): {
   values: Map<string, string | undefined>;
   consumed: Set<number>;
 } {
-  return sharedReadFlagValues(["--settings", "--outputs", "--timeout"], args);
+  return sharedReadFlagValues(
+    ["--settings", "--outputs", "--timeout", "--note"],
+    args,
+  );
 }
 
 /** Every `--sources <path>` pair's value (a missing final value
@@ -2425,12 +2476,33 @@ function collectPositional(
   return { positional, error: undefined };
 }
 
+/** The `--note` usage error, or undefined when it is valid: the
+ *  value is required, and a note only rides a scoped `--sources`
+ *  run (issue #149). */
+function noteArgError(
+  values: Map<string, string | undefined>,
+  sourcesCount: number,
+): string | undefined {
+  const note = values.get("--note");
+
+  if (values.has("--note") && (note === undefined || note.trim() === "")) {
+    return "--note needs a value";
+  }
+
+  if (note !== undefined && sourcesCount === 0) {
+    return "--note requires --sources";
+  }
+
+  return undefined;
+}
+
 /** Run the ingest with the parsed CLI state and print the outcome;
  *  errors print red and set the exit code. */
 async function runCliIngest(parsed: {
   values: Map<string, string | undefined>;
   positional: readonly string[];
   sources: readonly string[];
+  note: string | undefined;
   settingsPath: string;
   heartbeatMs: number | undefined;
   sink: ProgressSink;
@@ -2447,6 +2519,7 @@ async function runCliIngest(parsed: {
       outputsDir: parsed.values.get("--outputs") ?? join(repoRoot, "outputs"),
       promptsDir: join(repoRoot, "prompts"),
       sources: parsed.sources,
+      note: parsed.note,
       timeoutMs:
         timeoutArg === undefined ? undefined : Number(timeoutArg) * 1000,
       heartbeatMs: parsed.heartbeatMs,
@@ -2469,7 +2542,7 @@ async function runCliIngest(parsed: {
   }
 }
 
-/** wiki-ingest entry point: `wiki-ingest [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [<raw-dir>]`. */
+/** wiki-ingest entry point: `wiki-ingest [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [--note <text>] [<raw-dir>]`. */
 export async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
@@ -2491,6 +2564,15 @@ export async function main(): Promise<void> {
 
   if (positional.length > 1) {
     fail(`expected at most one <raw-dir> argument, got ${positional.length}`);
+
+    return;
+  }
+
+  const note = values.get("--note");
+  const noteError = noteArgError(values, sourcesRaw.length);
+
+  if (noteError !== undefined) {
+    fail(noteError);
 
     return;
   }
@@ -2518,6 +2600,7 @@ export async function main(): Promise<void> {
     values,
     positional,
     sources: sourcesRaw as string[],
+    note,
     settingsPath,
     heartbeatMs: animated ? 100 : undefined,
     sink,
