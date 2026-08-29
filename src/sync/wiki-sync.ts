@@ -52,7 +52,7 @@ import {
   resolveRawDir,
   type SyncConfig,
 } from "./config.ts";
-import { runPublishStage, type PublishResult } from "./publish.ts";
+import { type PublishResult, runPublishStage } from "./publish.ts";
 import { type RepoSyncReport, runRepoSync } from "./sync-repo.ts";
 import { runSync, type SyncReport } from "./sync-vault.ts";
 
@@ -900,10 +900,7 @@ function nothingToDoLine(result: WikiSyncResult): string | undefined {
     return undefined;
   }
 
-  if (
-    publish !== undefined &&
-    publish.copied + publish.removed > 0
-  ) {
+  if (publish !== undefined && publish.copied + publish.removed > 0) {
     return undefined;
   }
 

@@ -4561,7 +4561,7 @@ describe("runWikiIngest --sources", () => {
 
     expect(
       ["a.md", "b.md"].map(
-        (f) => prompt.split("~ Engineering/" + f).length - 1,
+        (f) => prompt.split(`~ Engineering/${f}`).length - 1,
       ),
     ).toEqual([1, 1]);
   });

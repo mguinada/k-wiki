@@ -989,7 +989,10 @@ describe("runWikiSync publish stage (issue #15)", () => {
     const progress: string[] = [];
 
     await configurePublish(h, mirror);
-    await runWikiSync({ ...optionsFor(h), onProgress: (m) => progress.push(m) });
+    await runWikiSync({
+      ...optionsFor(h),
+      onProgress: (m) => progress.push(m),
+    });
 
     expect(progress).toContainEqual("wiki-sync: stage 5/6 — commit");
     expect(progress).toContainEqual("wiki-sync: stage 6/6 — publish");

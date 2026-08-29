@@ -446,9 +446,7 @@ describe("loadSyncConfig", () => {
 
     await expect(
       loadSyncConfig(await writeConfig(bad), "/home/alice"),
-    ).rejects.toThrow(
-      /publish "include" must list at least one pattern/,
-    );
+    ).rejects.toThrow(/publish "include" must list at least one pattern/);
   });
 
   it("rejects a publish include pattern with an empty path segment", async () => {

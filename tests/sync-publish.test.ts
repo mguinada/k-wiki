@@ -1,4 +1,11 @@
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -222,7 +229,10 @@ describe("runPublishStage", () => {
     const tree = await makeTree();
     const progress: string[] = [];
 
-    await runPublishStage({ ...optionsFor(tree), onProgress: (m) => progress.push(m) });
+    await runPublishStage({
+      ...optionsFor(tree),
+      onProgress: (m) => progress.push(m),
+    });
 
     expect(progress).toContainEqual(
       expect.stringContaining(`2 files selected for ${tree.mirror}`),
@@ -233,7 +243,10 @@ describe("runPublishStage", () => {
     const tree = await makeTree();
     const progress: string[] = [];
 
-    await runPublishStage({ ...optionsFor(tree), onProgress: (m) => progress.push(m) });
+    await runPublishStage({
+      ...optionsFor(tree),
+      onProgress: (m) => progress.push(m),
+    });
 
     expect(progress).toContainEqual(
       expect.stringContaining("2 copied, 0 removed"),
