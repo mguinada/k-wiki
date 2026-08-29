@@ -120,7 +120,7 @@ k-wiki-data/            ← data repo: raw/ and wiki/ contents (Section 19)
 
 Open both as separate Obsidian vaults. Both repos live in plain local folders (Section 26); every instruction in this guide is relative to the repo root that owns the path, and paths under `raw/` and `wiki/` refer to the data repo's trees (Section 19).
 
-One exception: a source vault that syncs via iCloud must live inside Obsidian's iCloud container, `~/Library/Mobile Documents/iCloud~md~obsidian/<VaultName>/`. Vault placement and transports are covered in Section 26.
+One exception: a source vault that syncs via iCloud must live inside the `Documents` folder of Obsidian's iCloud container — `iCloud Drive/Obsidian` — at `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/<VaultName>/`; a vault placed anywhere else in the container is invisible to the vault switcher. Vault placement and transports are covered in Section 26.
 
 Recommended ownership:
 
@@ -1489,10 +1489,10 @@ W: wiki sync   reading copy on phones/tablets/Macs → mirror vault
 
 | Artifact | Home | Rule |
 |---|---|---|
-| Source vaults | Wherever their sync method keeps them (iCloud: `~/Library/Mobile Documents/iCloud~md~obsidian/<VaultName>/`) | Transport constraint |
+| Source vaults | Wherever their sync method keeps them (iCloud: `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/<VaultName>/`) | Transport constraint |
 | Code repo (`k-wiki`) | A plain local folder, e.g. `~/Lab/k-wiki/` | Implementation only; `.git` must never live in service-synced storage; no personal material |
 | Data repo (`k-wiki-data`) | A plain local folder placed by `sync.json`'s `dataRoot`, e.g. `~/Lab/k-wiki-data/` | Versions `raw/` and `wiki/` contents; may hold personal material — private remote only, and only by explicit opt-in |
-| Mirror vault (optional) | Inside the chosen transport's folder, e.g. `…/iCloud~md~obsidian/KWiki/` | Disposable derived reading copy |
+| Mirror vault (optional) | Inside the chosen transport's folder, e.g. `…/iCloud~md~obsidian/Documents/KWiki/` | Disposable derived reading copy |
 
 Never place either checkout — code or data — inside iCloud, Dropbox, or any synced folder: sync services race with git writes and corrupt repositories, and Obsidian's own guidance says never sync one vault through two services. Both repos move between machines only via `git push`/`git pull`. Scenario B/C instances follow the same rule — one checkout pair each, plain local folders.
 
@@ -1509,7 +1509,7 @@ All placement knowledge lives in one human-owned file at the `k-wiki` root:
       "exclude": "wiki:false" }
   ],
   "publish": {
-    "mirror": "~/Library/Mobile Documents/iCloud~md~obsidian/KWiki",
+    "mirror": "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/KWiki",
     "include": ["wiki/**"]
   }
 }

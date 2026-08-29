@@ -591,7 +591,8 @@ edit the snapshot by hand.
 which vaults to sync, where the data repo lives (`dataRoot`), and where to
 publish the mirror (guide §26). The
 `publish` section activates the mirror publish step: a `mirror` path
-(the iCloud Obsidian container's `KWiki` folder) plus the required
+(the `KWiki` folder inside the iCloud Obsidian container's `Documents`
+folder — the one iCloud Drive shows as Obsidian) plus the required
 include patterns selecting what to publish (`["wiki/**"]` in the
 shipped config). Sync state —
 hashes and timestamps — lives in `raw/manifest.json`, keyed per vault
