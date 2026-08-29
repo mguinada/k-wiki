@@ -963,6 +963,28 @@ describe("composePrompt", () => {
       ].join("\n"),
     );
   });
+
+  it("appends the operator note below the changed-source list under an Operator note heading", () => {
+    expect(composePrompt("PROMPT", diff, "re-adjudicate: under-filed")).toBe(
+      [
+        "PROMPT",
+        "",
+        "Changed sources since the previous ingestion:",
+        "",
+        "+ Engineering/new.md",
+        "~ Engineering/old.md",
+        "- Engineering/gone.md",
+        "",
+        "Operator note:",
+        "",
+        "re-adjudicate: under-filed",
+      ].join("\n"),
+    );
+  });
+
+  it("leaves a full-ingest prompt unchanged when a note is given", () => {
+    expect(composePrompt("PROMPT", undefined, "NOTE")).toBe("PROMPT");
+  });
 });
 
 describe("composeExpungePrompt", () => {
@@ -4596,6 +4618,54 @@ describe("runWikiIngest --sources", () => {
     expect(prompt).toContain("Changed sources since the previous ingestion:");
   });
 
+  it("carries the --note text below the ~ lines under an Operator note heading", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    await seedSnapshot(h, { "a.md": "a" });
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md"],
+      note: "recovery: file the four pre-adjudicated pages",
+    });
+
+    const prompt = invocation(h, 0).args.at(-1) ?? "";
+
+    expect(prompt).toContain("Operator note:");
+    expect(prompt.indexOf("~ Engineering/a.md")).toBeLessThan(
+      prompt.indexOf("Operator note:"),
+    );
+    expect(prompt).toContain("recovery: file the four pre-adjudicated pages");
+  });
+
+  it("applies the default operator note when --sources runs without one", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    await seedSnapshot(h, { "a.md": "a" });
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md"],
+    });
+
+    const prompt = invocation(h, 0).args.at(-1) ?? "";
+
+    expect(prompt).toContain("Operator note:");
+    expect(prompt).toContain(
+      "Sources re-opened by the operator: unchanged content does not imply a no-op; re-adjudicate filing decisions; if declining, state per concept why its treatment fails the page bar.",
+    );
+  });
+
+  it("omits the operator note on an ordinary incremental run", async () => {
+    const h = await makeHarness({ "a.md": "a", "b.md": "b" });
+    await seedSnapshot(h, { "a.md": "a" });
+
+    await runWikiIngest(optionsFor(h));
+
+    const prompt = invocation(h, 0).args.at(-1) ?? "";
+
+    expect(prompt).toContain("+ Engineering/b.md");
+    expect(prompt).not.toContain("Operator note:");
+  });
+
   it("marks the digest Mode line with sources selected explicitly", async () => {
     const h = await makeHarness({ "a.md": "a" });
     await seedSnapshot(h, { "a.md": "a" });
@@ -5670,7 +5740,7 @@ console.log("stub report");
 
   it("prints the usage line for --help", async () => {
     expect((await runCli(["--help"])).out).toContain(
-      "wiki-ingest [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [<raw-dir>]",
+      "wiki-ingest [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [--note <text>] [<raw-dir>]",
     );
   });
 
@@ -5720,6 +5790,19 @@ console.log("stub report");
     expect(out).toContain("run a full ingest first");
   });
 
+  it("documents --note with the <text> syntax", async () => {
+    const out = (await runCli(["--help"])).out;
+
+    expect(out).toContain("--note <text>");
+  });
+
+  it("documents the --note default line and scoped-only rule", async () => {
+    const out = (await runCli(["--help"])).out;
+
+    expect(out).toContain("does not imply a no-op");
+    expect(out).toContain("requires --sources");
+  });
+
   it("parses a repeatable --sources flag and dedupes it", async () => {
     const h = await makeCliHarness();
 
@@ -5745,6 +5828,75 @@ console.log("stub report");
     );
 
     expect(prompt.split("~ Engineering/a.md").length - 1).toBe(1);
+  });
+
+  it("carries a --note into the scoped prompt", async () => {
+    const h = await makeCliHarness();
+
+    await mkdir(dirname(h.snapshotPath), { recursive: true });
+    await writeFile(
+      h.snapshotPath,
+      serializeManifest(manifestWith("Engineering", { "a.md": entry("a") }), {
+        snapshotFor: h.dataRoot,
+      }),
+    );
+
+    await runCli([
+      ...cliArgs(h),
+      "--sources",
+      "Engineering/a.md",
+      "--note",
+      "recovery: re-adjudicate the four pages",
+    ]);
+
+    const prompt = await readFile(
+      join(h.dataRoot, "outputs", "stub-prompt.txt"),
+      "utf8",
+    );
+
+    expect(prompt).toContain("Operator note:");
+    expect(prompt).toContain("recovery: re-adjudicate the four pages");
+  });
+
+  it("applies the default operator note on a scoped CLI run without --note", async () => {
+    const h = await makeCliHarness();
+
+    await mkdir(dirname(h.snapshotPath), { recursive: true });
+    await writeFile(
+      h.snapshotPath,
+      serializeManifest(manifestWith("Engineering", { "a.md": entry("a") }), {
+        snapshotFor: h.dataRoot,
+      }),
+    );
+
+    await runCli([...cliArgs(h), "--sources", "Engineering/a.md"]);
+
+    const prompt = await readFile(
+      join(h.dataRoot, "outputs", "stub-prompt.txt"),
+      "utf8",
+    );
+
+    expect(prompt).toContain("Operator note:");
+    expect(prompt).toContain("Sources re-opened by the operator");
+    expect(prompt).toContain("re-adjudicate filing decisions");
+  });
+
+  it("exits 1 when --note has no value", async () => {
+    const h = await makeCliHarness();
+
+    const { err } = await runCli([...cliArgs(h), "--note"]);
+
+    expect(err).toContain("--note needs a value");
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("exits 1 when --note runs without --sources", async () => {
+    const h = await makeCliHarness();
+
+    const { err } = await runCli([...cliArgs(h), "--note", "intent"]);
+
+    expect(err).toContain("--note requires --sources");
+    expect(process.exitCode).toBe(1);
   });
 
   it("exits 1 on an unknown --sources path naming the path", async () => {

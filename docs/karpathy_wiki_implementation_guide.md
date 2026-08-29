@@ -726,6 +726,11 @@ unrelated wiki pages.
 
 For an existing wiki when one or more notes changed, or when
 `--sources` names explicit sources for scoped re-ingest (issue #133).
+A scoped run always carries an operator note (issue #149): `--note
+<text>` appended verbatim below the changed-source list under an
+`Operator note:` heading; without `--note` a static default line
+states that unchanged content does not imply a no-op and asks the
+agent to re-adjudicate filing decisions.
 
 Full text: `prompts/incremental.md`.
 

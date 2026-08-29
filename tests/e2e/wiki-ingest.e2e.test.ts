@@ -604,7 +604,11 @@ describe("wiki-ingest e2e", () => {
 });
 
 describe("wiki-ingest --sources e2e", () => {
-  function ingestSources(repo: Repo, ...sources: readonly string[]) {
+  function ingestSourcesWith(
+    repo: Repo,
+    extra: readonly string[],
+    ...sources: readonly string[]
+  ) {
     const flags = sources.flatMap((source) => ["--sources", source]);
 
     return runCli(INGEST_SCRIPT, [
@@ -612,9 +616,14 @@ describe("wiki-ingest --sources e2e", () => {
       repo.settingsPath,
       "--outputs",
       repo.outputsDir,
+      ...extra,
       ...flags,
       join(repo.dataRoot, "raw"),
     ]);
+  }
+
+  function ingestSources(repo: Repo, ...sources: readonly string[]) {
+    return ingestSourcesWith(repo, [], ...sources);
   }
 
   it("re-ingests explicit sources over an unchanged manifest", async () => {
@@ -657,6 +666,53 @@ describe("wiki-ingest --sources e2e", () => {
     );
 
     expect(snapshotAfterScoped).toBe(snapshotAfterFirst);
+  });
+
+  it("passes the operator note into a scoped run's prompt", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag" });
+    const first = await ingest(repo);
+
+    expect(first.code).toBe(0);
+
+    const result = await ingestSourcesWith(
+      repo,
+      ["--note", "recovery: re-adjudicate the four pre-adjudicated pages"],
+      "Engineering/AI/RAG.md",
+    );
+
+    expect(result.code).toBe(0);
+
+    const prompt = await readFile(
+      join(repo.dataRoot, "outputs", "stub-prompt.txt"),
+      "utf8",
+    );
+
+    expect(prompt).toContain("Operator note:");
+    expect(prompt).toContain(
+      "recovery: re-adjudicate the four pre-adjudicated pages",
+    );
+    expect(prompt.indexOf("~ Engineering/AI/RAG.md")).toBeLessThan(
+      prompt.indexOf("Operator note:"),
+    );
+  });
+
+  it("carries the default operator note when --note is absent", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag" });
+    const first = await ingest(repo);
+
+    expect(first.code).toBe(0);
+
+    const result = await ingestSources(repo, "Engineering/AI/RAG.md");
+
+    expect(result.code).toBe(0);
+
+    const prompt = await readFile(
+      join(repo.dataRoot, "outputs", "stub-prompt.txt"),
+      "utf8",
+    );
+
+    expect(prompt).toContain("Operator note:");
+    expect(prompt).toContain("re-adjudicate filing decisions");
   });
 
   it("holds a pending change back from the snapshot for the next ordinary run", async () => {
