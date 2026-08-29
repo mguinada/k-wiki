@@ -3,6 +3,7 @@ import { mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { errorMessage } from "../cli/colors.ts";
 import { flagValueError, readFlagValues } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { runGit } from "../data/git.ts";
@@ -141,7 +142,9 @@ export async function releaseLock(lockPath: string): Promise<void> {
 
 /** The PATH a scheduled run gets: node's bin dir first (the wrapper
  *  and any sibling CLIs), then the standard install locations — the
- *  agent CLI resolves with no interactive shell env (issue #14). */
+ *  agent CLI resolves with no interactive shell env (issue #14).
+ *  ponytail: unix PATH layout; revisit when a Windows scheduler
+ *  backend lands (issue #14 follow-up) — delimiter and dirs differ. */
 export function buildScheduledEnv(
   home: string,
   execPath: string,
@@ -348,10 +351,6 @@ async function spawnWikiSync(
   if (code !== 0) {
     throw new Error(`wiki-sync exited ${code}`);
   }
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 /** The log file for this machine: `~/Library/Logs/k-wiki/` on macOS
