@@ -842,9 +842,11 @@ export async function runWikiSync(
     total,
   );
 
-  onProgress(
-    `wiki-sync: stage ${config.publish === undefined ? total : total - 1}/${total} — commit`,
-  );
+  // The commit stage is the last one when publish is not configured;
+  // the publish stage follows it otherwise (issue #15).
+  const commitStage = total - (config.publish === undefined ? 0 : 1);
+
+  onProgress(`wiki-sync: stage ${commitStage}/${total} — commit`);
 
   const summary = await commitSummaryOf(sync, ingest, lint, dataRoot, env);
 
