@@ -9,9 +9,13 @@ export default defineConfig({
     // 24-30 s under full-suite load, so 60 s left headroom — but the
     // mixed-expunge ingest tests (two full ingest cycles each) and a
     // repo-sourced wiki-sync test still crossed it in a 20-minute
-    // full-coverage run (issue #149 gate), so the ceiling is 120 s.
-    // The e2e config sets 30 s for the CLI suites for the same reason.
-    testTimeout: 120_000,
+    // full-coverage run (issue #149 gate), so the ceiling rose to
+    // 120 s — and a later gate coverage run on a machine loaded
+    // ~2.5x its core count pushed the real-agent timeout test to
+    // 138 s past that, so 300 s, keeping the headroom ratio that
+    // fixed the earlier escalations. The e2e config sets 30 s for
+    // the CLI suites for the same reason.
+    testTimeout: 300_000,
     // afterAll cleanup rm's many git-heavy temp dirs; under load the
     // 10 s default kills the hook (guardrails flake, issue #145 run).
     // Same value the heaviest suites already declare per-file.
