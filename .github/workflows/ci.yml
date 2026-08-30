@@ -169,9 +169,8 @@ jobs:
         if: always() && steps.mutation.outcome == 'failure'
         run: >
           echo "::error title=Mutation run failed::The advisory mutation run
-          exited nonzero — see this job's log for the failing dry run. No
-          mutation-report artifact is produced, so the rolling survivor
-          issue (#208) is not updated tonight."
+          exited nonzero — see this job's log. A failed nightly run files
+          no report, so the rolling survivor issue (#208) is not updated."
       - name: Upload mutation report
         if: always()
         uses: actions/upload-artifact@v4
