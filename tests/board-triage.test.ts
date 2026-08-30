@@ -1,7 +1,6 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import {
   type BoardItem,
@@ -49,6 +48,7 @@ interface IssueSpec {
     state: string;
     pr: boolean;
   }[];
+  readonly truncated?: "labels" | "blockedBy" | "timelineItems";
 }
 
 /** One board item node in the GraphQL response shape. */
@@ -65,17 +65,22 @@ function issueNode(spec: IssueSpec): Record<string, unknown> {
       __typename: "Issue",
       number: spec.number,
       state: spec.state ?? "OPEN",
-      labels: { nodes: (spec.labels ?? []).map((name) => ({ name })) },
+      labels: {
+        nodes: (spec.labels ?? []).map((name) => ({ name })),
+        pageInfo: { hasNextPage: spec.truncated === "labels" },
+      },
       blockedBy: {
         nodes: (spec.blockers ?? []).map((blocker) => ({
           number: blocker.number,
           state: blocker.state,
         })),
+        pageInfo: { hasNextPage: spec.truncated === "blockedBy" },
       },
       timelineItems: {
         nodes: (spec.refs ?? []).map((ref) => ({
           source: ref.pr ? { number: ref.number, state: ref.state } : {},
         })),
+        pageInfo: { hasNextPage: spec.truncated === "timelineItems" },
       },
     },
   };
@@ -542,17 +547,54 @@ describe("runBoardTriage", () => {
     expect(mutations.length).toBe(before);
   });
 
-  it("never touches lane order: the module contains no item-position mutation", async () => {
-    const source = await readFile(
-      resolve(
-        dirname(fileURLToPath(import.meta.url)),
-        "../src/board/board-triage.ts",
-      ),
-      "utf8",
-    );
+  async function appliedRunQueries(): Promise<string[]> {
+    const queries: string[] = [];
+    const { graphql } = fakeBoard(mixedBoard());
+    const wrapped: GraphQLFn = async (query, variables) => {
+      queries.push(query);
 
-    expect(source.includes("updateProjectV2ItemPosition")).toBe(false);
+      return graphql(query, variables);
+    };
+
+    await runBoardTriage(wrapped, OPTIONS);
+
+    return queries;
+  }
+
+  it("applies its moves through field-value mutations", async () => {
+    const queries = await appliedRunQueries();
+
+    expect(
+      queries.some((query) => query.includes("updateProjectV2FieldValue")),
+    ).toBe(true);
   });
+
+  it("never sends an item-position mutation during an applied run", async () => {
+    const queries = await appliedRunQueries();
+
+    expect(
+      queries.some((query) => query.includes("updateProjectV2ItemPosition")),
+    ).toBe(false);
+  });
+
+  it.each(["labels", "blockedBy", "timelineItems"] as const)(
+    "fails the run instead of silently reading a truncated %s connection",
+    async (connection) => {
+      const graphql: GraphQLFn = async () =>
+        boardPage([
+          issueNode({
+            id: "I1",
+            number: 7,
+            status: "Backlog",
+            truncated: connection,
+          }),
+        ]);
+
+      await expect(runBoardTriage(graphql, OPTIONS)).rejects.toThrow(
+        "board read truncated: issue #7",
+      );
+    },
+  );
 });
 
 describe("stepSummaryMarkdown", () => {
@@ -748,6 +790,13 @@ describe("main", () => {
     const { err } = await runCli(["--owner"], undefined);
 
     expect(err[0]).toContain("--owner needs a login value");
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("rejects a valueless --project with exit 1 instead of triaging the default board", async () => {
+    const { err } = await runCli(["--project"], undefined);
+
+    expect(err[0]).toContain("--project needs a project number");
     expect(process.exitCode).toBe(1);
   });
 

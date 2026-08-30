@@ -88,14 +88,21 @@ const BOARD_PAGE_QUERY = `query BoardPage($owner: String!, $projectNumber: Int!,
             ... on Issue {
               number
               state
-              labels(first: 20) { nodes { name } }
-              blockedBy(first: 20) { nodes { number state } }
+              labels(first: 20) {
+                nodes { name }
+                pageInfo { hasNextPage }
+              }
+              blockedBy(first: 20) {
+                nodes { number state }
+                pageInfo { hasNextPage }
+              }
               timelineItems(first: 30, itemTypes: CROSS_REFERENCED_EVENT) {
                 nodes {
                   ... on CrossReferencedEvent {
                     source { ... on PullRequest { number state } }
                   }
                 }
+                pageInfo { hasNextPage }
               }
             }
           }
@@ -294,6 +301,21 @@ function openPrNumbers(value: unknown): readonly number[] {
     );
 }
 
+/** A nested connection truncated at its page cap fails the run:
+ *  silently dropping its facts (an open blocker, a live PR
+ *  reference) would misclassify the item. */
+function failIfTruncated(
+  connection: unknown,
+  number: number,
+  what: string,
+): void {
+  if (asRecord(asRecord(connection)?.pageInfo)?.hasNextPage === true) {
+    throw new Error(
+      `board read truncated: issue #${number} ${what} exceeded one page — raise the cap in BOARD_PAGE_QUERY or paginate`,
+    );
+  }
+}
+
 /** Issue items from board nodes; non-issue content (pull requests,
  *  draft issues) is skipped — the contract triages issues. */
 export function parseBoardItems(
@@ -309,12 +331,18 @@ export function parseBoardItems(
       continue;
     }
 
+    const number = requiredNumber(
+      content.number,
+      `the issue number of item ${String(node.id)}`,
+    );
+
+    failIfTruncated(content.labels, number, "labels");
+    failIfTruncated(content.blockedBy, number, "blockedBy edges");
+    failIfTruncated(content.timelineItems, number, "cross-referenced events");
+
     items.push({
       id: requiredString(node.id, "an item id"),
-      number: requiredNumber(
-        content.number,
-        `the issue number of item ${String(node.id)}`,
-      ),
+      number,
       state: parseState(content.state),
       status: statusName(node.fieldValueByName),
       labels: nameList(asRecord(content.labels)?.nodes),
@@ -750,6 +778,10 @@ function usageErrorOf(
 
   if (values.has("--owner") && values.get("--owner") === undefined) {
     return "--owner needs a login value";
+  }
+
+  if (values.has("--project") && values.get("--project") === undefined) {
+    return "--project needs a project number";
   }
 
   if (projectText !== undefined && !/^\d+$/.test(projectText)) {
