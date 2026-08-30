@@ -144,8 +144,8 @@ never generically: two checkouts each holding a `k-wiki-data`
 folder is exactly the crossed-instance confusion the snapshot stamp
 (issue #95) catches mechanically, and a subject-based name prevents
 it at the human level. The path is operator-owned config
-(`sync.json`'s `dataRoot`); the wiki's identity is the manifest
-snapshot stamp (issue #95), never the folder name — renaming an
+(`sync.json`'s `dataRoot`); the wiki's identity is that same
+stamp, never the folder name — renaming an
 instance is a safe operator procedure with one budgeted full run
 ([guide §19](docs/karpathy_wiki_implementation_guide.md#19-git)).
 
