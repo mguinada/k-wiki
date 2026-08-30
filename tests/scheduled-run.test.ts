@@ -853,7 +853,9 @@ describe("scheduled-run main: cycle outcomes", () => {
 
     await writeFile(configPath, JSON.stringify({ vaults: [], dataRoot: dir }));
 
-    const { err, exitCode } = await runMain([configPath, join(dir, "raw")]);
+    const { err, exitCode } = await runMain([configPath, join(dir, "raw")], {
+      KWIKI_SCHEDULED_LOG: join(dir, "run.log"),
+    });
 
     expect(exitCode).toBe("1");
     expect(err).toContain("origin");
