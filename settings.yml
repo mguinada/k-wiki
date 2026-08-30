@@ -13,7 +13,7 @@ reasoning: high    # pi thinking level, passed as --thinking
 # against every listed wiki after lint, before the commit. Leave the
 # key out (as here) to skip the stage; the default instance is a
 # domain wiki and never audits.
-# secondBrain.domains: [~/Lab/k-wiki-data/wiki]
+# secondBrain.domains: [~/Lab/k-wiki-engineering-data/wiki]
 
 # Isolate spawned agent runs from global pi configuration (issue
 # #118): the wrapper passes --no-context-files --no-extensions
