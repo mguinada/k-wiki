@@ -323,9 +323,9 @@ describe("runPublishStage", () => {
     await expect(
       readFile(join(tree.mirror, "notes", "foo.md"), "utf8"),
     ).resolves.toBe("note\n");
-    await expect(
-      readFile(join(tree.mirror, "index.md"), "utf8"),
-    ).resolves.toBe("# Index\n");
+    await expect(readFile(join(tree.mirror, "index.md"), "utf8")).resolves.toBe(
+      "# Index\n",
+    );
   });
 
   it("publishes a root-named path verbatim when no root is configured", async () => {

@@ -284,8 +284,10 @@ function parsePublish(value: unknown, home: string): PublishConfig | undefined {
 }
 
 /** Parse the optional re-root segment (issue #203): it must be one
- *  top-level path segment and every include pattern must select files
- *  beneath it, so stripping it from the selected set is total. */
+ *  literal top-level path segment (no `*` — include patterns expand
+ *  wildcards, the strip is literal) and every include pattern must
+ *  select files beneath it, so stripping it from the selected set is
+ *  total. */
 function parsePublishRoot(
   value: unknown,
   include: readonly string[],
