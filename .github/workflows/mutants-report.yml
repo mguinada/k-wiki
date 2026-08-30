@@ -59,7 +59,8 @@ jobs:
       ROLLING_TITLE: "Mutation testing: actionable survivors"
       PROJECT_ID: PVT_kwHOAAk_HM4Bgi7z
       PROJECT_STATUS_FIELD_ID: PVTSSF_lAHOAAk_HM4Bgi7zzhfiF2s
-      PROJECT_READY_OPTION_ID: "61e4505c"
+      # Status option "Ready" = 61e4505c, inlined in the GraphQL below
+      # (an ID! literal — gh -f variables arrive as String and are rejected).
       PROJECT_TOKEN: ${{ secrets.KWIKI_MUTANTS_REPORT_TOKEN }}
     steps:
       - uses: actions/checkout@v4
@@ -145,15 +146,19 @@ jobs:
               -f project="$PROJECT_ID" -f issue="$issue_id" \
               --jq '.data.addProjectV2ItemById.item.id')
           fi
+          # singleSelectOptionId inlines the Ready option (61e4505c):
+          # gh sends -f values as String, and the schema rejects a String
+          # variable for the ID! argument (verified live 2026-08-30, #208).
           GH_TOKEN="$PROJECT_TOKEN" gh api graphql \
-            -f query='mutation($project: ID!, $item: ID!, $field: ID!, $option: ID!) {
-              updateProjectV2FieldValue(input: {
+            -f query='mutation($project: ID!, $item: ID!, $field: ID!) {
+              updateProjectV2ItemFieldValue(input: {
                 projectId: $project, itemId: $item, fieldId: $field,
-                value: {singleSelectOptionId: $option}
-              }) { projectV2FieldValue { __typename } }
+                value: {singleSelectOptionId: "61e4505c"}
+              }) { __typename }
             }' \
             -f project="$PROJECT_ID" -f item="$item_id" \
-            -f field="$PROJECT_STATUS_FIELD_ID" -f option="$PROJECT_READY_OPTION_ID"
+            -f field="$PROJECT_STATUS_FIELD_ID" \
+            --jq '.data.updateProjectV2ItemFieldValue.__typename'
       - name: Warn when board automation is disabled
         if: env.PROJECT_TOKEN == ''
         run: >-
