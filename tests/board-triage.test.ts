@@ -305,6 +305,39 @@ describe("parseBoardIds", () => {
       "board has no Status field",
     );
   });
+
+  it("throws the named project error for a non-record project", () => {
+    expect(() => parseBoardIds(null)).toThrow(
+      "board response is missing the project",
+    );
+  });
+
+  it("throws naming the project id when it is an empty string", () => {
+    expect(() =>
+      parseBoardIds({
+        id: "",
+        field: { id: "F_9", options: STATUS_FIELD.options },
+      }),
+    ).toThrow("board response is missing the project id");
+  });
+
+  it("throws naming the Status field id when it is an empty string", () => {
+    expect(() =>
+      parseBoardIds({
+        id: "PVT_9",
+        field: { id: "", options: STATUS_FIELD.options },
+      }),
+    ).toThrow("board response is missing the Status field id");
+  });
+
+  it("throws naming the missing Status option when options holds only non-records", () => {
+    expect(() =>
+      parseBoardIds({
+        id: "PVT_9",
+        field: { id: "F_9", options: [5, "junk"] },
+      }),
+    ).toThrow("Status option missing on board: Ready");
+  });
 });
 
 describe("parseBoardItems", () => {
@@ -383,6 +416,125 @@ describe("parseBoardItems", () => {
       ]),
     ).toThrow("unknown issue state: MERGED");
   });
+
+  it("throws naming the item when the issue number is a string", () => {
+    expect(() =>
+      parseBoardItems([
+        {
+          id: "I9",
+          fieldValueByName: null,
+          content: { __typename: "Issue", number: "7", state: "OPEN" },
+        },
+      ]),
+    ).toThrow("board response is missing the issue number of item I9");
+  });
+
+  it("treats a non-string Status field name as statusless", () => {
+    const items = parseBoardItems([
+      {
+        id: "I6",
+        fieldValueByName: { name: 5, optionId: "o-x" },
+        content: { __typename: "Issue", number: 6, state: "OPEN" },
+      },
+    ]);
+
+    expect(items[0]?.status).toBeUndefined();
+  });
+
+  it("keeps only record string entries from the labels connection", () => {
+    const items = parseBoardItems([
+      {
+        id: "I7",
+        fieldValueByName: null,
+        content: {
+          __typename: "Issue",
+          number: 7,
+          state: "OPEN",
+          labels: { nodes: [{ name: "quality" }, 5] },
+        },
+      },
+    ]);
+
+    expect(items[0]?.labels).toEqual(["quality"]);
+  });
+
+  it("keeps only open record blockers that carry a number", () => {
+    const items = parseBoardItems([
+      {
+        id: "I8",
+        fieldValueByName: null,
+        content: {
+          __typename: "Issue",
+          number: 8,
+          state: "OPEN",
+          blockedBy: {
+            nodes: [
+              { number: 3, state: "OPEN" },
+              { number: 4, state: "CLOSED" },
+              5,
+              { state: "OPEN" },
+            ],
+          },
+        },
+      },
+    ]);
+
+    expect(items[0]?.openBlockers).toEqual([3]);
+  });
+
+  it("keeps only open pull-request sources among mixed cross-references", () => {
+    const items = parseBoardItems([
+      {
+        id: "I10",
+        fieldValueByName: null,
+        content: {
+          __typename: "Issue",
+          number: 10,
+          state: "OPEN",
+          timelineItems: {
+            nodes: [
+              { source: { number: 1, state: "OPEN" } },
+              { source: { number: 13, state: "MERGED" } },
+              { source: {} },
+              5,
+            ],
+          },
+        },
+      },
+    ]);
+
+    expect(items[0]?.openPrs).toEqual([1]);
+  });
+
+  it("skips non-record nodes and nodes without content", () => {
+    const items = parseBoardItems([
+      5,
+      { id: "I11", fieldValueByName: null },
+      issueNode({ id: "I12", number: 12, status: "Backlog" }),
+    ]);
+
+    expect(items.map((item) => item.number)).toEqual([12]);
+  });
+
+  it("parses an issue node that carries no labels, blockers, or cross-references keys", () => {
+    const items = parseBoardItems([
+      {
+        id: "I13",
+        fieldValueByName: null,
+        content: { __typename: "Issue", number: 13, state: "OPEN" },
+      },
+    ]);
+
+    expect(items[0]).toEqual({
+      id: "I13",
+      number: 13,
+      state: "OPEN",
+      status: undefined,
+      labels: [],
+      openBlockers: [],
+      openPrs: [],
+    });
+  });
 });
 
 describe("fetchBoardState", () => {
@@ -426,6 +578,95 @@ describe("fetchBoardState", () => {
     await expect(fetchBoardState(graphql, "nobody", 42)).rejects.toThrow(
       "owner nobody has no project 42 readable by this token",
     );
+  });
+
+  it("throws the named owner error for a response without data", async () => {
+    const graphql: GraphQLFn = async () => ({});
+
+    await expect(fetchBoardState(graphql, "nobody", 42)).rejects.toThrow(
+      "owner nobody has no project 42 readable by this token",
+    );
+  });
+
+  it("returns no items when the board's items connection is null", async () => {
+    const graphql: GraphQLFn = async () => ({
+      data: {
+        user: { projectV2: { id: "PVT_1", items: null, field: STATUS_FIELD } },
+      },
+    });
+
+    const state = await fetchBoardState(graphql, "mguinada", 2);
+
+    expect(`${state.ids.projectId}|${state.items.length}`).toBe("PVT_1|0");
+  });
+
+  it("stops paginating when the last page has hasNextPage false with a leftover cursor", async () => {
+    const cursors: string[] = [];
+    const responses = [
+      {
+        data: {
+          user: {
+            projectV2: {
+              id: "PVT_1",
+              items: {
+                pageInfo: { hasNextPage: true, endCursor: "c1" },
+                nodes: [issueNode({ id: "I1", number: 1, status: "Backlog" })],
+              },
+              field: STATUS_FIELD,
+            },
+          },
+        },
+      },
+      {
+        data: {
+          user: {
+            projectV2: {
+              id: "PVT_1",
+              items: {
+                pageInfo: { hasNextPage: false, endCursor: "leftover" },
+                nodes: [issueNode({ id: "I2", number: 2, status: "Ready" })],
+              },
+              field: STATUS_FIELD,
+            },
+          },
+        },
+      },
+    ];
+    const graphql: GraphQLFn = async (_query, variables) => {
+      cursors.push(String(variables.cursor));
+
+      return responses.shift() as unknown;
+    };
+
+    await fetchBoardState(graphql, "mguinada", 2);
+
+    expect(cursors).toEqual(["null", "c1"]);
+  });
+
+  it("stops paginating when a next-page cursor is not a string", async () => {
+    const cursors: string[] = [];
+    const graphql: GraphQLFn = async (_query, variables) => {
+      cursors.push(String(variables.cursor));
+
+      return {
+        data: {
+          user: {
+            projectV2: {
+              id: "PVT_1",
+              items: {
+                pageInfo: { hasNextPage: true, endCursor: 42 },
+                nodes: [issueNode({ id: "I1", number: 1, status: "Backlog" })],
+              },
+              field: STATUS_FIELD,
+            },
+          },
+        },
+      };
+    };
+
+    const state = await fetchBoardState(graphql, "mguinada", 2);
+
+    expect(`${cursors.join()}|${state.items.length}`).toBe("null|1");
   });
 });
 
@@ -577,6 +818,107 @@ describe("runBoardTriage", () => {
     ).toBe(false);
   });
 
+  it("logs a statusless item as untouched in a dry run", async () => {
+    const { graphql } = fakeBoard([
+      issueNode({ id: "I1", number: 7, status: null }),
+    ]);
+
+    const report = await runBoardTriage(graphql, { ...OPTIONS, dryRun: true });
+
+    expect(report.lines.map((line) => `${line.level}|${line.text}`)).toEqual([
+      "stay|#7 untouched — no Status value",
+    ]);
+  });
+
+  it("does not log a closed item already on Done in a dry run", async () => {
+    const { graphql } = fakeBoard([
+      issueNode({ id: "I1", number: 6, status: "Done", state: "CLOSED" }),
+      issueNode({ id: "I2", number: 2, status: "Backlog" }),
+    ]);
+
+    const report = await runBoardTriage(graphql, { ...OPTIONS, dryRun: true });
+
+    expect(report.lines.map((line) => line.text)).toEqual([
+      "#2 Backlog → Ready — unblocked, no research label",
+    ]);
+  });
+
+  it("reports a vanished item as not verified on no Status", async () => {
+    const nodes = [issueNode({ id: "I1", number: 7, status: "Backlog" })];
+    let reads = 0;
+    const graphql: GraphQLFn = async (query, _variables) => {
+      if (query.includes("updateProjectV2FieldValue")) {
+        return {
+          data: { updateProjectV2FieldValue: { clientMutationId: null } },
+        };
+      }
+
+      reads++;
+
+      return boardPage(reads === 1 ? nodes : []);
+    };
+
+    const report = await runBoardTriage(graphql, OPTIONS);
+
+    expect(report.lines.at(-1)?.text).toBe(
+      "#7 Backlog → Ready not verified — still on no Status",
+    );
+  });
+
+  it("reads the board exactly once when no moves are planned", async () => {
+    const reads: string[] = [];
+    const { graphql } = fakeBoard([
+      issueNode({
+        id: "I1",
+        number: 9,
+        status: "Backlog",
+        blockers: [{ number: 4, state: "OPEN" }],
+      }),
+    ]);
+    const wrapped: GraphQLFn = async (query, variables) => {
+      if (!query.includes("updateProjectV2FieldValue")) {
+        reads.push(String(variables.cursor));
+      }
+
+      return graphql(query, variables);
+    };
+
+    await runBoardTriage(wrapped, OPTIONS);
+
+    expect(reads).toEqual(["null"]);
+  });
+
+  it("verifies a green applied run with exactly one re-read", async () => {
+    const reads: string[] = [];
+    const { graphql } = fakeBoard([
+      issueNode({ id: "I1", number: 7, status: "Backlog" }),
+    ]);
+    const wrapped: GraphQLFn = async (query, variables) => {
+      if (!query.includes("updateProjectV2FieldValue")) {
+        reads.push(String(variables.cursor));
+      }
+
+      return graphql(query, variables);
+    };
+
+    await runBoardTriage(wrapped, OPTIONS);
+
+    expect(reads).toEqual(["null", "null"]);
+  });
+
+  it("names the failed move count exactly in the summary", async () => {
+    const { graphql } = fakeBoard(
+      [issueNode({ id: "I1", number: 7, status: "Backlog" })],
+      { failAlways: ["I1"] },
+    );
+
+    const report = await runBoardTriage(graphql, OPTIONS);
+
+    expect(report.summary).toBe(
+      "board-triage: 1 move, 0 stays, 0 untouched — 1 move not verified",
+    );
+  });
+
   it.each(["labels", "blockedBy", "timelineItems"] as const)(
     "fails the run instead of silently reading a truncated %s connection",
     async (connection) => {
@@ -624,6 +966,19 @@ describe("stepSummaryMarkdown", () => {
         "",
       ].join("\n"),
     );
+  });
+
+  it("renders the plain heading for an applied report", () => {
+    const markdown = stepSummaryMarkdown({
+      lines: [],
+      summary:
+        "board-triage: 0 moves, 0 stays, 0 untouched — verified against the board (0 reconciled)",
+      moves: 0,
+      ok: true,
+      dryRun: false,
+    });
+
+    expect(markdown.startsWith("## Board triage\n")).toBe(true);
   });
 });
 
@@ -703,7 +1058,7 @@ describe("ghGraphQL", () => {
 
     await writeFile(
       stub,
-      '#!/bin/sh\necho \'{"data":{"via":"\'"$GITHUB_TOKEN"\'"}}\'\n',
+      '#!/bin/sh\nif [ "$1" != "api" ]; then exit 9; fi\necho \'{"data":{"via":"\'"$GITHUB_TOKEN"\'"}}\'\n',
       { mode: 0o755 },
     );
 
@@ -729,12 +1084,17 @@ describe("main", () => {
     const err: string[] = [];
     const savedEnv: Record<string, string | undefined> = {};
 
-    for (const key of [...Object.keys(env), "GITHUB_STEP_SUMMARY"]) {
+    for (const key of [
+      ...Object.keys(env),
+      "GITHUB_STEP_SUMMARY",
+      "NO_COLOR",
+    ]) {
       savedEnv[key] = process.env[key];
     }
 
     process.argv = [...argv.slice(0, 2), ...args];
     Object.assign(process.env, env);
+    delete process.env.NO_COLOR;
     process.exitCode = undefined;
 
     const logSpy = vi
@@ -811,9 +1171,136 @@ describe("main", () => {
       return boardPage([issueNode({ id: "I1", number: 1, status: "Backlog" })]);
     };
 
-    await runCli(["--owner", "octo", "--project", "7", "--dry-run"], graphql);
+    await runCli(["--owner", "octo", "--project", "27", "--dry-run"], graphql);
 
-    expect(seen[0]).toEqual({ owner: "octo", projectNumber: 7 });
+    expect(seen[0]).toEqual({ owner: "octo", projectNumber: 27 });
+  });
+
+  it("defaults the owner and project when the flags are absent", async () => {
+    const seen: { owner: string; projectNumber: number }[] = [];
+    const graphql: GraphQLFn = async (_query, variables) => {
+      seen.push({
+        owner: String(variables.owner),
+        projectNumber: Number(variables.projectNumber),
+      });
+
+      return boardPage([
+        issueNode({
+          id: "I1",
+          number: 9,
+          status: "Backlog",
+          blockers: [{ number: 4, state: "OPEN" }],
+        }),
+      ]);
+    };
+
+    await runCli([], graphql);
+
+    expect(seen[0]).toEqual({ owner: "mguinada", projectNumber: 2 });
+  });
+
+  it("rejects a --project value with leading junk", async () => {
+    const { err } = await runCli(["--project", "x7"], undefined);
+
+    expect(err[0]).toContain("--project needs a project number");
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("rejects a --project value with trailing junk", async () => {
+    const { err } = await runCli(["--project", "7x"], undefined);
+
+    expect(err[0]).toContain("--project needs a project number");
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("prints the same usage line for -h as for --help", async () => {
+    const { out } = await runCli(["-h"], undefined);
+
+    expect(out[0]?.startsWith("Usage: board-triage")).toBe(true);
+  });
+
+  it("carries the CLI name in the unknown-option error", async () => {
+    const { err } = await runCli(["--wat"], undefined);
+
+    expect(err[0]).toContain("board-triage: unknown option");
+  });
+
+  it("carries the CLI name in the --project usage error", async () => {
+    const { err } = await runCli(["--project", "abc"], undefined);
+
+    expect(err[0]).toContain("board-triage: --project needs a project number");
+  });
+
+  it("stays green when GITHUB_STEP_SUMMARY is empty", async () => {
+    const { graphql } = fakeBoard([
+      issueNode({
+        id: "I1",
+        number: 9,
+        status: "Backlog",
+        blockers: [{ number: 4, state: "OPEN" }],
+      }),
+    ]);
+
+    const { err } = await runCli([], graphql, { GITHUB_STEP_SUMMARY: "" });
+
+    expect(err).toEqual([]);
+  });
+
+  it("renders move lines green with colors forced", async () => {
+    const { graphql } = fakeBoard([
+      issueNode({ id: "I1", number: 7, status: "Backlog" }),
+    ]);
+
+    const { out } = await runCli([], graphql);
+
+    expect(
+      out.some((line) => line.startsWith("\u001b[32m#7 Backlog → Ready")),
+    ).toBe(true);
+  });
+
+  it("renders stay lines dim with colors forced", async () => {
+    const { graphql } = fakeBoard([
+      issueNode({
+        id: "I1",
+        number: 9,
+        status: "Backlog",
+        blockers: [{ number: 4, state: "OPEN" }],
+      }),
+    ]);
+
+    const { out } = await runCli([], graphql);
+
+    expect(
+      out.some((line) => line.startsWith("\u001b[2m#9 stays Backlog")),
+    ).toBe(true);
+  });
+
+  it("renders a failed move line red with colors forced", async () => {
+    const { graphql } = fakeBoard(
+      [issueNode({ id: "I1", number: 7, status: "Backlog" })],
+      { failAlways: ["I1"] },
+    );
+
+    const { err } = await runCli([], graphql);
+
+    expect(
+      err.some((line) =>
+        line.startsWith("\u001b[31m#7 Backlog → Ready not verified"),
+      ),
+    ).toBe(true);
+  });
+
+  it("renders the failed summary red on stderr with colors forced", async () => {
+    const { graphql } = fakeBoard(
+      [issueNode({ id: "I1", number: 7, status: "Backlog" })],
+      { failAlways: ["I1"] },
+    );
+
+    const { err } = await runCli([], graphql);
+
+    expect(
+      err.some((line) => line.startsWith("\u001b[31mboard-triage: 1 move")),
+    ).toBe(true);
   });
 
   it("renders the dry-run plan on stdout and appends the job summary when GITHUB_STEP_SUMMARY is set", async () => {
@@ -831,7 +1318,9 @@ describe("main", () => {
       NO_COLOR: "1",
     });
 
-    expect(out).toContain("#7 Backlog → Ready — unblocked, no research label");
+    expect(
+      out.some((line) => line.includes("#7 Backlog → Ready — unblocked")),
+    ).toBe(true);
     expect(await readFile(summaryPath, "utf8")).toContain(
       "## Board triage (dry run)",
     );
