@@ -207,29 +207,33 @@ Full table and boundary rules:
 
 ### Mutation testing (advisory)
 
-Mutation testing is an advisory signal, not a gate — but it is a
-mandatory pre-handoff step. Before you declare work complete:
+Mutation testing is an advisory signal, not a gate — and it is
+**optional in the development loop** (issue #208). The authoritative
+mutation signal lives in CI: a nightly full run on `main`, per-PR runs
+on pull requests labeled `mutation`, and manual dispatch (all in
+`.github/workflows/ci.yml`). After every nightly run, the
+`mutants-report` workflow (`.github/workflows/mutants-report.yml`)
+auto-files the actionable mutants into one rolling issue labeled
+`mutation` — "Mutation testing: actionable survivors" — kept on the
+K-Wiki Kanban at Status = Ready. Kill-work batches are spun from that
+issue as normal agent work. Keep the rolling count tended: it is a
+dashboard of debt, not a graveyard.
 
-1. Run `npm run mutation:changed`. It mutates the changed hunks of the
-   `src/` files that differ from `origin/main` (uncommitted work
-   included; new files whole) and ends by printing
-   the actionable mutants (Survived and NoCoverage).
-2. Empty list — nothing to do; the step is complete.
-3. Non-empty list — load the mutation-triage skill
-   (`.agents/skills/mutation-triage/SKILL.md`) and follow it: kill every
-   survivor with a new or stronger test (write the whole batch of
-   killing tests first), or record it as an equivalent mutant in the PR
-   body; then re-run `npm run mutation:changed` once per batch until
-   only recorded equivalents remain.
-4. `npm run mutation:changed -- --full` replaces step 1 when the change
-   is broad, touches test infrastructure, or the user asks for a full
-   run; `npm run mutation:survivors` re-lists the last report without
-   re-running.
+Running mutation locally is still allowed and occasionally worth it:
+`npm run mutation:changed` mutates only the changed hunks of the `src/`
+files that differ from `origin/main` (uncommitted work included; new
+files whole) — recommended for small diffs where context-hot triage
+is cheap; skip it freely otherwise. `npm run mutation:changed --
+--full` covers all of `src/`; `npm run mutation:survivors` re-lists
+the last report without re-running. Survivors found either way are
+triaged with the mutation-triage skill
+(`.agents/skills/mutation-triage/SKILL.md`).
 
 The blocking gates (`npm run typecheck`, `npm run lint`, `npm test`,
-`npm run complexity`) must still pass after any new tests. A
-`// Stryker disable` comment
-without a written justification line in the PR body is forbidden.
+`npm run complexity`) are unchanged and must still pass after any new
+tests. A `// Stryker disable` comment
+without a written justification line in the PR body is forbidden —
+recording equivalent mutants stays a human judgment.
 
 ## Iron Rules
 

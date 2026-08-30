@@ -29,7 +29,8 @@
 # (issue #178): npm run complexity:full prints the whole-src/ per-function
 # debt table and uploads it as an artifact (7-day retention); the table
 # is advisory, though the run also re-executes the changed-mode gate (a
-# clean nightly checkout has nothing changed, so it passes). PR runs are scoped like the local pre-handoff step (issue #99): they
+# clean nightly checkout has nothing changed, so it passes). PR runs are scoped like
+# the optional local run (issue #99): they
 # mutate only the src/ hunks changed vs origin/main, so the checkout
 # needs full history (fetch-depth: 0). Nightly and dispatched runs stay
 # full. It follows the same log-hygiene rule: Stryker mutates and prints
@@ -155,5 +156,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mutation-report
-          path: reports/mutation/mutation.html
+          # mutation.json rides along so the mutants-report workflow can
+          # render the rolling survivor issue from the same run (issue #208).
+          path: |
+            reports/mutation/mutation.html
+            reports/mutation/mutation.json
           retention-days: 7

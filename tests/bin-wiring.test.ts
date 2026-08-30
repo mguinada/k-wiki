@@ -88,6 +88,11 @@ const ENTRIES: readonly Entry[] = [
     usage: "Usage: link-sources",
   },
   {
+    launcher: "mutation-report.ts",
+    module: "src/quality/mutation-report.ts",
+    usage: "Usage: mutation-report",
+  },
+  {
     launcher: "mutation-scope.ts",
     module: "src/quality/mutation-scope.ts",
     usage: "Usage: mutation-scope",

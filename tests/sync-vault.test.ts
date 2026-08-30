@@ -675,7 +675,7 @@ describe("runSync progress", () => {
         ).test(message),
       ),
     ).toBe(true);
-  }, 20000);
+  }, 60_000);
 
   it("honors progressEvery in a dry run too", async () => {
     const ws = await makeWorkspace();

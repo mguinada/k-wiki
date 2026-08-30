@@ -1,0 +1,168 @@
+# Auto-file actionable mutation survivors into a rolling issue (issue #208).
+#
+# Fires via workflow_run after each completed CI run whose mutation job
+# actually ran a full report — the nightly schedule arm and manual
+# workflow_dispatch dispatches of CI. Label-gated PR runs are scoped to
+# changed hunks, so their survivor lists are partial and deliberately
+# excluded: the rolling issue must reflect the whole-src/ picture.
+#
+# Downloads the triggering run's mutation-report artifact, renders the
+# actionable mutants (Survived, NoCoverage) with the exact formatting
+# `npm run mutation:survivors` prints (shared module:
+# src/quality/mutation-report.ts over src/quality/mutation-survivors.ts),
+# and creates-or-updates ONE rolling issue labeled `mutation`. An empty
+# list zeroes the body ("no actionable mutants") instead of closing the
+# issue — history stays in one place, and the lane stays visible.
+#
+# The board step (2b) keeps the rolling issue on the K-Wiki Kanban with
+# Status = Ready via direct GraphQL calls — GITHUB_TOKEN cannot touch
+# user-owned projects, so it runs on the dedicated
+# KWIKI_MUTANTS_REPORT_TOKEN secret (classic PAT, `project` + `repo`) and is
+# skipped with a warning when the secret is absent. Bookkeeping only:
+# never cancels the filing above it, never sequences the Ready lane
+# (that stays a human/agent triage judgment per the board contract).
+
+name: Mutation report
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run-id:
+        description: "CI run ID whose mutation-report artifact to file (default: latest completed nightly)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  issues: write
+  actions: read
+
+concurrency:
+  group: mutation-report
+  cancel-in-progress: false
+
+jobs:
+  file-survivors:
+    name: Update rolling survivor issue
+    # workflow_dispatch verifies the flow manually; workflow_run only
+    # for full mutation runs (nightly schedule, CI dispatch) — never
+    # push or pull_request runs, which skip the mutation job entirely.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.event == 'schedule' ||
+      github.event.workflow_run.event == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    env:
+      ROLLING_TITLE: "Mutation testing: actionable survivors"
+      PROJECT_ID: PVT_kwHOAAk_HM4Bgi7z
+      PROJECT_STATUS_FIELD_ID: PVTSSF_lAHOAAk_HM4Bgi7zzhfiF2s
+      # Status option "Ready" = 61e4505c, inlined in the GraphQL below
+      # (an ID! literal — gh -f variables arrive as String and are rejected).
+      PROJECT_TOKEN: ${{ secrets.KWIKI_MUTANTS_REPORT_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Resolve the source CI run
+        id: run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.run-id }}
+        run: |
+          if [ -n "$RUN_ID" ]; then
+            echo "id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ github.event.workflow_run.id }}" ]; then
+            echo "id=${{ github.event.workflow_run.id }}" >> "$GITHUB_OUTPUT"
+          else
+            id=$(gh run list --workflow ci.yml --event schedule --branch main \
+              --status completed --limit 1 --json databaseId --jq '.[0].databaseId')
+            echo "id=$id" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Download the mutation report artifact
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ steps.run.outputs.id }}
+          github-token: ${{ github.token }}
+          name: mutation-report
+          path: dl
+      - name: Render the issue body
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ steps.run.outputs.id }}
+        run: |
+          artifact_id=$(gh api \
+            "repos/${{ github.repository }}/actions/runs/${{ steps.run.outputs.id }}/artifacts" \
+            --jq '.artifacts[] | select(.name == "mutation-report") | .id')
+          node bin/mutation-report.ts dl/mutation.json \
+            --run-url "$RUN_URL" \
+            --html-url "$RUN_URL/artifacts/$artifact_id" \
+            > body.md
+          cat body.md
+      - name: Update or create the rolling issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          number=$(gh issue list --state open --limit 500 --json number,title \
+            --jq "first(.[] | select(.title == \"$ROLLING_TITLE\") | .number)")
+          if [ -z "$number" ]; then
+            gh issue create --title "$ROLLING_TITLE" --label mutation --body-file body.md
+          else
+            gh issue edit "$number" --body-file body.md
+          fi
+      - name: "Ensure board membership (Status: Ready)"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        if: env.PROJECT_TOKEN != ''
+        run: |
+          number=$(gh issue list --state open --limit 500 --json number,title \
+            --jq "first(.[] | select(.title == \"$ROLLING_TITLE\") | .number)")
+          issue_id=$(gh issue view "$number" --json id --jq .id)
+          item_id=$(GH_TOKEN="$PROJECT_TOKEN" gh api graphql \
+            -f query='query($issue: ID!) {
+              node(id: $issue) {
+                ... on Issue {
+                  projectItems(first: 100) {
+                    nodes { id project { id } }
+                  }
+                }
+              }
+            }' \
+            -f issue="$issue_id" \
+            --jq ".data.node.projectItems.nodes
+              | first(.[] | select(.project.id == \"$PROJECT_ID\") | .id)")
+          if [ -z "$item_id" ]; then
+            item_id=$(GH_TOKEN="$PROJECT_TOKEN" gh api graphql \
+              -f query='mutation($project: ID!, $issue: ID!) {
+                addProjectV2ItemById(input: {projectId: $project, contentId: $issue}) {
+                  item { id }
+                }
+              }' \
+              -f project="$PROJECT_ID" -f issue="$issue_id" \
+              --jq '.data.addProjectV2ItemById.item.id')
+          fi
+          # singleSelectOptionId inlines the Ready option (61e4505c):
+          # gh sends -f values as String, and the schema rejects a String
+          # variable for the ID! argument (verified live 2026-08-30, #208).
+          GH_TOKEN="$PROJECT_TOKEN" gh api graphql \
+            -f query='mutation($project: ID!, $item: ID!, $field: ID!) {
+              updateProjectV2ItemFieldValue(input: {
+                projectId: $project, itemId: $item, fieldId: $field,
+                value: {singleSelectOptionId: "61e4505c"}
+              }) { __typename }
+            }' \
+            -f project="$PROJECT_ID" -f item="$item_id" \
+            -f field="$PROJECT_STATUS_FIELD_ID" \
+            --jq '.data.updateProjectV2ItemFieldValue.__typename'
+      - name: Warn when board automation is disabled
+        if: env.PROJECT_TOKEN == ''
+        run: >-
+          echo "::warning::KWIKI_MUTANTS_REPORT_TOKEN secret is not set — the rolling
+          issue was filed, but not added to the K-Wiki Kanban. Add a classic
+          PAT (project + repo scopes) as the KWIKI_MUTANTS_REPORT_TOKEN secret
+          and re-run this workflow."

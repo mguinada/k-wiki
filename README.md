@@ -511,10 +511,11 @@ sources directly, so there is no build step — install dependencies with
 | `node <checkout>/bin/k-wiki.ts query "<question>"` (also `npm run k-wiki -- …` inside the checkout) | agent-facing CLI | Ask the wiki bound to the current project from any cwd — zero flags once `.k-wiki.json` binds it; plus four read-only commands: `status` (binding + paths), `list [<type>]` (pages by type), `read <slug>` (one page verbatim), `health` (projection check); answer-only, no filing passthrough ([details below](#querying-from-any-project-k-wiki)) |
 | `npm run data:init -- [--second-brain] [--meta] [<sync.json>]` | data repo seeder | Create and seed the data repo at `sync.json`'s `dataRoot`: git init, copy the `raw/`+`wiki/` skeleton from the code repo, write the standing `.gitignore` (Obsidian UI state, ingest snapshot — issue #146), first commit; idempotent; `--second-brain` also writes the `.second-brain` identity marker ([§5](#5-the-second-brain)); `--meta` seeds the meta contract (`wiki/AGENTS.meta.md`) as the data repo's `wiki/AGENTS.md` ([§9](#9-the-meta-wiki-a-repository-as-source)) |
 | `npm run board-triage -- [-h \| --help] [--dry-run] [--owner <login>] [--project <n>]` | board triage CLI | Apply the mechanical half of the K-Wiki Kanban triage contract via the `gh` CLI — Backlog → Ready (unblocked, no `research` label), open PR → In progress, closed → Done — Status field values only; lane order is never touched, ids are resolved fresh every run, every move is verified by re-reading the board, and `--dry-run` plans with zero writes (default: `mguinada`'s project 2; [below](#scheduled-board-triage)) |
-| `npm run mutation:changed` | StrykerJS | Advisory mutation run scoped to the changed hunks of the `src/` files that differ from `main` (uncommitted included; new files whole) — `src/quality/mutation-scope.ts` builds the `file:start-end` ranges; exits 0 without running when nothing changed, and ends by printing the actionable mutants — the default pre-handoff step |
+| `npm run mutation:changed` | StrykerJS | Optional advisory mutation run scoped to the changed hunks of the `src/` files that differ from `main` (uncommitted included; new files whole) — `src/quality/mutation-scope.ts` builds the `file:start-end` ranges; exits 0 without running when nothing changed, and ends by printing the actionable mutants — recommended for small diffs; the authoritative mutation signal lives in CI (issue #208) |
 | `npm run mutation:changed -- --full` | StrykerJS | Advisory mutation run over all of `src/`, not just changed files; same printed summary |
 | `npm run mutation:survivors` | triage helper | Re-list the actionable mutants from the last report — no run, instant |
-| `npm run mutation` | StrykerJS | Raw full Stryker run without the printed summary — prefer the two above |
+| `npm run mutation:report` | report renderer | Render the rolling survivor-issue body from a `mutation.json` report (what the `mutants-report` workflow files) — no run, instant |
+| `npm run mutation` | StrykerJS | Raw full Stryker run without the printed summary — prefer the three above |
 | `npm run complexity` | complexity gate | Blocking cyclomatic gate over changed code: every `src/` function whose lines a change vs `main` touches (new files whole, deletions skipped) must stay at cyclomatic ≤ 10 (engine: complexity-guard; scoping mirrors `mutation:changed`); runs as part of `npm test` too; failures name file, line, function, score, and the refactor instruction; no inline suppressions — exclusions via `.complexityguard.json` justified in the PR body ([reference](docs/references/complexity-gate.md)) |
 | `npm run complexity:full` | complexity report | Advisory whole-`src/` per-function debt table, worst first — the input for complexity-lowering refactors; the table is advisory, but the same run re-executes the changed-mode gate, so a working tree with a gated violation still fails it |
 
@@ -535,7 +536,7 @@ Verification has three layers:
 |---|---|---|
 | Gates | `npm run typecheck`, `npm run lint`, `npm test` | blocking — every change, every PR |
 | End-to-end | `npm run e2e`, `npm run health` | blocking — CI's `e2e` job on every PR; required locally when a change touches the sync, ingest, or CLI layers (exact trigger list in [AGENTS.md](AGENTS.md)) |
-| Mutation | `npm run mutation:changed` | advisory — a signal, never a gate ([below](#mutation-testing)) |
+| Mutation | CI nightly full run + label-gated PR runs (`mutation:changed` locally when wanted) | advisory — a signal, never a gate ([below](#mutation-testing)) |
 
 The e2e suites drive the real CLIs — sync-vault against the synthetic
 fixture vault, wiki-ingest and wiki-sync against a stub agent in temp
@@ -636,12 +637,13 @@ or records it as an equivalent mutant in the PR body.
 You do **not** run a script first and then invoke the skill — the skill
 re-runs the mutation itself if the report is stale. Two ways in:
 
-- **Agent, mid-issue (the normal path):** `AGENTS.md` requires the agent
-  to run `npm run mutation:changed` before declaring work complete; if
-  the run prints survivors, the agent loads the triage skill and works
-  the list in the same session.
-- **Human, any time:** run `npm run mutation:changed` (or re-list the
-  last report with `npm run mutation:survivors`), then tell the agent
+- **Agent, mid-issue (optional since issue #208):** the dev loop no
+  longer mandates a local run — CI is the authoritative signal. For a
+  small diff where context-hot triage is cheap, the agent runs `npm
+  run mutation:changed`, and if it prints survivors, loads the triage
+  skill and works the list in the same session.
+- **Human or agent, any time:** run `npm run mutation:changed` (or re-list
+  the last report with `npm run mutation:survivors`), then tell the agent
   `triage the survivors`.
 
 The scope rides on the prompt — one phrase runs and triages in one go:
@@ -664,11 +666,26 @@ minutes.
 In CI, the mutation job runs only when a pull request carries the
 [`mutation`](https://github.com/mguinada/k-wiki/labels) label, nightly on
 `main`, or via manual workflow dispatch — never as a blocking check.
-Labeled-PR runs use the same hunk-scoped command as the local
-pre-handoff step (`npm run mutation:changed`, full checkout history);
+Labeled-PR runs use the same hunk-scoped command as the optional local
+run (`npm run mutation:changed`, full checkout history);
 only the nightly and dispatched runs mutate all of `src/`. Its
-HTML report is uploaded as an artifact (7-day retention). The agent
-rules are in [AGENTS.md](AGENTS.md).
+HTML report and JSON report are uploaded as an artifact (7-day
+retention). After each nightly run, the
+[`mutants-report`](.github/workflows/mutants-report.yml) workflow
+downloads that artifact and auto-files the actionable mutants into one
+rolling issue labeled `mutation` — "Mutation testing: actionable
+survivors" — on the K-Wiki Kanban at Status = Ready (issue #208). The
+rolling issue is the kill-work queue: spin dedicated triage issues from
+its list when a batch is worth a pass, and keep the count tended. The
+agent rules are in [AGENTS.md](AGENTS.md).
+
+The Kanban step authenticates with a dedicated secret — the name is
+declared in the workflow file, the single source of truth: a classic
+PAT with `repo` + `project` scopes (fine-grained PATs cannot access
+user-owned projects, and `GITHUB_TOKEN` cannot write projects; same
+constraint as the board-triage job above). When the secret is absent
+the filing still happens — the board add is skipped with a warning, so
+missing board access never blocks the survivor report.
 
 `stryker.config.json` keeps `tsconfig.json` out of the sandbox
 (`ignorePatterns`): the repo runs TypeScript 7 (native), whose package
