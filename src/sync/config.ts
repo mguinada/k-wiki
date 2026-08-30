@@ -294,7 +294,7 @@ function parsePublishRoot(
     return undefined;
   }
 
-  if (!isNonEmptyString(value) || value.includes("/")) {
+  if (!isNonEmptyString(value) || value.includes("/") || value.includes("*")) {
     throw new Error(
       'publish "root" must be a non-empty string naming a single top-level path segment',
     );

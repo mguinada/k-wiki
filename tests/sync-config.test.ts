@@ -497,6 +497,19 @@ describe("loadSyncConfig", () => {
     );
   });
 
+  it("rejects a publish root that contains a wildcard", async () => {
+    const bad = {
+      ...ONE_VAULT,
+      publish: { mirror: "/mirror", include: ["d*/**"], root: "d*" },
+    };
+
+    await expect(
+      loadSyncConfig(await writeConfig(bad), "/home/alice"),
+    ).rejects.toThrow(
+      /publish "root" must be a non-empty string naming a single top-level path segment/,
+    );
+  });
+
   it("rejects a publish root the include patterns do not match", async () => {
     const bad = {
       ...ONE_VAULT,
