@@ -211,7 +211,13 @@ Mutation testing is an advisory signal, not a gate — and it is
 **optional in the development loop** (issue #208). The authoritative
 mutation signal lives in CI: a nightly full run on `main`, per-PR runs
 on pull requests labeled `mutation`, and manual dispatch (all in
-`.github/workflows/ci.yml`). After every nightly run, the
+`.github/workflows/ci.yml`). The full run starts with a dry run of
+the whole unit suite in Stryker's vitest worker-thread pool, so any
+test that is red on main — or passes in vitest's default forks pool
+but cannot run in worker threads, like `process.chdir()` (#189) —
+kills the run before a report exists; the job log names the failing
+tests, and the run page carries an error annotation while the job
+stays advisory-green (#215). After every nightly run, the
 `mutants-report` workflow (`.github/workflows/mutants-report.yml`)
 auto-files the actionable mutants into one rolling issue labeled
 `mutation` — "Mutation testing: actionable survivors" — kept on the
