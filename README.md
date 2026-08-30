@@ -584,10 +584,11 @@ line per move and stay, with reasons) lands in the job log and the
 run's summary page. Manual triage runs keep working alongside it — the
 automation is idempotent with them.
 
-The job authenticates with `GH_TOKEN = secrets.BOARD_TRIAGE_TOKEN`: a
-PAT that reads `mguinada/k-wiki` and writes mguinada's user projects
-(classic PAT with `repo` + `project` scopes, or fine-grained with
-repository read + user project read/write). The default `GITHUB_TOKEN`
+The job authenticates with `GH_TOKEN = secrets.KWIKI_BOARD_TRIAGE_TOKEN`:
+a classic PAT with `repo` + `project` scopes — it reads `mguinada/k-wiki`
+and writes mguinada's user projects. (Fine-grained PATs cannot access
+user-owned projects: their Projects permission is organization-only.)
+The default `GITHUB_TOKEN`
 cannot write projects. Locally, `npm run board-triage` uses the `gh`
 keyring login directly; `--dry-run` previews the plan with zero
 writes.

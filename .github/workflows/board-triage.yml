@@ -9,10 +9,11 @@
 # sequencing judgment stays with manual triage runs, which continue
 # to work alongside this automation unchanged.
 #
-# Token: the job needs GH_TOKEN = secrets.BOARD_TRIAGE_TOKEN — a PAT
-# that can read mguinada/k-wiki and write mguinada's user projects
-# (classic PAT with `repo` + `project` scopes, or a fine-grained PAT
-# with repository read + user project read/write). The default
+# Token: the job needs GH_TOKEN = secrets.KWIKI_BOARD_TRIAGE_TOKEN — a
+# classic PAT with `repo` + `project` scopes (fine-grained PATs
+# cannot access user-owned projects: their Projects permission is
+# organization-only). The PAT must read mguinada/k-wiki and write
+# mguinada's user projects. The default
 # GITHUB_TOKEN cannot write projects. Without the secret the run
 # fails red — visible, never silently skipped.
 #
@@ -50,4 +51,4 @@ jobs:
       - name: Run board triage
         run: node bin/board-triage.ts
         env:
-          GH_TOKEN: ${{ secrets.BOARD_TRIAGE_TOKEN }}
+          GH_TOKEN: ${{ secrets.KWIKI_BOARD_TRIAGE_TOKEN }}
