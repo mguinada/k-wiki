@@ -574,7 +574,7 @@ schedule ([issue #209](https://github.com/mguinada/k-wiki/issues/209)):
 `.github/workflows/board-triage.yml` runs `bin/board-triage.ts` every
 6 hours — Backlog → Ready for issues with no open blocker and no
 `research` label, → In progress for Backlog issues with an open PR
-cross-reference, → Done for closed issues not already there. Writes go
+cross-reference, → Done for closed issues on any non-Done lane. Writes go
 to the board's Status field only: issues, labels, bodies, and lane
 order are never touched (Ready-lane sequencing stays a triage-run
 judgment), project/field/option ids are resolved fresh every run, and
