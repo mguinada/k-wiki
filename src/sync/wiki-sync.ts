@@ -992,12 +992,12 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
 const HELP = `Usage: wiki-sync [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<config>] [<raw-dir>]
 
-Run the whole cycle in one command (guide §18, issue #13):
-sync (sync-vault for vault sources, sync-repo for repo sources,
-issue #145) → wiki-ingest → headless lint (prompts/lint.md) →
+Run the whole cycle in one command (guide §18):
+sync (sync-vault for vault sources, sync-repo for repo sources) →
+wiki-ingest → headless lint (prompts/lint.md) →
 crosslink audit (configured second brains) → verification
-(check-fidelity + check-provenance, issue #138) → one data-repo
-commit → mirror publish (issue #15, configs with a publish
+(check-fidelity + check-provenance) → one data-repo
+commit → mirror publish (configs with a publish
 section). Every stage stays independently runnable for debugging;
 this command only chains them.
 
@@ -1008,9 +1008,9 @@ this command only chains them.
                      isolate (true by default, false to opt out) adds
                      the pi isolation flags --no-context-files
                      --no-extensions --no-skills to both agent runs
-                     so global agent config cannot leak in (issue
-                     #118). isolate.skills and isolate.extensions
-                     (optional comma-separated lists, issue #144)
+                     so global agent config cannot leak in.
+                     isolate.skills and isolate.extensions
+                     (optional comma-separated lists)
                      whitelist specific entries back in: one --skill
                      flag per skill dir (resolved against the
                      settings file's directory) and one -e flag per
@@ -1022,7 +1022,7 @@ this command only chains them.
   --outputs <dir>    Where the ingest digest (runs/<timestamp>.md) goes.
                      Default: the repo's outputs/. The manifest snapshot
                      always lives in the data repo's outputs/ and is not
-                     moved by this switch (issue #112).
+                     moved by this switch.
   --timeout <secs>   Kill either agent run after this many seconds
                      and fail the cycle. Default: 1800 (30 minutes).
   -h, --help         Print this help and exit; no side effects.
@@ -1057,8 +1057,8 @@ What it does, stage by stage:
      [[<vault>/<page>]] link fails the cycle before the commit
      (nothing reverts; the uncommitted diff is the fix surface).
      Instances without the key skip the stage.
-  5. verification — run the deterministic check-fidelity (issue
-     #125) and check-provenance (issue #65) cores over the data
+  5. verification — run the deterministic check-fidelity and
+     check-provenance cores over the data
      repo's wiki/ and raw/ — every cycle, including no-change
      cycles, no configuration. One problem line per finding fails
      the cycle before the commit: the lint edits are reverted (the
@@ -1068,11 +1068,11 @@ What it does, stage by stage:
      commit with a message summarizing sources processed and pages
      touched.
   7. publish — only for configs whose sync.json carries a publish
-     section (guide §26, issue #15): copy the data repo's
+     section (guide §26): copy the data repo's
      include-matched files (["wiki/**"] in the shipped config) into the
      mirror vault — an iCloud-served disposable reading copy for
      iPhone and iPad. With publish.root set ("wiki" in the shipped
-     config, issue #203) the top-level segment is stripped from every
+     config) the top-level segment is stripped from every
      mirror path, so the wiki tree appears at vault root; without it
      the copy is verbatim. Deletions included: a page gone from the wiki
      is removed from the mirror; the mirror's own .obsidian/ device
@@ -1098,7 +1098,7 @@ audit (configured second brains), the fidelity and provenance results,
 the commit hash, the publish summary (configured mirror), and the full
 ingest digest — plus git log -1 in the data repo tell the whole story
 of the run. Live progress goes to stderr. Unattended scheduling is
-setup-schedule (issue #14).`;
+setup-schedule.`;
 
 /** Print one CLI usage error red on stderr and set the exit code. */
 function fail(message: string): void {

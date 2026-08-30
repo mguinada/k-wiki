@@ -218,8 +218,8 @@ export async function linkSources(
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
 const HELP = `Usage: link-sources [-h | --help] [--write] [--date <YYYY-MM-DD>] [<wiki-dir>]
 
-Migrate legacy raw-path \`sources\` entries to clickable wikilinks
-(issue #126): every path a \`type: source\` hub covers is rewritten —
+Migrate legacy raw-path \`sources\` entries to clickable wikilinks:
+every path a \`type: source\` hub covers is rewritten —
 to "[[hub]]" when the path is the hub's origin, to
 "[[hub|Chapter]]" (the cited path's parent directory name) when the
 hub's own \`sources\` list cites the path. Wikilink entries are left

@@ -506,7 +506,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 /** Help text: every switch and default (AGENTS.md CLI rule). */
 const HELP = `Usage: scheduled-run [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<config>] [<raw-dir>]
 
-Run one unattended pipeline cycle (issue #14) — the command the
+Run one unattended pipeline cycle — the command the
 launchd job executes every interval. The wrapper is portable Node:
 lockfile → git pull --rebase → wiki-sync (sync → ingest → lint →
 crosslinks → verification → commit) → git push. wiki-sync stays
@@ -522,7 +522,7 @@ commit-only; the push happens here and only here.
                      sync.json.
   <raw-dir>          Forwarded to wiki-sync. Default: <dataRoot>/raw.
 
-Behavior, failure mode by failure mode (issue #14):
+Behavior, failure mode by failure mode:
   - Overlap (same machine): an O_EXCL lockfile at
     <dataRoot>/.scheduled-run.lock (PID + timestamp) prevents
     concurrent runs; a lock older than two hours is taken over, so a

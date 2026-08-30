@@ -238,8 +238,8 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
 const HELP = `Usage: wiki-query [-h | --help] [--file-last] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>
 
-Ask the built wiki one question headless (guide §16, issues #67 and
-#72). Filing is two-stage: stage 1 answers and saves; stage 2 files
+Ask the built wiki one question headless (guide §16). Filing is
+two-stage: stage 1 answers and saves; stage 2 files
 what the human approved.
 
 Stage 1 (default): wiki-query "<question>"

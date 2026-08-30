@@ -32,14 +32,14 @@ Never let that direction reverse.
 
 ## Status
 
-Stage 1 implementation is underway; code lands sequentially through the [Stage 1 epic (#2)](https://github.com/mguinada/k-wiki/issues/2).
+Stage 1 implementation is underway; code lands sequentially through the Stage 1 epic.
 
 ## In this repository
 
 | Path | What it is |
 |---|---|
 | `docs/karpathy_wiki_implementation_guide.md` | The implementation guide — spec of record, including the target repository layout (§6) |
-| `AGENTS.md` / `wiki/AGENTS.md` | The two agent contexts ([issue #3](https://github.com/mguinada/k-wiki/issues/3)) |
+| `AGENTS.md` / `wiki/AGENTS.md` | The two agent contexts |
 
 ## Working in this repo (humans and agents)
 
@@ -79,11 +79,10 @@ Obsidian vault            sync-vault                wiki-ingest               re
 ([details](#running-the-full-cycle-wiki-sync)); the separate commands
 stay available for debugging, and `wiki-ingest` already runs the
 post-run guardrails — checks and auto-revert — after every agent run.
-Unattended scheduling is [`setup-schedule`](#scheduling-the-pipeline-launchd)
-(#14).
+Unattended scheduling is [`setup-schedule`](#scheduling-the-pipeline-launchd).
 
 After every successful ingest the pipeline also regenerates the
-static KPI dashboard (issue #73): `npm run dashboard [-- <data-repo>]`
+static KPI dashboard: `npm run dashboard [-- <data-repo>]`
 reads the data repo's wiki, manifests, and git history — read-only —
 and writes a self-contained `<data-repo>/dashboard.html` (gitignored;
 opens offline via `file://`) with coverage, structure, activity, and
@@ -142,7 +141,7 @@ Every instance's data repo is named for its wiki's subject —
 `k-wiki-<subject>-data`, this instance `k-wiki-engineering-data` —
 never generically: two checkouts each holding a `k-wiki-data`
 folder is exactly the crossed-instance confusion the snapshot stamp
-(issue #95) catches mechanically, and a subject-based name prevents
+catches mechanically, and a subject-based name prevents
 it at the human level. The path is operator-owned config
 (`sync.json`'s `dataRoot`); the wiki's identity is that same
 stamp, never the folder name — renaming an
@@ -343,7 +342,7 @@ the audit (the manual command below still works).
 Seed once, then run the same cycle as model 1 — naming the config,
 the settings, **and a per-instance outputs dir** so the run digests
 stay separate (the manifest snapshot lives in each data repo's own
-`outputs/`, so it never crosses instances; issue #112):
+`outputs/`, so it never crosses instances):
 
 ```sh
 npm run data:init -- --second-brain sync-second-brain.json
@@ -437,17 +436,17 @@ never inside a cloud-synced one (guide §26).
 
 ### 8. Operator rules that keep instances safe
 
-Hardened during the first full build (issue #61):
+Hardened during the first full build:
 
 - **Run every `sync-vault` / `wiki-ingest` from its own checkout
   root.** The manifest snapshot
   (`<dataRoot>/outputs/last-ingested-manifest.json`) is per-data-repo
   state kept in the data repo's `outputs/` (gitignored there); a
   legacy snapshot in a checkout's `outputs/` is adopted into the data
-  repo on the next run (issue #112). The wrapper resolves
+  repo on the next run. The wrapper resolves
   `sync.json`, `settings.yml`, and its own `outputs/` relative to the
   checkout you are standing in. A foreign
-  snapshot is caught mechanically (issue #95): the snapshot is
+  snapshot is caught mechanically: the snapshot is
   stamped with its data repo root at write time, and a read whose
   stamp does not match — foreign or unstamped — warns loudly and
   falls back to a full run. A crossed instance can therefore cost an
@@ -478,8 +477,8 @@ npm run wiki-sync -- --settings settings-meta.yml sync-meta.json \
   ~/Lab/k-wiki-meta-data/raw                     # the one-command cycle
 ```
 
-The meta instance rides the same cycle as every vault instance
-(issue #145): `wiki-sync` sees the repo-typed source in
+The meta instance rides the same cycle as every vault instance:
+`wiki-sync` sees the repo-typed source in
 `sync-meta.json` and runs the sync-repo core in-process at stage 1,
 so lint, the configured crosslink audit, verification, and the single
 regeneration commit run in-cycle — no operator discipline needed.
@@ -502,7 +501,7 @@ git-diff flow.
 These modes are documented when their issue lands, not before:
 
 - **`--batch N` for `wiki-ingest`** — batch construction stops
-  being snapshot surgery; deferred from #13 until batched runs
+  being snapshot surgery; deferred until batched runs
   become the standing procedure for large backlogs.
 
 ## Tooling
@@ -532,13 +531,13 @@ sources directly, so there is no build step — install dependencies with
 | `npm run sync-repo -- [-h \| --help] [<config>] [<raw-dir>]` | repo sync CLI | Project the allowlisted files of a committed source repository verbatim into `raw/notes/<name>/`, recording the source HEAD commit in the manifest (deterministic, no LLM; the meta-wiki adapter, [§9](#9-the-meta-wiki-a-repository-as-source)) |
 | `npm run wiki-ingest -- [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [--note <text>] [<raw-dir>]` | ingest wrapper | Run the wiki agent headless over the sources that changed since the last ingest and write the per-run digest (reads `settings.yml`; [details below](#running-the-wiki-agent-wiki-ingest)) |
 | `npm run wiki-sync -- [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<sync.json>] [<raw-dir>]` | cycle orchestrator | Run the whole cycle — sync (sync-vault for vault sources, sync-repo for repo-sourced configs, [§9](#9-the-meta-wiki-a-repository-as-source)) → ingest → lint → crosslink audit (configured second brains) → verification (check-fidelity + check-provenance) → one data-repo commit → mirror publish (configured `publish` section) — and print the digest (reads `settings.yml`, including its optional `secondBrain.domains` list; [details below](#running-the-full-cycle-wiki-sync)) |
-| `npm run setup-schedule -- [-h \| --help] [--interval <duration>] [--print] [--uninstall]` | launchd installer | Register the pipeline with launchd (issue #14): write `~/Library/LaunchAgents/com.kwiki.scheduled-run.plist` — absolute node + script paths, explicit `HOME`, minimal `PATH`, `StartInterval` (`30minutes` default) + `RunAtLoad` — then bootstrap and verify with `launchctl print`; `--interval` re-registers, `--print` emits the plist without installing (any OS), `--uninstall` boots out and removes it ([details below](#scheduling-the-pipeline-launchd)) |
+| `npm run setup-schedule -- [-h \| --help] [--interval <duration>] [--print] [--uninstall]` | launchd installer | Register the pipeline with launchd: write `~/Library/LaunchAgents/com.kwiki.scheduled-run.plist` — absolute node + script paths, explicit `HOME`, minimal `PATH`, `StartInterval` (`30minutes` default) + `RunAtLoad` — then bootstrap and verify with `launchctl print`; `--interval` re-registers, `--print` emits the plist without installing (any OS), `--uninstall` boots out and removes it ([details below](#scheduling-the-pipeline-launchd)) |
 | `npm run scheduled-run -- [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<config>] [<raw-dir>]` | scheduled cycle wrapper | Run one unattended cycle — the command the launchd job executes: O_EXCL lockfile (PID + timestamp, two-hour stale takeover) at `<dataRoot>/.scheduled-run.lock` → `git pull --rebase` → `wiki-sync` (commit-only) → `git push` (one pull --rebase + retry on rejection, then alert); fails loud without an `origin` remote ([details below](#scheduling-the-pipeline-launchd)) |
 | `npm run wiki-query -- [-h \| --help] [--file-last] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>` | query wrapper | Ask the built wiki one question headless: print the answer, save it for review (stage 1, default); `--file-last` files the reviewed answer deterministically (stage 2; reads `settings.yml` in stage 1; [details below](#running-queries-wiki-query)) |
 | `node <checkout>/bin/k-wiki.ts query "<question>"` (also `npm run k-wiki -- …` inside the checkout) | agent-facing CLI | Ask the wiki bound to the current project from any cwd — zero flags once `.k-wiki.json` binds it; plus four read-only commands: `status` (binding + paths), `list [<type>]` (pages by type), `read <slug>` (one page verbatim), `health` (projection check); answer-only, no filing passthrough ([details below](#querying-from-any-project-k-wiki)) |
-| `npm run data:init -- [--second-brain] [--meta] [<sync.json>]` | data repo seeder | Create and seed the data repo at `sync.json`'s `dataRoot`: git init, copy the `raw/`+`wiki/` skeleton from the code repo, write the standing `.gitignore` (Obsidian UI state, ingest snapshot — issue #146), first commit; idempotent; `--second-brain` also writes the `.second-brain` identity marker ([§5](#5-the-second-brain)); `--meta` seeds the meta contract (`wiki/AGENTS.meta.md`) as the data repo's `wiki/AGENTS.md` ([§9](#9-the-meta-wiki-a-repository-as-source)) |
+| `npm run data:init -- [--second-brain] [--meta] [<sync.json>]` | data repo seeder | Create and seed the data repo at `sync.json`'s `dataRoot`: git init, copy the `raw/`+`wiki/` skeleton from the code repo, write the standing `.gitignore` (Obsidian UI state, ingest snapshot), first commit; idempotent; `--second-brain` also writes the `.second-brain` identity marker ([§5](#5-the-second-brain)); `--meta` seeds the meta contract (`wiki/AGENTS.meta.md`) as the data repo's `wiki/AGENTS.md` ([§9](#9-the-meta-wiki-a-repository-as-source)) |
 | `npm run board-triage -- [-h \| --help] [--dry-run] [--owner <login>] [--project <n>]` | board triage CLI | Apply the mechanical half of the K-Wiki Kanban triage contract via the `gh` CLI — Backlog → Ready (unblocked, no `research` label), open PR → In progress, closed → Done — Status field values only; lane order is never touched, ids are resolved fresh every run, every move is verified by re-reading the board, and `--dry-run` plans with zero writes (default: `mguinada`'s project 2; [below](#scheduled-board-triage)) |
-| `npm run mutation:changed` | StrykerJS | Optional advisory mutation run scoped to the changed hunks of the `src/` files that differ from `main` (uncommitted included; new files whole) — `src/quality/mutation-scope.ts` builds the `file:start-end` ranges; exits 0 without running when nothing changed, and ends by printing the actionable mutants — recommended for small diffs; the authoritative mutation signal lives in CI (issue #208) |
+| `npm run mutation:changed` | StrykerJS | Optional advisory mutation run scoped to the changed hunks of the `src/` files that differ from `main` (uncommitted included; new files whole) — `src/quality/mutation-scope.ts` builds the `file:start-end` ranges; exits 0 without running when nothing changed, and ends by printing the actionable mutants — recommended for small diffs; the authoritative mutation signal lives in CI |
 | `npm run mutation:changed -- --full` | StrykerJS | Advisory mutation run over all of `src/`, not just changed files; same printed summary |
 | `npm run mutation:survivors` | triage helper | Re-list the actionable mutants from the last report — no run, instant |
 | `npm run mutation:report` | report renderer | Render the rolling survivor-issue body from a `mutation.json` report (what the `mutants-report` workflow files) — no run, instant |
@@ -598,7 +597,7 @@ not part of the sync run.
 ### Scheduled board triage
 
 The mechanical half of the K-Wiki Kanban triage contract runs on a
-schedule ([issue #209](https://github.com/mguinada/k-wiki/issues/209)):
+schedule:
 `.github/workflows/board-triage.yml` runs `bin/board-triage.ts` every
 6 hours — Backlog → Ready for issues with no open blocker and no
 `research` label, → In progress for Backlog issues with an open PR
@@ -664,7 +663,7 @@ or records it as an equivalent mutant in the PR body.
 You do **not** run a script first and then invoke the skill — the skill
 re-runs the mutation itself if the report is stale. Two ways in:
 
-- **Agent, mid-issue (optional since issue #208):** the dev loop no
+- **Agent, mid-issue (optional):** the dev loop no
   longer mandates a local run — CI is the authoritative signal. For a
   small diff where context-hot triage is cheap, the agent runs `npm
   run mutation:changed`, and if it prints survivors, loads the triage
@@ -701,7 +700,7 @@ retention). After each nightly run, the
 [`mutants-report`](.github/workflows/mutants-report.yml) workflow
 downloads that artifact and auto-files the actionable mutants into one
 rolling issue labeled `mutation` — "Mutation testing: actionable
-survivors" — on the K-Wiki Kanban at Status = Ready (issue #208). The
+survivors" — on the K-Wiki Kanban at Status = Ready. The
 rolling issue is the kill-work queue: spin dedicated triage issues from
 its list when a batch is worth a pass, and keep the count tended. The
 agent rules are in [AGENTS.md](AGENTS.md).
@@ -739,7 +738,7 @@ include patterns selecting what to publish (`["wiki/**"]` in the
 shipped config). The optional `root` knob (`"wiki"` in the shipped
 config) re-bases the selected files' mirror paths by stripping that
 top-level segment, so the wiki tree sits at the mirror vault's root
-instead of under a `wiki/` husk (issue #203). Sync state —
+instead of under a `wiki/` husk. Sync state —
 hashes and timestamps — lives in `raw/manifest.json`, keyed per vault
 namespace (guide §25). Sync is idempotent: a run with no source changes
 copies, removes, and writes nothing.
@@ -807,7 +806,7 @@ npm run sync-vault   # 1. sync the vault into raw/
 npm run wiki-ingest  # 2. run the agent headless, digest the run
 ```
 
-`wiki-ingest` is the unattended ingest step (guide §18, issue #11). It
+`wiki-ingest` is the unattended ingest step (guide §18). It
 reads `raw/manifest.json`, diffs it against the snapshot from the
 previous successful run (`<dataRoot>/outputs/last-ingested-manifest.json`), and
 runs the agent non-interactively **in the data repo root** — `prompts/ingest.md`
@@ -816,9 +815,9 @@ for the first run, `prompts/incremental.md` with the changed sources
 later one, except that removals route to `prompts/expunge.md` (see
 [below](#when-a-note-is-deleted-expungement)); a move is detected as a
 rename even when only its frontmatter changed — identical body text
-still pairs, so a same-day tag edit during a rename never expunges
-(issue #143). The
-snapshot is stamped with the data repo it belongs to (issue #95): one
+still pairs, so a same-day tag edit during a rename never expunges.
+The
+snapshot is stamped with the data repo it belongs to: one
 stamped for another instance — or an unstamped legacy one — is ignored
 with a loud warning and the run falls back to the full prompt, so a
 foreign snapshot in the data repo — a clone or copy from another
@@ -844,12 +843,12 @@ reasoning: high    # pi thinking level, passed as --thinking
 ```
 
 Unless `isolate: false` opts out, every spawned ingest and lint run
-is isolated from the host's global agent setup (issue #118): the
+is isolated from the host's global agent setup: the
 wrapper prepends `--no-context-files --no-extensions --no-skills`, so
 installed context files (AGENTS.md discovery), extensions, and skills
 cannot leak into headless runs. Set `false` only to debug with the
 ambient global setup. Query runs are not isolated. Under isolation,
-two optional list keys whitelist named entries back in (issue #144):
+two optional list keys whitelist named entries back in:
 `isolate.skills` (paths, resolved against the settings file's
 directory, `~` allowed) and `isolate.extensions` (pi `-e` sources —
 a path, `npm:<package>`, or `git:<repo>`); the wrapper appends one
@@ -881,7 +880,7 @@ that also matches an ignore rule: gitignore does not apply to
 tracked files, so the rule covers nothing and an external writer
 (an open Obsidian) editing the file would trip the immutability
 check; `data:init` seeds the standing rules, so a fresh repo cannot
-hit this (issue #146). After every agent run three mechanical guardrails check the
+hit this. After every agent run three mechanical guardrails check the
 data repo (immutability, frontmatter, wikilinks — guide §1, §7, §9):
 `wiki/log.md`, the append-only log, is exempt from the frontmatter
 check (it carries none by design); a tripped check auto-reverts the data repo to its pre-run state (the
@@ -889,12 +888,12 @@ pre-run commit plus the uncommitted work that preceded the run),
 writes a failure digest naming the check, and exits 1; the
 one-command orchestration is [`wiki-sync`](#running-the-full-cycle-wiki-sync);
 unattended scheduling is
-[`setup-schedule`](#scheduling-the-pipeline-launchd) (#14).
+[`setup-schedule`](#scheduling-the-pipeline-launchd).
 
 **Timeout budgeting:** the 1800 s default fits the steady state —
 incremental runs measured at 1–2 minutes (about one minute per note,
 including page updates). A first full ingest is much larger (136
-uningested notes at the time of the #10 drill); at the measured rate
+uningested notes at the time of the first measured full run); at the measured rate
 that is hours, so give it an explicit budget, for example
 `npm run wiki-ingest -- --timeout 14400`, and watch the spinner's
 elapsed clock. A timed-out run fails cleanly and retries the same
@@ -906,7 +905,7 @@ sources on the next run.
 npm run wiki-ingest -- --sources Engineering/AI/RAG.md   # repeatable
 ```
 
-`--sources <vault/path>` (issue #133) re-ingests exactly the listed
+`--sources <vault/path>` re-ingests exactly the listed
 sources against the existing wiki — the recovery affordance for a wiki
 that is complete but under-filed. Paths are exact manifest paths
 (`<vault name>/<vault-relative path>`): no globbing, no substring
@@ -916,12 +915,12 @@ and the list sorts. The explicit list replaces the manifest diff
 even when nothing changed. On success a scoped run writes a merged
 snapshot — the previous snapshot plus the explicit paths' current
 entries — so pending manifest changes outside the list stay pending
-for the next ordinary run (issue #150). It needs a valid snapshot:
+for the next ordinary run. It needs a valid snapshot:
 with none, run a full ingest first (`-h` documents the switch in
 full).
 The digest's Mode line records `sources selected explicitly`.
 
-A scoped run always carries an operator note (issue #149): `--note
+A scoped run always carries an operator note: `--note
 <text>` rides verbatim below the changed-source list under an
 `Operator note:` heading — the why behind a re-opened set — and
 without `--note` a static default line states that unchanged content
@@ -983,8 +982,8 @@ citing `queries/` pages are expunged, and `log.md` carries the
 pages — the wiki reflects the current `raw/`.
 
 Rename exception: deleting `AI/old.md` and adding `AI/new.md` with
-identical content — or identical body text, frontmatter edits aside
-(issue #143) — in the same sync is a **move**, not a deletion: the
+identical content — or identical body text, frontmatter edits aside —
+in the same sync is a **move**, not a deletion: the
 run treats it as a change/retitle (`→ vault/old → vault/new`) and never
 routes to expunge. A rename *with* body edits still routes to expunge.
 
@@ -998,7 +997,7 @@ missed purge surfaces as a dead link, not as silent contamination.
 npm run wiki-sync   # sync → ingest → lint → crosslinks (configured) → verification → commit → publish (configured)
 ```
 
-`wiki-sync` is the one-command orchestrator (guide §18, issue #13).
+`wiki-sync` is the one-command orchestrator (guide §18).
 It chains the proven pieces and adds no capability of its own:
 
 1. **sync** — `sync-vault` in-process: vault → `raw/`. A repo-sourced
@@ -1006,7 +1005,7 @@ It chains the proven pieces and adds no capability of its own:
    `sync-meta.json`) runs the `sync-repo` core in-process instead:
    the allowlisted files of the committed source tree project
    verbatim into `raw/notes/<name>/`, stamped with the source HEAD
-   commit (issue #145); a dirty source tree fails the cycle, and
+   commit; a dirty source tree fails the cycle, and
    mixed vault+repo configs are refused — one instance per config.
 2. **ingest** — `wiki-ingest` in-process: the agent over changed
    sources, the post-run guardrails, the digest in the code repo's
@@ -1014,12 +1013,12 @@ It chains the proven pieces and adds no capability of its own:
 3. **lint** — the headless sibling of the manual lint run: the same
    `prompts/lint.md`, through the same agent settings, in a fresh
    agent session in the data repo root. The report lands in the
-   **data repo's** `outputs/lint-<date>.md` (the #61 convention:
+   **data repo's** `outputs/lint-<date>.md` (the standing convention:
    quality history travels with the content), and the same three
    guardrails check the run with the same auto-revert. The orchestrator
    pins the date and passes the concrete report path in the prompt, so
    its report check and the prompt cannot disagree.
-4. **crosslinks** — second brains only (issue #96): an instance whose
+4. **crosslinks** — second brains only: an instance whose
    settings carry `secondBrain.domains: [<wiki dirs>]` gets the
    `check-crosslinks` audit run over its wiki against every listed
    domain wiki — every cycle, including no-change cycles, after lint
@@ -1029,9 +1028,9 @@ It chains the proven pieces and adds no capability of its own:
    the wiki/AGENTS.md "after every run" contract is enforced, not
    prose. Instances without the key skip the stage; the default
    instance is unchanged.
-5. **verification** — every cycle, configured or not (issue #138):
-   the deterministic `check-fidelity` (issue #125) and
-   `check-provenance` (issue #65) cores run over the data repo's
+5. **verification** — every cycle, configured or not:
+   the deterministic `check-fidelity` and
+   `check-provenance` cores run over the data repo's
    `wiki/` and `raw/`, after lint and the crosslink audit. One
    problem line per finding fails the cycle before the commit: the
    lint edits are reverted (the ingest edits stay, uncommitted, as
@@ -1042,11 +1041,11 @@ It chains the proven pieces and adds no capability of its own:
    `outputs/`, with a message summarizing sources processed, pages
    touched, and the lint report.
 7. **publish** — only for configs whose `sync.json` carries a
-   `publish` section (guide §26, issue #15): copy the data repo's
+   `publish` section (guide §26): copy the data repo's
    include-matched files (`["wiki/**"]` in the shipped config)
    into the mirror vault — an iCloud-served disposable
    reading copy that iPhone and iPad open in Obsidian. With
-   `publish.root` set (`"wiki"` in the shipped config, issue #203)
+   `publish.root` set (`"wiki"` in the shipped config)
    the top-level segment is stripped from every mirror path, so the
    wiki tree appears at the vault root; without it the copy is
    verbatim. Deletions
@@ -1080,7 +1079,7 @@ guardrail has already reverted its agent run, and a verification
 failure has reverted the lint edits. Switches:
 `--settings <path>`, `--outputs <dir>` (the run digest location;
 default the repo's `outputs/`; the ingest snapshot always lives in the
-data repo's `outputs/`, issue #112),
+data repo's `outputs/`),
 `--timeout <secs>` (default 1800, applies to both agent stages), plus
 the `<sync.json>` and `<raw-dir>` positionals — `-h` documents them
 all. Unattended scheduling is `setup-schedule` —
@@ -1095,7 +1094,7 @@ npm run setup-schedule -- --print             # emit the plist, install nothing
 npm run setup-schedule -- --uninstall         # bootout the job and remove the plist
 ```
 
-`setup-schedule` registers the pipeline with launchd (issue #14):
+`setup-schedule` registers the pipeline with launchd:
 the job runs `node bin/scheduled-run.ts` on a fixed interval —
 `StartInterval 1800` by default, `RunAtLoad` — from the checkout you
 installed it from, with absolute node + script paths, an explicit
@@ -1103,7 +1102,7 @@ installed it from, with absolute node + script paths, an explicit
 pinned node path is the **invocation path** when absolute and
 existing (e.g. `/opt/homebrew/bin/node`, stable across Homebrew
 upgrades — the resolved binary lives in a versioned Cellar and
-breaks on every `brew upgrade node`; issue #216), falling back to
+breaks on every `brew upgrade node`), falling back to
 the resolved binary. Register through the stable path once —
 `/opt/homebrew/bin/node bin/setup-schedule.ts` — to move an
 existing install off a versioned Cellar path. The plist
@@ -1188,7 +1187,7 @@ npm run wiki-query -- --file-last                                  # stage 2: fi
 ```
 
 `wiki-query` is the terminal front-end for asking the built wiki a
-question (guide §16, issues #67 and #72). Filing is two-stage, and an
+question (guide §16). Filing is two-stage, and an
 omitted flag can never produce wiki writes:
 
 - **Stage 1 (default, `<question>`)** composes `prompts/query.md`
@@ -1231,11 +1230,11 @@ k-wiki read retrieval-augmented-generation                 # one page verbatim
 k-wiki health                                               # projection coherence/freshness
 ```
 
-`k-wiki` is the agent-facing CLI (guide §16, issue #76): a thin
+`k-wiki` is the agent-facing CLI (guide §16): a thin
 wrapper — one LLM `query` command plus four read-only deterministic
 ones, `util.parseArgs`, no CLI framework — that resolves the current
 project's wiki and
-delegates to the answer-only stage-1 query above. After #72 the
+delegates to the answer-only stage-1 query above. The
 query is answer-only by construction, so exposing it to agents is
 safe: this entry can never write to `wiki/`, whatever flags an
 agent passes or omits.

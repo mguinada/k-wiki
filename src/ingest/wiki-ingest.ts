@@ -1869,7 +1869,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const HELP = `Usage: wiki-ingest [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [--note <text>] [<raw-dir>]
 
 Run the wiki agent headless over the sources that changed since the
-last ingest, then write a per-run digest (guide §18, issue #11).
+last ingest, then write a per-run digest (guide §18).
 
 Flow: read the raw manifest, diff it against the snapshot from the
 previous successful run (<dataRoot>/outputs/last-ingested-manifest.json
@@ -1901,9 +1901,9 @@ Switches and arguments:
                      isolate (true by default, false to opt out) adds the
                      pi isolation flags --no-context-files --no-extensions
                      --no-skills so global agent config cannot leak into
-                     spawned runs (issue #118). isolate.skills and
-                     isolate.extensions (optional comma-separated lists,
-                     issue #144) whitelist specific entries back in:
+                     spawned runs. isolate.skills and
+                     isolate.extensions (optional comma-separated lists)
+                     whitelist specific entries back in:
                      one --skill flag per skill dir (a path, resolved
                      against the settings file's directory, ~ allowed)
                      and one -e flag per extension source (a path,
@@ -1915,12 +1915,12 @@ Switches and arguments:
   --outputs <dir>    Where the run digest (runs/<timestamp>.md) goes.
                      Default: the repo's outputs/. The manifest snapshot
                      always lives in the data repo's outputs/ and is not
-                     moved by this switch (issue #112).
+                     moved by this switch.
   --timeout <secs>   Kill the agent run after this many seconds and
                      fail it; the snapshot stays untouched. Default:
                      1800 (30 minutes).
   --sources <vault/path>
-                     Scoped re-ingest of explicit sources (issue #133):
+                     Scoped re-ingest of explicit sources:
                      re-open exactly these sources against the existing
                      wiki — the recovery affordance for a wiki that is
                      complete but under-filed. Repeatable; paths are
@@ -1934,14 +1934,14 @@ Switches and arguments:
                      writes a merged snapshot — the previous snapshot
                      plus the explicit paths' current entries — so the
                      pending manifest diff outside the list stays
-                     pending for the next ordinary run (issue #150).
+                     pending for the next ordinary run.
                      Requires a valid
                      manifest snapshot for this data root; a missing or
                      foreign-stamped snapshot is an error:
                      run a full ingest first. Never touches raw/ or
                      the vault.
-  --note <text>      Operator intent for a scoped --sources run
-                     (issue #149): appended verbatim below the
+  --note <text>      Operator intent for a scoped --sources run:
+                     appended verbatim below the
                      changed-source list under an "Operator note:"
                      heading, so a re-opened set re-adjudicates filing
                      decisions instead of re-applying the no-change
@@ -1965,14 +1965,13 @@ What it writes:
     agent run; a --sources run writes a merged snapshot that keeps
     pending changes outside the list pending), stamped with its data repo root: a snapshot stamped
     for another instance — or an unstamped legacy one — is ignored
-    with a loud warning and the run falls back to full mode (issue
-    #95). A pre-#112 snapshot in this repo's outputs/ is adopted
-    (copied) into the data repo when the data repo has none (issue
-    #112);
+    with a loud warning and the run falls back to full mode. A
+    legacy snapshot in this repo's outputs/ is adopted (copied) into
+    the data repo when the data repo has none;
   - outputs/runs/<timestamp>.md — the digest, also printed to stdout.
 
 After every agent run three guardrails check the data repo (guide
-§1, §7, §9; issue #12): (1) immutability — only wiki/ (never the
+§1, §7, §9): (1) immutability — only wiki/ (never the
 wiki/AGENTS.md contract), outputs/, and raw/manifest.json may change,
 and HEAD may not move; (2) frontmatter — every changed wiki page
 parses with the required fields (wiki/log.md, the append-only log,
@@ -1994,7 +1993,7 @@ plain heartbeat line per 60 seconds instead. A run that fails or
 exceeds the timeout still runs the guardrails, exits 1, and leaves
 the snapshot untouched, so the next run retries the same sources. Live progress
 goes to stderr; the digest goes to stdout. Unattended scheduling is
-setup-schedule (issue #14).`;
+setup-schedule.`;
 
 /** Print one CLI usage error red on stderr and set the exit code. */
 function fail(message: string): void {

@@ -125,7 +125,7 @@ export function schedulerUnsupportedError(platform: string): string {
         ? "Task Scheduler"
         : `a ${platform} scheduler`;
 
-  return `scheduling on ${platform} is not implemented yet — the backend is ${backend}, a follow-up issue (issue #14 out of scope); use --print to inspect the macOS artifact or run wiki-sync manually`;
+  return `scheduling on ${platform} is not implemented yet — the backend is ${backend}, a follow-up issue (out of scope); use --print to inspect the macOS artifact or run wiki-sync manually`;
 }
 
 /** The log dir the plist points launchd's own captures at — the same
@@ -166,7 +166,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 /** Help text: every switch and default (AGENTS.md CLI rule). */
 const HELP = `Usage: setup-schedule [-h | --help] [--interval <duration>] [--print] [--uninstall]
 
-Register the k-wiki pipeline with the OS scheduler (issue #14). The
+Register the k-wiki pipeline with the OS scheduler. The
 scheduled command is node bin/scheduled-run.ts — lockfile, git pull
 --rebase, wiki-sync, git push — run unattended on a fixed interval.
 macOS only today: the source vault lives in iCloud, so only macOS can
@@ -191,7 +191,7 @@ What install does (darwin):
   1. builds the plist (Label ${LAUNCHD_LABEL}, StartInterval, RunAtLoad,
      absolute node + script paths — the node path is the invocation
      path when absolute and existing (stable across Homebrew
-     upgrades, issue #216), else the resolved binary — explicit HOME,
+     upgrades), else the resolved binary — explicit HOME,
      minimal PATH, launchd stdout/stderr into ~/Library/Logs/k-wiki/);
   2. boots out any previous registration of the label;
   3. writes it to ~/Library/LaunchAgents/${LAUNCHD_LABEL}.plist;

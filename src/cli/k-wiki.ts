@@ -254,7 +254,7 @@ const HELP = `Usage: k-wiki [-h | --help] | k-wiki <command> [<args>]
        k-wiki read <slug>
        k-wiki health [--fail-on-stale]
 
-The agent-facing entry point (guide §16, issue #76): one LLM command
+The agent-facing entry point (guide §16): one LLM command
 (query) and four read-only deterministic ones (status, list, read,
 health), usable from any cwd with zero flags once the project is
 bound. One command set — util.parseArgs, no CLI framework. None of
@@ -265,7 +265,7 @@ Binding file .k-wiki.json (at the bound project's root):
   checkout — a k-wiki checkout whose sync.json resolves the data
     repo; its prompts/, outputs/, and settings live there too.
   settings — optional non-default settings file inside the checkout
-    (e.g. settings-meta.yml, the meta-wiki instance of issue #74);
+    (e.g. settings-meta.yml, the meta wiki's settings file);
     default settings.yml. Exactly one wiki per binding: the file
     must be a single JSON object; lists and multi-wiki forms are
     rejected — one project binds exactly one wiki, so no ambient
@@ -286,7 +286,7 @@ Commands:
   query <question>   Ask the bound wiki one question (the only LLM
                      command). Prints the answer, saves the run to
                      <checkout>/outputs/last-query.md; answer-only
-                     by construction (#72): any change under wiki/
+                     by construction: any change under wiki/
                      during the run reverts the data repo and fails.
                      Filing is not exposed here.
   status             Print the resolved binding: checkout, origin,
