@@ -58,7 +58,7 @@ esac
 # origin/main, not local main: survives fresh clones and worktrees where
 # the local branch is checked out elsewhere or missing. Plain two-endpoint
 # diff (not `origin/main...HEAD`): it includes uncommitted work, so the
-# pre-handoff run sees what the agent actually changed. src/quality/
+# local run sees what the agent actually changed. src/quality/
 # mutation-scope.ts turns that diff into hunk-range --mutate patterns.
 patterns=$(node bin/mutation-scope.ts)
 
