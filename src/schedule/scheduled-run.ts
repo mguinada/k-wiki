@@ -305,18 +305,63 @@ async function gitStdout(
     : "";
 }
 
+/** True when the path exists; a failed stat — missing, or a parent
+ *  that is a regular file (a linked worktree's `.git`) — reads as
+ *  false. */
+async function pathExists(path: string): Promise<boolean> {
+  return await stat(path).then(
+    () => true,
+    () => false,
+  );
+}
+
+/** True when the data repo sits mid-rebase: git marks the state with
+ *  a `rebase-merge` (merge backend) or `rebase-apply` (apply backend)
+ *  directory under `.git` — the residue of a conflicted
+ *  `pull --rebase` from an earlier tick. */
+async function rebaseInProgress(dataRoot: string): Promise<boolean> {
+  return (
+    (await pathExists(join(dataRoot, ".git", "rebase-merge"))) ||
+    (await pathExists(join(dataRoot, ".git", "rebase-apply")))
+  );
+}
+
+/** Abort a conflicted rebase left mid-progress by a previous tick
+ *  before the next `git pull --rebase`: `git rebase --abort` returns
+ *  the repo to its last actionable state — the last good commit on
+ *  the pre-run path, the local unpushed commit on the push-retry
+ *  path. Conflict content is never auto-resolved; the operator
+ *  resolves divergent history manually, and the schedule self-heals
+ *  on the next tick once the tree is actionable. */
+async function abortConflictedRebase(
+  dataRoot: string,
+  runGitStep: NonNullable<ScheduledRunOptions["runGitStep"]>,
+  log: (line: string) => void,
+): Promise<void> {
+  if (!(await rebaseInProgress(dataRoot))) {
+    return;
+  }
+
+  await runGitStep(dataRoot, ["rebase", "--abort"]);
+  log("scheduled-run: aborted a conflicted rebase left by a previous tick");
+}
+
 /** The pre-run pull, skipped over a dirty tree: a failed or killed
  *  sync deliberately leaves its ingest edits uncommitted (the fix
  *  surface), and a rebase refuses such a tree — skipping the pull
  *  keeps the next interval's recovery reachable; divergence is then
  *  owned by the push-rejection path, which runs after a clean
  *  commit. Untracked files do not count: they never block a rebase,
- *  and the run's own lockfile is one. */
+ *  and the run's own lockfile is one. A rebase left mid-progress by a
+ *  previous tick is aborted first, so the dirty check below sees the
+ *  restored tree. */
 async function pullWhenClean(
   dataRoot: string,
   runGitStep: NonNullable<ScheduledRunOptions["runGitStep"]>,
   log: (line: string) => void,
 ): Promise<void> {
+  await abortConflictedRebase(dataRoot, runGitStep, log);
+
   const status = await gitStdout(runGitStep, dataRoot, [
     "status",
     "--porcelain",
@@ -355,6 +400,7 @@ async function pushWithRetry(
     );
 
     try {
+      await abortConflictedRebase(dataRoot, runGitStep, log);
       await runGitStep(dataRoot, ["pull", "--rebase"]);
       await runGitStep(dataRoot, ["push"]);
       log("scheduled-run: pushed after retry");
@@ -486,7 +532,10 @@ Behavior, failure mode by failure mode (issue #14):
   - Overlap (across machines): not prevented — recovered. The pre-run
     git pull --rebase keeps the run on a fresh base; a push rejection
     gets one pull --rebase + retry; a second failure logs an ALERT
-    line and exits 1.
+    line and exits 1. A conflicted pull --rebase leaves the repo
+    mid-rebase; the next tick aborts it (git rebase --abort before
+    each pull site) and retries with the tree actionable — divergent
+    content stays for the operator to resolve manually.
   - No origin: the data repo must have an origin remote (the push
     stage needs one); the wrapper fails loud without running.
   - wiki-sync failure: the guardrails and verification have already

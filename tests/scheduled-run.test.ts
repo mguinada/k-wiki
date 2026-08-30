@@ -468,6 +468,94 @@ describe("runScheduledCycle", () => {
   });
 });
 
+describe("runScheduledCycle conflicted rebase recovery", () => {
+  it("aborts a mid-rebase state before the pre-run pull", async () => {
+    const dir = await tempDir();
+    const { git, runGitStep } = fakeGit();
+
+    await mkdir(join(dir, ".git", "rebase-merge"), { recursive: true });
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      args: [],
+    });
+
+    expect(git.calls).toEqual([
+      ["remote", "get-url", "origin"],
+      ["rebase", "--abort"],
+      ["status", "--porcelain", "--untracked-files=no"],
+      ["pull", "--rebase"],
+      ["wiki-sync"],
+      ["push"],
+    ]);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("aborts a mid-rebase state before the push-retry pull", async () => {
+    const dir = await tempDir();
+    const { git, runGitStep } = fakeGit(async (args, calls) => {
+      if (
+        args[0] === "push" &&
+        calls.filter((call) => call[0] === "push").length === 1
+      ) {
+        await mkdir(join(dir, ".git", "rebase-apply"), { recursive: true });
+        throw new Error("! [rejected] fetch first");
+      }
+    });
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      args: [],
+    });
+
+    expect(git.calls).toEqual([
+      ["remote", "get-url", "origin"],
+      ["status", "--porcelain", "--untracked-files=no"],
+      ["pull", "--rebase"],
+      ["wiki-sync"],
+      ["push"],
+      ["rebase", "--abort"],
+      ["pull", "--rebase"],
+      ["push"],
+    ]);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("logs the aborted conflicted rebase", async () => {
+    const dir = await tempDir();
+    const { git, runGitStep } = fakeGit();
+    const lines: string[] = [];
+
+    await mkdir(join(dir, ".git", "rebase-merge"), { recursive: true });
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      args: [],
+      log: (line) => lines.push(line),
+    });
+
+    expect(lines).toContain(
+      "scheduled-run: aborted a conflicted rebase left by a previous tick",
+    );
+
+    await rm(dir, { recursive: true, force: true });
+  });
+});
+
 describe("LOCK_STALE_MS", () => {
   it("gives a run two hours before its lock goes stale", () => {
     expect(LOCK_STALE_MS).toBe(2 * 60 * 60 * 1000);
@@ -763,7 +851,11 @@ async function runMain(
     errorSpy.mockRestore();
 
     for (const [key, value] of Object.entries(prevEnv)) {
-      process.env[key] = value;
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
     }
   }
 
@@ -880,6 +972,35 @@ describe("scheduled-run main: cycle outcomes", () => {
     );
 
     await rm(dir, { recursive: true, force: true });
+  });
+
+  it("leaves a previously-unset env key absent after the run", async () => {
+    const dir = await tempDir();
+    const configPath = join(dir, "sync.json");
+    const prevLog = process.env.KWIKI_SCHEDULED_LOG;
+
+    delete process.env.KWIKI_SCHEDULED_LOG;
+    await writeFile(configPath, JSON.stringify({ vaults: [], dataRoot: dir }));
+    await writeFile(
+      join(dir, ".scheduled-run.lock"),
+      `${JSON.stringify({ pid: 1, takenAt: new Date().toISOString() })}\n`,
+    );
+
+    try {
+      await runMain([configPath, join(dir, "raw")], {
+        KWIKI_SCHEDULED_LOG: join(dir, "run.log"),
+      });
+
+      expect(process.env.KWIKI_SCHEDULED_LOG).toBeUndefined();
+    } finally {
+      if (prevLog === undefined) {
+        delete process.env.KWIKI_SCHEDULED_LOG;
+      } else {
+        process.env.KWIKI_SCHEDULED_LOG = prevLog;
+      }
+
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("runs a real cycle into a temp data repo and logs to the override path", async () => {

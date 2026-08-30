@@ -1064,7 +1064,10 @@ Node even starts. `KWIKI_SCHEDULED_LOG` overrides the location.
   by design: iCloud materializes files lazily, so file events fire
   late, in bursts, or only on download.
 - **Push rejection** — pull --rebase + retry once, then alert (log
-  `ALERT`, exit 1, launchd records the non-zero exit).
+  `ALERT`, exit 1, launchd records the non-zero exit). A conflicted
+  rebase is aborted (`git rebase --abort`) before the next pull site,
+  so the next tick retries with the tree actionable; divergent
+  content is resolved manually.
 
 **Multi-machine rule:** enable the scheduler on exactly one machine
 — the source vault lives in iCloud, so only macOS can run the
