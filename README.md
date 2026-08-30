@@ -501,7 +501,7 @@ git-diff flow.
 These modes are documented when their issue lands, not before:
 
 - **`--batch N` for `wiki-ingest`** — batch construction stops
-  being snapshot surgery; deferred from #13 until batched runs
+  being snapshot surgery; deferred until batched runs
   become the standing procedure for large backlogs.
 
 ## Tooling
@@ -893,7 +893,7 @@ unattended scheduling is
 **Timeout budgeting:** the 1800 s default fits the steady state —
 incremental runs measured at 1–2 minutes (about one minute per note,
 including page updates). A first full ingest is much larger (136
-uningested notes at the time of the #10 drill); at the measured rate
+uningested notes at the time of the first measured full run); at the measured rate
 that is hours, so give it an explicit budget, for example
 `npm run wiki-ingest -- --timeout 14400`, and watch the spinner's
 elapsed clock. A timed-out run fails cleanly and retries the same
@@ -1013,7 +1013,7 @@ It chains the proven pieces and adds no capability of its own:
 3. **lint** — the headless sibling of the manual lint run: the same
    `prompts/lint.md`, through the same agent settings, in a fresh
    agent session in the data repo root. The report lands in the
-   **data repo's** `outputs/lint-<date>.md` (the #61 convention:
+   **data repo's** `outputs/lint-<date>.md` (the standing convention:
    quality history travels with the content), and the same three
    guardrails check the run with the same auto-revert. The orchestrator
    pins the date and passes the concrete report path in the prompt, so
