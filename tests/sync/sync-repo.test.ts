@@ -950,7 +950,7 @@ describe("shipped sync-meta.json (issue #74)", () => {
 
     expect(
       [
-        "tests/sync-repo.test.ts",
+        "tests/sync/sync-repo.test.ts",
         "scripts/check-links.ts",
         "node_modules/vitest/index.js",
         "k-wiki-meta-data/wiki/index.md",

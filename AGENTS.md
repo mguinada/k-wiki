@@ -174,7 +174,9 @@ infrastructure, free to use for any unit or e2e work; the snapshot at
   (`sync-publish.test.ts` becomes `tests/sync/publish.test.ts`).
   Exceptions: `tests/e2e/` (system tests, own lane), `tests/bin/`
   (tests of the `bin/` launchers themselves), repo-wide guard tests
-  under `tests/quality/` with no single src subject, and the
+  under `tests/quality/` with no single src subject,
+  `tests/wiki-contract-sync.test.ts` (contract guard with no single
+  src subject, stays at `tests/` root), and the
   `tests/fixtures/Documents/` snapshot data (not test code). Use
   `git mv` for every move.
 - Put exactly one expectation in each `it` block.
