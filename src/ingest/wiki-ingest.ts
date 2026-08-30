@@ -1700,7 +1700,9 @@ export async function runWikiIngest(
   options: IngestOptions,
 ): Promise<IngestResult> {
   const { env, now, onProgress } = runContext(options);
-  const settings = await loadAgentSettings(options.settingsPath);
+  const settings = await loadAgentSettings(options.settingsPath, {
+    onProgress,
+  });
 
   onProgress(`wiki-ingest: raw dir ${options.rawDir}`);
 
@@ -1899,7 +1901,17 @@ Switches and arguments:
                      isolate (true by default, false to opt out) adds the
                      pi isolation flags --no-context-files --no-extensions
                      --no-skills so global agent config cannot leak into
-                     spawned runs (issue #118).
+                     spawned runs (issue #118). isolate.skills and
+                     isolate.extensions (optional comma-separated lists,
+                     issue #144) whitelist specific entries back in:
+                     one --skill flag per skill dir (a path, resolved
+                     against the settings file's directory, ~ allowed)
+                     and one -e flag per extension source (a path,
+                     npm:<package>, or git:<repo>) — additive even under
+                     the --no-* flags, so exactly the named entries load.
+                     Each entry is a deliberate trust grant; an entry
+                     that is missing warns and is omitted, and the run
+                     proceeds. Both keys are ignored with isolate: false.
   --outputs <dir>    Where the run digest (runs/<timestamp>.md) goes.
                      Default: the repo's outputs/. The manifest snapshot
                      always lives in the data repo's outputs/ and is not

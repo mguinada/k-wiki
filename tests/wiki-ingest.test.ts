@@ -1959,6 +1959,90 @@ describe("runWikiIngest", () => {
     ]);
   });
 
+  it("passes one --skill/-e flag per whitelisted entry after the isolation flags (issue #144)", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const skillDir = join(h.dataRoot, ".agents", "skills", "obsidian-markdown");
+
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(join(skillDir, "SKILL.md"), "# skill\n");
+    await mkdir(join(h.dataRoot, "exts"), { recursive: true });
+    await writeFile(join(h.dataRoot, "exts", "web-access.ts"), "export {};\n");
+    await writeFile(
+      h.settingsPath,
+      `${SETTINGS_YML}isolate.skills: [.agents/skills/obsidian-markdown]\nisolate.extensions: [exts/web-access.ts]\n`,
+    );
+
+    await runWikiIngest(optionsFor(h));
+
+    expect(invocation(h, 0).args.slice(0, 7)).toEqual([
+      "--no-context-files",
+      "--no-extensions",
+      "--no-skills",
+      "--skill",
+      skillDir,
+      "-e",
+      join(h.dataRoot, "exts", "web-access.ts"),
+    ]);
+  });
+
+  it("warns and omits an absent whitelist entry (issue #144)", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const progress: string[] = [];
+
+    await writeFile(
+      h.settingsPath,
+      `${SETTINGS_YML}isolate.skills: [.agents/skills/absent]\n`,
+    );
+    await runWikiIngest({
+      ...optionsFor(h),
+      onProgress: (message) => progress.push(message),
+    });
+
+    expect(progress).toContain(
+      `WARNING — isolate.skills entry "${join(h.dataRoot, ".agents", "skills", "absent")}" not found; omitted`,
+    );
+    expect(invocation(h, 0).args).not.toContain("--skill");
+  });
+
+  it("records the whitelist state in the digest header (issue #144)", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const skillDir = join(h.dataRoot, ".agents", "skills", "obsidian-markdown");
+
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(join(skillDir, "SKILL.md"), "# skill\n");
+    await writeFile(
+      h.settingsPath,
+      `${SETTINGS_YML}isolate.skills: [.agents/skills/obsidian-markdown]\n`,
+    );
+
+    const result = await runWikiIngest(optionsFor(h));
+
+    if (result.status !== "ran") {
+      throw new Error("expected a ran ingest");
+    }
+
+    expect(result.digest).toContain("· isolated +1 skill");
+  });
+
+  it("keeps the whitelist keys ignored on an isolate: false opt-out", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+
+    await writeFile(
+      h.settingsPath,
+      `${SETTINGS_YML}isolate: false\nisolate.skills: [.agents/skills/absent]\n`,
+    );
+    await runWikiIngest(optionsFor(h));
+
+    expect(invocation(h, 0).args).toEqual([
+      "--model",
+      "GLM-5.2",
+      "--thinking",
+      "high",
+      "--print",
+      "FULL PROMPT",
+    ]);
+  });
+
   it("writes the manifest snapshot the next run diffs against", async () => {
     const h = await makeHarness({ "a.md": "a" });
 
