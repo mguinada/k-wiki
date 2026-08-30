@@ -1076,7 +1076,14 @@ npm run setup-schedule -- --uninstall         # bootout the job and remove the p
 the job runs `node bin/scheduled-run.ts` on a fixed interval —
 `StartInterval 1800` by default, `RunAtLoad` — from the checkout you
 installed it from, with absolute node + script paths, an explicit
-`HOME`, and a minimal `PATH` (the wrapper builds the rest). The plist
+`HOME`, and a minimal `PATH` (the wrapper builds the rest). The
+pinned node path is the **invocation path** when absolute and
+existing (e.g. `/opt/homebrew/bin/node`, stable across Homebrew
+upgrades — the resolved binary lives in a versioned Cellar and
+breaks on every `brew upgrade node`; issue #216), falling back to
+the resolved binary. Register through the stable path once —
+`/opt/homebrew/bin/node bin/setup-schedule.ts` — to move an
+existing install off a versioned Cellar path. The plist
 lands at `~/Library/LaunchAgents/com.kwiki.scheduled-run.plist` and is
 verified with `launchctl print` before the installer reports success.
 After installing, one manual kick proves the whole path:

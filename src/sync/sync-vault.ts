@@ -1,13 +1,5 @@
 import type { Stats } from "node:fs";
-import {
-  mkdir,
-  readdir,
-  readFile,
-  rm,
-  rmdir,
-  stat,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, readdir, rm, rmdir, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -29,6 +21,7 @@ import {
   type SourceConfig,
   type VaultSourceConfig,
 } from "./config.ts";
+import { readFileTolerant } from "./eagain.ts";
 import { isSelectedNote } from "./frontmatter.ts";
 import { sha256 } from "./hash.ts";
 import {
@@ -133,7 +126,7 @@ async function readSourceNote(
   relPath: string,
 ): Promise<Uint8Array> {
   try {
-    return await readFile(toAbsolute(vault.root, relPath));
+    return await readFileTolerant(toAbsolute(vault.root, relPath));
   } catch (cause) {
     const reason = cause instanceof Error ? cause.message : String(cause);
 

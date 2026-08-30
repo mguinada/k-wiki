@@ -1,12 +1,6 @@
-import {
-  copyFile,
-  mkdir,
-  readdir,
-  readFile,
-  rm,
-  rmdir,
-} from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, rmdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import { copyFileTolerant } from "./eagain.ts";
 import { compileAllowlistPattern } from "./sync-repo.ts";
 
 /**
@@ -157,7 +151,7 @@ async function copySelected(
     }
 
     await mkdir(dirname(target), { recursive: true });
-    await copyFile(absPath, target);
+    await copyFileTolerant(absPath, target);
     copied += 1;
   }
 
