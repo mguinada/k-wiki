@@ -98,7 +98,16 @@ alternative printed, and passes every other invocation through
 untouched. Bare `no-mistakes` (and `-y`) attach to an active run when
 one exists, and the CLI rejects `--skip` on attach — so the shim leaves
 those invocations alone; a wizard-started push carries the repo's
-`push.pushOption` above, which supplies the skip. Every invocation
+`push.pushOption` above, which supplies the skip. Inside Herdr panes
+(`HERDR_ENV=1`), the shim also reports agent lifecycle around the blocking
+`axi run` / `axi respond` calls (`herdr pane report-agent --source
+custom:no-mistakes`): `working` while the call runs, `blocked` when it
+parks at a gate, `idle` plus `release-agent` on a terminal outcome — so
+Herdr notifies on completion exactly as it does for recognized agents.
+Reporting is best-effort (a Herdr failure never breaks a gate run), is a
+no-op outside Herdr, and is ignored on panes whose lifecycle an agent
+integration already owns, where the agent's own notifications stay
+authoritative. Every invocation
 prints a one-line shim notice to stderr (never stdout, where agents
 parse TOON output), so the shim cannot act invisibly. Self-updates
 replace only `~/.no-mistakes/bin/no-mistakes`, so the shim survives
