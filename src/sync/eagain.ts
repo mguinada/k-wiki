@@ -7,10 +7,10 @@ import { copyFile, readFile, rm } from "node:fs/promises";
  * stubs; reading or copying such a file through Node fails with
  * EAGAIN (`Unknown system error -11`) instead of blocking until
  * iCloud materializes it, while a plain `cat` succeeds. These
- * helpers convert exactly one EAGAIN failure into a self-healing
- * attempt — bounded, no backoff machinery (guide §26 rule 3) — and
- * leave every other error envelope untouched: persistent EAGAIN
- * still fails loudly.
+ * helpers convert EAGAIN failures into self-healing attempts inside
+ * a bounded per-file budget (issue #229) — no backoff machinery
+ * (guide §26 rule 3) — and leave every other error envelope
+ * untouched: EAGAIN that outlasts the budget still fails loudly.
  */
 
 /** The pause before the single re-read attempt (issue #216: ~1–2 s). */
@@ -43,6 +43,7 @@ function sleep(ms: number): Promise<void> {
 async function materializeByCat(
   path: string,
   fallback: Error,
+  timeoutMs: number,
 ): Promise<Buffer> {
   try {
     return await new Promise<Buffer>((resolve, reject) => {
@@ -51,7 +52,7 @@ async function materializeByCat(
         [path],
         {
           encoding: "buffer",
-          timeout: MATERIALIZE_TIMEOUT_MS,
+          timeout: Math.max(timeoutMs, 1_000),
           maxBuffer: MATERIALIZE_MAX_BUFFER,
         },
         (error, stdout) => (error === null ? resolve(stdout) : reject(error)),
@@ -62,47 +63,63 @@ async function materializeByCat(
   }
 }
 
-/** Read one file, tolerating one dataless-file EAGAIN: a delayed
- *  re-read, then a materializing cat read, before giving up loudly. */
+/** Read one file, tolerating dataless-file EAGAIN within a per-file
+ *  budget: re-read after `delayMs` while the budget lasts, then one
+ *  final cat-equivalent materializing attempt (issue #229: the
+ *  provider refuses every reader for a transient window after mass
+ *  eviction, so one retry + one cat fails inside it). */
 export async function readFileTolerant(
   path: string,
   delayMs: number = EAGAIN_RETRY_DELAY_MS,
+  deadlineMs: number = MATERIALIZE_TIMEOUT_MS,
 ): Promise<Buffer> {
-  try {
-    return await readFile(path);
-  } catch (first) {
-    if (!isEagain(first)) {
-      throw first;
+  const deadline = Date.now() + deadlineMs;
+  let retained: unknown;
+
+  while (true) {
+    try {
+      return await readFile(path);
+    } catch (cause) {
+      if (!isEagain(cause)) {
+        throw cause;
+      }
+
+      retained = cause;
+    }
+
+    if (Date.now() + delayMs > deadline) {
+      break;
     }
 
     await sleep(delayMs);
   }
 
-  try {
-    return await readFile(path);
-  } catch (second) {
-    if (!isEagain(second)) {
-      throw second;
-    }
-
-    return await materializeByCat(path, second as Error);
-  }
+  return await materializeByCat(path, retained as Error, deadline - Date.now());
 }
 
-/** Copy one file, tolerating a dataless-file EAGAIN on the target:
- *  drop the stub (copy-over re-creates it) and retry once. */
+/** Copy one file, tolerating dataless-file EAGAIN on the target
+ *  within the same per-file budget: drop the stub (copy-over
+ *  re-creates it), wait, and retry until the budget is spent. */
 export async function copyFileTolerant(
   source: string,
   target: string,
+  delayMs: number = EAGAIN_RETRY_DELAY_MS,
+  deadlineMs: number = MATERIALIZE_TIMEOUT_MS,
 ): Promise<void> {
-  try {
-    await copyFile(source, target);
-  } catch (first) {
-    if (!isEagain(first)) {
-      throw first;
+  const deadline = Date.now() + deadlineMs;
+
+  while (true) {
+    try {
+      await copyFile(source, target);
+
+      return;
+    } catch (cause) {
+      if (!isEagain(cause) || Date.now() + delayMs > deadline) {
+        throw cause;
+      }
     }
 
     await rm(target, { force: true });
-    await copyFile(source, target);
+    await sleep(delayMs);
   }
 }
