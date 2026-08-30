@@ -18,7 +18,7 @@ import { runChecker } from "./check-provenance.ts";
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
 const HELP = `Usage: check-fidelity [-h | --help] [<wiki-dir> [<raw-dir>]]
 
-Check citation fidelity (issue #125): every machine-checkable token a
+Check citation fidelity: every machine-checkable token a
 \`type: source\` page quotes in its body — tilde paths (\`~/…\`),
 dotted config keys (\`push.pushOption\` style, file names excluded),
 long and short CLI flags, and \`npm run\` commands — appears in the

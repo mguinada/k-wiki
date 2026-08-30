@@ -90,7 +90,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
 const HELP = `Usage: dashboard [-h | --help] [-o | --open] [<data-repo>]
 
-Generate the static KPI dashboard (issue #73): one self-contained
+Generate the static KPI dashboard: one self-contained
 HTML file — inline CSS and SVG, no external references — written to
 <data-repo>/dashboard.html. Open it offline via file://; it carries
 dark and light themes (initial theme follows the system preference,

@@ -18,7 +18,7 @@ export interface ReportMeta {
 const HELP = `Usage: mutation-report <report.json> [--run-url <url>]
        [--html-url <url>] [-h | --help]
 
-Render the rolling survivor-issue body (issue #208) from a Stryker
+Render the rolling survivor-issue body from a Stryker
 JSON report — the actionable mutants (Survived, NoCoverage) in the
 same format npm run mutation:survivors prints, plus the run and
 HTML-report links when given.

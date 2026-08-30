@@ -67,7 +67,7 @@ async function resolveHubFile(wikiDir: string, hub: string): Promise<string> {
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
 const HELP = `Usage: open-origin [-h | --help] [--print] [--config <path>] [--vault <name>] <hub>
 
-The deep-dive hop for a source hub (issue #126): read the hub's
+The deep-dive hop for a source hub: read the hub's
 origin (raw/notes/<vault>/<rest>), resolve <vault> against the
 vaults named in the sync config, and open the live vault note via
 its obsidian://open URI. Nothing is written to wiki data; the URI

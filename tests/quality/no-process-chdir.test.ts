@@ -26,6 +26,13 @@ async function collectTsFiles(root: string, prefix = ""): Promise<string[]> {
   for (const entry of entries) {
     const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
 
+    // sync-cli-spawn stages transient launcher copies here while this
+    // scan may be walking tests/ in parallel; skipping the directory
+    // kills the read-vs-delete race (ENOENT) outright.
+    if (entry.isDirectory() && entry.name === ".cli-import-staging") {
+      continue;
+    }
+
     if (entry.isDirectory()) {
       files.push(...(await collectTsFiles(join(root, entry.name), rel)));
     } else if (entry.isFile() && entry.name.endsWith(".ts")) {

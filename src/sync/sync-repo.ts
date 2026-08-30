@@ -426,7 +426,7 @@ const HELP = `Usage: sync-repo [-h | --help] [<config>] [<raw-dir>]
 
 Project the allowlisted files of a committed source repository into
 raw/notes/<name>/ verbatim, grounding the projection in the source
-repo's HEAD commit (issue #74). The config's single repo source names
+repo's HEAD commit. The config's single repo source names
 the namespace, the checkout root, and the include allowlist; anything
 not listed is excluded by construction. The manifest records the per-
 file hashes plus the source commit and root, which the health check

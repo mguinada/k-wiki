@@ -18,7 +18,7 @@ export { checkCrossWikiLinks } from "../src/crosslinks.ts";
 const HELP = `Usage: check-crosslinks [-h | --help] <wiki-dir> <domain-wiki-dir> [<domain-wiki-dir>...]
 
 Check the one-way cross-wiki link discipline between a wiki and its
-domain wikis (issue #81): every [[<vault>/<page>]] link in <wiki-dir>
+domain wikis: every [[<vault>/<page>]] link in <wiki-dir>
 must name a vault of a passed domain wiki — validated
 case-insensitively against each domain repo's raw/manifest.json — and
 resolve to an existing page of that wiki. The domain wikis themselves

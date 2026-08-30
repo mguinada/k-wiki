@@ -224,10 +224,10 @@ Idempotent — an already-seeded data repo is left untouched.
                   commit it with the seed. The marker — not the
                   agent-writable wiki/second-brain/profile.md — is
                   what the ingest guardrails read as second-brain
-                  identity (issue #94). Mark an already-seeded repo
+                  identity. Mark an already-seeded repo
                   by hand: create and commit .second-brain at its
                   root.
-  --meta          Seed the meta contract (issue #74) as the data
+  --meta          Seed the meta contract as the data
                   repo's wiki/AGENTS.md instead of the canonical
                   wiki contract: the repo-as-source wiki that
                   documents k-wiki itself, describe-don't-prescribe.
