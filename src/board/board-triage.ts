@@ -117,7 +117,7 @@ const BOARD_PAGE_QUERY = `query BoardPage($owner: String!, $projectNumber: Int!,
 }`;
 
 const MOVE_MUTATION = `mutation MoveItem($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
-  updateProjectV2FieldValue(
+  updateProjectV2ItemFieldValue(
     input: {
       projectId: $projectId
       itemId: $itemId

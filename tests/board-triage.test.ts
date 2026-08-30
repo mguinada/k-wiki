@@ -118,7 +118,7 @@ function fakeBoard(
   const dropped = new Set<string>();
 
   const graphql: GraphQLFn = async (query, variables) => {
-    if (query.includes("updateProjectV2FieldValue")) {
+    if (query.includes("updateProjectV2ItemFieldValue")) {
       mutations.push({ ...variables });
       const node = nodes.find((candidate) => candidate.id === variables.itemId);
       const lane = LANE_BY_OPTION_ID.get(String(variables.optionId));
@@ -136,7 +136,7 @@ function fakeBoard(
       }
 
       return {
-        data: { updateProjectV2FieldValue: { clientMutationId: null } },
+        data: { updateProjectV2ItemFieldValue: { clientMutationId: null } },
       };
     }
 
@@ -827,7 +827,7 @@ describe("runBoardTriage", () => {
     const queries = await appliedRunQueries();
 
     expect(
-      queries.some((query) => query.includes("updateProjectV2FieldValue")),
+      queries.some((query) => query.includes("updateProjectV2ItemFieldValue")),
     ).toBe(true);
   });
 
@@ -868,9 +868,9 @@ describe("runBoardTriage", () => {
     const nodes = [issueNode({ id: "I1", number: 7, status: "Backlog" })];
     let reads = 0;
     const graphql: GraphQLFn = async (query, _variables) => {
-      if (query.includes("updateProjectV2FieldValue")) {
+      if (query.includes("updateProjectV2ItemFieldValue")) {
         return {
-          data: { updateProjectV2FieldValue: { clientMutationId: null } },
+          data: { updateProjectV2ItemFieldValue: { clientMutationId: null } },
         };
       }
 
@@ -897,7 +897,7 @@ describe("runBoardTriage", () => {
       }),
     ]);
     const wrapped: GraphQLFn = async (query, variables) => {
-      if (!query.includes("updateProjectV2FieldValue")) {
+      if (!query.includes("updateProjectV2ItemFieldValue")) {
         reads.push(String(variables.cursor));
       }
 
@@ -915,7 +915,7 @@ describe("runBoardTriage", () => {
       issueNode({ id: "I1", number: 7, status: "Backlog" }),
     ]);
     const wrapped: GraphQLFn = async (query, variables) => {
-      if (!query.includes("updateProjectV2FieldValue")) {
+      if (!query.includes("updateProjectV2ItemFieldValue")) {
         reads.push(String(variables.cursor));
       }
 
