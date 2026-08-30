@@ -82,8 +82,8 @@ until all three pass. Run them before every handoff.
   full-cycle, no-change, failure, guardrail-revert, reverted
   fidelity-failure, and repo-source cycle (the meta flow) runs, and
   scheduled-run through full-cycle, no-op re-run, lock-skip,
-  push-rejection-retry, and double-push-failure runs in temp data
-  repos with an upstream remote.
+  push-rejection-retry, double-push-failure, and dirty-tree
+  recovery runs in temp data repos with an upstream remote.
 - `npm run health [-- <raw-dir>] [--fail-on-stale]` — coherence check
   of a `raw/` projection (default: the repo's `raw/`); a repo-sourced
   projection is also freshness-checked (`--fail-on-stale` makes a
