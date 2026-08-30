@@ -494,7 +494,9 @@ async function preflightWhitelist(
   const warn = context.onProgress ?? (() => {});
   const piInstallRoot =
     context.piInstallRoot ??
-    expandHome(process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent"));
+    expandHome(
+      process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent"),
+    );
   const skills = await preflightSkills(settings.isolateSkills ?? [], warn);
   const extensions = await preflightExtensions(
     settings.isolateExtensions ?? [],

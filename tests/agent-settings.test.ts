@@ -785,10 +785,9 @@ describe("loadAgentSettings whitelist resolution (issue #144)", () => {
 
     const piInstallRoot = join(root, "pi-root");
 
-    await mkdir(
-      join(piInstallRoot, "npm", "node_modules", "@scope", "pkg"),
-      { recursive: true },
-    );
+    await mkdir(join(piInstallRoot, "npm", "node_modules", "@scope", "pkg"), {
+      recursive: true,
+    });
 
     const settingsPath = join(root, "settings.yml");
 
