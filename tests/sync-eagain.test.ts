@@ -13,6 +13,7 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { generateFixtureVault, VAULT_NAME } from "../src/fixtures/generate.ts";
 import {
   copyFileTolerant,
+  EAGAIN_RETRY_DELAY_MS,
   isEagain,
   readFileTolerant,
 } from "../src/sync/eagain.ts";
@@ -37,6 +38,7 @@ vi.mock("node:fs/promises", async (importOriginal) => {
     ...actual,
     copyFile: vi.fn(actual.copyFile),
     readFile: vi.fn(actual.readFile),
+    rm: vi.fn(actual.rm),
   };
 });
 
@@ -155,6 +157,34 @@ describe("readFileTolerant", () => {
     expect(readFile).toHaveBeenCalledTimes(2);
   });
 
+  it("waits the configured delay before the single re-read", async () => {
+    const dir = await makeTempDir();
+    const path = join(dir, "note.md");
+
+    await writeFile(path, "materialized\n");
+    vi.mocked(readFile).mockImplementationOnce(
+      rejectReadFor(eagainError("read"), path),
+    );
+    const waits: number[] = [];
+    const timer = vi.spyOn(globalThis, "setTimeout").mockImplementation(((
+      callback: () => void,
+      ms?: number,
+    ) => {
+      waits.push(ms ?? 0);
+      callback();
+
+      return {} as NodeJS.Timeout;
+    }) as unknown as typeof setTimeout);
+
+    try {
+      await readFileTolerant(path);
+    } finally {
+      timer.mockRestore();
+    }
+
+    expect(waits).toEqual([EAGAIN_RETRY_DELAY_MS]);
+  });
+
   it("falls back to a cat-equivalent read when EAGAIN persists", async () => {
     const dir = await makeTempDir();
     const path = join(dir, "note.md");
@@ -231,6 +261,7 @@ describe("copyFileTolerant", () => {
 
     expect(await readFile(target, "utf8")).toBe("src\n");
     expect(copyFile).toHaveBeenCalledTimes(2);
+    expect(rm).toHaveBeenCalledWith(target, { force: true });
   });
 
   it("fails loudly when the retried copy fails EAGAIN again", async () => {

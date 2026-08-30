@@ -27,9 +27,7 @@ const MATERIALIZE_MAX_BUFFER = 32 * 1024 * 1024;
 export function isEagain(cause: unknown): boolean {
   const error = cause as NodeJS.ErrnoException;
 
-  return (
-    error?.code === "EAGAIN" || (error as { errno?: number })?.errno === -11
-  );
+  return error?.code === "EAGAIN" || error?.errno === -11;
 }
 
 function sleep(ms: number): Promise<void> {
