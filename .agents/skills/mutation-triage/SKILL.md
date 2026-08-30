@@ -1,6 +1,6 @@
 ---
 name: mutation-triage
-description: "Triage StrykerJS mutation-testing survivors: extract surviving and uncovered mutants from reports/mutation/mutation.json, kill each with a new or stronger test, or record it as an equivalent mutant in the PR body, then re-run the scoped mutation to confirm. Use after `npm run mutation:changed` (or `npm run mutation`) reports survived or no-coverage mutants, or when the user says 'triage the survivors', 'triage the full mutation run', 'run mutation across all of src', 'handle the surviving mutants', or asks why tests did not catch a mutant. Do NOT use for running mutation testing itself (AGENTS.md already requires the scoped run before handoff) or for disabling mutators."
+description: "Triage StrykerJS mutation-testing survivors: extract surviving and uncovered mutants from reports/mutation/mutation.json, kill each with a new or stronger test, or record it as an equivalent mutant in the PR body, then re-run the scoped mutation to confirm. Use after `npm run mutation:changed` (or `npm run mutation`) reports survived or no-coverage mutants, or when the user says 'triage the survivors', 'triage the full mutation run', 'run mutation across all of src', 'handle the surviving mutants', or asks why tests did not catch a mutant. Do NOT use for running mutation testing itself (the dev-loop run is optional since issue #208; CI auto-files survivors into the rolling issue) or for disabling mutators."
 ---
 
 # Mutation Triage

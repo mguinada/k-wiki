@@ -1,0 +1,550 @@
+import { spawn } from "node:child_process";
+import { realpathSync } from "node:fs";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { afterAll, describe, expect, it, vi } from "vitest";
+import {
+  main,
+  type ReportMeta,
+  renderIssueBody,
+} from "../src/quality/mutation-report.ts";
+
+const tempDirs: string[] = [];
+
+afterAll(async () => {
+  await Promise.all(
+    tempDirs.map((dir) => rm(dir, { recursive: true, force: true })),
+  );
+});
+
+const report = {
+  files: {
+    "src/sync/config.ts": {
+      mutants: [
+        {
+          mutatorName: "EqualityOperator",
+          status: "Killed",
+          location: { start: { line: 10 } },
+        },
+        {
+          mutatorName: "StringLiteral",
+          status: "Survived",
+          location: { start: { line: 42 } },
+        },
+        {
+          mutatorName: "ConditionalExpression",
+          status: "Survived",
+          location: { start: { line: 7 } },
+        },
+      ],
+    },
+    "src/sync/scan.ts": {
+      mutants: [
+        {
+          mutatorName: "MethodExpression",
+          status: "NoCoverage",
+          location: { start: { line: 3 } },
+        },
+        {
+          mutatorName: "ArrowFunction",
+          status: "Timeout",
+          location: { start: { line: 9 } },
+        },
+      ],
+    },
+  },
+};
+
+const cleanReport = {
+  files: {
+    "src/sync/config.ts": {
+      mutants: [
+        {
+          mutatorName: "EqualityOperator",
+          status: "Killed",
+          location: { start: { line: 10 } },
+        },
+      ],
+    },
+  },
+};
+
+const meta: ReportMeta = {
+  runUrl: "https://github.com/mguinada/k-wiki/actions/runs/123456",
+  htmlUrl:
+    "https://github.com/mguinada/k-wiki/actions/runs/123456/artifacts/98765",
+};
+
+const RUN_URL = "https://github.com/mguinada/k-wiki/actions/runs/123456";
+
+const HTML_URL =
+  "https://github.com/mguinada/k-wiki/actions/runs/123456/artifacts/98765";
+
+const HEAD = [
+  "Mutation testing: actionable survivors — auto-filed from CI",
+  "(issue #208). Advisory signal, never a gate. Kill survivors via",
+  "the mutation-triage skill, or record equivalents in the PR body.",
+].join("\n");
+
+describe("renderIssueBody", () => {
+  it("renders the exact survivor body with both links", () => {
+    expect(renderIssueBody(JSON.stringify(report), meta)).toBe(
+      [
+        HEAD,
+        "",
+        `- Source run: ${RUN_URL}`,
+        `- HTML report artifact: ${HTML_URL}`,
+        "",
+        "Actionable mutants (3) — kill or record as equivalent:",
+        "",
+        "Survived  src/sync/config.ts:7  ConditionalExpression",
+        "Survived  src/sync/config.ts:42  StringLiteral",
+        "NoCoverage  src/sync/scan.ts:3  MethodExpression",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("renders the exact survivor body without links", () => {
+    expect(renderIssueBody(JSON.stringify(report))).toBe(
+      [
+        HEAD,
+        "Actionable mutants (3) — kill or record as equivalent:",
+        "",
+        "Survived  src/sync/config.ts:7  ConditionalExpression",
+        "Survived  src/sync/config.ts:42  StringLiteral",
+        "NoCoverage  src/sync/scan.ts:3  MethodExpression",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("renders the exact clean body with one link only", () => {
+    expect(
+      renderIssueBody(JSON.stringify(cleanReport), { runUrl: RUN_URL }),
+    ).toBe(
+      [
+        HEAD,
+        "",
+        `- Source run: ${RUN_URL}`,
+        "",
+        "No actionable mutants — nothing survived, nothing uncovered.",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("renders the exact clean body without links", () => {
+    expect(renderIssueBody(JSON.stringify(cleanReport))).toBe(
+      [
+        HEAD,
+        "No actionable mutants — nothing survived, nothing uncovered.",
+        "",
+      ].join("\n"),
+    );
+  });
+});
+
+const script = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "../bin/mutation-report.ts",
+);
+
+interface RunResult {
+  readonly code: number | null;
+  readonly out: string;
+  readonly err: string;
+}
+
+function runNode(
+  args: readonly string[],
+  cwd: string = process.cwd(),
+): Promise<RunResult> {
+  const child = spawn(process.execPath, [realpathSync(script), ...args], {
+    stdio: "pipe",
+    cwd,
+  });
+
+  return new Promise((resolve, reject) => {
+    let out = "";
+    let err = "";
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      out += chunk;
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      err += chunk;
+    });
+    child.on("error", reject);
+    child.on("close", (code) => resolve({ code, out, err }));
+  });
+}
+
+/** Write `report` as a mutation.json fixture and return its path. */
+async function writeReport(
+  dir: string,
+  content: Record<string, unknown>,
+): Promise<string> {
+  const path = join(dir, "mutation.json");
+
+  await writeFile(path, JSON.stringify(content));
+
+  return path;
+}
+
+describe("mutation-report CLI", () => {
+  it("prints the usage line for --help with exit 0", async () => {
+    const result = await runNode(["--help"]);
+
+    expect(`${result.code}|${result.out}`).toMatch(/0\|Usage: mutation-report/);
+  });
+
+  it("prints help without reading any file", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-"));
+
+    tempDirs.push(dir);
+
+    const result = await runNode(
+      ["--help", join(dir, "does-not-exist.json")],
+      dir,
+    );
+
+    expect(result.code).toBe(0);
+    expect(result.err).toBe("");
+  });
+
+  it("prints the rendered body to stdout for a report file", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-"));
+
+    tempDirs.push(dir);
+
+    const reportPath = await writeReport(dir, report);
+    const result = await runNode([
+      reportPath,
+      "--run-url",
+      RUN_URL,
+      "--html-url",
+      HTML_URL,
+    ]);
+
+    expect(result.code).toBe(0);
+    expect(result.out).toContain(
+      "Survived  src/sync/config.ts:42  StringLiteral",
+    );
+    expect(result.out).toContain(meta.htmlUrl);
+  });
+
+  it("exits 1 naming the report when the path is unreadable", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-"));
+
+    tempDirs.push(dir);
+
+    const result = await runNode([join(dir, "missing.json")], dir);
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("missing.json");
+  });
+
+  it("exits 1 naming the drifted shape for a non-report JSON file", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-"));
+
+    tempDirs.push(dir);
+
+    const reportPath = await writeReport(dir, { config: {} });
+    const result = await runNode([
+      reportPath,
+      "--run-url",
+      "u",
+      "--html-url",
+      "h",
+    ]);
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("unexpected shape");
+  });
+});
+
+describe("mutation-report main in-process", () => {
+  /** Run `main` with console spies; restore state after. */
+  const runMain = (
+    argv: readonly string[],
+  ): { out: string[]; err: string[] } => {
+    const out: string[] = [];
+    const err: string[] = [];
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+    const errSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) => err.push(parts.join(" ")));
+
+    process.exitCode = undefined;
+
+    try {
+      main(argv);
+    } finally {
+      logSpy.mockRestore();
+      errSpy.mockRestore();
+    }
+
+    return { out, err };
+  };
+
+  it("prints the usage line for --help in-process", () => {
+    const { out } = runMain(["--help"]);
+
+    expect(out[0]).toContain("Usage: mutation-report <report.json>");
+  });
+
+  it("leaves the exit code unset for --help", () => {
+    runMain(["--help"]);
+
+    expect(process.exitCode).toBeUndefined();
+
+    process.exitCode = undefined;
+  });
+
+  it("exits 1 with the missing-report-path message for no arguments", () => {
+    const { err } = runMain([]);
+
+    expect(`${err[0]}|${process.exitCode ?? 0}`).toMatch(
+      /missing <report\.json> — see --help\|1$/,
+    );
+  });
+
+  it("exits 1 naming --run-url when its value is absent", () => {
+    const { err } = runMain(["report.json", "--run-url"]);
+
+    expect(`${err[0]}|${process.exitCode ?? 0}`).toMatch(
+      /--run-url requires a value\|1$/,
+    );
+  });
+
+  it("exits 1 naming --html-url when its value is absent", () => {
+    const { err } = runMain(["report.json", "--html-url"]);
+
+    expect(`${err[0]}|${process.exitCode ?? 0}`).toMatch(
+      /--html-url requires a value\|1$/,
+    );
+  });
+
+  it("exits 1 naming an unexpected extra positional", () => {
+    const { err } = runMain(["a.json", "b.json"]);
+
+    expect(`${err[0]}|${process.exitCode ?? 0}`).toMatch(
+      /unexpected argument: b\.json\|1$/,
+    );
+  });
+
+  it("prints the rendered body with flags before the positional", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-"));
+
+    tempDirs.push(dir);
+
+    const reportPath = await writeReport(dir, cleanReport);
+    const { out } = runMain([
+      "--run-url",
+      RUN_URL,
+      "--html-url",
+      HTML_URL,
+      reportPath,
+    ]);
+
+    expect(out.join("\n")).toContain(
+      "No actionable mutants — nothing survived, nothing uncovered.",
+    );
+  });
+
+  it("keeps the exit code unset after rendering a valid report", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-"));
+
+    tempDirs.push(dir);
+
+    const reportPath = await writeReport(dir, report);
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    process.exitCode = undefined;
+
+    try {
+      main([reportPath]);
+
+      expect(process.exitCode).toBeUndefined();
+    } finally {
+      logSpy.mockRestore();
+      process.exitCode = undefined;
+    }
+  });
+
+  it("exits 1 naming the report path when it cannot be read", () => {
+    const { err } = runMain(["/nonexistent/mutation.json"]);
+
+    expect(`${err[0]}|${process.exitCode ?? 0}`).toMatch(
+      /cannot read the report at \/nonexistent\/mutation\.json\|1$/,
+    );
+  });
+
+  it("exits 1 naming the drifted shape in-process", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-"));
+
+    tempDirs.push(dir);
+
+    const reportPath = await writeReport(dir, { config: {} });
+    const { err } = runMain([reportPath]);
+
+    expect(`${err[0]}|${process.exitCode ?? 0}`).toMatch(
+      /unexpected shape.*\|1$/,
+    );
+  });
+});
+
+describe("mutation-report main flag routing in-process", () => {
+  it("prints the usage line for -h in-process", () => {
+    const out: string[] = [];
+    const err: string[] = [];
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+    const errSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) => err.push(parts.join(" ")));
+
+    process.exitCode = undefined;
+
+    try {
+      main(["-h"]);
+    } finally {
+      logSpy.mockRestore();
+      errSpy.mockRestore();
+      process.exitCode = undefined;
+    }
+
+    expect(out[0]).toContain("Usage: mutation-report <report.json>");
+  });
+
+  it("routes --run-url onto the Source run link line", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-"));
+
+    tempDirs.push(dir);
+
+    const reportPath = await writeReport(dir, cleanReport);
+    const out: string[] = [];
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    process.exitCode = undefined;
+
+    try {
+      main([reportPath, "--run-url", RUN_URL]);
+    } finally {
+      logSpy.mockRestore();
+      errSpy.mockRestore();
+      process.exitCode = undefined;
+    }
+
+    expect(out.join("\n")).toBe(
+      [
+        HEAD,
+        "",
+        `- Source run: ${RUN_URL}`,
+        "",
+        "No actionable mutants — nothing survived, nothing uncovered.",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("routes --html-url onto the HTML report artifact link line", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-"));
+
+    tempDirs.push(dir);
+
+    const reportPath = await writeReport(dir, cleanReport);
+    const out: string[] = [];
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    process.exitCode = undefined;
+
+    try {
+      main([reportPath, "--html-url", HTML_URL]);
+    } finally {
+      logSpy.mockRestore();
+      errSpy.mockRestore();
+      process.exitCode = undefined;
+    }
+
+    expect(out.join("\n")).toBe(
+      [
+        HEAD,
+        "",
+        `- HTML report artifact: ${HTML_URL}`,
+        "",
+        "No actionable mutants — nothing survived, nothing uncovered.",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("exits 1 with the cannot-render message for invalid JSON", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-"));
+
+    tempDirs.push(dir);
+
+    const reportPath = join(dir, "mutation.json");
+
+    await writeFile(reportPath, "not json at all");
+
+    const err: string[] = [];
+    const errSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) => err.push(parts.join(" ")));
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    process.exitCode = undefined;
+
+    try {
+      main([reportPath]);
+    } finally {
+      errSpy.mockRestore();
+      logSpy.mockRestore();
+    }
+
+    expect(`${err[0]}|${process.exitCode ?? 0}`).toMatch(
+      /cannot render the report at .*\|1$/,
+    );
+
+    process.exitCode = undefined;
+  });
+
+  it("uses argv past the interpreter and script for a bare main()", () => {
+    const argv = process.argv;
+    const err: string[] = [];
+    const errSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) => err.push(parts.join(" ")));
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    process.argv = [argv[0] ?? "node", "mutation-report.ts"];
+    process.exitCode = undefined;
+
+    try {
+      main();
+    } finally {
+      process.argv = argv;
+      errSpy.mockRestore();
+      logSpy.mockRestore();
+    }
+
+    expect(`${err[0]}|${process.exitCode ?? 0}`).toMatch(
+      /missing <report\.json> — see --help\|1$/,
+    );
+
+    process.exitCode = undefined;
+  });
+});

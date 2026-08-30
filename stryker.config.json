@@ -8,6 +8,7 @@
   },
   "reporters": ["html", "clear-text", "json"],
   "ignorePatterns": ["tsconfig.json", ".claude"],
+  "concurrency": 4,
   "dryRunTimeoutMinutes": 30,
   "timeoutMS": 30000
 }

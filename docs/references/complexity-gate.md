@@ -17,8 +17,8 @@ changing the npm scripts, the test, or the CI shape.
 
 - **Scoping mirrors `npm run mutation:changed`:** the gate analyzes the
   `src/*.ts` files that differ from `origin/main` (uncommitted work
-  included — the same plain two-endpoint diff, so the pre-handoff run
-  sees what the agent actually changed). New/untracked files are gated
+  included — the same plain two-endpoint diff, so the local
+  optional run sees what the agent actually changed). New/untracked files are gated
   whole; deleted files are skipped. A rename gates like an edit, not
   like a new file: a pure rename emits no new-side hunks under the
   `-U0 --diff-filter=ACMRT` diff, so nothing is gated (moved-only
