@@ -355,6 +355,29 @@ describe("parseBoardItems", () => {
 
     expect(items[0]?.status).toBeUndefined();
   });
+
+  it("throws on an item node without an id", () => {
+    expect(() =>
+      parseBoardItems([
+        {
+          fieldValueByName: null,
+          content: { __typename: "Issue", number: 5, state: "OPEN" },
+        },
+      ]),
+    ).toThrow("board response is missing an item id");
+  });
+
+  it("throws on an unknown issue state", () => {
+    expect(() =>
+      parseBoardItems([
+        {
+          id: "I5",
+          fieldValueByName: null,
+          content: { __typename: "Issue", number: 5, state: "MERGED" },
+        },
+      ]),
+    ).toThrow("unknown issue state: MERGED");
+  });
 });
 
 describe("fetchBoardState", () => {
@@ -788,5 +811,19 @@ describe("main", () => {
 
     expect(err.some((line) => line.includes("not verified"))).toBe(true);
     expect(process.exitCode).toBe(1);
+  });
+
+  it("exits 0 on a green applied run", async () => {
+    const { graphql } = fakeBoard([
+      issueNode({ id: "I1", number: 7, status: "Backlog" }),
+    ]);
+
+    const { out } = await runCli([], graphql);
+
+    expect(out.some((line) => line.includes("#7 Backlog → Ready"))).toBe(true);
+    expect(
+      out.some((line) => line.includes("verified against the board")),
+    ).toBe(true);
+    expect(process.exitCode).toBeUndefined();
   });
 });

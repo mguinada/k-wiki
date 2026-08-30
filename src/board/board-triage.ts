@@ -403,6 +403,19 @@ interface PlannedEntry {
   readonly decision: TriageDecision;
 }
 
+/** A planned move: the narrowed form of a move decision, so apply and
+ *  verify code carries the invariant in its type. */
+interface PlannedMove {
+  readonly item: BoardItem;
+  readonly to: "Ready" | "In progress" | "Done";
+}
+
+function toMove(entry: PlannedEntry): PlannedMove[] {
+  return entry.decision.kind === "move"
+    ? [{ item: entry.item, to: entry.decision.to }]
+    : [];
+}
+
 /** Whether the entry gets a report line: Backlog items, statusless
  *  items, and closed items not yet Done. Open items on other lanes
  *  are untouched and unlogged. */
@@ -434,23 +447,18 @@ function plannedLines(planned: readonly PlannedEntry[]): TriageLine[] {
 async function moveItem(
   graphql: GraphQLFn,
   ids: BoardIds,
-  entry: PlannedEntry,
+  move: PlannedMove,
 ): Promise<void> {
-  if (entry.decision.kind !== "move") {
-    return;
-  }
-
   await graphql(MOVE_MUTATION, {
     projectId: ids.projectId,
-    itemId: entry.item.id,
+    itemId: move.item.id,
     fieldId: ids.statusFieldId,
-    optionId: ids.optionIds[entry.decision.to],
+    optionId: ids.optionIds[move.to],
   });
 }
 
 interface UnverifiedMove {
-  readonly entry: PlannedEntry;
-  readonly to: string;
+  readonly move: PlannedMove;
   readonly actual: string;
 }
 
@@ -460,23 +468,15 @@ async function unverifiedMoves(
   graphql: GraphQLFn,
   owner: string,
   projectNumber: number,
-  planned: readonly PlannedEntry[],
+  moves: readonly PlannedMove[],
 ): Promise<UnverifiedMove[]> {
   const state = await fetchBoardState(graphql, owner, projectNumber);
   const byId = new Map(state.items.map((item) => [item.id, item]));
 
-  return planned.flatMap((entry) => {
-    const decision = entry.decision;
+  return moves.flatMap((move) => {
+    const actual = byId.get(move.item.id)?.status;
 
-    if (decision.kind !== "move") {
-      return [];
-    }
-
-    const actual = byId.get(entry.item.id)?.status;
-
-    return actual === decision.to
-      ? []
-      : [{ entry, to: decision.to, actual: actual ?? "no Status" }];
+    return actual === move.to ? [] : [{ move, actual: actual ?? "no Status" }];
   });
 }
 
@@ -500,14 +500,14 @@ async function applyAndVerify(
   graphql: GraphQLFn,
   options: TriageOptions,
   state: BoardState,
-  moves: readonly PlannedEntry[],
+  moves: readonly PlannedMove[],
 ): Promise<TriageOutcome> {
   if (moves.length === 0) {
     return DRY_OUTCOME;
   }
 
-  for (const entry of moves) {
-    await moveItem(graphql, state.ids, entry);
+  for (const move of moves) {
+    await moveItem(graphql, state.ids, move);
   }
 
   const mismatched = await unverifiedMoves(
@@ -517,8 +517,8 @@ async function applyAndVerify(
     moves,
   );
 
-  for (const move of mismatched) {
-    await moveItem(graphql, state.ids, move.entry);
+  for (const unverified of mismatched) {
+    await moveItem(graphql, state.ids, unverified.move);
   }
 
   const failed =
@@ -576,18 +576,18 @@ export async function runBoardTriage(
     decision: decideTriage(item),
   }));
   const lines = plannedLines(planned);
-  const moves = planned.filter((entry) => entry.decision.kind === "move");
+  const moves = planned.flatMap(toMove);
   const stays = lines.filter((line) => line.level === "stay").length;
   const untouched = state.items.length - moves.length - stays;
   const outcome = options.dryRun
     ? DRY_OUTCOME
     : await applyAndVerify(graphql, options, state, moves);
 
-  for (const move of outcome.failed) {
-    const from = move.entry.item.status ?? "no Status";
+  for (const unverified of outcome.failed) {
+    const from = unverified.move.item.status ?? "no Status";
 
     lines.push({
-      text: `#${move.entry.item.number} ${from} → ${move.to} not verified — still on ${move.actual}`,
+      text: `#${unverified.move.item.number} ${from} → ${unverified.move.to} not verified — still on ${unverified.actual}`,
       level: "error",
     });
   }
@@ -728,7 +728,6 @@ with zero writes.
 Exit status: 0 = triage applied or planned, 1 = usage error, board or
 API failure, or a move that failed verification.`;
 
-/** board-triage entry point: \`board-triage [-h | --help] [--dry-run] [--owner <login>] [--project <number>]\` (default: mguinada's project 2). */
 function parseCliArgs(args: readonly string[]): {
   readonly values: Map<string, string | undefined>;
   readonly dryRun: boolean;
@@ -774,6 +773,7 @@ function triageOptionsOf(parsed: {
   };
 }
 
+/** board-triage entry point: `board-triage [-h | --help] [--dry-run] [--owner <login>] [--project <number>]` (default: mguinada's project 2). */
 export async function main(graphql?: GraphQLFn): Promise<void> {
   const args = process.argv.slice(2);
 
