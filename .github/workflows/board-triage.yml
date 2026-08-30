@@ -1,0 +1,54 @@
+# Scheduled board triage (issue #209): the mechanical half of the
+# triage-issues skill, every 6 hours.
+#
+# The workflow runs `bin/board-triage.ts` — Backlog → Ready for
+# unblocked, non-research issues; open-PR → In progress; closed →
+# Done — writing Status field values only. Lane order and the issues
+# themselves are never touched, and every move is verified by
+# re-reading the board (a lost write is retried once). The Ready-lane
+# sequencing judgment stays with manual triage runs, which continue
+# to work alongside this automation unchanged.
+#
+# Token: the job needs GH_TOKEN = secrets.KWIKI_BOARD_TRIAGE_TOKEN — a
+# classic PAT with `repo` + `project` scopes (fine-grained PATs
+# cannot access user-owned projects: their Projects permission is
+# organization-only). The PAT must read mguinada/k-wiki and write
+# mguinada's user projects. The default
+# GITHUB_TOKEN cannot write projects. Without the secret the run
+# fails red — visible, never silently skipped.
+#
+# The report (one line per move and per stay, with reasons) goes to
+# the job log and, via $GITHUB_STEP_SUMMARY, to the run's summary
+# page. A move that fails verification exits 1 — the run shows red.
+
+name: Board triage
+
+on:
+  schedule:
+    # Every 6 hours: 00:00, 06:00, 12:00, 18:00 UTC.
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: board-triage
+  cancel-in-progress: false
+
+jobs:
+  triage:
+    name: Mechanical lane moves
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Run board triage
+        run: node bin/board-triage.ts
+        env:
+          GH_TOKEN: ${{ secrets.KWIKI_BOARD_TRIAGE_TOKEN }}

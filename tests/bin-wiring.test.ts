@@ -33,6 +33,11 @@ const ENTRIES: readonly Entry[] = [
     usage: "Usage: backfill-origin",
   },
   {
+    launcher: "board-triage.ts",
+    module: "src/board/board-triage.ts",
+    usage: "Usage: board-triage",
+  },
+  {
     launcher: "check-crosslinks.ts",
     module: "scripts/check-crosslinks.ts",
     usage: "Usage: check-crosslinks",
