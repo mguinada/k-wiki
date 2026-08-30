@@ -13,8 +13,9 @@ import { runPublishStage } from "../src/sync/publish.ts";
 
 /**
  * The publish stage (guide §26, issue #15): copy the data repo's
- * include-matched files verbatim into the mirror vault — deletions
- * included, the mirror's `.obsidian` device state preserved, idempotent
+ * include-matched files into the mirror vault — verbatim, or
+ * re-based to vault root when `root` is configured (issue #203) —
+ * deletions included, the mirror's `.obsidian` device state preserved, idempotent
  * (identical bytes are never rewritten).
  */
 

@@ -11,9 +11,11 @@ import { compileAllowlistPattern } from "./sync-repo.ts";
 
 /**
  * The publish stage (guide §26, issue #15): copy the data repo's
- * include-matched files verbatim into the mirror vault — an
+ * include-matched files into the mirror vault — an
  * iCloud-served disposable reading copy that iPhone and iPad open in
- * Obsidian. The mirror reflects the selected tree exactly: deletions
+ * Obsidian. With `root` configured (issue #203) each target path is
+ * re-based by stripping that top-level segment; without it the copy
+ * is verbatim. The mirror reflects the selected tree exactly: deletions
  * included, drifted bytes rewritten, the mirror's own `.obsidian/`
  * device state never touched. The stage is idempotent — a second run
  * over an intact mirror copies and removes nothing — and heuristic-

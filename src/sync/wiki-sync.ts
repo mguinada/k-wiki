@@ -91,8 +91,9 @@ import { runSync, type SyncReport } from "./sync-vault.ts";
  * own failure semantics.
  *
  * The publish stage (guide §26, issue #15) copies the data repo's
- * include-matched files verbatim into the configured mirror vault —
- * the iCloud-served reading copy for iPhone and iPad. It runs after
+ * include-matched files into the configured mirror vault — verbatim,
+ * or re-based to vault root when `publish.root` is configured (issue
+ * #203) — the iCloud-served reading copy for iPhone and iPad. It runs after
  * the commit, every cycle, so a mirror the transport mangled is
  * healed by the next run; deletions included, the device-side
  * `.obsidian/` state preserved, byte-identical files never rewritten
@@ -1054,9 +1055,12 @@ What it does, stage by stage:
      touched.
   7. publish — only for configs whose sync.json carries a publish
      section (guide §26, issue #15): copy the data repo's
-     include-matched files (["wiki/**"] in the shipped config) verbatim into the
+     include-matched files (["wiki/**"] in the shipped config) into the
      mirror vault — an iCloud-served disposable reading copy for
-     iPhone and iPad. Deletions included: a page gone from the wiki
+     iPhone and iPad. With publish.root set ("wiki" in the shipped
+     config, issue #203) the top-level segment is stripped from every
+     mirror path, so the wiki tree appears at vault root; without it
+     the copy is verbatim. Deletions included: a page gone from the wiki
      is removed from the mirror; the mirror's own .obsidian/ device
      state is never touched; byte-identical files are never
      rewritten, so a second run over an intact mirror changes
