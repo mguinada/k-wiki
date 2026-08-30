@@ -11,21 +11,23 @@ import { flagValueError } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { formatDuration } from "../cli/progress.ts";
 import {
+  type AgentRunner,
+  createAgentProgressSink,
+  HEARTBEAT_MS,
+  type ProgressSink,
+  readPrompt,
+  spawnAgent,
+} from "../ingest/agent-run.ts";
+import {
+  type AgentSettings,
+  loadAgentSettings,
+} from "../ingest/agent-settings.ts";
+import {
   capturePreRunState,
   type PreRunState,
   revertToPreRun,
   statusSince,
 } from "../ingest/guardrails.ts";
-import {
-  type AgentRunner,
-  type AgentSettings,
-  createAgentProgressSink,
-  HEARTBEAT_MS,
-  loadAgentSettings,
-  type ProgressSink,
-  readPrompt,
-  spawnAgent,
-} from "../ingest/wiki-ingest.ts";
 import { loadSyncConfig, resolveRawDir } from "../sync/config.ts";
 import { citedPages, fileLastQuery, writeQueryArtifact } from "./file-last.ts";
 

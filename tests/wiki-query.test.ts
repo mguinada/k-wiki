@@ -6,7 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
-import type { AgentRunner } from "../src/ingest/wiki-ingest.ts";
+import type { AgentRunner } from "../src/ingest/agent-run.ts";
 import { readQueryArtifact } from "../src/query/file-last.ts";
 import {
   canAnimate,
