@@ -6,11 +6,13 @@ import { copyFile, readFile, rm } from "node:fs/promises";
  * Optimize Mac Storage, macOS evicts file bodies and serves only
  * stubs; reading or copying such a file through Node fails with
  * EAGAIN (`Unknown system error -11`) instead of blocking until
- * iCloud materializes it, while a plain `cat` succeeds. These
- * helpers convert EAGAIN failures into self-healing attempts inside
+ * iCloud materializes it. These helpers retry such failures inside
  * a bounded per-file budget (issue #229) — no backoff machinery
  * (guide §26 rule 3) — and leave every other error envelope
  * untouched: EAGAIN that outlasts the budget still fails loudly.
+ * The budget covers genuinely transient EAGAIN only: a launchd-run
+ * process is refused outright (access control, guide §26 rule 10),
+ * so no retry here can materialize a file for the schedule.
  */
 
 /** The pause between EAGAIN retries inside the budget (issue #216: ~1–2 s). */
@@ -38,9 +40,11 @@ function sleep(ms: number): Promise<void> {
 }
 
 /** The cat-equivalent materializing read: a blocking descriptor
- *  downloads the dataless body where Node's own read refuses to.
- *  When even this fails, `fallback` — the retained EAGAIN error —
- *  keeps the loud envelope unchanged. */
+ *  downloads the dataless body where Node's own read refuses to —
+ *  but only for a process the provider will serve (guide §26
+ *  rule 10: a launchd-run process is refused here too). When even
+ *  this fails, `fallback` — the retained EAGAIN error — keeps the
+ *  loud envelope unchanged. */
 async function materializeByCat(
   path: string,
   fallback: Error,
@@ -66,9 +70,10 @@ async function materializeByCat(
 
 /** Read one file, tolerating dataless-file EAGAIN within a per-file
  *  budget: re-read after `delayMs` while the budget lasts, then one
- *  final cat-equivalent materializing attempt (issue #229: the
- *  provider refuses every reader for a transient window after mass
- *  eviction, so one retry + one cat fails inside it). */
+ *  final cat-equivalent materializing attempt. The budget covers
+ *  genuinely transient EAGAIN only (guide §26 rule 10): a
+ *  launchd-run process's refusal is access control — no retry
+ *  overrides it, and the read fails loudly. */
 export async function readFileTolerant(
   path: string,
   delayMs: number = EAGAIN_RETRY_DELAY_MS,
