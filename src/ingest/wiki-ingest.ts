@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -14,11 +13,7 @@ import {
   readFlagValues as sharedReadFlagValues,
 } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
-import {
-  createProgressRenderer,
-  formatDuration,
-  isWarning,
-} from "../cli/progress.ts";
+import { formatDuration } from "../cli/progress.ts";
 import { writeDashboard } from "../dashboard/generate.ts";
 import { runGit } from "../data/git.ts";
 import {
@@ -43,9 +38,23 @@ import {
   normalizeRawPath,
   type PageFields,
   readPageFields,
-  unquote,
   wikilinkTarget,
 } from "../wiki/pages.ts";
+import {
+  type AgentRunner,
+  createAgentProgressSink,
+  HEARTBEAT_MS,
+  type ProgressSink,
+  readPrompt,
+  spawnAgent,
+} from "./agent-run.ts";
+import {
+  type AgentSettings,
+  agentArgs,
+  formatAgentInvocation,
+  isolationLabel,
+  loadAgentSettings,
+} from "./agent-settings.ts";
 import {
   capturePreRunState,
   type GuardrailFailure,
@@ -72,274 +81,6 @@ import {
  * digest the human can review in under a minute. Scheduling the
  * cycle unattended is `setup-schedule` (issue #14).
  */
-
-export interface AgentSettings {
-  /** Agent CLI command; run non-interactively in the data repo root. */
-  readonly command: string;
-  /** Passed to the agent as `--model`. */
-  readonly model: string;
-  /** Reasoning level; passed to the agent as `--thinking`. */
-  readonly reasoning: string;
-  /** Passed to the agent as `--provider` when set. */
-  readonly provider?: string;
-  /** False opts out of the pi isolation flags (issue #118);
-   *  unset means isolated — the safe default. Agent-agnostic: the
-   *  setting becomes flags at the spawn site (agentArgs), so a
-   *  non-pi agent's settings simply omit it or opt out. */
-  readonly isolate?: boolean;
-  /** Domain wiki dirs for the cycle's crosslink audit (wiki-sync,
-   *  issue #96); undefined leaves the stage out entirely. Paths are
-   *  as written — `~` expands at use, like every settings value. */
-  readonly secondBrainDomains?: readonly string[];
-}
-
-const REQUIRED_KEYS = ["command", "model", "reasoning"] as const;
-const OPTIONAL_KEYS = ["provider", "isolate"] as const;
-const DOMAIN_KEY = "secondBrain.domains";
-const SETTING_KEYS = [...REQUIRED_KEYS, ...OPTIONAL_KEYS] as const;
-
-type SettingKey = (typeof SETTING_KEYS)[number];
-
-/** The dirs of a `secondBrain.domains` value: an optional `[...]`
- *  wrapper, then comma-separated paths (each optionally quoted).
- *  Empty items are dropped; an empty list is an error. */
-function parseDomainDirs(value: string, origin: string): string[] {
-  const list = value.replace(/^\[/, "").replace(/\]$/, "");
-  const dirs = list
-    .split(",")
-    .map((item) => unquote(item.trim()))
-    .filter((item) => item !== "");
-
-  if (dirs.length === 0) {
-    throw new Error(
-      `invalid agent settings at ${origin}: setting ${JSON.stringify(DOMAIN_KEY)} needs at least one wiki dir`,
-    );
-  }
-
-  return dirs;
-}
-
-/** One parsed settings line: skipped, the one list-valued key,
- *  or one scalar setting. */
-type ParsedSettingLine =
-  | { readonly kind: "skip" }
-  | { readonly kind: "domain"; readonly value: string }
-  | {
-      readonly kind: "setting";
-      readonly key: SettingKey;
-      readonly value: string;
-    };
-
-/** Parse one settings line: reject nesting and malformed pairs,
- *  drop blanks and comments, split `key: value`. */
-function parseSettingLine(rawLine: string, origin: string): ParsedSettingLine {
-  if (/^\s/.test(rawLine)) {
-    const indented = rawLine.trim();
-
-    if (indented !== "" && !indented.startsWith("#")) {
-      throw new Error(
-        `invalid agent settings at ${origin}: nested values are not supported`,
-      );
-    }
-
-    return { kind: "skip" };
-  }
-
-  const line = rawLine.replace(/\s+#.*$/, "").trim();
-
-  if (line === "" || line.startsWith("#")) {
-    return { kind: "skip" };
-  }
-
-  const separator = line.indexOf(":");
-
-  if (separator < 1) {
-    throw new Error(
-      `invalid agent settings at ${origin}: expected \`key: value\`, got ${JSON.stringify(line)}`,
-    );
-  }
-
-  const key = line.slice(0, separator).trim();
-  const value = unquote(line.slice(separator + 1).trim());
-
-  if (key === DOMAIN_KEY) {
-    return { kind: "domain", value };
-  }
-
-  if (!(SETTING_KEYS as readonly string[]).includes(key)) {
-    throw new Error(
-      `invalid agent settings at ${origin}: unknown setting ${JSON.stringify(key)}`,
-    );
-  }
-
-  return { kind: "setting", key: key as SettingKey, value };
-}
-
-/** Record the `secondBrain.domains` value; a second one is an error. */
-function recordDomain(
-  domains: readonly string[] | undefined,
-  value: string,
-  origin: string,
-): readonly string[] {
-  if (domains !== undefined) {
-    throw new Error(
-      `invalid agent settings at ${origin}: duplicate setting ${JSON.stringify(DOMAIN_KEY)}`,
-    );
-  }
-
-  return parseDomainDirs(value, origin);
-}
-
-/** Record one scalar setting; duplicates and empty values are errors. */
-function recordSetting(
-  values: Map<SettingKey, string>,
-  key: SettingKey,
-  value: string,
-  origin: string,
-): void {
-  if (values.has(key)) {
-    throw new Error(
-      `invalid agent settings at ${origin}: duplicate setting ${JSON.stringify(key)}`,
-    );
-  }
-
-  if (value === "") {
-    throw new Error(
-      `invalid agent settings at ${origin}: setting ${JSON.stringify(key)} needs a value`,
-    );
-  }
-
-  values.set(key, value);
-}
-
-/** After the loop: every required key present, isolate a boolean. */
-function validateSettings(
-  values: Map<SettingKey, string>,
-  origin: string,
-): void {
-  for (const key of REQUIRED_KEYS) {
-    if (!values.has(key)) {
-      throw new Error(
-        `invalid agent settings at ${origin}: missing setting ${JSON.stringify(key)}`,
-      );
-    }
-  }
-
-  const isolate = values.get("isolate");
-
-  if (isolate !== undefined && isolate !== "true" && isolate !== "false") {
-    throw new Error(
-      `invalid agent settings at ${origin}: setting ${JSON.stringify("isolate")} must be true or false, got ${JSON.stringify(isolate)}`,
-    );
-  }
-}
-
-/** The AgentSettings the parsed map and domain list describe. */
-function finalizeSettings(
-  values: Map<SettingKey, string>,
-  domains: readonly string[] | undefined,
-): AgentSettings {
-  const provider = values.get("provider");
-  const isolate = values.get("isolate");
-
-  return {
-    command: values.get("command") ?? "",
-    model: values.get("model") ?? "",
-    reasoning: values.get("reasoning") ?? "",
-    ...(provider !== undefined && { provider }),
-    ...(isolate !== undefined && { isolate: isolate === "true" }),
-    ...(domains !== undefined && { secondBrainDomains: domains }),
-  };
-}
-
-/**
- * Parse the settings file: a YAML subset of top-level `key: value`
- * scalars, `#` comments on their own line or trailing the value, and
- * optionally quoted values — plus the one list-valued key
- * `secondBrain.domains`. Anything else (nesting, other lists) is
- * rejected so a typo cannot silently change the agent configuration.
- */
-export function parseSettings(text: string, origin: string): AgentSettings {
-  const values = new Map<SettingKey, string>();
-  let domains: readonly string[] | undefined;
-
-  for (const rawLine of text.split("\n")) {
-    const parsed = parseSettingLine(rawLine, origin);
-
-    if (parsed.kind === "skip") {
-      continue;
-    }
-
-    if (parsed.kind === "domain") {
-      domains = recordDomain(domains, parsed.value, origin);
-    } else {
-      recordSetting(values, parsed.key, parsed.value, origin);
-    }
-  }
-
-  validateSettings(values, origin);
-
-  return finalizeSettings(values, domains);
-}
-
-/** The pi isolation flags (issue #118): mechanically disable every
- *  ambient configuration source — context files (AGENTS.md/CLAUDE.md
- *  discovery), extensions, skills — so a spawned run cannot inherit
- *  globally installed persona, tools, or prompts. Available since
- *  pi 0.67.4. */
-const ISOLATION_FLAGS = [
-  "--no-context-files",
-  "--no-extensions",
-  "--no-skills",
-] as const;
-
-/** The non-interactive agent argv (issue #118): the isolation flags
- *  (unless the operator opted out with `isolate: false`), then the
- *  settings' provider, model, and reasoning, with the prompt as the
- *  `--print` payload. With `isolate: false` the argv is
- *  byte-identical to the pre-isolation one. */
-export function agentArgs(settings: AgentSettings, prompt: string): string[] {
-  return [
-    ...(settings.isolate === false ? [] : ISOLATION_FLAGS),
-    ...(settings.provider ? ["--provider", settings.provider] : []),
-    "--model",
-    settings.model,
-    "--thinking",
-    settings.reasoning,
-    "--print",
-    prompt,
-  ];
-}
-
-/** The isolation state of a spawned run, for progress and digest
- *  lines (issue #118): `isolated` unless the operator opted out. */
-function isolationLabel(settings: AgentSettings): string {
-  return settings.isolate === false ? "not isolated" : "isolated";
-}
-
-/** The `command [--provider P] --model M --thinking T (state)` tail
- *  the spawn sites print when invoking the agent (issue #118) — the
- *  auditable counterpart of agentArgs, one source for both. */
-export function formatAgentInvocation(settings: AgentSettings): string {
-  const providerFlag = settings.provider
-    ? ` --provider ${settings.provider}`
-    : "";
-
-  return `${settings.command}${providerFlag} --model ${settings.model} --thinking ${settings.reasoning} (${isolationLabel(settings)})`;
-}
-
-/** Read and parse the agent settings file; missing values are errors. */
-export async function loadAgentSettings(path: string): Promise<AgentSettings> {
-  let text: string;
-
-  try {
-    text = await readFile(path, "utf8");
-  } catch (cause) {
-    throw new Error(`cannot read agent settings at ${path}`, { cause });
-  }
-
-  return parseSettings(text, path);
-}
 
 /** One vault's source changes between two manifests. */
 export interface VaultSourceChange {
@@ -1176,118 +917,6 @@ export function formatDigest(run: IngestRun): string {
   return `${lines.join("\n")}\n`;
 }
 
-/** How the agent is invoked; injectable for tests. */
-export type AgentRunner = (
-  command: string,
-  args: readonly string[],
-  options: {
-    cwd: string;
-    env: NodeJS.ProcessEnv;
-    timeoutMs?: number | undefined;
-  },
-) => Promise<{ stdout: string; stderr: string }>;
-
-/** The agent gets 30 minutes by default; a hung run must not hang the wrapper. */
-const AGENT_TIMEOUT_MS = 30 * 60_000;
-
-/** Interval for the progress-sink liveness line while the agent
- *  runs (see AGENT_HEARTBEAT_PREFIX for the line's wording). */
-export const HEARTBEAT_MS = 60_000;
-
-/** Heartbeat sentence prefixes (plain or expunge-labeled); the TTY
- *  renderer keeps matching messages on one animated line (spinner + clock). */
-export const AGENT_HEARTBEAT_PREFIX = [
-  "wiki-ingest: agent still running",
-  "wiki-ingest: expunge agent still running",
-] as const;
-
-/** Collected output cap: 16 MB, far above any final agent report. */
-const AGENT_MAX_BUFFER = 16 * 1024 * 1024;
-
-/** The last 500 characters of a buffer — where the failure lands. */
-function tail(text: string): string {
-  return text.slice(-500).trim();
-}
-
-/**
- * Run the agent CLI non-interactively, capturing its final output.
- * stdin is closed ("ignore"): an open pipe never reaching EOF makes
- * the agent wait on stdin forever — verified against pi 0.84.2, whose
- * `-p` mode reads stdin even when the prompt arrives via `--print`.
- * A run exceeding AGENT_TIMEOUT_MS is killed and reported as failed.
- */
-export function spawnAgent(
-  command: string,
-  args: readonly string[],
-  options: {
-    cwd: string;
-    env: NodeJS.ProcessEnv;
-    timeoutMs?: number | undefined;
-  },
-): Promise<{ stdout: string; stderr: string }> {
-  const timeoutMs = options.timeoutMs ?? AGENT_TIMEOUT_MS;
-
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, [...args], {
-      cwd: options.cwd,
-      env: options.env,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    const stdout: Buffer[] = [];
-    const stderr: Buffer[] = [];
-    let bytes = 0;
-
-    const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      const seconds = Math.ceil(timeoutMs / 1000);
-
-      reject(
-        new Error(
-          `agent ${command} timed out after ${seconds} second${seconds === 1 ? "" : "s"}`,
-        ),
-      );
-    }, timeoutMs);
-
-    const collect = (chunks: Buffer[], chunk: Buffer) => {
-      bytes += chunk.length;
-
-      if (bytes > AGENT_MAX_BUFFER) {
-        child.kill("SIGKILL");
-
-        return;
-      }
-
-      chunks.push(chunk);
-    };
-
-    child.stdout.on("data", (chunk: Buffer) => collect(stdout, chunk));
-    child.stderr.on("data", (chunk: Buffer) => collect(stderr, chunk));
-    child.on("error", (error: Error) => {
-      clearTimeout(timer);
-      reject(new Error(`agent ${command} could not start: ${error.message}`));
-    });
-    child.on("close", (code, signal) => {
-      clearTimeout(timer);
-
-      const out = Buffer.concat(stdout).toString("utf8");
-      const errText = Buffer.concat(stderr).toString("utf8");
-
-      if (code === 0) {
-        resolve({ stdout: out, stderr: errText });
-
-        return;
-      }
-
-      const why =
-        signal !== null
-          ? `killed with ${signal} (output over ${AGENT_MAX_BUFFER} bytes, or wrapper shutdown)`
-          : `exited with code ${code}`;
-
-      reject(new Error(`agent ${why}: ${tail(errText)}`));
-    });
-  });
-}
-
 /** Bucket the post-run status entries: created (added or
  *  untracked), updated (modified), deleted (deleted now but not
  *  already deleted pre-run). */
@@ -1443,14 +1072,6 @@ export type IngestResult =
        *  message (issue #13). */
       readonly diff: ManifestDiff;
     };
-
-export async function readPrompt(path: string): Promise<string> {
-  try {
-    return await readFile(path, "utf8");
-  } catch (cause) {
-    throw new Error(`cannot read prompt at ${path}`, { cause });
-  }
-}
 
 /** Prompt file per mode: first run, later changes, deletions. */
 function promptFileFor(mode: "full" | "incremental" | "expunge"): string {
@@ -2366,59 +1987,6 @@ setup-schedule (issue #14).`;
 /** Print one CLI usage error red on stderr and set the exit code. */
 function fail(message: string): void {
   cliFail("wiki-ingest", message);
-}
-
-/** A stderr progress surface: plain lines, or one animated line. */
-export interface ProgressSink {
-  render(message: string): void;
-  end(): void;
-}
-
-export interface ProgressTones {
-  /** Routine progress lines. */
-  readonly dim: (text: string) => string;
-  /** WARNING-severity lines. */
-  readonly yellow: (text: string) => string;
-}
-
-/**
- * The stderr presentation for one wiki-ingest run: agent heartbeats
- * keep one animated line (spinner + clock) on a TTY; every other
- * message scrolls. Non-animated runs append plain lines only.
- * Severity is detected here, at the render boundary: WARNING messages
- * render yellow, everything else dim.
- */
-export function createAgentProgressSink(
-  write: (text: string) => void,
-  writeLine: (text: string) => void,
-  animated: boolean,
-  tones: ProgressTones,
-  heartbeatPrefix: string | readonly string[] = AGENT_HEARTBEAT_PREFIX,
-): ProgressSink {
-  const prefixes =
-    typeof heartbeatPrefix === "string" ? [heartbeatPrefix] : heartbeatPrefix;
-  const styled = (message: string) =>
-    isWarning(message) ? tones.yellow(message) : tones.dim(message);
-
-  if (!animated) {
-    return {
-      render: (message) => writeLine(styled(message)),
-      end: () => {},
-    };
-  }
-
-  const renderer = createProgressRenderer(write);
-
-  return {
-    render: (message) => {
-      if (prefixes.some((prefix) => message.startsWith(prefix))) {
-        renderer.live(styled(message));
-      } else {
-        renderer.event(styled(message));
-      }
-    },
-    end: () => renderer.end(),
-  };
 }
 
 /** The value-taking flags (`--settings`, `--outputs`, `--timeout`,

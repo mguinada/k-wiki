@@ -17,7 +17,7 @@ import { runGit } from "../src/data/git.ts";
 import {
   type AgentRunner,
   createAgentProgressSink,
-} from "../src/ingest/wiki-ingest.ts";
+} from "../src/ingest/agent-run.ts";
 import { serializeManifest } from "../src/sync/manifest.ts";
 import {
   type CommitResult,
