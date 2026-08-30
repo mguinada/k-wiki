@@ -661,7 +661,7 @@ describe("wiki-sync e2e", () => {
         vaults: [
           { name: VAULT_NAME, root: repo.vaultRoot, exclude: "wiki:false" },
         ],
-        publish: { mirror, include: ["wiki/**"] },
+        publish: { mirror, include: ["wiki/**"], root: "wiki" },
       }),
     );
 
@@ -671,11 +671,11 @@ describe("wiki-sync e2e", () => {
     expect(first.out).toMatch(
       /^- \*\*Publish:\*\* ok — \d+ files copied, 0 files removed$/m,
     );
+    await expect(readFile(join(mirror, "index.md"), "utf8")).resolves.toContain(
+      "Index v2",
+    );
     await expect(
-      readFile(join(mirror, "wiki", "index.md"), "utf8"),
-    ).resolves.toContain("Index v2");
-    await expect(
-      readFile(join(mirror, "wiki", "concepts", "stub.md"), "utf8"),
+      readFile(join(mirror, "concepts", "stub.md"), "utf8"),
     ).resolves.toContain("stub body");
 
     // Idempotent: a no-change rerun publishes nothing and the mirror
@@ -684,14 +684,14 @@ describe("wiki-sync e2e", () => {
 
     expect(second.code).toBe(0);
     expect(second.out).toContain("nothing to do");
-    await expect(
-      readFile(join(mirror, "wiki", "index.md"), "utf8"),
-    ).resolves.toContain("Index v2");
+    await expect(readFile(join(mirror, "index.md"), "utf8")).resolves.toContain(
+      "Index v2",
+    );
 
     // A wiki page deleted on the Mac leaves the mirror on the next
     // publish; a mirror file the transport mangled is healed.
     await rm(join(repo.dataRoot, "wiki", "concepts", "stub.md"));
-    await rm(join(mirror, "wiki", "index.md"));
+    await rm(join(mirror, "index.md"));
 
     const third = await runCycle(repo);
 
@@ -700,10 +700,10 @@ describe("wiki-sync e2e", () => {
       /^- \*\*Publish:\*\* ok — 1 file copied, 1 file removed$/m,
     );
     await expect(
-      readFile(join(mirror, "wiki", "concepts", "stub.md"), "utf8"),
+      readFile(join(mirror, "concepts", "stub.md"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
-    await expect(
-      readFile(join(mirror, "wiki", "index.md"), "utf8"),
-    ).resolves.toContain("Index v2");
+    await expect(readFile(join(mirror, "index.md"), "utf8")).resolves.toContain(
+      "Index v2",
+    );
   });
 });

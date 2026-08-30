@@ -46,6 +46,9 @@ export interface PublishConfig {
   /** Mirror root with `~` already expanded. */
   readonly mirror: string;
   readonly include: readonly string[];
+  /** Top-level source segment re-based away in the mirror (issue
+   *  #203); undefined = verbatim copy (the issue #15 behavior). */
+  readonly root: string | undefined;
 }
 
 export interface SyncConfig {
@@ -271,10 +274,41 @@ function parsePublish(value: unknown, home: string): PublishConfig | undefined {
     throw new Error('publish "include" must list at least one pattern');
   }
 
+  const root = parsePublishRoot(value.root, include);
+
   return {
     mirror: expandHome(value.mirror, home),
     include,
+    root,
   };
+}
+
+/** Parse the optional re-root segment (issue #203): it must be one
+ *  literal top-level path segment (no `*` — include patterns expand
+ *  wildcards, the strip is literal) and every include pattern must
+ *  select files beneath it, so stripping it from the selected set is
+ *  total. */
+function parsePublishRoot(
+  value: unknown,
+  include: readonly string[],
+): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!isNonEmptyString(value) || value.includes("/") || value.includes("*")) {
+    throw new Error(
+      'publish "root" must be a non-empty string naming a single top-level path segment',
+    );
+  }
+
+  if (!include.every((pattern) => pattern.startsWith(`${value}/`))) {
+    throw new Error(
+      `publish "root" ${JSON.stringify(value)} must match the include patterns`,
+    );
+  }
+
+  return value;
 }
 
 /** Parse an optional top-level `dataRoot`; undefined when absent. */

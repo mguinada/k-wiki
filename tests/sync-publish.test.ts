@@ -13,8 +13,9 @@ import { runPublishStage } from "../src/sync/publish.ts";
 
 /**
  * The publish stage (guide §26, issue #15): copy the data repo's
- * include-matched files verbatim into the mirror vault — deletions
- * included, the mirror's `.obsidian` device state preserved, idempotent
+ * include-matched files into the mirror vault — verbatim, or
+ * re-based to vault root when `root` is configured (issue #203) —
+ * deletions included, the mirror's `.obsidian` device state preserved, idempotent
  * (identical bytes are never rewritten).
  */
 
@@ -251,6 +252,97 @@ describe("runPublishStage", () => {
     expect(progress).toContainEqual(
       expect.stringContaining("2 copied, 0 removed"),
     );
+  });
+
+  it("re-bases target paths by stripping the configured root", async () => {
+    const tree = await makeTree();
+
+    const result = await runPublishStage({ ...optionsFor(tree), root: "wiki" });
+
+    await expect(readFile(join(tree.mirror, "index.md"), "utf8")).resolves.toBe(
+      "# Index\n",
+    );
+    await expect(
+      readFile(join(tree.mirror, "concepts", "stub.md"), "utf8"),
+    ).resolves.toBe("stub\n");
+    await expect(stat(join(tree.mirror, "wiki"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    expect(result.copied).toBe(2);
+  });
+
+  it("prunes the old verbatim tree when switching to a re-rooted mirror", async () => {
+    const tree = await makeTree();
+
+    await mkdir(join(tree.mirror, "wiki", "concepts"), { recursive: true });
+    await writeFile(join(tree.mirror, "wiki", "index.md"), "old\n");
+    await writeFile(join(tree.mirror, "wiki", "concepts", "stub.md"), "old\n");
+    await mkdir(join(tree.mirror, ".obsidian"), { recursive: true });
+    await writeFile(join(tree.mirror, ".obsidian", "state.json"), "{}");
+
+    const result = await runPublishStage({ ...optionsFor(tree), root: "wiki" });
+
+    await expect(stat(join(tree.mirror, "wiki"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(readFile(join(tree.mirror, "index.md"), "utf8")).resolves.toBe(
+      "# Index\n",
+    );
+    await expect(
+      readFile(join(tree.mirror, ".obsidian", "state.json"), "utf8"),
+    ).resolves.toBe("{}");
+    expect(result).toEqual({ copied: 2, removed: 2 });
+  });
+
+  it("writes nothing on a second re-rooted run over an intact mirror", async () => {
+    const tree = await makeTree();
+
+    await runPublishStage({ ...optionsFor(tree), root: "wiki" });
+
+    const index = join(tree.mirror, "index.md");
+    const before = await stat(index);
+    const result = await runPublishStage({ ...optionsFor(tree), root: "wiki" });
+    const after = await stat(index);
+
+    expect(result).toEqual({ copied: 0, removed: 0 });
+    expect(after.mtimeMs).toBe(before.mtimeMs);
+  });
+
+  it("passes files outside the root through unchanged", async () => {
+    const tree = await makeTree();
+
+    await mkdir(join(tree.dataRoot, "notes"), { recursive: true });
+    await writeFile(join(tree.dataRoot, "notes", "foo.md"), "note\n");
+
+    await runPublishStage({
+      ...optionsFor(tree),
+      include: ["**/*.md"],
+      root: "wiki",
+    });
+
+    await expect(
+      readFile(join(tree.mirror, "notes", "foo.md"), "utf8"),
+    ).resolves.toBe("note\n");
+    await expect(readFile(join(tree.mirror, "index.md"), "utf8")).resolves.toBe(
+      "# Index\n",
+    );
+  });
+
+  it("publishes a root-named path verbatim when no root is configured", async () => {
+    const tree = await makeTree();
+
+    await mkdir(join(tree.dataRoot, "undefined"), { recursive: true });
+    await writeFile(join(tree.dataRoot, "undefined", "x.md"), "edge\n");
+
+    const result = await runPublishStage({
+      ...optionsFor(tree),
+      include: ["wiki/**", "undefined/**"],
+    });
+
+    await expect(
+      readFile(join(tree.mirror, "undefined", "x.md"), "utf8"),
+    ).resolves.toBe("edge\n");
+    expect(result.copied).toBe(3);
   });
 
   it("runs without a progress sink", async () => {
