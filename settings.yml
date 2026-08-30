@@ -36,7 +36,7 @@ isolate: true
 # or contract rule governs web use — granting search/fetch tools
 # would let unattended runs send note-derived content to third
 # parties and add facts with no origin in raw/. Revisit once a
-# usage policy exists (see the research issue).
+# usage policy exists (issue #228).
 isolate.skills: [.agents/skills/obsidian-markdown, .agents/skills/obsidian-bases]
 isolate.extensions: [npm:pi-subagents]
 
