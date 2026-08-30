@@ -149,6 +149,18 @@ stamp, never the folder name — renaming an
 instance is a safe operator procedure with one budgeted full run
 ([guide §19](docs/karpathy_wiki_implementation_guide.md#19-git)).
 
+The mirror vault follows the same naming family: **`KWiki <Subject>`**,
+TitleCase with spaces — `KWiki` the brand prefix, the subject trailing;
+this instance's mirror is `KWiki Engineering` (in the same iCloud
+container as the source vault). Obsidian on iPhone/iPad lists vaults by
+folder name, and the operating rule "edits belong upstream, never in the
+mirror" depends on the picker making source and mirror unmistakable: a
+mirror never takes a source vault's name, never the bare brand `KWiki`,
+and never differs from a source name by case alone — case-insensitive
+filesystems (the macOS/iOS default) would not show the difference. One
+mirror per instance
+([guide §26](docs/karpathy_wiki_implementation_guide.md#26-devices-and-sync)).
+
 ### 1. One vault → one wiki (baseline)
 
 The current instance: one iCloud vault, one data repo, the four-step
@@ -719,13 +731,15 @@ edit the snapshot by hand.
 which vaults to sync, where the data repo lives (`dataRoot`), and where to
 publish the mirror (guide §26). The
 `publish` section activates the mirror publish step: a `mirror` path
-(the `KWiki` folder inside the iCloud Obsidian container's `Documents`
-folder — the one iCloud Drive shows as Obsidian) plus the required
+(the `KWiki Engineering` folder inside the iCloud Obsidian container's
+`Documents` folder — the one iCloud Drive shows as Obsidian; mirrors are
+named `KWiki <Subject>`, see
+[Usage models](#usage-models)) plus the required
 include patterns selecting what to publish (`["wiki/**"]` in the
 shipped config). The optional `root` knob (`"wiki"` in the shipped
 config) re-bases the selected files' mirror paths by stripping that
 top-level segment, so the wiki tree sits at the mirror vault's root
-instead of under a `KWiki/wiki/` husk (issue #203). Sync state —
+instead of under a `wiki/` husk (issue #203). Sync state —
 hashes and timestamps — lives in `raw/manifest.json`, keyed per vault
 namespace (guide §25). Sync is idempotent: a run with no source changes
 copies, removes, and writes nothing.

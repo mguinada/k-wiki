@@ -1518,9 +1518,11 @@ W: wiki sync   reading copy on phones/tablets/Macs → mirror vault
 | Source vaults | Wherever their sync method keeps them (iCloud: `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/<VaultName>/`) | Transport constraint |
 | Code repo (`k-wiki`) | A plain local folder, e.g. `~/Lab/k-wiki/` | Implementation only; `.git` must never live in service-synced storage; no personal material |
 | Data repo (`k-wiki-engineering-data`) | A plain local folder placed by `sync.json`'s `dataRoot`, e.g. `~/Lab/k-wiki-engineering-data/` | Versions `raw/` and `wiki/` contents; may hold personal material — private remote only, and only by explicit opt-in |
-| Mirror vault (optional) | Inside the chosen transport's folder, e.g. `…/iCloud~md~obsidian/Documents/KWiki/` | Disposable derived reading copy |
+| Mirror vault (optional) | Inside the chosen transport's folder, e.g. `…/iCloud~md~obsidian/Documents/KWiki Engineering/` | Disposable derived reading copy |
 
 Never place either checkout — code or data — inside iCloud, Dropbox, or any synced folder: sync services race with git writes and corrupt repositories, and Obsidian's own guidance says never sync one vault through two services. Both repos move between machines only via `git push`/`git pull`. Scenario B/C instances follow the same rule — one checkout pair each, plain local folders.
+
+**Name the mirror vault after the wiki's subject — `KWiki <Subject>`, TitleCase with spaces (here `KWiki Engineering`) — never the bare brand `KWiki`, never a source vault's name, one mirror per instance.** The mirror sits in the same transport container as the source vaults, and Obsidian on iPhone/iPad lists vaults by folder name: the picker must make source and mirror unmistakable, because the operating rule — edits belong upstream, never in the mirror — depends on it. The `KWiki` prefix brands the family and keeps a second instance's mirror from colliding; names that differ only by case are invisible on the case-insensitive filesystems macOS and iOS default to, so mirror and source names must differ as full strings. This is the mirror-side sibling of the data repo's `k-wiki-<subject>-data` convention (Section 19). Renaming the mirror is an operator procedure: commit the new `publish.mirror` path first, then `mv` the folder (it is disposable derived data — re-copying heals anything), then run one publish and verify the picker shows the new vault only; pause the scheduled pipeline (Section 18) for the window, or a tick re-creates the old folder from the not-yet-pulled config.
 
 ### Sync configuration (`sync.json`)
 
@@ -1535,7 +1537,7 @@ All placement knowledge lives in one human-owned file at the `k-wiki` root:
       "exclude": "wiki:false" }
   ],
   "publish": {
-    "mirror": "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/KWiki",
+    "mirror": "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/KWiki Engineering",
     "include": ["wiki/**"],
     "root": "wiki"
   }
