@@ -7,7 +7,7 @@ A concise implementation guide for building an LLM-maintained wiki as a **derive
 ## 0. Target Architecture
 
 ```text
-MyVault/                         k-wiki-data/
+MyVault/                         k-wiki-engineering-data/
 Human source                    Derived machine knowledge
     │
     │ deterministic sync
@@ -28,7 +28,7 @@ Human source                    Derived machine knowledge
                                   └── comparisons/
 ```
 
-**Core rule:** `MyVault` is the source of truth. `k-wiki-data` — the `raw/` and `wiki/` trees — is disposable derived data (Section 19).
+**Core rule:** `MyVault` is the source of truth. `k-wiki-engineering-data` — the `raw/` and `wiki/` trees — is disposable derived data (Section 19).
 
 This does **not** violate the Karpathy-style wiki principles. It strengthens source immutability, provenance, separation of human/LLM ownership, and reproducibility.
 
@@ -113,9 +113,9 @@ Rules of thumb:
 Example:
 
 ```text
-~/Obsidian/MyVault/     ← source vault (human-owned)
-k-wiki/                 ← code repo (this repository)
-k-wiki-data/            ← data repo: raw/ and wiki/ contents (Section 19)
+~/Obsidian/MyVault/      ← source vault (human-owned)
+k-wiki/                  ← code repo (this repository)
+k-wiki-engineering-data/ ← data repo: raw/ and wiki/ contents (Section 19)
 ```
 
 Open both as separate Obsidian vaults. Both repos live in plain local folders (Section 26); every instruction in this guide is relative to the repo root that owns the path, and paths under `raw/` and `wiki/` refer to the data repo's trees (Section 19).
@@ -127,10 +127,10 @@ Recommended ownership:
 | Area | Owner | LLM writes? |
 |---|---|---:|
 | `MyVault/` | Human | No |
-| `k-wiki-data/raw/` | Sync process | No |
-| `k-wiki-data/wiki/` | LLM | Yes |
-| `k-wiki-data/wiki/index.md` | LLM | Yes |
-| `k-wiki-data/wiki/log.md` | LLM | Append-only |
+| `k-wiki-engineering-data/raw/` | Sync process | No |
+| `k-wiki-engineering-data/wiki/` | LLM | Yes |
+| `k-wiki-engineering-data/wiki/index.md` | LLM | Yes |
+| `k-wiki-engineering-data/wiki/log.md` | LLM | Append-only |
 | `k-wiki/AGENTS.md` | Human (router, invariants); dev agent (conventions) | Conventions block only |
 | `k-wiki/wiki/AGENTS.md` | Human | Only via approved schema changes |
 | `k-wiki/sync.json` | Human | No |
@@ -224,15 +224,15 @@ MyVault/
     │
     │ deterministic sync
     ▼
-k-wiki-data/raw/
+k-wiki-engineering-data/raw/
     │
     │ LLM analysis
     ▼
-k-wiki-data/normalized/
+k-wiki-engineering-data/normalized/
     │
     │ LLM ingest
     ▼
-k-wiki-data/wiki/
+k-wiki-engineering-data/wiki/
 ```
 
 `normalized/` must also be derived data. Never use it to overwrite `MyVault/` automatically.
@@ -294,7 +294,7 @@ k-wiki/                  ← code repo (this repository)
 ├── AGENTS.md
 └── .git/
 
-k-wiki-data/             ← data repo (Section 19)
+k-wiki-engineering-data/ ← data repo (Section 19)
 ├── raw/
 │   └── notes/
 │
@@ -321,7 +321,7 @@ The exact taxonomy can evolve. Start small.
 The synchronization pipeline is:
 
 ```text
-MyVault → k-wiki-data/raw → k-wiki-data/wiki
+MyVault → k-wiki-engineering-data/raw → k-wiki-engineering-data/wiki
 ```
 
 Never:
@@ -352,7 +352,7 @@ Drop wiki:false notes
     ↓
 Compare hashes
     ↓
-Copy new/changed notes → k-wiki-data/raw/
+Copy new/changed notes → k-wiki-engineering-data/raw/
     ↓
 Detect deleted notes
     ↓
@@ -368,7 +368,7 @@ On macOS, `launchd` plus a small TypeScript/Node CLI is a good implementation.
 Track hashes in something such as:
 
 ```text
-k-wiki-data/raw/manifest.json
+k-wiki-engineering-data/raw/manifest.json
 ```
 
 Example:
@@ -1001,11 +1001,23 @@ Two rules keep multi-instance setups safe (hardened during the first full build,
 Two repositories, two concerns:
 
 - **Code repo** (`k-wiki`): the pipeline — sync, prompts, tests, skills, this guide. It versions only the `raw/` and `wiki/` directory skeleton; the contents of both trees are gitignored. It holds no personal material, so it can be shared or published as-is.
-- **Data repo** (`k-wiki-data`, placed by `sync.json`'s `dataRoot`): the contents of `raw/` and `wiki/`, plus `raw/manifest.json`. Ingestion commits land here. The data repo can hold personal notes: push it only to a private remote you explicitly control. Local git — history, rollback, audit — works with no remote at all; the remote is the opt-in.
+- **Data repo** (`k-wiki-engineering-data`, placed by `sync.json`'s `dataRoot`): the contents of `raw/` and `wiki/`, plus `raw/manifest.json`. Ingestion commits land here. The data repo can hold personal notes: push it only to a private remote you explicitly control. Local git — history, rollback, audit — works with no remote at all; the remote is the opt-in.
 
 Seed the data repo once with `npm run data:init`: git init, copy the skeleton from the code repo, first commit. The copy step derives from `git ls-files`, so the skeleton cannot drift. The seed also writes the standing `.gitignore` the data repo must carry — Obsidian UI state (`.obsidian/`, `wiki/.obsidian/`: an open Obsidian writing into the repo is an external writer that guardrail 1 would revert runs over) and the ingest snapshot (issue #112). gitignore does not apply to already-tracked files, so the rules must precede the files; when one does not — a rule added after its files were committed — `wiki-ingest` warns pre-flight, one line per file, with the fix (`git rm --cached <path>`), and proceeds: a signal, not a gate (issue #146). The code repo's `wiki/AGENTS.md` is the canonical contract; the copy shipped into the data repo is derived, exactly like the mirror copy (Section 26). Worked examples of data-repo privacy postures — local only, opt-in remote, bare repo on an external disk — are in the README's Usage models section.
 
 Keep both checkouts in plain local folders — never inside a cloud-synced folder — and share them between Macs through git remotes (Section 26).
+
+**Name the data repo after the wiki's subject — `k-wiki-<subject>-data` — never generically.** Two checkouts each holding a `k-wiki-data` folder is exactly the crossed-instance confusion the snapshot stamp (issue #95) catches mechanically; a subject-based name prevents it at the human level. The subject is the wiki's, not a vault's — `sync.json` can feed several vaults into one wiki (README usage model 4), and a repo fed by vaults "Engineering" and "Work" would be misnamed after either. The data repo path is operator-owned config: the wiki's identity is the manifest snapshot stamp, never the folder name.
+
+Renaming an instance is therefore safe at the data layer, and costs one full run.
+
+**Pause the scheduled pipeline first (Section 18)** — if the launchd job is installed (`~/Library/LaunchAgents/com.kwiki.scheduled-run.plist`), run `npm run setup-schedule -- --uninstall` from the production checkout before step 1. Two hazards otherwise: a tick that fires between steps 1 and 3 resolves the old `dataRoot`, recreates the folder, and re-syncs the full vault into it — exactly the crossed-instance confusion this convention prevents; and the scheduled wrapper runs `wiki-sync` with the default `--timeout 1800`, which would truncate the post-rename full re-ingest and retry it every interval instead of one clean budgeted run. Reinstall (`npm run setup-schedule`) only after step 5's verification and after pulling the `dataRoot` commit into the production checkout — the schedule re-reads `sync.json` every tick but never updates the code checkout.
+
+1. Rename the local directory (`mv ~/Lab/k-wiki-data ~/Lab/k-wiki-<subject>-data`) — git history, `outputs/`, and the manifest snapshot move with it.
+2. Rename the GitHub upstream (`gh repo rename <new-name> -R <owner>/<old-name>`), then update the local remote explicitly (`git remote set-url origin <new-url>`); GitHub redirects the old URL, but verify push/pull and that the renamed repo's settings survived.
+3. Update `dataRoot` in the code repo's `sync.json` and commit it.
+4. Budget one full re-ingest, run manually with a raised `--timeout`: the snapshot is stamped with the data repo root at write time (issue #95), so the first `wiki-ingest` after the rename reads a foreign-stamped snapshot, warns loudly, and falls back to a full run (~1 min/note; e.g. `--timeout 14400`). Nothing is lost — the fallback is correct by design. Time the rename right after a topology rebuild, when the next run is a full run anyway, and the cost is zero.
+5. Verify: `npm run health -- <dataRoot>/raw` exits 0; the first digest shows the full-run mode; the next incremental run is fast again.
 
 Recommended review workflow (in the data repo):
 
@@ -1205,39 +1217,39 @@ Only after this works reliably should you automate the schedule.
 The complete system should eventually look like:
 
 ```text
-                         HUMAN
-                           │
-                           ▼
-                  ┌─────────────────┐
-                  │    MyVault      │
-                  │                 │
-                  │ source of truth │
-                  └────────┬────────┘
-                           │
-                     deterministic
-                         sync
-                           │
-                           ▼
-                  ┌─────────────────┐
-                  │ k-wiki-data/raw │
-                  │                 │
-                  │ immutable input │
-                  └────────┬────────┘
-                           │
-                         ingest
-                           │
-                           ▼
-                  ┌─────────────────┐
-                  │ k-wiki-data/wiki│
-                  │                 │
-                  │ LLM-maintained  │
-                  │ knowledge base  │
-                  └────────┬────────┘
-                           │
-                     lint / query
-                           │
-                           ▼
-                          LLM
+                                HUMAN
+                                  │
+                                  ▼
+                  ┌───────────────────────────────┐
+                  │            MyVault            │
+                  │                               │
+                  │        source of truth        │
+                  └───────────────┬───────────────┘
+                                  │
+                            deterministic
+                                sync
+                                  │
+                                  ▼
+                  ┌───────────────────────────────┐
+                  │ k-wiki-engineering-data/raw   │
+                  │                               │
+                  │        immutable input        │
+                  └───────────────┬───────────────┘
+                                  │
+                               ingest
+                                  │
+                                  ▼
+                  ┌───────────────────────────────┐
+                  │ k-wiki-engineering-data/wiki  │
+                  │                               │
+                  │        LLM-maintained         │
+                  │        knowledge base         │
+                  └───────────────┬───────────────┘
+                                  │
+                            lint / query
+                                  │
+                                  ▼
+                                 LLM
 ```
 
 ### Bottom line
@@ -1500,7 +1512,7 @@ W: wiki sync   reading copy on phones/tablets/Macs → mirror vault
 |---|---|---|
 | Source vaults | Wherever their sync method keeps them (iCloud: `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/<VaultName>/`) | Transport constraint |
 | Code repo (`k-wiki`) | A plain local folder, e.g. `~/Lab/k-wiki/` | Implementation only; `.git` must never live in service-synced storage; no personal material |
-| Data repo (`k-wiki-data`) | A plain local folder placed by `sync.json`'s `dataRoot`, e.g. `~/Lab/k-wiki-data/` | Versions `raw/` and `wiki/` contents; may hold personal material — private remote only, and only by explicit opt-in |
+| Data repo (`k-wiki-engineering-data`) | A plain local folder placed by `sync.json`'s `dataRoot`, e.g. `~/Lab/k-wiki-engineering-data/` | Versions `raw/` and `wiki/` contents; may hold personal material — private remote only, and only by explicit opt-in |
 | Mirror vault (optional) | Inside the chosen transport's folder, e.g. `…/iCloud~md~obsidian/Documents/KWiki/` | Disposable derived reading copy |
 
 Never place either checkout — code or data — inside iCloud, Dropbox, or any synced folder: sync services race with git writes and corrupt repositories, and Obsidian's own guidance says never sync one vault through two services. Both repos move between machines only via `git push`/`git pull`. Scenario B/C instances follow the same rule — one checkout pair each, plain local folders.
@@ -1511,10 +1523,10 @@ All placement knowledge lives in one human-owned file at the `k-wiki` root:
 
 ```json
 {
-  "dataRoot": "~/Lab/k-wiki-data",
+  "dataRoot": "~/Lab/k-wiki-engineering-data",
   "vaults": [
-    { "name": "Documents",
-      "root": "~/Library/Mobile Documents/iCloud~md~obsidian/Documents",
+    { "name": "Engineering",
+      "root": "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/Engineering",
       "exclude": "wiki:false" }
   ],
   "publish": {
@@ -1561,7 +1573,7 @@ Never run two transports on the same mirror vault. Publishing two independent mi
 
 ### Multiple Macs
 
-1. Give each Mac its own checkout pair in the same plain location (code at `~/Lab/k-wiki/`, data at `~/Lab/k-wiki-data/`). The code repo shares one remote — publishable, since it holds no personal material. The data repo's private remote is the explicit opt-in.
+1. Give each Mac its own checkout pair in the same plain location (code at `~/Lab/k-wiki/`, data at `~/Lab/k-wiki-engineering-data/`). The code repo shares one remote — publishable, since it holds no personal material. The data repo's private remote is the explicit opt-in.
 2. Exactly one Mac runs the scheduled pipeline; the others pull read-only.
 3. The repo travels only via git — never by placing a checkout in a synced folder.
 

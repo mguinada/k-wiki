@@ -138,6 +138,17 @@ the examples here are the operator-level contract. Modes that arrive
 with open issues are [listed separately](#arriving-with-open-issues)
 and documented only when they land.
 
+Every instance's data repo is named for its wiki's subject —
+`k-wiki-<subject>-data`, this instance `k-wiki-engineering-data` —
+never generically: two checkouts each holding a `k-wiki-data`
+folder is exactly the crossed-instance confusion the snapshot stamp
+(issue #95) catches mechanically, and a subject-based name prevents
+it at the human level. The path is operator-owned config
+(`sync.json`'s `dataRoot`); the wiki's identity is that same
+stamp, never the folder name — renaming an
+instance is a safe operator procedure with one budgeted full run
+([guide §19](docs/karpathy_wiki_implementation_guide.md#19-git)).
+
 ### 1. One vault → one wiki (baseline)
 
 The current instance: one iCloud vault, one data repo, the four-step
@@ -147,11 +158,11 @@ standing checks:
 ```sh
 npm run wiki-sync   # sync → ingest → lint → crosslinks (configured) → verification → commit → publish (configured)
 # review: the printed digest, git log -1 in the data repo
-npm run check-links -- ~/Lab/k-wiki-data/wiki   # every [[wikilink]] resolves
-npm run check-provenance -- ~/Lab/k-wiki-data/wiki  # every sources entry and origin is alive
-npm run check-fidelity -- ~/Lab/k-wiki-data/wiki ~/Lab/k-wiki-data/raw  # quoted tokens trace to origins; titles match file names
-npm run health -- ~/Lab/k-wiki-data/raw         # raw/ matches its manifest
-npm run dashboard -- ~/Lab/k-wiki-data          # regenerate the KPI dashboard (also refreshed by every ingest); add -o to open it
+npm run check-links -- ~/Lab/k-wiki-engineering-data/wiki   # every [[wikilink]] resolves
+npm run check-provenance -- ~/Lab/k-wiki-engineering-data/wiki  # every sources entry and origin is alive
+npm run check-fidelity -- ~/Lab/k-wiki-engineering-data/wiki ~/Lab/k-wiki-engineering-data/raw  # quoted tokens trace to origins; titles match file names
+npm run health -- ~/Lab/k-wiki-engineering-data/raw         # raw/ matches its manifest
+npm run dashboard -- ~/Lab/k-wiki-engineering-data          # regenerate the KPI dashboard (also refreshed by every ingest); add -o to open it
 ```
 
 The command commits the data repo itself, so the next digest covers
@@ -253,13 +264,17 @@ into its own `raw/notes/<name>/` namespace with its own manifest key:
 
 ```json
 {
-  "dataRoot": "~/Lab/k-wiki-data",
+  "dataRoot": "~/Lab/k-wiki-life-data",
   "vaults": [
     { "name": "Work", "root": "~/Vaults/Work", "exclude": "wiki:false" },
     { "name": "Personal", "root": "~/Vaults/Personal", "exclude": "wiki:false" }
   ]
 }
 ```
+
+The `dataRoot` names the wiki's subject — here both vaults together —
+never one of its vaults: several vaults feed one wiki in this model,
+and either vault's name would misname the repo (guide §19).
 
 **Sync is supported today; wiki-contract operation is not.** The e2e
 suite covers a full single-vault lifecycle plus two-vault sync
@@ -302,7 +317,7 @@ command: pi
 provider: openrouter
 model: moonshotai/kimi-k2.6
 reasoning: high
-secondBrain.domains: [~/Lab/k-wiki-data/wiki]
+secondBrain.domains: [~/Lab/k-wiki-engineering-data/wiki]
 ```
 
 The `secondBrain.domains` key (a `[...]`-wrapped, comma-separated
@@ -362,7 +377,7 @@ failure fails the cycle before the commit. The manual commands (one
 npm run check-links -- ~/Lab/k-wiki-second-brain-data/wiki
 npm run check-provenance -- ~/Lab/k-wiki-second-brain-data/wiki ~/Lab/k-wiki-second-brain-data/raw
 npm run check-fidelity -- ~/Lab/k-wiki-second-brain-data/wiki ~/Lab/k-wiki-second-brain-data/raw
-npm run check-crosslinks -- ~/Lab/k-wiki-second-brain-data/wiki ~/Lab/k-wiki-data/wiki
+npm run check-crosslinks -- ~/Lab/k-wiki-second-brain-data/wiki ~/Lab/k-wiki-engineering-data/wiki
 npm run health -- ~/Lab/k-wiki-second-brain-data/raw
 ```
 
@@ -371,7 +386,7 @@ way — self-referenced, it asserts the default instance (a domain
 wiki) contains no cross-wiki links:
 
 ```sh
-npm run check-crosslinks -- ~/Lab/k-wiki-data/wiki ~/Lab/k-wiki-data/wiki
+npm run check-crosslinks -- ~/Lab/k-wiki-engineering-data/wiki ~/Lab/k-wiki-engineering-data/wiki
 ```
 
 ### 6. Topology changes by rebuild
@@ -398,9 +413,9 @@ works — a private GitHub repo, a self-hosted one, or a bare repo on
 an external disk as the only remote:
 
 ```sh
-git init --bare /Volumes/Backup/k-wiki-data.git   # once, on the disk
-cd ~/Lab/k-wiki-data
-git remote add origin /Volumes/Backup/k-wiki-data.git
+git init --bare /Volumes/Backup/k-wiki-engineering-data.git   # once, on the disk
+cd ~/Lab/k-wiki-engineering-data
+git remote add origin /Volumes/Backup/k-wiki-engineering-data.git
 git push -u origin main
 ```
 

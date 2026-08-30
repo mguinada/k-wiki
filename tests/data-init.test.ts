@@ -139,7 +139,7 @@ describe("data:init CLI help", () => {
     const { out } = await runInitCli([configPath]);
 
     expect(out).toBe(`data:init: ${dataRoot} already seeded`);
-  }, 20000);
+  });
 
   it("leaves the exit code unset when already seeded", async () => {
     const dataRoot = await makeTempDir();
@@ -154,7 +154,7 @@ describe("data:init CLI help", () => {
     await runInitCli([configPath]);
 
     expect(process.exitCode).toBeUndefined();
-  }, 20000);
+  });
 });
 
 async function makeTempDir(): Promise<string> {
@@ -218,7 +218,7 @@ describe("seedDataRepo", () => {
     });
 
     expect(existsSync(join(dataRoot, "wiki/AGENTS.md"))).toBe(true);
-  }, 20000);
+  });
 
   it("seeds the wiki index at the data root", async () => {
     const dataRoot = await makeTempDir();
@@ -230,7 +230,7 @@ describe("seedDataRepo", () => {
     });
 
     expect(existsSync(join(dataRoot, "wiki/index.md"))).toBe(true);
-  }, 20000);
+  });
 
   it("seeds the raw skeleton at the data root", async () => {
     const dataRoot = await makeTempDir();
@@ -242,7 +242,7 @@ describe("seedDataRepo", () => {
     });
 
     expect(existsSync(join(dataRoot, "raw/notes/.gitkeep"))).toBe(true);
-  }, 20000);
+  });
 
   it("writes the README at the data root", async () => {
     const dataRoot = await makeTempDir();
@@ -254,7 +254,7 @@ describe("seedDataRepo", () => {
     });
 
     expect(existsSync(join(dataRoot, "README.md"))).toBe(true);
-  }, 20000);
+  });
 
   it("makes an initial commit at the data root", async () => {
     const dataRoot = await makeTempDir();
@@ -268,7 +268,7 @@ describe("seedDataRepo", () => {
     const { stdout } = await git(dataRoot, "rev-parse", "HEAD");
 
     expect(stdout.trim().length).toBeGreaterThan(0);
-  }, 20000);
+  });
 
   it('returns "seeded" after the first seed', async () => {
     const dataRoot = await makeTempDir();
@@ -280,7 +280,7 @@ describe("seedDataRepo", () => {
     });
 
     expect(result).toBe("seeded");
-  }, 20000);
+  });
 
   it("is a no-op when the data root is already seeded", async () => {
     const dataRoot = await makeTempDir();
@@ -292,7 +292,7 @@ describe("seedDataRepo", () => {
     const result = await seedDataRepo({ configPath, repoRoot, env: GIT_ENV });
 
     expect(result).toBe("already-seeded");
-  }, 20000);
+  });
 
   it("makes no new commit when already seeded", async () => {
     const dataRoot = await makeTempDir();
@@ -312,7 +312,7 @@ describe("seedDataRepo", () => {
     ).stdout.trim();
 
     expect(after).toBe(before);
-  }, 20000);
+  });
 
   it("refuses to seed into a non-empty directory that is not a seeded data repo", async () => {
     const dataRoot = await makeTempDir();
@@ -423,7 +423,7 @@ describe("seedDataRepo", () => {
     const { stdout } = await git(dataRoot, "ls-files", "--", ".second-brain");
 
     expect(stdout.trim()).toBe(".second-brain");
-  }, 20000);
+  });
 
   it("writes an empty second-brain marker", async () => {
     const dataRoot = await makeTempDir();
@@ -436,7 +436,7 @@ describe("seedDataRepo", () => {
     });
 
     expect(await readFile(join(dataRoot, ".second-brain"), "utf8")).toBe("");
-  }, 20000);
+  });
 
   it("rejects a config without a data root", async () => {
     const dir = await makeTempDir();
@@ -625,7 +625,7 @@ describe("data:init standing .gitignore (issue #146)", () => {
     expect(await readFile(join(dataRoot, ".gitignore"), "utf8")).toBe(
       STANDING_GITIGNORE,
     );
-  }, 20000);
+  });
 
   it("commits the seeded .gitignore with the skeleton", async () => {
     const dataRoot = await makeTempDir();
@@ -639,7 +639,7 @@ describe("data:init standing .gitignore (issue #146)", () => {
     const { stdout } = await git(dataRoot, "ls-files", "--", ".gitignore");
 
     expect(stdout.trim()).toBe(".gitignore");
-  }, 20000);
+  });
 
   it("merges the missing standing rules into an existing .gitignore", async () => {
     const dataRoot = await makeTempDir();
@@ -699,7 +699,7 @@ describe("seedDataRepo meta contract (issue #74)", () => {
     expect(await readFile(join(dataRoot, "wiki/AGENTS.md"), "utf8")).toBe(
       "# meta contract\n",
     );
-  }, 20000);
+  });
 
   it("never copies the canonical meta contract file into a seeded data repo", async () => {
     const dataRoot = await makeTempDir();
@@ -712,7 +712,7 @@ describe("seedDataRepo meta contract (issue #74)", () => {
     });
 
     expect(existsSync(join(dataRoot, "wiki/AGENTS.meta.md"))).toBe(false);
-  }, 20000);
+  });
 
   it("keeps the canonical wiki contract and skips the meta template for an ordinary seed", async () => {
     const dataRoot = await makeTempDir();
@@ -726,5 +726,5 @@ describe("seedDataRepo meta contract (issue #74)", () => {
     expect(await readFile(join(dataRoot, "wiki/AGENTS.md"), "utf8")).toBe(
       "# wiki contract\n",
     );
-  }, 20000);
+  });
 });
