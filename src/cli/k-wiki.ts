@@ -63,7 +63,7 @@ const ORIGIN_LABELS = {
 } as const;
 
 /** The k-wiki command vocabulary (drift-guarded against the
- *  k-wiki skill by tests/k-wiki-skill.test.ts). */
+ *  k-wiki skill by tests/cli/k-wiki-skill.test.ts). */
 export const COMMANDS = ["query", "status", "list", "read", "health"] as const;
 
 /** COMMANDS widened to strings for membership checks on runtime

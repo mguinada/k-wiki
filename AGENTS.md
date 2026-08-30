@@ -166,6 +166,19 @@ infrastructure, free to use for any unit or e2e work; the snapshot at
 
 ### Unit tests
 
+- **Mirrored test tree.** Every unit test file mirrors its subject's
+  module path: the tests for `src/<area>/<mod>.ts` live in
+  `tests/<area>/<mod>.test.ts` (same for `scripts/<mod>.ts` →
+  `tests/scripts/<mod>.test.ts`). The filename is the subject's
+  basename plus `.test.ts` — no area prefixes in filenames
+  (`sync-publish.test.ts` becomes `tests/sync/publish.test.ts`).
+  Exceptions: `tests/e2e/` (system tests, own lane), `tests/bin/`
+  (tests of the `bin/` launchers themselves), repo-wide guard tests
+  under `tests/quality/` with no single src subject,
+  `tests/wiki-contract-sync.test.ts` (contract guard with no single
+  src subject, stays at `tests/` root), and the
+  `tests/fixtures/Documents/` snapshot data (not test code). Use
+  `git mv` for every move.
 - Put exactly one expectation in each `it` block.
 - Name each `it` block after the fact that its expectation verifies.
 - Test code never calls `process.chdir()`: Stryker's dry run executes
@@ -182,7 +195,7 @@ Every CLI runs through a shebanged `bin/<name>.ts` launcher
 they export `main()` but never invoke it at module scope — no Stryker
 mutant can fire a CLI as an import side effect with live defaults
 (issue #123's hazard class, eliminated by construction, issue #135).
-Patches of the pattern fail CI in `tests/bin-structure.test.ts`.
+Patches of the pattern fail CI in `tests/bin/bin-structure.test.ts`.
 Every library module that exports `main()` keeps a direct-execution
 tail — `refuseDirectExecution(import.meta.url, "<name>")` from
 `src/cli/is-main.ts` — so `node src/sync/sync-vault.ts` prints

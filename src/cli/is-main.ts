@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
  * shebanged `bin/<name>.ts` launchers are the only entry path — so no
  * Stryker mutant can fire a CLI `main()` as an import side effect with
  * live defaults (issue #123's hazard class, eliminated by
- * construction; the tests/bin-structure.test.ts scan keeps it true).
+ * construction; the tests/bin/bin-structure.test.ts scan keeps it true).
  *
  * Executing a library module directly (`node src/sync/sync-vault.ts`)
  * prints the refusal naming its launcher and exits 1: the wrong path
