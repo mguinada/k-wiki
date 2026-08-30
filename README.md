@@ -667,8 +667,16 @@ downloads that artifact and auto-files the actionable mutants into one
 rolling issue labeled `mutation` — "Mutation testing: actionable
 survivors" — on the K-Wiki Kanban at Status = Ready (issue #208). The
 rolling issue is the kill-work queue: spin dedicated triage issues from
-its list when a batch is worth a pass, and keep the count tended. The agent
-rules are in [AGENTS.md](AGENTS.md).
+its list when a batch is worth a pass, and keep the count tended. The
+agent rules are in [AGENTS.md](AGENTS.md).
+
+The Kanban step authenticates with a dedicated secret — the name is
+declared in the workflow file, the single source of truth: a classic
+PAT with `repo` + `project` scopes (fine-grained PATs cannot access
+user-owned projects, and `GITHUB_TOKEN` cannot write projects; same
+constraint as the board-triage job above). When the secret is absent
+the filing still happens — the board add is skipped with a warning, so
+missing board access never blocks the survivor report.
 
 `stryker.config.json` keeps `tsconfig.json` out of the sandbox
 (`ignorePatterns`): the repo runs TypeScript 7 (native), whose package
