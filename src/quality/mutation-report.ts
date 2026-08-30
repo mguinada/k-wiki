@@ -75,7 +75,9 @@ export function renderIssueBody(
     ...lead,
     `Actionable mutants (${lines.length}) — kill or record as equivalent:`,
     "",
+    "```",
     ...lines,
+    "```",
     "",
   ].join("\n");
 }

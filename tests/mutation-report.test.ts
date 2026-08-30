@@ -99,9 +99,11 @@ describe("renderIssueBody", () => {
         "",
         "Actionable mutants (3) — kill or record as equivalent:",
         "",
+        "```",
         "Survived  src/sync/config.ts:7  ConditionalExpression",
         "Survived  src/sync/config.ts:42  StringLiteral",
         "NoCoverage  src/sync/scan.ts:3  MethodExpression",
+        "```",
         "",
       ].join("\n"),
     );
@@ -113,9 +115,11 @@ describe("renderIssueBody", () => {
         HEAD,
         "Actionable mutants (3) — kill or record as equivalent:",
         "",
+        "```",
         "Survived  src/sync/config.ts:7  ConditionalExpression",
         "Survived  src/sync/config.ts:42  StringLiteral",
         "NoCoverage  src/sync/scan.ts:3  MethodExpression",
+        "```",
         "",
       ].join("\n"),
     );

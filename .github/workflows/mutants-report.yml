@@ -71,9 +71,10 @@ jobs:
         id: run
         env:
           GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.run-id }}
         run: |
-          if [ -n "${{ inputs.run-id }}" ]; then
-            echo "id=${{ inputs.run-id }}" >> "$GITHUB_OUTPUT"
+          if [ -n "$RUN_ID" ]; then
+            echo "id=$RUN_ID" >> "$GITHUB_OUTPUT"
           elif [ -n "${{ github.event.workflow_run.id }}" ]; then
             echo "id=${{ github.event.workflow_run.id }}" >> "$GITHUB_OUTPUT"
           else
@@ -121,18 +122,18 @@ jobs:
             --jq "first(.[] | select(.title == \"$ROLLING_TITLE\") | .number)")
           issue_id=$(gh issue view "$number" --json id --jq .id)
           item_id=$(GH_TOKEN="$PROJECT_TOKEN" gh api graphql \
-            -f query='query($project: ID!, $issue: ID!) {
-              node(id: $project) {
-                ... on ProjectV2 {
-                  items(first: 10) {
-                    nodes { id content { ... on Issue { id } } }
+            -f query='query($issue: ID!) {
+              node(id: $issue) {
+                ... on Issue {
+                  projectItems(first: 100) {
+                    nodes { id project { id } }
                   }
                 }
               }
             }' \
-            -f project="$PROJECT_ID" -f issue="$issue_id" \
-            --jq ".data.node.items.nodes
-              | first(.[] | select(.content.id == \"$issue_id\") | .id)")
+            -f issue="$issue_id" \
+            --jq ".data.node.projectItems.nodes
+              | first(.[] | select(.project.id == \"$PROJECT_ID\") | .id)")
           if [ -z "$item_id" ]; then
             item_id=$(GH_TOKEN="$PROJECT_TOKEN" gh api graphql \
               -f query='mutation($project: ID!, $issue: ID!) {
