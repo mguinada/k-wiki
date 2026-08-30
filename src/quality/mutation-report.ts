@@ -81,9 +81,9 @@ export function renderIssueBody(
 }
 
 interface Options {
-  readonly reportPath: string;
-  readonly runUrl?: string | undefined;
-  readonly htmlUrl?: string | undefined;
+  reportPath: string;
+  runUrl?: string | undefined;
+  htmlUrl?: string | undefined;
 }
 
 /** Parse argv into the report path and link options; throws on
