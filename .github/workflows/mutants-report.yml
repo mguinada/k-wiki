@@ -16,8 +16,8 @@
 #
 # The board step (2b) keeps the rolling issue on the K-Wiki Kanban with
 # Status = Ready via direct GraphQL calls — GITHUB_TOKEN cannot touch
-# user-owned projects, so it runs on the KWIKI_BOARD_TRIAGE_TOKEN
-# secret (classic PAT, `project` + `repo`) and is
+# user-owned projects, so it runs on the dedicated
+# KWIKI_MUTANTS_REPORT_TOKEN secret (classic PAT, `project` + `repo`) and is
 # skipped with a warning when the secret is absent. Bookkeeping only:
 # never cancels the filing above it, never sequences the Ready lane
 # (that stays a human/agent triage judgment per the board contract).
@@ -60,7 +60,7 @@ jobs:
       PROJECT_ID: PVT_kwHOAAk_HM4Bgi7z
       PROJECT_STATUS_FIELD_ID: PVTSSF_lAHOAAk_HM4Bgi7zzhfiF2s
       PROJECT_READY_OPTION_ID: "61e4505c"
-      PROJECT_TOKEN: ${{ secrets.KWIKI_BOARD_TRIAGE_TOKEN }}
+      PROJECT_TOKEN: ${{ secrets.KWIKI_MUTANTS_REPORT_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -157,7 +157,7 @@ jobs:
       - name: Warn when board automation is disabled
         if: env.PROJECT_TOKEN == ''
         run: >-
-          echo "::warning::KWIKI_BOARD_TRIAGE_TOKEN secret is not set — the rolling
+          echo "::warning::KWIKI_MUTANTS_REPORT_TOKEN secret is not set — the rolling
           issue was filed, but not added to the K-Wiki Kanban. Add a classic
-          PAT (project + repo scopes) as the KWIKI_BOARD_TRIAGE_TOKEN secret
+          PAT (project + repo scopes) as the KWIKI_MUTANTS_REPORT_TOKEN secret
           and re-run this workflow."
