@@ -4,7 +4,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { errorMessage } from "../cli/colors.ts";
 import { checkRaw } from "../health/check-raw.ts";
-import { createAgentProgressSink } from "../ingest/wiki-ingest.ts";
+import { createAgentProgressSink } from "../ingest/agent-run.ts";
 import {
   canAnimate,
   QUERY_HEARTBEAT_PREFIX,

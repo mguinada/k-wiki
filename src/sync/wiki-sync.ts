@@ -14,6 +14,19 @@ import { formatDuration } from "../cli/progress.ts";
 import { checkCrossWikiLinks } from "../crosslinks.ts";
 import { runGit } from "../data/git.ts";
 import {
+  AGENT_HEARTBEAT_PREFIX,
+  type AgentRunner,
+  createAgentProgressSink,
+  readPrompt,
+  spawnAgent,
+} from "../ingest/agent-run.ts";
+import {
+  type AgentSettings,
+  agentArgs,
+  formatAgentInvocation,
+  loadAgentSettings,
+} from "../ingest/agent-settings.ts";
+import {
   capturePreRunState,
   type PreRunState,
   parseStatus,
@@ -21,18 +34,9 @@ import {
   runGuardrails,
 } from "../ingest/guardrails.ts";
 import {
-  AGENT_HEARTBEAT_PREFIX,
-  type AgentRunner,
-  type AgentSettings,
-  agentArgs,
-  createAgentProgressSink,
-  formatAgentInvocation,
   type IngestResult,
-  loadAgentSettings,
-  readPrompt,
   runWikiIngest,
   sourceCount,
-  spawnAgent,
   wikiPages,
 } from "../ingest/wiki-ingest.ts";
 import {
