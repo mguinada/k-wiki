@@ -429,6 +429,18 @@ describe("parseBoardItems", () => {
     ).toThrow("board response is missing the issue number of item I9");
   });
 
+  it("throws naming the item when the issue number is NaN", () => {
+    expect(() =>
+      parseBoardItems([
+        {
+          id: "I9",
+          fieldValueByName: null,
+          content: { __typename: "Issue", number: Number.NaN, state: "OPEN" },
+        },
+      ]),
+    ).toThrow("board response is missing the issue number of item I9");
+  });
+
   it("treats a non-string Status field name as statusless", () => {
     const items = parseBoardItems([
       {
@@ -495,6 +507,7 @@ describe("parseBoardItems", () => {
             nodes: [
               { source: { number: 1, state: "OPEN" } },
               { source: { number: 13, state: "MERGED" } },
+              { source: { number: "9", state: "OPEN" } },
               { source: {} },
               5,
             ],
@@ -582,6 +595,14 @@ describe("fetchBoardState", () => {
 
   it("throws the named owner error for a response without data", async () => {
     const graphql: GraphQLFn = async () => ({});
+
+    await expect(fetchBoardState(graphql, "nobody", 42)).rejects.toThrow(
+      "owner nobody has no project 42 readable by this token",
+    );
+  });
+
+  it("throws the named owner error for a null response", async () => {
+    const graphql: GraphQLFn = async () => null;
 
     await expect(fetchBoardState(graphql, "nobody", 42)).rejects.toThrow(
       "owner nobody has no project 42 readable by this token",
@@ -919,9 +940,13 @@ describe("runBoardTriage", () => {
     );
   });
 
-  it.each(["labels", "blockedBy", "timelineItems"] as const)(
-    "fails the run instead of silently reading a truncated %s connection",
-    async (connection) => {
+  it.each([
+    ["labels", "labels"],
+    ["blockedBy", "blockedBy edges"],
+    ["timelineItems", "cross-referenced events"],
+  ] as const)(
+    "fails the run with the exact evidence when the %s connection is truncated",
+    async (connection, what) => {
       const graphql: GraphQLFn = async () =>
         boardPage([
           issueNode({
@@ -933,7 +958,7 @@ describe("runBoardTriage", () => {
         ]);
 
       await expect(runBoardTriage(graphql, OPTIONS)).rejects.toThrow(
-        "board read truncated: issue #7",
+        `board read truncated: issue #7 ${what} exceeded one page — raise the cap in BOARD_PAGE_QUERY or paginate`,
       );
     },
   );
