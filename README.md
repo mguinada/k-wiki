@@ -593,6 +593,15 @@ cannot write projects. Locally, `npm run board-triage` uses the `gh`
 keyring login directly; `--dry-run` previews the plan with zero
 writes.
 
+**Re-verifying the automation** (GraphQL schema drift, behavior
+changes, a new board): `scripts/rehearse-board-triage.sh` rebuilds a
+scratch board — never the live one — carrying one issue per contract
+state and proves the lane verdicts, the dry-run zero-write property,
+verify-on-apply, evidence lines, Ready-order preservation, and
+idempotency, failing red on any mismatch. Run it from the repo root
+with the `gh` keyring login; its header documents the fixture's
+lifecycle and the rate-limit back-offs.
+
 ### Mutation testing
 
 Green tests do not prove that the tests assert real behavior. Mutation
