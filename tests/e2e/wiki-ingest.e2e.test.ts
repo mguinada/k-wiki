@@ -258,6 +258,15 @@ describe("wiki-ingest e2e", () => {
     expect(`${result.code}|${result.out}`).toMatch(/0\|Usage: wiki-ingest/);
   });
 
+  it("documents the isolate.skills and isolate.extensions keys in the help text", async () => {
+    const result = await runCli(INGEST_SCRIPT, ["--help"]);
+
+    expect(result.out).toContain("isolate.skills");
+    expect(result.out).toContain("isolate.extensions");
+    expect(result.out).toContain("--skill");
+    expect(result.out).toContain("-e");
+  });
+
   it("runs the agent headless on a first ingest and digests it", async () => {
     const repo = await makeRepo({ "AI/RAG.md": "rag" });
     const result = await ingest(repo);
@@ -295,6 +304,88 @@ describe("wiki-ingest e2e", () => {
       "--no-extensions",
       "--no-skills",
     ]);
+  });
+
+  it("passes the whitelisted --skill/-e flags on the child argv with the prompt verbatim (issue #144)", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag" });
+    const skillDir = join(repo.dataRoot, "skills", "obsidian-markdown");
+
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(join(skillDir, "SKILL.md"), "# skill\n");
+    await mkdir(join(repo.dataRoot, "exts"), { recursive: true });
+    await writeFile(
+      join(repo.dataRoot, "exts", "web-access.ts"),
+      "export {};\n",
+    );
+    await writeFile(
+      repo.settingsPath,
+      [
+        `command: ${join(repo.dataRoot, "stub-agent.mjs")}`,
+        "model: E2E-MODEL",
+        "reasoning: low",
+        "isolate.skills: [skills/obsidian-markdown]",
+        "isolate.extensions: [exts/web-access.ts]",
+        "",
+      ].join("\n"),
+    );
+
+    const result = await ingest(repo);
+
+    expect(`${result.code}|${result.out}${result.err}`).toMatch(
+      /0\|[\s\S]*Wiki ingest digest/,
+    );
+
+    const argv = (
+      await readFile(join(repo.dataRoot, "outputs", "stub-argv.txt"), "utf8")
+    ).split("\n");
+
+    expect(argv.slice(0, 7)).toEqual([
+      "--no-context-files",
+      "--no-extensions",
+      "--no-skills",
+      "--skill",
+      skillDir,
+      "-e",
+      join(repo.dataRoot, "exts", "web-access.ts"),
+    ]);
+
+    const prompt = await readFile(
+      join(repo.dataRoot, "outputs", "stub-prompt.txt"),
+      "utf8",
+    );
+
+    expect(prompt).toContain("You are maintaining a structured knowledge wiki");
+    expect(prompt).not.toContain(
+      "Changed sources since the previous ingestion",
+    );
+  });
+
+  it("warns and proceeds without an absent whitelist entry (issue #144)", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag" });
+
+    await writeFile(
+      repo.settingsPath,
+      [
+        `command: ${join(repo.dataRoot, "stub-agent.mjs")}`,
+        "model: E2E-MODEL",
+        "reasoning: low",
+        "isolate.skills: [skills/absent]",
+        "",
+      ].join("\n"),
+    );
+
+    const result = await ingest(repo);
+
+    expect(`${result.code}${result.err}`).toContain("WARNING");
+    expect(result.err).toContain(
+      `isolate.skills entry "${join(repo.dataRoot, "skills", "absent")}" not found; omitted`,
+    );
+
+    const argv = (
+      await readFile(join(repo.dataRoot, "outputs", "stub-argv.txt"), "utf8")
+    ).split("\n");
+
+    expect(argv).not.toContain("--skill");
   });
 
   it("persists the digest and the manifest snapshot", async () => {

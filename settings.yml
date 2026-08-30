@@ -22,6 +22,24 @@ reasoning: high    # pi thinking level, passed as --thinking
 # the ambient global setup.
 isolate: true
 
+# Whitelist for isolated runs (issue #144): specific skills and
+# extensions loaded additively even under the --no-* flags — exactly
+# the named entries, nothing ambient. Skill entries are paths
+# resolved against this file's directory (~ allowed); extension
+# entries are pi -e sources: a path, npm:<package>, or git:<repo>.
+# A missing entry warns and is omitted; the run proceeds. Ignored
+# with isolate: false. Each extension entry is a deliberate trust
+# grant — extensions execute code via hooks.
+#
+# pi-web-access is deliberately NOT whitelisted: the wiki is a
+# closed-world system (wiki/AGENTS.md, Residual Risk) and no prompt
+# or contract rule governs web use — granting search/fetch tools
+# would let unattended runs send note-derived content to third
+# parties and add facts with no origin in raw/. Revisit once a
+# usage policy exists (issue #228).
+isolate.skills: [.agents/skills/obsidian-markdown, .agents/skills/obsidian-bases]
+isolate.extensions: [npm:pi-subagents]
+
 # Example: how to add another model. Keep exactly one active
 # provider/model pair. To switch, comment the two lines above out and
 # uncomment a pair below (Kimi via OpenRouter):

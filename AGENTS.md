@@ -75,7 +75,9 @@ until all three pass. Run them before every handoff.
   the synthetic fixture vault in temp workspaces under `.e2e-tmp/`
   (gitignored), wiki-ingest against a stub agent in temp data repos
   (second-brain runs included: profile ingest, cross-wiki validation,
-  and the reverted domain→second-brain leak), sync-repo through
+  and the reverted domain→second-brain leak; isolate-whitelist runs
+  pass the `--skill`/`-e` flags and warn-and-omit absent entries,
+  issue #144), sync-repo through
   repo-as-source projection runs in temp source repos (verbatim copy,
   commit stamping, dirty-source and wrong-config failures, health
   freshness), and wiki-sync through

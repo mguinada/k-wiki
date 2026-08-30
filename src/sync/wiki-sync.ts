@@ -214,7 +214,9 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
   const now = options.now ?? (() => new Date());
   const onProgress = options.onProgress ?? (() => {});
   const dataRoot = dirname(options.rawDir);
-  const settings = await loadAgentSettings(options.settingsPath);
+  const settings = await loadAgentSettings(options.settingsPath, {
+    onProgress,
+  });
 
   onProgress("wiki-sync: lint — reading prompts/lint.md");
 
@@ -1007,7 +1009,15 @@ this command only chains them.
                      the pi isolation flags --no-context-files
                      --no-extensions --no-skills to both agent runs
                      so global agent config cannot leak in (issue
-                     #118).
+                     #118). isolate.skills and isolate.extensions
+                     (optional comma-separated lists, issue #144)
+                     whitelist specific entries back in: one --skill
+                     flag per skill dir (resolved against the
+                     settings file's directory) and one -e flag per
+                     extension source (a path, npm:<package>, or
+                     git:<repo>). A missing entry warns and is
+                     omitted; both keys are ignored with isolate:
+                     false.
                      Default: the repo's settings.yml.
   --outputs <dir>    Where the ingest digest (runs/<timestamp>.md) goes.
                      Default: the repo's outputs/. The manifest snapshot

@@ -2027,6 +2027,13 @@ describe("wiki-sync CLI", () => {
     expect((await runCli(["--help"])).out).toContain("--settings");
   });
 
+  it("documents the isolate whitelist keys in the help text", async () => {
+    const out = (await runCli(["--help"])).out;
+
+    expect(out).toContain("isolate.skills");
+    expect(out).toContain("isolate.extensions");
+  });
+
   it("documents the --outputs switch in the help text", async () => {
     expect((await runCli(["--help"])).out).toContain("--outputs");
   });
@@ -2450,6 +2457,88 @@ describe("runWikiSync progress and invocation contract", () => {
 
     expect(progress.join("\n")).toContain(
       "wiki-sync: lint — invoking agent: pi --model GLM-5.2 --thinking high (isolated)",
+    );
+  });
+
+  it("passes one --skill/-e flag per whitelisted entry to the lint agent (issue #144)", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const skillDir = join(
+      dirname(h.settingsPath),
+      "skills",
+      "obsidian-markdown",
+    );
+
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(join(skillDir, "SKILL.md"), "# skill\n");
+    await mkdir(join(dirname(h.settingsPath), "exts"), { recursive: true });
+    await writeFile(
+      join(dirname(h.settingsPath), "exts", "web-access.ts"),
+      "export {};\n",
+    );
+    await writeFile(
+      h.settingsPath,
+      `${SETTINGS_YML}isolate.skills: [skills/obsidian-markdown]\nisolate.extensions: [exts/web-access.ts]\n`,
+    );
+
+    await runWikiSync(optionsFor(h));
+
+    const lintArgs = h.argRecords[1] ?? [];
+
+    expect(lintArgs.slice(0, 7)).toEqual([
+      "--no-context-files",
+      "--no-extensions",
+      "--no-skills",
+      "--skill",
+      skillDir,
+      "-e",
+      join(dirname(h.settingsPath), "exts", "web-access.ts"),
+    ]);
+  });
+
+  it("warns and omits an absent whitelist entry before the lint run (issue #144)", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const progress: string[] = [];
+
+    await writeFile(
+      h.settingsPath,
+      `${SETTINGS_YML}isolate.skills: [skills/absent]\n`,
+    );
+    await runWikiSync({
+      ...optionsFor(h),
+      onProgress: (message) => progress.push(message),
+    });
+
+    expect(progress.join("\n")).toContain(
+      `WARNING — isolate.skills entry "${join(dirname(h.settingsPath), "skills", "absent")}" not found; omitted`,
+    );
+
+    for (const args of h.argRecords) {
+      expect(args).not.toContain("--skill");
+    }
+  });
+
+  it("records the whitelist state on the lint invoking-agent progress line (issue #144)", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const skillDir = join(
+      dirname(h.settingsPath),
+      "skills",
+      "obsidian-markdown",
+    );
+    const progress: string[] = [];
+
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(join(skillDir, "SKILL.md"), "# skill\n");
+    await writeFile(
+      h.settingsPath,
+      `${SETTINGS_YML}isolate.skills: [skills/obsidian-markdown]\n`,
+    );
+    await runWikiSync({
+      ...optionsFor(h),
+      onProgress: (message) => progress.push(message),
+    });
+
+    expect(progress.join("\n")).toContain(
+      "wiki-sync: lint — invoking agent: pi --model GLM-5.2 --thinking high (isolated +1 skill)",
     );
   });
 
