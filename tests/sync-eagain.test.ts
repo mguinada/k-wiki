@@ -21,11 +21,11 @@ import { runPublishStage } from "../src/sync/publish.ts";
 import { runSync } from "../src/sync/sync-vault.ts";
 
 /**
- * EAGAIN materialize-and-retry (issue #216): iCloud dataless files
- * fail Node reads and copies with EAGAIN instead of blocking to
- * materialize. The helpers convert exactly one such failure into a
- * self-healing attempt — a delayed re-read, then a cat-equivalent
- * materializing read; a remove-and-recreate copy retry — while every
+ * EAGAIN materialize-and-retry (issues #216, #229): iCloud dataless
+ * files fail Node reads and copies with EAGAIN instead of blocking to
+ * materialize. The helpers retry each such failure inside a bounded
+ * per-file budget — delayed re-reads ending in one cat-equivalent
+ * materializing read; remove-and-recreate copy retries — while every
  * other error envelope is unchanged. Real filesystems cannot produce
  * EAGAIN, so every test mocks the failing primitive; `cat` stays real
  * wherever it must succeed.
@@ -185,7 +185,28 @@ describe("readFileTolerant", () => {
     expect(waits).toEqual([EAGAIN_RETRY_DELAY_MS]);
   });
 
-  it("falls back to a cat-equivalent read when EAGAIN persists", async () => {
+  it("recovers when EAGAIN strikes three times before the provider settles", async () => {
+    const dir = await makeTempDir();
+    const path = join(dir, "note.md");
+
+    await writeFile(path, "slow provider\n");
+    vi.mocked(readFile).mockImplementationOnce(
+      rejectReadFor(eagainError("read"), path),
+    );
+    vi.mocked(readFile).mockImplementationOnce(
+      rejectReadFor(eagainError("read"), path),
+    );
+    vi.mocked(readFile).mockImplementationOnce(
+      rejectReadFor(eagainError("read"), path),
+    );
+
+    expect((await readFileTolerant(path, 0, 10_000)).toString()).toBe(
+      "slow provider\n",
+    );
+    expect(readFile).toHaveBeenCalledTimes(4);
+  });
+
+  it("falls back to a cat-equivalent read when EAGAIN outlasts the budget", async () => {
     const dir = await makeTempDir();
     const path = join(dir, "note.md");
 
@@ -194,7 +215,7 @@ describe("readFileTolerant", () => {
       rejectReadFor(eagainError("read"), path),
     );
 
-    expect((await readFileTolerant(path, 0)).toString()).toBe(
+    expect((await readFileTolerant(path, 0, 50)).toString()).toBe(
       "cat materializes me\n",
     );
   });
@@ -214,9 +235,10 @@ describe("readFileTolerant", () => {
       },
     );
 
-    await expect(readFileTolerant(path, 0)).rejects.toMatchObject({
+    await expect(readFileTolerant(path, 0, 50)).rejects.toMatchObject({
       errno: -11,
     });
+    expect(vi.mocked(readFile).mock.calls.length).toBeGreaterThan(2);
   });
 
   it("propagates a non-EAGAIN failure without retry", async () => {
@@ -257,11 +279,31 @@ describe("copyFileTolerant", () => {
         : actualFs.copyFile(from, to),
     );
 
-    await copyFileTolerant(source, target);
+    await copyFileTolerant(source, target, 0);
 
     expect(await readFile(target, "utf8")).toBe("src\n");
     expect(copyFile).toHaveBeenCalledTimes(2);
     expect(rm).toHaveBeenCalledWith(target, { force: true });
+  });
+
+  it("recovers when the copyfile EAGAIN outlasts one retry", async () => {
+    const dir = await makeTempDir();
+    const source = join(dir, "a.md");
+    const target = join(dir, "b.md");
+
+    await writeFile(source, "src\n");
+    for (let i = 0; i < 2; i += 1) {
+      vi.mocked(copyFile).mockImplementationOnce(async (from, to) =>
+        to === target
+          ? Promise.reject(eagainError("copyfile"))
+          : actualFs.copyFile(from, to),
+      );
+    }
+
+    await copyFileTolerant(source, target, 0, 10_000);
+
+    expect(await readFile(target, "utf8")).toBe("src\n");
+    expect(copyFile).toHaveBeenCalledTimes(3);
   });
 
   it("fails loudly when the retried copy fails EAGAIN again", async () => {
@@ -274,9 +316,11 @@ describe("copyFileTolerant", () => {
       Promise.reject(eagainError("copyfile")),
     );
 
-    await expect(copyFileTolerant(source, target)).rejects.toMatchObject({
-      errno: -11,
-    });
+    await expect(copyFileTolerant(source, target, 1, 50)).rejects.toMatchObject(
+      {
+        errno: -11,
+      },
+    );
   });
 
   it("propagates a non-EAGAIN copy failure without retry", async () => {
@@ -313,7 +357,7 @@ async function makeVaultWorkspace(): Promise<VaultWorkspace> {
 }
 
 /** Run sync with the EAGAIN retry delay collapsed to zero, so the
- *  one-shot materialize-and-retry path runs without real waiting. */
+ *  bounded materialize-and-retry loop runs without real waiting. */
 async function runSyncAdvancingRetry(
   options: Parameters<typeof runSync>[0],
 ): Promise<Awaited<ReturnType<typeof runSync>>> {
@@ -349,29 +393,57 @@ describe("runSync EAGAIN surface", () => {
     expect(vaults[0]?.copied).toContain("AI/RAG.md");
   });
 
-  it("fails loudly through the note-read envelope when EAGAIN persists", async () => {
+  it("completes when a note read fails EAGAIN twice then settles", async () => {
     const ws = await makeVaultWorkspace();
     const notePath = join(ws.vaultRoot, "AI", "RAG.md");
 
-    vi.mocked(readFile).mockImplementation(
+    vi.mocked(readFile).mockImplementationOnce(
       rejectReadFor(eagainError("read"), notePath),
     );
-    vi.mocked(execFile).mockImplementationOnce(
-      (_file, _args, _options, callback) => {
-        callback?.(catEagain(), Buffer.alloc(0), Buffer.alloc(0));
-
-        return undefined as never;
-      },
+    vi.mocked(readFile).mockImplementationOnce(
+      rejectReadFor(eagainError("read"), notePath),
     );
 
-    await expect(
-      runSyncAdvancingRetry({
-        configPath: ws.configPath,
-        rawDir: ws.rawDir,
-      }),
-    ).rejects.toThrow(
-      `failed to read note "AI/RAG.md" in vault "${VAULT_NAME}"`,
-    );
+    const { vaults } = await runSyncAdvancingRetry({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+    });
+
+    expect(vaults[0]?.copied).toContain("AI/RAG.md");
+  });
+
+  it("fails loudly through the note-read envelope when EAGAIN persists", async () => {
+    const ws = await makeVaultWorkspace();
+    const notePath = join(ws.vaultRoot, "AI", "RAG.md");
+    const realNow = Date.now;
+    let ticks = 0;
+    const now = vi
+      .spyOn(Date, "now")
+      .mockImplementation(() => realNow() + ticks++ * 60_000);
+
+    try {
+      vi.mocked(readFile).mockImplementation(
+        rejectReadFor(eagainError("read"), notePath),
+      );
+      vi.mocked(execFile).mockImplementationOnce(
+        (_file, _args, _options, callback) => {
+          callback?.(catEagain(), Buffer.alloc(0), Buffer.alloc(0));
+
+          return undefined as never;
+        },
+      );
+
+      await expect(
+        runSyncAdvancingRetry({
+          configPath: ws.configPath,
+          rawDir: ws.rawDir,
+        }),
+      ).rejects.toThrow(
+        `failed to read note "AI/RAG.md" in vault "${VAULT_NAME}"`,
+      );
+    } finally {
+      now.mockRestore();
+    }
   });
 });
 
@@ -414,17 +486,34 @@ describe("runPublishStage EAGAIN surface", () => {
 
   it("fails loudly when the copyfile retry fails EAGAIN again", async () => {
     const tree = await makePublishTree();
+    const realNow = Date.now;
+    let ticks = 0;
+    const now = vi
+      .spyOn(Date, "now")
+      .mockImplementation(() => realNow() + ticks++ * 60_000);
+    const timer = vi.spyOn(globalThis, "setTimeout").mockImplementation(((
+      callback: () => void,
+    ) => {
+      callback();
 
-    vi.mocked(copyFile).mockImplementation(async () =>
-      Promise.reject(eagainError("copyfile")),
-    );
+      return {} as NodeJS.Timeout;
+    }) as unknown as typeof setTimeout);
 
-    await expect(
-      runPublishStage({
-        dataRoot: tree.dataRoot,
-        mirror: tree.mirror,
-        include: ["wiki/**"],
-      }),
-    ).rejects.toMatchObject({ errno: -11 });
+    try {
+      vi.mocked(copyFile).mockImplementation(async () =>
+        Promise.reject(eagainError("copyfile")),
+      );
+
+      await expect(
+        runPublishStage({
+          dataRoot: tree.dataRoot,
+          mirror: tree.mirror,
+          include: ["wiki/**"],
+        }),
+      ).rejects.toMatchObject({ errno: -11 });
+    } finally {
+      now.mockRestore();
+      timer.mockRestore();
+    }
   });
 });
