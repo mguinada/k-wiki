@@ -332,7 +332,8 @@ export function formatAgentInvocation(settings: AgentSettings): string {
 export interface LoadAgentSettingsContext {
   /** Receives one WARNING line per absent whitelist entry. */
   readonly onProgress?: ((message: string) => void) | undefined;
-  /** pi's install root for `npm:` extension pre-flights; default
+  /** pi's install root for `npm:` extension pre-flights; defaults
+   *  to `PI_CODING_AGENT_DIR` when set (pi's own override), else
    *  ~/.pi/agent (issue #144). */
   readonly piInstallRoot?: string | undefined;
 }
@@ -349,9 +350,14 @@ async function pathExists(path: string): Promise<boolean> {
   }
 }
 
-/** The `npm:<package>` dir under pi's install root. */
+/** The `npm:<package>` dir under pi's install root; pi installs
+ *  under the bare package name, so any `@version` suffix in the
+ *  spec is stripped (parseNpmSpec). */
 function npmExtensionDir(source: string, piInstallRoot: string): string {
-  return join(piInstallRoot, "npm", "node_modules", source.slice(4));
+  const spec = source.slice(4);
+  const name = /^(@?[^@]+(?:\/[^@]+)?)(?:@(.+))?$/.exec(spec)?.[1] ?? spec;
+
+  return join(piInstallRoot, "npm", "node_modules", name);
 }
 
 /** Resolve skill entries against the settings file's directory,
@@ -487,7 +493,8 @@ async function preflightWhitelist(
 
   const warn = context.onProgress ?? (() => {});
   const piInstallRoot =
-    context.piInstallRoot ?? join(homedir(), ".pi", "agent");
+    context.piInstallRoot ??
+    expandHome(process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent"));
   const skills = await preflightSkills(settings.isolateSkills ?? [], warn);
   const extensions = await preflightExtensions(
     settings.isolateExtensions ?? [],

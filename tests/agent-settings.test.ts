@@ -749,6 +749,105 @@ describe("loadAgentSettings whitelist resolution (issue #144)", () => {
     expect(settings.isolateExtensions).toEqual(["npm:pi-web-access"]);
   });
 
+  it("keeps a versioned npm: extension by checking the bare package name", async () => {
+    const root = await mkdtemp(join(tmpdir(), "k-wiki-whitelist-npm-"));
+
+    whitelistDirs.push(root);
+
+    const piInstallRoot = join(root, "pi-root");
+
+    await mkdir(join(piInstallRoot, "npm", "node_modules", "pkg"), {
+      recursive: true,
+    });
+
+    const settingsPath = join(root, "settings.yml");
+
+    await writeFile(
+      settingsPath,
+      "command: pi\nmodel: m\nreasoning: h\nisolate.extensions: npm:pkg@1.2.3\n",
+      "utf8",
+    );
+    const warnings: string[] = [];
+
+    const settings = await loadAgentSettings(settingsPath, {
+      piInstallRoot,
+      onProgress: (message) => warnings.push(message),
+    });
+
+    expect(warnings).toEqual([]);
+    expect(settings.isolateExtensions).toEqual(["npm:pkg@1.2.3"]);
+  });
+
+  it("checks a scoped npm: extension against its bare name", async () => {
+    const root = await mkdtemp(join(tmpdir(), "k-wiki-whitelist-npm-"));
+
+    whitelistDirs.push(root);
+
+    const piInstallRoot = join(root, "pi-root");
+
+    await mkdir(
+      join(piInstallRoot, "npm", "node_modules", "@scope", "pkg"),
+      { recursive: true },
+    );
+
+    const settingsPath = join(root, "settings.yml");
+
+    await writeFile(
+      settingsPath,
+      "command: pi\nmodel: m\nreasoning: h\nisolate.extensions: npm:@scope/pkg@1.2.3\n",
+      "utf8",
+    );
+    const warnings: string[] = [];
+
+    const settings = await loadAgentSettings(settingsPath, {
+      piInstallRoot,
+      onProgress: (message) => warnings.push(message),
+    });
+
+    expect(warnings).toEqual([]);
+    expect(settings.isolateExtensions).toEqual(["npm:@scope/pkg@1.2.3"]);
+  });
+
+  it("pre-flights npm: extensions against PI_CODING_AGENT_DIR when set", async () => {
+    const root = await mkdtemp(join(tmpdir(), "k-wiki-whitelist-env-"));
+
+    whitelistDirs.push(root);
+
+    const agentDir = join(root, "custom-agent-dir");
+
+    await mkdir(join(agentDir, "npm", "node_modules", "pkg"), {
+      recursive: true,
+    });
+
+    const settingsPath = join(root, "settings.yml");
+
+    await writeFile(
+      settingsPath,
+      "command: pi\nmodel: m\nreasoning: h\nisolate.extensions: npm:pkg\n",
+      "utf8",
+    );
+
+    const previous = process.env.PI_CODING_AGENT_DIR;
+    const warnings: string[] = [];
+
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+
+    try {
+      const settings = await loadAgentSettings(settingsPath, {
+        onProgress: (message) => warnings.push(message),
+      });
+
+      expect(warnings).toEqual([]);
+      expect(settings.isolateExtensions).toEqual(["npm:pkg"]);
+    } finally {
+      if (previous === undefined) {
+        delete process.env.PI_CODING_AGENT_DIR;
+      } else {
+        process.env.PI_CODING_AGENT_DIR = previous;
+      }
+    }
+  });
+
   it("warns and omits a path-like extension entry that does not exist", async () => {
     const { settingsPath, piInstallRoot } = await makeWhitelistFixture({
       missingExtensions: ["ext/absent.ts"],
