@@ -1009,7 +1009,7 @@ Keep both checkouts in plain local folders — never inside a cloud-synced folde
 
 **Name the data repo after the wiki's subject — `k-wiki-<subject>-data` — never generically.** Two checkouts each holding a `k-wiki-data` folder is exactly the crossed-instance confusion the snapshot stamp (issue #95) catches mechanically; a subject-based name prevents it at the human level. The subject is the wiki's, not a vault's — `sync.json` can feed several vaults into one wiki (README usage model 4), and a repo fed by vaults "Engineering" and "Work" would be misnamed after either. The data repo path is operator-owned config: the wiki's identity is the manifest snapshot stamp, never the folder name.
 
-Renaming an instance is therefore safe at the data layer, and costs one full run:
+Renaming an instance is therefore safe at the data layer, and costs one full run. Pause the scheduled pipeline (Section 18) before step 1: a sync that fires between steps 1 and 3 resolves the old `dataRoot`, recreates the folder, and re-syncs the full vault into it.
 
 1. Rename the local directory (`mv ~/Lab/k-wiki-data ~/Lab/k-wiki-<subject>-data`) — git history, `outputs/`, and the manifest snapshot move with it.
 2. Rename the GitHub upstream (`gh repo rename <new-name> -R <owner>/<old-name>`), then update the local remote explicitly (`git remote set-url origin <new-url>`); GitHub redirects the old URL, but verify push/pull and that the renamed repo's settings survived.
@@ -1240,8 +1240,8 @@ The complete system should eventually look like:
                   ┌───────────────────────────────┐
                   │ k-wiki-engineering-data/wiki  │
                   │                               │
-                  │         LLM-maintained         │
-                  │         knowledge base         │
+                  │        LLM-maintained         │
+                  │        knowledge base         │
                   └───────────────┬───────────────┘
                                   │
                             lint / query
