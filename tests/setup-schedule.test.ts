@@ -1,6 +1,16 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { realpathSync } from "node:fs";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_INTERVAL_SECONDS,
@@ -11,6 +21,7 @@ import {
   parseIntervalDuration,
   plistPath,
   schedulerUnsupportedError,
+  stableNodePath,
 } from "../src/schedule/setup-schedule.ts";
 
 describe("parseIntervalDuration", () => {
@@ -393,6 +404,63 @@ describe("plistPath", () => {
 describe("DEFAULT_INTERVAL_SECONDS", () => {
   it("is the agreed 30 minutes", () => {
     expect(DEFAULT_INTERVAL_SECONDS).toBe(1800);
+  });
+});
+
+describe("stableNodePath", () => {
+  it("pins the invocation path when it is absolute and existing", () => {
+    expect(
+      stableNodePath(
+        "/opt/homebrew/bin/node",
+        "/opt/homebrew/Cellar/node/26.7.0/bin/node",
+        () => true,
+      ),
+    ).toBe("/opt/homebrew/bin/node");
+  });
+
+  it("falls back to the resolved binary for a relative invocation path", () => {
+    const execPath = "/opt/homebrew/Cellar/node/26.7.0/bin/node";
+
+    expect(stableNodePath("node", execPath, () => true)).toBe(execPath);
+  });
+
+  it("falls back to the resolved binary when the invocation path no longer exists", () => {
+    const execPath = "/opt/homebrew/Cellar/node/26.7.0/bin/node";
+
+    expect(stableNodePath("/gone/bin/node", execPath, () => false)).toBe(
+      execPath,
+    );
+  });
+});
+
+describe("main --print node path pinning", () => {
+  it("pins the symlinked invocation path, not the resolved binary", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-argv0-"));
+    const nodeSymlink = join(dir, "node-stable");
+    const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+
+    await symlink(process.execPath, nodeSymlink);
+
+    const stdout = await new Promise<string>((resolve, reject) => {
+      const child = spawn(nodeSymlink, [
+        join(repoRoot, "bin", "setup-schedule.ts"),
+        "--print",
+      ]);
+      let out = "";
+
+      child.stdout.on("data", (chunk) => (out += String(chunk)));
+      child.on("error", reject);
+      child.on("close", (code) =>
+        code === 0 ? resolve(out) : reject(new Error(`exit ${code}: ${out}`)),
+      );
+    });
+
+    await rm(dir, { recursive: true, force: true });
+
+    expect(stdout).toContain(`<string>${nodeSymlink}</string>`);
+    expect(stdout).not.toContain(
+      `<string>${realpathSync(process.execPath)}</string>`,
+    );
   });
 });
 

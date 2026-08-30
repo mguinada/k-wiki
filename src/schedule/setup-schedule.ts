@@ -1,7 +1,8 @@
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { errorMessage } from "../cli/colors.ts";
@@ -138,6 +139,20 @@ function guiDomain(): string {
   return `gui/${process.getuid?.() ?? 501}`;
 }
 
+/** The node path pinned into the plist (issue #216): the verbatim
+ *  invocation path (`process.argv0`) when absolute and existing —
+ *  stable across Homebrew upgrades, unlike the symlink-resolved
+ *  `process.execPath`, which points into a versioned Cellar — else
+ *  the resolved binary. Note: `process.argv[0]` is already resolved
+ *  by Node and equals `execPath`; only `argv0` keeps the invocation. */
+export function stableNodePath(
+  argv0: string,
+  execPath: string,
+  exists: (path: string) => boolean = existsSync,
+): string {
+  return isAbsolute(argv0) && exists(argv0) ? argv0 : execPath;
+}
+
 async function launchctl(args: readonly string[]): Promise<void> {
   await run("launchctl", args).catch((error: unknown) => {
     throw new Error(
@@ -174,8 +189,10 @@ backends are follow-up issues and fail loud here.
 
 What install does (darwin):
   1. builds the plist (Label ${LAUNCHD_LABEL}, StartInterval, RunAtLoad,
-     absolute node + script paths, explicit HOME, minimal PATH,
-     launchd stdout/stderr into ~/Library/Logs/k-wiki/);
+     absolute node + script paths — the node path is the invocation
+     path when absolute and existing (stable across Homebrew
+     upgrades, issue #216), else the resolved binary — explicit HOME,
+     minimal PATH, launchd stdout/stderr into ~/Library/Logs/k-wiki/);
   2. boots out any previous registration of the label;
   3. writes it to ~/Library/LaunchAgents/${LAUNCHD_LABEL}.plist;
   4. boots it in and verifies with launchctl print.
@@ -280,7 +297,7 @@ export async function main(
   }
 
   const plist = launchdPlist({
-    nodePath: process.execPath,
+    nodePath: stableNodePath(process.argv0, process.execPath),
     scriptPath: join(repoRoot, "bin", "scheduled-run.ts"),
     intervalSeconds: parsed.interval,
     home,

@@ -975,8 +975,13 @@ Suggested schedule:
 Start manually until the pipeline is reliable, then schedule it. The
 shipped scheduler is `setup-schedule` + `scheduled-run` (issue #14):
 launchd runs the wrapper on a fixed interval — lockfile, pre-run
-pull --rebase, `wiki-sync`, push. The README's Scheduling the
-pipeline section documents the wrapper's contract.
+pull --rebase, `wiki-sync`, push. The plist pins the node **invocation
+path** (`process.argv0`) when it is absolute and existing — stable
+across Homebrew upgrades, unlike the symlink-resolved `execPath`,
+which points into a versioned Cellar — falling back to the resolved
+binary (issue #216); one re-registration after upgrading to this
+behavior moves existing installs onto the stable path. The README's
+Scheduling the pipeline section documents the wrapper's contract.
 
 ### Ingest modes
 
@@ -1588,6 +1593,7 @@ Never run two transports on the same mirror vault. Publishing two independent mi
 7. Near-real-time is bounded by pipeline cadence, not transport: schedule every 15–60 minutes (`setup-schedule`, issue #14). File-event triggers (`fswatch`, launchd `WatchPaths`) are rejected by design — iCloud materializes files lazily, so events fire late, in bursts, or only on download.
 8. `raw/` and `wiki/` contents are versioned by the data repo only. If generated files appear under the code repo's trees, git ignores them — that is the safety property, not a bug.
 9. A failed scheduled run waits for the next interval — no retry, no backoff: the guardrails have already reverted the failed run, so the wiki stays at the last good commit. The one exception is the scheduled push: a rejected push gets a single `git pull --rebase` + retry, then a loud alert (issue #14).
+10. Dataless (evicted) iCloud files fail Node reads and copies with EAGAIN instead of blocking to materialize. The pipeline self-heals each such failure once — a delayed re-read, then a materializing `cat`-equivalent read (sync-vault note reads), and a remove-and-recreate retry (publish copyfile) — then fails loudly (issue #216). This is one bounded attempt, not lag machinery (rule 3); Keep Downloaded (rule 2) stays the primary posture.
 
 ---
 
