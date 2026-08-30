@@ -1139,6 +1139,13 @@ describe("main", () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it("rejects a positional argument with exit 1 instead of triaging the default board", async () => {
+    const { err } = await runCli(["mguinada", "3"], undefined);
+
+    expect(err[0]).toContain("unexpected argument");
+    expect(process.exitCode).toBe(1);
+  });
+
   it("rejects a non-numeric --project value with exit 1", async () => {
     const { err } = await runCli(["--project", "abc"], undefined);
 

@@ -759,7 +759,7 @@ API failure, or a move that failed verification.`;
 function parseCliArgs(args: readonly string[]): {
   readonly values: Map<string, string | undefined>;
   readonly dryRun: boolean;
-  readonly unknown: string | undefined;
+  readonly unexpected: string | undefined;
 } {
   const { values, consumed } = readFlagValues(["--owner", "--project"], args);
   const rest = args.filter((_, index) => !consumed.has(index));
@@ -767,8 +767,16 @@ function parseCliArgs(args: readonly string[]): {
   return {
     values,
     dryRun: rest.includes("--dry-run"),
-    unknown: rest.find((arg) => arg !== "--dry-run" && arg.startsWith("-")),
+    unexpected: rest.find((arg) => arg !== "--dry-run"),
   };
+}
+
+/** The first argument that is neither a known flag nor a flag value,
+ *  as a usage error message; board-triage takes no positionals. */
+function unexpectedArgError(arg: string): string {
+  return arg.startsWith("-")
+    ? `unknown option ${JSON.stringify(arg)}`
+    : `unexpected argument ${JSON.stringify(arg)} — board-triage takes no positionals`;
 }
 
 function usageErrorOf(
@@ -817,8 +825,8 @@ export async function main(graphql?: GraphQLFn): Promise<void> {
 
   const parsed = parseCliArgs(args);
 
-  if (parsed.unknown !== undefined) {
-    cliFail("board-triage", `unknown option ${JSON.stringify(parsed.unknown)}`);
+  if (parsed.unexpected !== undefined) {
+    cliFail("board-triage", unexpectedArgError(parsed.unexpected));
 
     return;
   }
