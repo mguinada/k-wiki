@@ -30,8 +30,15 @@ isolate: true
 # A missing entry warns and is omitted; the run proceeds. Ignored
 # with isolate: false. Each extension entry is a deliberate trust
 # grant — extensions execute code via hooks.
+#
+# pi-web-access is deliberately NOT whitelisted: the wiki is a
+# closed-world system (wiki/AGENTS.md, Residual Risk) and no prompt
+# or contract rule governs web use — granting search/fetch tools
+# would let unattended runs send note-derived content to third
+# parties and add facts with no origin in raw/. Revisit once a
+# usage policy exists (see the research issue).
 isolate.skills: [.agents/skills/obsidian-markdown, .agents/skills/obsidian-bases]
-isolate.extensions: [npm:pi-web-access, npm:pi-subagents]
+isolate.extensions: [npm:pi-subagents]
 
 # Example: how to add another model. Keep exactly one active
 # provider/model pair. To switch, comment the two lines above out and
