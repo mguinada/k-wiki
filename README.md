@@ -510,6 +510,7 @@ sources directly, so there is no build step — install dependencies with
 | `npm run wiki-query -- [-h \| --help] [--file-last] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>` | query wrapper | Ask the built wiki one question headless: print the answer, save it for review (stage 1, default); `--file-last` files the reviewed answer deterministically (stage 2; reads `settings.yml` in stage 1; [details below](#running-queries-wiki-query)) |
 | `node <checkout>/bin/k-wiki.ts query "<question>"` (also `npm run k-wiki -- …` inside the checkout) | agent-facing CLI | Ask the wiki bound to the current project from any cwd — zero flags once `.k-wiki.json` binds it; plus four read-only commands: `status` (binding + paths), `list [<type>]` (pages by type), `read <slug>` (one page verbatim), `health` (projection check); answer-only, no filing passthrough ([details below](#querying-from-any-project-k-wiki)) |
 | `npm run data:init -- [--second-brain] [--meta] [<sync.json>]` | data repo seeder | Create and seed the data repo at `sync.json`'s `dataRoot`: git init, copy the `raw/`+`wiki/` skeleton from the code repo, write the standing `.gitignore` (Obsidian UI state, ingest snapshot — issue #146), first commit; idempotent; `--second-brain` also writes the `.second-brain` identity marker ([§5](#5-the-second-brain)); `--meta` seeds the meta contract (`wiki/AGENTS.meta.md`) as the data repo's `wiki/AGENTS.md` ([§9](#9-the-meta-wiki-a-repository-as-source)) |
+| `npm run board-triage -- [-h \| --help] [--dry-run] [--owner <login>] [--project <n>]` | board triage CLI | Apply the mechanical half of the K-Wiki Kanban triage contract via the `gh` CLI — Backlog → Ready (unblocked, no `research` label), open PR → In progress, closed → Done — Status field values only; lane order is never touched, ids are resolved fresh every run, every move is verified by re-reading the board, and `--dry-run` plans with zero writes (default: `mguinada`'s project 2; [below](#scheduled-board-triage)) |
 | `npm run mutation:changed` | StrykerJS | Advisory mutation run scoped to the changed hunks of the `src/` files that differ from `main` (uncommitted included; new files whole) — `src/quality/mutation-scope.ts` builds the `file:start-end` ranges; exits 0 without running when nothing changed, and ends by printing the actionable mutants — the default pre-handoff step |
 | `npm run mutation:changed -- --full` | StrykerJS | Advisory mutation run over all of `src/`, not just changed files; same printed summary |
 | `npm run mutation:survivors` | triage helper | Re-list the actionable mutants from the last report — no run, instant |
@@ -565,6 +566,31 @@ wiki-ingest` routes it to
 [expungement](#when-a-note-is-deleted-expungement) and re-derives the
 affected wiki pages; that is wiki maintenance under `wiki/AGENTS.md`,
 not part of the sync run.
+
+### Scheduled board triage
+
+The mechanical half of the K-Wiki Kanban triage contract runs on a
+schedule ([issue #209](https://github.com/mguinada/k-wiki/issues/209)):
+`.github/workflows/board-triage.yml` runs `bin/board-triage.ts` every
+6 hours — Backlog → Ready for issues with no open blocker and no
+`research` label, → In progress for Backlog issues with an open PR
+cross-reference, → Done for closed issues not already there. Writes go
+to the board's Status field only: issues, labels, bodies, and lane
+order are never touched (Ready-lane sequencing stays a triage-run
+judgment), project/field/option ids are resolved fresh every run, and
+every move is verified by re-reading the board — a mismatch is retried
+once, and a move that still fails turns the run red. The report (one
+line per move and stay, with reasons) lands in the job log and the
+run's summary page. Manual triage runs keep working alongside it — the
+automation is idempotent with them.
+
+The job authenticates with `GH_TOKEN = secrets.BOARD_TRIAGE_TOKEN`: a
+PAT that reads `mguinada/k-wiki` and writes mguinada's user projects
+(classic PAT with `repo` + `project` scopes, or fine-grained with
+repository read + user project read/write). The default `GITHUB_TOKEN`
+cannot write projects. Locally, `npm run board-triage` uses the `gh`
+keyring login directly; `--dry-run` previews the plan with zero
+writes.
 
 ### Mutation testing
 
