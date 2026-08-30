@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
  * 2026-08-29 nightlies fully green on the run page while the Stryker
  * dry run died on unit tests that were red on main (#171, merged over
  * its own red checks) or incompatible with the runner's worker-thread
- * pool (#189's `process.chdir()`). The contract this guard enforces:
+ * pool (#193's `process.chdir()`). The contract this guard enforces:
  * the failure must surface as an error annotation on the run page —
  * visible the same night, without making anything blocking.
  *

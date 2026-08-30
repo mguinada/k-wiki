@@ -214,7 +214,7 @@ on pull requests labeled `mutation`, and manual dispatch (all in
 `.github/workflows/ci.yml`). The full run starts with a dry run of
 the whole unit suite in Stryker's vitest worker-thread pool, so any
 test that is red on main — or passes in vitest's default forks pool
-but cannot run in worker threads, like `process.chdir()` (#189) —
+but cannot run in worker threads, like `process.chdir()` (#193) —
 kills the run before a report exists; the job log names the failing
 tests, and the run page carries an error annotation while the job
 stays advisory-green (#215). After every nightly run, the

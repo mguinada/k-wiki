@@ -40,7 +40,7 @@
 # The full run starts with a dry run of the whole unit suite in
 # Stryker's vitest worker-thread pool; any failing test kills the run
 # before a report exists (issue #215: a suite red on main — #171, merged
-# over its own red checks — and a chdir-incompatible test — #189 — each
+# over its own red checks — and a chdir-incompatible test — #193 — each
 # starved the rolling survivor issue #208 for a night). continue-on-error
 # keeps that failure non-blocking, so the annotation step in the mutation
 # job marks the run page with an error while the job stays advisory-green.
