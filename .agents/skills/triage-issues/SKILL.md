@@ -16,6 +16,14 @@ One run does four things, in order: **move** Backlog issues that are ready,
 summary table. Default board: K-Wiki Kanban (project 2, owner `mguinada`).
 Parameterize owner/project number for any other board.
 
+The mechanical half of this contract — the rule 2–4 lane moves, plus
+closed → Done (issue #209's exception to rule 1) — also runs
+automatically every 6 hours (`.github/workflows/board-triage.yml`,
+`npm run board-triage`; README, *Scheduled board triage*). A manual
+run may therefore find those moves already applied: read the board
+state fresh (Step 1) and apply the rules as usual — the two are
+idempotent together. Sequencing and reporting stay manual-only.
+
 ## Rules (the contract)
 
 1. Only items **on the Backlog lane** move. Issues on any other lane are
