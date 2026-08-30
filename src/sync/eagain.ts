@@ -13,10 +13,11 @@ import { copyFile, readFile, rm } from "node:fs/promises";
  * untouched: EAGAIN that outlasts the budget still fails loudly.
  */
 
-/** The pause before the single re-read attempt (issue #216: ~1–2 s). */
+/** The pause between EAGAIN retries inside the budget (issue #216: ~1–2 s). */
 export const EAGAIN_RETRY_DELAY_MS = 1500;
 
-/** Hard ceiling on one materializing `cat` read (issue #216: 30 s/file). */
+/** Default per-file EAGAIN budget: retries plus the final materializing
+ *  `cat` read must all fit inside it (issues #216, #229: 30 s/file). */
 export const MATERIALIZE_TIMEOUT_MS = 30_000;
 
 /** One materialized note can be at most this large for the cat path. */

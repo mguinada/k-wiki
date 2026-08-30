@@ -21,11 +21,11 @@ import { runPublishStage } from "../src/sync/publish.ts";
 import { runSync } from "../src/sync/sync-vault.ts";
 
 /**
- * EAGAIN materialize-and-retry (issue #216): iCloud dataless files
- * fail Node reads and copies with EAGAIN instead of blocking to
- * materialize. The helpers convert exactly one such failure into a
- * self-healing attempt — a delayed re-read, then a cat-equivalent
- * materializing read; a remove-and-recreate copy retry — while every
+ * EAGAIN materialize-and-retry (issues #216, #229): iCloud dataless
+ * files fail Node reads and copies with EAGAIN instead of blocking to
+ * materialize. The helpers retry each such failure inside a bounded
+ * per-file budget — delayed re-reads ending in one cat-equivalent
+ * materializing read; remove-and-recreate copy retries — while every
  * other error envelope is unchanged. Real filesystems cannot produce
  * EAGAIN, so every test mocks the failing primitive; `cat` stays real
  * wherever it must succeed.
@@ -357,7 +357,7 @@ async function makeVaultWorkspace(): Promise<VaultWorkspace> {
 }
 
 /** Run sync with the EAGAIN retry delay collapsed to zero, so the
- *  one-shot materialize-and-retry path runs without real waiting. */
+ *  bounded materialize-and-retry loop runs without real waiting. */
 async function runSyncAdvancingRetry(
   options: Parameters<typeof runSync>[0],
 ): Promise<Awaited<ReturnType<typeof runSync>>> {
