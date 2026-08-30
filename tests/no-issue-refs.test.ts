@@ -55,12 +55,16 @@ describe("user-facing surfaces carry no issue references (issue #202 guard)", ()
   });
 
   it("bin/*.ts help output contains no issue reference", async () => {
-    const launchers = await collectBinLaunchers();
+    const offenders: string[] = [];
 
-    for (const launcher of launchers) {
-      const help = normalize(runHelp(launcher));
+    for (const launcher of await collectBinLaunchers()) {
+      const citation = normalize(runHelp(launcher)).match(ISSUE_REFERENCE);
 
-      expect(help.match(ISSUE_REFERENCE), `${launcher} --help`).toBeNull();
+      if (citation !== null) {
+        offenders.push(`${launcher}: ${citation[0]}`);
+      }
     }
+
+    expect(offenders).toEqual([]);
   });
 });
