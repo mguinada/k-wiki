@@ -80,7 +80,10 @@ until all three pass. Run them before every handoff.
   commit stamping, dirty-source and wrong-config failures, health
   freshness), and wiki-sync through
   full-cycle, no-change, failure, guardrail-revert, reverted
-  fidelity-failure, and repo-source cycle (the meta flow) runs.
+  fidelity-failure, and repo-source cycle (the meta flow) runs, and
+  scheduled-run through full-cycle, no-op re-run, lock-skip,
+  push-rejection-retry, double-push-failure, and dirty-tree
+  recovery runs in temp data repos with an upstream remote.
 - `npm run health [-- <raw-dir>] [--fail-on-stale]` — coherence check
   of a `raw/` projection (default: the repo's `raw/`); a repo-sourced
   projection is also freshness-checked (`--fail-on-stale` makes a
@@ -118,7 +121,7 @@ npm run typecheck   # gate — always
 npm run lint        # gate — always
 npm test            # gate — always (unit only; e2e is NOT included; includes the complexity gate)
 npm run complexity  # gate — fast targeted re-run of the gate when only it matters
-npm run e2e         # when the change touches src/sync/, src/ingest/, src/query/, src/dashboard/, src/wiki/, src/cli/, src/fixtures/, tests/e2e/, or raw/
+npm run e2e         # when the change touches src/sync/, src/ingest/, src/query/, src/dashboard/, src/wiki/, src/cli/, src/schedule/, src/fixtures/, tests/e2e/, or raw/
 npm run health      # same trigger as e2e; also safe to run any time — read-only, no vault access
 ```
 
