@@ -387,7 +387,8 @@ interface ExtensionEntry {
 /** Classify one extension source (issue #144): `npm:<package>`
  *  installs under pi's root, `git:<repo>` cannot be verified offline
  *  and passes through (pi fails loudly when the clone fails),
- *  anything else is a path resolved against the settings dir. */
+ *  anything else is a path resolved against the settings dir
+ *  (with `~` expansion, like skill entries). */
 function extensionEntry(
   source: string,
   settingsDir: string,
@@ -402,11 +403,20 @@ function extensionEntry(
     };
   }
 
-  const resolved = resolve(settingsDir, source);
+  if (source.startsWith("git:")) {
+    return {
+      check: undefined,
+      value: source,
+      missingName: source,
+      reason: "not found",
+    };
+  }
+
+  const resolved = resolve(settingsDir, expandHome(source));
 
   return {
-    check: source.startsWith("git:") ? undefined : resolved,
-    value: source.startsWith("git:") ? source : resolved,
+    check: resolved,
+    value: resolved,
     missingName: resolved,
     reason: "not found",
   };
@@ -511,7 +521,8 @@ export async function loadAgentSettings(
     throw new Error(`cannot read agent settings at ${path}`, { cause });
   }
 
-  const settings = resolveSkillPaths(parseSettings(text, path), dirname(path));
+  const settingsDir = dirname(path);
+  const settings = resolveSkillPaths(parseSettings(text, path), settingsDir);
 
-  return preflightWhitelist(settings, context, dirname(path));
+  return preflightWhitelist(settings, context, settingsDir);
 }

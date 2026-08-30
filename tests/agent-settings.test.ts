@@ -1,5 +1,5 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import {
@@ -836,6 +836,30 @@ describe("loadAgentSettings whitelist resolution (issue #144)", () => {
     });
 
     expect(settings.isolateSkills).toEqual([]);
+  });
+
+  it("expands a leading ~ in path-like extension entries against home", async () => {
+    const root = await mkdtemp(join(tmpdir(), "k-wiki-whitelist-home-"));
+
+    whitelistDirs.push(root);
+
+    const settingsPath = join(root, "settings.yml");
+    const warnings: string[] = [];
+
+    await writeFile(
+      settingsPath,
+      "command: pi\nmodel: m\nreasoning: h\nisolate.extensions: ~/definitely-missing-ext.ts\n",
+      "utf8",
+    );
+
+    const settings = await loadAgentSettings(settingsPath, {
+      onProgress: (message) => warnings.push(message),
+    });
+
+    expect(settings.isolateExtensions).toEqual([]);
+    expect(warnings[0]).toContain(
+      `entry "${join(homedir(), "definitely-missing-ext.ts")}"`,
+    );
   });
 });
 
