@@ -54,6 +54,14 @@ Two principles govern this:
 <!-- Dev agent: you may extend this block only. The router and the shared
      invariants above are human-only (see Write Authority). -->
 
+### Direction of record
+
+`VISION.md` is the direction of record — an acceptance policy for what
+change aligns. Consult it when scoping issues or proposing features.
+It governs direction only; on any conflict with this file or
+`wiki/AGENTS.md`, the contracts win and the conflict is filed as an
+issue.
+
 ### Quality gates
 
 Type check, lint, and unit tests are quality gates: a change is not done
