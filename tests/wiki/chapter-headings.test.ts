@@ -88,9 +88,11 @@ describe("insertChapterHeadings", () => {
   it("skips a chapter name whose heading cannot be byte-identical", () => {
     const text = "prose\n";
 
-    expect(
-      insertChapterHeadings(text, ["04. Rate Limiter "]),
-    ).toEqual({ text, added: [], skipped: ["04. Rate Limiter "] });
+    expect(insertChapterHeadings(text, ["04. Rate Limiter "])).toEqual({
+      text,
+      added: [],
+      skipped: ["04. Rate Limiter "],
+    });
   });
 
   it("appends only the chapters that round-trip and skips the rest", () => {
