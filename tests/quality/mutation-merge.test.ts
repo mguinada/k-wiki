@@ -55,8 +55,11 @@ describe("mergeReports", () => {
       ]),
     );
 
-    expect(merged.files["src/a.ts"].mutants).toHaveLength(1);
-    expect(merged.files["src/b.ts"].mutants).toHaveLength(1);
+    const statuses = ["src/a.ts", "src/b.ts"].flatMap(
+      (file) => merged.files[file].mutants.map((mutant) => mutant.status),
+    );
+
+    expect(statuses).toEqual(["Killed", "Survived"]);
   });
 
   it("carries the first report's non-files keys unchanged", () => {
@@ -67,9 +70,15 @@ describe("mergeReports", () => {
       ]),
     );
 
-    expect(merged.schemaVersion).toBe("1.1");
-    expect(merged.thresholds).toEqual({ high: 80, low: 60 });
-    expect(merged.framework).toEqual({ name: "stryker" });
+    expect({
+      schemaVersion: merged.schemaVersion,
+      thresholds: merged.thresholds,
+      framework: merged.framework,
+    }).toEqual({
+      schemaVersion: "1.1",
+      thresholds: { high: 80, low: 60 },
+      framework: { name: "stryker" },
+    });
   });
 
   it("passes a single report through with its files intact", () => {
@@ -155,8 +164,9 @@ describe("mutation-merge CLI", () => {
   it("prints the usage line for --help with exit 0", async () => {
     const result = await runCli(["--help"]);
 
-    expect(result.stdout).toContain("Usage: mutation-merge");
-    expect(result.code).toBe(0);
+    expect(`${result.stdout}|${result.code}`).toMatch(
+      /Usage: mutation-merge[\s\S]*\|0$/,
+    );
   });
 
   it("writes the merged report to the output path", async () => {
@@ -165,11 +175,11 @@ describe("mutation-merge CLI", () => {
 
     const result = await runCli([out, first, second]);
 
-    expect(result.code).toBe(0);
-
     const merged = JSON.parse(await readFile(out, "utf8"));
 
-    expect(Object.keys(merged.files).sort()).toEqual(["src/a.ts", "src/b.ts"]);
+    expect(`${result.code}|${Object.keys(merged.files).sort().join(",")}`).toBe(
+      "0|src/a.ts,src/b.ts",
+    );
   });
 
   it("prints a summary line with the merged counts", async () => {
@@ -205,15 +215,17 @@ describe("mutation-merge CLI", () => {
       "3",
     ]);
 
-    expect(result.code).toBe(1);
-    expect(result.stderr).toContain("expected 3");
+    expect(`${result.stderr}|${result.code}`).toMatch(
+      /expected 3[\s\S]*\|1$/,
+    );
   });
 
   it("exits 1 naming the output path requirement when no positional is given", async () => {
     const result = await runCli(["--expect", "2"]);
 
-    expect(result.code).toBe(1);
-    expect(result.stderr).toContain("<out.json>");
+    expect(`${result.stderr}|${result.code}`).toMatch(
+      /<out\.json>[\s\S]*\|1$/,
+    );
   });
 });
 
@@ -315,8 +327,9 @@ describe("mutation-merge main in-process", () => {
 
     const merged = JSON.parse(await readFile(out, "utf8"));
 
-    expect(Object.keys(merged.files).sort()).toEqual(["src/a.ts", "src/b.ts"]);
-    expect(result.exitCode).toBeUndefined();
+    expect(
+      `${Object.keys(merged.files).sort().join(",")}|${result.exitCode}`,
+    ).toBe("src/a.ts,src/b.ts|undefined");
   });
 
   it("exits 1 with the missing-output message for no arguments", async () => {
@@ -441,10 +454,9 @@ describe("mutation-merge --expect in-process", () => {
       "2",
     ]);
 
-    expect(result.log[0]).toBe(
-      "Merged 2 mutants across 2 files from 2 reports.",
+    expect(`${result.log[0]}|${result.exitCode}`).toBe(
+      "Merged 2 mutants across 2 files from 2 reports.|undefined",
     );
-    expect(result.exitCode).toBeUndefined();
   });
 
   it("prints the usage line for --help in-process", async () => {

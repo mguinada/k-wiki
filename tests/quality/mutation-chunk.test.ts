@@ -164,8 +164,9 @@ describe("mutation-chunk CLI", () => {
         () => "",
       );
 
-      expect(error.mock.calls[0]?.[0]).toContain("--index");
-      expect(process.exitCode).toBe(1);
+      expect(`${error.mock.calls[0]?.[0]}|${process.exitCode ?? 0}`).toMatch(
+        /--index[\s\S]*\|1$/,
+      );
     } finally {
       error.mockRestore();
       process.exitCode = undefined;
@@ -175,8 +176,9 @@ describe("mutation-chunk CLI", () => {
   it("prints the usage line for --help with exit 0", async () => {
     const result = await runCli(["--help"]);
 
-    expect(result.stdout).toContain("Usage: mutation-chunk");
-    expect(result.code).toBe(0);
+    expect(`${result.stdout}|${result.code}`).toMatch(
+      /Usage: mutation-chunk[\s\S]*\|0$/,
+    );
   });
 });
 
@@ -308,8 +310,7 @@ describe("mutation-chunk direct execution", () => {
       child.on("close", resolve);
     });
 
-    expect(stderr).toContain("run bin/mutation-chunk");
-    expect(code).toBe(1);
+    expect(`${stderr}|${code}`).toMatch(/run bin\/mutation-chunk[\s\S]*\|1$/);
   });
 });
 
@@ -328,8 +329,9 @@ describe("mutation-chunk index bounds", () => {
         () => "",
       );
 
-      expect(error.mock.calls[0]?.[0]).toBe("--index must be 1..2");
-      expect(process.exitCode).toBe(1);
+      expect(`${error.mock.calls[0]?.[0]}|${process.exitCode ?? 0}`).toBe(
+        "--index must be 1..2|1",
+      );
     } finally {
       error.mockRestore();
       process.exitCode = undefined;

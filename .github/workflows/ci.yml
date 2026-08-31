@@ -177,7 +177,7 @@ jobs:
         if: always() && steps.mutation.outcome == 'failure'
         run: >
           echo "::error title=Mutation run failed::The advisory mutation run
-          exited nonzero — see this job's log. A failed nightly run files
+          exited nonzero — see this job's log. A failed PR run files
           no report, so the rolling survivor issue (#208) is not updated."
       - name: Upload mutation report
         if: always()
