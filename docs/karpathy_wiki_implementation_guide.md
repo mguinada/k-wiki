@@ -520,6 +520,16 @@ existing hubs are backfilled with scoped re-ingest (`wiki-ingest
 --sources <chapter path>`, one chapter at a time), one data-repo
 migration commit per hub.
 
+Caveat — Obsidian client behavior: the lints guarantee the anchor's
+*address* (a byte-identical heading exists), not Obsidian's *scroll*.
+Heading-anchor clicks are a known-flaky client surface — they
+sometimes land at the note top, and they need a warm metadata cache
+(external writes re-index asynchronously). Chapter navigation lives
+in body prose, not the properties-panel chips; test in Live Preview
+on a settled cache before reporting a link broken. Tracked, with
+the upstream bug reports, in
+[`docs/obsidian/anchor-navigation.md`](obsidian/anchor-navigation.md).
+
 #### Derived concept pages
 
 Use `sources` (plural) because a wiki page may synthesize multiple sources:
