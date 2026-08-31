@@ -11,6 +11,7 @@ import {
   closingFence,
   isWikilinkEntry,
   listWikiPages,
+  normalizeRawPath,
   type PageFields,
   unquote,
   wikilinkTarget,
@@ -80,17 +81,29 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** The chapters a hub's own `sources` list cites, in citation order:
  *  the self-wikilink chapter of each wikilink entry plus the parent
- *  directory name of each raw-path entry — the citation-alias rule,
- *  the same string an anchored citation and its heading must carry. */
+ *  directory name of each raw-path entry other than the hub's own
+ *  origin (the origin migrates to a plain self-link, not a chapter)
+ *  — the citation-alias rule, the same string an anchored citation
+ *  and its heading must carry. */
 function chapterSet(name: string, fields: PageFields): string[] {
   const chapters: string[] = [];
+  const origin =
+<<<<<<< Updated upstream
+    fields.origin === undefined
+      ? undefined
+      : normalizeRawPath(fields.origin);
+=======
+    fields.origin === undefined ? undefined : normalizeRawPath(fields.origin);
+>>>>>>> Stashed changes
 
   for (const entry of fields.sources) {
     const chapter = isWikilinkEntry(entry)
       ? wikilinkTarget(entry) === name
         ? citationChapter(entry)
         : undefined
-      : citationAlias(normalize(entry));
+      : normalizeRawPath(entry) === origin
+        ? undefined
+        : citationAlias(normalizeRawPath(entry));
 
     if (chapter !== undefined) {
       chapters.push(chapter);
@@ -98,11 +111,6 @@ function chapterSet(name: string, fields: PageFields): string[] {
   }
 
   return [...new Set(chapters)];
-}
-
-/** `raw/notes/…` with an optional `raw/` prefix removed. */
-function normalize(path: string): string {
-  return path.replace(/^raw\//, "");
 }
 
 /** Rewrite every aliased chapter citation of one page's `sources`

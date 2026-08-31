@@ -28,13 +28,13 @@ export function wikilinkBodyTarget(body: string): string {
   return body.split("|")[0]?.split("#")[0]?.trim() ?? "";
 }
 
-/**
- * Extract every wikilink from markdown text, skipping fenced code
- * blocks. Aliased links keep only the page name, heading anchors are
- * dropped, and anchor-only or alias-only links are ignored.
- */
-export function extractWikilinks(text: string): Wikilink[] {
-  const links: Wikilink[] = [];
+/** Every non-fence line of a markdown text as `[index, line]`
+ *  pairs (0-based source line; fence lines and fenced content
+ *  skipped) — the shared scanner for wikilink and heading
+ *  extraction, so fence semantics cannot drift between them. */
+export function* unfencedLines(
+  text: string,
+): Generator<[number, string], void, unknown> {
   let fenceChar: string | null = null;
 
   for (const [i, line] of text.split("\n").entries()) {
@@ -54,6 +54,19 @@ export function extractWikilinks(text: string): Wikilink[] {
       continue;
     }
 
+    yield [i, line];
+  }
+}
+
+/**
+ * Extract every wikilink from markdown text, skipping fenced code
+ * blocks. Aliased links keep only the page name, heading anchors are
+ * dropped, and anchor-only or alias-only links are ignored.
+ */
+export function extractWikilinks(text: string): Wikilink[] {
+  const links: Wikilink[] = [];
+
+  for (const [i, line] of unfencedLines(text)) {
     for (const match of line.matchAll(/\[\[([^\]]+)\]\]/g)) {
       const target = wikilinkBodyTarget(match[1] ?? "");
 

@@ -213,6 +213,35 @@ describe("anchorCitations", () => {
     ]);
   });
 
+  it("generates headings for a hub whose own chapters are still legacy path entries", async () => {
+    const wikiDir = await makeWiki({
+<<<<<<< Updated upstream
+      "sources/sdn.md": hub("System design interview notes", "notes/Books/SDN/Readme.md", [
+        "notes/Books/SDN/Readme.md",
+        "notes/Books/SDN/04. Rate Limiter/Readme.md",
+      ]),
+=======
+      "sources/sdn.md": hub(
+        "System design interview notes",
+        "notes/Books/SDN/Readme.md",
+        [
+          "notes/Books/SDN/Readme.md",
+          "notes/Books/SDN/04. Rate Limiter/Readme.md",
+        ],
+      ),
+>>>>>>> Stashed changes
+    });
+
+    const report = await anchorCitations(wikiDir, {
+      write: true,
+      date: "2026-08-30",
+    });
+
+    expect(report.headings).toEqual([
+      { page: "sources/sdn.md", chapter: "04. Rate Limiter" },
+    ]);
+  });
+
   it("writes nothing in dry-run mode", async () => {
     const wikiDir = await makeWiki({
       ...MIGRATED_HUB,
