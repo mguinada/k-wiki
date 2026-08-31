@@ -213,6 +213,55 @@ describe("anchorCitations", () => {
     ]);
   });
 
+  it("rewrites an aliased citation whose alias contains a '#'", async () => {
+    const wikiDir = await makeWiki({
+      "sources/sdn.md": hub(
+        "System design interview notes",
+        "notes/Books/SDN/Readme.md",
+        ["[[sdn]]", "notes/Books/SDN/C# notes/Readme.md"],
+      ),
+      "concepts/cites.md": citing(["[[sdn|C# notes]]"]),
+    });
+
+    const report = await anchorCitations(wikiDir, {
+      write: true,
+      date: "2026-08-30",
+    });
+    const hubText = await readFile(join(wikiDir, "sources", "sdn.md"), "utf8");
+
+    expect(
+      `${JSON.stringify(report.rewrites)}:${hubText.includes("## C# notes")}`,
+    ).toBe(
+      `${JSON.stringify([
+        {
+          page: "concepts/cites.md",
+          entry: "[[sdn|C# notes]]",
+          replacement: "[[sdn#C# notes]]",
+        },
+      ])}:true`,
+    );
+  });
+
+  it("leaves an anchored citation with a display alias untouched", async () => {
+    const wikiDir = await makeWiki({
+      ...MIGRATED_HUB,
+      "concepts/cites.md": citing(["[[sdn#04. Rate Limiter|the chapter]]"]),
+    });
+
+    const report = await anchorCitations(wikiDir, {
+      write: true,
+      date: "2026-08-30",
+    });
+    const text = await readFile(join(wikiDir, "concepts", "cites.md"), "utf8");
+    const touched = [...report.rewrites, ...report.skipped].some(
+      (item) => item.page === "concepts/cites.md",
+    );
+
+    expect(
+      `${touched}:${text.includes("[[sdn#04. Rate Limiter|the chapter]]")}`,
+    ).toBe("false:true");
+  });
+
   it("generates headings for a hub whose own chapters are still legacy path entries", async () => {
     const wikiDir = await makeWiki({
       "sources/sdn.md": hub(
@@ -250,7 +299,9 @@ describe("anchorCitations", () => {
     });
     const hubText = await readFile(join(wikiDir, "sources", "sdn.md"), "utf8");
 
-    expect(`${JSON.stringify(report.skipped)}:${report.headings.length}:${hubText.includes("## 04. Rate Limiter")}`).toBe(
+    expect(
+      `${JSON.stringify(report.skipped)}:${report.headings.length}:${hubText.includes("## 04. Rate Limiter")}`,
+    ).toBe(
       `${JSON.stringify([
         {
           page: "sources/sdn.md",

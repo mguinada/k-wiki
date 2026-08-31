@@ -152,7 +152,7 @@ function rewritePage(
     const entry = unquote(item[2]?.trim() ?? "");
     const body = entry.slice(2, -2);
 
-    if (!isWikilinkEntry(entry) || !body.includes("|") || body.includes("#")) {
+    if (!isWikilinkEntry(entry) || !body.includes("|")) {
       continue;
     }
 

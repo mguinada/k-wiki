@@ -206,7 +206,7 @@ function selfCitationRule(
 }
 
 /** True when a no-origin source hub's own raw path entry is an
- *  aliased self-citation whose coverage cannot be re-derived after
+ *  anchored self-citation whose coverage cannot be re-derived after
  *  a rewrite: rewriting it to `[[hub#Chapter]]` would silently drop
  *  the chapter path from `byOrigin`, `byCitation`, and `selfCitations`
  *  alike (the migration/check-provenance guard for issue #126). */
