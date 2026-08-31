@@ -88,13 +88,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 function chapterSet(name: string, fields: PageFields): string[] {
   const chapters: string[] = [];
   const origin =
-<<<<<<< Updated upstream
-    fields.origin === undefined
-      ? undefined
-      : normalizeRawPath(fields.origin);
-=======
     fields.origin === undefined ? undefined : normalizeRawPath(fields.origin);
->>>>>>> Stashed changes
 
   for (const entry of fields.sources) {
     const chapter = isWikilinkEntry(entry)

@@ -215,12 +215,6 @@ describe("anchorCitations", () => {
 
   it("generates headings for a hub whose own chapters are still legacy path entries", async () => {
     const wikiDir = await makeWiki({
-<<<<<<< Updated upstream
-      "sources/sdn.md": hub("System design interview notes", "notes/Books/SDN/Readme.md", [
-        "notes/Books/SDN/Readme.md",
-        "notes/Books/SDN/04. Rate Limiter/Readme.md",
-      ]),
-=======
       "sources/sdn.md": hub(
         "System design interview notes",
         "notes/Books/SDN/Readme.md",
@@ -229,7 +223,6 @@ describe("anchorCitations", () => {
           "notes/Books/SDN/04. Rate Limiter/Readme.md",
         ],
       ),
->>>>>>> Stashed changes
     });
 
     const report = await anchorCitations(wikiDir, {

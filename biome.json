@@ -12,9 +12,9 @@
   "files": {
     "includes": [
       "**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs,json,jsonc}",
-      "!tests/fixtures/**",
+      "!tests/fixtures",
       "tests/fixtures/*.test.ts",
-      "!**/Documents/**",
+      "!**/Documents",
       "!raw",
       "!.agents",
       "!skills-lock.json",
