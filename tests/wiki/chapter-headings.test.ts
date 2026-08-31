@@ -29,6 +29,14 @@ describe("extractHeadings", () => {
       "27.  Digital Wallet",
     ]);
   });
+
+  it("accepts several spaces between the hashes and the heading text", () => {
+    expect(extractHeadings("##  Two\n")).toEqual(["Two"]);
+  });
+
+  it("does not read a hash inside a prose line as a heading", () => {
+    expect(extractHeadings("see # Tags mid-line\n")).toEqual([]);
+  });
 });
 
 describe("anchorResolves", () => {
@@ -52,6 +60,10 @@ describe("anchorResolves", () => {
     expect(
       anchorResolves("# Part One\n\n## Details\n", "Part One#Details"),
     ).toBe(true);
+  });
+
+  it("resolves the last segment of a three-level anchor", () => {
+    expect(anchorResolves("## C\n", "A#B#C")).toBe(true);
   });
 
   it("ignores headings written inside the page's frontmatter", () => {
@@ -149,5 +161,23 @@ describe("insertChapterHeadings", () => {
     expect(`${twice.text === once.text}|${twice.skipped}`).toBe(
       "true|04. Rate Limiter",
     );
+  });
+
+  it("ends a body without a trailing newline in exactly one before appending", () => {
+    const { text } = insertChapterHeadings("body", ["Chap"]);
+
+    expect(text).toBe("body\n## Chap\n");
+  });
+
+  it("collapses several trailing newlines into one before appending", () => {
+    const { text } = insertChapterHeadings("body\n\n", ["Chap"]);
+
+    expect(text).toBe("body\n\n## Chap\n");
+  });
+
+  it("returns a fully skipped page byte-identical, trailing spaces included", () => {
+    const { text } = insertChapterHeadings("```\nfenced  ", ["Chap"]);
+
+    expect(text).toBe("```\nfenced  ");
   });
 });

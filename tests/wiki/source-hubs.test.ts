@@ -458,6 +458,16 @@ describe("isUnmigratableSelfCitation", () => {
     expect(isUnmigratableSelfCitation("cite", CHAPTER, index)).toBe(false);
   });
 
+  it("does not flag a self-cited path that maps to a bare wikilink", async () => {
+    const index = await loadSourceHubIndex(
+      await makeWiki({
+        "sources/sdn.md": page({ title: "Sdn", type: "source" }, ["Readme.md"]),
+      }),
+    );
+
+    expect(isUnmigratableSelfCitation("sdn", "Readme.md", index)).toBe(false);
+  });
+
   it("does not flag a hub's own citation when the hub has an origin", async () => {
     const index = await loadSourceHubIndex(
       await makeWiki({
