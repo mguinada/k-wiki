@@ -36,10 +36,10 @@ export interface SourceHubIndex {
   /** Normalized raw path → covering hub page name (hub `sources`
    *  citation match). */
   readonly byCitation: ReadonlyMap<string, string>;
-  /** A hub's aliased self-citations (`[[hub|Chapter]]`), the
-   *  migrated form of its own chapter citations: each still covers
-   *  the chapter directory `<originDir>/<alias>/`, so citation
-   *  coverage survives the migration. */
+  /** A hub's chapter self-citations, anchored (`[[hub#Chapter]]`,
+   *  the migrated form) or legacy-aliased (`[[hub|Chapter]]`): each
+   *  still covers the chapter directory `<originDir>/<alias>/`, so
+   *  citation coverage survives the migration. */
   readonly selfCitations: readonly SelfCitation[];
   /** Raw paths covered by more than one hub: never guessed. */
   readonly ambiguous: ReadonlySet<string>;

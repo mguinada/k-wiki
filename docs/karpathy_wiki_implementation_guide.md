@@ -488,10 +488,12 @@ written at ingest time, backfilled onto older pages in one wiki
 operation — and is the deterministic handle expungement uses (Section
 14a).
 
-`sources` entries are wikilinks to `type: source` pages — aliased
-(`[[hub|Chapter]]`) when citing a sub-source of a multi-part hub — so
-they render as clickable chips in Obsidian's properties panel. A raw
-path with no source page stays legal (repo-as-source code files);
+`sources` entries are wikilinks to `type: source` pages — anchored
+(`[[hub#Chapter]]`, the cited chapter's directory name) when citing
+a sub-source of a multi-part hub, whose hub body carries one
+generated heading per cited chapter, byte-identical to the anchor —
+so they render as clickable chips in Obsidian's properties panel. A
+raw path with no source page stays legal (repo-as-source code files);
 anything a hub covers must use the wikilink: the ingest guardrails
 reject a covered path entry on changed pages, and `check-provenance`
 flags it. Legacy path-form entries migrate in one wiki operation with
