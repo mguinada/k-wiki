@@ -1,9 +1,9 @@
 ---
-description: Kick off GitHub issue work in parallel — one fresh pi main agent per issue, in its own Herdr worktree, running the do-gh-issue skill
+description: Kick off GitHub issue work in parallel — one fresh pi main agent per issue, in its own Herdr worktree, running the path-appropriate skill (do-gh-issue, or mutation-triage for the rolling survivor issue)
 argument-hint: "[<issue-number> | <issue-URL> | label:<label> | top:<N> by <criterion> ...]"
 ---
 
-You (host) only resolve issues and launch agents. Each fresh pi main agent implements its issue alone via the `do-gh-issue` skill — the skill already gates on blockers, so the kickoff never re-checks them.
+You (host) only resolve issues and launch agents. Each fresh pi main agent works its issue alone via the path-appropriate skill — `do-gh-issue` for regular issues (that skill gates on blockers, so the kickoff never re-checks them), `mutation-triage` for the rolling survivor issue.
 
 ## 1. Preconditions
 
