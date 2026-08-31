@@ -36,6 +36,14 @@
 # full. It follows the same log-hygiene rule: Stryker mutates and prints
 # repo code under src/ only; the suite reads synthetic fixtures, never
 # vault data.
+#
+# The full run starts with a dry run of the whole unit suite in
+# Stryker's vitest worker-thread pool; any failing test kills the run
+# before a report exists (issue #215: a suite red on main — #171, merged
+# over its own red checks — and a chdir-incompatible test — #193 — each
+# starved the rolling survivor issue #208 for a night). continue-on-error
+# keeps that failure non-blocking, so the annotation step in the mutation
+# job marks the run page with an error while the job stays advisory-green.
 
 name: CI
 
@@ -150,7 +158,19 @@ jobs:
           path: complexity-debt-report.txt
           retention-days: 7
       # PRs: diff-scoped (issue #99). Scheduled/dispatched: full run.
-      - run: ${{ github.event_name == 'pull_request' && 'npm run mutation:changed' || 'npm run mutation' }}
+      - name: Mutation testing run
+        id: mutation
+        run: ${{ github.event_name == 'pull_request' && 'npm run mutation:changed' || 'npm run mutation' }}
+      - name: Surface a failed advisory run
+        # continue-on-error would otherwise leave the run page fully
+        # green (#215); the annotation is visible without gating anything.
+        # The mutants-report workflow then fails loudly on the missing
+        # artifact (its designed signal, issue #208).
+        if: always() && steps.mutation.outcome == 'failure'
+        run: >
+          echo "::error title=Mutation run failed::The advisory mutation run
+          exited nonzero — see this job's log. A failed nightly run files
+          no report, so the rolling survivor issue (#208) is not updated."
       - name: Upload mutation report
         if: always()
         uses: actions/upload-artifact@v4
