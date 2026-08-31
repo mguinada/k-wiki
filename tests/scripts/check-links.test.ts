@@ -469,6 +469,18 @@ describe("checkWikiLinks", () => {
     expect(`${report.broken.length}/${report.external}`).toBe("0/1");
   });
 
+  it("reports only the missing page for an anchored link with no target page", async () => {
+    const root = await makeWiki({
+      "index.md": "See [[missing-page#Chapter]].\n",
+    });
+
+    const report = await checkWikiLinks(join(root, "wiki"));
+
+    expect(report.broken).toEqual([
+      "wiki/index.md:1 -> [[missing-page#Chapter]]",
+    ]);
+  });
+
   it("does not double-report a frontmatter anchored citation", async () => {
     const root = await makeWiki({
       "concepts/decision.md": [
