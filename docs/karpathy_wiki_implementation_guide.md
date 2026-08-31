@@ -507,6 +507,19 @@ from a hub to the live vault note is `npm run open-origin -- <hub>`:
 it maps `origin` to an `obsidian://open` URI against `sync.json` and
 opens it; nothing is stored in wiki data.
 
+A multi-part hub carries one section per cited chapter, under that
+chapter's generated heading (issue #227): the page-level digest
+above the sections stays the landing zone for plain `[[hub]]`
+citations, and a chapter's content lives under its own heading,
+written from that chapter's own raw note. A section states what the
+chapter claims and links to the pages that hold the detail — it never
+restates detail that already has a page, and may legitimately be one
+line: the anchor is the point, not the volume. The rule is codified
+in `wiki/AGENTS.md` and taught in the ingest and incremental prompts;
+existing hubs are backfilled with scoped re-ingest (`wiki-ingest
+--sources <chapter path>`, one chapter at a time), one data-repo
+migration commit per hub.
+
 #### Derived concept pages
 
 Use `sources` (plural) because a wiki page may synthesize multiple sources:
@@ -743,6 +756,10 @@ Intent: process only the sources changed since the previous ingestion,
 inspect the existing related pages first, and make the smallest set of
 changes necessary — updates, link changes, obsolete-claim removal,
 contradiction handling, retitles — never regenerating unrelated pages.
+A changed chapter of a multi-part hub fills that chapter's section in
+the hub page under its generated heading (issue #227): scoped
+re-ingest is the backfill mechanism for per-chapter sections, one
+chapter path per `--sources` argument.
 
 ---
 
