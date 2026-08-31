@@ -21,11 +21,29 @@ export interface Wikilink {
   readonly line: number;
   /** The original `[[...]]` text as written. */
   readonly raw: string;
+  /** The heading anchor after the page name, as written
+   *  (`[[hub#A#B|chip]]` → `A#B`); undefined for anchorless links,
+   *  empty anchors, and `#^block-id` references — blocks are not
+   *  headings, and Obsidian block semantics stay out of scope
+   *  (issue #235). */
+  readonly anchor?: string | undefined;
 }
 
 /** The page-name part of a wikilink's inner text; empty when blank. */
 export function wikilinkBodyTarget(body: string): string {
   return body.split("|")[0]?.split("#")[0]?.trim() ?? "";
+}
+
+/** The heading-anchor part of a wikilink's inner text, before any
+ *  alias: `hub#Chapter` → `Chapter`, multi-level paths as written
+ *  (`hub#A#B` → `A#B`); undefined for empty anchors and `#^block`
+ *  references. The one parser every anchor consumer shares —
+ *  body-text link checking (issue #235) and `sources` citations
+ *  (issue #226, via citationAnchor) — so the surfaces cannot drift. */
+export function wikilinkBodyAnchor(body: string): string | undefined {
+  const anchor = body.split("|")[0]?.split("#").slice(1).join("#") ?? "";
+
+  return anchor === "" || anchor.startsWith("^") ? undefined : anchor;
 }
 
 /** Every non-fence line of a markdown text as `[index, line]`
@@ -60,21 +78,28 @@ export function* unfencedLines(
 
 /**
  * Extract every wikilink from markdown text, skipping fenced code
- * blocks. Aliased links keep only the page name, heading anchors are
- * dropped, and anchor-only or alias-only links are ignored.
+ * blocks. Aliased links keep only the page name, the heading anchor
+ * is kept as written on the `anchor` field, and anchor-only or
+ * alias-only links are ignored.
  */
 export function extractWikilinks(text: string): Wikilink[] {
   const links: Wikilink[] = [];
 
   for (const [i, line] of unfencedLines(text)) {
     for (const match of line.matchAll(/\[\[([^\]]+)\]\]/g)) {
-      const target = wikilinkBodyTarget(match[1] ?? "");
+      const inner = match[1] ?? "";
+      const target = wikilinkBodyTarget(inner);
 
       if (target === "") {
         continue;
       }
 
-      links.push({ target, line: i + 1, raw: match[0] });
+      links.push({
+        target,
+        line: i + 1,
+        raw: match[0],
+        anchor: wikilinkBodyAnchor(inner),
+      });
     }
   }
 

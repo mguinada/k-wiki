@@ -31,6 +31,21 @@ export function extractHeadings(body: string): string[] {
   return headings;
 }
 
+/** Whether a page's body carries the heading an anchored wikilink
+ *  names — byte-identically, the rule issue #226 set for `sources`
+ *  citations and issue #235 extends to body-text links: no case
+ *  folding, no punctuation tolerance (Obsidian's own matching is
+ *  looser — case-insensitive, non-alphanumerics stripped — so the
+ *  lint is deliberately stricter; wiki anchors are generated, never
+ *  typed, and a mismatch is drift). A multi-level anchor (`A#B`)
+ *  names its final segment, matching Obsidian's nested-heading
+ *  resolution. The one match rule every anchor consumer shares. */
+export function anchorResolves(pageText: string, anchor: string): boolean {
+  const heading = anchor.split("#").at(-1) ?? anchor;
+
+  return extractHeadings(bodyAfterFrontmatter(pageText)).includes(heading);
+}
+
 /** The result of regenerating a hub's chapter-heading skeleton: the
  *  page text (unchanged when nothing was appended), the chapters
  *  whose headings were appended, and the chapters skipped because

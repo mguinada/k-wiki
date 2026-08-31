@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { stem } from "../wiki-links.ts";
+import { stem, wikilinkBodyAnchor } from "../wiki-links.ts";
 import {
   isWikilinkEntry,
   listWikiPages,
@@ -153,16 +153,12 @@ function cover(
 }
 
 /** The `#anchor` segment of a wikilink (`[[hub#Chapter]]` →
- * `Chapter`); undefined when the entry carries none. */
+ * `Chapter`); undefined when the entry carries none or names a
+ * `#^block-id` block reference — delegated to the shared parser
+ * (wikilinkBodyAnchor) so citation anchors and body-text anchors
+ * can never drift apart. */
 export function citationAnchor(entry: string): string | undefined {
-  const anchor = entry
-    .slice(2, -2)
-    .split("|")[0]
-    ?.split("#")
-    .slice(1)
-    .join("#");
-
-  return anchor === "" ? undefined : anchor;
+  return wikilinkBodyAnchor(entry.slice(2, -2));
 }
 
 /** The chapter a hub citation names: the `#anchor` segment of an

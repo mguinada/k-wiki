@@ -1,9 +1,8 @@
 import { readFile, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { stem } from "../wiki-links.ts";
-import { extractHeadings } from "./chapter-headings.ts";
+import { anchorResolves } from "./chapter-headings.ts";
 import {
-  bodyAfterFrontmatter,
   buildPageIndex,
   closingFence,
   isWikilinkEntry,
@@ -117,9 +116,8 @@ function checkWikilinkEntry(
   }
 
   const targetText = texts.get(index.get(target) ?? "");
-  const headings = extractHeadings(bodyAfterFrontmatter(targetText ?? ""));
 
-  if (!headings.includes(anchor)) {
+  if (!anchorResolves(targetText ?? "", anchor)) {
     problems.push(
       `${page}${line === undefined ? "" : `:${line}`} -> ${entry} (target has no heading "${anchor}")`,
     );

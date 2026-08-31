@@ -11,6 +11,7 @@ import {
   buildPageIndex,
   crossWikiTarget,
   extractWikilinks,
+  wikilinkBodyAnchor,
   wikilinkBodyTarget,
 } from "../../src/wiki-links.ts";
 
@@ -172,6 +173,69 @@ describe("extractWikilinks", () => {
       },
     ]);
   });
+
+  it("keeps the heading anchor of an anchored wikilink", () => {
+    expect(extractWikilinks("[[vector-database#Vendors]]")).toEqual([
+      {
+        target: "vector-database",
+        line: 1,
+        raw: "[[vector-database#Vendors]]",
+        anchor: "Vendors",
+      },
+    ]);
+  });
+
+  it("keeps the anchor before the alias of an anchored aliased wikilink", () => {
+    expect(extractWikilinks("[[sdn#04. Rate Limiter|chip]]")[0]?.anchor).toBe(
+      "04. Rate Limiter",
+    );
+  });
+
+  it("keeps a multi-level heading path as written", () => {
+    expect(extractWikilinks("[[page#Part One#Details]]")[0]?.anchor).toBe(
+      "Part One#Details",
+    );
+  });
+
+  it("drops a block-reference anchor", () => {
+    expect(extractWikilinks("[[page#^block-id]]")[0]?.anchor).toBeUndefined();
+  });
+
+  it("drops an empty anchor", () => {
+    expect(extractWikilinks("[[page#]]")[0]?.anchor).toBeUndefined();
+  });
+
+  it("does not read an alias's hash as an anchor", () => {
+    expect(extractWikilinks("[[page|see #5]]")[0]?.anchor).toBeUndefined();
+  });
+});
+
+describe("wikilinkBodyAnchor", () => {
+  it("returns the segment after the page name's hash", () => {
+    expect(wikilinkBodyAnchor("sdn#04. Rate Limiter")).toBe("04. Rate Limiter");
+  });
+
+  it("keeps later hash segments as written", () => {
+    expect(wikilinkBodyAnchor("page#Part One#Details")).toBe(
+      "Part One#Details",
+    );
+  });
+
+  it("ignores an alias after the anchor", () => {
+    expect(wikilinkBodyAnchor("sdn#Chapter|chip")).toBe("Chapter");
+  });
+
+  it("returns undefined without an anchor", () => {
+    expect(wikilinkBodyAnchor("sdn")).toBeUndefined();
+  });
+
+  it("returns undefined for an empty anchor", () => {
+    expect(wikilinkBodyAnchor("sdn#")).toBeUndefined();
+  });
+
+  it("returns undefined for a block reference", () => {
+    expect(wikilinkBodyAnchor("sdn#^block-id")).toBeUndefined();
+  });
 });
 
 describe("wikilinkBodyTarget", () => {
@@ -310,6 +374,163 @@ describe("checkWikiLinks", () => {
     expect(`${report.external}/${report.links}`).toBe("1/2");
   });
 
+  it("reports a body-text anchored link whose target lacks the heading", async () => {
+    const root = await makeWiki({
+      "index.md": "See [[vector-database#Vendors]].\n",
+      "concepts/vector-database.md": "# Vector Database\n",
+    });
+
+    const report = await checkWikiLinks(join(root, "wiki"));
+
+    expect(report.broken).toEqual([
+      'wiki/index.md:1 -> [[vector-database#Vendors]] (target has no heading "Vendors")',
+    ]);
+  });
+
+  it("passes an anchored link whose target carries the heading", async () => {
+    const root = await makeWiki({
+      "index.md": "See [[sdn#27.  Digital Wallet]].\n",
+      "sources/sdn.md": "## 27.  Digital Wallet\n",
+    });
+
+    const report = await checkWikiLinks(join(root, "wiki"));
+
+    expect(report.broken).toEqual([]);
+  });
+
+  it("flags an anchor that differs from the heading by whitespace", async () => {
+    const root = await makeWiki({
+      "index.md": "See [[sdn#27. Digital Wallet]].\n",
+      "sources/sdn.md": "## 27.  Digital Wallet\n",
+    });
+
+    const report = await checkWikiLinks(join(root, "wiki"));
+
+    expect(report.broken).toEqual([
+      'wiki/index.md:1 -> [[sdn#27. Digital Wallet]] (target has no heading "27. Digital Wallet")',
+    ]);
+  });
+
+  it("flags an anchor that differs from the heading by case", async () => {
+    const root = await makeWiki({
+      "index.md": "See [[vector-database#vendors]].\n",
+      "concepts/vector-database.md": "## Vendors\n",
+    });
+
+    const report = await checkWikiLinks(join(root, "wiki"));
+
+    expect(report.broken).toEqual([
+      'wiki/index.md:1 -> [[vector-database#vendors]] (target has no heading "vendors")',
+    ]);
+  });
+
+  it("validates the final heading segment of a multi-level anchor", async () => {
+    const root = await makeWiki({
+      "index.md": "See [[sdn#Part One#Details]].\n",
+      "sources/sdn.md": "# Part One\n\n## Details\n",
+    });
+
+    const report = await checkWikiLinks(join(root, "wiki"));
+
+    expect(report.broken).toEqual([]);
+  });
+
+  it("flags a multi-level anchor whose final segment has no heading", async () => {
+    const root = await makeWiki({
+      "index.md": "See [[sdn#Part One#Details]].\n",
+      "sources/sdn.md": "# Part One\n",
+    });
+
+    const report = await checkWikiLinks(join(root, "wiki"));
+
+    expect(report.broken).toEqual([
+      'wiki/index.md:1 -> [[sdn#Part One#Details]] (target has no heading "Part One#Details")',
+    ]);
+  });
+
+  it("does not flag a block-reference link", async () => {
+    const root = await makeWiki({
+      "index.md": "See [[vector-database#^block-id]].\n",
+      "concepts/vector-database.md": "# Vector Database\n",
+    });
+
+    const report = await checkWikiLinks(join(root, "wiki"));
+
+    expect(report.broken).toEqual([]);
+  });
+
+  it("skips a cross-wiki anchored target as external", async () => {
+    const root = await makeWiki({
+      "index.md": "See [[engineering/stub#Chapter]].\n",
+    });
+
+    const report = await checkWikiLinks(join(root, "wiki"));
+
+    expect(`${report.broken.length}/${report.external}`).toBe("0/1");
+  });
+
+  it("does not double-report a frontmatter anchored citation", async () => {
+    const root = await makeWiki({
+      "concepts/decision.md": [
+        "---",
+        "sources:",
+        '  - "[[sdn#Typo]]"',
+        "---",
+        "",
+      ].join("\n"),
+      "sources/sdn.md": "## Chapter\n",
+    });
+
+    const report = await checkWikiLinks(join(root, "wiki"));
+
+    expect(report.broken).toEqual([]);
+  });
+
+  it("validates a body link below a frontmatter block with its file line", async () => {
+    const root = await makeWiki({
+      "concepts/decision.md": [
+        "---",
+        "type: concept",
+        "---",
+        "See [[sdn#Typo]].",
+        "",
+      ].join("\n"),
+      "sources/sdn.md": "## Chapter\n",
+    });
+
+    const report = await checkWikiLinks(join(root, "wiki"));
+
+    expect(report.broken).toEqual([
+      'wiki/concepts/decision.md:4 -> [[sdn#Typo]] (target has no heading "Typo")',
+    ]);
+  });
+
+  it("does not match a heading written only in the target's frontmatter", async () => {
+    const root = await makeWiki({
+      "index.md": "See [[sdn#Fake]].\n",
+      "sources/sdn.md": ["---", "note: # Fake", "---", "Body\n"].join("\n"),
+    });
+
+    const report = await checkWikiLinks(join(root, "wiki"));
+
+    expect(report.broken).toEqual([
+      'wiki/index.md:1 -> [[sdn#Fake]] (target has no heading "Fake")',
+    ]);
+  });
+
+  it("does not match a heading inside the target's fenced code block", async () => {
+    const root = await makeWiki({
+      "index.md": "See [[sdn#Fake]].\n",
+      "sources/sdn.md": ["```text", "# Fake", "```"].join("\n"),
+    });
+
+    const report = await checkWikiLinks(join(root, "wiki"));
+
+    expect(report.broken).toEqual([
+      'wiki/index.md:1 -> [[sdn#Fake]] (target has no heading "Fake")',
+    ]);
+  });
+
   it("reports a bare engineering prefix as a broken internal link", async () => {
     const root = await makeWiki({
       "index.md": "Empty target [[engineering/]].\n",
@@ -397,6 +618,19 @@ describe("check-links CLI", () => {
 
     expect(`${result.code}: ${result.err}`).toBe(
       `1: ${paint.red("wiki/index.md:2 -> [[missing-page]]")}\n`,
+    );
+  });
+
+  it("exits 1 and prints the anchor failure with its reason", async () => {
+    const root = await makeWiki({
+      "index.md": "See [[vector-database#Vendors]].\n",
+      "concepts/vector-database.md": "# Vector Database\n",
+    });
+
+    const result = await runNode([join(root, "wiki")]);
+
+    expect(`${result.code}: ${result.err}`).toBe(
+      `1: ${paint.red('wiki/index.md:1 -> [[vector-database#Vendors]] (target has no heading "Vendors")')}\n`,
     );
   });
 

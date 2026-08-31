@@ -40,7 +40,8 @@ export function kebab(text: string): string {
     .replace(/-+$/, "");
 }
 
-const FRONTMATTER_FENCE = "---";
+/** The frontmatter block's opening and closing fence line. */
+export const FRONTMATTER_FENCE = "---";
 
 const EMPTY_FIELDS: PageFields = {
   title: undefined,

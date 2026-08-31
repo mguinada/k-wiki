@@ -855,7 +855,15 @@ page quotes — tilde paths, config keys, CLI flags, `npm run`
 commands — appears in its `origin`, and every page title kebab-cases
 to its file name), the fidelity item in the lint prompt (relational
 misquotes — right tokens, wrong containment — are detected there,
-not deterministically), recurring lint, periodic rebuild. A
+not deterministically), the body-text anchor lint (`npm run
+check-links`: every `[[wikilink]]` resolves to an existing page, and
+a body-text heading anchor `[[page#Chapter]]` lands on a target
+heading byte-identical to the anchor — the same rule
+`check-provenance` applies to `sources` citations, shared through
+one helper, deliberately stricter than Obsidian's own
+case-insensitive, punctuation-stripping match because wiki anchors
+are generated, not typed; frontmatter citations are not
+double-reported), recurring lint, periodic rebuild. A
 surgical pass is not a proof — do not pretend it is.
 
 ---

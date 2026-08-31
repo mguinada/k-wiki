@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  anchorResolves,
   extractHeadings,
   insertChapterHeadings,
 } from "../../src/wiki/chapter-headings.ts";
@@ -27,6 +28,40 @@ describe("extractHeadings", () => {
     expect(extractHeadings("## 27.  Digital Wallet\n")).toEqual([
       "27.  Digital Wallet",
     ]);
+  });
+});
+
+describe("anchorResolves", () => {
+  it("resolves a byte-identical heading with irregular whitespace", () => {
+    expect(
+      anchorResolves("## 27.  Digital Wallet\n", "27.  Digital Wallet"),
+    ).toBe(true);
+  });
+
+  it("rejects an anchor that differs from the heading by whitespace", () => {
+    expect(
+      anchorResolves("## 27.  Digital Wallet\n", "27. Digital Wallet"),
+    ).toBe(false);
+  });
+
+  it("rejects an anchor the page has no heading for", () => {
+    expect(anchorResolves("## Chapter\n", "Typo")).toBe(false);
+  });
+
+  it("resolves the final heading segment of a multi-level anchor", () => {
+    expect(
+      anchorResolves("# Part One\n\n## Details\n", "Part One#Details"),
+    ).toBe(true);
+  });
+
+  it("ignores headings written inside the page's frontmatter", () => {
+    expect(anchorResolves("---\nnote: # Fake\n---\n## Real\n", "Fake")).toBe(
+      false,
+    );
+  });
+
+  it("ignores headings inside fenced code blocks", () => {
+    expect(anchorResolves("```\n## Fenced\n```\n", "Fenced")).toBe(false);
   });
 });
 

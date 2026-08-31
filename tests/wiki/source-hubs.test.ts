@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import {
   citationAlias,
+  citationAnchor,
   citationChapter,
   isUnmigratableSelfCitation,
   loadSourceHubIndex,
@@ -68,6 +69,24 @@ describe("citationAlias", () => {
 
   it("returns undefined for a path without a directory part", () => {
     expect(citationAlias("note.md")).toBeUndefined();
+  });
+});
+
+describe("citationAnchor", () => {
+  it("reads the anchor of an anchored citation", () => {
+    expect(citationAnchor("[[sdn#04. Rate Limiter]]")).toBe("04. Rate Limiter");
+  });
+
+  it("keeps a multi-level anchor as written", () => {
+    expect(citationAnchor("[[sdn#Part One#Details]]")).toBe("Part One#Details");
+  });
+
+  it("returns undefined without an anchor", () => {
+    expect(citationAnchor("[[sdn]]")).toBeUndefined();
+  });
+
+  it("returns undefined for a block reference", () => {
+    expect(citationAnchor("[[sdn#^block-id]]")).toBeUndefined();
   });
 });
 
