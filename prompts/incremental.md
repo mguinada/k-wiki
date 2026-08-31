@@ -54,7 +54,9 @@ whose note in `raw/` is a directory of chapters), write that chapter's
 section in the hub page, under its generated `## <chapter>` heading
 (heading text byte-identical to the citation anchor, never typed
 free-hand). The page-level digest above the chapter sections stays the
-landing zone for plain `[[hub]]` citations; chapter content lives
+landing zone for plain `[[hub]]` citations — it states what the
+corpus is and how the page is organized; a chapter's facts live only
+in its section, never duplicated in the digest. Chapter content lives
 under its own heading, written from that chapter's own source file. A
 section states what the chapter claims and links to the pages that
 hold the detail; it never restates detail that already has a page — a

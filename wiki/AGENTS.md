@@ -121,8 +121,11 @@ of chapters — carries one section per cited chapter, under that
 chapter's `## <chapter>` heading in the generated skeleton (heading
 text byte-identical to the citation anchor, never typed free-hand).
 The page-level digest above the chapter sections stays the landing
-zone for plain `[[hub]]` citations; a chapter's content lives under
-its own heading, written from that chapter's own note in `raw/`.
+zone for plain `[[hub]]` citations; it states what the corpus is
+and how the page is organized — a chapter's facts live only in its
+section, never duplicated in the digest. A chapter's content lives
+under its own heading, written from that chapter's own note in
+`raw/`.
 
 A chapter section states what the chapter claims and links to the
 pages that hold the detail; it never restates detail that already has
