@@ -55,11 +55,10 @@ describe("mergeReports", () => {
       ]),
     );
 
-    const statuses = ["src/a.ts", "src/b.ts"].flatMap(
-      (file) =>
-        merged.files[file].mutants.map((mutant: { status: string }) =>
-          mutant.status
-        ),
+    const statuses = ["src/a.ts", "src/b.ts"].flatMap((file) =>
+      merged.files[file].mutants.map(
+        (mutant: { status: string }) => mutant.status,
+      ),
     );
 
     expect(statuses).toEqual(["Killed", "Survived"]);
@@ -218,17 +217,13 @@ describe("mutation-merge CLI", () => {
       "3",
     ]);
 
-    expect(`${result.stderr}|${result.code}`).toMatch(
-      /expected 3[\s\S]*\|1$/,
-    );
+    expect(`${result.stderr}|${result.code}`).toMatch(/expected 3[\s\S]*\|1$/);
   });
 
   it("exits 1 naming the output path requirement when no positional is given", async () => {
     const result = await runCli(["--expect", "2"]);
 
-    expect(`${result.stderr}|${result.code}`).toMatch(
-      /<out\.json>[\s\S]*\|1$/,
-    );
+    expect(`${result.stderr}|${result.code}`).toMatch(/<out\.json>[\s\S]*\|1$/);
   });
 });
 
