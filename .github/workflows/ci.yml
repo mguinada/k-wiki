@@ -25,17 +25,27 @@
 # The mutation job is advisory, never a gate (issue #21): it runs only
 # when a PR carries the `mutation` label, nightly on main, or via manual
 # dispatch, and continue-on-error keeps its outcome from blocking merge.
-# The same nightly arm carries the advisory complexity debt report
+# PR runs stay one diff-scoped job. Nightly and dispatched FULL runs are
+# chunked (issue #236): the full run outgrew GitHub's 6 h per-job limit
+# (8619 mutants, cancelled at 5 h 58 m before any report existed), so
+# src/quality/mutation-chunk.ts splits the mutate list into size-balanced
+# disjoint chunks, one parallel job each; mutation-merge then stitches the
+# chunk reports into the one mutation.json the mutation-report artifact
+# and the mutants-report workflow consume. The merge refuses a partial
+# picture (--expect the chunk count): a cancelled or failed chunk fails
+# the merge loudly, preserving the issue #208 starvation signal — while
+# fail-fast: false keeps one bad chunk from cancelling its siblings, so
+# the merge can name exactly what is missing.
+# The nightly arm carries the advisory complexity debt report
 # (issue #178): npm run complexity:full prints the whole-src/ per-function
 # debt table and uploads it as an artifact (7-day retention); the table
 # is advisory, though the run also re-executes the changed-mode gate (a
 # clean nightly checkout has nothing changed, so it passes). PR runs are scoped like
 # the optional local run (issue #99): they
 # mutate only the src/ hunks changed vs origin/main, so the checkout
-# needs full history (fetch-depth: 0). Nightly and dispatched runs stay
-# full. It follows the same log-hygiene rule: Stryker mutates and prints
-# repo code under src/ only; the suite reads synthetic fixtures, never
-# vault data.
+# needs full history (fetch-depth: 0). It follows the same log-hygiene
+# rule: Stryker mutates and prints repo code under src/ only; the suite
+# reads synthetic fixtures, never vault data.
 #
 # The full run starts with a dry run of the whole unit suite in
 # Stryker's vitest worker-thread pool; any failing test kills the run
@@ -127,12 +137,11 @@ jobs:
 
   mutation:
     name: Mutation testing (advisory)
-    # PRs: only when labeled `mutation`. Otherwise: nightly schedule on
-    # main and manual workflow_dispatch runs — never per push: the full
-    # run is slow and the nightly cadence already covers main. Pushes
-    # carry no pull_request context, so contains() falls through to
-    # false without erroring; the explicit event list keeps them out.
-    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'mutation'))
+    # PRs: only when labeled `mutation`, diff-scoped (issue #99). The
+    # nightly/dispatch FULL runs live in the chunked mutation-chunks +
+    # mutation-merge jobs below (issue #236) — never per push: the full
+    # run is slow and the nightly cadence already covers main.
+    if: github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'mutation')
     runs-on: ubuntu-latest
     # Advisory signal, not a gate: a failing run must never block a merge.
     continue-on-error: true
@@ -157,10 +166,9 @@ jobs:
           name: complexity-debt-report
           path: complexity-debt-report.txt
           retention-days: 7
-      # PRs: diff-scoped (issue #99). Scheduled/dispatched: full run.
       - name: Mutation testing run
         id: mutation
-        run: ${{ github.event_name == 'pull_request' && 'npm run mutation:changed' || 'npm run mutation' }}
+        run: npm run mutation:changed
       - name: Surface a failed advisory run
         # continue-on-error would otherwise leave the run page fully
         # green (#215); the annotation is visible without gating anything.
@@ -169,7 +177,7 @@ jobs:
         if: always() && steps.mutation.outcome == 'failure'
         run: >
           echo "::error title=Mutation run failed::The advisory mutation run
-          exited nonzero — see this job's log. A failed nightly run files
+          exited nonzero — see this job's log. A failed PR run files
           no report, so the rolling survivor issue (#208) is not updated."
       - name: Upload mutation report
         if: always()
@@ -178,6 +186,133 @@ jobs:
           name: mutation-report
           # mutation.json rides along so the mutants-report workflow can
           # render the rolling survivor issue from the same run (issue #208).
+          path: |
+            reports/mutation/mutation.html
+            reports/mutation/mutation.json
+          retention-days: 7
+
+  mutation-chunks:
+    name: Mutation chunk ${{ matrix.chunk }} of 4 (advisory)
+    # Nightly schedule and manual dispatch: the FULL run, split into
+    # size-balanced disjoint src/ chunks (issue #236) so no single job
+    # approaches GitHub's 6 h per-job limit.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    strategy:
+      # One failing chunk must not cancel its siblings: each chunk's
+      # artifact must exist (or its absence stay attributable) so the
+      # merge can name exactly what is missing.
+      fail-fast: false
+      matrix:
+        chunk: [1, 2, 3, 4]
+    # Advisory signal, not a gate: a failing chunk must never block a
+    # merge; the merge job turns a missing chunk into the loud signal.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: the chunk's dry run executes the whole unit
+          # suite, and the live complexity-gate test diffs against
+          # origin/main — a shallow checkout has no such ref and the
+          # dry run dies before any mutant runs.
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Compute this chunk's mutate list
+        id: globs
+        run: >
+          echo "globs=$(node bin/mutation-chunk.ts --index
+          ${{ matrix.chunk }} --total 4)" >> "$GITHUB_OUTPUT"
+      - name: Mutation testing run (chunk ${{ matrix.chunk }} of 4)
+        id: mutation
+        run: npm run mutation -- --mutate "${{ steps.globs.outputs.globs }}"
+      - name: Surface a failed advisory chunk
+        if: always() && steps.mutation.outcome == 'failure'
+        run: >
+          echo "::error title=Mutation chunk ${{ matrix.chunk }} failed::The
+          advisory mutation run for chunk ${{ matrix.chunk }} of 4 exited
+          nonzero — see this job's log. Its report is missing, so the merge
+          below fails and the rolling survivor issue (#208) is not updated."
+      - name: Upload chunk mutation report
+        # Only a successful chunk reports; a missing artifact is exactly
+        # what the merge's --expect 4 turns into the loud failure.
+        if: steps.mutation.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report-chunk-${{ matrix.chunk }}
+          path: |
+            reports/mutation/mutation.html
+            reports/mutation/mutation.json
+          retention-days: 7
+
+  mutation-merge:
+    name: Mutation report merge (advisory)
+    # Stitches the chunk reports into the one mutation-report artifact
+    # the mutants-report workflow consumes (issue #236). Runs whenever
+    # the chunk jobs ran (even cancelled/failed ones — always()), but
+    # never on PR runs where they were skipped.
+    needs: mutation-chunks
+    if: always() && needs.mutation-chunks.result != 'skipped'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: npm run complexity:full re-executes the
+          # changed-mode gate, which diffs against origin/main.
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Complexity debt report (advisory)
+        if: always()
+        run: npm run complexity:full | tee complexity-debt-report.txt
+      - name: Upload complexity debt report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: complexity-debt-report
+          path: complexity-debt-report.txt
+          retention-days: 7
+      - name: Download chunk mutation reports
+        # Zero matches warn but do not fail; the merge's --expect turns
+        # the missing inputs into the loud, named failure.
+        uses: actions/download-artifact@v4
+        with:
+          pattern: mutation-report-chunk-*
+          path: chunks
+      - name: Merge chunk reports
+        id: merge
+        run: >
+          mkdir -p reports/mutation && node bin/mutation-merge.ts
+          reports/mutation/mutation.json
+          chunks/mutation-report-chunk-*/mutation.json --expect 4
+      - name: Surface a failed advisory merge
+        if: always() && steps.merge.outcome == 'failure'
+        run: >
+          echo "::error title=Mutation merge failed::The chunk reports could
+          not be merged into one report — a chunk job failed or was
+          cancelled (see the chunk jobs' logs and annotations). No
+          mutation-report artifact is filed, so the rolling survivor issue
+          (#208) is not updated."
+      - name: Copy a chunk's HTML bootstrap beside the merged report
+        # Stryker's mutation.html loads ./mutation.json at view time, so
+        # any chunk's bootstrap renders the MERGED report when copied
+        # next to it; the per-chunk artifacts keep the per-chunk views.
+        if: steps.merge.outcome == 'success'
+        run: >
+          cp "$(ls chunks/mutation-report-chunk-*/mutation.html | head -1)"
+          reports/mutation/mutation.html
+      - name: Upload mutation report
+        if: steps.merge.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report
           path: |
             reports/mutation/mutation.html
             reports/mutation/mutation.json

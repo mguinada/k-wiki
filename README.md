@@ -689,14 +689,18 @@ Runs are incremental — results are reused from
 `reports/stryker-incremental.json`, so repeat runs cost seconds, not
 minutes.
 
-In CI, the mutation job runs only when a pull request carries the
-[`mutation`](https://github.com/mguinada/k-wiki/labels) label, nightly on
-`main`, or via manual workflow dispatch — never as a blocking check.
-Labeled-PR runs use the same hunk-scoped command as the optional local
-run (`npm run mutation:changed`, full checkout history);
-only the nightly and dispatched runs mutate all of `src/`. Its
-HTML report and JSON report are uploaded as an artifact (7-day
-retention). After each nightly run, the
+In CI, mutation testing is advisory — never a blocking check — and
+runs in two shapes. A pull request carrying the
+[`mutation`](https://github.com/mguinada/k-wiki/labels) label triggers
+the `mutation` job, which uses the same hunk-scoped command as the
+optional local run (`npm run mutation:changed`, full checkout history)
+and uploads its HTML and JSON report as an artifact (7-day retention).
+The nightly `main` and dispatched full runs instead run as four
+parallel `mutation-chunks` jobs — `src/` split into size-balanced
+disjoint chunks, because one full run outgrew GitHub's 6 h per-job
+limit — stitched by the `mutation-merge` job into that same artifact,
+refusing a partial picture when a chunk failed. After each nightly
+run, the
 [`mutants-report`](.github/workflows/mutants-report.yml) workflow
 downloads that artifact and auto-files the actionable mutants into one
 rolling issue labeled `mutation` — "Mutation testing: actionable

@@ -238,7 +238,16 @@ test that is red on main — or passes in vitest's default forks pool
 but cannot run in worker threads, like `process.chdir()` (#193) —
 kills the run before a report exists; the job log names the failing
 tests, and the run page carries an error annotation while the job
-stays advisory-green (#215). After every nightly run, the
+stays advisory-green (#215). The nightly/dispatch full run is
+**chunked** (#236): the full run once outgrew GitHub's 6 h per-job
+limit and was cancelled before any report existed, so
+`bin/mutation-chunk.ts` splits the mutate list into four
+size-balanced, disjoint parallel chunk jobs (each runs the same
+dry run first), and `bin/mutation-merge.ts` stitches the chunk
+reports into the one `mutation-report` artifact — refusing
+(`--expect`) to merge a partial picture, so a failed or cancelled
+chunk still files no report and the #208 starvation signal survives.
+After every nightly run, the
 `mutants-report` workflow (`.github/workflows/mutants-report.yml`)
 auto-files the actionable mutants into one rolling issue labeled
 `mutation` — "Mutation testing: actionable survivors" — kept on the

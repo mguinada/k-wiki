@@ -37,6 +37,8 @@
     "mutation": "stryker run",
     "mutation:changed": "sh src/quality/mutation-changed.sh",
     "mutation:survivors": "node bin/mutation-survivors.ts",
+    "mutation:chunk": "node bin/mutation-chunk.ts",
+    "mutation:merge": "node bin/mutation-merge.ts",
     "mutation:report": "node bin/mutation-report.ts",
     "complexity": "vitest run --disableConsoleIntercept tests/quality/complexity.test.ts",
     "complexity:full": "COMPLEXITY_FULL=1 vitest run --disableConsoleIntercept tests/quality/complexity.test.ts"
