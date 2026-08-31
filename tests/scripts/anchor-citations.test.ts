@@ -235,6 +235,33 @@ describe("anchorCitations", () => {
     ]);
   });
 
+  it("skips and reports a cited chapter whose generated heading does not resolve in the hub body", async () => {
+    const wikiDir = await makeWiki({
+      "sources/sdn.md": hub(
+        "System design interview notes",
+        "notes/Books/SDN/Readme.md",
+        ["[[sdn]]", "[[sdn|04. Rate Limiter]]"],
+      ).replace("digest\n", "digest\n```\ncode\n"),
+    });
+
+    const report = await anchorCitations(wikiDir, {
+      write: true,
+      date: "2026-08-30",
+    });
+    const hubText = await readFile(join(wikiDir, "sources", "sdn.md"), "utf8");
+
+    expect(`${JSON.stringify(report.skipped)}:${report.headings.length}:${hubText.includes("## 04. Rate Limiter")}`).toBe(
+      `${JSON.stringify([
+        {
+          page: "sources/sdn.md",
+          entry: "[[sdn#04. Rate Limiter]]",
+          reason:
+            "generated heading does not resolve in the hub body (unclosed code fence or unrepresentative chapter name)",
+        },
+      ])}:0:false`,
+    );
+  });
+
   it("writes nothing in dry-run mode", async () => {
     const wikiDir = await makeWiki({
       ...MIGRATED_HUB,

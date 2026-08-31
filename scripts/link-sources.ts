@@ -221,10 +221,10 @@ const HELP = `Usage: link-sources [-h | --help] [--write] [--date <YYYY-MM-DD>] 
 Migrate legacy raw-path \`sources\` entries to clickable wikilinks:
 every path a \`type: source\` hub covers is rewritten —
 to "[[hub]]" when the path is the hub's origin, to
-"[[hub|Chapter]]" (the cited path's parent directory name) when the
-hub's own \`sources\` list cites the path. Wikilink entries are left
-untouched; only \`sources\` list items inside the frontmatter block
-are rewritten.
+"[[hub#Chapter]]" (the anchor is the cited path's parent directory
+name) when the hub's own \`sources\` list cites the path. Wikilink
+entries are left untouched; only \`sources\` list items inside the
+frontmatter block are rewritten.
 
   <wiki-dir>     Wiki root to scan. Default: the repo's own wiki/.
   --write        Perform the rewrite. Default: dry run — print every

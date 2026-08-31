@@ -43,10 +43,11 @@ lacks it. When a note is renamed, update its raw path in the kept
 source page's `origin` and in every `sources` entry that cites it.
 
 Cite sources as wikilinks to `type: source` pages in every affected
-page's `sources` frontmatter — `- "[[hub]]"`, aliased
-(`- "[[hub|Chapter]]"`) when citing a sub-source of a multi-part
-hub; create the source page first when it does not exist. A raw
-path with no source page stays legal (repo-as-source code files).
+page's `sources` frontmatter — `- "[[hub]]"`, anchored
+(`- "[[hub#Chapter]]"`, the chapter's directory name) when citing a
+sub-source of a multi-part hub; create the source page first when it
+does not exist. A raw path with no source page stays legal
+(repo-as-source code files).
 
 Do not regenerate unrelated pages.
 Do not modify raw/.

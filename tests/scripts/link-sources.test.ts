@@ -127,7 +127,7 @@ describe("linkSources", () => {
     ]);
   });
 
-  it("rewrites a chapter cite covered by a hub's own sources to an aliased wikilink", async () => {
+  it("rewrites a chapter cite covered by a hub's own sources to an anchored wikilink", async () => {
     const wikiDir = await makeWiki({
       "sources/system-design-interview-notes.md": MULTIPART_HUB,
       "concepts/rate-limiting.md": citing([CHAPTER]),

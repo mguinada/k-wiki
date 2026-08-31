@@ -32,7 +32,10 @@ import { stem } from "../src/wiki-links.ts";
  * chapter set derives from its own `sources` citation list, so both
  * halves stay in step. Aliases that name no chapter of their hub
  * (display aliases) are skipped and reported, never guessed; aliases
- * to non-source pages are untouched. Safety envelope modeled on
+ * to non-source pages are untouched; so is a cited chapter whose
+ * generated heading does not round-trip in the hub body (an
+ * unclosed code fence, a chapter name no heading carries
+ * byte-identically). Safety envelope modeled on
  * link-sources: dry run by default, `--write` refuses a tree with
  * uncommitted changes, the audit trail lands in `wiki/log.md`
  * (wiki/log.md itself is never rewritten: only `sources` lists
@@ -266,6 +269,15 @@ export async function anchorCitations(
         report.headings.push({ page: file, chapter });
       }
 
+      for (const chapter of insertion.skipped) {
+        report.skipped.push({
+          page: file,
+          entry: `[[${name}#${chapter}]]`,
+          reason:
+            "generated heading does not resolve in the hub body (unclosed code fence or unrepresentative chapter name)",
+        });
+      }
+
       next = insertion.text;
     }
 
@@ -312,8 +324,9 @@ What it writes (a --write run with at least one change):
     anchor-citations-migration | N pages" with one line per rewrite
     ("entry -> anchored wikilink") and per heading (+ "## Chapter");
   - a summary to stdout: every rewrite (green), every inserted
-    heading (green), every skipped alias with its reason (yellow,
-    needs judgment — the script never guesses), and the totals.
+    heading (green), every skipped alias or heading with its reason
+    (yellow, needs judgment — the script never guesses), and the
+    totals.
 
 Safety: --write refuses a tree with uncommitted changes (the git
 diff is the review surface; git restore is the revert); outside a

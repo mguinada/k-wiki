@@ -48,6 +48,7 @@ describe("insertChapterHeadings", () => {
     expect(insertChapterHeadings(text, ["04. Rate Limiter"])).toEqual({
       text,
       added: [],
+      skipped: [],
     });
   });
 
@@ -72,5 +73,44 @@ describe("insertChapterHeadings", () => {
     const { text } = insertChapterHeadings("prose\n", ["27.  Digital Wallet"]);
 
     expect(text).toContain("\n## 27.  Digital Wallet\n");
+  });
+
+  it("skips a chapter whose appended heading lands inside an unclosed code fence", () => {
+    const text = "prose\n\n```\ncode\n";
+
+    expect(insertChapterHeadings(text, ["04. Rate Limiter"])).toEqual({
+      text,
+      added: [],
+      skipped: ["04. Rate Limiter"],
+    });
+  });
+
+  it("skips a chapter name whose heading cannot be byte-identical", () => {
+    const text = "prose\n";
+
+    expect(
+      insertChapterHeadings(text, ["04. Rate Limiter "]),
+    ).toEqual({ text, added: [], skipped: ["04. Rate Limiter "] });
+  });
+
+  it("appends only the chapters that round-trip and skips the rest", () => {
+    const { text, added, skipped } = insertChapterHeadings("prose\n", [
+      "01. Scaling",
+      "02. Estimation ",
+    ]);
+
+    expect(`${added}|${skipped}|${text}`).toBe(
+      "01. Scaling|02. Estimation |prose\n\n## 01. Scaling\n",
+    );
+  });
+
+  it("is idempotent for a chapter it skipped: a re-run appends nothing", () => {
+    const text = "prose\n\n```\ncode\n";
+    const once = insertChapterHeadings(text, ["04. Rate Limiter"]);
+    const twice = insertChapterHeadings(once.text, ["04. Rate Limiter"]);
+
+    expect(`${twice.text === once.text}|${twice.skipped}`).toBe(
+      "true|04. Rate Limiter",
+    );
   });
 });

@@ -32,35 +32,55 @@ export function extractHeadings(body: string): string[] {
 }
 
 /** The result of regenerating a hub's chapter-heading skeleton: the
- *  page text (unchanged when nothing was missing) and the chapters
- *  whose headings were appended. */
+ *  page text (unchanged when nothing was appended), the chapters
+ *  whose headings were appended, and the chapters skipped because
+ *  their generated heading does not round-trip through
+ *  extractHeadings — an unclosed code fence swallows the appended
+ *  line, or no ATX heading carries the chapter name
+ *  byte-identically (edge whitespace is stripped). Skipped chapters
+ *  are reported, never guessed, so a re-run cannot append them
+ *  again. */
 export interface HeadingInsertion {
   readonly text: string;
   readonly added: readonly string[];
+  readonly skipped: readonly string[];
 }
 
 /** Append one `## <chapter>` heading per chapter the page does not
  *  already carry — heading text byte-identical to the chapter name —
  *  after the existing body; everything already written stays
  *  byte-identical, so a re-run with no new chapters changes nothing
- *  (idempotent). */
+ *  (idempotent). Only chapters whose appended heading survives
+ *  extractHeadings are written; the rest are skipped and reported. */
 export function insertChapterHeadings(
   text: string,
   chapters: readonly string[],
 ): HeadingInsertion {
   const body = bodyAfterFrontmatter(text);
   const existing = new Set(extractHeadings(body));
-  const added = [...new Set(chapters)].filter(
+  const missing = [...new Set(chapters)].filter(
     (chapter) => !existing.has(chapter),
   );
 
-  if (added.length === 0) {
-    return { text, added: [] };
+  if (missing.length === 0) {
+    return { text, added: [], skipped: [] };
   }
 
   const prefix = text.slice(0, text.length - body.length);
   const normalized = body.replace(/\s+$/, "\n");
-  const blocks = added.map((chapter) => `\n## ${chapter}\n`).join("");
+  const blocks = missing.map((chapter) => `\n## ${chapter}\n`).join("");
+  const visible = new Set(
+    extractHeadings(bodyAfterFrontmatter(`${prefix}${normalized}${blocks}`)),
+  );
+  const added = missing.filter((chapter) => visible.has(chapter));
 
-  return { text: `${prefix}${normalized}${blocks}`, added };
+  if (added.length === 0) {
+    return { text, added: [], skipped: missing };
+  }
+
+  return {
+    text: `${prefix}${normalized}${added.map((chapter) => `\n## ${chapter}\n`).join("")}`,
+    added,
+    skipped: missing.filter((chapter) => !visible.has(chapter)),
+  };
 }
