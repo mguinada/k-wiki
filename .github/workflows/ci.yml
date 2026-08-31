@@ -210,6 +210,12 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history: the chunk's dry run executes the whole unit
+          # suite, and the live complexity-gate test diffs against
+          # origin/main — a shallow checkout has no such ref and the
+          # dry run dies before any mutant runs.
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -254,6 +260,10 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history: npm run complexity:full re-executes the
+          # changed-mode gate, which diffs against origin/main.
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
