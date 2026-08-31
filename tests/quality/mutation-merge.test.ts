@@ -56,7 +56,10 @@ describe("mergeReports", () => {
     );
 
     const statuses = ["src/a.ts", "src/b.ts"].flatMap(
-      (file) => merged.files[file].mutants.map((mutant) => mutant.status),
+      (file) =>
+        merged.files[file].mutants.map((mutant: { status: string }) =>
+          mutant.status
+        ),
     );
 
     expect(statuses).toEqual(["Killed", "Survived"]);
