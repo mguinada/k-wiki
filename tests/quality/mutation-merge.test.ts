@@ -322,8 +322,9 @@ describe("mutation-merge main in-process", () => {
   it("exits 1 with the missing-output message for no arguments", async () => {
     const result = await run([]);
 
-    expect(result.error[0]).toContain("missing <out.json>");
-    expect(result.exitCode).toBe(1);
+    expect(`${result.error[0]}|${result.exitCode ?? 0}`).toMatch(
+      /missing <out\.json>.*\|1$/,
+    );
   });
 
   it("exits 1 naming an unreadable chunk report", async () => {
@@ -335,8 +336,9 @@ describe("mutation-merge main in-process", () => {
       join(dir, "absent.json"),
     ]);
 
-    expect(result.error[0]).toContain("absent.json");
-    expect(result.exitCode).toBe(1);
+    expect(`${result.error[0]}|${result.exitCode ?? 0}`).toMatch(
+      /absent\.json.*\|1$/,
+    );
   });
 
   it("exits 1 naming --expect when its value is missing", async () => {
@@ -349,8 +351,9 @@ describe("mutation-merge main in-process", () => {
       "--expect",
     ]);
 
-    expect(result.error[0]).toContain("--expect requires an integer value");
-    expect(result.exitCode).toBe(1);
+    expect(`${result.error[0]}|${result.exitCode ?? 0}`).toMatch(
+      /--expect requires an integer value\|1$/,
+    );
   });
 
   it("exits 1 naming both counts when --expect misses inputs in-process", async () => {
@@ -364,8 +367,9 @@ describe("mutation-merge main in-process", () => {
       "3",
     ]);
 
-    expect(result.error[0]).toContain("expected 3");
-    expect(result.exitCode).toBe(1);
+    expect(`${result.error[0]}|${result.exitCode ?? 0}`).toMatch(
+      /expected 3.*\|1$/,
+    );
   });
 });
 
@@ -421,8 +425,9 @@ describe("mutation-merge --expect in-process", () => {
       "abc",
     ]);
 
-    expect(result.error[0]).toContain("--expect requires an integer value");
-    expect(result.exitCode).toBe(1);
+    expect(`${result.error[0]}|${result.exitCode ?? 0}`).toMatch(
+      /--expect requires an integer value\|1$/,
+    );
   });
 
   it("merges and prints the summary when --expect matches", async () => {
@@ -436,7 +441,9 @@ describe("mutation-merge --expect in-process", () => {
       "2",
     ]);
 
-    expect(result.log[0]).toBe("Merged 2 mutants across 2 files from 2 reports.");
+    expect(result.log[0]).toBe(
+      "Merged 2 mutants across 2 files from 2 reports.",
+    );
     expect(result.exitCode).toBeUndefined();
   });
 

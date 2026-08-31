@@ -230,36 +230,41 @@ describe("mutation-chunk argument handling", () => {
   it("exits 1 naming an unexpected argument", () => {
     const result = run(["bogus", "--index", "1"]);
 
-    expect(result.error[0]).toContain("unexpected argument: bogus");
-    expect(result.exitCode).toBe(1);
+    expect(`${result.error[0]}|${result.exitCode ?? 0}`).toMatch(
+      /unexpected argument: bogus.*\|1$/,
+    );
   });
 
   it("exits 1 naming the switch when its value is not an integer", () => {
     const result = run(["--index", "abc", "--total", "2"]);
 
-    expect(result.error[0]).toContain("requires an integer value");
-    expect(result.exitCode).toBe(1);
+    expect(`${result.error[0]}|${result.exitCode ?? 0}`).toMatch(
+      /requires an integer value.*\|1$/,
+    );
   });
 
   it("exits 1 naming the switch when its value is missing", () => {
     const result = run(["--index"]);
 
-    expect(result.error[0]).toContain("requires an integer value");
-    expect(result.exitCode).toBe(1);
+    expect(`${result.error[0]}|${result.exitCode ?? 0}`).toMatch(
+      /requires an integer value.*\|1$/,
+    );
   });
 
   it("exits 1 for an --index above --total", () => {
     const result = run(["--index", "3", "--total", "2"]);
 
-    expect(result.error[0]).toBe("--index must be 1..2");
-    expect(result.exitCode).toBe(1);
+    expect(`${result.error[0]}|${result.exitCode ?? 0}`).toBe(
+      "--index must be 1..2|1",
+    );
   });
 
   it("exits 1 naming --total when it is missing", () => {
     const result = run(["--index", "1"]);
 
-    expect(result.error[0]).toContain("--total is required");
-    expect(result.exitCode).toBe(1);
+    expect(`${result.error[0]}|${result.exitCode ?? 0}`).toMatch(
+      /--total is required.*\|1$/,
+    );
   });
 
   it("prints the usage line for -h in-process", () => {
