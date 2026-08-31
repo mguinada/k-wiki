@@ -23,10 +23,10 @@ import { stem } from "../src/wiki-links.ts";
  * One-shot `sources` wikilink migration (issue #126, Part A): every
  * raw-path `sources` entry that a `type: source` hub covers is
  * rewritten to a clickable wikilink — plain `[[hub]]` when the path
- * is the hub's origin, aliased `[[hub|Chapter]]` when the hub's own
- * `sources` list cites the path (the multi-part-hub case; the alias
+ * is the hub's origin, anchored `[[hub#Chapter]]` when the hub's own
+ * `sources` list cites the path (the multi-part-hub case; the anchor
  * is the cited path's parent directory name). A no-origin hub's own
- * chapter citation is an exception: its aliased self-wikilink cannot
+ * chapter citation is an exception: its anchored self-wikilink cannot
  * be re-derived without an origin anchor, so that entry is skipped
  * and reported, never rewritten, rather than silently drop the
  * chapter's coverage. Coverage and ambiguity
@@ -221,10 +221,10 @@ const HELP = `Usage: link-sources [-h | --help] [--write] [--date <YYYY-MM-DD>] 
 Migrate legacy raw-path \`sources\` entries to clickable wikilinks:
 every path a \`type: source\` hub covers is rewritten —
 to "[[hub]]" when the path is the hub's origin, to
-"[[hub|Chapter]]" (the cited path's parent directory name) when the
-hub's own \`sources\` list cites the path. Wikilink entries are left
-untouched; only \`sources\` list items inside the frontmatter block
-are rewritten.
+"[[hub#Chapter]]" (the anchor is the cited path's parent directory
+name) when the hub's own \`sources\` list cites the path. Wikilink
+entries are left untouched; only \`sources\` list items inside the
+frontmatter block are rewritten.
 
   <wiki-dir>     Wiki root to scan. Default: the repo's own wiki/.
   --write        Perform the rewrite. Default: dry run — print every

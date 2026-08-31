@@ -806,7 +806,7 @@ describe("runGuardrails — check 2, sources entry format", () => {
       check: 2,
       problems: expect.arrayContaining([
         expect.stringContaining(
-          'cites a path that has a hub — use "[[sdn|04. Rate Limiter]]"',
+          'cites a path that has a hub — use "[[sdn#04. Rate Limiter]]"',
         ),
       ]),
     });
@@ -823,7 +823,7 @@ describe("runGuardrails — check 2, sources entry format", () => {
           "origin: raw/notes/src.md",
           "origin: raw/notes/Books/SDN/Readme.md",
         )
-        .replace('"notes/src.md"', '"[[sdn|04. Rate Limiter]]"'),
+        .replace('"notes/src.md"', '"[[sdn#04. Rate Limiter]]"'),
     );
     await commit(dataRoot, "add migrated multi-part hub");
 
@@ -841,7 +841,7 @@ describe("runGuardrails — check 2, sources entry format", () => {
       check: 2,
       problems: expect.arrayContaining([
         expect.stringContaining(
-          'cites a path that has a hub — use "[[sdn|04. Rate Limiter]]"',
+          'cites a path that has a hub — use "[[sdn#04. Rate Limiter]]"',
         ),
       ]),
     });

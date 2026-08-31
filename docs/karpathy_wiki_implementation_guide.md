@@ -488,19 +488,47 @@ written at ingest time, backfilled onto older pages in one wiki
 operation — and is the deterministic handle expungement uses (Section
 14a).
 
-`sources` entries are wikilinks to `type: source` pages — aliased
-(`[[hub|Chapter]]`) when citing a sub-source of a multi-part hub — so
-they render as clickable chips in Obsidian's properties panel. A raw
-path with no source page stays legal (repo-as-source code files);
+`sources` entries are wikilinks to `type: source` pages — anchored
+(`[[hub#Chapter]]`, the cited chapter's directory name) when citing
+a sub-source of a multi-part hub, whose hub body carries one
+generated heading per cited chapter, byte-identical to the anchor —
+so they render as clickable chips in Obsidian's properties panel. A
+raw path with no source page stays legal (repo-as-source code files);
 anything a hub covers must use the wikilink: the ingest guardrails
 reject a covered path entry on changed pages, and `check-provenance`
 flags it. Legacy path-form entries migrate in one wiki operation with
 `npm run link-sources -- <wiki-dir>` (dry run by default; `--write`
 refuses a dirty tree and logs the audit trail to `wiki/log.md`, the
-same safety envelope as backfill-origin). The reader-side deep dive
+same safety envelope as backfill-origin); legacy aliased citations
+(`[[hub|Chapter]]`) migrate to the anchored form — generating the
+hub's chapter headings — with `npm run anchor-citations --
+<wiki-dir>`, the same envelope. The reader-side deep dive
 from a hub to the live vault note is `npm run open-origin -- <hub>`:
 it maps `origin` to an `obsidian://open` URI against `sync.json` and
 opens it; nothing is stored in wiki data.
+
+A multi-part hub carries one section per cited chapter, under that
+chapter's generated heading (issue #227): the page-level digest
+above the sections stays the landing zone for plain `[[hub]]`
+citations, and a chapter's content lives under its own heading,
+written from that chapter's own raw note. A section states what the
+chapter claims and links to the pages that hold the detail — it never
+restates detail that already has a page, and may legitimately be one
+line: the anchor is the point, not the volume. The rule is codified
+in `wiki/AGENTS.md` and taught in the ingest and incremental prompts;
+existing hubs are backfilled with scoped re-ingest (`wiki-ingest
+--sources <chapter path>`, one chapter at a time), one data-repo
+migration commit per hub.
+
+Caveat — Obsidian client behavior: the lints guarantee the anchor's
+*address* (a byte-identical heading exists), not Obsidian's *scroll*.
+Heading-anchor clicks are a known-flaky client surface — they
+sometimes land at the note top, and they need a warm metadata cache
+(external writes re-index asynchronously). Chapter navigation lives
+in body prose, not the properties-panel chips; test in Live Preview
+on a settled cache before reporting a link broken. Tracked, with
+the upstream bug reports, in
+[`docs/obsidian/anchor-navigation.md`](obsidian/anchor-navigation.md).
 
 #### Derived concept pages
 
@@ -738,6 +766,10 @@ Intent: process only the sources changed since the previous ingestion,
 inspect the existing related pages first, and make the smallest set of
 changes necessary — updates, link changes, obsolete-claim removal,
 contradiction handling, retitles — never regenerating unrelated pages.
+A changed chapter of a multi-part hub fills that chapter's section in
+the hub page under its generated heading (issue #227): scoped
+re-ingest is the backfill mechanism for per-chapter sections, one
+chapter path per `--sources` argument.
 
 ---
 
@@ -841,15 +873,24 @@ missing `origin` automatically (Sections 13–14).
 Frontmatter tracing cannot *prove* the absence of uncited influence.
 Mitigations: phase-1 full-text search, the permanent dead-provenance
 check (`npm run check-provenance`: every `sources` entry resolves —
-wikilinks to existing `type: source` pages, raw paths both to files
-under `raw/` and to no hub that covers them — every `origin` exists
-under `raw/`), the quote-fidelity check
+wikilinks to existing `type: source` pages, anchored `[[hub#Chapter]]`
+citations to hub headings byte-identical to their anchors, raw paths
+both to files under `raw/` and to no hub that covers them — every
+`origin` exists under `raw/`), the quote-fidelity check
 (`npm run check-fidelity`: every machine-checkable token a source
 page quotes — tilde paths, config keys, CLI flags, `npm run`
 commands — appears in its `origin`, and every page title kebab-cases
 to its file name), the fidelity item in the lint prompt (relational
 misquotes — right tokens, wrong containment — are detected there,
-not deterministically), recurring lint, periodic rebuild. A
+not deterministically), the body-text anchor lint (`npm run
+check-links`: every `[[wikilink]]` resolves to an existing page, and
+a body-text heading anchor `[[page#Chapter]]` lands on a target
+heading byte-identical to the anchor — the same rule
+`check-provenance` applies to `sources` citations, shared through
+one helper, deliberately stricter than Obsidian's own
+case-insensitive, punctuation-stripping match because wiki anchors
+are generated, not typed; frontmatter citations are not
+double-reported), recurring lint, periodic rebuild. A
 surgical pass is not a proof — do not pretend it is.
 
 ---

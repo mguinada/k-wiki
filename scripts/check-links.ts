@@ -3,7 +3,12 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { terminalColors as colors, errorMessage } from "../src/cli/colors.ts";
 import { refuseDirectExecution } from "../src/cli/is-main.ts";
-import { listWikiPages } from "../src/wiki/pages.ts";
+import { anchorResolves } from "../src/wiki/chapter-headings.ts";
+import {
+  closingFence,
+  FRONTMATTER_FENCE,
+  listWikiPages,
+} from "../src/wiki/pages.ts";
 import {
   buildPageIndex,
   crossWikiTarget,
@@ -13,7 +18,16 @@ import {
 /**
  * Wikilink checker: scans every Markdown page under wiki/, extracts
  * each `[[wikilink]]` (bare, aliased, or with a heading anchor), and
- * resolves it by page file name against the scanned tree. Cross-wiki
+ * resolves it by page file name against the scanned tree. A
+ * body-text heading anchor (`[[page#Chapter]]`, issue #235) must
+ * also match a heading in the target page byte-identically — the
+ * same rule `check-provenance` enforces for anchored `sources`
+ * citations (issue #226), shared through anchorResolves, so the two
+ * surfaces cannot drift. Anchored links inside the frontmatter
+ * block are `sources` citations — check-provenance's domain — and
+ * are not double-reported here. `#^block-id` references are blocks,
+ * not headings, and are skipped; a `[[page#A#B]]` multi-level anchor
+ * resolves against its final heading segment. Cross-wiki
  * `[[<vault>/<page>]]` links are external to this wiki and are
  * skipped (issue #81); `check-crosslinks` validates them against
  * the domain wikis themselves. Prints one `file:line -> [[link]]` line
@@ -49,12 +63,27 @@ export async function checkWikiLinks(
   // checker that reports what the operator typed.
   const files = await listWikiPages(wikiDirInput);
   const index = buildPageIndex(files);
+  const texts = new Map<string, string>();
   const broken: string[] = [];
   let links = 0;
   let external = 0;
 
   for (const file of files) {
-    const text = await readFile(join(wikiDir, file), "utf8");
+    texts.set(file, await readFile(join(wikiDir, file), "utf8"));
+  }
+
+  for (const file of files) {
+    const text = texts.get(file) ?? "";
+    const reportPath = relative(displayRoot, join(wikiDir, file));
+    const lines = text.split("\n");
+    // Anchored links inside the frontmatter block are `sources`
+    // citations — check-provenance's domain (issue #226); the anchor
+    // rule applies to body-text links, which start after the closing
+    // fence (line 1 when the page opens with no frontmatter; an
+    // unclosed fence leaves the whole page body, matching
+    // bodyAfterFrontmatter).
+    const bodyFrom =
+      lines[0] === FRONTMATTER_FENCE ? closingFence(lines) + 2 : 1;
 
     for (const link of extractWikilinks(text)) {
       links++;
@@ -65,9 +94,21 @@ export async function checkWikiLinks(
         continue;
       }
 
-      if (!index.has(link.target)) {
+      const targetFile = index.get(link.target);
+
+      if (targetFile === undefined) {
+        broken.push(`${reportPath}:${link.line} -> ${link.raw}`);
+
+        continue;
+      }
+
+      if (
+        link.anchor !== undefined &&
+        link.line >= bodyFrom &&
+        !anchorResolves(texts.get(targetFile) ?? "", link.anchor)
+      ) {
         broken.push(
-          `${relative(displayRoot, join(wikiDir, file))}:${link.line} -> ${link.raw}`,
+          `${reportPath}:${link.line} -> ${link.raw} (target has no heading "${link.anchor}")`,
         );
       }
     }
@@ -79,10 +120,16 @@ export async function checkWikiLinks(
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
 const HELP = `Usage: check-links [-h | --help] [<wiki-dir>]
 
-Check that every [[wikilink]] under a wiki resolves to an existing
-page by file name (bare, aliased, and heading-anchor links).
-Cross-wiki [[<vault>/<page>]] links are external and skipped;
-check-crosslinks validates them against the domain wikis.
+Check that every [[wikilink]] under a wiki resolves: the target page
+must exist by file name, and a body-text heading anchor
+([[page#Chapter]]) must match a heading in the target page
+byte-identically — no case or punctuation tolerance, because wiki
+anchors are generated, not typed. Anchored citations inside the
+frontmatter sources list are check-provenance's domain and are not
+re-checked here; block references ([[page#^block-id]]) and
+multi-level anchors' parent segments are skipped. Cross-wiki
+[[<vault>/<page>]] links are external and skipped; check-crosslinks
+validates them against the domain wikis.
 
   <wiki-dir>    Wiki root to scan. Default: the repo's own wiki/.
   -h, --help    Print this help and exit; no side effects.

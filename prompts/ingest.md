@@ -42,10 +42,11 @@ For each changed source:
    source page you create, and add it to any source page you touch that
    lacks it.
 9. Add source attribution to every affected page: `sources` entries are
-   wikilinks to `type: source` pages — `- "[[hub]]"`, aliased
-   (`- "[[hub|Chapter]]"`) when citing a sub-source of a multi-part
-   hub; create the source page first when it does not exist. A raw
-   path with no source page stays legal (repo-as-source code files).
+   wikilinks to `type: source` pages — `- "[[hub]]"`, anchored
+   (`- "[[hub#Chapter]]"`, the chapter's directory name) when citing
+   a sub-source of a multi-part hub; create the source page first
+   when it does not exist. A raw path with no source page stays legal
+   (repo-as-source code files).
 10. Add appropriate wikilinks.
 11. Preserve contradictions and uncertainty.
 12. Do not invent facts.
@@ -55,6 +56,42 @@ For each changed source:
     corroborate → raise status and confidence; contradict → add or update
     a `CONTRADICTION` callout; unrelated → leave flagged.
 16. Append a concise operation summary to log.md.
+
+When a changed source is a chapter of a multi-part hub (a source page
+whose note in `raw/` is a directory of chapters), write that chapter's
+section in the hub page, under its generated `## <chapter>` heading
+(heading text byte-identical to the citation anchor, never typed
+free-hand). The page-level digest above the chapter sections stays the
+landing zone for plain `[[hub]]` citations — it states what the
+corpus is and how the page is organized; a chapter's facts live only
+in its section, never duplicated in the digest. Chapter content lives
+under its own heading, written from that chapter's own source file. A
+section states what the chapter claims and links to the pages that
+hold the detail; it never restates detail that already has a page — a
+section may legitimately be one line; the anchor is the point, not the
+volume.
+
+Good — chapter-specific framing plus links to the pages that hold
+the detail:
+
+    ## 04. Rate Limiter
+
+    [[rate-limiting]] — five algorithms, Redis counters, distributed
+    race conditions. The chapter's own framing, which no wiki page
+    carries: placement is the first design decision — client-side is
+    untrustworthy, server-side preferred, API-gateway middleware is
+    the microservices answer. See
+    [[token-bucket-vs-leaky-bucket]].
+
+Bad — restates the chapter's bullet list; every bullet already lives
+in [[rate-limiting]] or the comparison page:
+
+    ## 04. Rate Limiter
+    - **Token Bucket:** tokens added at fixed rate; pros: easy,
+      supports bursts; cons: needs tuning.
+    - **Leaking Bucket:** FIFO queue at fixed rate; cons: bursts
+      delay requests.
+    - …
 
 Do not modify raw/.
 Do not modify the original source vault.

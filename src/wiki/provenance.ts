@@ -1,16 +1,19 @@
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { stem } from "../wiki-links.ts";
+import { anchorResolves } from "./chapter-headings.ts";
 import {
   buildPageIndex,
+  closingFence,
   isWikilinkEntry,
   listWikiPages,
   normalizeRawPath,
   pageReportPath,
-  readPageFields,
+  parsePageFields,
   wikilinkTarget,
 } from "./pages.ts";
 import {
+  citationAnchor,
   isUnmigratableSelfCitation,
   loadSourceHubIndex,
   type SourceHubIndex,
@@ -25,10 +28,14 @@ import {
  * `raw/`. A path-form `sources` entry (issue #126) must be backed by a
  * raw file AND must not be a path a `type: source` hub covers — a
  * covered path has a clickable wikilink, and citing the raw path
- * instead is dead-provenance drift. Coverage follows the shared hub
- * index (src/wiki/source-hubs.ts), the one rule the migration and the
- * guardrails also apply. The scripts/check-provenance CLI renders it;
- * the wiki-sync verification stage (issue #138) runs it every cycle.
+ * instead is dead-provenance drift. An anchored citation
+ * (`[[hub#Chapter]]`, issue #226) must also land on a heading
+ * byte-identical to the anchor — reported with page and line, the
+ * check that stops anchor drift returning. Coverage follows the
+ * shared hub index (src/wiki/source-hubs.ts), the one rule the
+ * migration and the guardrails also apply. The scripts/check-provenance
+ * CLI renders it; the wiki-sync verification stage (issue #138) runs
+ * it every cycle.
  */
 
 export interface ProvenanceReport {
@@ -60,12 +67,31 @@ export async function assertRawDir(rawDir: string): Promise<void> {
   }
 }
 
+/** The 1-based line a `sources` entry sits on inside its page's
+ *  frontmatter block, or undefined when it cannot be located. */
+function entryLine(text: string, entry: string): number | undefined {
+  const lines = text.split("\n");
+  const closing = closingFence(lines);
+  const limit = closing === -1 ? lines.length : closing;
+
+  for (let i = 0; i < limit; i += 1) {
+    if ((lines[i] ?? "").includes(entry)) {
+      return i + 1;
+    }
+  }
+
+  return undefined;
+}
+
 /** Check one `sources` wikilink entry: it must resolve to an
- *  existing page whose hub index type is `source`. */
+ *  existing page whose hub index type is `source`, and an anchored
+ *  citation must land on a heading byte-identical to its anchor. */
 function checkWikilinkEntry(
   page: string,
+  line: number | undefined,
   entry: string,
   index: ReadonlyMap<string, string>,
+  texts: ReadonlyMap<string, string>,
   hubs: SourceHubIndex,
   problems: string[],
 ): void {
@@ -79,6 +105,22 @@ function checkWikilinkEntry(
 
   if (hubs.fields.get(target)?.type !== "source") {
     problems.push(`${page} -> ${entry} (does not cite a type: source page)`);
+
+    return;
+  }
+
+  const anchor = citationAnchor(entry);
+
+  if (anchor === undefined) {
+    return;
+  }
+
+  const targetText = texts.get(index.get(target) ?? "");
+
+  if (!anchorResolves(targetText ?? "", anchor)) {
+    problems.push(
+      `${page}${line === undefined ? "" : `:${line}`} -> ${entry} (target has no heading "${anchor}")`,
+    );
   }
 }
 
@@ -152,12 +194,18 @@ export async function checkWikiProvenance(
   const index = buildPageIndex(files);
   const hubs = await loadSourceHubIndex(wikiDir);
   const problems: string[] = [];
+  const texts = new Map<string, string>();
   let sources = 0;
   let origins = 0;
   let missingOrigins = 0;
 
   for (const file of files) {
-    const fields = await readPageFields(join(wikiDir, file));
+    texts.set(file, await readFile(join(wikiDir, file), "utf8"));
+  }
+
+  for (const file of files) {
+    const text = texts.get(file) ?? "";
+    const fields = parsePageFields(text);
     const page = pageReportPath(wikiDir, file);
 
     if (fields.type === "source" && fields.origin === undefined) {
@@ -168,7 +216,15 @@ export async function checkWikiProvenance(
       sources++;
 
       if (isWikilinkEntry(entry)) {
-        checkWikilinkEntry(page, entry, index, hubs, problems);
+        checkWikilinkEntry(
+          page,
+          entryLine(text, entry),
+          entry,
+          index,
+          texts,
+          hubs,
+          problems,
+        );
 
         continue;
       }

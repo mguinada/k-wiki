@@ -23,6 +23,7 @@
     "check-fidelity": "node bin/check-fidelity.ts",
     "backfill-origin": "node bin/backfill-origin.ts",
     "link-sources": "node bin/link-sources.ts",
+    "anchor-citations": "node bin/anchor-citations.ts",
     "open-origin": "node bin/open-origin.ts",
     "fixtures": "node bin/generate.ts",
     "sync-vault": "node bin/sync-vault.ts",

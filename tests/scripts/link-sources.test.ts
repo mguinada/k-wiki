@@ -127,7 +127,7 @@ describe("linkSources", () => {
     ]);
   });
 
-  it("rewrites a chapter cite covered by a hub's own sources to an aliased wikilink", async () => {
+  it("rewrites a chapter cite covered by a hub's own sources to an anchored wikilink", async () => {
     const wikiDir = await makeWiki({
       "sources/system-design-interview-notes.md": MULTIPART_HUB,
       "concepts/rate-limiting.md": citing([CHAPTER]),
@@ -142,7 +142,7 @@ describe("linkSources", () => {
       {
         page: "concepts/rate-limiting.md",
         entry: CHAPTER,
-        replacement: "[[system-design-interview-notes|04. Rate Limiter]]",
+        replacement: "[[system-design-interview-notes#04. Rate Limiter]]",
       },
       {
         page: "sources/system-design-interview-notes.md",
@@ -152,7 +152,7 @@ describe("linkSources", () => {
       {
         page: "sources/system-design-interview-notes.md",
         entry: CHAPTER,
-        replacement: "[[system-design-interview-notes|04. Rate Limiter]]",
+        replacement: "[[system-design-interview-notes#04. Rate Limiter]]",
       },
     ]);
   });
@@ -164,7 +164,7 @@ describe("linkSources", () => {
         "notes/Books/SDN/Readme.md",
         [
           "[[system-design-interview-notes]]",
-          "[[system-design-interview-notes|04. Rate Limiter]]",
+          "[[system-design-interview-notes#04. Rate Limiter]]",
         ],
       ),
       "concepts/rate-limiting.md": citing([CHAPTER]),
@@ -179,7 +179,7 @@ describe("linkSources", () => {
       {
         page: "concepts/rate-limiting.md",
         entry: CHAPTER,
-        replacement: "[[system-design-interview-notes|04. Rate Limiter]]",
+        replacement: "[[system-design-interview-notes#04. Rate Limiter]]",
       },
     ]);
   });
@@ -191,7 +191,7 @@ describe("linkSources", () => {
         "notes/Books/SDN/Readme.md",
         [
           "[[system-design-interview-notes]]",
-          "[[system-design-interview-notes|04. Rate Limiter]]",
+          "[[system-design-interview-notes#04. Rate Limiter]]",
         ],
       ),
       "concepts/rate-limiting.md": citing([CHAPTER]),
@@ -279,7 +279,7 @@ describe("linkSources", () => {
       {
         page: "concepts/rate-limiting.md",
         entry: CHAPTER,
-        replacement: "[[sdn|04. Rate Limiter]]",
+        replacement: "[[sdn#04. Rate Limiter]]",
       },
     ]);
   });
@@ -319,7 +319,7 @@ describe("linkSources", () => {
       {
         page: "sources/system-design-interview-notes.md",
         entry: CHAPTER,
-        replacement: "[[system-design-interview-notes|04. Rate Limiter]]",
+        replacement: "[[system-design-interview-notes#04. Rate Limiter]]",
       },
     ]);
   });

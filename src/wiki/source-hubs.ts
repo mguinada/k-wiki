@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { stem } from "../wiki-links.ts";
+import { stem, wikilinkBodyAnchor } from "../wiki-links.ts";
 import {
   isWikilinkEntry,
   listWikiPages,
@@ -17,10 +17,12 @@ import {
  * check-provenance — applies one rule, not three. A path is covered
  * when it is a hub's `origin` (priority 1) or cited in a hub's own
  * `sources` list (priority 2, the multi-part-hub case). The citation
- * form survives the migration itself: a hub's own sources migrate
- * to aliased self-wikilinks (`[[hub|Chapter]]`), and each such
- * self-citation still covers its chapter directory — the reverse of
- * the alias rule. A path covered by two different hubs is ambiguous:
+ * form survives the migration itself: a hub's own chapter citations
+ * are anchored self-wikilinks (`[[hub#Chapter]]`, issue #226), and
+ * each such self-citation still covers its chapter directory — the
+ * reverse of the alias rule. The legacy aliased form (`[[hub|Chapter]]`,
+ * issue #126) is still indexed so pre-migration states resolve. A
+ * path covered by two different hubs is ambiguous:
  * reported, never guessed. The index also exposes every page's parsed
  * fields by page name, the resolution surface for wikilink `sources`
  * entries.
@@ -34,10 +36,10 @@ export interface SourceHubIndex {
   /** Normalized raw path → covering hub page name (hub `sources`
    *  citation match). */
   readonly byCitation: ReadonlyMap<string, string>;
-  /** A hub's aliased self-citations (`[[hub|Chapter]]`), the
-   *  migrated form of its own chapter citations: each still covers
-   *  the chapter directory `<originDir>/<alias>/`, so citation
-   *  coverage survives the migration. */
+  /** A hub's chapter self-citations, anchored (`[[hub#Chapter]]`,
+   *  the migrated form) or legacy-aliased (`[[hub|Chapter]]`): each
+   *  still covers the chapter directory `<originDir>/<alias>/`, so
+   *  citation coverage survives the migration. */
   readonly selfCitations: readonly SelfCitation[];
   /** Raw paths covered by more than one hub: never guessed. */
   readonly ambiguous: ReadonlySet<string>;
@@ -63,8 +65,10 @@ export function citationAlias(path: string): string | undefined {
 }
 
 /** The wikilink a covered raw path cites as — plain `[[hub]]` for an
- *  origin match, aliased `[[hub|Chapter]]` for a citation match —
- *  or the reason the path cannot be mapped. One definition shared by
+ *  origin match, anchored `[[hub#Chapter]]` for a citation match
+ *  (issue #226: the chapter must be a navigable anchor target, and
+ *  the hub body carries a heading per cited chapter) — or the reason
+ *  the path cannot be mapped. One definition shared by
  *  the link-sources migration (which performs the rewrite), the
  *  guardrails (which demand it), and check-provenance (which flag
  *  it), so the three cannot drift apart. */
@@ -88,7 +92,7 @@ export function wikilinkFor(
       wikilink:
         alias === undefined
           ? `[[${citationHub}]]`
-          : `[[${citationHub}|${alias}]]`,
+          : `[[${citationHub}#${alias}]]`,
     };
   }
 
@@ -99,7 +103,7 @@ export function wikilinkFor(
   const derived = derivedHubs(normalized, hubs);
 
   if (derived.length === 1 && derived[0] !== undefined) {
-    return { wikilink: `[[${derived[0]}|${citationAlias(normalized)}]]` };
+    return { wikilink: `[[${derived[0]}#${citationAlias(normalized)}]]` };
   }
 
   return {
@@ -148,6 +152,23 @@ function cover(
   map.delete(path);
 }
 
+/** The `#anchor` segment of a wikilink (`[[hub#Chapter]]` →
+ * `Chapter`); undefined when the entry carries none or names a
+ * `#^block-id` block reference — delegated to the shared parser
+ * (wikilinkBodyAnchor) so citation anchors and body-text anchors
+ * can never drift apart. */
+export function citationAnchor(entry: string): string | undefined {
+  return wikilinkBodyAnchor(entry.slice(2, -2));
+}
+
+/** The chapter a hub citation names: the `#anchor` segment of an
+ * anchored wikilink (`[[hub#Chapter]]`), else the `|alias` segment
+ * of the legacy form (`[[hub|Chapter]]`) — the machine key a
+ * chapter citation carries in either form. */
+export function citationChapter(entry: string): string | undefined {
+  return citationAnchor(entry) ?? wikilinkAlias(entry);
+}
+
 /** The alias part of a wikilink entry (`[[hub|Chapter]]` →
  *  `Chapter`); undefined when the entry carries none. */
 function wikilinkAlias(entry: string): string | undefined {
@@ -157,8 +178,10 @@ function wikilinkAlias(entry: string): string | undefined {
 }
 
 /** The derived-coverage rule one self-citation certifies, or none:
- *  only an aliased wikilink to the hub itself, in a hub that has an
- *  origin with a directory part, anchors a chapter directory. */
+ *  only a wikilink to the hub itself that names a chapter — anchored
+ *  (`[[hub#Chapter]]`) or legacy-aliased (`[[hub|Chapter]]`) — in a
+ *  hub that has an origin with a directory part, anchors a chapter
+ *  directory. */
 function selfCitationRule(
   entry: string,
   origin: string | undefined,
@@ -168,7 +191,7 @@ function selfCitationRule(
     return undefined;
   }
 
-  const alias = wikilinkAlias(entry);
+  const alias = citationChapter(entry);
   const originDir = dirname(normalizeRawPath(origin));
 
   if (alias === undefined || originDir === "." || originDir === "/") {
@@ -179,8 +202,8 @@ function selfCitationRule(
 }
 
 /** True when a no-origin source hub's own raw path entry is an
- *  aliased self-citation whose coverage cannot be re-derived after
- *  a rewrite: rewriting it to `[[hub|Chapter]]` would silently drop
+ *  anchored self-citation whose coverage cannot be re-derived after
+ *  a rewrite: rewriting it to `[[hub#Chapter]]` would silently drop
  *  the chapter path from `byOrigin`, `byCitation`, and `selfCitations`
  *  alike (the migration/check-provenance guard for issue #126). */
 export function isUnmigratableSelfCitation(
@@ -202,7 +225,7 @@ export function isUnmigratableSelfCitation(
 
   return (
     wikilinkTarget(mapped.wikilink) === hubName &&
-    wikilinkAlias(mapped.wikilink) !== undefined
+    citationChapter(mapped.wikilink) !== undefined
   );
 }
 
