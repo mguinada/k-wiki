@@ -171,6 +171,58 @@ describe("checkWikiProvenance", () => {
     ]);
   });
 
+  it("passes an anchored citation whose target hub carries the chapter heading", async () => {
+    const { wikiDir, rawDir } = await makeFixture(
+      {
+        "sources/Temp research.md":
+          "---\ntitle: Temp research\ntype: source\norigin: raw/notes/V/Scratch/temp.md\n---\nprose\n\n## 04. Rate Limiter\n",
+        "concepts/cites.md":
+          '---\ntitle: Cites\nsources:\n  - "[[Temp research#04. Rate Limiter]]"\n---\nbody',
+      },
+      { "notes/V/Scratch/temp.md": "temp body" },
+    );
+
+    const report = await checkWikiProvenance(wikiDir, rawDir);
+
+    expect(report.problems).toEqual([]);
+  });
+
+  it("reports an anchored citation whose target hub lacks the chapter heading, with page and line", async () => {
+    const { wikiDir, rawDir } = await makeFixture(
+      {
+        "sources/Temp research.md":
+          "---\ntitle: Temp research\ntype: source\norigin: raw/notes/V/Scratch/temp.md\n---\nprose without headings\n",
+        "concepts/cites.md":
+          '---\ntitle: Cites\nsources:\n  - "[[Temp research]]"\n  - "[[Temp research#04. Rate Limiter]]"\n---\nbody',
+      },
+      { "notes/V/Scratch/temp.md": "temp body" },
+    );
+
+    const report = await checkWikiProvenance(wikiDir, rawDir);
+
+    expect(report.problems).toEqual([
+      'wiki/concepts/cites.md:5 -> [[Temp research#04. Rate Limiter]] (target has no heading "04. Rate Limiter")',
+    ]);
+  });
+
+  it("matches the anchored heading byte-for-byte for names with double spaces", async () => {
+    const { wikiDir, rawDir } = await makeFixture(
+      {
+        "sources/Temp research.md":
+          "---\ntitle: Temp research\ntype: source\norigin: raw/notes/V/Scratch/temp.md\n---\nprose\n\n## 27. Digital Wallet\n",
+        "concepts/cites.md":
+          '---\ntitle: Cites\nsources:\n  - "[[Temp research#27.  Digital Wallet]]"\n---\nbody',
+      },
+      { "notes/V/Scratch/temp.md": "temp body" },
+    );
+
+    const report = await checkWikiProvenance(wikiDir, rawDir);
+
+    expect(report.problems).toEqual([
+      'wiki/concepts/cites.md:4 -> [[Temp research#27.  Digital Wallet]] (target has no heading "27.  Digital Wallet")',
+    ]);
+  });
+
   it("reports a sources path that no raw file backs", async () => {
     const { wikiDir, rawDir } = await makeFixture(
       {
@@ -219,7 +271,7 @@ describe("checkWikiProvenance", () => {
     const report = await checkWikiProvenance(wikiDir, rawDir);
 
     expect(report.problems).toEqual([
-      "wiki/concepts/rate-limiting.md -> sources notes/Books/SDN/04. Rate Limiter/Readme.md (path has hub [[sdn|04. Rate Limiter]] — use the wikilink)",
+      "wiki/concepts/rate-limiting.md -> sources notes/Books/SDN/04. Rate Limiter/Readme.md (path has hub [[sdn#04. Rate Limiter]] — use the wikilink)",
     ]);
   });
 
@@ -248,7 +300,7 @@ describe("checkWikiProvenance", () => {
     const report = await checkWikiProvenance(wikiDir, rawDir);
 
     expect(report.problems).toEqual([
-      "wiki/concepts/rate-limiting.md -> sources notes/Books/SDN/04. Rate Limiter/Readme.md (path has hub [[sdn|04. Rate Limiter]] — use the wikilink)",
+      "wiki/concepts/rate-limiting.md -> sources notes/Books/SDN/04. Rate Limiter/Readme.md (path has hub [[sdn#04. Rate Limiter]] — use the wikilink)",
     ]);
   });
 

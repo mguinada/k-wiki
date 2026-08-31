@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import {
   citationAlias,
+  citationChapter,
   isUnmigratableSelfCitation,
   loadSourceHubIndex,
   type SourceHubIndex,
@@ -67,6 +68,30 @@ describe("citationAlias", () => {
 
   it("returns undefined for a path without a directory part", () => {
     expect(citationAlias("note.md")).toBeUndefined();
+  });
+});
+
+describe("citationChapter", () => {
+  it("reads the chapter from an anchored wikilink's # segment", () => {
+    expect(citationChapter("[[sdn#04. Rate Limiter]]")).toBe(
+      "04. Rate Limiter",
+    );
+  });
+
+  it("reads the chapter from a legacy aliased wikilink's pipe segment", () => {
+    expect(citationChapter("[[sdn|04. Rate Limiter]]")).toBe(
+      "04. Rate Limiter",
+    );
+  });
+
+  it("prefers the anchor when a wikilink carries both anchor and alias", () => {
+    expect(citationChapter("[[sdn#04. Rate Limiter|display]]")).toBe(
+      "04. Rate Limiter",
+    );
+  });
+
+  it("returns undefined for a plain wikilink", () => {
+    expect(citationChapter("[[sdn]]")).toBeUndefined();
   });
 });
 
@@ -242,6 +267,20 @@ describe("wikilinkFor", () => {
       reason: "no hub covers this path",
     });
   });
+
+  it("emits the anchored wikilink for a chapter path a hub's own sources cite", async () => {
+    const wikiDir = await makeWiki({
+      "sources/sdn.md": page({ title: "Sdn", type: "source" }, [
+        "notes/Books/SDN/04. Rate Limiter/Readme.md",
+      ]),
+    });
+
+    const index = await loadSourceHubIndex(wikiDir);
+
+    expect(
+      wikilinkFor("notes/Books/SDN/04. Rate Limiter/Readme.md", index),
+    ).toEqual({ wikilink: "[[sdn#04. Rate Limiter]]" });
+  });
 });
 
 describe("loadSourceHubIndex duplicate self-citation", () => {
@@ -284,12 +323,29 @@ describe("derived citation coverage (migrated multi-part hubs)", () => {
     ]);
   });
 
-  it("maps a chapter path under the hub origin to the aliased self-wikilink", async () => {
+  it("maps a chapter path under the hub origin to the anchored self-wikilink", async () => {
     const index = await migratedWiki(MIGRATED_SDN);
 
     expect(wikilinkFor(CHAPTER, index)).toEqual({
-      wikilink: "[[sdn|04. Rate Limiter]]",
+      wikilink: "[[sdn#04. Rate Limiter]]",
     });
+  });
+
+  it("records the rule for an anchored self-citation too", async () => {
+    const index = await migratedWiki({
+      "sources/sdn.md": page(
+        {
+          title: "Sdn",
+          type: "source",
+          origin: "raw/notes/Books/SDN/Readme.md",
+        },
+        ["[[sdn#04. Rate Limiter]]"],
+      ),
+    });
+
+    expect(index.selfCitations).toEqual([
+      { hub: "sdn", originDir: "notes/Books/SDN", alias: "04. Rate Limiter" },
+    ]);
   });
 
   it("leaves a sibling chapter directory uncovered when no self-citation names it", async () => {
@@ -355,7 +411,7 @@ describe("derived citation coverage (migrated multi-part hubs)", () => {
     });
 
     expect(wikilinkFor("notes/V/Chap/Readme.md", index)).toEqual({
-      wikilink: "[[hub|Chap]]",
+      wikilink: "[[hub#Chap]]",
     });
   });
 });
