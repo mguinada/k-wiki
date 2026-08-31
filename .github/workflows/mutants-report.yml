@@ -1,8 +1,9 @@
 # Auto-file actionable mutation survivors into a rolling issue (issue #208).
 #
-# Fires via workflow_run after each completed CI run whose mutation job
-# actually ran a full report — the nightly schedule arm and manual
-# workflow_dispatch dispatches of CI. Label-gated PR runs are scoped to
+# Fires via workflow_run after each completed CI run that actually
+# produced a full mutation report — the nightly schedule arm and manual
+# workflow_dispatch dispatches of CI (nightly full runs are chunk jobs
+# merged by mutation-merge, issue #236). Label-gated PR runs are scoped to
 # changed hunks, so their survivor lists are partial and deliberately
 # excluded: the rolling issue must reflect the whole-src/ picture.
 #

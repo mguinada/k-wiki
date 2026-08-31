@@ -89,11 +89,13 @@ changed and full mode. `files.exclude` starts empty.
 - **Pull requests (blocking):** the gate rides the existing `test` job
   inside `npm run test:coverage`; that job checks out with
   `fetch-depth: 0` because the gate diffs against `origin/main`.
-- **Nightly + manual dispatch (advisory):** the mutation job's arm runs
-  `npm run complexity:full`, uploads `complexity-debt-report` as an
-  artifact (7-day retention). The debt table is advisory; the same run
-  re-executes the changed-mode gate, which on the nightly's clean
-  checkout finds nothing changed and passes.
+- **Nightly + manual dispatch (advisory):** the `mutation-merge`
+  job runs `npm run complexity:full`, uploads `complexity-debt-report`
+  as an artifact (7-day retention). The debt table is advisory; the
+  same run re-executes the changed-mode gate, which on the nightly's
+  clean checkout finds nothing changed and passes. (The nightly arm
+  moved out of the `mutation` job — now PR-only — when full mutation
+  runs were chunked into parallel jobs, issue #236.)
 
 ## What lives where
 
