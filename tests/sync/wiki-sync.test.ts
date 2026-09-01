@@ -3160,25 +3160,29 @@ describe("formatFinalDigest sections", () => {
   });
 
   it("states the skip reason under the Ingest line when no ingest ran", () => {
-    const base = ranResult({});
+    const { ingest: _ran, ...rest } = ranResult({});
+    const result = {
+      ...rest,
+      ingest: { status: "skipped", reason: "no source changes" },
+    } as unknown as Parameters<typeof formatFinalDigest>[0];
 
-    base.ingest = {
-      status: "skipped",
-      reason: "no source changes",
-    };
-
-    expect(formatFinalDigest(base)).toContain(
+    expect(formatFinalDigest(result)).toContain(
       "- **Ingest:** skipped — no source changes",
     );
   });
 
   it("states the lint skip when no ingest ran", () => {
-    const base = ranResult({});
+    const { lint, ...rest } = ranResult({});
+    // WikiSyncResult types lint as always present; the digest writer
+    // itself branches on a lint-less run, so the runtime shape here
+    // is legal even though the type is imprecise.
+    const result = {
+      ...rest,
+      ingest: { status: "skipped" as const, reason: "no source changes" },
+    } as unknown as Parameters<typeof formatFinalDigest>[0];
 
-    base.ingest = { status: "skipped", reason: "no source changes" };
-    base.lint = undefined;
-
-    expect(formatFinalDigest(base)).toContain(
+    expect(lint).toBeDefined();
+    expect(formatFinalDigest(result)).toContain(
       "- **Lint:** skipped — no ingest ran",
     );
   });
