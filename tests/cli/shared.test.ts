@@ -29,11 +29,23 @@ describe("isPlainObject", () => {
     expect(isPlainObject({ a: 1 })).toBe(true);
   });
 
-  it("rejects null, arrays, and primitives", () => {
+  it("rejects null", () => {
     expect(isPlainObject(null)).toBe(false);
+  });
+
+  it("rejects an array", () => {
     expect(isPlainObject([1, 2])).toBe(false);
+  });
+
+  it("rejects a string", () => {
     expect(isPlainObject("object")).toBe(false);
+  });
+
+  it("rejects a number", () => {
     expect(isPlainObject(42)).toBe(false);
+  });
+
+  it("rejects undefined", () => {
     expect(isPlainObject(undefined)).toBe(false);
   });
 });

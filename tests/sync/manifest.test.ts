@@ -232,14 +232,11 @@ describe("serializeManifest", () => {
       },
     };
 
-    const text = serializeManifest(manifest);
+    const noteKeys = [
+      ...serializeManifest(manifest).matchAll(/"([^"]+)": \{/g),
+    ].map((match) => match[1]);
 
-    expect(text.indexOf('      "a.md": {')).toBeLessThan(
-      text.indexOf('      "b.md": {'),
-    );
-    expect(text.indexOf('      "b.md": {')).toBeLessThan(
-      text.indexOf('      "c.md": {'),
-    );
+    expect(noteKeys).toEqual(["vaults", "work", "a.md", "b.md", "c.md"]);
   });
 
   it("serializes three or more keys of every kind in default string order", () => {
