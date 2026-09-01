@@ -33,7 +33,6 @@ import {
 } from "../sync/manifest.ts";
 import {
   bodyAfterFrontmatter,
-  buildPageIndex,
   isWikilinkEntry,
   listWikiPages,
   normalizeRawPath,
@@ -41,6 +40,7 @@ import {
   readPageFields,
   wikilinkTarget,
 } from "../wiki/pages.ts";
+import { buildPageIndex } from "../wiki/wiki-links.ts";
 import {
   type AgentRunner,
   createAgentProgressSink,
