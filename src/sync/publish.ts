@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, rm, rmdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { copyFileTolerant } from "./eagain.ts";
-import { compileAllowlistPattern } from "./sync-repo.ts";
+import { compileIncludePattern } from "./projection.ts";
 
 /**
  * The publish stage (guide §26, issue #15): copy the data repo's
@@ -168,7 +168,7 @@ export async function runPublishStage(
 ): Promise<PublishResult> {
   const onProgress = options.onProgress ?? (() => {});
   const mirror = resolve(options.mirror);
-  const matchers = options.include.map(compileAllowlistPattern);
+  const matchers = options.include.map(compileIncludePattern);
   const all = new Map<string, string>();
 
   await walkFiles(options.dataRoot, "", all);

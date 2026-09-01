@@ -23,14 +23,19 @@ import {
 import {
   assertSourceDirectory,
   colorizeProgress,
+  compileIncludePattern,
+  type DriverOptions,
   formatReport,
   listNamespaceDirs,
   type ProjectedNote,
   projectNotes,
   pruneNamespaces,
+  type RepoSyncReport,
   reportColors,
+  type SyncProgress,
+  type SyncReport,
   toAbsolute,
-} from "./sync-vault.ts";
+} from "./projection.ts";
 
 /**
  * sync-repo: the repo-as-source sync adapter (issue #74). Projects the
@@ -45,72 +50,6 @@ import {
  * Everything downstream (health, ingest, guardrails) is reused
  * unchanged — topology is decided at the sync layer (guide §2, §25).
  */
-
-export interface RepoSyncOptions {
-  /** Path to the repo-source sync config (e.g. `sync-meta.json`). */
-  readonly configPath: string;
-  /** The `raw/` directory that receives `notes/` and `manifest.json`. */
-  readonly rawDir: string;
-  /** Home directory for `~` expansion; defaults to the real home. */
-  readonly home?: string;
-  /** Clock for `last_synced`; defaults to the wall clock. */
-  readonly now?: () => Date;
-  /** Environment for git child processes; defaults to `process.env`. */
-  readonly env?: NodeJS.ProcessEnv;
-  /** Progress sink (uncolored messages); default: silent. */
-  readonly onProgress?: (message: string) => void;
-}
-
-export interface RepoSyncReport {
-  readonly source: string;
-  /** The source repo HEAD commit the projection was made from. */
-  readonly commit: string;
-  /** Files examined while walking the allowlisted subtrees. */
-  readonly candidates: number;
-  readonly selected: number;
-  readonly copied: readonly string[];
-  readonly unchanged: readonly string[];
-  readonly removed: readonly string[];
-  /** Namespaces removed because they are absent from the config. */
-  readonly prunedNamespaces: readonly string[];
-}
-
-/** Compile one allowlist pattern: `*` matches within a path segment,
- *  `**` matches across segments (gitignore-style — a double-star
- *  segment also matches zero directories, so `src` + double-star +
- *  `*.ts` matches `src/a.ts` as well as `src/x/a.ts`); every other
- *  character is literal. */
-export function compileAllowlistPattern(pattern: string): RegExp {
-  const segments = pattern.split("/");
-  let source = "^";
-  let skipSlash = false;
-
-  for (const [index, segment] of segments.entries()) {
-    if (segment === "**") {
-      if (index === segments.length - 1) {
-        source += index === 0 ? ".*" : "/.*";
-      } else {
-        source += index === 0 ? "(?:.*/)?" : "/(?:.*/)?";
-
-        skipSlash = true;
-      }
-
-      continue;
-    }
-
-    if (index > 0 && !skipSlash) {
-      source += "/";
-    }
-
-    skipSlash = false;
-
-    source += segment
-      .replace(/[.+?^${}()|[\]\\]/g, "\\$&")
-      .replace(/\*/g, "[^/]*");
-  }
-
-  return new RegExp(`${source}$`);
-}
 
 /** The literal leading directory segments of a pattern, before the
  *  first wildcard segment; the walk never leaves these subtrees. */
@@ -199,7 +138,7 @@ export async function selectRepoFiles(
   root: string,
   patterns: readonly string[],
 ): Promise<{ candidates: number; selected: readonly string[] }> {
-  const matchers = patterns.map(compileAllowlistPattern);
+  const matchers = patterns.map(compileIncludePattern);
   const matches = (relPath: string) => matchers.some((m) => m.test(relPath));
   const { exactFiles, walkRoots } = classifyPatterns(patterns);
 
@@ -315,19 +254,20 @@ async function projectRepo(
   now: () => Date,
   previous: VaultNotes,
   commit: string,
-  onProgress: (message: string) => void,
+  onProgress: (message: SyncProgress) => void,
 ): Promise<{
   notes: VaultNotes;
-  report: Omit<RepoSyncReport, "prunedNamespaces">;
+  report: RepoSyncReport;
 }> {
   const { candidates, selected } = await selectRepoFiles(
     source.root,
     source.include,
   );
 
-  onProgress(
-    `repo "${source.name}": ${selected.length} of ${candidates} examined files selected at commit ${commit.slice(0, 8)}`,
-  );
+  onProgress({
+    kind: "event",
+    text: `repo "${source.name}": ${selected.length} of ${candidates} examined files selected at commit ${commit.slice(0, 8)}`,
+  });
 
   const selectedNotes: ProjectedNote[] = [];
 
@@ -348,7 +288,8 @@ async function projectRepo(
   return {
     notes,
     report: {
-      source: source.name,
+      kind: "repo",
+      name: source.name,
       commit,
       candidates,
       selected: selected.length,
@@ -359,16 +300,16 @@ async function projectRepo(
   };
 }
 
-/** Run one repo projection pass and return the run report. */
-export async function runRepoSync(
-  options: RepoSyncOptions,
-): Promise<RepoSyncReport> {
+/** Run one repo projection pass and return the run report — the
+ *  source-neutral `SyncReport`, whose single row is the repo
+ *  source. */
+export async function runRepoSync(options: DriverOptions): Promise<SyncReport> {
   const home = options.home ?? homedir();
   const now = options.now ?? (() => new Date());
   const env = options.env ?? process.env;
   const onProgress = options.onProgress ?? (() => {});
 
-  onProgress(`sync-repo: raw dir ${options.rawDir}`);
+  onProgress({ kind: "event", text: `sync-repo: raw dir ${options.rawDir}` });
 
   const source = await theRepoSource(options.configPath, home);
 
@@ -396,7 +337,7 @@ export async function runRepoSync(
     nextManifest,
     notesRoot,
     "repo",
-    onProgress,
+    (text) => onProgress({ kind: "event", text }),
   );
 
   const { notes, report } = await projectRepo(
@@ -417,7 +358,22 @@ export async function runRepoSync(
     await writeManifest(manifestPath, nextManifest, extras);
   }
 
-  return { ...report, prunedNamespaces };
+  return { sources: [report], prunedNamespaces };
+}
+
+/** The run's single repo row — the commit line's source; the driver
+ *  produces exactly one repo row, so its absence is a bug, not a
+ *  state to render. Exported for the report-shape contract tests. */
+export function repoRowOf(report: SyncReport): RepoSyncReport {
+  const row = report.sources.find(
+    (row): row is RepoSyncReport => row.kind === "repo",
+  );
+
+  if (row === undefined) {
+    throw new Error("repo sync report carries no repo source row");
+  }
+
+  return row;
 }
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -465,28 +421,14 @@ export async function main(): Promise<void> {
     const report = await runRepoSync({
       configPath,
       rawDir,
-      onProgress: (message) => console.error(colorizeProgress(message, "repo")),
+      onProgress: (message) =>
+        console.error(colorizeProgress(message.text, "repo")),
     });
 
     console.log(
       [
-        `source repo at commit ${report.commit}`,
-        formatReport(
-          {
-            vaults: [
-              {
-                vault: report.source,
-                candidates: report.candidates,
-                selected: report.selected,
-                copied: report.copied,
-                unchanged: report.unchanged,
-                removed: report.removed,
-              },
-            ],
-            prunedNamespaces: report.prunedNamespaces,
-          },
-          reportColors(),
-        ),
+        `source repo at commit ${repoRowOf(report).commit}`,
+        formatReport(report, reportColors()),
       ].join("\n"),
     );
   } catch (error) {

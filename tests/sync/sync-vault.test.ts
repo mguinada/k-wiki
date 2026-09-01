@@ -10,28 +10,18 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createColors } from "picocolors";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import {
   generateFixtureVault,
   VAULT_NAME,
 } from "../../src/fixtures/generate.ts";
 import { parseManifest } from "../../src/sync/manifest.ts";
+import type { SyncProgress } from "../../src/sync/projection.ts";
 import {
-  colorizeError,
-  colorizeProgress,
-  createSyncProgressSink,
-  formatDryRunReport,
-  formatReport,
   main,
   PROGRESS_EVERY,
-  reportColors,
   runDryRun,
-  runSync,
-  type SyncProgress,
-  type SyncReport,
-  type VaultDryRunReport,
-  type VaultSyncReport,
+  runVaultSync,
 } from "../../src/sync/sync-vault.ts";
 import { collectFiles, SELECTED_PATHS } from "../e2e/helpers.ts";
 
@@ -93,19 +83,19 @@ function fixedClock(iso: string): () => Date {
 }
 
 async function run(ws: Workspace, iso: string = T1) {
-  const { vaults } = await runSync({
+  const { sources } = await runVaultSync({
     configPath: ws.configPath,
     rawDir: ws.rawDir,
     now: fixedClock(iso),
   });
 
-  return vaults;
+  return sources;
 }
 
 /** Run with a progress collector; returns reports and messages. */
 async function runWithProgress(ws: Workspace, iso: string = T1) {
   const messages: SyncProgress[] = [];
-  const report = await runSync({
+  const report = await runVaultSync({
     configPath: ws.configPath,
     rawDir: ws.rawDir,
     now: fixedClock(iso),
@@ -113,7 +103,7 @@ async function runWithProgress(ws: Workspace, iso: string = T1) {
   });
 
   return {
-    reports: report.vaults,
+    reports: report.sources,
     pruned: report.prunedNamespaces,
     messages,
   };
@@ -146,7 +136,7 @@ async function readdRetiredNamespace(ws: Workspace): Promise<void> {
   await writeFile(join(ws.rawDir, "notes", "Retired", "Old.md"), "# old\n");
 }
 
-describe("runSync first run", () => {
+describe("runVaultSync first run", () => {
   it("copies exactly the wiki:true notes into raw/notes/<vault>", async () => {
     const ws = await makeWorkspace();
 
@@ -172,7 +162,8 @@ describe("runSync first run", () => {
 
     expect(await run(ws)).toEqual([
       {
-        vault: VAULT_NAME,
+        kind: "vault",
+        name: VAULT_NAME,
         candidates: 9,
         selected: 7,
         copied: SELECTED_PATHS,
@@ -234,7 +225,7 @@ describe("runSync first run", () => {
     );
 
     await expect(
-      runSync({ configPath, rawDir: join(ws.dir, "raw") }),
+      runVaultSync({ configPath, rawDir: join(ws.dir, "raw") }),
     ).rejects.toThrow(
       `vault root for "${VAULT_NAME}" is not a directory: ${filePath}`,
     );
@@ -266,7 +257,7 @@ describe("runSync first run", () => {
   );
 });
 
-describe("runSync idempotence", () => {
+describe("runVaultSync idempotence", () => {
   it("rejects with the raw read error when the manifest path is a directory", async () => {
     const ws = await makeWorkspace();
 
@@ -297,7 +288,8 @@ describe("runSync idempotence", () => {
 
     expect(second).toEqual([
       {
-        vault: VAULT_NAME,
+        kind: "vault",
+        name: VAULT_NAME,
         candidates: 9,
         selected: 7,
         copied: [],
@@ -331,7 +323,7 @@ describe("runSync idempotence", () => {
   });
 });
 
-describe("runSync edit detection", () => {
+describe("runVaultSync edit detection", () => {
   it("copies exactly the edited note on the next run", async () => {
     const ws = await makeWorkspace();
 
@@ -402,7 +394,7 @@ describe("runSync edit detection", () => {
 const itRequiresPermissionChecks =
   process.getuid !== undefined && process.getuid() === 0 ? it.skip : it;
 
-describe("runSync removal detection", () => {
+describe("runVaultSync removal detection", () => {
   it("removes the raw copy when the source note disappears", async () => {
     const ws = await makeWorkspace();
 
@@ -587,7 +579,7 @@ describe("runSync removal detection", () => {
   });
 });
 
-describe("runSync progress", () => {
+describe("runVaultSync progress", () => {
   it("emits the raw dir as the first progress message", async () => {
     const ws = await makeWorkspace();
     const { messages } = await runWithProgress(ws);
@@ -670,7 +662,7 @@ describe("runSync progress", () => {
     const ws = await makeWorkspace();
     const messages: SyncProgress[] = [];
 
-    await runSync({
+    await runVaultSync({
       configPath: ws.configPath,
       rawDir: ws.rawDir,
       progressEvery: 1,
@@ -687,7 +679,7 @@ describe("runSync progress", () => {
     const ws = await makeWorkspace();
     const messages: SyncProgress[] = [];
 
-    await runSync({
+    await runVaultSync({
       configPath: ws.configPath,
       rawDir: ws.rawDir,
       progressEvery: 1,
@@ -738,121 +730,7 @@ describe("runSync progress", () => {
   });
 });
 
-describe("createSyncProgressSink", () => {
-  const colorize = (text: string) => `[${text}]`;
-
-  function makeSink(animated: boolean) {
-    const written: string[] = [];
-    const lines: string[] = [];
-    const sink = createSyncProgressSink(
-      (text) => written.push(text),
-      (text) => lines.push(text),
-      animated,
-      colorize,
-    );
-
-    return { sink, written, lines };
-  }
-
-  const heartbeat = {
-    kind: "heartbeat",
-    text: `vault "${VAULT_NAME}": 1/9 read, 1 selected`,
-  } as const;
-
-  it("appends plain lines when not animated", () => {
-    const { sink, written } = makeSink(false);
-
-    sink.render(heartbeat);
-
-    expect(written).toEqual([]);
-  });
-
-  it("appends the rendered line to the log when not animated", () => {
-    const { sink, lines } = makeSink(false);
-
-    sink.render(heartbeat);
-
-    expect(lines).toEqual([`[vault "${VAULT_NAME}": 1/9 read, 1 selected]`]);
-  });
-
-  it("keeps heartbeats on the animated line", () => {
-    const { sink, written } = makeSink(true);
-
-    sink.render(heartbeat);
-
-    expect(written).toEqual([
-      `\r⠋ [vault "${VAULT_NAME}": 1/9 read, 1 selected]`,
-    ]);
-  });
-
-  it("keeps scan heartbeats on the animated line", () => {
-    const { sink, written } = makeSink(true);
-
-    sink.render({
-      kind: "heartbeat",
-      text: `vault "${VAULT_NAME}": scanning (0s, 1000 dirs)`,
-    });
-
-    expect(written[0]).toMatch(/^\r⠋ \[.*scanning \(0s, 1000 dirs\)\]$/);
-  });
-
-  it("scrolls events on the animated sink", () => {
-    const { sink, written } = makeSink(true);
-
-    sink.render({
-      kind: "event",
-      text: `vault "${VAULT_NAME}": scanning /some/root`,
-    });
-
-    expect(written).toEqual([`[vault "${VAULT_NAME}": scanning /some/root]\n`]);
-  });
-
-  it("keeps multi-digit read heartbeats on the animated line", () => {
-    const { sink, written } = makeSink(true);
-
-    sink.render({
-      kind: "heartbeat",
-      text: `vault "${VAULT_NAME}": 12/345 read, 67 selected`,
-    });
-
-    expect(written[0]).toMatch(/^\r⠋ \[.*12\/345 read, 67 selected\]$/);
-  });
-
-  it("keeps a heartbeat for a vault name containing a colon on the animated line", () => {
-    const { sink, written } = makeSink(true);
-
-    sink.render({
-      kind: "heartbeat",
-      text: 'vault "notes:work": 1/9 read, 1 selected',
-    });
-
-    expect(written[0]).toMatch(/^\r⠋ /);
-  });
-
-  it("classifies by kind, not wording: heartbeat-shaped text tagged event scrolls", () => {
-    const { sink, written } = makeSink(true);
-
-    sink.render({
-      kind: "event",
-      text: `note: vault "${VAULT_NAME}": 1/9 read, 1 selected (quoted)`,
-    });
-
-    expect(written).toEqual([
-      `[note: vault "${VAULT_NAME}": 1/9 read, 1 selected (quoted)]\n`,
-    ]);
-  });
-
-  it("clears the animated line on end", () => {
-    const { sink, written } = makeSink(true);
-
-    sink.render(heartbeat);
-    sink.end();
-
-    expect(written[1]).toMatch(/^\r\s+\r$/);
-  });
-});
-
-describe("runSync candidate count", () => {
+describe("runVaultSync candidate count", () => {
   it("counts every markdown candidate, selected or not", async () => {
     const ws = await makeWorkspace();
     const { reports } = await runWithProgress(ws);
@@ -873,141 +751,31 @@ describe("runSync candidate count", () => {
       }),
     );
 
-    const { vaults } = await runSync({
+    const { sources } = await runVaultSync({
       configPath,
       rawDir: ws.rawDir,
       now: fixedClock(T1),
     });
 
-    expect(vaults[0]?.candidates).toBe(0);
+    expect(sources[0]?.candidates).toBe(0);
   });
 });
 
-describe("formatReport all-blocked hint", () => {
-  const allBlocked: VaultSyncReport = {
-    vault: VAULT_NAME,
-    candidates: 9,
-    selected: 0,
-    copied: [],
-    unchanged: [],
-    removed: [],
-  };
-
-  function reportOf(
-    vault: VaultSyncReport,
-    prunedNamespaces: readonly string[] = [],
-  ): SyncReport {
-    return { vaults: [vault], prunedNamespaces };
-  }
-
-  it("appends the hint when every candidate is blocked", () => {
-    expect(formatReport(reportOf(allBlocked)).split("\n")[0]).toBe(
-      `vault "${VAULT_NAME}": 0 selected, 0 copied, 0 unchanged, 0 removed (9 candidates, all blocked)`,
-    );
-  });
-
-  it("omits the hint when the vault has no candidates", () => {
-    const report: VaultSyncReport = { ...allBlocked, candidates: 0 };
-
-    expect(formatReport(reportOf(report)).split("\n")[0]).toBe(
-      `vault "${VAULT_NAME}": 0 selected, 0 copied, 0 unchanged, 0 removed`,
-    );
-  });
-
-  it("omits the hint when candidates were ingested", () => {
-    const report: VaultSyncReport = {
-      ...allBlocked,
-      selected: 1,
-      copied: ["a.md"],
-    };
-
-    expect(formatReport(reportOf(report)).split("\n")[0]).toBe(
-      `vault "${VAULT_NAME}": 1 selected, 1 copied, 0 unchanged, 0 removed`,
-    );
-  });
-
-  it("keeps the no-changes summary when nothing was pruned", () => {
-    expect(formatReport(reportOf(allBlocked)).split("\n").at(-1)).toBe(
-      "sync complete: no changes",
-    );
-  });
-
-  it("appends the formatted duration to the summary", () => {
-    const report: SyncReport = { ...reportOf(allBlocked), elapsedMs: 1200 };
-
-    expect(formatReport(report).split("\n").at(-1)).toBe(
-      "sync complete: no changes (1s)",
-    );
-  });
-
-  it("appends a zero-second duration when the run is sub-second", () => {
-    const report: SyncReport = { ...reportOf(allBlocked), elapsedMs: 100 };
-
-    expect(formatReport(report).split("\n").at(-1)).toBe(
-      "sync complete: no changes (0s)",
-    );
-  });
-});
-
-describe("formatReport pruned namespaces", () => {
-  const unchanged: VaultSyncReport = {
-    vault: VAULT_NAME,
-    candidates: 6,
-    selected: 4,
-    copied: [],
-    unchanged: SELECTED_PATHS,
-    removed: [],
-  };
-
-  it("lists each pruned namespace with a minus sign", () => {
-    const report: SyncReport = {
-      vaults: [unchanged],
-      prunedNamespaces: ["Retired"],
-    };
-
-    expect(formatReport(report)).toContain(
-      "  - Retired/ (stale namespace, not configured)",
-    );
-  });
-
-  it("counts a pruned namespace in the summary instead of reporting no changes", () => {
-    const report: SyncReport = {
-      vaults: [unchanged],
-      prunedNamespaces: ["Retired"],
-    };
-
-    expect(formatReport(report).split("\n").at(-1)).toBe(
-      "sync complete: 0 copied, 0 removed, 1 namespace pruned",
-    );
-  });
-
-  it("pluralizes the prune count for several namespaces", () => {
-    const report: SyncReport = {
-      vaults: [],
-      prunedNamespaces: ["Old", "Retired"],
-    };
-
-    expect(formatReport(report).split("\n").at(-1)).toBe(
-      "sync complete: 0 copied, 0 removed, 2 namespaces pruned",
-    );
-  });
-});
-
-describe("runSync home expansion", () => {
+describe("runVaultSync home expansion", () => {
   it("syncs a vault whose root is a tilde path", async () => {
     const ws = await makeWorkspace({ root: `~/${VAULT_NAME}` });
-    const { vaults } = await runSync({
+    const { sources } = await runVaultSync({
       configPath: ws.configPath,
       rawDir: ws.rawDir,
       home: ws.dir,
       now: fixedClock(T1),
     });
 
-    expect(vaults[0]?.copied).toEqual(SELECTED_PATHS);
+    expect(sources[0]?.copied).toEqual(SELECTED_PATHS);
   });
 });
 
-describe("runSync multiple vaults", () => {
+describe("runVaultSync multiple vaults", () => {
   async function makeTwoVaultWorkspace(): Promise<Workspace> {
     const dir = await makeTempDir();
     const documentsRoot = await generateFixtureVault(dir);
@@ -1073,7 +841,7 @@ describe("runSync multiple vaults", () => {
   });
 });
 
-describe("runSync stale namespace pruning", () => {
+describe("runVaultSync stale namespace pruning", () => {
   const retiredEntry = { hash: "0".repeat(64), last_synced: T1 };
 
   async function seedRetiredNamespace(ws: Workspace): Promise<void> {
@@ -1307,243 +1075,33 @@ describe("runDryRun", () => {
   });
 });
 
-describe("formatDryRunReport", () => {
-  it("renders the would-ingest list with a nothing-written summary", () => {
-    expect(
-      formatDryRunReport([
-        { vault: VAULT_NAME, candidates: 9, wouldIngest: ["AI/RAG.md"] },
-      ]),
-    ).toBe(
-      [
-        `vault "${VAULT_NAME}": 1 of 9 candidates would be ingested`,
-        "  + AI/RAG.md",
-        "dry-run complete: nothing written",
-      ].join("\n"),
-    );
-  });
-});
-
-describe("colorized output", () => {
-  const pc = createColors(true);
-
-  function reportOf(
-    vault: Partial<VaultSyncReport> = {},
-    prunedNamespaces: readonly string[] = [],
-  ): SyncReport {
-    return {
-      vaults: [
-        {
-          vault: VAULT_NAME,
-          candidates: 0,
-          selected: 0,
-          copied: [],
-          unchanged: [],
-          removed: [],
-          ...vault,
-        },
-      ],
-      prunedNamespaces,
-    };
-  }
-
-  it("colors copied paths green", () => {
-    expect(formatReport(reportOf({ copied: ["AI/RAG.md"] }), pc)).toContain(
-      `  + ${pc.green("AI/RAG.md")}`,
-    );
-  });
-
-  it("colors removed paths red", () => {
-    expect(formatReport(reportOf({ removed: ["AI/RAG.md"] }), pc)).toContain(
-      `  - ${pc.red("AI/RAG.md")}`,
-    );
-  });
-
-  it("colors vault names bold in report lines", () => {
-    expect(formatReport(reportOf(), pc).split("\n")[0]).toBe(
-      `vault ${pc.bold(`"${VAULT_NAME}"`)}: 0 selected, 0 copied, 0 unchanged, 0 removed`,
-    );
-  });
-
-  it("dims the no-changes summary", () => {
-    expect(formatReport(reportOf(), pc).split("\n").at(-1)).toBe(
-      pc.dim("sync complete: no changes"),
-    );
-  });
-
-  it("colors a copy-only summary green", () => {
-    const report = reportOf({ copied: ["a.md", "b.md", "c.md", "d.md"] });
-
-    expect(formatReport(report, pc).split("\n").at(-1)).toBe(
-      pc.green("sync complete: 4 copied, 0 removed"),
-    );
-  });
-
-  it("colors a summary with removals red", () => {
-    const report = reportOf({ removed: ["a.md"] });
-
-    expect(formatReport(report, pc).split("\n").at(-1)).toBe(
-      pc.red("sync complete: 0 copied, 1 removed"),
-    );
-  });
-
-  it("colors a prune-only summary red", () => {
-    const report = reportOf({}, ["Retired"]);
-
-    expect(formatReport(report, pc).split("\n").at(-1)).toBe(
-      pc.red("sync complete: 0 copied, 0 removed, 1 namespace pruned"),
-    );
-  });
-
-  it("colors pruned namespace lines red", () => {
-    const report = reportOf({}, ["Retired"]);
-
-    expect(formatReport(report, pc)).toContain(
-      `  - ${pc.red("Retired/ (stale namespace, not configured)")}`,
-    );
-  });
-
-  it("colors a pruned namespace summary red for several namespaces", () => {
-    const report = reportOf({}, ["Old", "Retired"]);
-
-    expect(formatReport(report, pc).split("\n").at(-1)).toBe(
-      pc.red("sync complete: 0 copied, 0 removed, 2 namespaces pruned"),
-    );
-  });
-
-  it("colors errors red", () => {
-    expect(colorizeError("sync-vault: boom")).toBe(pc.red("sync-vault: boom"));
-  });
-
-  it("colors vault names bold in progress messages", () => {
-    expect(colorizeProgress(`vault "${VAULT_NAME}": 6 candidates`)).toBe(
-      `vault ${pc.bold(`"${VAULT_NAME}"`)}: 6 candidates`,
-    );
-  });
-
-  it("colors a WARNING-severity progress message yellow", () => {
-    expect(
-      colorizeProgress("sync-vault: WARNING — config drift detected"),
-    ).toBe(pc.yellow("sync-vault: WARNING — config drift detected"));
-  });
-
-  it("colors a WARNING message yellow even when it names a vault", () => {
-    const message = `vault "${VAULT_NAME}": WARNING — drift detected`;
-
-    expect(colorizeProgress(message)).toBe(pc.yellow(message));
-  });
-
-  it("leaves progress messages without a vault name plain", () => {
-    expect(colorizeProgress("sync-vault: raw dir /tmp/raw")).toBe(
-      "sync-vault: raw dir /tmp/raw",
-    );
-  });
-
-  it("does not bold a vault name embedded mid-message", () => {
-    expect(colorizeProgress('echo vault "X": done')).toBe(
-      'echo vault "X": done',
-    );
-  });
-
-  it("does not bold an undefined vault label embedded mid-message", () => {
-    expect(colorizeProgress('echo vault "undefined": done')).toBe(
-      'echo vault "undefined": done',
-    );
-  });
-
-  it("colors a dry-run header bold and its paths green", () => {
-    const reports: readonly VaultDryRunReport[] = [
-      { vault: VAULT_NAME, candidates: 9, wouldIngest: ["AI/RAG.md"] },
-    ];
-
-    expect(formatDryRunReport(reports, pc)).toBe(
-      [
-        `vault ${pc.bold(`"${VAULT_NAME}"`)}: 1 of 9 candidates would be ingested`,
-        `  + ${pc.green("AI/RAG.md")}`,
-        "dry-run complete: nothing written",
-      ].join("\n"),
-    );
-  });
-
-  it("leaves the dry-run completion line plain", () => {
-    const reports: readonly VaultDryRunReport[] = [
-      { vault: VAULT_NAME, candidates: 0, wouldIngest: [] },
-    ];
-
-    expect(formatDryRunReport(reports, pc).split("\n").at(-1)).toBe(
-      "dry-run complete: nothing written",
-    );
-  });
-
-  it("appends the formatted duration to the dry-run summary", () => {
-    const reports: readonly VaultDryRunReport[] = [
-      { vault: VAULT_NAME, candidates: 9, wouldIngest: ["AI/RAG.md"] },
-    ];
-
-    expect(formatDryRunReport(reports, pc, 65000).split("\n").at(-1)).toBe(
-      "dry-run complete: nothing written (1m05s)",
-    );
-  });
-
-  it("colors a summary without a removed count green", () => {
-    const report = reportOf({ copied: ["a.md"] });
-
-    expect(formatReport(report, pc).split("\n").at(-1)).toBe(
-      pc.green("sync complete: 1 copied, 0 removed"),
-    );
-  });
-
-  it("colors a multi-digit-removal summary red", () => {
-    const report = reportOf({
-      removed: Array.from({ length: 10 }, (_, i) => `${i}.md`),
-    });
-
-    expect(formatReport(report, pc).split("\n").at(-1)).toBe(
-      pc.red("sync complete: 0 copied, 10 removed"),
-    );
-  });
-
-  describe("NO_COLOR", () => {
-    const original = process.env.NO_COLOR;
-
-    afterEach(() => {
-      if (original === undefined) {
-        delete process.env.NO_COLOR;
-      } else {
-        process.env.NO_COLOR = original;
-      }
-    });
-
-    it("strips report color", () => {
-      process.env.NO_COLOR = "1";
-
-      expect(reportColors().green("AI/RAG.md")).toBe("AI/RAG.md");
-    });
-
-    it("strips progress color", () => {
-      process.env.NO_COLOR = "1";
-
-      expect(colorizeProgress(`vault "${VAULT_NAME}": 6 candidates`)).toBe(
-        `vault "${VAULT_NAME}": 6 candidates`,
-      );
-    });
-
-    it("strips WARNING color", () => {
-      process.env.NO_COLOR = "1";
-
-      expect(
-        colorizeProgress("sync-vault: WARNING — config drift detected"),
-      ).toBe("sync-vault: WARNING — config drift detected");
-    });
-
-    it("strips error color", () => {
-      process.env.NO_COLOR = "1";
-
-      expect(colorizeError("sync-vault: boom")).toBe("sync-vault: boom");
-    });
-  });
-});
-
 describe("sync-vault CLI", () => {
+  it("writes the manifest under the config dataRoot when the raw dir arg is absent", async () => {
+    const ws = await makeWorkspace();
+    const dataRoot = join(ws.dir, "data");
+    const configPath = join(ws.dir, "sync-dataroot.json");
+
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        dataRoot,
+        vaults: [
+          {
+            name: VAULT_NAME,
+            root: ws.vaultRoot,
+            exclude: "wiki:false",
+          },
+        ],
+      }),
+    );
+
+    await runCli([configPath]);
+
+    expect(
+      await readFile(join(dataRoot, "raw", "manifest.json"), "utf8"),
+    ).toContain(VAULT_NAME);
+  });
+
   async function runCli(
     args: string[],
     options: { color?: boolean } = {},
@@ -1897,7 +1455,7 @@ describe("sync-vault CLI", () => {
   });
 });
 
-describe("runSync repo-source rejection", () => {
+describe("runVaultSync repo-source rejection", () => {
   it("rejects a config whose source is a repo with a pointer to sync-repo", async () => {
     const ws = await makeWorkspace();
     const configPath = join(ws.dir, "sync-meta.json");
@@ -1918,7 +1476,7 @@ describe("runSync repo-source rejection", () => {
     );
 
     await expect(
-      runSync({ configPath, rawDir: join(ws.dir, "raw-meta") }),
+      runVaultSync({ configPath, rawDir: join(ws.dir, "raw-meta") }),
     ).rejects.toThrow(/repo source.*sync-repo/);
   });
 
@@ -1942,7 +1500,7 @@ describe("runSync repo-source rejection", () => {
       "utf8",
     );
 
-    await expect(runSync({ configPath, rawDir })).rejects.toThrow();
+    await expect(runVaultSync({ configPath, rawDir })).rejects.toThrow();
     await expect(stat(rawDir)).rejects.toMatchObject({ code: "ENOENT" });
   });
 

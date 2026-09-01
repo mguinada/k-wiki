@@ -1,20 +1,10 @@
-import type { Stats } from "node:fs";
-import { mkdir, readdir, rm, rmdir, stat, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createColors } from "picocolors";
-import {
-  canAnimate,
-  terminalColors as colors,
-  errorMessage,
-} from "../cli/colors.ts";
+import { canAnimate, errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
-import {
-  createProgressRenderer,
-  formatDuration,
-  isWarning,
-} from "../cli/progress.ts";
+import { formatDuration } from "../cli/progress.ts";
 import { readTextIfExists } from "../cli/shared.ts";
 import {
   loadSyncConfig,
@@ -28,97 +18,50 @@ import { sha256 } from "./hash.ts";
 import {
   emptyManifest,
   type Manifest,
-  type ManifestEntry,
   parseManifest,
   serializeManifest,
   type VaultNotes,
   writeManifest,
 } from "./manifest.ts";
+import {
+  assertSourceDirectory,
+  colorizeError,
+  colorizeProgress,
+  createSyncProgressSink,
+  type DriverOptions,
+  formatDryRunReport,
+  formatReport,
+  listNamespaceDirs,
+  type ProjectedNote,
+  projectNotes,
+  pruneNamespaces,
+  reportColors,
+  type SyncProgress,
+  type SyncReport,
+  toAbsolute,
+  type VaultDryRunReport,
+  type VaultSyncReport,
+} from "./projection.ts";
 import { scanVault } from "./scan.ts";
 
 /**
- * sync-vault: the deterministic, LLM-free projection of source notes
- * into `raw/notes/` (guide §8). For every vault in `sync.json`, it
- * scans markdown files, ingests every note not blocked by the vault's
- * exclusion rule (`wiki: false` in its frontmatter), hashes them, copies
- * new or changed notes, removes projections whose source disappeared or
- * was blocked, prunes namespaces that left the config, and records
- * state in `raw/manifest.json`. The run is
- * idempotent: a second run with no source changes copies, removes, and
- * writes nothing.
+ * sync-vault: the vault-source adapter (guide §8) — the deterministic,
+ * LLM-free projection driver for vault sources. For every vault in
+ * `sync.json`, it scans markdown files, ingests every note not blocked
+ * by the vault's exclusion rule (`wiki: false` in its frontmatter),
+ * hashes them, copies new or changed notes, removes projections whose
+ * source disappeared or was blocked, prunes namespaces that left the
+ * config, and records state in `raw/manifest.json` — all through the
+ * shared projection loop of `projection.ts`. The run is idempotent: a
+ * second run with no source changes copies, removes, and writes
+ * nothing.
  */
 
-export interface SyncOptions {
-  /** Path to `sync.json`. */
-  readonly configPath: string;
-  /** The `raw/` directory that receives `notes/` and `manifest.json`;
-   *  a dry run neither reads nor writes it. */
-  readonly rawDir: string;
-  /** Home directory for `~` expansion; defaults to the real home. */
-  readonly home?: string;
-  /** Clock for `last_synced`; defaults to the wall clock. */
-  readonly now?: () => Date;
-  /** Read-loop heartbeat cadence in files read; default: every 500. */
-  readonly progressEvery?: number | undefined;
-  /** Progress sink (uncolored messages); default: silent. */
-  readonly onProgress?: (message: SyncProgress) => void;
-}
-
-export interface VaultSyncReport {
-  readonly vault: string;
-  /** Markdown files considered, selected or not. */
-  readonly candidates: number;
-  readonly selected: number;
-  readonly copied: readonly string[];
-  readonly unchanged: readonly string[];
-  readonly removed: readonly string[];
-}
-
-export interface SyncReport {
-  /** Per-vault results for the configured vaults. */
-  readonly vaults: readonly VaultSyncReport[];
-  /** Namespaces removed because they are absent from the config. */
-  readonly prunedNamespaces: readonly string[];
-  /** Elapsed wall time for the entire run, in milliseconds. */
-  readonly elapsedMs?: number;
-}
-
-/** One selected source file: its path relative to the source root,
- *  its bytes, and its content hash. */
-export interface ProjectedNote {
-  readonly relPath: string;
-  readonly bytes: Uint8Array;
-  readonly hash: string;
-}
-
-/** Verify a configured source root (vault or repo) is an accessible
- *  directory; `kind` names it in the error. */
-export async function assertSourceDirectory(
-  kind: string,
-  name: string,
-  root: string,
-): Promise<void> {
-  let info: Stats;
-
-  try {
-    info = await stat(root);
-  } catch (cause) {
-    throw new Error(`${kind} root for "${name}" is not accessible: ${root}`, {
-      cause,
-    });
-  }
-
-  if (!info.isDirectory()) {
-    throw new Error(`${kind} root for "${name}" is not a directory: ${root}`);
-  }
-}
+/** Heartbeat interval for the read loop: one line per files read. */
+export const PROGRESS_EVERY = 500;
 
 async function assertDirectory(vault: VaultSourceConfig): Promise<void> {
   await assertSourceDirectory("vault", vault.name, vault.root);
-}
-
-export function toAbsolute(root: string, relPath: string): string {
-  return join(root, ...relPath.split("/"));
 }
 
 async function readSourceNote(
@@ -135,73 +78,6 @@ async function readSourceNote(
       { cause },
     );
   }
-}
-
-/** Remove now-empty parent directories of a deleted projection. */
-async function pruneEmptyDirs(dir: string, stopAt: string): Promise<void> {
-  let current = dir;
-
-  while (current.startsWith(stopAt) && current !== stopAt) {
-    try {
-      await rmdir(current);
-    } catch (cause) {
-      if (isPruneStop(cause)) {
-        return;
-      }
-
-      throw new Error(`failed to prune directory ${current}`, { cause });
-    }
-
-    current = dirname(current);
-  }
-}
-
-/** Pruning stops when the directory has entries or no longer exists. */
-function isPruneStop(cause: unknown): boolean {
-  const code = (cause as NodeJS.ErrnoException).code;
-
-  return code === "ENOTEMPTY" || code === "ENOENT";
-}
-
-/** Namespace directories under the notes root; empty when it is absent. */
-export async function listNamespaceDirs(notesRoot: string): Promise<string[]> {
-  try {
-    const entries = await readdir(notesRoot, { withFileTypes: true });
-
-    return entries
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return [];
-    }
-
-    throw error;
-  }
-}
-
-/** Heartbeat interval for the read loop: one line per files read. */
-export const PROGRESS_EVERY = 500;
-
-/** Wrong-pairing guard (issue #74): sync-vault syncs vault sources
- *  only; a repo source in the config fails loudly, pointing at
- *  sync-repo, instead of silently skipping or mis-projecting it. */
-function vaultSourcesOnly(
-  sources: readonly SourceConfig[],
-): readonly VaultSourceConfig[] {
-  const vaults: VaultSourceConfig[] = [];
-
-  for (const source of sources) {
-    if (source.kind === "repo") {
-      throw new Error(
-        `source "${source.name}" is a repo source; this config belongs to sync-repo`,
-      );
-    }
-
-    vaults.push(source);
-  }
-
-  return vaults;
 }
 
 /** Heartbeat interval for the directory walk: one line per dirs. */
@@ -303,7 +179,8 @@ async function syncVault(
   return {
     notes,
     report: {
-      vault: vault.name,
+      kind: "vault",
+      name: vault.name,
       candidates: candidates.length,
       selected: selected.length,
       copied,
@@ -313,106 +190,31 @@ async function syncVault(
   };
 }
 
-/** What one projection pass did to a namespace: the manifest entries
- *  after the pass, and the per-file change lists the reports print. */
-export interface ProjectionResult {
-  readonly notes: VaultNotes;
-  readonly copied: readonly string[];
-  readonly unchanged: readonly string[];
-  readonly removed: readonly string[];
-}
+/** Wrong-pairing guard (issue #74): sync-vault syncs vault sources
+ *  only; a repo source in the config fails loudly, pointing at
+ *  sync-repo, instead of silently skipping or mis-projecting it. */
+function vaultSourcesOnly(
+  sources: readonly SourceConfig[],
+): readonly VaultSourceConfig[] {
+  const vaults: VaultSourceConfig[] = [];
 
-/**
- * The shared projection loop (guide §8), the one invariant every
- * source adapter funnels into: copy each selected file whose hash
- * changed into the namespace, carry unchanged files' manifest entries
- * forward (their `last_synced` survives), remove projections whose
- * source disappeared, and prune now-empty parent directories.
- */
-export async function projectNotes(
-  selected: readonly ProjectedNote[],
-  namespaceRoot: string,
-  previous: VaultNotes,
-  now: () => Date,
-): Promise<ProjectionResult> {
-  const copied: string[] = [];
-  const unchanged: string[] = [];
-  const notes: VaultNotes = {};
-
-  for (const note of selected) {
-    const known = previous[note.relPath];
-
-    if (known !== undefined && known.hash === note.hash) {
-      unchanged.push(note.relPath);
-      notes[note.relPath] = known;
-
-      continue;
+  for (const source of sources) {
+    if (source.kind === "repo") {
+      throw new Error(
+        `source "${source.name}" is a repo source; this config belongs to sync-repo`,
+      );
     }
 
-    const destination = toAbsolute(namespaceRoot, note.relPath);
-
-    await mkdir(dirname(destination), { recursive: true });
-    await writeFile(destination, note.bytes);
-
-    const entry: ManifestEntry = {
-      hash: note.hash,
-      last_synced: now().toISOString(),
-    };
-
-    notes[note.relPath] = entry;
-    copied.push(note.relPath);
+    vaults.push(source);
   }
 
-  const removed: string[] = [];
-
-  for (const relPath of Object.keys(previous).sort()) {
-    if (Object.hasOwn(notes, relPath)) {
-      continue;
-    }
-
-    const destination = toAbsolute(namespaceRoot, relPath);
-
-    await rm(destination, { force: true });
-    await pruneEmptyDirs(dirname(destination), namespaceRoot);
-    removed.push(relPath);
-  }
-
-  return { notes, copied, unchanged, removed };
+  return vaults;
 }
 
-/** One vault's would-ingest listing; produced by a dry run. */
-export interface VaultDryRunReport {
-  readonly vault: string;
-  readonly candidates: number;
-  readonly wouldIngest: readonly string[];
-}
-
-/** Remove stale namespaces from the manifest and disk, reporting
- *  each. The caller owns the staleness computation and the
- *  empty-config safety (a misconfigured empty list must compute no
- *  stale names, never "everything"). Shared by the vault and repo
- *  adapters. */
-export async function pruneNamespaces(
-  staleNames: readonly string[],
-  nextManifest: Manifest,
-  notesRoot: string,
-  noun: "vault" | "repo",
-  onProgress: (message: string) => void,
-): Promise<string[]> {
-  const prunedNamespaces: string[] = [];
-
-  for (const name of staleNames) {
-    delete nextManifest.vaults[name];
-    await rm(join(notesRoot, name), { recursive: true, force: true });
-    onProgress(`${noun} "${name}": removed stale namespace (not configured)`);
-    prunedNamespaces.push(name);
-  }
-
-  return prunedNamespaces;
-}
-
-/** Run one full sync pass and return the run report. */
-export async function runSync(options: SyncOptions): Promise<SyncReport> {
+/** Run one full vault sync pass and return the run report. */
+export async function runVaultSync(
+  options: DriverOptions,
+): Promise<SyncReport> {
   const home = options.home ?? homedir();
   const now = options.now ?? (() => new Date());
   const onProgress = options.onProgress ?? (() => {});
@@ -470,7 +272,7 @@ export async function runSync(options: SyncOptions): Promise<SyncReport> {
     await writeManifest(manifestPath, nextManifest);
   }
 
-  return { vaults: reports, prunedNamespaces };
+  return { sources: reports, prunedNamespaces };
 }
 
 /**
@@ -479,7 +281,7 @@ export async function runSync(options: SyncOptions): Promise<SyncReport> {
  * before the first real inverted sync.
  */
 export async function runDryRun(
-  options: SyncOptions,
+  options: DriverOptions,
 ): Promise<readonly VaultDryRunReport[]> {
   const home = options.home ?? homedir();
   const onProgress = options.onProgress ?? (() => {});
@@ -509,161 +311,6 @@ export async function runDryRun(
   return reports;
 }
 
-/** Color functions a report renderer applies; identity when plain. */
-export interface ReportColors {
-  readonly bold: (text: string) => string;
-  readonly green: (text: string) => string;
-  readonly red: (text: string) => string;
-  readonly dim: (text: string) => string;
-}
-
-const PLAIN_COLORS: ReportColors = {
-  bold: (text) => text,
-  green: (text) => text,
-  red: (text) => text,
-  dim: (text) => text,
-};
-
-/** Report colors from the environment (NO_COLOR disables them). */
-export function reportColors(): ReportColors {
-  const colors = createColors(!process.env.NO_COLOR);
-
-  return {
-    bold: colors.bold,
-    green: colors.green,
-    red: colors.red,
-    dim: colors.dim,
-  };
-}
-
-/** The `(1m05s)` summary suffix; empty when the run was unmeasured. */
-function durationClause(elapsedMs: number | undefined): string {
-  return elapsedMs === undefined ? "" : ` (${formatDuration(elapsedMs)})`;
-}
-
-/** The trailing `sync complete:` summary line for the run totals. */
-function summaryLine(
-  copied: number,
-  removed: number,
-  pruned: number,
-  duration: string,
-  colors: ReportColors,
-): string {
-  if (copied === 0 && removed === 0 && pruned === 0) {
-    return colors.dim(`sync complete: no changes${duration}`);
-  }
-
-  const prunedClause =
-    pruned === 0
-      ? ""
-      : `, ${pruned} namespace${pruned === 1 ? "" : "s"} pruned`;
-
-  return colors[removed > 0 || pruned > 0 ? "red" : "green"](
-    `sync complete: ${copied} copied, ${removed} removed${prunedClause}${duration}`,
-  );
-}
-
-/** Render the run summary; `+` marks copies and `-` marks removals. */
-export function formatReport(
-  report: SyncReport,
-  colors: ReportColors = PLAIN_COLORS,
-): string {
-  const lines: string[] = [];
-
-  for (const vault of report.vaults) {
-    const counts = `vault ${colors.bold(`"${vault.vault}"`)}: ${vault.selected} selected, ${vault.copied.length} copied, ${vault.unchanged.length} unchanged, ${vault.removed.length} removed`;
-    const hint =
-      vault.selected === 0 && vault.candidates > 0
-        ? ` (${vault.candidates} candidates, all blocked)`
-        : "";
-
-    lines.push(counts + hint);
-
-    for (const relPath of vault.copied) {
-      lines.push(`  + ${colors.green(relPath)}`);
-    }
-
-    for (const relPath of vault.removed) {
-      lines.push(`  - ${colors.red(relPath)}`);
-    }
-  }
-
-  for (const name of report.prunedNamespaces) {
-    lines.push(
-      `  - ${colors.red(`${name}/ (stale namespace, not configured)`)}`,
-    );
-  }
-
-  const copied = report.vaults.reduce(
-    (total, vault) => total + vault.copied.length,
-    0,
-  );
-  const removed = report.vaults.reduce(
-    (total, vault) => total + vault.removed.length,
-    0,
-  );
-
-  lines.push(
-    summaryLine(
-      copied,
-      removed,
-      report.prunedNamespaces.length,
-      durationClause(report.elapsedMs),
-      colors,
-    ),
-  );
-
-  return lines.join("\n");
-}
-
-/** Render the dry-run would-ingest listing; nothing is written. */
-export function formatDryRunReport(
-  reports: readonly VaultDryRunReport[],
-  colors: ReportColors = PLAIN_COLORS,
-  elapsedMs?: number,
-): string {
-  const lines: string[] = [];
-
-  for (const report of reports) {
-    lines.push(
-      `vault ${colors.bold(`"${report.vault}"`)}: ${report.wouldIngest.length} of ${report.candidates} candidates would be ingested`,
-    );
-
-    for (const relPath of report.wouldIngest) {
-      lines.push(`  + ${colors.green(relPath)}`);
-    }
-  }
-
-  lines.push(`dry-run complete: nothing written${durationClause(elapsedMs)}`);
-
-  return lines.join("\n");
-}
-
-/** Color a progress line at the render boundary: WARNING severity
- *  renders yellow, the `noun`-labelled source name renders bold
- *  ("vault" for vault sync, "repo" for repo sync). */
-export function colorizeProgress(message: string, noun = "vault"): string {
-  if (isWarning(message)) {
-    return colors().yellow(message);
-  }
-
-  const name = new RegExp(`^${noun} "([^"]*)":`).exec(message)?.[1];
-
-  if (name === undefined) {
-    return message;
-  }
-
-  return message.replace(
-    `${noun} "${name}":`,
-    () => `${noun} ${colors().bold(`"${name}"`)}:`,
-  );
-}
-
-/** Color an error line red at the render boundary. */
-export function colorizeError(message: string): string {
-  return colors().red(message);
-}
-
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
@@ -686,52 +333,6 @@ Live progress goes to stderr, the report to stdout. On a terminal
 status line - a braille spinner plus the sentence - rewritten in
 place; piped, redirected, CI, or NO_COLOR runs get plain appended
 lines instead (read heartbeat every 500 files by default).`;
-
-/** One progress message from a sync pass: an `event` scrolls as its own
- *  line, a `heartbeat` rewrites the animated status line in place. The
- *  emitter constructs the kind, so classification never depends on
- *  message wording and vault names may contain `:` (issue #246 C-9). */
-export type SyncProgress =
-  | { readonly kind: "event"; readonly text: string }
-  | { readonly kind: "heartbeat"; readonly text: string };
-
-/** A stderr progress surface: plain lines, or one animated line. */
-export interface ProgressSink {
-  render(message: SyncProgress): void;
-  end(): void;
-}
-
-/**
- * The stderr presentation for one sync run: heartbeat messages keep
- * one animated line (spinner + sentence) on a TTY; event messages
- * scroll. Non-animated runs append plain lines only.
- */
-export function createSyncProgressSink(
-  write: (text: string) => void,
-  writeLine: (text: string) => void,
-  animated: boolean,
-  colorize: (text: string) => string,
-): ProgressSink {
-  if (!animated) {
-    return {
-      render: (message) => writeLine(colorize(message.text)),
-      end: () => {},
-    };
-  }
-
-  const renderer = createProgressRenderer(write);
-
-  return {
-    render: (message) => {
-      if (message.kind === "heartbeat") {
-        renderer.live(colorize(message.text));
-      } else {
-        renderer.event(colorize(message.text));
-      }
-    },
-    end: () => renderer.end(),
-  };
-}
 
 export async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -776,7 +377,7 @@ export async function main(): Promise<void> {
     }
 
     const startedAt = Date.now();
-    const report = await runSync({
+    const report = await runVaultSync({
       configPath,
       rawDir,
       progressEvery,

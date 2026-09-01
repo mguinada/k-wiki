@@ -3,7 +3,7 @@ agent: pi
 commands:
   lint: "npm run lint"
   format: "npm run format"
-  test: "npm run typecheck && npm run test:coverage"
+  test: "npm install --silent && npm run typecheck && npm run test:coverage"
 
 ignore_patterns:
   - "raw/**"

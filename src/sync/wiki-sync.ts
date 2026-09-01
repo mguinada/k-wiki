@@ -54,11 +54,17 @@ import {
   loadSyncConfig,
   type PublishConfig,
   resolveRawDir,
+  type SourceConfig,
   type SyncConfig,
 } from "./config.ts";
+import type {
+  DriverOptions,
+  RepoSyncReport,
+  SyncReport,
+} from "./projection.ts";
 import { type PublishResult, runPublishStage } from "./publish.ts";
-import { type RepoSyncReport, runRepoSync } from "./sync-repo.ts";
-import { runSync, type SyncReport } from "./sync-vault.ts";
+import { runRepoSync } from "./sync-repo.ts";
+import { runVaultSync } from "./sync-vault.ts";
 
 /**
  * wiki-sync: the one-command orchestrator (guide §18, issue #13). It
@@ -513,10 +519,9 @@ async function commitDataRepo(
 
 /** Everything one wiki-sync cycle reports. */
 export interface WikiSyncResult {
-  /** The stage-1 report: vault-shaped (`SyncReport`) or repo-shaped
-   *  (`RepoSyncReport`) — the config's source kinds decide (issue
-   *  #145). */
-  readonly sync: SyncReport | RepoSyncReport;
+  /** The stage-1 report — source-neutral: one row per source the
+   *  driver table picked for the config's source kinds (issue #250). */
+  readonly sync: SyncReport;
   readonly ingest: IngestResult;
   /** Undefined when the ingest stage skipped (nothing to lint). */
   readonly lint: LintResult | undefined;
@@ -555,32 +560,28 @@ export interface WikiSyncOptions {
   readonly onProgress?: (message: string) => void;
 }
 
-/** Count a sync report's copied and removed notes — across every
- *  vault of a vault run, or the one repo source of a repo run. */
-function syncChangeCounts(sync: SyncReport | RepoSyncReport): {
+/** Count a sync report's copied and removed notes across every
+ *  source row — vault or repo. */
+function syncChangeCounts(sync: SyncReport): {
   copied: number;
   removed: number;
 } {
-  if ("vaults" in sync) {
-    return {
-      copied: sync.vaults.reduce(
-        (total, vault) => total + vault.copied.length,
-        0,
-      ),
-      removed: sync.vaults.reduce(
-        (total, vault) => total + vault.removed.length,
-        0,
-      ),
-    };
-  }
-
-  return { copied: sync.copied.length, removed: sync.removed.length };
+  return {
+    copied: sync.sources.reduce(
+      (total, source) => total + source.copied.length,
+      0,
+    ),
+    removed: sync.sources.reduce(
+      (total, source) => total + source.removed.length,
+      0,
+    ),
+  };
 }
 
 /** The commit summary of one cycle: ingest diff counts when the agent
  *  ran, the sync report's counts otherwise. */
 async function commitSummaryOf(
-  sync: SyncReport | RepoSyncReport,
+  sync: SyncReport,
   ingest: IngestResult,
   lint: LintResult | undefined,
   dataRoot: string,
@@ -614,10 +615,66 @@ async function commitSummaryOf(
   };
 }
 
-/** Stage 1 (issue #145 dispatch): refuse mixed
- *  source kinds, then run the sync-repo core for a repo-typed
- *  config (the meta instance, in-process over that config) and the
- *  sync-vault core otherwise — same cycle, same
+/** The config's single source kind: mixed kinds refuse (issue #145,
+ *  one instance per config), an empty config stays vault-kind so the
+ *  vault driver's empty-config safety holds. */
+function syncKindOf(
+  config: SyncConfig,
+  configPath: string,
+): SourceConfig["kind"] {
+  const kinds = new Set(config.vaults.map((source) => source.kind));
+
+  if (kinds.has("vault") && kinds.has("repo")) {
+    throw new Error(
+      `mixed source kinds in ${configPath}: one instance per config — vault sources for sync-vault, a repo source for sync-repo`,
+    );
+  }
+
+  return kinds.has("repo") ? "repo" : "vault";
+}
+
+/** The sync driver table (issue #250): one row per source kind, keyed
+ *  by the config's source kinds — a future source kind (devices,
+ *  mirror) is a row, not a copy of the cycle. */
+const DRIVERS: Record<
+  SourceConfig["kind"],
+  (options: DriverOptions) => Promise<SyncReport>
+> = {
+  vault: runVaultSync,
+  repo: runRepoSync,
+};
+
+/** The cycle's stage names in run order (the stage table, issue
+ *  #250): crosslinks only for instances whose settings carry a
+ *  `secondBrain.domains` key, publish only for configs with a
+ *  publish section. Every stage line numbers itself from this
+ *  table — no scattered stage arithmetic. */
+export function stageNames(options: {
+  readonly domains: readonly string[] | undefined;
+  readonly publish: PublishConfig | undefined;
+}): readonly string[] {
+  const names = ["sync", "ingest", "lint"];
+
+  if (options.domains !== undefined) {
+    names.push("crosslinks");
+  }
+
+  names.push("verification", "commit");
+
+  if (options.publish !== undefined) {
+    names.push("publish");
+  }
+
+  return names;
+}
+
+/** One stage's progress line, numbered by its table position. */
+export function stageLine(stages: readonly string[], name: string): string {
+  return `wiki-sync: stage ${stages.indexOf(name) + 1}/${stages.length} — ${name}`;
+}
+
+/** Stage 1 (issue #145 dispatch): refuse mixed source kinds, then run
+ *  the driver table's row for the config's kind — same cycle, same
  *  lint → verification → commit flow, whatever the source kind. */
 async function runSyncStage(
   config: SyncConfig,
@@ -625,34 +682,19 @@ async function runSyncStage(
   env: NodeJS.ProcessEnv,
   now: () => Date,
   onProgress: (message: string) => void,
-  total: number,
-): Promise<SyncReport | RepoSyncReport> {
-  const repoSourced = config.vaults.some((source) => source.kind === "repo");
+  stages: readonly string[],
+): Promise<SyncReport> {
+  const kind = syncKindOf(config, options.configPath);
 
-  if (repoSourced && config.vaults.some((source) => source.kind === "vault")) {
-    throw new Error(
-      `mixed source kinds in ${options.configPath}: one instance per config — vault sources for sync-vault, a repo source for sync-repo`,
-    );
-  }
+  onProgress(stageLine(stages, "sync"));
 
-  onProgress(
-    `wiki-sync: stage 1/${total} — ${repoSourced ? "sync-repo" : "sync-vault"}`,
-  );
-
-  return repoSourced
-    ? await runRepoSync({
-        configPath: options.configPath,
-        rawDir: options.rawDir,
-        env,
-        now,
-        onProgress,
-      })
-    : await runSync({
-        configPath: options.configPath,
-        rawDir: options.rawDir,
-        now,
-        onProgress: (message) => onProgress(message.text),
-      });
+  return await DRIVERS[kind]({
+    configPath: options.configPath,
+    rawDir: options.rawDir,
+    env,
+    now,
+    onProgress: (message) => onProgress(message.text),
+  });
 }
 
 /** Stage 3: lint what the ingest agent produced, or skip the lint
@@ -663,16 +705,16 @@ async function runLintOrSkip(
   env: NodeJS.ProcessEnv,
   now: () => Date,
   onProgress: (message: string) => void,
-  total: number,
+  stages: readonly string[],
   pre: PreRunState,
 ): Promise<LintResult | undefined> {
   if (ingest.status !== "ran") {
-    onProgress(`wiki-sync: stage 3/${total} — lint skipped (no ingest ran)`);
+    onProgress(`${stageLine(stages, "lint")} skipped (no ingest ran)`);
 
     return undefined;
   }
 
-  onProgress(`wiki-sync: stage 3/${total} — lint`);
+  onProgress(stageLine(stages, "lint"));
 
   return await runLintStage({
     settingsPath: options.settingsPath,
@@ -694,13 +736,13 @@ async function runCrosslinksOrSkip(
   options: WikiSyncOptions,
   domains: readonly string[] | undefined,
   onProgress: (message: string) => void,
-  total: number,
+  stages: readonly string[],
 ): Promise<CrosslinksResult | undefined> {
   if (domains === undefined) {
     return undefined;
   }
 
-  onProgress(`wiki-sync: stage 4/${total} — crosslinks`);
+  onProgress(stageLine(stages, "crosslinks"));
 
   return await runCrosslinksStage({
     rawDir: options.rawDir,
@@ -717,13 +759,10 @@ async function runVerificationWithRevert(
   dataRoot: string,
   env: NodeJS.ProcessEnv,
   preLint: PreRunState,
-  domains: readonly string[] | undefined,
   onProgress: (message: string) => void,
-  total: number,
+  stages: readonly string[],
 ): Promise<VerificationResult> {
-  onProgress(
-    `wiki-sync: stage ${domains === undefined ? 4 : 5}/${total} — verification`,
-  );
+  onProgress(stageLine(stages, "verification"));
 
   try {
     return await runVerificationStage({
@@ -750,13 +789,13 @@ async function runPublishOrSkip(
   options: WikiSyncOptions,
   publish: PublishConfig | undefined,
   onProgress: (message: string) => void,
-  total: number,
+  stages: readonly string[],
 ): Promise<PublishResult | undefined> {
   if (publish === undefined) {
     return undefined;
   }
 
-  onProgress(`wiki-sync: stage ${total}/${total} — publish`);
+  onProgress(stageLine(stages, "publish"));
 
   return await runPublishStage({
     dataRoot: dirname(options.rawDir),
@@ -800,13 +839,17 @@ export async function runWikiSync(
     options.settingsPath,
   );
   const config = await loadSyncConfig(options.configPath, homedir());
-  const total =
-    5 +
-    (domains === undefined ? 0 : 1) +
-    (config.publish === undefined ? 0 : 1);
-  const sync = await runSyncStage(config, options, env, now, onProgress, total);
+  const stages = stageNames({ domains, publish: config.publish });
+  const sync = await runSyncStage(
+    config,
+    options,
+    env,
+    now,
+    onProgress,
+    stages,
+  );
 
-  onProgress(`wiki-sync: stage 2/${total} — wiki-ingest`);
+  onProgress(stageLine(stages, "ingest"));
 
   const ingest = await runWikiIngest({
     settingsPath: options.settingsPath,
@@ -831,30 +874,25 @@ export async function runWikiSync(
     env,
     now,
     onProgress,
-    total,
+    stages,
     preLint,
   );
   const crosslinks = await runCrosslinksOrSkip(
     options,
     domains,
     onProgress,
-    total,
+    stages,
   );
   const verification = await runVerificationWithRevert(
     options,
     dataRoot,
     env,
     preLint,
-    domains,
     onProgress,
-    total,
+    stages,
   );
 
-  // The commit stage is the last one when publish is not configured;
-  // the publish stage follows it otherwise (issue #15).
-  const commitStage = total - (config.publish === undefined ? 0 : 1);
-
-  onProgress(`wiki-sync: stage ${commitStage}/${total} — commit`);
+  onProgress(stageLine(stages, "commit"));
 
   const summary = await commitSummaryOf(sync, ingest, lint, dataRoot, env);
 
@@ -865,7 +903,12 @@ export async function runWikiSync(
     crosslinks,
     verification,
     commit: await commitDataRepo(dataRoot, env, formatCommitMessage(summary)),
-    publish: await runPublishOrSkip(options, config.publish, onProgress, total),
+    publish: await runPublishOrSkip(
+      options,
+      config.publish,
+      onProgress,
+      stages,
+    ),
   };
 }
 
@@ -873,8 +916,9 @@ function pluralized(count: number, noun: string): string {
   return count === 1 ? `1 ${noun}` : `${count} ${noun}s`;
 }
 
-/** One line per vault or repo source: what sync copied and removed. */
-function syncSummaryLines(sync: SyncReport | RepoSyncReport): string[] {
+/** One line per source: what sync copied and removed; a repo run
+ *  also names the commit its projection is stamped with. */
+function syncSummaryLines(sync: SyncReport): string[] {
   const { copied, removed } = syncChangeCounts(sync);
   const pruned = sync.prunedNamespaces.length;
 
@@ -882,13 +926,14 @@ function syncSummaryLines(sync: SyncReport | RepoSyncReport): string[] {
     return ["no source changes"];
   }
 
-  const commit =
-    "vaults" in sync ? "" : ` at commit ${sync.commit.slice(0, 8)}`;
+  const commit = sync.sources.find(
+    (source): source is RepoSyncReport => source.kind === "repo",
+  )?.commit;
 
   return [
     `${pluralized(copied, "source")} copied, ${pluralized(removed, "source")} removed` +
       (pruned === 0 ? "" : `, ${pluralized(pruned, "namespace")} pruned`) +
-      commit,
+      (commit === undefined ? "" : ` at commit ${commit.slice(0, 8)}`),
   ];
 }
 

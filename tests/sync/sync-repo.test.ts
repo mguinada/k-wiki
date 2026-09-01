@@ -14,7 +14,12 @@ import { runGit } from "../../src/data/git.ts";
 import { loadSyncConfig } from "../../src/sync/config.ts";
 import { parseManifest } from "../../src/sync/manifest.ts";
 import {
-  compileAllowlistPattern,
+  compileIncludePattern,
+  type RepoSyncReport,
+  type SyncReport,
+} from "../../src/sync/projection.ts";
+import {
+  repoRowOf,
   runRepoSync,
   selectRepoFiles,
 } from "../../src/sync/sync-repo.ts";
@@ -155,110 +160,6 @@ async function head(root: string): Promise<string> {
 
 /** Every file below a directory, POSIX-style, sorted — shared with
  *  the e2e suite via tests/e2e/helpers.ts. */
-
-describe("compileAllowlistPattern", () => {
-  it("matches an exact path pattern at that path", () => {
-    const pattern = compileAllowlistPattern("README.md");
-
-    expect(pattern.test("README.md")).toBe(true);
-  });
-
-  it("does not match an exact path pattern deeper in the tree", () => {
-    const pattern = compileAllowlistPattern("README.md");
-
-    expect(pattern.test("docs/README.md")).toBe(false);
-  });
-
-  it("does not match a filename that merely starts with the pattern", () => {
-    const pattern = compileAllowlistPattern("README.md");
-
-    expect(pattern.test("README.md2")).toBe(false);
-  });
-
-  it("treats regex metacharacters in a pattern as literals", () => {
-    const pattern = compileAllowlistPattern("package.json");
-
-    expect(pattern.test("package.json")).toBe(true);
-  });
-
-  it("does not let a literal dot match a substituted character", () => {
-    const pattern = compileAllowlistPattern("package.json");
-
-    expect(pattern.test("packageXjson")).toBe(false);
-  });
-
-  it("matches a single star inside one path segment", () => {
-    const pattern = compileAllowlistPattern("docs/*.md");
-
-    expect(pattern.test("docs/a.md")).toBe(true);
-  });
-
-  it("does not let a single star cross into deeper segments", () => {
-    const pattern = compileAllowlistPattern("docs/*.md");
-
-    expect(pattern.test("docs/sub/a.md")).toBe(false);
-  });
-
-  it("does not let a single star change the literal segment", () => {
-    const pattern = compileAllowlistPattern("docs/*.md");
-
-    expect(pattern.test("docsX/a.md")).toBe(false);
-  });
-
-  it("matches a double star across zero path segments", () => {
-    const pattern = compileAllowlistPattern("src/**/*.ts");
-
-    expect(pattern.test("src/a.ts")).toBe(true);
-  });
-
-  it("matches a double star across several path segments", () => {
-    const pattern = compileAllowlistPattern("src/**/*.ts");
-
-    expect(pattern.test("src/x/y/a.ts")).toBe(true);
-  });
-
-  it("does not let a double star change the literal segment", () => {
-    const pattern = compileAllowlistPattern("src/**/*.ts");
-
-    expect(pattern.test("srcx/a.ts")).toBe(false);
-  });
-
-  it("matches any path for a bare double-star pattern", () => {
-    const pattern = compileAllowlistPattern("**");
-
-    expect(pattern.test("deep/path/file.md")).toBe(true);
-  });
-
-  it("matches a leading double star at the top level", () => {
-    const pattern = compileAllowlistPattern("**/*.md");
-
-    expect(pattern.test("a.md")).toBe(true);
-  });
-
-  it("matches a leading double star at any depth", () => {
-    const pattern = compileAllowlistPattern("**/*.md");
-
-    expect(pattern.test("x/y/a.md")).toBe(true);
-  });
-
-  it("matches a trailing double star directly below the prefix", () => {
-    const pattern = compileAllowlistPattern("docs/**");
-
-    expect(pattern.test("docs/a.md")).toBe(true);
-  });
-
-  it("matches a trailing double star at deeper nesting", () => {
-    const pattern = compileAllowlistPattern("docs/**");
-
-    expect(pattern.test("docs/x/b.ts")).toBe(true);
-  });
-
-  it("does not let a trailing double star change the prefix segment", () => {
-    const pattern = compileAllowlistPattern("docs/**");
-
-    expect(pattern.test("docsX/a.md")).toBe(false);
-  });
-});
 
 describe("runRepoSync first run", () => {
   it("projects exactly the allowlisted files, namespaced under raw/notes/<name>/", async () => {
@@ -412,7 +313,7 @@ describe("runRepoSync first run", () => {
       env: GIT_ENV,
     });
 
-    expect(report.source).toBe(NAME);
+    expect(repoRowOf(report).name).toBe(NAME);
   });
 
   it("stamps the source commit in the run report", async () => {
@@ -424,7 +325,7 @@ describe("runRepoSync first run", () => {
       env: GIT_ENV,
     });
 
-    expect(report.commit).toBe(await head(ws.sourceRoot));
+    expect(repoRowOf(report).commit).toBe(await head(ws.sourceRoot));
   });
 
   it("shortens the stamped commit to eight characters in the report line", async () => {
@@ -435,7 +336,7 @@ describe("runRepoSync first run", () => {
       configPath: ws.configPath,
       rawDir: ws.rawDir,
       env: GIT_ENV,
-      onProgress: (line) => lines.push(line),
+      onProgress: (line) => lines.push(line.text),
     });
 
     expect(lines.join("\n")).toMatch(/selected at commit [0-9a-f]{8}$/m);
@@ -450,7 +351,7 @@ describe("runRepoSync first run", () => {
       env: GIT_ENV,
     });
 
-    expect(report.candidates).toBe(8);
+    expect(repoRowOf(report).candidates).toBe(8);
   });
 
   it("counts the selected files in the run report", async () => {
@@ -462,7 +363,7 @@ describe("runRepoSync first run", () => {
       env: GIT_ENV,
     });
 
-    expect(report.selected).toBe(SELECTED.length);
+    expect(repoRowOf(report).selected).toBe(SELECTED.length);
   });
 
   it("lists the copied files in the run report", async () => {
@@ -474,7 +375,7 @@ describe("runRepoSync first run", () => {
       env: GIT_ENV,
     });
 
-    expect([...report.copied].sort()).toEqual(SELECTED);
+    expect([...repoRowOf(report).copied].sort()).toEqual(SELECTED);
   });
 
   it("lists no removed files in the first run report", async () => {
@@ -486,7 +387,7 @@ describe("runRepoSync first run", () => {
       env: GIT_ENV,
     });
 
-    expect(report.removed).toEqual([]);
+    expect(repoRowOf(report).removed).toEqual([]);
   });
 });
 
@@ -505,7 +406,7 @@ describe("runRepoSync second run", () => {
       env: GIT_ENV,
     });
 
-    expect(second.copied).toEqual([]);
+    expect(repoRowOf(second).copied).toEqual([]);
   });
 
   it("removes no files when neither the tree nor the commit changed", async () => {
@@ -522,7 +423,7 @@ describe("runRepoSync second run", () => {
       env: GIT_ENV,
     });
 
-    expect(second.removed).toEqual([]);
+    expect(repoRowOf(second).removed).toEqual([]);
   });
 
   it("keeps every projection unchanged when neither the tree nor the commit changed", async () => {
@@ -539,7 +440,7 @@ describe("runRepoSync second run", () => {
       env: GIT_ENV,
     });
 
-    expect([...second.unchanged].sort()).toEqual(SELECTED);
+    expect([...repoRowOf(second).unchanged].sort()).toEqual(SELECTED);
   });
 
   it("recopies a file that changed in a new commit", async () => {
@@ -561,7 +462,7 @@ describe("runRepoSync second run", () => {
       env: GIT_ENV,
     });
 
-    expect(second.copied).toEqual(["src/a.ts"]);
+    expect(repoRowOf(second).copied).toEqual(["src/a.ts"]);
   });
 
   it("writes the new bytes of a changed file into the projection", async () => {
@@ -633,7 +534,7 @@ describe("runRepoSync second run", () => {
       env: GIT_ENV,
     });
 
-    expect(second.removed).toEqual(["src/deep/b.ts"]);
+    expect(repoRowOf(second).removed).toEqual(["src/deep/b.ts"]);
   });
 
   it("deletes the projected file on disk when its source was deleted", async () => {
@@ -706,7 +607,7 @@ describe("runRepoSync second run", () => {
       env: GIT_ENV,
     });
 
-    expect([...second.removed].sort()).toEqual(
+    expect([...repoRowOf(second).removed].sort()).toEqual(
       SELECTED.filter((path) => !path.startsWith("src/")),
     );
   });
@@ -932,7 +833,7 @@ describe("shipped sync-meta.json (issue #74)", () => {
       throw new Error("sync-meta.json must hold one repo source");
     }
 
-    const matchers = source.include.map(compileAllowlistPattern);
+    const matchers = source.include.map(compileIncludePattern);
     const includes = (path: string) =>
       matchers.some((matcher) => matcher.test(path));
 
@@ -964,7 +865,7 @@ describe("shipped sync-meta.json (issue #74)", () => {
       throw new Error("sync-meta.json must hold one repo source");
     }
 
-    const matchers = source.include.map(compileAllowlistPattern);
+    const matchers = source.include.map(compileIncludePattern);
     const includes = (path: string) =>
       matchers.some((matcher) => matcher.test(path));
 
@@ -976,26 +877,6 @@ describe("shipped sync-meta.json (issue #74)", () => {
         "k-wiki-meta-data/wiki/index.md",
       ].filter(includes),
     ).toEqual([]);
-  });
-});
-
-describe("compileAllowlistPattern multi-segment literals", () => {
-  it("matches a two-segment exact pattern at that path", () => {
-    const pattern = compileAllowlistPattern("docs/guide.md");
-
-    expect(pattern.test("docs/guide.md")).toBe(true);
-  });
-
-  it("does not let a two-segment exact pattern flatten into one segment", () => {
-    const pattern = compileAllowlistPattern("docs/guide.md");
-
-    expect(pattern.test("docsguide.md")).toBe(false);
-  });
-
-  it("does not let a two-segment exact pattern match a longer extension", () => {
-    const pattern = compileAllowlistPattern("docs/guide.md");
-
-    expect(pattern.test("docs/guide.mdx")).toBe(false);
   });
 });
 
@@ -1247,7 +1128,7 @@ describe("sync-repo CLI main", () => {
     const result = await runMainCli([ws.configPath, ws.rawDir]);
 
     expect(result.out).toContain(
-      `vault "k-wiki": 7 selected, 7 copied, 0 unchanged, 0 removed`,
+      `repo "k-wiki": 7 selected, 7 copied, 0 unchanged, 0 removed`,
     );
   });
 
@@ -1350,6 +1231,32 @@ describe("sync-repo CLI main", () => {
     const reset = "\u001b[22m";
 
     expect(err.join("\n")).toContain(`repo ${bold}"k-wiki"${reset}:`);
+  });
+});
+
+describe("repoRowOf", () => {
+  it("returns the repo row of a report that carries one", () => {
+    const row: RepoSyncReport = {
+      kind: "repo",
+      name: NAME,
+      commit: "a1b2c3d4e5f6a7b8",
+      candidates: 8,
+      selected: 7,
+      copied: [],
+      unchanged: [],
+      removed: [],
+    };
+    const report: SyncReport = { sources: [row], prunedNamespaces: [] };
+
+    expect(repoRowOf(report)).toBe(row);
+  });
+
+  it("rejects a report that carries no repo row", () => {
+    const report: SyncReport = { sources: [], prunedNamespaces: [] };
+
+    expect(() => repoRowOf(report)).toThrow(
+      "repo sync report carries no repo source row",
+    );
   });
 });
 
@@ -1535,7 +1442,7 @@ describe("runRepoSync stale namespace pruning", () => {
       configPath: renamedConfig,
       rawDir: ws.rawDir,
       env: GIT_ENV,
-      onProgress: (message) => messages.push(message),
+      onProgress: (message) => messages.push(message.text),
     });
 
     expect(messages).toContain(
@@ -1553,7 +1460,7 @@ describe("runRepoSync caller-provided context", () => {
       configPath: ws.configPath,
       rawDir: ws.rawDir,
       env: GIT_ENV,
-      onProgress: (message) => progress.push(message),
+      onProgress: (message) => progress.push(message.text),
     });
 
     expect(progress).toContain(`sync-repo: raw dir ${ws.rawDir}`);

@@ -30,6 +30,8 @@ import {
   runLintStage,
   runVerificationStage,
   runWikiSync,
+  stageLine,
+  stageNames,
 } from "../../src/sync/wiki-sync.ts";
 
 const run = promisify(execFile);
@@ -901,7 +903,7 @@ describe("runWikiSync repo-sourced instances", () => {
     );
   });
 
-  it("announces stage 1 as sync-repo for a repo-sourced config", async () => {
+  it("announces stage 1 as sync, with the repo driver's own lines, for a repo-sourced config", async () => {
     const h = await makeRepoHarness();
     const progress: string[] = [];
 
@@ -910,10 +912,13 @@ describe("runWikiSync repo-sourced instances", () => {
       onProgress: (m) => progress.push(m),
     });
 
-    expect(progress).toContainEqual("wiki-sync: stage 1/5 — sync-repo");
+    expect(progress).toContainEqual("wiki-sync: stage 1/5 — sync");
+    expect(progress.join("\n")).toMatch(
+      /^repo "k-wiki": \d+ of \d+ examined files selected at commit /m,
+    );
   });
 
-  it("does not announce sync-vault for a repo-sourced config", async () => {
+  it("does not run the vault driver for a repo-sourced config", async () => {
     const h = await makeRepoHarness();
     const progress: string[] = [];
 
@@ -922,7 +927,53 @@ describe("runWikiSync repo-sourced instances", () => {
       onProgress: (m) => progress.push(m),
     });
 
-    expect(progress).not.toContainEqual("wiki-sync: stage 1/5 — sync-vault");
+    expect(progress.join("\n")).not.toMatch(/^vault ".*": scanning /m);
+  });
+});
+
+describe("stage table", () => {
+  it("lists the base stages without crosslinks or publish", () => {
+    expect(stageNames({ domains: undefined, publish: undefined })).toEqual([
+      "sync",
+      "ingest",
+      "lint",
+      "verification",
+      "commit",
+    ]);
+  });
+
+  it("inserts crosslinks after lint for a configured second brain", () => {
+    expect(
+      stageNames({
+        domains: ["/domain/wiki"],
+        publish: undefined,
+      }),
+    ).toEqual([
+      "sync",
+      "ingest",
+      "lint",
+      "crosslinks",
+      "verification",
+      "commit",
+    ]);
+  });
+
+  it("appends publish after commit for a configured mirror", () => {
+    expect(
+      stageNames({
+        domains: undefined,
+        publish: { mirror: "/mirror", include: ["wiki/**"], root: undefined },
+      }),
+    ).toEqual(["sync", "ingest", "lint", "verification", "commit", "publish"]);
+  });
+
+  it("numbers a stage line by its table position", () => {
+    expect(
+      stageLine(
+        ["sync", "ingest", "lint", "verification", "commit"],
+        "verification",
+      ),
+    ).toBe("wiki-sync: stage 4/5 — verification");
   });
 });
 
@@ -1046,7 +1097,7 @@ describe("runWikiSync publish stage (issue #15)", () => {
 describe("formatFinalDigest", () => {
   it("states nothing to do when the cycle was a no-op", () => {
     const digest = formatFinalDigest({
-      sync: { vaults: [], prunedNamespaces: [] },
+      sync: { sources: [], prunedNamespaces: [] },
       ingest: { status: "skipped", reason: "no changed sources" },
       lint: undefined,
       crosslinks: undefined,
@@ -1144,7 +1195,7 @@ describe("formatFinalDigest", () => {
 
   it("names pruned namespaces in the sync summary", () => {
     const digest = formatFinalDigest({
-      sync: { vaults: [], prunedNamespaces: ["Old"] },
+      sync: { sources: [], prunedNamespaces: ["Old"] },
       ingest: { status: "skipped", reason: "no changed sources" },
       lint: undefined,
       crosslinks: undefined,
@@ -2433,8 +2484,8 @@ describe("runWikiSync progress and invocation contract", () => {
     });
 
     for (const expected of [
-      "wiki-sync: stage 1/5 — sync-vault",
-      "wiki-sync: stage 2/5 — wiki-ingest",
+      "wiki-sync: stage 1/5 — sync",
+      "wiki-sync: stage 2/5 — ingest",
       "wiki-sync: stage 3/5 — lint",
       "wiki-sync: lint — invoking agent:",
       "wiki-sync: lint — agent finished",
@@ -3030,7 +3081,7 @@ describe("formatFinalDigest sections", () => {
     commit?: CommitResult;
   }) {
     return {
-      sync: { vaults: [], prunedNamespaces: [] },
+      sync: { sources: [], prunedNamespaces: [] },
       ingest: {
         status: "ran" as const,
         mode: "incremental" as const,
@@ -3084,9 +3135,10 @@ describe("formatFinalDigest sections", () => {
     const digest = formatFinalDigest({
       ...ranResult({}),
       sync: {
-        vaults: [
+        sources: [
           {
-            vault: "Engineering",
+            kind: "vault",
+            name: "Engineering",
             candidates: 2,
             selected: 2,
             copied: ["a1.md", "a2.md"],
@@ -3094,7 +3146,8 @@ describe("formatFinalDigest sections", () => {
             removed: [],
           },
           {
-            vault: "Research",
+            kind: "vault",
+            name: "Research",
             candidates: 1,
             selected: 1,
             copied: [],
