@@ -1,8 +1,7 @@
 import { lstat, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { errorMessage } from "../cli/colors.ts";
-import { runGit } from "../data/git.ts";
-import { parseStatus } from "../ingest/guardrails.ts";
+import { parseStatus, runGit } from "../data/git.ts";
 import {
   appendWikiLog,
   kebab,

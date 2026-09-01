@@ -10,6 +10,7 @@ import {
 import { flagValueError } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { formatDuration } from "../cli/progress.ts";
+import { statusSince } from "../data/git.ts";
 import {
   type AgentRunner,
   createAgentProgressSink,
@@ -26,7 +27,6 @@ import {
   capturePreRunState,
   type PreRunState,
   revertToPreRun,
-  statusSince,
 } from "../ingest/guardrails.ts";
 import { loadSyncConfig, resolveRawDir } from "../sync/config.ts";
 import { citedPages, fileLastQuery, writeQueryArtifact } from "./file-last.ts";
