@@ -4,13 +4,10 @@ import { fileURLToPath } from "node:url";
 import { terminalColors as colors, errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { runGit } from "../data/git.ts";
+import { readTextIfExists } from "../shared.ts";
 import { isPlainObject } from "../sync/config.ts";
 import { sha256 } from "../sync/hash.ts";
-import {
-  parseManifest,
-  readManifestText,
-  type VaultNotes,
-} from "../sync/manifest.ts";
+import { parseManifest, type VaultNotes } from "../sync/manifest.ts";
 import { listFiles } from "../wiki-links.ts";
 
 /**
@@ -306,7 +303,7 @@ export async function checkRaw(
 
   const notesRoot = join(rawDir, "notes");
   const manifestPath = join(rawDir, "manifest.json");
-  const manifestText = await readManifestText(manifestPath);
+  const manifestText = await readTextIfExists(manifestPath);
   const problems: string[] = [];
   const entriesByVault = await loadVaultEntries(
     manifestText,

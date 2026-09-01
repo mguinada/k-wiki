@@ -16,6 +16,7 @@ import { refuseDirectExecution } from "../cli/is-main.ts";
 import { formatDuration } from "../cli/progress.ts";
 import { writeDashboard } from "../dashboard/generate.ts";
 import { runGit } from "../data/git.ts";
+import { readTextIfExists } from "../shared.ts";
 import {
   isPlainObject,
   loadSyncConfig,
@@ -26,7 +27,6 @@ import {
   emptyManifest,
   type Manifest,
   parseManifest,
-  readManifestText,
   type VaultNotes,
   writeManifest,
 } from "../sync/manifest.ts";
@@ -1121,7 +1121,7 @@ async function readSnapshot(
   onProgress: (message: string) => void,
   scoped: boolean,
 ): Promise<Manifest | undefined> {
-  const text = await readManifestText(snapshotPath);
+  const text = await readTextIfExists(snapshotPath);
 
   if (text === undefined) {
     return undefined;
@@ -1174,7 +1174,7 @@ async function appendGitignoreEntry(
   comment: string,
 ): Promise<boolean> {
   const ignorePath = join(dataRoot, ".gitignore");
-  const existing = (await readManifestText(ignorePath)) ?? "";
+  const existing = (await readTextIfExists(ignorePath)) ?? "";
 
   if (existing.split("\n").some((line) => accepted.includes(line.trim()))) {
     return false;
@@ -1254,11 +1254,11 @@ async function adoptLegacySnapshot(
   snapshotPath: string,
   onProgress: (message: string) => void,
 ): Promise<void> {
-  if ((await readManifestText(snapshotPath)) !== undefined) {
+  if ((await readTextIfExists(snapshotPath)) !== undefined) {
     return;
   }
 
-  if ((await readManifestText(legacyPath)) === undefined) {
+  if ((await readTextIfExists(legacyPath)) === undefined) {
     return;
   }
 
@@ -1327,7 +1327,7 @@ async function readRunManifest(
   rawDir: string,
 ): Promise<{ dataRoot: string; current: Manifest }> {
   const manifestPath = join(rawDir, "manifest.json");
-  const manifestText = await readManifestText(manifestPath);
+  const manifestText = await readTextIfExists(manifestPath);
 
   if (manifestText === undefined) {
     throw new Error(`no manifest at ${manifestPath}: run sync-vault first`);

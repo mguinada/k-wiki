@@ -15,6 +15,7 @@ import {
   formatDuration,
   isWarning,
 } from "../cli/progress.ts";
+import { readTextIfExists } from "../shared.ts";
 import {
   loadSyncConfig,
   resolveRawDir,
@@ -29,7 +30,6 @@ import {
   type Manifest,
   type ManifestEntry,
   parseManifest,
-  readManifestText,
   serializeManifest,
   type VaultNotes,
   writeManifest,
@@ -425,7 +425,7 @@ export async function runSync(options: SyncOptions): Promise<SyncReport> {
   const config = await loadSyncConfig(options.configPath, home);
   const vaults = vaultSourcesOnly(config.vaults);
   const manifestPath = join(options.rawDir, "manifest.json");
-  const previousText = await readManifestText(manifestPath);
+  const previousText = await readTextIfExists(manifestPath);
   const manifest =
     previousText === undefined
       ? emptyManifest()
