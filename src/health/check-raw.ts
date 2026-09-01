@@ -3,11 +3,10 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { terminalColors as colors, errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
-import { isPlainObject, readTextIfExists } from "../cli/shared.ts";
+import { isPlainObject, listFiles, readTextIfExists } from "../cli/shared.ts";
 import { runGit } from "../data/git.ts";
 import { sha256 } from "../sync/hash.ts";
 import { parseManifest, type VaultNotes } from "../sync/manifest.ts";
-import { listFiles } from "../wiki/wiki-links.ts";
 
 /**
  * raw/ health check: a read-only, vault-free coherence check of the
