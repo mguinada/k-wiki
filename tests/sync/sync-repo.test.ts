@@ -1000,6 +1000,40 @@ describe("compileAllowlistPattern multi-segment literals", () => {
 });
 
 describe("selectRepoFiles walker gaps", () => {
+  it("counts every walked file once across overlapping walk roots", async () => {
+    const dir = await makeTempDir();
+    const root = await makeSourceRepo(dir);
+
+    await put(root, "src/pkg/one.ts", "one\n");
+    await put(root, "src/pkg/deeper/two.ts", "two\n");
+    await runGit(root, ["add", "-A"], GIT_ENV);
+    await runGit(root, ["commit", "--quiet", "-m", "more"], GIT_ENV);
+
+    const { candidates, selected } = await selectRepoFiles(root, [
+      "src/**",
+      "src/pkg/**",
+    ]);
+
+    expect(candidates).toBe(selected.length);
+  });
+
+  it("counts an exact file only once when a walk root also covers it", async () => {
+    const dir = await makeTempDir();
+    const root = await makeSourceRepo(dir);
+
+    await put(root, "src/pkg/one.ts", "one\n");
+    await put(root, "src/pkg/deeper/two.ts", "two\n");
+    await runGit(root, ["add", "-A"], GIT_ENV);
+    await runGit(root, ["commit", "--quiet", "-m", "more"], GIT_ENV);
+
+    const { candidates, selected } = await selectRepoFiles(root, [
+      "src/pkg/one.ts",
+      "src/**",
+    ]);
+
+    expect(candidates).toBe(selected.length);
+  });
+
   it("selects a mid-path single star at exactly one directory level", async () => {
     const dir = await makeTempDir();
     const root = await makeSourceRepo(dir);

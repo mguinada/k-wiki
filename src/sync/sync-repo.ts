@@ -191,6 +191,9 @@ function classifyPatterns(patterns: readonly string[]): {
  * Select the files of a source repo that match the allowlist. Only the
  * literal directory prefixes of the patterns are walked (excluded by
  * construction); fully literal patterns are checked as exact files.
+ * Candidates are counted by path — overlapping walk roots (src/** plus
+ * src/x/**) and an exact file a walk root also covers each count once,
+ * keeping the "N of M examined" report honest (issue #246 C-7).
  */
 export async function selectRepoFiles(
   root: string,
@@ -200,12 +203,10 @@ export async function selectRepoFiles(
   const matches = (relPath: string) => matchers.some((m) => m.test(relPath));
   const { exactFiles, walkRoots } = classifyPatterns(patterns);
 
+  const examined = new Set<string>(exactFiles);
   const selected = new Set<string>();
-  let candidates = 0;
 
   for (const relPath of exactFiles) {
-    candidates++;
-
     if (await isFile(toAbsolute(root, relPath))) {
       selected.add(relPath);
     }
@@ -228,7 +229,7 @@ export async function selectRepoFiles(
     }
 
     for (const relPath of files) {
-      candidates++;
+      examined.add(relPath);
 
       if (matches(relPath)) {
         selected.add(relPath);
@@ -236,7 +237,7 @@ export async function selectRepoFiles(
     }
   }
 
-  return { candidates, selected: [...selected].sort() };
+  return { candidates: examined.size, selected: [...selected].sort() };
 }
 
 /** The source repo's HEAD commit SHA. */

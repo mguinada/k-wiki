@@ -30,10 +30,11 @@ run, instant. Takes no arguments.
 
   -h, --help    Print this help and exit; no side effects.
 
-Writes nothing. Exit 0 whenever a report exists — even with
+Writes nothing. Exit 0 whenever a report parses — even with
 survivors, because mutation testing is advisory and this printer
 must stay unusable as a gate; exit 1 with a hint when no report
-exists yet.`;
+exists yet, when it is corrupt (not valid JSON), or when a Stryker
+upgrade drifted its shape.`;
 
 /** Actionable entries — Survived or NoCoverage — as sorted, readable lines. */
 export function actionableLines(report: Report): string[] {
@@ -142,7 +143,7 @@ export function printSurvivors(text: string | undefined): void {
       );
     } else {
       console.error(
-        `No report at ${REPORT_PATH} — run npm run mutation:changed first.`,
+        `The report at ${REPORT_PATH} is corrupt (not valid JSON) — re-run npm run mutation:changed to regenerate it.`,
       );
     }
 
@@ -168,10 +169,11 @@ export function printSurvivors(text: string | undefined): void {
   }
 }
 
-export function main(baseDir: string = process.cwd()): void {
-  const args = process.argv.slice(2);
-
-  if (args.includes("-h") || args.includes("--help")) {
+export function main(
+  argv: readonly string[],
+  baseDir: string = process.cwd(),
+): void {
+  if (argv.includes("-h") || argv.includes("--help")) {
     console.log(HELP);
 
     return;

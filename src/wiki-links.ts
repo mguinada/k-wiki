@@ -46,33 +46,68 @@ export function wikilinkBodyAnchor(body: string): string | undefined {
   return anchor === "" || anchor.startsWith("^") ? undefined : anchor;
 }
 
+/** A line's fence marker — 0–3 leading spaces, then 3+ backticks or
+ *  tildes — as the marker run plus the rest of the line (the info
+ *  string, trimmed); null when the line is not a fence marker. */
+function fenceMarker(line: string): { chars: string; info: string } | null {
+  const chars = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
+
+  if (chars === undefined) {
+    return null;
+  }
+
+  return {
+    chars,
+    info: line.slice(line.indexOf(chars) + chars.length).trim(),
+  };
+}
+
+/** Whether one fence marker closes an open fence, per CommonMark:
+ *  bare (no info string), same character, at least the opening
+ *  length (issue #246 C-10). */
+function closesFence(
+  marker: { chars: string; info: string },
+  open: { char: string; length: number },
+): boolean {
+  return (
+    marker.chars.slice(0, 1) === open.char &&
+    marker.chars.length >= open.length &&
+    marker.info === ""
+  );
+}
+
 /** Every non-fence line of a markdown text as `[index, line]`
  *  pairs (0-based source line; fence lines and fenced content
  *  skipped) — the shared scanner for wikilink and heading
- *  extraction, so fence semantics cannot drift between them. */
+ *  extraction, so fence semantics cannot drift between them.
+ *  Fences follow CommonMark's closing rule: any 3+ backtick/tilde
+ *  marker opens (an info string is allowed on the opener), while a
+ *  closing fence must be bare, use the same character, and be at
+ *  least as long as the opener (issue #246 C-10). */
 export function* unfencedLines(
   text: string,
 ): Generator<[number, string], void, unknown> {
-  let fenceChar: string | null = null;
+  let open: { char: string; length: number } | null = null;
 
   for (const [i, line] of text.split("\n").entries()) {
-    const fence = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
+    const marker = fenceMarker(line);
 
-    if (fence !== undefined) {
-      if (fenceChar === null) {
-        fenceChar = fence[0] ?? null;
-      } else if (fence[0] === fenceChar) {
-        fenceChar = null;
+    if (marker === null) {
+      if (open === null) {
+        yield [i, line];
       }
 
       continue;
     }
 
-    if (fenceChar !== null) {
-      continue;
+    if (open === null) {
+      open = {
+        char: marker.chars.slice(0, 1),
+        length: marker.chars.length,
+      };
+    } else if (closesFence(marker, open)) {
+      open = null;
     }
-
-    yield [i, line];
   }
 }
 
