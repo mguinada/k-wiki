@@ -610,6 +610,32 @@ describe("loadAgentSettings", () => {
   });
 });
 
+describe("loadAgentSettings resolved shape", () => {
+  const dirs: string[] = [];
+
+  afterAll(async () => {
+    await Promise.all(
+      dirs.map((dir) => rm(dir, { recursive: true, force: true })),
+    );
+  });
+
+  it("adds no whitelist keys when the settings carry none", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-agent-resolved-"));
+
+    dirs.push(dir);
+
+    const settingsPath = join(dir, "agent.md");
+
+    await writeFile(settingsPath, "command: pi\nmodel: m\nreasoning: high\n");
+
+    const resolved = await loadAgentSettings(settingsPath, {
+      piInstallRoot: dir,
+    });
+
+    expect(resolved).toEqual({ command: "pi", model: "m", reasoning: "high" });
+  });
+});
+
 describe("loadAgentSettings whitelist resolution (issue #144)", () => {
   const whitelistDirs: string[] = [];
 

@@ -203,6 +203,54 @@ describe("renderDebtReport", () => {
   });
 });
 
+describe("renderDebtReport boundaries", () => {
+  const fns = Array.from({ length: 21 }, (_, i) => ({
+    name: `f${i}`,
+    start_line: i + 1,
+    end_line: i + 1,
+    cyclomatic: (i % 13) + 1,
+  }));
+
+  const report = parseEngineReport(
+    JSON.stringify({ files: [{ path: "src/many.ts", functions: fns }] }),
+  );
+
+  it("counts the warning tier strictly above eight", () => {
+    expect(renderDebtReport(report)).toContain(
+      "21 functions, 3 over 10, 5 over 8",
+    );
+  });
+
+  it("lists the worst function first regardless of input order", () => {
+    expect(renderDebtReport(report).split("\n")[1]).toContain("f12");
+  });
+
+  it("caps the table at twenty functions", () => {
+    expect(renderDebtReport(report).split("\n")).toHaveLength(21);
+  });
+
+  it("colors an over-limit score red", () => {
+    const lines = renderDebtReport(report).split("\n");
+    const worst = lines.find((line) => line.includes("f12"));
+
+    expect(worst).toContain("\u001b[31m");
+  });
+
+  it("leaves a score at exactly the limit uncolored", () => {
+    const lines = renderDebtReport(report).split("\n");
+    const atLimit = lines.find((line) => line.includes("f9"));
+
+    expect(atLimit).not.toContain("\u001b[31m");
+  });
+
+  it("leaves a small score uncolored", () => {
+    const lines = renderDebtReport(report).split("\n");
+    const small = lines.find((line) => line.includes("f0"));
+
+    expect(small).not.toContain("\u001b[31m");
+  });
+});
+
 describe("complexity gate (live)", () => {
   it("the engine reports the repository's own quality library", () => {
     expect(

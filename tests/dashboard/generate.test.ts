@@ -340,6 +340,54 @@ describe("writeDashboard", () => {
     expect(warnings).toEqual([]);
   });
 
+  it("stays silent when the gitignore line is padded with spaces", async () => {
+    const dataRoot = await makeDataRepo();
+    const warnings: string[] = [];
+
+    await writeFile(join(dataRoot, ".gitignore"), "  dashboard.html  \n");
+
+    await writeDashboard(dataRoot, {
+      now: () => new Date("2026-09-01T12:00:00.000Z"),
+      warn: (message) => warnings.push(message),
+    });
+
+    expect(warnings).toEqual([]);
+  });
+
+  it("stays silent when the gitignore line is slash-prefixed", async () => {
+    const dataRoot = await makeDataRepo();
+    const warnings: string[] = [];
+
+    await writeFile(join(dataRoot, ".gitignore"), "/dashboard.html\n");
+
+    await writeDashboard(dataRoot, {
+      now: () => new Date("2026-09-01T12:00:00.000Z"),
+      warn: (message) => warnings.push(message),
+    });
+
+    expect(warnings).toEqual([]);
+  });
+
+  it("warns on the console when no warn sink is provided", async () => {
+    const dataRoot = await makeDataRepo();
+    const errors: string[] = [];
+    const spy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) =>
+        errors.push(parts.join(" ")),
+      );
+
+    try {
+      await writeDashboard(dataRoot, {
+        now: () => new Date("2026-09-01T12:00:00.000Z"),
+      });
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(errors.join("\n")).toContain("dashboard.html");
+  });
+
   it("counts backlog from the ingest snapshot when present", async () => {
     const dataRoot = await makeDataRepo();
 

@@ -131,6 +131,66 @@ describe("parseStatus", () => {
     ]);
   });
 
+  it("decodes every C escape in a quoted path", () => {
+    expect(parseStatus('?? "a\\ab\\bc\\fd\\ne\\rf\\tg\\vh\\\\i.md"\n')).toEqual(
+      [{ code: "??", path: "a\x07b\bc\fd\ne\rf\tg\vh\\i.md" }],
+    );
+  });
+
+  it("decodes three-digit and one-digit octal escapes", () => {
+    expect(parseStatus('R  "wiki/caf\\303\\251\\7.md" -> wiki/c.md\n')).toEqual(
+      [
+        {
+          code: "R ",
+          path: "wiki/c.md",
+          origin: "wiki/caf\u00c3\u00a9\x07.md",
+        },
+      ],
+    );
+  });
+
+  it("keeps a path with only a leading quote verbatim", () => {
+    expect(parseStatus('?? "partial\n')).toEqual([
+      { code: "??", path: '"partial' },
+    ]);
+  });
+
+  it("keeps a path with only a trailing quote verbatim", () => {
+    expect(parseStatus('?? partial"\n')).toEqual([
+      { code: "??", path: 'partial"' },
+    ]);
+  });
+
+  it("keeps a trailing backslash in a quoted path", () => {
+    expect(parseStatus('?? "end\\"\n')).toEqual([
+      { code: "??", path: "end\\" },
+    ]);
+  });
+
+  it("keeps an unknown escape followed by octal digits verbatim", () => {
+    expect(parseStatus('?? "x\\8a7.md"\n')).toEqual([
+      { code: "??", path: "x8a7.md" },
+    ]);
+  });
+
+  it("treats a quoted rename without a separator as a plain path", () => {
+    expect(parseStatus('R  "quoted lonely.md"\n')).toEqual([
+      { code: "R ", path: "quoted lonely.md" },
+    ]);
+  });
+
+  it("splits a rename whose origin contains an escaped quote before the separator", () => {
+    expect(parseStatus('R  "a\\" -> b.md" -> c.md\n')).toEqual([
+      { code: "R ", path: "c.md", origin: 'a" -> b.md' },
+    ]);
+  });
+
+  it("keeps a non-rename unquoted path containing ' -> ' whole", () => {
+    expect(parseStatus("?? raw/notes/draft -> final.md\n")).toEqual([
+      { code: "??", path: "raw/notes/draft -> final.md" },
+    ]);
+  });
+
   it("returns no entries for empty output", () => {
     expect(parseStatus("")).toEqual([]);
   });

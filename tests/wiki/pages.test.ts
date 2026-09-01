@@ -23,6 +23,10 @@ afterAll(async () => {
 });
 
 describe("kebab", () => {
+  it("collapses leading and trailing hyphen runs", () => {
+    expect(kebab("--multiple--")).toBe("multiple");
+  });
+
   it("lowercases and hyphenates non-alphanumerics", () => {
     expect(kebab("Wiki parsing primitives")).toBe("wiki-parsing-primitives");
   });
@@ -415,6 +419,12 @@ describe("readPageFields", () => {
 });
 
 describe("bodyAfterFrontmatter", () => {
+  it("returns the full text when the frontmatter never closes", () => {
+    expect(bodyAfterFrontmatter("---\ntitle: x\nbody")).toBe(
+      "---\ntitle: x\nbody",
+    );
+  });
+
   it("returns the full text when the note opens with no frontmatter", () => {
     expect(bodyAfterFrontmatter("plain body\n")).toBe("plain body\n");
   });

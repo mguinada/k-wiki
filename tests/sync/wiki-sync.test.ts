@@ -3129,6 +3129,64 @@ describe("formatFinalDigest sections", () => {
     expect(digest).not.toContain("undefined");
   });
 
+  it("separates the lint heading from its body with a blank line", () => {
+    const digest = formatFinalDigest(
+      ranResult({ lintSummary: "padded summary" }),
+    );
+
+    expect(digest).toContain("## Lint summary\n\npadded summary");
+  });
+
+  it("separates the ingest digest heading from its body with a blank line", () => {
+    const digest = formatFinalDigest(ranResult({}));
+
+    expect(digest).toContain("## Ingest digest\n\ningest digest body");
+  });
+
+  it("keeps the leading whitespace of the ingest digest body", () => {
+    const base = ranResult({});
+
+    base.ingest.digest = "  indented digest body\n";
+
+    expect(formatFinalDigest(base)).toContain(
+      "## Ingest digest\n\n  indented digest body",
+    );
+  });
+
+  it("reports the ingest mode under the Ingest line for a run", () => {
+    const digest = formatFinalDigest(ranResult({}));
+
+    expect(digest).toContain("- **Ingest:** incremental — digest below");
+  });
+
+  it("states the skip reason under the Ingest line when no ingest ran", () => {
+    const { ingest: _ran, ...rest } = ranResult({});
+    const result = {
+      ...rest,
+      ingest: { status: "skipped", reason: "no source changes" },
+    } as unknown as Parameters<typeof formatFinalDigest>[0];
+
+    expect(formatFinalDigest(result)).toContain(
+      "- **Ingest:** skipped — no source changes",
+    );
+  });
+
+  it("states the lint skip when no ingest ran", () => {
+    const { lint, ...rest } = ranResult({});
+    // WikiSyncResult types lint as always present; the digest writer
+    // itself branches on a lint-less run, so the runtime shape here
+    // is legal even though the type is imprecise.
+    const result = {
+      ...rest,
+      ingest: { status: "skipped" as const, reason: "no source changes" },
+    } as unknown as Parameters<typeof formatFinalDigest>[0];
+
+    expect(lint).toBeDefined();
+    expect(formatFinalDigest(result)).toContain(
+      "- **Lint:** skipped — no ingest ran",
+    );
+  });
+
   it("embeds the lint summary under the Lint summary heading", () => {
     const digest = formatFinalDigest(
       ranResult({ lintSummary: "  padded summary  \n" }),

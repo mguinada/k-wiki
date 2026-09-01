@@ -47,6 +47,12 @@ describe("stalenessBuckets", () => {
     expect(buckets.fresh).toBe(1);
   });
 
+  it("counts a page updated exactly 7 days ago as fresh", () => {
+    const buckets = stalenessBuckets([page({ updated: "2026-08-25" })], NOW);
+
+    expect(buckets.fresh).toBe(1);
+  });
+
   it("counts a page updated 8 to 30 days ago as month", () => {
     const buckets = stalenessBuckets([page({ updated: "2026-08-10" })], NOW);
 
@@ -129,6 +135,12 @@ describe("backlogFrom", () => {
       rawTotal: 2,
       snapshotPresent: false,
     });
+  });
+
+  it("reports the snapshot as present when one exists", () => {
+    const backlog = backlogFrom(["V/a.md"], ["V/a.md"]);
+
+    expect(backlog.snapshotPresent).toBe(true);
   });
 
   it("reports zero backlog for a fully ingested projection", () => {
@@ -239,6 +251,27 @@ describe("computeKpis link graph", () => {
     });
 
     expect(kpis.orphans).toEqual(["orphan.md"]);
+  });
+
+  it("lists orphan pages in ascending path order", () => {
+    const kpis = computeKpis({
+      now: NOW,
+      head: "abc1234",
+      pages: [
+        page({ path: "z.md", outbound: [] }),
+        page({ path: "a.md", outbound: [] }),
+      ],
+      rawNoteKeys: [],
+      ingestedKeys: [],
+      lastSync: null,
+      rawNoteSyncDates: [],
+      statusFlips: [],
+      commits: [],
+      firstAdded: [],
+      lastQuery: null,
+    });
+
+    expect(kpis.orphans).toEqual(["a.md", "z.md"]);
   });
 
   it("skips cross-wiki link targets in the internal graph", () => {
@@ -441,6 +474,12 @@ describe("growthSeries", () => {
     );
 
     expect(series[series.length - 2]?.count).toBe(2);
+  });
+
+  it("counts an addition on the last day of its week in that week", () => {
+    const series = growthSeries([{ path: "a.md", date: "2026-09-06" }], NOW);
+
+    expect(series[series.length - 1]?.count).toBe(1);
   });
 
   it("counts an addition on a week boundary in that week", () => {
@@ -649,6 +688,24 @@ describe("sourceRotBuckets", () => {
     expect(buckets.aging).toBe(1);
   });
 
+  it("counts a note last synced exactly 30 days ago as fresh", () => {
+    const buckets = sourceRotBuckets(
+      [{ key: "V/a.md", lastSynced: "2026-08-02T00:00:00.000Z" }],
+      NOW,
+    );
+
+    expect(buckets.fresh).toBe(1);
+  });
+
+  it("counts a note last synced exactly 90 days ago as aging", () => {
+    const buckets = sourceRotBuckets(
+      [{ key: "V/a.md", lastSynced: "2026-06-03T00:00:00.000Z" }],
+      NOW,
+    );
+
+    expect(buckets.aging).toBe(1);
+  });
+
   it("skips a note whose sync stamp is unparseable", () => {
     const buckets = sourceRotBuckets(
       [{ key: "V/bad.md", lastSynced: "banana" }],
@@ -716,6 +773,25 @@ describe("ingestCadence", () => {
     expect(cadence).toBe(2.5);
   });
 
+  it("reports the mean gap for exactly two runs", () => {
+    expect(
+      ingestCadence([
+        { date: "2026-08-30", subject: "wiki-sync: x" },
+        { date: "2026-08-20", subject: "wiki-sync: y" },
+      ]),
+    ).toBe(10);
+  });
+
+  it("keeps a non-run commit out of the gap math", () => {
+    expect(
+      ingestCadence([
+        { date: "2026-08-30", subject: "wiki-sync: x" },
+        { date: "2026-08-25", subject: "sweep: rename pages" },
+        { date: "2026-08-20", subject: "wiki-sync: y" },
+      ]),
+    ).toBe(10);
+  });
+
   it("is null without at least two runs", () => {
     expect(
       ingestCadence([{ date: "2026-08-30", subject: "wiki-sync: x" }]),
@@ -754,6 +830,40 @@ describe("sourcesPerRun", () => {
         { date: "2026-08-30", subject: "wiki-sync: 1 source processed" },
       ]),
     ).toBe(1);
+  });
+
+  it("reads multi-digit source counts", () => {
+    expect(
+      sourcesPerRun([
+        { date: "2026-08-30", subject: "wiki-sync: 12 sources processed" },
+      ]),
+    ).toBe(12);
+  });
+
+  it("keeps a non-run commit that mentions a count out of the mean", () => {
+    expect(
+      sourcesPerRun([
+        { date: "2026-08-30", subject: "sweep: 3 sources processed" },
+        { date: "2026-08-28", subject: "wiki-sync: 6 sources processed" },
+      ]),
+    ).toBe(6);
+  });
+
+  it("skips runs that report no count", () => {
+    expect(
+      sourcesPerRun([
+        { date: "2026-08-30", subject: "wiki-sync: 4 sources processed" },
+        { date: "2026-08-28", subject: "wiki-sync: no count" },
+      ]),
+    ).toBe(4);
+  });
+
+  it("ignores subjects that merely extend the run prefix", () => {
+    expect(
+      sourcesPerRun([
+        { date: "2026-08-30", subject: "wiki-syncing: 3 sources processed" },
+      ]),
+    ).toBeNull();
   });
 
   it("is null when no run reports a count", () => {

@@ -798,7 +798,9 @@ describe("checkRaw freshness (repo-as-source)", () => {
     const report = await checkRaw(rawDir, { env: GIT_ENV });
 
     expect(report.warnings).toEqual([
-      expect.stringMatching(/stale projection.*behind source HEAD/),
+      expect.stringMatching(
+        /stale projection: recorded commit [0-9a-f]{8} is behind source HEAD [0-9a-f]{8} — re-run sync-repo/,
+      ),
     ]);
   });
 
@@ -999,6 +1001,17 @@ describe("checkRaw freshness edges (issue #74)", () => {
     const report = await checkRaw(rawDir, { env: GIT_ENV });
 
     expect(report.warnings).toEqual([]);
+  });
+
+  it("stays non-stale when the manifest is not valid JSON", async () => {
+    const rawDir = await makeRawDir();
+
+    await mkdir(join(rawDir, "notes"), { recursive: true });
+    await writeFile(join(rawDir, "manifest.json"), "{ not json");
+
+    const report = await checkRaw(rawDir, { env: GIT_ENV });
+
+    expect(report.stale).toBe(false);
   });
 
   it("skips freshness when the manifest is valid JSON but not an object", async () => {

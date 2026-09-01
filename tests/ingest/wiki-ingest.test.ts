@@ -6510,6 +6510,19 @@ describe("wikiPages vanished untracked detection", () => {
     expect(pages.deleted).toEqual(["wiki/a.md", "wiki/z.md"]);
   });
 
+  it("lists created and updated pages in sorted order with no stray entries", async () => {
+    const dataRoot = await makeDataRepo({ "a.md": "a" });
+
+    await writeFile(join(dataRoot, "wiki", "z.md"), "# Z\n");
+    await writeFile(join(dataRoot, "wiki", "a.md"), "# A\n");
+    await writeFile(join(dataRoot, "wiki", "index.md"), "# Index changed\n");
+
+    const pages = await wikiPages(dataRoot, process.env);
+
+    expect(pages.created).toEqual(["wiki/a.md", "wiki/z.md"]);
+    expect(pages.updated).toEqual(["wiki/index.md"]);
+  });
+
   it("reports git as unavailable outside a repository instead of throwing", async () => {
     const dataRoot = await makeDataRepo({ "a.md": "a" });
 

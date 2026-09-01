@@ -1,87 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { computeKpis, type DashboardInput } from "../../src/dashboard/kpis.ts";
 import { renderDashboard } from "../../src/dashboard/render.ts";
+import {
+  GOLDEN_BASE,
+  GOLDEN_SPARSE,
+  GOLDEN_STRUCTURE_HEAVY,
+} from "./golden-html.ts";
+import { fixtureKpis, goldenCases } from "./render-cases.ts";
+
+const NOW = new Date("2026-09-01T12:00:00.000Z");
 
 /**
  * The renderer's contract (issue #73): one self-contained HTML file —
  * inline CSS, inline SVG, near-zero JS, dark and light themes from the
  * reference palette with the #FF5E35 accent — that opens offline via
- * file://. Everything is asserted against fixture KPIs.
+ * file://. Everything is asserted against fixture KPIs; the golden
+ * cases pin the full document byte-for-byte (see
+ * tests/dashboard/golden-html.ts).
  */
-
-const NOW = new Date("2026-09-01T12:00:00.000Z");
-
-/** A small, fully populated KPI set for rendering assertions. */
-function fixtureKpis() {
-  const input: DashboardInput = {
-    now: NOW,
-    head: "abee7c4",
-    pages: [
-      {
-        path: "concepts/agent-evals.md",
-        title: "Agent evals",
-        type: "concept",
-        updated: "2026-08-25",
-        status: "stable",
-        sourcesCount: 11,
-        sources: ["notes/Engineering/evals.md"],
-        outbound: ["overview"],
-      },
-      {
-        path: "sources/beginner-roadmap.md",
-        title: "Beginner roadmap",
-        type: "source",
-        updated: "2026-05-01",
-        status: "needs-review",
-        sourcesCount: 1,
-        sources: ["notes/Engineering/a.md"],
-        outbound: [],
-      },
-      {
-        path: "queries/how-to-eval.md",
-        title: "How to eval",
-        type: "query",
-        updated: "2026-08-30",
-        status: "filed",
-        sourcesCount: 2,
-        sources: ["notes/Engineering/a.md", "[[agent-evals]]"],
-        outbound: [],
-      },
-      {
-        path: "overview.md",
-        title: "Overview",
-        type: "topic",
-        updated: null,
-        status: null,
-        sourcesCount: 0,
-        sources: [],
-        outbound: ["agent-evals"],
-      },
-    ],
-    rawNoteKeys: ["Engineering/a.md", "Engineering/b.md", "Engineering/c.md"],
-    ingestedKeys: ["Engineering/a.md", "Engineering/b.md"],
-    lastSync: "2026-08-30T00:00:00.000Z",
-    rawNoteSyncDates: [
-      { key: "Engineering/a.md", lastSynced: "2026-08-30T00:00:00.000Z" },
-      { key: "Engineering/b.md", lastSynced: "2026-05-01T00:00:00.000Z" },
-    ],
-    statusFlips: [{ date: "2026-08-20", subject: "ingest" }],
-    commits: [
-      { date: "2026-08-25", subject: "wiki-sync: 9 sources processed" },
-      { date: "2026-08-20", subject: "wiki-sync: 0 sources processed" },
-      { date: "2026-08-19", subject: "sweep: rename pages" },
-    ],
-    firstAdded: [
-      { path: "overview.md", date: "2026-06-01" },
-      { path: "concepts/agent-evals.md", date: "2026-08-20" },
-      { path: "sources/beginner-roadmap.md", date: "2026-08-25" },
-      { path: "queries/how-to-eval.md", date: "2026-08-28" },
-    ],
-    lastQuery: "2026-08-30T10:00:00.000Z",
-  };
-
-  return computeKpis(input);
-}
 
 describe("renderDashboard", () => {
   it("starts the document with a DOCTYPE", () => {
@@ -310,6 +245,60 @@ describe("renderDashboard", () => {
     });
 
     expect(html).not.toContain("a<b>&c.md");
+  });
+
+  it("caps the dead-link list at twelve entries", () => {
+    const kpis = fixtureKpis();
+    const withMany = {
+      ...kpis,
+      deadLinks: Array.from({ length: 13 }, (_, i) => ({
+        source: `s${i}.md`,
+        target: `t${i}`,
+      })),
+    };
+
+    const html = renderDashboard(withMany, {
+      generatedAt: NOW,
+      head: "abee7c4",
+      dataRoot: "~/Lab/k-wiki-data",
+    });
+
+    expect(html).toContain("s11.md → t11");
+  });
+
+  it("drops the thirteenth dead-link entry", () => {
+    const kpis = fixtureKpis();
+    const withMany = {
+      ...kpis,
+      deadLinks: Array.from({ length: 13 }, (_, i) => ({
+        source: `s${i}.md`,
+        target: `t${i}`,
+      })),
+    };
+
+    const html = renderDashboard(withMany, {
+      generatedAt: NOW,
+      head: "abee7c4",
+      dataRoot: "~/Lab/k-wiki-data",
+    });
+
+    expect(html).not.toContain("s12.md → t12");
+  });
+
+  it("shows no more-note when exactly twelve orphans are listed", () => {
+    const kpis = fixtureKpis();
+    const withTwelve = {
+      ...kpis,
+      orphans: Array.from({ length: 12 }, (_, i) => `orphan-${i}.md`),
+    };
+
+    const html = renderDashboard(withTwelve, {
+      generatedAt: NOW,
+      head: "abee7c4",
+      dataRoot: "~/Lab/k-wiki-data",
+    });
+
+    expect(html).not.toContain(" more</p>");
   });
 
   it("lists dead links as source-to-target pairs when any exist", () => {
@@ -579,4 +568,20 @@ describe("renderDashboard funnel section and stamp details", () => {
       '<span class="stat-value">2026-08-30</span><span class="stat-label">last query run',
     );
   });
+});
+
+describe("renderDashboard golden output", () => {
+  const goldens: Readonly<Record<string, string>> = {
+    base: GOLDEN_BASE,
+    "structure-heavy": GOLDEN_STRUCTURE_HEAVY,
+    sparse: GOLDEN_SPARSE,
+  };
+
+  for (const testCase of goldenCases()) {
+    it(`matches the golden HTML byte-for-byte for the ${testCase.name} case`, () => {
+      const html = renderDashboard(testCase.kpis, testCase.meta);
+
+      expect(html).toBe(goldens[testCase.name]);
+    });
+  }
 });

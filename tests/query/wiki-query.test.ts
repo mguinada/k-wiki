@@ -267,6 +267,24 @@ describe("runWikiQuery", () => {
     expect(invocation(h, 0).cwd).toBe(h.dataRoot);
   });
 
+  it("announces the provider in the invocation progress line", async () => {
+    const h = await makeHarness();
+
+    await writeFile(
+      h.settingsPath,
+      "command: pi\nmodel: GLM-5.2\nprovider: zai\nreasoning: high\n",
+    );
+    const messages: string[] = [];
+    await runWikiQuery({
+      ...optionsFor(h),
+      onProgress: (message) => messages.push(message),
+    });
+
+    expect(messages.join("\n")).toContain(
+      "pi --provider zai --model GLM-5.2 --thinking high",
+    );
+  });
+
   it("passes the --provider flag when the setting is present", async () => {
     const h = await makeHarness();
 
