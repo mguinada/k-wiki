@@ -468,7 +468,13 @@ async function spawnWikiSync(
   });
 
   if (code !== 0) {
-    throw new Error(`wiki-sync exited ${code}`);
+    // code is null exactly when a signal killed the child — name it
+    // instead of reporting "exited null" (issue #244).
+    throw new Error(
+      child.signalCode === null
+        ? `wiki-sync exited ${code}`
+        : `wiki-sync exited by signal ${child.signalCode}`,
+    );
   }
 }
 

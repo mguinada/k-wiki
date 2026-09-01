@@ -765,6 +765,33 @@ describe("runScheduledCycle with the real wiki-sync spawner", () => {
 
     await rm(dir, { recursive: true, force: true });
   });
+
+  it("names the signal when the spawned wiki-sync is killed", async () => {
+    const dir = await tempDir();
+    const repoRoot = join(dir, "repo");
+    const { runGitStep } = fakeGit();
+
+    await mkdir(join(repoRoot, "bin"), { recursive: true });
+    await writeFile(
+      join(repoRoot, "bin", "wiki-sync.ts"),
+      "process.kill(process.pid, " + JSON.stringify("SIGKILL") + ");",
+    );
+
+    const outcome = await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      args: [],
+    });
+
+    expect(outcome).toEqual({
+      status: "failed",
+      error: "wiki-sync exited by signal SIGKILL",
+    });
+
+    await rm(dir, { recursive: true, force: true });
+  });
 });
 
 describe("runScheduledCycle log narration", () => {
