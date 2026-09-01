@@ -969,31 +969,35 @@ describe("runBoardTriage", () => {
 describe("runBoardTriage mid-failure reporting (issue #245)", () => {
   const OPTIONS = { owner: "mguinada", projectNumber: 2, dryRun: false };
 
-  /** A fake board whose mutation for `failItemId` throws mid-loop
-   *  (after earlier moves applied); `failFirst` keeps its usual
-   *  lost-write meaning, `failBoardReads` makes that board read
-   *  throw instead. */
+  /** A fake board whose mutation for `failItemId` throws on its
+   *  `failAttempt`-th attempt (the first by default — mid-loop, after
+   *  earlier moves applied); `failFirst` keeps its usual lost-write
+   *  meaning, `failReads` lists the 1-based board reads (past the
+   *  initial one) that throw instead. */
   function throwingBoard(
     nodes: Record<string, unknown>[],
     failItemId: string,
     fakeOptions: { failFirst?: readonly string[] } = {},
-    failBoardReads = 0,
+    failReads: readonly number[] = [],
+    failAttempt = 1,
   ): GraphQLFn {
     const { graphql } = fakeBoard(nodes, fakeOptions);
+    const attempts = new Map<string, number>();
     let reads = 0;
 
     return async (query, variables) => {
-      if (
-        query.includes("updateProjectV2ItemFieldValue") &&
-        variables.itemId === failItemId
-      ) {
-        throw new Error("mutation exploded");
-      }
+      if (query.includes("updateProjectV2ItemFieldValue")) {
+        const attempt = (attempts.get(String(variables.itemId)) ?? 0) + 1;
 
-      if (!query.includes("updateProjectV2ItemFieldValue")) {
+        attempts.set(String(variables.itemId), attempt);
+
+        if (variables.itemId === failItemId && attempt === failAttempt) {
+          throw new Error("mutation exploded");
+        }
+      } else {
         reads++;
 
-        if (reads > 1 && reads <= 1 + failBoardReads) {
+        if (failReads.includes(reads)) {
           throw new Error("board unreadable");
         }
       }
@@ -1035,10 +1039,42 @@ describe("runBoardTriage mid-failure reporting (issue #245)", () => {
   });
 
   it("falls back to an unverified report when the verification re-read fails", async () => {
-    const graphql = throwingBoard(mixedBoard(), "I3", {}, 1);
+    const graphql = throwingBoard(mixedBoard(), "I3", {}, [2]);
 
     await expect(runBoardTriage(graphql, OPTIONS)).rejects.toThrow(
       "#101 Backlog → Ready — verification unavailable (board unreadable)",
+    );
+  });
+
+  it("reports the applied moves when the first verification read fails", async () => {
+    const graphql = throwingBoard(mixedBoard(), "I9", {}, [2]);
+
+    await expect(runBoardTriage(graphql, OPTIONS)).rejects.toThrow(
+      "applied moves: #101 Backlog → Ready — verified; #103 In progress → Done — verified",
+    );
+  });
+
+  it("still reports a landed move when the retry after a lost write fails", async () => {
+    const graphql = throwingBoard(
+      mixedBoard(),
+      "I1",
+      { failFirst: ["I1"] },
+      [],
+      2,
+    );
+
+    await expect(runBoardTriage(graphql, OPTIONS)).rejects.toThrow(
+      "applied moves: #101 Backlog → Ready not verified — still on Backlog; #103 In progress → Done — verified",
+    );
+  });
+
+  it("reports the applied moves when the final verification read fails", async () => {
+    const graphql = throwingBoard(mixedBoard(), "I9", { failFirst: ["I1"] }, [
+      3,
+    ]);
+
+    await expect(runBoardTriage(graphql, OPTIONS)).rejects.toThrow(
+      "board unreadable — triage aborted; applied moves: #101 Backlog → Ready — verified; #103 In progress → Done — verified",
     );
   });
 });

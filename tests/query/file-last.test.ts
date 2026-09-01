@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import {
   access,
+  chmod,
   lstat,
   mkdir,
   mkdtemp,
@@ -631,6 +632,27 @@ describe("fileLastQuery", () => {
     );
   });
 
+  it("suffixed -2 when a symlink holds the first slug", async () => {
+    const { dataRoot, artifactPath } = await makeFiledRepo();
+    const queriesDir = join(dataRoot, "wiki", "queries");
+
+    await mkdir(queriesDir, { recursive: true });
+    await symlink(
+      "when-should-i-prefer-rag-over-fine-tuning.md",
+      join(queriesDir, "when-should-i-prefer-rag-over-fine-tuning.md"),
+    );
+
+    const result = await fileLastQuery({
+      artifactPath,
+      dataRoot,
+      now: () => new Date("2026-08-21T09:00:00Z"),
+    });
+
+    expect(result.pagePath).toBe(
+      "wiki/queries/when-should-i-prefer-rag-over-fine-tuning-2.md",
+    );
+  });
+
   it("fails with the remedy when no saved answer exists", async () => {
     const { dataRoot, artifactPath } = await makeFiledRepo();
 
@@ -823,6 +845,43 @@ describe("fileLastQuery rollback (issue #245)", () => {
     await runFailedFiling(repo);
 
     expect((await lstat(indexPath)).isSymbolicLink()).toBe(true);
+  });
+
+  it("leaves an unreadable index.md in place instead of deleting it when its write fails", async () => {
+    const repo = await makeFiledRepo();
+    const indexPath = join(repo.dataRoot, "wiki", "index.md");
+
+    await chmod(indexPath, 0o000);
+    await runFailedFiling(repo);
+
+    expect((await lstat(indexPath)).isFile()).toBe(true);
+  });
+
+  it("leaves an unreadable log.md in place instead of deleting it when its write fails", async () => {
+    const repo = await makeFiledRepo();
+    const logPath = join(repo.dataRoot, "wiki", "log.md");
+
+    await chmod(logPath, 0o000);
+    await runFailedFiling(repo);
+
+    expect((await lstat(logPath)).isFile()).toBe(true);
+  });
+
+  it("leaves a symlink holding the query slug in place when the filing fails", async () => {
+    const repo = await makeFiledRepo();
+    const queriesDir = join(repo.dataRoot, "wiki", "queries");
+    const linkPath = join(
+      queriesDir,
+      "when-should-i-prefer-rag-over-fine-tuning.md",
+    );
+
+    await mkdir(queriesDir, { recursive: true });
+    await symlink("when-should-i-prefer-rag-over-fine-tuning.md", linkPath);
+    await rm(join(repo.dataRoot, "wiki", "index.md"));
+    await mkdir(join(repo.dataRoot, "wiki", "index.md"));
+    await runFailedFiling(repo);
+
+    expect((await lstat(linkPath)).isSymbolicLink()).toBe(true);
   });
 
   it("reports the rollback on progress", async () => {

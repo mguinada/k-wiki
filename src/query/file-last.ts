@@ -1,4 +1,4 @@
-import { access, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { errorMessage } from "../cli/colors.ts";
 import { runGit } from "../data/git.ts";
@@ -222,10 +222,12 @@ export function slugForQuestion(question: string): string {
   return slug === "" ? "query" : slug;
 }
 
-/** True when the path exists; keeps this module's IO non-blocking. */
+/** True when any directory entry exists at the path — a symlink
+ *  counts even when it dangles or loops, so the slug it names is
+ *  never claimed; keeps this module's IO non-blocking. */
 async function exists(path: string): Promise<boolean> {
   try {
-    await access(path);
+    await lstat(path);
 
     return true;
   } catch {
@@ -323,12 +325,18 @@ export function logEntry(question: string, date: string): string {
   return `## [${date}] query | ${oneLine(question)}`;
 }
 
-/** One filing target's state before the filing ran: its bytes when a
- *  readable file existed, undefined when none did (absent or
- *  unreadable — a directory blocking the write counts as none). */
+/** One filing target's pre-run state: its bytes when a readable
+ *  file existed, `absent` when no directory entry existed, and
+ *  `unreadable` when an entry existed but its bytes could not be
+ *  read — never deleted, since its content was never captured. */
+type TargetPreState =
+  | { readonly kind: "bytes"; readonly text: string }
+  | { readonly kind: "absent" }
+  | { readonly kind: "unreadable" };
+
 interface FilingTarget {
   readonly path: string;
-  readonly text: string | undefined;
+  readonly state: TargetPreState;
 }
 
 /** The pre-run state of the three files a filing writes, captured
@@ -341,32 +349,49 @@ interface FilingPreState {
   readonly log: FilingTarget;
 }
 
-/** A wiki file's bytes before the filing, or undefined when no
- *  readable file exists; the filing's empty-input default is
- *  `text ?? ""` (readTextIfExists semantics, kept). */
-async function readPreState(path: string): Promise<string | undefined> {
+/** A wiki file's pre-run state: its bytes when readable, `absent`
+ *  when no entry exists, `unreadable` when an entry exists but its
+ *  bytes cannot be read. */
+async function readPreState(path: string): Promise<TargetPreState> {
   try {
-    return await readFile(path, "utf8");
+    return { kind: "bytes", text: await readFile(path, "utf8") };
   } catch {
-    return undefined;
+    const info = await lstat(path).catch(() => undefined);
+
+    return info === undefined ? { kind: "absent" } : { kind: "unreadable" };
+  }
+}
+
+/** The filing's input for a target: its captured bytes, or the
+ *  empty string when none were readable. */
+function textOrEmpty(state: TargetPreState): string {
+  return state.kind === "bytes" ? state.text : "";
+}
+
+/** Delete the regular file a failed filing created; any other entry
+ *  (a directory, a symlink) is left untouched, and so is a path that
+ *  stayed absent. */
+async function rmIfCreated(path: string): Promise<void> {
+  const info = await lstat(path).catch(() => undefined);
+
+  if (info?.isFile() === true) {
+    await rm(path, { force: true });
   }
 }
 
 /** Restore one filing target after a failed write: rewrite the
- *  captured bytes, or delete the file the failed filing created —
- *  a non-file that blocked the write (a directory) is left
- *  untouched, and so is a path that stayed absent. */
+ *  captured bytes, delete the regular file the failed filing created
+ *  when nothing existed before, and leave an unreadable entry
+ *  untouched. */
 async function restoreTarget(target: FilingTarget): Promise<void> {
-  if (target.text !== undefined) {
-    await writeFile(target.path, target.text, "utf8");
+  if (target.state.kind === "bytes") {
+    await writeFile(target.path, target.state.text, "utf8");
 
     return;
   }
 
-  const info = await stat(target.path).catch(() => undefined);
-
-  if (info?.isFile() === true) {
-    await rm(target.path, { force: true });
+  if (target.state.kind === "absent") {
+    await rmIfCreated(target.path);
   }
 }
 
@@ -374,7 +399,7 @@ async function restoreTarget(target: FilingTarget): Promise<void> {
  *  query page — never present before, queryPagePath claims a free
  *  slug — is deleted, index.md and log.md are restored. */
 async function rollbackFiling(pre: FilingPreState): Promise<void> {
-  await rm(pre.pageFile, { force: true });
+  await rmIfCreated(pre.pageFile);
   await restoreTarget(pre.index);
   await restoreTarget(pre.log);
 }
@@ -546,11 +571,11 @@ export async function fileLastQuery(
   const pageFile = join(options.dataRoot, pagePath);
   const index: FilingTarget = {
     path: indexPath,
-    text: await readPreState(indexPath),
+    state: await readPreState(indexPath),
   };
   const log: FilingTarget = {
     path: logPath,
-    text: await readPreState(logPath),
+    state: await readPreState(logPath),
   };
 
   await mkdir(join(wikiDir, "queries"), { recursive: true });
@@ -565,7 +590,7 @@ export async function fileLastQuery(
     await writeFile(
       indexPath,
       appendIndexEntry(
-        index.text ?? "",
+        textOrEmpty(index.state),
         indexEntryFor(slug, artifact.question),
       ),
       "utf8",
@@ -573,7 +598,10 @@ export async function fileLastQuery(
 
     await writeFile(
       logPath,
-      appendWikiLog(log.text ?? "", logEntry(artifact.question, date)),
+      appendWikiLog(
+        textOrEmpty(log.state),
+        logEntry(artifact.question, date),
+      ),
       "utf8",
     );
   } catch (cause) {

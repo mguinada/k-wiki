@@ -565,35 +565,11 @@ async function appliedMovesReport(
   }
 }
 
-/** Apply every planned move in order (issue #245): the applied ones
- *  accumulate, and a mid-loop failure is rethrown with the applied
- *  moves verified and reported — the partial state is never lost. */
-async function applyMoves(
-  graphql: GraphQLFn,
-  ids: BoardIds,
-  options: TriageOptions,
-  moves: readonly PlannedMove[],
-): Promise<void> {
-  const applied: PlannedMove[] = [];
-
-  try {
-    for (const move of moves) {
-      await moveItem(graphql, ids, move);
-      applied.push(move);
-    }
-  } catch (cause) {
-    const report = await appliedMovesReport(graphql, options, applied);
-
-    throw new Error(
-      `${errorMessage(cause)} — triage aborted; applied moves: ${report}`,
-      { cause },
-    );
-  }
-}
-
-/** Apply every planned move, then verify by re-reading the board; a
- *  lost write is retried once, and whatever still fails verification
- *  comes back in `failed`. */
+/** Apply every planned move, then verify by re-reading the board;
+ *  a lost write is retried once, and whatever still fails
+ *  verification comes back in `failed`. Every failure after the
+ *  first write is rethrown with the applied moves verified and
+ *  reported — the partial state is never lost (issue #245). */
 async function applyAndVerify(
   graphql: GraphQLFn,
   options: TriageOptions,
@@ -604,30 +580,44 @@ async function applyAndVerify(
     return DRY_OUTCOME;
   }
 
-  await applyMoves(graphql, state.ids, options, moves);
+  const applied: PlannedMove[] = [];
 
-  const mismatched = await unverifiedMoves(
-    graphql,
-    options.owner,
-    options.projectNumber,
-    moves,
-  );
+  try {
+    for (const move of moves) {
+      await moveItem(graphql, state.ids, move);
+      applied.push(move);
+    }
 
-  for (const unverified of mismatched) {
-    await moveItem(graphql, state.ids, unverified.move);
+    const mismatched = await unverifiedMoves(
+      graphql,
+      options.owner,
+      options.projectNumber,
+      moves,
+    );
+
+    for (const unverified of mismatched) {
+      await moveItem(graphql, state.ids, unverified.move);
+    }
+
+    const failed =
+      mismatched.length === 0
+        ? []
+        : await unverifiedMoves(
+            graphql,
+            options.owner,
+            options.projectNumber,
+            moves,
+          );
+
+    return { reconciled: mismatched.length, failed };
+  } catch (cause) {
+    const report = await appliedMovesReport(graphql, options, applied);
+
+    throw new Error(
+      `${errorMessage(cause)} — triage aborted; applied moves: ${report}`,
+      { cause },
+    );
   }
-
-  const failed =
-    mismatched.length === 0
-      ? []
-      : await unverifiedMoves(
-          graphql,
-          options.owner,
-          options.projectNumber,
-          moves,
-        );
-
-  return { reconciled: mismatched.length, failed };
 }
 
 function pluralized(count: number, noun: string): string {
