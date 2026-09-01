@@ -1,5 +1,13 @@
 import { spawn } from "node:child_process";
-import { mkdir, link, open, readFile, rename, rm, stat } from "node:fs/promises";
+import {
+  link,
+  mkdir,
+  open,
+  readFile,
+  rename,
+  rm,
+  stat,
+} from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { Readable } from "node:stream";
@@ -447,18 +455,21 @@ async function pushWithRetry(
  *  (issue #244): a chunk can end mid-line at any byte, so each pipe
  *  buffers its own tail and only complete `\n`-terminated lines are
  *  recorded; a final fragment without a newline is flushed at end. */
-function streamChildLines(
-  source: Readable,
-  log: (line: string) => void,
-): void {
+function streamChildLines(source: Readable, log: (line: string) => void): void {
   let pending = "";
 
   source.on("data", (chunk: Buffer) => {
     pending += chunk.toString();
-    const complete = pending.split("\n");
-    pending = complete.pop() ?? "";
+    const cut = pending.lastIndexOf("\n");
 
-    for (const line of complete) {
+    if (cut === -1) {
+      return;
+    }
+
+    const complete = pending.slice(0, cut);
+    pending = pending.slice(cut + 1);
+
+    for (const line of complete.split("\n")) {
       if (line !== "") {
         log(line);
       }

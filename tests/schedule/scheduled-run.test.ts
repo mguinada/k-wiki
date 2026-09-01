@@ -1428,9 +1428,9 @@ describe("createRunLog", () => {
 
     await runLog.flush();
 
-    expect((await readFile(logPath, "utf8")).split("\n").filter(Boolean)).toEqual(
-      lines,
-    );
+    expect(
+      (await readFile(logPath, "utf8")).split("\n").filter(Boolean),
+    ).toEqual(lines);
 
     await rm(dir, { recursive: true, force: true });
   });
@@ -1548,7 +1548,7 @@ describe("runScheduledCycle streamed output hygiene", () => {
       join(repoRoot, "bin", "wiki-sync.ts"),
       [
         'process.stdout.write("torn-");',
-        "setTimeout(() => { process.stdout.write(\"line\\n\"); }, 30);",
+        'setTimeout(() => { process.stdout.write("line\\n"); }, 30);',
       ].join("\n"),
     );
 
@@ -1577,7 +1577,7 @@ describe("runScheduledCycle streamed output hygiene", () => {
       join(repoRoot, "bin", "wiki-sync.ts"),
       [
         'process.stderr.write("torn-err");',
-        "setTimeout(() => { process.stderr.write(\"or\\n\"); }, 30);",
+        'setTimeout(() => { process.stderr.write("or\\n"); }, 30);',
       ].join("\n"),
     );
 
