@@ -39,26 +39,29 @@ export interface StatusEntry {
 
 /** Undo git's C-string quoting of one porcelain path: git quotes
  *  every path containing whitespace, quotes, or control bytes, and
- *  escapes `"`, `\\`, and control bytes inside the quotes. */
+ *  escapes `"`, `\\`, and control bytes inside the quotes.
+ *  Non-ASCII bytes arrive octal-escaped, so the unescaped bytes are
+ *  the path's raw UTF-8 — decoding them byte-per-codepoint would
+ *  mojibake every multi-byte path (issue #248, C-2). */
 function decodeGitQuotedPath(path: string): string {
   if (!path.startsWith('"') || !path.endsWith('"')) {
     return path;
   }
 
   const inner = path.slice(1, -1);
-  const C_ESCAPES: Record<string, string> = {
-    a: "\x07",
-    b: "\b",
-    f: "\f",
-    n: "\n",
-    r: "\r",
-    t: "\t",
-    v: "\v",
-    "\\": "\\",
-    '"': '"',
+  const C_ESCAPES: Record<string, number> = {
+    a: 0x07,
+    b: 0x08,
+    f: 0x0c,
+    n: 0x0a,
+    r: 0x0d,
+    t: 0x09,
+    v: 0x0b,
+    "\\": 0x5c,
+    '"': 0x22,
   };
-
-  let result = "";
+  const utf8 = new TextEncoder();
+  const bytes: number[] = [];
   let i = 0;
 
   while (i < inner.length) {
@@ -67,7 +70,7 @@ function decodeGitQuotedPath(path: string): string {
     i += 1;
 
     if (char !== "\\" || i === inner.length) {
-      result += char;
+      bytes.push(...utf8.encode(char));
 
       continue;
     }
@@ -79,17 +82,17 @@ function decodeGitQuotedPath(path: string): string {
     const octal = /^[0-7]{1,3}/.exec(inner.slice(i - 1));
 
     if (C_ESCAPES[escaped] !== undefined) {
-      result += C_ESCAPES[escaped];
+      bytes.push(C_ESCAPES[escaped]);
     } else if (octal !== null) {
       i += octal[0].length - 1;
 
-      result += String.fromCharCode(Number.parseInt(octal[0], 8));
+      bytes.push(Number.parseInt(octal[0], 8));
     } else {
-      result += escaped;
+      bytes.push(...utf8.encode(escaped));
     }
   }
 
-  return result;
+  return new TextDecoder().decode(Uint8Array.from(bytes));
 }
 
 /** The ` -> ` separating a rename's two paths: a quoted origin may

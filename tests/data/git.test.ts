@@ -299,7 +299,7 @@ describe("parseStatus", () => {
         {
           code: "R ",
           path: "wiki/c.md",
-          origin: "wiki/caf\u00c3\u00a9\x07.md",
+          origin: "wiki/caf\u00e9\x07.md",
         },
       ],
     );
