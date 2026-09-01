@@ -13,11 +13,11 @@
           "type": "script"
         },
         {
-          "text": "Every state reported matches the live gh state (closed: 243, 244, 245, 246, 253; open: all others including 247)",
+          "text": "Every state reported matches the live gh state (closed: 243, 244, 245, 246, 247, 253; open: all others)",
           "type": "script"
         },
         {
-          "text": "The report states slice D is incomplete (issue #247 open), not complete",
+          "text": "The report states slice D is complete (issue #247 closed), not incomplete",
           "type": "script"
         },
         {

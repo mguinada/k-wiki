@@ -51,7 +51,7 @@ interface ScannedFile {
   readonly text: string;
 }
 
-/** A relative `from "..."` import and the importing file. */
+/** A relative import specifier and the importing file. */
 interface ImportEdge {
   readonly importer: ScannedFile;
   readonly specifier: string;
@@ -77,10 +77,13 @@ const METRIC_LABELS: readonly (readonly [keyof StructureMetrics, string])[] = [
 const IMPORT_PATTERN = /from\s+["']([^"']+)["']/g;
 const SIGNATURE_PATTERN =
   /(?:function\s+\w+|const\s+\w+\s*=\s*(?:async\s*)?\()([^)]*)/g;
-const PARSE_ARGS_PATTERN = /\bfunction\s+(?:parseArgs|parseCliArgs)\s*\(/g;
-const WALKER_PATTERN = /\bfunction\s+walk\w*\s*\(/g;
+const PARSE_ARGS_PATTERN =
+  /(?:\bfunction\s+(?:parseArgs|parseCliArgs)|\b(?:parseArgs|parseCliArgs)\s*=\s*(?:async\s*)?)\s*\(/g;
+const WALKER_PATTERN =
+  /(?:\bfunction\s+walk\w*|\bwalk\w*\s*=\s*(?:async\s*)?)\s*\(/g;
 const REPO_ROOT_PATTERN = /fileURLToPath\(import\.meta\.url\)/g;
-const UNQUOTE_PATTERN = /\bfunction\s+unquote\s*\(/g;
+const UNQUOTE_PATTERN =
+  /(?:\bfunction\s+unquote|\bunquote\s*=\s*(?:async\s*)?)\s*\(/g;
 const DIRNAME_RAW_DIR_PATTERN = /dirname\(\s*[^)]*rawDir[^)]*\)/g;
 const ENV_PARAM = /\benv\b/;
 const DATA_ROOT_PARAM = /\bdataRoot\b/;
