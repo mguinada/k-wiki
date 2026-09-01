@@ -76,6 +76,50 @@ type ParsedSettingLine =
       readonly value: string;
     };
 
+/** Whether the quote at `index` can open a quoted span: the
+ *  nearest preceding non-space character is `:`, `[`, or `,` (a
+ *  value or list-item start), or there is none (line start) — so a
+ *  mid-word apostrophe (`it's`) never starts a quoted span. */
+function opensQuotedSpan(line: string, index: number): boolean {
+  for (let at = index - 1; at >= 0; at--) {
+    const char = line.charAt(at);
+
+    if (!/\s/.test(char)) {
+      return char === ":" || char === "[" || char === ",";
+    }
+  }
+
+  return true;
+}
+
+/** Strip a trailing ` #` comment, but only outside quoted spans —
+ *  a quoted value like `"my #1 model"` keeps its hash (issue #243).
+ *  A `#` at the line start (full-line comment) is left for the
+ *  caller's own check. */
+function stripComment(line: string): string {
+  let quote: '"' | "'" | undefined;
+
+  for (let index = 0; index < line.length; index++) {
+    const char = line[index];
+
+    if (quote === undefined) {
+      if ((char === '"' || char === "'") && opensQuotedSpan(line, index)) {
+        quote = char;
+      } else if (
+        char === "#" &&
+        index > 0 &&
+        /\s/.test(line.slice(index - 1, index))
+      ) {
+        return line.slice(0, index - 1);
+      }
+    } else if (char === quote) {
+      quote = undefined;
+    }
+  }
+
+  return line;
+}
+
 /** Parse one settings line: reject nesting and malformed pairs,
  *  drop blanks and comments, split `key: value`. */
 function parseSettingLine(rawLine: string, origin: string): ParsedSettingLine {
@@ -91,7 +135,7 @@ function parseSettingLine(rawLine: string, origin: string): ParsedSettingLine {
     return { kind: "skip" };
   }
 
-  const line = rawLine.replace(/\s+#.*$/, "").trim();
+  const line = stripComment(rawLine).trim();
 
   if (line === "" || line.startsWith("#")) {
     return { kind: "skip" };
@@ -219,8 +263,9 @@ function finalizeSettings(
 
 /**
  * Parse the settings file: a YAML subset of top-level `key: value`
- * scalars, `#` comments on their own line or trailing the value, and
- * optionally quoted values — plus the list-valued keys
+ * scalars, `#` comments on their own line or trailing the value
+ * (outside quotes), and optionally quoted values — plus the
+ * list-valued keys
  * `secondBrain.domains`, `isolate.skills`, and `isolate.extensions`.
  * Anything else (nesting, other lists) is rejected so a typo cannot
  * silently change the agent configuration.

@@ -94,6 +94,51 @@ describe("parseSettings", () => {
     expect(settings.reasoning).toBe("high");
   });
 
+  it("keeps a double-quoted value containing ' #' intact", () => {
+    const settings = parseSettings(
+      'command: pi\nmodel: "my #1 model"\nreasoning: h\n',
+      "s",
+    );
+
+    expect(settings.model).toBe("my #1 model");
+  });
+
+  it("keeps a single-quoted value containing ' #' intact", () => {
+    const settings = parseSettings(
+      "command: pi\nmodel: 'my #1 model'\nreasoning: h\n",
+      "s",
+    );
+
+    expect(settings.model).toBe("my #1 model");
+  });
+
+  it("still strips a trailing comment after a closed quote", () => {
+    const settings = parseSettings(
+      'command: pi\nmodel: "my model" # the default\nreasoning: h\n',
+      "s",
+    );
+
+    expect(settings.model).toBe("my model");
+  });
+
+  it("leaves a lone leading quote in the value as written", () => {
+    const settings = parseSettings(
+      'command: pi\nmodel: "unbalanced\nreasoning: h\n',
+      "s",
+    );
+
+    expect(settings.model).toBe('"unbalanced');
+  });
+
+  it("strips a trailing comment after an unquoted value containing an apostrophe", () => {
+    const settings = parseSettings(
+      "command: pi\nmodel: it's # fast\nreasoning: h\n",
+      "s",
+    );
+
+    expect(settings.model).toBe("it's");
+  });
+
   it("accepts an indented comment line", () => {
     const settings = parseSettings(
       "command: pi\nmodel: m\nreasoning: h\n  # indented note\n",
@@ -298,6 +343,24 @@ describe("parseSettings", () => {
       "npm:pi-web-access",
       "npm:pi-subagents",
     ]);
+  });
+
+  it("keeps ' #' inside a quoted isolate.skills item", () => {
+    const settings = parseSettings(
+      'command: pi\nmodel: m\nreasoning: h\nisolate.skills: ["a #b", c]\n',
+      "s",
+    );
+
+    expect(settings.isolateSkills).toEqual(["a #b", "c"]);
+  });
+
+  it("keeps ' #' inside a quoted list item after a comma", () => {
+    const settings = parseSettings(
+      'command: pi\nmodel: m\nreasoning: h\nisolate.skills: [a, "b #c"]\n',
+      "s",
+    );
+
+    expect(settings.isolateSkills).toEqual(["a", "b #c"]);
   });
 
   it("unquotes isolate.skills items", () => {

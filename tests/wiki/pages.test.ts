@@ -59,6 +59,18 @@ describe("parsePageFields", () => {
     ).toMatchObject({ origin: "raw/notes/V/a.md" });
   });
 
+  it("leaves a lone leading quote on an origin scalar as written", () => {
+    expect(
+      parsePageFields('---\norigin: "raw/notes/V/a.md\n---\n'),
+    ).toMatchObject({ origin: '"raw/notes/V/a.md' });
+  });
+
+  it("leaves a lone quote character as the whole origin value", () => {
+    expect(parsePageFields('---\norigin: "\n---\n')).toMatchObject({
+      origin: '"',
+    });
+  });
+
   it("reads the page type scalar like origin", () => {
     expect(parsePageFields('---\ntype: "source"\n---\n')).toMatchObject({
       type: "source",
