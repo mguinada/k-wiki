@@ -29,6 +29,7 @@ export interface Wikilink {
 
 /** The page-name part of a wikilink's inner text; empty when blank. */
 export function wikilinkBodyTarget(body: string): string {
+  /* v8 ignore next: split never yields undefined — the fallback satisfies the type system only */
   return body.split("|")[0]?.split("#")[0]?.trim() ?? "";
 }
 
@@ -39,6 +40,7 @@ export function wikilinkBodyTarget(body: string): string {
  *  body-text link checking (issue #235) and `sources` citations
  *  (issue #226, via citationAnchor) — so the surfaces cannot drift. */
 export function wikilinkBodyAnchor(body: string): string | undefined {
+  /* v8 ignore next: split never yields undefined — the fallback satisfies the type system only */
   const anchor = body.split("|")[0]?.split("#").slice(1).join("#") ?? "";
 
   return anchor === "" || anchor.startsWith("^") ? undefined : anchor;
@@ -120,6 +122,7 @@ export function extractWikilinks(text: string): Wikilink[] {
 
   for (const [i, line] of unfencedLines(text)) {
     for (const match of line.matchAll(/\[\[([^\]]+)\]\]/g)) {
+      /* v8 ignore next: the regex guarantees group 1 on every match — fallback is for the type system */
       const inner = match[1] ?? "";
       const target = wikilinkBodyTarget(inner);
 
