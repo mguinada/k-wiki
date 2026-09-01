@@ -310,3 +310,49 @@ describe("bin/ launcher structure (issue #135)", () => {
     expect(problems).toEqual([]);
   });
 });
+
+describe("launcher two-class rule (issue #253)", () => {
+  /**
+   * The wiki runtime interface and the development-lifecycle tooling
+   * live in separate launcher classes: `bin/*.ts` launches the wiki
+   * runtime (meaningful outside this repo), `dev/*.ts` launches
+   * repo-internal development commands whose src domains are
+   * quality/, board/, and fixtures/. A launcher in the wrong class
+   * blurs the two-context doctrine the split exists to encode.
+   */
+  const DEV_DOMAIN_IMPORT = /^\.\.\/src\/(?:quality|board|fixtures)\//;
+
+  it("no bin/ launcher imports a dev-only src domain (quality/, board/, fixtures/)", async () => {
+    const offenders: string[] = [];
+
+    for (const file of await collectTsFiles(join(repoRoot, "bin"), "bin")) {
+      const imported = LAUNCHER_IMPORT.exec(
+        await readFile(join(repoRoot, file), "utf8"),
+      )?.[1];
+
+      if (imported !== undefined && DEV_DOMAIN_IMPORT.test(imported)) {
+        offenders.push(`${file}: imports dev domain ${imported}`);
+      }
+    }
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("every dev/ launcher imports a dev-only src domain (quality/, board/, fixtures/)", async () => {
+    const offenders: string[] = [];
+
+    for (const file of await collectTsFiles(join(repoRoot, "dev"), "dev")) {
+      const imported = LAUNCHER_IMPORT.exec(
+        await readFile(join(repoRoot, file), "utf8"),
+      )?.[1];
+
+      if (imported === undefined || !DEV_DOMAIN_IMPORT.test(imported)) {
+        offenders.push(
+          `${file}: imports no dev domain (${imported ?? "no import"})`,
+        );
+      }
+    }
+
+    expect(offenders).toEqual([]);
+  });
+});
