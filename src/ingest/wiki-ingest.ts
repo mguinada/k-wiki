@@ -3,7 +3,6 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  canAnimate,
   cliFail,
   terminalColors as colors,
   errorMessage,
@@ -14,10 +13,10 @@ import {
 } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import {
-  createAgentProgressSink,
   formatDuration,
   HEARTBEAT_MS,
   type ProgressSink,
+  stderrSink,
 } from "../cli/progress.ts";
 import { isPlainObject, readTextIfExists } from "../cli/shared.ts";
 import { writeDashboard } from "../dashboard/generate.ts";
@@ -2198,14 +2197,7 @@ export async function main(): Promise<void> {
   const settingsPath =
     values.get("--settings") ?? join(repoRoot, "settings.yml");
 
-  const animated = canAnimate(process.stderr.isTTY === true, process.env);
-  const sink = createAgentProgressSink(
-    (text) => process.stderr.write(text),
-    (text) => console.error(text),
-    animated,
-    colors(),
-    AGENT_HEARTBEAT_PREFIX,
-  );
+  const { sink, animated } = stderrSink(AGENT_HEARTBEAT_PREFIX);
 
   await runCliIngest({
     values,

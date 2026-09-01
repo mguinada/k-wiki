@@ -5,6 +5,7 @@ import {
   createProgressRenderer,
   createStatusLine,
   formatDuration,
+  stderrSink,
 } from "../../src/cli/progress.ts";
 
 describe("formatDuration", () => {
@@ -358,5 +359,107 @@ describe("createAgentProgressSink", () => {
     sink.end();
 
     expect(lines).toEqual([]);
+  });
+});
+
+describe("stderrSink", () => {
+  /** Force `process.stderr.isTTY`; returns the restore function. */
+  function forceTty(tty: boolean): () => void {
+    const priorValue = process.stderr.isTTY;
+
+    Object.defineProperty(process.stderr, "isTTY", {
+      value: tty,
+      configurable: true,
+    });
+
+    return () =>
+      Object.defineProperty(process.stderr, "isTTY", {
+        value: priorValue,
+        configurable: true,
+      });
+  }
+
+  it("builds a plain-line sink when stderr is not a TTY", () => {
+    const restore = forceTty(false);
+    const lines: string[] = [];
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation((text) => lines.push(String(text)));
+
+    try {
+      const { sink, animated } = stderrSink("pfx:");
+
+      sink.render("pfx: agent still running (0s)");
+
+      expect(animated).toBe(false);
+      expect(lines[0]).toContain("pfx: agent still running (0s)");
+      expect(lines[0]).not.toContain("\r");
+    } finally {
+      errorSpy.mockRestore();
+      restore();
+    }
+  });
+
+  it("builds an animated sink when stderr is a TTY with color on", () => {
+    const restore = forceTty(true);
+    const writes: string[] = [];
+    const writeSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation((text) => {
+        writes.push(String(text));
+
+        return true;
+      });
+    const priorNoColor = process.env.NO_COLOR;
+
+    delete process.env.NO_COLOR;
+
+    try {
+      const { sink, animated } = stderrSink("pfx:");
+
+      sink.render("pfx: agent still running (0s)");
+
+      expect(animated).toBe(true);
+      expect(writes[0]?.startsWith("\r⠋")).toBe(true);
+      expect(writes[0]).toContain("pfx: agent still running (0s)");
+    } finally {
+      writeSpy.mockRestore();
+      restore();
+
+      if (priorNoColor === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = priorNoColor;
+      }
+    }
+  });
+
+  it("builds a plain non-animated sink under NO_COLOR", () => {
+    const restore = forceTty(true);
+    const lines: string[] = [];
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation((text) => lines.push(String(text)));
+    const priorNoColor = process.env.NO_COLOR;
+
+    process.env.NO_COLOR = "1";
+
+    try {
+      const { sink, animated } = stderrSink("pfx:");
+
+      sink.render("pfx: agent still running (0s)");
+
+      expect(animated).toBe(false);
+      expect(lines).toEqual(["pfx: agent still running (0s)"]);
+    } finally {
+      errorSpy.mockRestore();
+      restore();
+
+      if (priorNoColor === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = priorNoColor;
+      }
+    }
   });
 });

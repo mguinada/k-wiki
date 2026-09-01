@@ -9,7 +9,6 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentRunner } from "../../src/ingest/agent-run.ts";
 import { readQueryArtifact } from "../../src/query/file-last.ts";
 import {
-  canAnimate,
   composeQueryPrompt,
   main,
   QUERY_HEARTBEAT_PREFIX,
@@ -63,20 +62,6 @@ describe("composeQueryPrompt", () => {
         "Mode: answer-only — write nothing: no query page, no index.md or log.md change, no edit anywhere under wiki/; the reply is the only output. The wrapper saves it; the human alone decides later whether to file it.",
       ].join("\n"),
     );
-  });
-});
-
-describe("canAnimate", () => {
-  it("animates on a TTY when color is enabled", () => {
-    expect(canAnimate(true, {})).toBe(true);
-  });
-
-  it("stays still on a TTY under NO_COLOR", () => {
-    expect(canAnimate(true, { NO_COLOR: "1" })).toBe(false);
-  });
-
-  it("stays still without a TTY", () => {
-    expect(canAnimate(false, {})).toBe(false);
   });
 });
 

@@ -5,7 +5,6 @@ import { parseArgs } from "node:util";
 import { errorMessage } from "../cli/colors.ts";
 import { checkRaw } from "../health/check-raw.ts";
 import {
-  canAnimate,
   QUERY_HEARTBEAT_PREFIX,
   runWikiQuery,
   terminalColors,
@@ -15,7 +14,7 @@ import { listWikiPages, readPageFields } from "../wiki/pages.ts";
 import { cliFail } from "./colors.ts";
 import { timeoutArgError } from "./flag-args.ts";
 import { refuseDirectExecution } from "./is-main.ts";
-import { createAgentProgressSink } from "./progress.ts";
+import { stderrSink } from "./progress.ts";
 import { isPlainObject } from "./shared.ts";
 
 /**
@@ -714,14 +713,7 @@ async function runQueryCommand(
   rest: readonly string[],
 ): Promise<void> {
   const colors = terminalColors(process.env);
-  const animated = canAnimate(process.stderr.isTTY === true, process.env);
-  const sink = createAgentProgressSink(
-    (text) => process.stderr.write(text),
-    (text) => console.error(text),
-    animated,
-    colors,
-    QUERY_HEARTBEAT_PREFIX,
-  );
+  const { sink, animated } = stderrSink(QUERY_HEARTBEAT_PREFIX);
 
   try {
     const result = await runWikiQuery({

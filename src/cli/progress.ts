@@ -1,3 +1,5 @@
+import { canAnimate, terminalColors } from "./colors.ts";
+
 /**
  * Terminal progress presentation shared by the long-running CLIs:
  * plain events scroll up, one live status line (spinner frame +
@@ -137,6 +139,31 @@ export function isWarning(message: string): boolean {
 /** Interval for the progress-sink liveness line while the agent
  *  runs; the wording is each consumer's heartbeat prefix. */
 export const HEARTBEAT_MS = 60_000;
+
+/**
+ * The shared stderr sink construction for every agent-driving CLI:
+ * the canAnimate gate (TTY + NO_COLOR policy) plus the five-arg
+ * createAgentProgressSink wiring. Returns the sink and the animation
+ * flag, which callers need for cadence decisions (fast heartbeat on
+ * a TTY, plain otherwise).
+ */
+export function stderrSink(heartbeatPrefix: string | readonly string[]): {
+  sink: ProgressSink;
+  animated: boolean;
+} {
+  const animated = canAnimate(process.stderr.isTTY === true, process.env);
+
+  return {
+    animated,
+    sink: createAgentProgressSink(
+      (text) => process.stderr.write(text),
+      (text) => console.error(text),
+      animated,
+      terminalColors(),
+      heartbeatPrefix,
+    ),
+  };
+}
 
 /** A stderr progress surface: plain lines, or one animated line. */
 export interface ProgressSink {

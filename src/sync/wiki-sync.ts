@@ -2,15 +2,10 @@ import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  canAnimate,
-  cliFail,
-  terminalColors as colors,
-  errorMessage,
-} from "../cli/colors.ts";
+import { cliFail, terminalColors as colors, errorMessage } from "../cli/colors.ts";
 import { flagValueError, readFlagValues } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
-import { createAgentProgressSink, formatDuration } from "../cli/progress.ts";
+import { formatDuration, stderrSink } from "../cli/progress.ts";
 import { parseStatus, runGit } from "../data/git.ts";
 import {
   type AgentRunner,
@@ -1245,14 +1240,10 @@ export async function main(): Promise<void> {
     return;
   }
 
-  const animated = canAnimate(process.stderr.isTTY === true, process.env);
-  const sink = createAgentProgressSink(
-    (text) => process.stderr.write(text),
-    (text) => console.error(text),
-    animated,
-    colors(),
-    [...AGENT_HEARTBEAT_PREFIX, LINT_HEARTBEAT_PREFIX],
-  );
+  const { sink, animated } = stderrSink([
+    ...AGENT_HEARTBEAT_PREFIX,
+    LINT_HEARTBEAT_PREFIX,
+  ]);
 
   try {
     const result = await runCycle(parsed, sink.render, animated);

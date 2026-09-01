@@ -12,7 +12,7 @@ is detected at the sink via the shared predicate `isWarning`
 
 | Color | Feedback kind | Examples |
 |---|---|---|
-| dim | progress and heartbeat lines | `createAgentProgressSink` in `src/cli/progress.ts` (consumed by `src/ingest/wiki-ingest.ts`, `src/sync/wiki-sync.ts`, `src/query/wiki-query.ts`, `src/cli/k-wiki.ts`), the dim human-step filing hint in `src/cli/k-wiki.ts`, and the no-change summary in `formatReport` (`src/sync/projection.ts`) |
+| dim | progress and heartbeat lines | `createAgentProgressSink` / `stderrSink` in `src/cli/progress.ts` (consumed by `src/ingest/wiki-ingest.ts`, `src/sync/wiki-sync.ts`, `src/query/wiki-query.ts`, `src/cli/k-wiki.ts`), the dim human-step filing hint in `src/cli/k-wiki.ts`, and the no-change summary in `formatReport` (`src/sync/projection.ts`) |
 | yellow | warning severity | any progress message containing `WARNING` — today the foreign-snapshot warning in `readSnapshot` (`src/ingest/wiki-ingest.ts`) — and the freshness warning rendered at the sink in `src/health/check-raw.ts` |
 | red | error | `fail()` in every entry point, broken crosslinks, removed files, health problems in `src/health/check-raw.ts` |
 | green | ok / healthy / added | `src/health/check-raw.ts`, the ok summary in `scripts/check-crosslinks.ts`, copied files in `formatReport` (`src/sync/projection.ts`) |
@@ -33,7 +33,10 @@ urgency of an error.
   call site.
 - `createAgentProgressSink` takes the caller's `ProgressTones`
   (`dim` + `yellow`) and renders `isWarning` messages `yellow`, all
-  others `dim`.
+  others `dim`. `stderrSink` (`src/cli/progress.ts`) is the shared
+  construction for the agent-driving CLIs: it applies the `canAnimate`
+  gate (TTY + `NO_COLOR`) and builds the sink with `terminalColors`
+  tones and the caller's heartbeat prefix.
 - `colorizeProgress` (`src/sync/projection.ts`) applies the same rule
   for its self-built sink, plus `bold` source names (its `noun`
   argument — vault or repo); a WARNING message
