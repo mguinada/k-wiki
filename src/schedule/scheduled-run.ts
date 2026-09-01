@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
+import { mkdir, link, open, readFile, rename, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { Readable } from "node:stream";
@@ -135,19 +135,49 @@ export async function acquireLock(
   return reacquired === "busy" ? "busy" : "took-over";
 }
 
-/** Release the lock only when its recorded pid is this process's:
- *  a run whose stale lock was taken over must not delete its
- *  successor's fresh lock (mutual exclusion survives takeovers). An
- *  absent or foreign lock is left alone. */
+/** Release the lock only when the recorded pid is this process's,
+ *  and delete it by atomic claim (issue #244): the lock is first
+ *  renamed to a private path, so the unlink can never hit a
+ *  successor's fresh lock — a run outliving LOCK_STALE_MS whose
+ *  lock was taken over would otherwise rm by path and delete the
+ *  successor's lock in the read-to-delete window, breaking mutual
+ *  exclusion exactly in the long-run scenario. A claim that raced
+ *  such a takeover is given back; an absent or foreign lock is
+ *  never touched. */
 export async function releaseLock(
   lockPath: string,
   pid: number = process.pid,
 ): Promise<void> {
   const existing = lockData(await readFile(lockPath, "utf8").catch(() => ""));
 
-  if (existing?.pid === pid) {
-    await rm(lockPath, { force: true });
+  if (existing?.pid !== pid) {
+    return;
   }
+
+  const claimed = `${lockPath}.releasing.${pid}`;
+
+  await rename(lockPath, claimed).catch(() => undefined);
+
+  const claim = lockData(await readFile(claimed, "utf8").catch(() => ""));
+
+  if (claim?.pid === pid) {
+    await rm(claimed, { force: true });
+
+    return;
+  }
+
+  await restoreClaimedLock(claimed, lockPath);
+}
+
+/** Give a claimed-but-foreign lock back: the hard link lands only
+ *  while the lock path is free — an EEXIST means another run
+ *  already re-holds the path, and the claim is dropped instead. */
+async function restoreClaimedLock(
+  claimed: string,
+  lockPath: string,
+): Promise<void> {
+  await link(claimed, lockPath).catch(() => undefined);
+  await rm(claimed, { force: true });
 }
 
 /** The PATH a scheduled run gets: node's bin dir first (the wrapper

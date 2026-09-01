@@ -1,8 +1,10 @@
 import { execFile } from "node:child_process";
 import {
+  link,
   mkdir,
   mkdtemp,
   readFile,
+  rename,
   rm,
   stat,
   writeFile,
@@ -43,6 +45,12 @@ vi.mock("node:fs/promises", async (importOriginal) => {
         path: string | URL,
         options?: { force?: boolean; recursive?: boolean },
       ) => actual.rm(path, options),
+    ),
+    rename: vi.fn(async (from: string | URL, to: string | URL) =>
+      actual.rename(from, to),
+    ),
+    link: vi.fn(async (from: string | URL, to: string | URL) =>
+      actual.link(from, to),
     ),
   };
 });
@@ -164,6 +172,116 @@ describe("releaseLock", () => {
     await releaseLock(lockPath, 4242);
 
     await expect(readFile(lockPath, "utf8")).rejects.toThrow();
+
+    await rm(dir, { recursive: true, force: true });
+  });
+});
+
+/** The lock JSON of a given pid, as a successor writes it. */
+function lockJson(pid: number): string {
+  return `${JSON.stringify({ pid, takenAt: "2026-01-01T00:00:00Z" })}\n`;
+}
+
+describe("releaseLock takeover race", () => {
+  it("never deletes a successor's fresh lock that lands during the release", async () => {
+    const dir = await tempDir();
+    const lockPath = join(dir, "scheduled-run.lock");
+    const realFs =
+      await vi.importActual<typeof import("node:fs/promises")>(
+        "node:fs/promises",
+      );
+
+    await writeFile(lockPath, lockJson(1111));
+    vi.mocked(rm).mockImplementationOnce(async (path, options) => {
+      // The successor's takeover completes while the releaser is
+      // between its pid check and its delete: the path now holds the
+      // successor's fresh lock.
+      await realFs.rm(lockPath, { force: true });
+      await realFs.writeFile(lockPath, lockJson(4242));
+
+      return realFs.rm(path, options);
+    });
+
+    await releaseLock(lockPath, 1111);
+
+    await expect(readFile(lockPath, "utf8")).resolves.toBe(lockJson(4242));
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("restores a successor's lock claimed by the release's rename", async () => {
+    const dir = await tempDir();
+    const lockPath = join(dir, "scheduled-run.lock");
+    const realFs =
+      await vi.importActual<typeof import("node:fs/promises")>(
+        "node:fs/promises",
+      );
+
+    await writeFile(lockPath, lockJson(1111));
+    vi.mocked(rename).mockImplementationOnce(async (from, to) => {
+      // The successor's takeover lands inside the read-to-rename
+      // window: the claim moves the successor's fresh lock away.
+      await realFs.rm(from, { force: true });
+      await realFs.writeFile(from, lockJson(4242));
+
+      return realFs.rename(from, to);
+    });
+
+    await releaseLock(lockPath, 1111);
+
+    await expect(readFile(lockPath, "utf8")).resolves.toBe(lockJson(4242));
+    await expect(realFs.stat(lockPath)).resolves.toBeInstanceOf(Object);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("drops the claim when another run already re-holds the lock path", async () => {
+    const dir = await tempDir();
+    const lockPath = join(dir, "scheduled-run.lock");
+    const realFs =
+      await vi.importActual<typeof import("node:fs/promises")>(
+        "node:fs/promises",
+      );
+
+    await writeFile(lockPath, lockJson(1111));
+    vi.mocked(rename).mockImplementationOnce(async (from, to) => {
+      await realFs.rm(from, { force: true });
+      await realFs.writeFile(from, lockJson(4242));
+
+      return realFs.rename(from, to);
+    });
+    vi.mocked(link).mockImplementationOnce(async (from, to) => {
+      // A third run acquires the free path before the restore lands.
+      await realFs.writeFile(to, lockJson(5151));
+
+      return realFs.link(from, to);
+    });
+
+    await releaseLock(lockPath, 1111);
+
+    await expect(readFile(lockPath, "utf8")).resolves.toBe(lockJson(5151));
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("resolves cleanly when the lock vanished before the claim", async () => {
+    const dir = await tempDir();
+    const lockPath = join(dir, "scheduled-run.lock");
+    const realFs =
+      await vi.importActual<typeof import("node:fs/promises")>(
+        "node:fs/promises",
+      );
+
+    await writeFile(lockPath, lockJson(1111));
+    vi.mocked(rename).mockImplementationOnce(async () => {
+      // The lock is already gone at claim time — another releaser or
+      // a takeover removed it and nothing recreated it yet.
+      await realFs.rm(lockPath, { force: true });
+      throw Object.assign(new Error("gone"), { code: "ENOENT" });
+    });
+
+    await expect(releaseLock(lockPath, 1111)).resolves.toBeUndefined();
+    await expect(realFs.stat(lockPath)).rejects.toThrow();
 
     await rm(dir, { recursive: true, force: true });
   });
