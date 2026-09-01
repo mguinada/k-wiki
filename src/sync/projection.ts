@@ -229,8 +229,13 @@ export function compileIncludePattern(pattern: string): RegExp {
   return new RegExp(`${source}$`);
 }
 
+/** One vault source's row in a sync run report: the counts the
+ *  report prints for a vault the vault driver synced. */
 export interface VaultSyncReport {
-  readonly vault: string;
+  /** The noun the report prints for this row. */
+  readonly kind: "vault";
+  /** The vault's configured name. */
+  readonly name: string;
   /** Markdown files considered, selected or not. */
   readonly candidates: number;
   readonly selected: number;
@@ -239,13 +244,56 @@ export interface VaultSyncReport {
   readonly removed: readonly string[];
 }
 
+/** One repo source's row: the vault counts plus the source repo
+ *  HEAD commit the projection was stamped with. */
+export interface RepoSyncReport {
+  /** The noun the report prints for this row. */
+  readonly kind: "repo";
+  /** The repo source's configured name. */
+  readonly name: string;
+  /** The source repo HEAD commit the projection grounds on. */
+  readonly commit: string;
+  /** Files examined while walking the allowlisted subtrees. */
+  readonly candidates: number;
+  readonly selected: number;
+  readonly copied: readonly string[];
+  readonly unchanged: readonly string[];
+  readonly removed: readonly string[];
+}
+
+/** One source's row in a sync run report (issue #250): `name` is the
+ *  vault or repo source name, `kind` picks the noun the report
+ *  prints — a repo source never renders as a vault. */
+export type SourceSyncReport = VaultSyncReport | RepoSyncReport;
+
 export interface SyncReport {
-  /** Per-vault results for the configured vaults. */
-  readonly vaults: readonly VaultSyncReport[];
+  /** One row per configured source the run synced. */
+  readonly sources: readonly SourceSyncReport[];
   /** Namespaces removed because they are absent from the config. */
   readonly prunedNamespaces: readonly string[];
   /** Elapsed wall time for the entire run, in milliseconds. */
   readonly elapsedMs?: number;
+}
+
+/** Options every sync driver accepts — the row signature of the
+ *  driver table. Both drivers take the full shape; each ignores the
+ *  fields it does not use (the vault driver ignores `env`, the repo
+ *  driver ignores `progressEvery`). */
+export interface DriverOptions {
+  /** Path to the sync config (e.g. `sync.json`, `sync-meta.json`). */
+  readonly configPath: string;
+  /** The `raw/` directory that receives `notes/` and `manifest.json`. */
+  readonly rawDir: string;
+  /** Home directory for `~` expansion; defaults to the real home. */
+  readonly home?: string;
+  /** Clock for `last_synced`; defaults to the wall clock. */
+  readonly now?: () => Date;
+  /** Environment for git child processes; defaults to `process.env`. */
+  readonly env?: NodeJS.ProcessEnv;
+  /** Read-loop heartbeat cadence in files read; default: every 500. */
+  readonly progressEvery?: number | undefined;
+  /** Progress sink (uncolored messages); default: silent. */
+  readonly onProgress?: (message: SyncProgress) => void;
 }
 
 /** One vault's would-ingest listing; produced by a dry run. */
@@ -309,27 +357,29 @@ function summaryLine(
   );
 }
 
-/** Render the run summary; `+` marks copies and `-` marks removals. */
+/** Render the run summary; `+` marks copies and `-` marks removals.
+ *  Each row prints under its own kind's noun — vault or repo — so a
+ *  repo source never renders as a vault (issue #250, B-7). */
 export function formatReport(
   report: SyncReport,
   colors: ReportColors = PLAIN_COLORS,
 ): string {
   const lines: string[] = [];
 
-  for (const vault of report.vaults) {
-    const counts = `vault ${colors.bold(`"${vault.vault}"`)}: ${vault.selected} selected, ${vault.copied.length} copied, ${vault.unchanged.length} unchanged, ${vault.removed.length} removed`;
+  for (const source of report.sources) {
+    const counts = `${source.kind} ${colors.bold(`"${source.name}"`)}: ${source.selected} selected, ${source.copied.length} copied, ${source.unchanged.length} unchanged, ${source.removed.length} removed`;
     const hint =
-      vault.selected === 0 && vault.candidates > 0
-        ? ` (${vault.candidates} candidates, all blocked)`
+      source.selected === 0 && source.candidates > 0
+        ? ` (${source.candidates} candidates, all blocked)`
         : "";
 
     lines.push(counts + hint);
 
-    for (const relPath of vault.copied) {
+    for (const relPath of source.copied) {
       lines.push(`  + ${colors.green(relPath)}`);
     }
 
-    for (const relPath of vault.removed) {
+    for (const relPath of source.removed) {
       lines.push(`  - ${colors.red(relPath)}`);
     }
   }
@@ -340,12 +390,12 @@ export function formatReport(
     );
   }
 
-  const copied = report.vaults.reduce(
-    (total, vault) => total + vault.copied.length,
+  const copied = report.sources.reduce(
+    (total, source) => total + source.copied.length,
     0,
   );
-  const removed = report.vaults.reduce(
-    (total, vault) => total + vault.removed.length,
+  const removed = report.sources.reduce(
+    (total, source) => total + source.removed.length,
     0,
   );
 

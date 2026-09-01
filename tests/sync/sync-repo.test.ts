@@ -13,7 +13,11 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { runGit } from "../../src/data/git.ts";
 import { loadSyncConfig } from "../../src/sync/config.ts";
 import { parseManifest } from "../../src/sync/manifest.ts";
-import { compileIncludePattern } from "../../src/sync/projection.ts";
+import {
+  compileIncludePattern,
+  type RepoSyncReport,
+  type SyncReport,
+} from "../../src/sync/projection.ts";
 import { runRepoSync, selectRepoFiles } from "../../src/sync/sync-repo.ts";
 import { collectFiles } from "../e2e/helpers.ts";
 
@@ -31,6 +35,20 @@ afterAll(async () => {
     tempDirs.map((dir) => rm(dir, { recursive: true, force: true })),
   );
 }, 120_000);
+
+/** The single repo row of a repo run's report (the driver always
+ *  produces exactly one). */
+function repoRowOf(report: SyncReport): RepoSyncReport {
+  const row = report.sources.find(
+    (row): row is RepoSyncReport => row.kind === "repo",
+  );
+
+  if (row === undefined) {
+    throw new Error("repo sync report carries no repo source row");
+  }
+
+  return row;
+}
 
 const GIT_ENV = {
   PATH: process.env.PATH,
@@ -305,7 +323,7 @@ describe("runRepoSync first run", () => {
       env: GIT_ENV,
     });
 
-    expect(report.source).toBe(NAME);
+    expect(repoRowOf(report).name).toBe(NAME);
   });
 
   it("stamps the source commit in the run report", async () => {
@@ -317,7 +335,7 @@ describe("runRepoSync first run", () => {
       env: GIT_ENV,
     });
 
-    expect(report.commit).toBe(await head(ws.sourceRoot));
+    expect(repoRowOf(report).commit).toBe(await head(ws.sourceRoot));
   });
 
   it("shortens the stamped commit to eight characters in the report line", async () => {
@@ -328,7 +346,7 @@ describe("runRepoSync first run", () => {
       configPath: ws.configPath,
       rawDir: ws.rawDir,
       env: GIT_ENV,
-      onProgress: (line) => lines.push(line),
+      onProgress: (line) => lines.push(line.text),
     });
 
     expect(lines.join("\n")).toMatch(/selected at commit [0-9a-f]{8}$/m);
@@ -343,7 +361,7 @@ describe("runRepoSync first run", () => {
       env: GIT_ENV,
     });
 
-    expect(report.candidates).toBe(8);
+    expect(repoRowOf(report).candidates).toBe(8);
   });
 
   it("counts the selected files in the run report", async () => {
@@ -355,7 +373,7 @@ describe("runRepoSync first run", () => {
       env: GIT_ENV,
     });
 
-    expect(report.selected).toBe(SELECTED.length);
+    expect(repoRowOf(report).selected).toBe(SELECTED.length);
   });
 
   it("lists the copied files in the run report", async () => {
@@ -367,7 +385,7 @@ describe("runRepoSync first run", () => {
       env: GIT_ENV,
     });
 
-    expect([...report.copied].sort()).toEqual(SELECTED);
+    expect([...repoRowOf(report).copied].sort()).toEqual(SELECTED);
   });
 
   it("lists no removed files in the first run report", async () => {
@@ -379,7 +397,7 @@ describe("runRepoSync first run", () => {
       env: GIT_ENV,
     });
 
-    expect(report.removed).toEqual([]);
+    expect(repoRowOf(report).removed).toEqual([]);
   });
 });
 
@@ -398,7 +416,7 @@ describe("runRepoSync second run", () => {
       env: GIT_ENV,
     });
 
-    expect(second.copied).toEqual([]);
+    expect(repoRowOf(second).copied).toEqual([]);
   });
 
   it("removes no files when neither the tree nor the commit changed", async () => {
@@ -415,7 +433,7 @@ describe("runRepoSync second run", () => {
       env: GIT_ENV,
     });
 
-    expect(second.removed).toEqual([]);
+    expect(repoRowOf(second).removed).toEqual([]);
   });
 
   it("keeps every projection unchanged when neither the tree nor the commit changed", async () => {
@@ -432,7 +450,7 @@ describe("runRepoSync second run", () => {
       env: GIT_ENV,
     });
 
-    expect([...second.unchanged].sort()).toEqual(SELECTED);
+    expect([...repoRowOf(second).unchanged].sort()).toEqual(SELECTED);
   });
 
   it("recopies a file that changed in a new commit", async () => {
@@ -454,7 +472,7 @@ describe("runRepoSync second run", () => {
       env: GIT_ENV,
     });
 
-    expect(second.copied).toEqual(["src/a.ts"]);
+    expect(repoRowOf(second).copied).toEqual(["src/a.ts"]);
   });
 
   it("writes the new bytes of a changed file into the projection", async () => {
@@ -526,7 +544,7 @@ describe("runRepoSync second run", () => {
       env: GIT_ENV,
     });
 
-    expect(second.removed).toEqual(["src/deep/b.ts"]);
+    expect(repoRowOf(second).removed).toEqual(["src/deep/b.ts"]);
   });
 
   it("deletes the projected file on disk when its source was deleted", async () => {
@@ -599,7 +617,7 @@ describe("runRepoSync second run", () => {
       env: GIT_ENV,
     });
 
-    expect([...second.removed].sort()).toEqual(
+    expect([...repoRowOf(second).removed].sort()).toEqual(
       SELECTED.filter((path) => !path.startsWith("src/")),
     );
   });
@@ -1120,7 +1138,7 @@ describe("sync-repo CLI main", () => {
     const result = await runMainCli([ws.configPath, ws.rawDir]);
 
     expect(result.out).toContain(
-      `vault "k-wiki": 7 selected, 7 copied, 0 unchanged, 0 removed`,
+      `repo "k-wiki": 7 selected, 7 copied, 0 unchanged, 0 removed`,
     );
   });
 
@@ -1408,7 +1426,7 @@ describe("runRepoSync stale namespace pruning", () => {
       configPath: renamedConfig,
       rawDir: ws.rawDir,
       env: GIT_ENV,
-      onProgress: (message) => messages.push(message),
+      onProgress: (message) => messages.push(message.text),
     });
 
     expect(messages).toContain(
@@ -1426,7 +1444,7 @@ describe("runRepoSync caller-provided context", () => {
       configPath: ws.configPath,
       rawDir: ws.rawDir,
       env: GIT_ENV,
-      onProgress: (message) => progress.push(message),
+      onProgress: (message) => progress.push(message.text),
     });
 
     expect(progress).toContain(`sync-repo: raw dir ${ws.rawDir}`);

@@ -21,7 +21,7 @@ import {
   readFileTolerant,
 } from "../../src/sync/eagain.ts";
 import { runPublishStage } from "../../src/sync/publish.ts";
-import { runSync } from "../../src/sync/sync-vault.ts";
+import { runVaultSync } from "../../src/sync/sync-vault.ts";
 
 /**
  * EAGAIN materialize-and-retry (issues #216, #229): iCloud dataless
@@ -380,9 +380,9 @@ async function makeVaultWorkspace(): Promise<VaultWorkspace> {
 
 /** Run sync with the EAGAIN retry delay collapsed to zero, so the
  *  bounded materialize-and-retry loop runs without real waiting. */
-async function runSyncAdvancingRetry(
-  options: Parameters<typeof runSync>[0],
-): Promise<Awaited<ReturnType<typeof runSync>>> {
+async function runVaultSyncAdvancingRetry(
+  options: Parameters<typeof runVaultSync>[0],
+): Promise<Awaited<ReturnType<typeof runVaultSync>>> {
   const timer = vi.spyOn(globalThis, "setTimeout").mockImplementation(((
     callback: () => void,
   ) => {
@@ -392,7 +392,7 @@ async function runSyncAdvancingRetry(
   }) as unknown as typeof setTimeout);
 
   try {
-    return await runSync(options);
+    return await runVaultSync(options);
   } finally {
     timer.mockRestore();
   }
@@ -407,12 +407,12 @@ describe("runSync EAGAIN surface", () => {
       rejectReadFor(eagainError("read"), notePath),
     );
 
-    const { vaults } = await runSyncAdvancingRetry({
+    const { sources } = await runVaultSyncAdvancingRetry({
       configPath: ws.configPath,
       rawDir: ws.rawDir,
     });
 
-    expect(vaults[0]?.copied).toContain("AI/RAG.md");
+    expect(sources[0]?.copied).toContain("AI/RAG.md");
   });
 
   it("completes when a note read fails EAGAIN twice then settles", async () => {
@@ -426,12 +426,12 @@ describe("runSync EAGAIN surface", () => {
       rejectReadFor(eagainError("read"), notePath),
     );
 
-    const { vaults } = await runSyncAdvancingRetry({
+    const { sources } = await runVaultSyncAdvancingRetry({
       configPath: ws.configPath,
       rawDir: ws.rawDir,
     });
 
-    expect(vaults[0]?.copied).toContain("AI/RAG.md");
+    expect(sources[0]?.copied).toContain("AI/RAG.md");
   });
 
   it("fails loudly through the note-read envelope when EAGAIN persists", async () => {
@@ -456,7 +456,7 @@ describe("runSync EAGAIN surface", () => {
       );
 
       await expect(
-        runSyncAdvancingRetry({
+        runVaultSyncAdvancingRetry({
           configPath: ws.configPath,
           rawDir: ws.rawDir,
         }),

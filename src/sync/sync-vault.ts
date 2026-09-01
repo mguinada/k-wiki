@@ -28,6 +28,7 @@ import {
   colorizeError,
   colorizeProgress,
   createSyncProgressSink,
+  type DriverOptions,
   formatDryRunReport,
   formatReport,
   listNamespaceDirs,
@@ -55,22 +56,6 @@ import { scanVault } from "./scan.ts";
  * second run with no source changes copies, removes, and writes
  * nothing.
  */
-
-export interface SyncOptions {
-  /** Path to `sync.json`. */
-  readonly configPath: string;
-  /** The `raw/` directory that receives `notes/` and `manifest.json`;
-   *  a dry run neither reads nor writes it. */
-  readonly rawDir: string;
-  /** Home directory for `~` expansion; defaults to the real home. */
-  readonly home?: string;
-  /** Clock for `last_synced`; defaults to the wall clock. */
-  readonly now?: () => Date;
-  /** Read-loop heartbeat cadence in files read; default: every 500. */
-  readonly progressEvery?: number | undefined;
-  /** Progress sink (uncolored messages); default: silent. */
-  readonly onProgress?: (message: SyncProgress) => void;
-}
 
 /** Heartbeat interval for the read loop: one line per files read. */
 export const PROGRESS_EVERY = 500;
@@ -194,7 +179,8 @@ async function syncVault(
   return {
     notes,
     report: {
-      vault: vault.name,
+      kind: "vault",
+      name: vault.name,
       candidates: candidates.length,
       selected: selected.length,
       copied,
@@ -225,8 +211,10 @@ function vaultSourcesOnly(
   return vaults;
 }
 
-/** Run one full sync pass and return the run report. */
-export async function runSync(options: SyncOptions): Promise<SyncReport> {
+/** Run one full vault sync pass and return the run report. */
+export async function runVaultSync(
+  options: DriverOptions,
+): Promise<SyncReport> {
   const home = options.home ?? homedir();
   const now = options.now ?? (() => new Date());
   const onProgress = options.onProgress ?? (() => {});
@@ -284,7 +272,7 @@ export async function runSync(options: SyncOptions): Promise<SyncReport> {
     await writeManifest(manifestPath, nextManifest);
   }
 
-  return { vaults: reports, prunedNamespaces };
+  return { sources: reports, prunedNamespaces };
 }
 
 /**
@@ -293,7 +281,7 @@ export async function runSync(options: SyncOptions): Promise<SyncReport> {
  * before the first real inverted sync.
  */
 export async function runDryRun(
-  options: SyncOptions,
+  options: DriverOptions,
 ): Promise<readonly VaultDryRunReport[]> {
   const home = options.home ?? homedir();
   const onProgress = options.onProgress ?? (() => {});
@@ -389,7 +377,7 @@ export async function main(): Promise<void> {
     }
 
     const startedAt = Date.now();
-    const report = await runSync({
+    const report = await runVaultSync({
       configPath,
       rawDir,
       progressEvery,

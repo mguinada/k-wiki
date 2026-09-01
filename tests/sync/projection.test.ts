@@ -257,9 +257,65 @@ describe("createSyncProgressSink", () => {
   });
 });
 
+describe("formatReport source nouns", () => {
+  it("labels a repo source with the repo noun, not vault", () => {
+    const report: SyncReport = {
+      sources: [
+        {
+          kind: "repo",
+          name: "k-wiki",
+          commit: "a1b2c3d4e5f6a7b8",
+          candidates: 12,
+          selected: 7,
+          copied: ["src/a.ts"],
+          unchanged: [],
+          removed: [],
+        },
+      ],
+      prunedNamespaces: [],
+    };
+
+    expect(formatReport(report).split("\n")[0]).toBe(
+      'repo "k-wiki": 7 selected, 1 copied, 0 unchanged, 0 removed',
+    );
+  });
+
+  it("aggregates the summary across vault and repo sources", () => {
+    const report: SyncReport = {
+      sources: [
+        {
+          kind: "vault",
+          name: VAULT_NAME,
+          candidates: 0,
+          selected: 1,
+          copied: ["a.md"],
+          unchanged: [],
+          removed: [],
+        },
+        {
+          kind: "repo",
+          name: "k-wiki",
+          commit: "a1b2c3d4e5f6a7b8",
+          candidates: 0,
+          selected: 1,
+          copied: ["src/a.ts"],
+          unchanged: [],
+          removed: [],
+        },
+      ],
+      prunedNamespaces: [],
+    };
+
+    expect(formatReport(report).split("\n").at(-1)).toBe(
+      "sync complete: 2 copied, 0 removed",
+    );
+  });
+});
+
 describe("formatReport all-blocked hint", () => {
   const allBlocked: VaultSyncReport = {
-    vault: VAULT_NAME,
+    kind: "vault",
+    name: VAULT_NAME,
     candidates: 9,
     selected: 0,
     copied: [],
@@ -271,7 +327,7 @@ describe("formatReport all-blocked hint", () => {
     vault: VaultSyncReport,
     prunedNamespaces: readonly string[] = [],
   ): SyncReport {
-    return { vaults: [vault], prunedNamespaces };
+    return { sources: [vault], prunedNamespaces };
   }
 
   it("appends the hint when every candidate is blocked", () => {
@@ -325,7 +381,8 @@ describe("formatReport all-blocked hint", () => {
 
 describe("formatReport pruned namespaces", () => {
   const unchanged: VaultSyncReport = {
-    vault: VAULT_NAME,
+    kind: "vault",
+    name: VAULT_NAME,
     candidates: 6,
     selected: 4,
     copied: [],
@@ -335,7 +392,7 @@ describe("formatReport pruned namespaces", () => {
 
   it("lists each pruned namespace with a minus sign", () => {
     const report: SyncReport = {
-      vaults: [unchanged],
+      sources: [unchanged],
       prunedNamespaces: ["Retired"],
     };
 
@@ -346,7 +403,7 @@ describe("formatReport pruned namespaces", () => {
 
   it("counts a pruned namespace in the summary instead of reporting no changes", () => {
     const report: SyncReport = {
-      vaults: [unchanged],
+      sources: [unchanged],
       prunedNamespaces: ["Retired"],
     };
 
@@ -357,7 +414,7 @@ describe("formatReport pruned namespaces", () => {
 
   it("pluralizes the prune count for several namespaces", () => {
     const report: SyncReport = {
-      vaults: [],
+      sources: [],
       prunedNamespaces: ["Old", "Retired"],
     };
 
@@ -391,9 +448,10 @@ describe("colorized output", () => {
     prunedNamespaces: readonly string[] = [],
   ): SyncReport {
     return {
-      vaults: [
+      sources: [
         {
-          vault: VAULT_NAME,
+          kind: "vault",
+          name: VAULT_NAME,
           candidates: 0,
           selected: 0,
           copied: [],

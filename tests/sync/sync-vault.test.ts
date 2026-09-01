@@ -21,7 +21,7 @@ import {
   main,
   PROGRESS_EVERY,
   runDryRun,
-  runSync,
+  runVaultSync,
 } from "../../src/sync/sync-vault.ts";
 import { collectFiles, SELECTED_PATHS } from "../e2e/helpers.ts";
 
@@ -83,19 +83,19 @@ function fixedClock(iso: string): () => Date {
 }
 
 async function run(ws: Workspace, iso: string = T1) {
-  const { vaults } = await runSync({
+  const { sources } = await runVaultSync({
     configPath: ws.configPath,
     rawDir: ws.rawDir,
     now: fixedClock(iso),
   });
 
-  return vaults;
+  return sources;
 }
 
 /** Run with a progress collector; returns reports and messages. */
 async function runWithProgress(ws: Workspace, iso: string = T1) {
   const messages: SyncProgress[] = [];
-  const report = await runSync({
+  const report = await runVaultSync({
     configPath: ws.configPath,
     rawDir: ws.rawDir,
     now: fixedClock(iso),
@@ -103,7 +103,7 @@ async function runWithProgress(ws: Workspace, iso: string = T1) {
   });
 
   return {
-    reports: report.vaults,
+    reports: report.sources,
     pruned: report.prunedNamespaces,
     messages,
   };
@@ -162,7 +162,8 @@ describe("runSync first run", () => {
 
     expect(await run(ws)).toEqual([
       {
-        vault: VAULT_NAME,
+        kind: "vault",
+        name: VAULT_NAME,
         candidates: 9,
         selected: 7,
         copied: SELECTED_PATHS,
@@ -224,7 +225,7 @@ describe("runSync first run", () => {
     );
 
     await expect(
-      runSync({ configPath, rawDir: join(ws.dir, "raw") }),
+      runVaultSync({ configPath, rawDir: join(ws.dir, "raw") }),
     ).rejects.toThrow(
       `vault root for "${VAULT_NAME}" is not a directory: ${filePath}`,
     );
@@ -287,7 +288,8 @@ describe("runSync idempotence", () => {
 
     expect(second).toEqual([
       {
-        vault: VAULT_NAME,
+        kind: "vault",
+        name: VAULT_NAME,
         candidates: 9,
         selected: 7,
         copied: [],
@@ -660,7 +662,7 @@ describe("runSync progress", () => {
     const ws = await makeWorkspace();
     const messages: SyncProgress[] = [];
 
-    await runSync({
+    await runVaultSync({
       configPath: ws.configPath,
       rawDir: ws.rawDir,
       progressEvery: 1,
@@ -677,7 +679,7 @@ describe("runSync progress", () => {
     const ws = await makeWorkspace();
     const messages: SyncProgress[] = [];
 
-    await runSync({
+    await runVaultSync({
       configPath: ws.configPath,
       rawDir: ws.rawDir,
       progressEvery: 1,
@@ -749,27 +751,27 @@ describe("runSync candidate count", () => {
       }),
     );
 
-    const { vaults } = await runSync({
+    const { sources } = await runVaultSync({
       configPath,
       rawDir: ws.rawDir,
       now: fixedClock(T1),
     });
 
-    expect(vaults[0]?.candidates).toBe(0);
+    expect(sources[0]?.candidates).toBe(0);
   });
 });
 
 describe("runSync home expansion", () => {
   it("syncs a vault whose root is a tilde path", async () => {
     const ws = await makeWorkspace({ root: `~/${VAULT_NAME}` });
-    const { vaults } = await runSync({
+    const { sources } = await runVaultSync({
       configPath: ws.configPath,
       rawDir: ws.rawDir,
       home: ws.dir,
       now: fixedClock(T1),
     });
 
-    expect(vaults[0]?.copied).toEqual(SELECTED_PATHS);
+    expect(sources[0]?.copied).toEqual(SELECTED_PATHS);
   });
 });
 
@@ -1448,7 +1450,7 @@ describe("runSync repo-source rejection", () => {
     );
 
     await expect(
-      runSync({ configPath, rawDir: join(ws.dir, "raw-meta") }),
+      runVaultSync({ configPath, rawDir: join(ws.dir, "raw-meta") }),
     ).rejects.toThrow(/repo source.*sync-repo/);
   });
 
@@ -1472,7 +1474,7 @@ describe("runSync repo-source rejection", () => {
       "utf8",
     );
 
-    await expect(runSync({ configPath, rawDir })).rejects.toThrow();
+    await expect(runVaultSync({ configPath, rawDir })).rejects.toThrow();
     await expect(stat(rawDir)).rejects.toMatchObject({ code: "ENOENT" });
   });
 

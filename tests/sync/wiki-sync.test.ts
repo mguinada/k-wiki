@@ -1046,7 +1046,7 @@ describe("runWikiSync publish stage (issue #15)", () => {
 describe("formatFinalDigest", () => {
   it("states nothing to do when the cycle was a no-op", () => {
     const digest = formatFinalDigest({
-      sync: { vaults: [], prunedNamespaces: [] },
+      sync: { sources: [], prunedNamespaces: [] },
       ingest: { status: "skipped", reason: "no changed sources" },
       lint: undefined,
       crosslinks: undefined,
@@ -1144,7 +1144,7 @@ describe("formatFinalDigest", () => {
 
   it("names pruned namespaces in the sync summary", () => {
     const digest = formatFinalDigest({
-      sync: { vaults: [], prunedNamespaces: ["Old"] },
+      sync: { sources: [], prunedNamespaces: ["Old"] },
       ingest: { status: "skipped", reason: "no changed sources" },
       lint: undefined,
       crosslinks: undefined,
@@ -3030,7 +3030,7 @@ describe("formatFinalDigest sections", () => {
     commit?: CommitResult;
   }) {
     return {
-      sync: { vaults: [], prunedNamespaces: [] },
+      sync: { sources: [], prunedNamespaces: [] },
       ingest: {
         status: "ran" as const,
         mode: "incremental" as const,
@@ -3084,9 +3084,10 @@ describe("formatFinalDigest sections", () => {
     const digest = formatFinalDigest({
       ...ranResult({}),
       sync: {
-        vaults: [
+        sources: [
           {
-            vault: "Engineering",
+            kind: "vault",
+            name: "Engineering",
             candidates: 2,
             selected: 2,
             copied: ["a1.md", "a2.md"],
@@ -3094,7 +3095,8 @@ describe("formatFinalDigest sections", () => {
             removed: [],
           },
           {
-            vault: "Research",
+            kind: "vault",
+            name: "Research",
             candidates: 1,
             selected: 1,
             copied: [],

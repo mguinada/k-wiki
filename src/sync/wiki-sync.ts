@@ -54,12 +54,17 @@ import {
   loadSyncConfig,
   type PublishConfig,
   resolveRawDir,
+  type SourceConfig,
   type SyncConfig,
 } from "./config.ts";
-import type { SyncReport } from "./projection.ts";
+import type {
+  DriverOptions,
+  RepoSyncReport,
+  SyncReport,
+} from "./projection.ts";
 import { type PublishResult, runPublishStage } from "./publish.ts";
-import { type RepoSyncReport, runRepoSync } from "./sync-repo.ts";
-import { runSync } from "./sync-vault.ts";
+import { runRepoSync } from "./sync-repo.ts";
+import { runVaultSync } from "./sync-vault.ts";
 
 /**
  * wiki-sync: the one-command orchestrator (guide §18, issue #13). It
@@ -514,10 +519,9 @@ async function commitDataRepo(
 
 /** Everything one wiki-sync cycle reports. */
 export interface WikiSyncResult {
-  /** The stage-1 report: vault-shaped (`SyncReport`) or repo-shaped
-   *  (`RepoSyncReport`) — the config's source kinds decide (issue
-   *  #145). */
-  readonly sync: SyncReport | RepoSyncReport;
+  /** The stage-1 report — source-neutral: one row per source the
+   *  driver table picked for the config's source kinds (issue #250). */
+  readonly sync: SyncReport;
   readonly ingest: IngestResult;
   /** Undefined when the ingest stage skipped (nothing to lint). */
   readonly lint: LintResult | undefined;
@@ -556,32 +560,28 @@ export interface WikiSyncOptions {
   readonly onProgress?: (message: string) => void;
 }
 
-/** Count a sync report's copied and removed notes — across every
- *  vault of a vault run, or the one repo source of a repo run. */
-function syncChangeCounts(sync: SyncReport | RepoSyncReport): {
+/** Count a sync report's copied and removed notes across every
+ *  source row — vault or repo. */
+function syncChangeCounts(sync: SyncReport): {
   copied: number;
   removed: number;
 } {
-  if ("vaults" in sync) {
-    return {
-      copied: sync.vaults.reduce(
-        (total, vault) => total + vault.copied.length,
-        0,
-      ),
-      removed: sync.vaults.reduce(
-        (total, vault) => total + vault.removed.length,
-        0,
-      ),
-    };
-  }
-
-  return { copied: sync.copied.length, removed: sync.removed.length };
+  return {
+    copied: sync.sources.reduce(
+      (total, source) => total + source.copied.length,
+      0,
+    ),
+    removed: sync.sources.reduce(
+      (total, source) => total + source.removed.length,
+      0,
+    ),
+  };
 }
 
 /** The commit summary of one cycle: ingest diff counts when the agent
  *  ran, the sync report's counts otherwise. */
 async function commitSummaryOf(
-  sync: SyncReport | RepoSyncReport,
+  sync: SyncReport,
   ingest: IngestResult,
   lint: LintResult | undefined,
   dataRoot: string,
@@ -615,10 +615,37 @@ async function commitSummaryOf(
   };
 }
 
-/** Stage 1 (issue #145 dispatch): refuse mixed
- *  source kinds, then run the sync-repo core for a repo-typed
- *  config (the meta instance, in-process over that config) and the
- *  sync-vault core otherwise — same cycle, same
+/** The config's single source kind: mixed kinds refuse (issue #145,
+ *  one instance per config), an empty config stays vault-kind so the
+ *  vault driver's empty-config safety holds. */
+function syncKindOf(
+  config: SyncConfig,
+  configPath: string,
+): SourceConfig["kind"] {
+  const kinds = new Set(config.vaults.map((source) => source.kind));
+
+  if (kinds.has("vault") && kinds.has("repo")) {
+    throw new Error(
+      `mixed source kinds in ${configPath}: one instance per config — vault sources for sync-vault, a repo source for sync-repo`,
+    );
+  }
+
+  return kinds.has("repo") ? "repo" : "vault";
+}
+
+/** The sync driver table (issue #250): one row per source kind, keyed
+ *  by the config's source kinds — a future source kind (devices,
+ *  mirror) is a row, not a copy of the cycle. */
+const DRIVERS: Record<
+  SourceConfig["kind"],
+  (options: DriverOptions) => Promise<SyncReport>
+> = {
+  vault: runVaultSync,
+  repo: runRepoSync,
+};
+
+/** Stage 1 (issue #145 dispatch): refuse mixed source kinds, then run
+ *  the driver table's row for the config's kind — same cycle, same
  *  lint → verification → commit flow, whatever the source kind. */
 async function runSyncStage(
   config: SyncConfig,
@@ -627,33 +654,20 @@ async function runSyncStage(
   now: () => Date,
   onProgress: (message: string) => void,
   total: number,
-): Promise<SyncReport | RepoSyncReport> {
-  const repoSourced = config.vaults.some((source) => source.kind === "repo");
-
-  if (repoSourced && config.vaults.some((source) => source.kind === "vault")) {
-    throw new Error(
-      `mixed source kinds in ${options.configPath}: one instance per config — vault sources for sync-vault, a repo source for sync-repo`,
-    );
-  }
+): Promise<SyncReport> {
+  const kind = syncKindOf(config, options.configPath);
 
   onProgress(
-    `wiki-sync: stage 1/${total} — ${repoSourced ? "sync-repo" : "sync-vault"}`,
+    `wiki-sync: stage 1/${total} — ${kind === "repo" ? "sync-repo" : "sync-vault"}`,
   );
 
-  return repoSourced
-    ? await runRepoSync({
-        configPath: options.configPath,
-        rawDir: options.rawDir,
-        env,
-        now,
-        onProgress,
-      })
-    : await runSync({
-        configPath: options.configPath,
-        rawDir: options.rawDir,
-        now,
-        onProgress: (message) => onProgress(message.text),
-      });
+  return await DRIVERS[kind]({
+    configPath: options.configPath,
+    rawDir: options.rawDir,
+    env,
+    now,
+    onProgress: (message) => onProgress(message.text),
+  });
 }
 
 /** Stage 3: lint what the ingest agent produced, or skip the lint
@@ -874,8 +888,9 @@ function pluralized(count: number, noun: string): string {
   return count === 1 ? `1 ${noun}` : `${count} ${noun}s`;
 }
 
-/** One line per vault or repo source: what sync copied and removed. */
-function syncSummaryLines(sync: SyncReport | RepoSyncReport): string[] {
+/** One line per source: what sync copied and removed; a repo run
+ *  also names the commit its projection is stamped with. */
+function syncSummaryLines(sync: SyncReport): string[] {
   const { copied, removed } = syncChangeCounts(sync);
   const pruned = sync.prunedNamespaces.length;
 
@@ -883,13 +898,14 @@ function syncSummaryLines(sync: SyncReport | RepoSyncReport): string[] {
     return ["no source changes"];
   }
 
-  const commit =
-    "vaults" in sync ? "" : ` at commit ${sync.commit.slice(0, 8)}`;
+  const commit = sync.sources.find(
+    (source): source is RepoSyncReport => source.kind === "repo",
+  )?.commit;
 
   return [
     `${pluralized(copied, "source")} copied, ${pluralized(removed, "source")} removed` +
       (pruned === 0 ? "" : `, ${pluralized(pruned, "namespace")} pruned`) +
-      commit,
+      (commit === undefined ? "" : ` at commit ${commit.slice(0, 8)}`),
   ];
 }
 
