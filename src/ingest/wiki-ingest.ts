@@ -16,7 +16,7 @@ import { refuseDirectExecution } from "../cli/is-main.ts";
 import { formatDuration } from "../cli/progress.ts";
 import { isPlainObject, readTextIfExists } from "../cli/shared.ts";
 import { writeDashboard } from "../dashboard/generate.ts";
-import { runGit } from "../data/git.ts";
+import { parseStatus, runGit, type StatusEntry } from "../data/git.ts";
 import { loadSyncConfig, resolveRawDir } from "../sync/config.ts";
 import { sha256 } from "../sync/hash.ts";
 import {
@@ -55,10 +55,8 @@ import {
   capturePreRunState,
   type GuardrailFailure,
   type PreRunState,
-  parseStatus,
   revertToPreRun,
   runGuardrails,
-  type StatusEntry,
 } from "./guardrails.ts";
 
 /**

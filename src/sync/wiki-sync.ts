@@ -12,7 +12,7 @@ import { flagValueError, readFlagValues } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { formatDuration } from "../cli/progress.ts";
 import { checkCrossWikiLinks } from "../crosslinks.ts";
-import { runGit } from "../data/git.ts";
+import { parseStatus, runGit } from "../data/git.ts";
 import {
   AGENT_HEARTBEAT_PREFIX,
   type AgentRunner,
@@ -29,7 +29,6 @@ import {
 import {
   capturePreRunState,
   type PreRunState,
-  parseStatus,
   revertToPreRun,
   runGuardrails,
 } from "../ingest/guardrails.ts";
