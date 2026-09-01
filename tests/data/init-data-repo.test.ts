@@ -384,6 +384,22 @@ describe("seedDataRepo", () => {
     ).rejects.toThrow("refusing to seed into it");
   });
 
+  it("refuses on an interrupted seed whose wiki/index.md landed but whose commit did not", async () => {
+    const dataRoot = await makeTempDir();
+
+    await mkdir(join(dataRoot, "wiki"), { recursive: true });
+    await writeFile(join(dataRoot, "wiki", "index.md"), "# index\n");
+    await git(dataRoot, "init", "--quiet");
+
+    await expect(
+      seedDataRepo({
+        configPath: await writeConfig(dataRoot),
+        repoRoot: await makeCodeRepoFixture(),
+        env: GIT_ENV,
+      }),
+    ).rejects.toThrow("refusing to seed into it");
+  });
+
   it("writes the k-wiki data README at the data root", async () => {
     const dataRoot = await makeTempDir();
 

@@ -50,9 +50,21 @@ Do not edit by hand — the pipeline writes here. This repository can hold
 personal material: push it only to a private remote you control.
 `;
 
-/** The data root counts as seeded once the wiki skeleton is present. */
-function isSeeded(dataRoot: string): boolean {
-  return existsSync(join(dataRoot, "wiki", "index.md"));
+/** The data root counts as seeded once the seed's commit landed: the
+ *  commit is seed()'s final step, so a resolvable HEAD marks a completed
+ *  seed — a partially copied skeleton (an interrupted run) does not
+ *  count (issue #246 C-8). */
+async function isSeeded(
+  dataRoot: string,
+  env: NodeJS.ProcessEnv,
+): Promise<boolean> {
+  try {
+    await runGit(dataRoot, ["rev-parse", "--verify", "HEAD"], env);
+
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** The canonical meta contract (issue #74): copied into a meta data
@@ -177,7 +189,7 @@ export async function seedDataRepo(
     throw new Error(`no "dataRoot" in ${options.configPath}: nothing to seed`);
   }
 
-  if (isSeeded(config.dataRoot)) {
+  if (await isSeeded(config.dataRoot, env)) {
     return "already-seeded";
   }
 
