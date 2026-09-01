@@ -912,7 +912,7 @@ describe("runScheduledCycle with the real wiki-sync spawner", () => {
     await mkdir(join(repoRoot, "bin"), { recursive: true });
     await writeFile(
       join(repoRoot, "bin", "wiki-sync.ts"),
-      "process.kill(process.pid, " + JSON.stringify("SIGKILL") + ");",
+      `process.kill(process.pid, ${JSON.stringify("SIGKILL")});`,
     );
 
     const outcome = await runScheduledCycle({
