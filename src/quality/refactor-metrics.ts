@@ -272,13 +272,44 @@ function renderTable(metrics: StructureMetrics): string {
 const HELP = `Usage: refactor-metrics [--json] [<root>] [-h | --help]
 
 Scan a TypeScript tree recursively and print the src/ refactor
-campaign's structure counters: the file-size bands (>800, >500,
->350 lines, and the largest file), cross-domain import edges
-(imports between different top-level domains, with the cli shared
-layer excluded), and the duplication counters (parseArgs copies,
-directory walkers, repoRoot derivations, unquote definitions,
-env: signatures and their file spread, (dataRoot, env) pairs, and
-dirname derivations of rawDir).
+campaign's structure counters. Every counter measures structural
+debt: lower is better, and the unit suite freezes each counter at
+or below the committed baseline budget.
+
+Counters:
+
+  files >800 / >500 / >350
+                  .ts files over each size band. Fewer oversized
+                  files is better.
+  max file lines  Lines of the largest file. Smaller is better.
+  cross-domain edges
+                  Relative imports crossing top-level domains.
+                  Imports whose importer or target is the cli
+                  shared layer never count. Fewer boundary
+                  crossings is better.
+  parseArgs copies
+                  Local parseArgs/parseCliArgs definitions, in
+                  declaration or arrow form. Fewer copies is
+                  better: one shared CLI shell is the goal.
+  directory walkers
+                  Local walk-named recursive directory walkers.
+                  Fewer is better: one shared walker is the goal.
+  repoRoot derivations
+                  Sites deriving the repo root from the module
+                  URL idiom. Fewer is better: one canonical
+                  derivation is the goal.
+  unquote definitions
+                  Local unquote definitions. Fewer is better.
+  env: signatures / env: signature files
+                  Function signatures binding an env parameter,
+                  and the number of files holding them. Fewer is
+                  better: one run-context object is the goal.
+  (dataRoot, env) pairs
+                  Signatures binding both dataRoot and env.
+                  Fewer is better.
+  dirname derivations of rawDir
+                  dirname calls whose argument mentions rawDir.
+                  Fewer is better: derive the parent once.
 
   <root>   Directory to scan for .ts files. Default: the src/
            directory of this repository.

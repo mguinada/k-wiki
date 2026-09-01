@@ -291,4 +291,23 @@ describe("CLI (dev/refactor-metrics.ts)", () => {
 
     expect(stdout).toContain("Usage: refactor-metrics");
   });
+
+  it("--help explains every counter and says lower is better", async () => {
+    const { stdout } = await run(process.execPath, [launcher, "--help"]);
+    const missing = [
+      "files >800",
+      "max file lines",
+      "cross-domain edges",
+      "parseArgs copies",
+      "directory walkers",
+      "repoRoot derivations",
+      "unquote definitions",
+      "env: signatures",
+      "(dataRoot, env) pairs",
+      "dirname derivations of rawDir",
+      "lower is better",
+    ].filter((phrase) => !stdout.includes(phrase));
+
+    expect(missing).toEqual([]);
+  });
 });
