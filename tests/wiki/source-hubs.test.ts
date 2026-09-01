@@ -73,6 +73,14 @@ describe("citationAlias", () => {
 });
 
 describe("citationAnchor", () => {
+  it("reads no chapter from a plain self-citation without anchor or alias", () => {
+    expect(citationChapter("[[hub]]")).toBeUndefined();
+  });
+
+  it("reads no chapter from a whitespace-only alias", () => {
+    expect(citationChapter("[[hub| ]]")).toBeUndefined();
+  });
+
   it("reads the anchor of an anchored citation", () => {
     expect(citationAnchor("[[sdn#04. Rate Limiter]]")).toBe("04. Rate Limiter");
   });

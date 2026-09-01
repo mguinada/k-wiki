@@ -281,6 +281,10 @@ describe("crossWikiTarget", () => {
     expect(crossWikiTarget("retrieval-augmented-generation")).toBeUndefined();
   });
 
+  it("returns undefined for a target with an empty vault segment", () => {
+    expect(crossWikiTarget("/kinship")).toBeUndefined();
+  });
+
   it("returns undefined for a target that is only a prefix", () => {
     expect(crossWikiTarget("engineering/")).toBeUndefined();
   });

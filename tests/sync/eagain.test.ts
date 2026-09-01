@@ -127,6 +127,10 @@ describe("isEagain", () => {
     expect(isEagain(eagainError("read"))).toBe(true);
   });
 
+  it("rejects an undefined cause without throwing", () => {
+    expect(isEagain(undefined)).toBe(false);
+  });
+
   it("rejects other errors", () => {
     expect(
       isEagain(
@@ -221,6 +225,21 @@ describe("readFileTolerant", () => {
     expect((await readFileTolerant(path, 0, 50)).toString()).toBe(
       "cat materializes me\n",
     );
+  });
+
+  it("cat-reads a file larger than execFile's 1 MiB default buffer", async () => {
+    const dir = await makeTempDir();
+    const path = join(dir, "big.md");
+    const big = "x".repeat(2 * 1024 * 1024);
+
+    await writeFile(path, big);
+    vi.mocked(readFile).mockImplementation(
+      rejectReadFor(eagainError("read"), path),
+    );
+
+    const buffer = await readFileTolerant(path, 0, 50);
+
+    expect(buffer.byteLength).toBe(2 * 1024 * 1024);
   });
 
   it("fails loudly with the EAGAIN error when even cat cannot read", async () => {

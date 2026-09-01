@@ -1579,6 +1579,37 @@ describe("k-wiki list", () => {
     );
   });
 
+  it("prints the exact grouped listing with unknown and untyped sections last", async () => {
+    const h = await makeBoundProject();
+
+    await mkdir(join(h.dataRoot, "wiki", "scratch"), { recursive: true });
+    await writeFile(
+      join(h.dataRoot, "wiki", "scratch", "loose-note.md"),
+      "No frontmatter.\n",
+    );
+    await mkdir(join(h.dataRoot, "wiki", "customs"), { recursive: true });
+    await writeFile(
+      join(h.dataRoot, "wiki", "customs", "custom-page.md"),
+      "---\ntype: custom\ntitle: Custom Page\n---\nBody.\n",
+    );
+    const { out } = await runKWiki(join(h.project, "nested"), ["list"]);
+
+    expect(out.trimEnd().split("\n")).toEqual([
+      "## concepts",
+      "rag — Retrieval-Augmented Generation",
+      "## sources",
+      "attention — Attention Is All You Need",
+      "## queries",
+      "when-to-prefer-rag — When to Prefer RAG",
+      "## comparisons",
+      "rag-vs-fine-tuning — RAG vs Fine-Tuning",
+      "## customs",
+      "custom-page — Custom Page",
+      "## untyped",
+      "loose-note — loose-note",
+    ]);
+  });
+
   it("groups pages without a type under untyped", async () => {
     const h = await makeBoundProject();
 
@@ -1767,6 +1798,26 @@ describe("k-wiki read", () => {
     ]);
 
     expect(err).toContain("near matches: attention");
+  });
+
+  it("joins multiple near matches with commas", async () => {
+    const h = await makeBoundProject();
+
+    await mkdir(join(h.dataRoot, "wiki", "scratch"), { recursive: true });
+    await writeFile(
+      join(h.dataRoot, "wiki", "scratch", "al.md"),
+      "No frontmatter.\n",
+    );
+    await writeFile(
+      join(h.dataRoot, "wiki", "scratch", "pha.md"),
+      "No frontmatter.\n",
+    );
+    const { err } = await runKWiki(join(h.project, "nested"), [
+      "read",
+      "alpha",
+    ]);
+
+    expect(err).toContain("near matches: al, pha");
   });
 
   it("names the absent page when no near match exists", async () => {

@@ -1,5 +1,12 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -787,6 +794,120 @@ describe("runScheduledCycle log narration", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
+  it("timestamps the start line with the injected clock", async () => {
+    const dir = await tempDir();
+    const { git, runGitStep } = fakeGit();
+    const lines: string[] = [];
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      args: [],
+      now: () => new Date("2026-01-01T00:00:00.000Z"),
+      log: (line) => lines.push(line),
+    });
+
+    expect(lines[0]).toBe(
+      "scheduled-run: 2026-01-01T00:00:00.000Z — starting cycle",
+    );
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("marks a taken-over stale lock in the start line", async () => {
+    const dir = await tempDir();
+    const lockPath = join(dir, ".scheduled-run.lock");
+    const { git, runGitStep } = fakeGit();
+    const lines: string[] = [];
+
+    await writeFile(
+      lockPath,
+      `${JSON.stringify({
+        pid: 1,
+        takenAt: "2020-01-01T00:00:00.000Z",
+      })}\n`,
+    );
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath,
+      runGitStep,
+      runSync: syncRecorder(git),
+      args: [],
+      now: () => new Date("2026-01-01T00:00:00.000Z"),
+      log: (line) => lines.push(line),
+    });
+
+    expect(lines[0]).toBe(
+      "scheduled-run: 2026-01-01T00:00:00.000Z — took over a stale lock; starting cycle",
+    );
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("releases the lock it re-acquired with the injected pid", async () => {
+    const dir = await tempDir();
+    const lockPath = join(dir, ".scheduled-run.lock");
+    const { git, runGitStep } = fakeGit();
+
+    await writeFile(
+      lockPath,
+      `${JSON.stringify({
+        pid: 1,
+        takenAt: "2020-01-01T00:00:00.000Z",
+      })}\n`,
+    );
+
+    const outcome = await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath,
+      runGitStep,
+      runSync: syncRecorder(git),
+      args: [],
+      pid: 4242,
+      now: () => new Date("2026-01-01T00:00:00.000Z"),
+    });
+
+    expect([outcome, await stat(lockPath).catch(() => null)]).toEqual([
+      { status: "ok" },
+      null,
+    ]);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("logs the pushed-after-retry line on a recovered push", async () => {
+    const dir = await tempDir();
+    const { git, runGitStep } = fakeGit((args, calls) => {
+      if (
+        args[0] === "push" &&
+        calls.filter((c) => c[0] === "push").length === 1
+      ) {
+        throw new Error("! [rejected]");
+      }
+    });
+    const lines: string[] = [];
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      args: [],
+      log: (line) => lines.push(line),
+    });
+
+    expect(lines.join("\n")).toContain("scheduled-run: pushed after retry");
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
   it("narrates the push rejection, retry, and alert in the log", async () => {
     const dir = await tempDir();
     const { git, runGitStep } = fakeGit((args) => {
@@ -1052,6 +1173,144 @@ describe("scheduled-run main: cycle outcomes", () => {
 
     expect(`${exitCode}|${log}`).toContain("0|");
     expect(log).toContain("cycle complete");
+
+    await rm(dir, { recursive: true, force: true });
+  });
+});
+
+describe("gitStdout defensiveness", () => {
+  async function statusReturns(
+    value: unknown,
+  ): Promise<{ calls: string[][]; outcome: { status: string } }> {
+    const dir = await tempDir();
+    const calls: string[][] = [];
+
+    const outcome = await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep: async (_dir, args) => {
+        calls.push([...args]);
+
+        if (args[0] === "status") {
+          return value as unknown;
+        }
+
+        return { stdout: "" };
+      },
+      runSync: async () => {},
+      args: [],
+    });
+
+    await rm(dir, { recursive: true, force: true });
+
+    return { calls, outcome };
+  }
+
+  it("treats a status result without a stdout field as a clean tree", async () => {
+    const { calls } = await statusReturns(undefined);
+
+    expect(calls.some((args) => args[0] === "pull")).toBe(true);
+  });
+
+  it("treats a null status result as a clean tree", async () => {
+    const { calls } = await statusReturns(null);
+
+    expect(calls.some((args) => args[0] === "pull")).toBe(true);
+  });
+});
+
+describe("appendLog failure reporting", () => {
+  it("reports a failed log write to stderr", async () => {
+    const dir = await tempDir();
+    const errors: string[] = [];
+    const spy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) =>
+        errors.push(parts.join(" ")),
+      );
+
+    try {
+      await appendLog(dir, "a line that cannot be written");
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(errors.join("\n")).toContain("log write failed");
+
+    await rm(dir, { recursive: true, force: true });
+  });
+});
+
+describe("rotateLogIfNeeded default threshold", () => {
+  it("keeps a one-byte log in place", async () => {
+    const dir = await tempDir();
+    const logPath = join(dir, "scheduled-run.log");
+
+    await writeFile(logPath, "x");
+    await rotateLogIfNeeded(logPath);
+
+    await expect(readFile(logPath, "utf8")).resolves.toBe("x");
+    await expect(readFile(`${logPath}.1`, "utf8")).rejects.toThrow();
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("keeps a six-kilobyte log in place", async () => {
+    const dir = await tempDir();
+    const logPath = join(dir, "scheduled-run.log");
+
+    await writeFile(logPath, "x".repeat(6 * 1024));
+    await rotateLogIfNeeded(logPath);
+
+    await expect(readFile(`${logPath}.1`, "utf8")).rejects.toThrow();
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("rotates a log of exactly five MiB", async () => {
+    const dir = await tempDir();
+    const logPath = join(dir, "scheduled-run.log");
+
+    await writeFile(logPath, "x".repeat(5 * 1024 * 1024));
+    await rotateLogIfNeeded(logPath);
+
+    await expect(readFile(`${logPath}.1`, "utf8")).resolves.toBe(
+      "x".repeat(5 * 1024 * 1024),
+    );
+
+    await rm(dir, { recursive: true, force: true });
+  });
+});
+
+describe("runScheduledCycle streamed output hygiene", () => {
+  it("drops blank lines from the streamed child output", async () => {
+    const dir = await tempDir();
+    const repoRoot = join(dir, "repo");
+    const { runGitStep } = fakeGit();
+    const lines: string[] = [];
+
+    await mkdir(join(repoRoot, "bin"), { recursive: true });
+    await writeFile(
+      join(repoRoot, "bin", "wiki-sync.ts"),
+      [
+        'console.log("kept-stdout");',
+        "console.log();",
+        'console.error("kept-stderr");',
+        "console.error();",
+      ].join("\n"),
+    );
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      args: [],
+      log: (line) => lines.push(line),
+    });
+
+    expect(lines).not.toContain("");
 
     await rm(dir, { recursive: true, force: true });
   });

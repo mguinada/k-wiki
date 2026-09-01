@@ -37,6 +37,18 @@ describe("parseIntervalDuration", () => {
     expect(parseIntervalDuration(text)).toBe(seconds);
   });
 
+  it("rejects trailing junk after the unit", () => {
+    expect(parseIntervalDuration("15minutesx")).toBeUndefined();
+  });
+
+  it("parses a singular second", () => {
+    expect(parseIntervalDuration("1second")).toBe(1);
+  });
+
+  it("parses an interval with surrounding whitespace", () => {
+    expect(parseIntervalDuration(" 15minutes ")).toBe(900);
+  });
+
   it.each(["15", "minutes", "abc", "0minutes", "-5minutes", "1.5hours", ""])(
     "rejects %s",
     (text) => {
