@@ -10,11 +10,10 @@ import {
 } from "../cli/colors.ts";
 import { flagValueError, readFlagValues } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
-import { formatDuration } from "../cli/progress.ts";
+import { createAgentProgressSink, formatDuration } from "../cli/progress.ts";
 import { parseStatus, runGit } from "../data/git.ts";
 import {
   type AgentRunner,
-  createAgentProgressSink,
   readPrompt,
   spawnAgent,
 } from "../ingest/agent-run.ts";

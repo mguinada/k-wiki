@@ -133,3 +133,60 @@ export function createProgressRenderer(
 export function isWarning(message: string): boolean {
   return message.includes("WARNING");
 }
+
+/** Interval for the progress-sink liveness line while the agent
+ *  runs; the wording is each consumer's heartbeat prefix. */
+export const HEARTBEAT_MS = 60_000;
+
+/** A stderr progress surface: plain lines, or one animated line. */
+export interface ProgressSink {
+  render(message: string): void;
+  end(): void;
+}
+
+export interface ProgressTones {
+  /** Routine progress lines. */
+  readonly dim: (text: string) => string;
+  /** WARNING-severity lines. */
+  readonly yellow: (text: string) => string;
+}
+
+/**
+ * The stderr presentation for one agent-driven run: agent heartbeats
+ * keep one animated line (spinner + clock) on a TTY; every other
+ * message scrolls. Non-animated runs append plain lines only.
+ * Severity is detected here, at the render boundary: WARNING messages
+ * render yellow, everything else dim.
+ */
+export function createAgentProgressSink(
+  write: (text: string) => void,
+  writeLine: (text: string) => void,
+  animated: boolean,
+  tones: ProgressTones,
+  heartbeatPrefix: string | readonly string[],
+): ProgressSink {
+  const prefixes =
+    typeof heartbeatPrefix === "string" ? [heartbeatPrefix] : heartbeatPrefix;
+  const styled = (message: string) =>
+    isWarning(message) ? tones.yellow(message) : tones.dim(message);
+
+  if (!animated) {
+    return {
+      render: (message) => writeLine(styled(message)),
+      end: () => {},
+    };
+  }
+
+  const renderer = createProgressRenderer(write);
+
+  return {
+    render: (message) => {
+      if (prefixes.some((prefix) => message.startsWith(prefix))) {
+        renderer.live(styled(message));
+      } else {
+        renderer.event(styled(message));
+      }
+    },
+    end: () => renderer.end(),
+  };
+}

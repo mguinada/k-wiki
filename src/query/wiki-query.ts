@@ -9,13 +9,15 @@ import {
 } from "../cli/colors.ts";
 import { flagValueError } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
-import { formatDuration } from "../cli/progress.ts";
+import {
+  createAgentProgressSink,
+  formatDuration,
+  HEARTBEAT_MS,
+  type ProgressSink,
+} from "../cli/progress.ts";
 import { statusSince } from "../data/git.ts";
 import {
   type AgentRunner,
-  createAgentProgressSink,
-  HEARTBEAT_MS,
-  type ProgressSink,
   readPrompt,
   spawnAgent,
 } from "../ingest/agent-run.ts";

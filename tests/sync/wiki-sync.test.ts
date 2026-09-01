@@ -13,11 +13,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { createAgentProgressSink } from "../../src/cli/progress.ts";
 import { runGit } from "../../src/data/git.ts";
-import {
-  type AgentRunner,
-  createAgentProgressSink,
-} from "../../src/ingest/agent-run.ts";
+import type { AgentRunner } from "../../src/ingest/agent-run.ts";
 import { serializeManifest } from "../../src/sync/manifest.ts";
 import {
   type CommitResult,

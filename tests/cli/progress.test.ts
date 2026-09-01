@@ -1,5 +1,7 @@
+import { createColors } from "picocolors";
 import { describe, expect, it, vi } from "vitest";
 import {
+  createAgentProgressSink,
   createProgressRenderer,
   createStatusLine,
   formatDuration,
@@ -236,5 +238,125 @@ describe("createProgressRenderer", () => {
     createProgressRenderer(write);
 
     expect(write).not.toHaveBeenCalled();
+  });
+});
+
+describe("createAgentProgressSink", () => {
+  const tones = {
+    dim: (text: string) => `<${text}>`,
+    yellow: (text: string) => `[${text}]`,
+  };
+  const ingestPrefix = "wiki-ingest: agent still running";
+
+  function makeSink(animated: boolean) {
+    const written: string[] = [];
+    const lines: string[] = [];
+    const sink = createAgentProgressSink(
+      (text) => written.push(text),
+      (text) => lines.push(text),
+      animated,
+      tones,
+      ingestPrefix,
+    );
+
+    return { sink, written, lines };
+  }
+
+  it("requires the heartbeat prefix argument", () => {
+    // @ts-expect-error heartbeatPrefix has no consumer-specific default
+    createAgentProgressSink(
+      () => {},
+      () => {},
+      false,
+      tones,
+    );
+  });
+
+  it("keeps the animated channel quiet when not animated", () => {
+    const { sink, written } = makeSink(false);
+
+    sink.render("wiki-ingest: agent finished");
+
+    expect(written).toEqual([]);
+  });
+
+  it("appends plain lines when not animated", () => {
+    const { sink, lines } = makeSink(false);
+
+    sink.render("wiki-ingest: agent finished");
+
+    expect(lines).toEqual(["<wiki-ingest: agent finished>"]);
+  });
+
+  it("renders a WARNING-severity message yellow, not dim, when not animated", () => {
+    const { sink, lines } = makeSink(false);
+
+    sink.render("wiki-ingest: WARNING — snapshot is foreign");
+
+    expect(lines).toEqual(["[wiki-ingest: WARNING — snapshot is foreign]"]);
+  });
+
+  it("renders a WARNING-severity message yellow on the animated sink", () => {
+    const { sink, written } = makeSink(true);
+
+    sink.render("wiki-ingest: WARNING — snapshot is foreign");
+
+    expect(written).toEqual(["[wiki-ingest: WARNING — snapshot is foreign]\n"]);
+  });
+
+  it("renders a WARNING-severity message plain under NO_COLOR", () => {
+    const lines: string[] = [];
+    const sink = createAgentProgressSink(
+      () => {},
+      (text) => lines.push(text),
+      false,
+      createColors(false),
+      ingestPrefix,
+    );
+
+    sink.render("wiki-ingest: WARNING — snapshot is foreign");
+
+    expect(lines).toEqual(["wiki-ingest: WARNING — snapshot is foreign"]);
+  });
+
+  it("keeps heartbeat messages on the animated line", () => {
+    const { sink, written } = makeSink(true);
+
+    sink.render("wiki-ingest: agent still running (2m07s)");
+
+    expect(written).toEqual(["\r⠋ <wiki-ingest: agent still running (2m07s)>"]);
+  });
+
+  it("scrolls non-heartbeat messages as events on the animated sink", () => {
+    const { sink, written } = makeSink(true);
+
+    sink.render("wiki-ingest: agent finished");
+
+    expect(written).toEqual(["<wiki-ingest: agent finished>\n"]);
+  });
+
+  it("clears the animated line on end", () => {
+    const { sink, written } = makeSink(true);
+
+    sink.render("wiki-ingest: agent still running (0s)");
+    sink.end();
+
+    expect(written[1]).toMatch(/^\r\s+\r$/);
+  });
+
+  it("does nothing on end when not animated", () => {
+    const { sink, written } = makeSink(false);
+
+    sink.end();
+
+    expect(written).toEqual([]);
+  });
+
+  it("keeps the scroll lines empty on end when not animated", () => {
+    const { sink, lines } = makeSink(false);
+
+    sink.end();
+
+    expect(lines).toEqual([]);
   });
 });
