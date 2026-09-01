@@ -2,7 +2,11 @@ import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { cliFail, terminalColors as colors, errorMessage } from "../cli/colors.ts";
+import {
+  cliFail,
+  terminalColors as colors,
+  errorMessage,
+} from "../cli/colors.ts";
 import { flagValueError, readFlagValues } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { formatDuration, stderrSink } from "../cli/progress.ts";
