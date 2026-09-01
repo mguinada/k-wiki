@@ -1595,6 +1595,33 @@ describe("runScheduledCycle streamed output hygiene", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
+  it("records each line of a chunk that carries several complete lines", async () => {
+    const dir = await tempDir();
+    const repoRoot = join(dir, "repo");
+    const { runGitStep } = fakeGit();
+    const lines: string[] = [];
+
+    await mkdir(join(repoRoot, "bin"), { recursive: true });
+    await writeFile(
+      join(repoRoot, "bin", "wiki-sync.ts"),
+      'process.stdout.write("first\\nsecond\\n");',
+    );
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      args: [],
+      log: (line) => lines.push(line),
+    });
+
+    expect(lines).toEqual(expect.arrayContaining(["first", "second"]));
+    expect(lines).not.toContain("first\\nsecond");
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
   it("records a final fragment that ends without a newline", async () => {
     const dir = await tempDir();
     const repoRoot = join(dir, "repo");
