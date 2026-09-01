@@ -173,7 +173,7 @@ infrastructure, free to use for any unit or e2e work; the snapshot at
   basename plus `.test.ts` — no area prefixes in filenames
   (`sync-publish.test.ts` becomes `tests/sync/publish.test.ts`).
   Exceptions: `tests/e2e/` (system tests, own lane), `tests/bin/`
-  (tests of the `bin/` launchers themselves), repo-wide guard tests
+  (tests of the `bin/` and `dev/` launchers themselves), repo-wide guard tests
   under `tests/quality/` with no single src subject,
   `tests/wiki-contract-sync.test.ts` (contract guard with no single
   src subject, stays at `tests/` root), and the
@@ -196,7 +196,7 @@ the wiki). `dev/<name>.ts` launches development-lifecycle commands
 that exist only to build and maintain this repo (`generate`,
 `mutation-*`, `board-triage`). Every CLI runs through a shebanged
 launcher of its class (`#!/usr/bin/env node`, committed `100755`);
-npm scripts invoke `node bin/<name>.ts` or `node dev/<name>.ts>`.
+npm scripts invoke `node bin/<name>.ts` or `node dev/<name>.ts`.
 `src/` and `scripts/` modules are libraries:
 they export `main()` but never invoke it at module scope — no Stryker
 mutant can fire a CLI as an import side effect with live defaults
