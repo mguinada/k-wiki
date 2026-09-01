@@ -1,5 +1,6 @@
-import { access, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+import { errorMessage } from "../cli/colors.ts";
 import { runGit } from "../data/git.ts";
 import { parseStatus } from "../ingest/guardrails.ts";
 import {
@@ -322,14 +323,60 @@ export function logEntry(question: string, date: string): string {
   return `## [${date}] query | ${oneLine(question)}`;
 }
 
-/** A file's text, or "" when the path is absent — the caller's
- *  default for a wiki (index/log) that does not exist yet. */
-async function readTextIfExists(path: string): Promise<string> {
+/** One filing target's state before the filing ran: its bytes when a
+ *  readable file existed, undefined when none did (absent or
+ *  unreadable — a directory blocking the write counts as none). */
+interface FilingTarget {
+  readonly path: string;
+  readonly text: string | undefined;
+}
+
+/** The pre-run state of the three files a filing writes, captured
+ *  before the first write so a failure can roll all of them back
+ *  (issue #245: a half-filed wiki — page without index entry — is
+ *  never left behind). */
+interface FilingPreState {
+  readonly pageFile: string;
+  readonly index: FilingTarget;
+  readonly log: FilingTarget;
+}
+
+/** A wiki file's bytes before the filing, or undefined when no
+ *  readable file exists; the filing's empty-input default is
+ *  `text ?? ""` (readTextIfExists semantics, kept). */
+async function readPreState(path: string): Promise<string | undefined> {
   try {
     return await readFile(path, "utf8");
   } catch {
-    return "";
+    return undefined;
   }
+}
+
+/** Restore one filing target after a failed write: rewrite the
+ *  captured bytes, or delete the file the failed filing created —
+ *  a non-file that blocked the write (a directory) is left
+ *  untouched, and so is a path that stayed absent. */
+async function restoreTarget(target: FilingTarget): Promise<void> {
+  if (target.text !== undefined) {
+    await writeFile(target.path, target.text, "utf8");
+
+    return;
+  }
+
+  const info = await stat(target.path).catch(() => undefined);
+
+  if (info?.isFile() === true) {
+    await rm(target.path, { force: true });
+  }
+}
+
+/** Roll a failed filing back to its pre-run state (issue #245): the
+ *  query page — never present before, queryPagePath claims a free
+ *  slug — is deleted, index.md and log.md are restored. */
+async function rollbackFiling(pre: FilingPreState): Promise<void> {
+  await rm(pre.pageFile, { force: true });
+  await restoreTarget(pre.index);
+  await restoreTarget(pre.log);
 }
 
 /** Warning when a commit touched raw/ or wiki/ after the save.
@@ -494,29 +541,52 @@ export async function fileLastQuery(
   const slug = basename(pagePath, ".md");
   const date = (options.now ?? (() => new Date()))().toISOString().slice(0, 10);
   const sources = await citedSourcePages(wikiDir, artifact.pages);
+  const indexPath = join(wikiDir, "index.md");
+  const logPath = join(wikiDir, "log.md");
+  const pageFile = join(options.dataRoot, pagePath);
+  const index: FilingTarget = {
+    path: indexPath,
+    text: await readPreState(indexPath),
+  };
+  const log: FilingTarget = {
+    path: logPath,
+    text: await readPreState(logPath),
+  };
 
   await mkdir(join(wikiDir, "queries"), { recursive: true });
-  await writeFile(
-    join(options.dataRoot, pagePath),
-    templateQueryPage(artifact, { created: date, updated: date, sources }),
-    "utf8",
-  );
 
-  const indexText = await readTextIfExists(join(wikiDir, "index.md"));
+  try {
+    await writeFile(
+      pageFile,
+      templateQueryPage(artifact, { created: date, updated: date, sources }),
+      "utf8",
+    );
 
-  await writeFile(
-    join(wikiDir, "index.md"),
-    appendIndexEntry(indexText, indexEntryFor(slug, artifact.question)),
-    "utf8",
-  );
+    await writeFile(
+      indexPath,
+      appendIndexEntry(
+        index.text ?? "",
+        indexEntryFor(slug, artifact.question),
+      ),
+      "utf8",
+    );
 
-  const logText = await readTextIfExists(join(wikiDir, "log.md"));
+    await writeFile(
+      logPath,
+      appendWikiLog(log.text ?? "", logEntry(artifact.question, date)),
+      "utf8",
+    );
+  } catch (cause) {
+    await rollbackFiling({ pageFile, index, log });
+    onProgress(
+      "wiki-query: filing failed — rolled back the query page, index.md, and log.md; nothing was filed",
+    );
 
-  await writeFile(
-    join(wikiDir, "log.md"),
-    appendWikiLog(logText, logEntry(artifact.question, date)),
-    "utf8",
-  );
+    throw new Error(
+      `filing failed — rolled back, no wiki file was changed: ${errorMessage(cause)}`,
+      { cause },
+    );
+  }
 
   return { pagePath, warning };
 }

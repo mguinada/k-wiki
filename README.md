@@ -1213,7 +1213,9 @@ omitted flag can never produce wiki writes:
   `-2`/`-3` suffixes on collision; `type: query` frontmatter with
   `sources` derived from the answer's citations of `type: source`
   pages), appends the `index.md` entry under `## Queries`, and
-  appends the `log.md` entry (`## [date] query | <question>`). It
+  appends the `log.md` entry (`## [date] query | <question>`). The
+  three writes are a unit: a failure anywhere in the filing rolls
+  all of them back — no half-filed wiki is left behind. It
   fails cleanly when no saved answer exists, and warns when the data
   repo's `raw/` or `wiki/` changed after the saved timestamp — the
   answer cites pages that may have moved; the warning does not block

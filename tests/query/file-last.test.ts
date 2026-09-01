@@ -1,9 +1,13 @@
 import { execFile } from "node:child_process";
 import {
+  access,
+  lstat,
   mkdir,
   mkdtemp,
   readFile,
   rm,
+  stat,
+  symlink,
   utimes,
   writeFile,
 } from "node:fs/promises";
@@ -695,6 +699,183 @@ describe("fileLastQuery", () => {
     });
 
     expect(result.warning).toBeUndefined();
+  });
+});
+
+describe("fileLastQuery rollback (issue #245)", () => {
+  /** A repo whose wiki/index.md is a directory: the page write
+   *  lands, the index write fails with EISDIR. */
+  async function makeIndexBlockedRepo(): Promise<{
+    readonly dataRoot: string;
+    readonly artifactPath: string;
+  }> {
+    const repo = await makeFiledRepo();
+
+    await rm(join(repo.dataRoot, "wiki", "index.md"));
+    await mkdir(join(repo.dataRoot, "wiki", "index.md"));
+
+    return repo;
+  }
+
+  /** A repo with no index.md and a directory at wiki/log.md: the
+   *  page and index writes land, the log write fails with EISDIR. */
+  async function makeLogBlockedRepo(): Promise<{
+    readonly dataRoot: string;
+    readonly artifactPath: string;
+  }> {
+    const repo = await makeFiledRepo();
+
+    await rm(join(repo.dataRoot, "wiki", "index.md"));
+    await rm(join(repo.dataRoot, "wiki", "log.md"));
+    await mkdir(join(repo.dataRoot, "wiki", "log.md"));
+
+    return repo;
+  }
+
+  /** Run the failing filing once, collecting the progress messages
+   *  and the rejection; every rollback expectation reuses it. */
+  async function runFailedFiling(repo: {
+    readonly dataRoot: string;
+    readonly artifactPath: string;
+  }): Promise<{ readonly messages: readonly string[]; readonly error: Error }> {
+    const messages: string[] = [];
+    let error: Error | undefined;
+
+    try {
+      await fileLastQuery({
+        artifactPath: repo.artifactPath,
+        dataRoot: repo.dataRoot,
+        now: () => new Date("2026-08-21T09:00:00Z"),
+        onProgress: (message) => messages.push(message),
+      });
+    } catch (caught) {
+      error = caught as Error;
+    }
+
+    if (error === undefined) {
+      throw new Error("the filing was expected to fail but succeeded");
+    }
+
+    return { messages, error };
+  }
+
+  /** True when the path exists (file or directory). */
+  async function pathExists(path: string): Promise<boolean> {
+    try {
+      await access(path);
+
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  it("rejects naming the failure and the rollback when the index write fails", async () => {
+    const { error } = await runFailedFiling(await makeIndexBlockedRepo());
+
+    expect(error.message).toContain(
+      "filing failed — rolled back, no wiki file was changed",
+    );
+  });
+
+  it("leaves no query page behind when the index write fails", async () => {
+    const repo = await makeIndexBlockedRepo();
+
+    await runFailedFiling(repo);
+
+    expect(
+      await pathExists(
+        join(
+          repo.dataRoot,
+          "wiki",
+          "queries",
+          "when-should-i-prefer-rag-over-fine-tuning.md",
+        ),
+      ),
+    ).toBe(false);
+  });
+
+  it("restores log.md byte-exactly when the index write fails", async () => {
+    const repo = await makeIndexBlockedRepo();
+    const logPath = join(repo.dataRoot, "wiki", "log.md");
+    const before = await readFile(logPath, "utf8");
+
+    await runFailedFiling(repo);
+
+    expect(await readFile(logPath, "utf8")).toBe(before);
+  });
+
+  it("leaves a directory blocking index.md untouched when its write fails", async () => {
+    const repo = await makeIndexBlockedRepo();
+    const indexPath = join(repo.dataRoot, "wiki", "index.md");
+
+    await runFailedFiling(repo);
+
+    expect((await stat(indexPath)).isDirectory()).toBe(true);
+  });
+
+  it("leaves a self-referencing symlink blocking index.md in place when its write fails", async () => {
+    const repo = await makeFiledRepo();
+    const indexPath = join(repo.dataRoot, "wiki", "index.md");
+
+    await rm(indexPath);
+    await symlink("index.md", indexPath);
+    await runFailedFiling(repo);
+
+    expect((await lstat(indexPath)).isSymbolicLink()).toBe(true);
+  });
+
+  it("reports the rollback on progress", async () => {
+    const { messages } = await runFailedFiling(await makeIndexBlockedRepo());
+
+    expect(messages).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/wiki-query: filing failed — rolled back/),
+      ]),
+    );
+  });
+
+  it("keeps the original failure as the error's cause", async () => {
+    const { error } = await runFailedFiling(await makeIndexBlockedRepo());
+
+    expect((error.cause as Error).message).toMatch(/EISDIR|illegal operation/);
+  });
+
+  it("deletes an index.md the failed filing created when the log write fails", async () => {
+    const repo = await makeLogBlockedRepo();
+
+    await runFailedFiling(repo);
+
+    expect(await pathExists(join(repo.dataRoot, "wiki", "index.md"))).toBe(
+      false,
+    );
+  });
+
+  it("leaves no query page behind when the log write fails", async () => {
+    const repo = await makeLogBlockedRepo();
+
+    await runFailedFiling(repo);
+
+    expect(
+      await pathExists(
+        join(
+          repo.dataRoot,
+          "wiki",
+          "queries",
+          "when-should-i-prefer-rag-over-fine-tuning.md",
+        ),
+      ),
+    ).toBe(false);
+  });
+
+  it("leaves a directory blocking log.md untouched when its write fails", async () => {
+    const repo = await makeLogBlockedRepo();
+
+    await runFailedFiling(repo);
+
+    expect(
+      (await stat(join(repo.dataRoot, "wiki", "log.md"))).isDirectory(),
+    ).toBe(true);
   });
 });
 
