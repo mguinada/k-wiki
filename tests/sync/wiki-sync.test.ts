@@ -3129,6 +3129,60 @@ describe("formatFinalDigest sections", () => {
     expect(digest).not.toContain("undefined");
   });
 
+  it("separates the lint heading from its body with a blank line", () => {
+    const digest = formatFinalDigest(
+      ranResult({ lintSummary: "padded summary" }),
+    );
+
+    expect(digest).toContain("## Lint summary\n\npadded summary");
+  });
+
+  it("separates the ingest digest heading from its body with a blank line", () => {
+    const digest = formatFinalDigest(ranResult({}));
+
+    expect(digest).toContain("## Ingest digest\n\ningest digest body");
+  });
+
+  it("keeps the leading whitespace of the ingest digest body", () => {
+    const base = ranResult({});
+
+    base.ingest.digest = "  indented digest body\n";
+
+    expect(formatFinalDigest(base)).toContain(
+      "## Ingest digest\n\n  indented digest body",
+    );
+  });
+
+  it("reports the ingest mode under the Ingest line for a run", () => {
+    const digest = formatFinalDigest(ranResult({}));
+
+    expect(digest).toContain("- **Ingest:** incremental — digest below");
+  });
+
+  it("states the skip reason under the Ingest line when no ingest ran", () => {
+    const base = ranResult({});
+
+    base.ingest = {
+      status: "skipped",
+      reason: "no source changes",
+    };
+
+    expect(formatFinalDigest(base)).toContain(
+      "- **Ingest:** skipped — no source changes",
+    );
+  });
+
+  it("states the lint skip when no ingest ran", () => {
+    const base = ranResult({});
+
+    base.ingest = { status: "skipped", reason: "no source changes" };
+    base.lint = undefined;
+
+    expect(formatFinalDigest(base)).toContain(
+      "- **Lint:** skipped — no ingest ran",
+    );
+  });
+
   it("embeds the lint summary under the Lint summary heading", () => {
     const digest = formatFinalDigest(
       ranResult({ lintSummary: "  padded summary  \n" }),

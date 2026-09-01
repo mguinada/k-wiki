@@ -223,6 +223,12 @@ describe("compileAllowlistPattern", () => {
     expect(pattern.test("srcx/a.ts")).toBe(false);
   });
 
+  it("matches any path for a bare double-star pattern", () => {
+    const pattern = compileAllowlistPattern("**");
+
+    expect(pattern.test("deep/path/file.md")).toBe(true);
+  });
+
   it("matches a leading double star at the top level", () => {
     const pattern = compileAllowlistPattern("**/*.md");
 
@@ -419,6 +425,20 @@ describe("runRepoSync first run", () => {
     });
 
     expect(report.commit).toBe(await head(ws.sourceRoot));
+  });
+
+  it("shortens the stamped commit to eight characters in the report line", async () => {
+    const ws = await makeWorkspace();
+
+    const lines: string[] = [];
+    await runRepoSync({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+      env: GIT_ENV,
+      onProgress: (line) => lines.push(line),
+    });
+
+    expect(lines.join("\n")).toMatch(/selected at commit [0-9a-f]{8}$/m);
   });
 
   it("counts every candidate file in the run report", async () => {
