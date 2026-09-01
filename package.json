@@ -42,7 +42,8 @@
     "mutation:merge": "node dev/mutation-merge.ts",
     "mutation:report": "node dev/mutation-report.ts",
     "complexity": "vitest run --disableConsoleIntercept tests/quality/complexity.test.ts",
-    "complexity:full": "COMPLEXITY_FULL=1 vitest run --disableConsoleIntercept tests/quality/complexity.test.ts"
+    "complexity:full": "COMPLEXITY_FULL=1 vitest run --disableConsoleIntercept tests/quality/complexity.test.ts",
+    "refactor-metrics": "node dev/refactor-metrics.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",
