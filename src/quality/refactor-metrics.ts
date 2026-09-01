@@ -156,14 +156,17 @@ function countCrossDomainEdges(
     const target = relative(
       root,
       resolve(root, dirname(edge.importer.relPath), edge.specifier),
-    );
+    )
+      .split(sep)
+      .join("/");
     const importerDomain = domainOf(edge.importer.relPath);
+    const targetDomain = domainOf(target);
 
     if (
       !target.startsWith("..") &&
       importerDomain !== "cli" &&
-      domainOf(target.split(sep).join("/")) !== "cli" &&
-      importerDomain !== domainOf(target.split(sep).join("/"))
+      targetDomain !== "cli" &&
+      importerDomain !== targetDomain
     ) {
       count += 1;
     }
@@ -204,18 +207,13 @@ function countEnvSignatures(signatures: readonly Signature[]): {
   total: number;
   files: number;
 } {
-  const files = new Set<string>();
-
-  for (const signature of signatures) {
-    if (ENV_PARAM.test(signature.params)) {
-      files.add(signature.file);
-    }
-  }
+  const envSignatures = signatures.filter((signature) =>
+    ENV_PARAM.test(signature.params),
+  );
 
   return {
-    total: signatures.filter((signature) => ENV_PARAM.test(signature.params))
-      .length,
-    files: files.size,
+    total: envSignatures.length,
+    files: new Set(envSignatures.map((signature) => signature.file)).size,
   };
 }
 
@@ -235,7 +233,8 @@ export async function collectMetrics(
   const root = resolve(rootInput);
   const files = await listTsFiles(root);
   const lineCounts = files.map((file) => countLines(file.text));
-  const envSignatures = countEnvSignatures(scanSignatures(files));
+  const signatures = scanSignatures(files);
+  const envSignatures = countEnvSignatures(signatures);
 
   return {
     filesOver800: lineCounts.filter((lines) => lines > 800).length,
@@ -249,7 +248,7 @@ export async function collectMetrics(
     unquoteDefinitions: countMatches(files, UNQUOTE_PATTERN),
     envSignatures: envSignatures.total,
     envSignatureFiles: envSignatures.files,
-    dataRootEnvPairs: countDataRootEnvPairs(scanSignatures(files)),
+    dataRootEnvPairs: countDataRootEnvPairs(signatures),
     dirnameRawDirDerivations: countMatches(files, DIRNAME_RAW_DIR_PATTERN),
   };
 }
