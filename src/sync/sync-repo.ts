@@ -23,6 +23,7 @@ import {
 import {
   assertSourceDirectory,
   colorizeProgress,
+  compileIncludePattern,
   formatReport,
   listNamespaceDirs,
   type ProjectedNote,
@@ -30,7 +31,7 @@ import {
   pruneNamespaces,
   reportColors,
   toAbsolute,
-} from "./sync-vault.ts";
+} from "./projection.ts";
 
 /**
  * sync-repo: the repo-as-source sync adapter (issue #74). Projects the
@@ -73,43 +74,6 @@ export interface RepoSyncReport {
   readonly removed: readonly string[];
   /** Namespaces removed because they are absent from the config. */
   readonly prunedNamespaces: readonly string[];
-}
-
-/** Compile one allowlist pattern: `*` matches within a path segment,
- *  `**` matches across segments (gitignore-style — a double-star
- *  segment also matches zero directories, so `src` + double-star +
- *  `*.ts` matches `src/a.ts` as well as `src/x/a.ts`); every other
- *  character is literal. */
-export function compileAllowlistPattern(pattern: string): RegExp {
-  const segments = pattern.split("/");
-  let source = "^";
-  let skipSlash = false;
-
-  for (const [index, segment] of segments.entries()) {
-    if (segment === "**") {
-      if (index === segments.length - 1) {
-        source += index === 0 ? ".*" : "/.*";
-      } else {
-        source += index === 0 ? "(?:.*/)?" : "/(?:.*/)?";
-
-        skipSlash = true;
-      }
-
-      continue;
-    }
-
-    if (index > 0 && !skipSlash) {
-      source += "/";
-    }
-
-    skipSlash = false;
-
-    source += segment
-      .replace(/[.+?^${}()|[\]\\]/g, "\\$&")
-      .replace(/\*/g, "[^/]*");
-  }
-
-  return new RegExp(`${source}$`);
 }
 
 /** The literal leading directory segments of a pattern, before the
@@ -199,7 +163,7 @@ export async function selectRepoFiles(
   root: string,
   patterns: readonly string[],
 ): Promise<{ candidates: number; selected: readonly string[] }> {
-  const matchers = patterns.map(compileAllowlistPattern);
+  const matchers = patterns.map(compileIncludePattern);
   const matches = (relPath: string) => matchers.some((m) => m.test(relPath));
   const { exactFiles, walkRoots } = classifyPatterns(patterns);
 

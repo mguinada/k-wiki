@@ -56,9 +56,10 @@ import {
   resolveRawDir,
   type SyncConfig,
 } from "./config.ts";
+import type { SyncReport } from "./projection.ts";
 import { type PublishResult, runPublishStage } from "./publish.ts";
 import { type RepoSyncReport, runRepoSync } from "./sync-repo.ts";
-import { runSync, type SyncReport } from "./sync-vault.ts";
+import { runSync } from "./sync-vault.ts";
 
 /**
  * wiki-sync: the one-command orchestrator (guide §18, issue #13). It

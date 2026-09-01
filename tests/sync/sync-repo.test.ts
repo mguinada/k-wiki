@@ -13,11 +13,8 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { runGit } from "../../src/data/git.ts";
 import { loadSyncConfig } from "../../src/sync/config.ts";
 import { parseManifest } from "../../src/sync/manifest.ts";
-import {
-  compileAllowlistPattern,
-  runRepoSync,
-  selectRepoFiles,
-} from "../../src/sync/sync-repo.ts";
+import { compileIncludePattern } from "../../src/sync/projection.ts";
+import { runRepoSync, selectRepoFiles } from "../../src/sync/sync-repo.ts";
 import { collectFiles } from "../e2e/helpers.ts";
 
 /**
@@ -155,110 +152,6 @@ async function head(root: string): Promise<string> {
 
 /** Every file below a directory, POSIX-style, sorted — shared with
  *  the e2e suite via tests/e2e/helpers.ts. */
-
-describe("compileAllowlistPattern", () => {
-  it("matches an exact path pattern at that path", () => {
-    const pattern = compileAllowlistPattern("README.md");
-
-    expect(pattern.test("README.md")).toBe(true);
-  });
-
-  it("does not match an exact path pattern deeper in the tree", () => {
-    const pattern = compileAllowlistPattern("README.md");
-
-    expect(pattern.test("docs/README.md")).toBe(false);
-  });
-
-  it("does not match a filename that merely starts with the pattern", () => {
-    const pattern = compileAllowlistPattern("README.md");
-
-    expect(pattern.test("README.md2")).toBe(false);
-  });
-
-  it("treats regex metacharacters in a pattern as literals", () => {
-    const pattern = compileAllowlistPattern("package.json");
-
-    expect(pattern.test("package.json")).toBe(true);
-  });
-
-  it("does not let a literal dot match a substituted character", () => {
-    const pattern = compileAllowlistPattern("package.json");
-
-    expect(pattern.test("packageXjson")).toBe(false);
-  });
-
-  it("matches a single star inside one path segment", () => {
-    const pattern = compileAllowlistPattern("docs/*.md");
-
-    expect(pattern.test("docs/a.md")).toBe(true);
-  });
-
-  it("does not let a single star cross into deeper segments", () => {
-    const pattern = compileAllowlistPattern("docs/*.md");
-
-    expect(pattern.test("docs/sub/a.md")).toBe(false);
-  });
-
-  it("does not let a single star change the literal segment", () => {
-    const pattern = compileAllowlistPattern("docs/*.md");
-
-    expect(pattern.test("docsX/a.md")).toBe(false);
-  });
-
-  it("matches a double star across zero path segments", () => {
-    const pattern = compileAllowlistPattern("src/**/*.ts");
-
-    expect(pattern.test("src/a.ts")).toBe(true);
-  });
-
-  it("matches a double star across several path segments", () => {
-    const pattern = compileAllowlistPattern("src/**/*.ts");
-
-    expect(pattern.test("src/x/y/a.ts")).toBe(true);
-  });
-
-  it("does not let a double star change the literal segment", () => {
-    const pattern = compileAllowlistPattern("src/**/*.ts");
-
-    expect(pattern.test("srcx/a.ts")).toBe(false);
-  });
-
-  it("matches any path for a bare double-star pattern", () => {
-    const pattern = compileAllowlistPattern("**");
-
-    expect(pattern.test("deep/path/file.md")).toBe(true);
-  });
-
-  it("matches a leading double star at the top level", () => {
-    const pattern = compileAllowlistPattern("**/*.md");
-
-    expect(pattern.test("a.md")).toBe(true);
-  });
-
-  it("matches a leading double star at any depth", () => {
-    const pattern = compileAllowlistPattern("**/*.md");
-
-    expect(pattern.test("x/y/a.md")).toBe(true);
-  });
-
-  it("matches a trailing double star directly below the prefix", () => {
-    const pattern = compileAllowlistPattern("docs/**");
-
-    expect(pattern.test("docs/a.md")).toBe(true);
-  });
-
-  it("matches a trailing double star at deeper nesting", () => {
-    const pattern = compileAllowlistPattern("docs/**");
-
-    expect(pattern.test("docs/x/b.ts")).toBe(true);
-  });
-
-  it("does not let a trailing double star change the prefix segment", () => {
-    const pattern = compileAllowlistPattern("docs/**");
-
-    expect(pattern.test("docsX/a.md")).toBe(false);
-  });
-});
 
 describe("runRepoSync first run", () => {
   it("projects exactly the allowlisted files, namespaced under raw/notes/<name>/", async () => {
@@ -932,7 +825,7 @@ describe("shipped sync-meta.json (issue #74)", () => {
       throw new Error("sync-meta.json must hold one repo source");
     }
 
-    const matchers = source.include.map(compileAllowlistPattern);
+    const matchers = source.include.map(compileIncludePattern);
     const includes = (path: string) =>
       matchers.some((matcher) => matcher.test(path));
 
@@ -964,7 +857,7 @@ describe("shipped sync-meta.json (issue #74)", () => {
       throw new Error("sync-meta.json must hold one repo source");
     }
 
-    const matchers = source.include.map(compileAllowlistPattern);
+    const matchers = source.include.map(compileIncludePattern);
     const includes = (path: string) =>
       matchers.some((matcher) => matcher.test(path));
 
@@ -976,26 +869,6 @@ describe("shipped sync-meta.json (issue #74)", () => {
         "k-wiki-meta-data/wiki/index.md",
       ].filter(includes),
     ).toEqual([]);
-  });
-});
-
-describe("compileAllowlistPattern multi-segment literals", () => {
-  it("matches a two-segment exact pattern at that path", () => {
-    const pattern = compileAllowlistPattern("docs/guide.md");
-
-    expect(pattern.test("docs/guide.md")).toBe(true);
-  });
-
-  it("does not let a two-segment exact pattern flatten into one segment", () => {
-    const pattern = compileAllowlistPattern("docs/guide.md");
-
-    expect(pattern.test("docsguide.md")).toBe(false);
-  });
-
-  it("does not let a two-segment exact pattern match a longer extension", () => {
-    const pattern = compileAllowlistPattern("docs/guide.md");
-
-    expect(pattern.test("docs/guide.mdx")).toBe(false);
   });
 });
 
