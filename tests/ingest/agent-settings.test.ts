@@ -130,6 +130,15 @@ describe("parseSettings", () => {
     expect(settings.model).toBe('"unbalanced');
   });
 
+  it("strips a trailing comment after an unquoted value containing an apostrophe", () => {
+    const settings = parseSettings(
+      "command: pi\nmodel: it's # fast\nreasoning: h\n",
+      "s",
+    );
+
+    expect(settings.model).toBe("it's");
+  });
+
   it("accepts an indented comment line", () => {
     const settings = parseSettings(
       "command: pi\nmodel: m\nreasoning: h\n  # indented note\n",
@@ -343,6 +352,15 @@ describe("parseSettings", () => {
     );
 
     expect(settings.isolateSkills).toEqual(["a #b", "c"]);
+  });
+
+  it("keeps ' #' inside a quoted list item after a comma", () => {
+    const settings = parseSettings(
+      'command: pi\nmodel: m\nreasoning: h\nisolate.skills: [a, "b #c"]\n',
+      "s",
+    );
+
+    expect(settings.isolateSkills).toEqual(["a", "b #c"]);
   });
 
   it("unquotes isolate.skills items", () => {

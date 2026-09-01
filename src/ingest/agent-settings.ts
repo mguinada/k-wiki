@@ -76,6 +76,22 @@ type ParsedSettingLine =
       readonly value: string;
     };
 
+/** Whether the quote at `index` can open a quoted span: the
+ *  nearest preceding non-space character is `:`, `[`, or `,` (a
+ *  value or list-item start), or there is none (line start) — so a
+ *  mid-word apostrophe (`it's`) never starts a quoted span. */
+function opensQuotedSpan(line: string, index: number): boolean {
+  for (let at = index - 1; at >= 0; at--) {
+    const char = line[at];
+
+    if (!/\s/.test(char)) {
+      return char === ":" || char === "[" || char === ",";
+    }
+  }
+
+  return true;
+}
+
 /** Strip a trailing ` #` comment, but only outside quoted spans —
  *  a quoted value like `"my #1 model"` keeps its hash (issue #243).
  *  A `#` at the line start (full-line comment) is left for the
@@ -87,7 +103,7 @@ function stripComment(line: string): string {
     const char = line[index];
 
     if (quote === undefined) {
-      if (char === '"' || char === "'") {
+      if ((char === '"' || char === "'") && opensQuotedSpan(line, index)) {
         quote = char;
       } else if (
         char === "#" &&
