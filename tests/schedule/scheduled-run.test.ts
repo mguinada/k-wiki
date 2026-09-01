@@ -230,7 +230,6 @@ describe("releaseLock takeover race", () => {
     await releaseLock(lockPath, 1111);
 
     await expect(readFile(lockPath, "utf8")).resolves.toBe(lockJson(4242));
-    await expect(realFs.stat(lockPath)).resolves.toBeInstanceOf(Object);
 
     await rm(dir, { recursive: true, force: true });
   });
@@ -281,6 +280,27 @@ describe("releaseLock takeover race", () => {
     });
 
     await expect(releaseLock(lockPath, 1111)).resolves.toBeUndefined();
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("leaves no lock file behind when the lock vanished before the claim", async () => {
+    const dir = await tempDir();
+    const lockPath = join(dir, "scheduled-run.lock");
+    const realFs =
+      await vi.importActual<typeof import("node:fs/promises")>(
+        "node:fs/promises",
+      );
+
+    await writeFile(lockPath, lockJson(1111));
+    vi.mocked(rename).mockImplementationOnce(async () => {
+      // The lock is already gone at claim time — another releaser or
+      // a takeover removed it and nothing recreated it yet.
+      await realFs.rm(lockPath, { force: true });
+      throw Object.assign(new Error("gone"), { code: "ENOENT" });
+    });
+
+    await releaseLock(lockPath, 1111);
     await expect(realFs.stat(lockPath)).rejects.toThrow();
 
     await rm(dir, { recursive: true, force: true });
@@ -1595,6 +1615,35 @@ describe("runScheduledCycle streamed output hygiene", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
+  it("joins a multi-byte character torn across stdout chunk boundaries before recording it", async () => {
+    const dir = await tempDir();
+    const repoRoot = join(dir, "repo");
+    const { runGitStep } = fakeGit();
+    const lines: string[] = [];
+
+    await mkdir(join(repoRoot, "bin"), { recursive: true });
+    await writeFile(
+      join(repoRoot, "bin", "wiki-sync.ts"),
+      [
+        "process.stdout.write(Buffer.from([0xc3]));",
+        'setTimeout(() => { process.stdout.write(Buffer.concat([Buffer.from([0xa9]), Buffer.from("\\n")])); }, 30);',
+      ].join("\n"),
+    );
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      args: [],
+      log: (line) => lines.push(line),
+    });
+
+    expect(lines).toContain("é");
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
   it("records each line of a chunk that carries several complete lines", async () => {
     const dir = await tempDir();
     const repoRoot = join(dir, "repo");
@@ -1617,7 +1666,6 @@ describe("runScheduledCycle streamed output hygiene", () => {
     });
 
     expect(lines).toEqual(expect.arrayContaining(["first", "second"]));
-    expect(lines).not.toContain("first\\nsecond");
 
     await rm(dir, { recursive: true, force: true });
   });

@@ -452,14 +452,15 @@ async function pushWithRetry(
 }
 
 /** Stream one child pipe into the log without tearing lines
- *  (issue #244): a chunk can end mid-line at any byte, so each pipe
+ *  (issue #244): a chunk can end mid-line, so each pipe
  *  buffers its own tail and only complete `\n`-terminated lines are
  *  recorded; a final fragment without a newline is flushed at end. */
 function streamChildLines(source: Readable, log: (line: string) => void): void {
   let pending = "";
 
-  source.on("data", (chunk: Buffer) => {
-    pending += chunk.toString();
+  source.setEncoding("utf8");
+  source.on("data", (chunk: string) => {
+    pending += chunk;
     const cut = pending.lastIndexOf("\n");
 
     if (cut === -1) {
