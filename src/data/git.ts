@@ -40,9 +40,12 @@ export interface StatusEntry {
 /** Undo git's C-string quoting of one porcelain path: git quotes
  *  every path containing whitespace, quotes, or control bytes, and
  *  escapes `"`, `\\`, and control bytes inside the quotes.
- *  Non-ASCII bytes arrive octal-escaped, so the unescaped bytes are
- *  the path's raw UTF-8 — decoding them byte-per-codepoint would
- *  mojibake every multi-byte path (issue #248, C-2). */
+ *  Non-ASCII bytes arrive octal-escaped (or raw, under
+ *  core.quotePath=false), so the unescaped bytes are the path's raw
+ *  UTF-8 — decoding them byte-per-codepoint would mojibake every
+ *  multi-byte path (issue #248, C-2). Literal runs buffer through
+ *  one encode so UTF-16 surrogate pairs (astral-plane characters)
+ *  stay paired instead of collapsing to U+FFFD halves. */
 function decodeGitQuotedPath(path: string): string {
   if (!path.startsWith('"') || !path.endsWith('"')) {
     return path;
@@ -62,7 +65,14 @@ function decodeGitQuotedPath(path: string): string {
   };
   const utf8 = new TextEncoder();
   const bytes: number[] = [];
+  let pending = "";
   let i = 0;
+
+  const flushPending = (): void => {
+    bytes.push(...utf8.encode(pending));
+
+    pending = "";
+  };
 
   while (i < inner.length) {
     const char = inner[i];
@@ -70,10 +80,12 @@ function decodeGitQuotedPath(path: string): string {
     i += 1;
 
     if (char !== "\\" || i === inner.length) {
-      bytes.push(...utf8.encode(char));
+      pending += char;
 
       continue;
     }
+
+    flushPending();
 
     const escaped = inner[i] ?? "";
 
@@ -91,6 +103,8 @@ function decodeGitQuotedPath(path: string): string {
       bytes.push(...utf8.encode(escaped));
     }
   }
+
+  flushPending();
 
   return new TextDecoder().decode(Uint8Array.from(bytes));
 }

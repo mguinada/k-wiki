@@ -265,6 +265,16 @@ describe("parseStatus", () => {
     ]);
   });
 
+  it("keeps an astral-plane character whole in a quoted path", () => {
+    // An emoji filename is quoted for the space with the astral
+    // character raw (a surrogate pair in JS); encoding it one
+    // UTF-16 code unit at a time would corrupt it to two U+FFFDs
+    // and yield a path that does not exist.
+    expect(parseStatus('?? "wiki/idea \u{1F600} v2.md"\n')).toEqual([
+      { code: "??", path: "wiki/idea \u{1F600} v2.md" },
+    ]);
+  });
+
   it("unquotes both paths of a quoted rename", () => {
     expect(parseStatus('R  "wiki/a b.md" -> "wiki/c d.md"\n')).toEqual([
       { code: "R ", path: "wiki/c d.md", origin: "wiki/a b.md" },
