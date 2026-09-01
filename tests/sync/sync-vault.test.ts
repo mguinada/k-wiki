@@ -136,7 +136,7 @@ async function readdRetiredNamespace(ws: Workspace): Promise<void> {
   await writeFile(join(ws.rawDir, "notes", "Retired", "Old.md"), "# old\n");
 }
 
-describe("runSync first run", () => {
+describe("runVaultSync first run", () => {
   it("copies exactly the wiki:true notes into raw/notes/<vault>", async () => {
     const ws = await makeWorkspace();
 
@@ -257,7 +257,7 @@ describe("runSync first run", () => {
   );
 });
 
-describe("runSync idempotence", () => {
+describe("runVaultSync idempotence", () => {
   it("rejects with the raw read error when the manifest path is a directory", async () => {
     const ws = await makeWorkspace();
 
@@ -323,7 +323,7 @@ describe("runSync idempotence", () => {
   });
 });
 
-describe("runSync edit detection", () => {
+describe("runVaultSync edit detection", () => {
   it("copies exactly the edited note on the next run", async () => {
     const ws = await makeWorkspace();
 
@@ -394,7 +394,7 @@ describe("runSync edit detection", () => {
 const itRequiresPermissionChecks =
   process.getuid !== undefined && process.getuid() === 0 ? it.skip : it;
 
-describe("runSync removal detection", () => {
+describe("runVaultSync removal detection", () => {
   it("removes the raw copy when the source note disappears", async () => {
     const ws = await makeWorkspace();
 
@@ -579,7 +579,7 @@ describe("runSync removal detection", () => {
   });
 });
 
-describe("runSync progress", () => {
+describe("runVaultSync progress", () => {
   it("emits the raw dir as the first progress message", async () => {
     const ws = await makeWorkspace();
     const { messages } = await runWithProgress(ws);
@@ -730,7 +730,7 @@ describe("runSync progress", () => {
   });
 });
 
-describe("runSync candidate count", () => {
+describe("runVaultSync candidate count", () => {
   it("counts every markdown candidate, selected or not", async () => {
     const ws = await makeWorkspace();
     const { reports } = await runWithProgress(ws);
@@ -761,7 +761,7 @@ describe("runSync candidate count", () => {
   });
 });
 
-describe("runSync home expansion", () => {
+describe("runVaultSync home expansion", () => {
   it("syncs a vault whose root is a tilde path", async () => {
     const ws = await makeWorkspace({ root: `~/${VAULT_NAME}` });
     const { sources } = await runVaultSync({
@@ -775,7 +775,7 @@ describe("runSync home expansion", () => {
   });
 });
 
-describe("runSync multiple vaults", () => {
+describe("runVaultSync multiple vaults", () => {
   async function makeTwoVaultWorkspace(): Promise<Workspace> {
     const dir = await makeTempDir();
     const documentsRoot = await generateFixtureVault(dir);
@@ -841,7 +841,7 @@ describe("runSync multiple vaults", () => {
   });
 });
 
-describe("runSync stale namespace pruning", () => {
+describe("runVaultSync stale namespace pruning", () => {
   const retiredEntry = { hash: "0".repeat(64), last_synced: T1 };
 
   async function seedRetiredNamespace(ws: Workspace): Promise<void> {
@@ -1455,7 +1455,7 @@ describe("sync-vault CLI", () => {
   });
 });
 
-describe("runSync repo-source rejection", () => {
+describe("runVaultSync repo-source rejection", () => {
   it("rejects a config whose source is a repo with a pointer to sync-repo", async () => {
     const ws = await makeWorkspace();
     const configPath = join(ws.dir, "sync-meta.json");
