@@ -5,8 +5,8 @@ import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
 import { errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
+import { readTextIfExists } from "../cli/shared.ts";
 import { runGit } from "../data/git.ts";
-import { readTextIfExists } from "../shared.ts";
 import {
   loadSyncConfig,
   type RepoSourceConfig,

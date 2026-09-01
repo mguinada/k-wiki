@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { isPlainObject, RESERVED_NAMES } from "../shared.ts";
+import { isPlainObject, RESERVED_NAMES } from "../cli/shared.ts";
 
 /**
  * Loader for `sync.json`, the human-owned sync configuration at the

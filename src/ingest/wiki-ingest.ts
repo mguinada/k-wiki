@@ -14,9 +14,9 @@ import {
 } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { formatDuration } from "../cli/progress.ts";
+import { isPlainObject, readTextIfExists } from "../cli/shared.ts";
 import { writeDashboard } from "../dashboard/generate.ts";
 import { runGit } from "../data/git.ts";
-import { isPlainObject, readTextIfExists } from "../shared.ts";
 import { loadSyncConfig, resolveRawDir } from "../sync/config.ts";
 import { sha256 } from "../sync/hash.ts";
 import {

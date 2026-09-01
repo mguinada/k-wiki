@@ -15,7 +15,7 @@ import {
   formatDuration,
   isWarning,
 } from "../cli/progress.ts";
-import { readTextIfExists } from "../shared.ts";
+import { readTextIfExists } from "../cli/shared.ts";
 import {
   loadSyncConfig,
   resolveRawDir,

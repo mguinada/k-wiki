@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
-import { readTextIfExists } from "./shared.ts";
+import { readTextIfExists } from "./cli/shared.ts";
 import { parseManifest } from "./sync/manifest.ts";
 import { listWikiPages, pageReportPath } from "./wiki/pages.ts";
 import {

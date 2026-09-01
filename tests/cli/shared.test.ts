@@ -6,7 +6,7 @@ import {
   isPlainObject,
   RESERVED_NAMES,
   readTextIfExists,
-} from "../src/shared.ts";
+} from "../../src/cli/shared.ts";
 
 const tempDirs: string[] = [];
 
