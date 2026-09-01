@@ -1,0 +1,15 @@
+{
+  "filesOver800": 6,
+  "filesOver500": 11,
+  "filesOver350": 16,
+  "maxFileLines": 2192,
+  "crossDomainEdges": 52,
+  "parseArgsCopies": 10,
+  "directoryWalkers": 3,
+  "repoRootDerivations": 12,
+  "unquoteDefinitions": 2,
+  "envSignatures": 50,
+  "envSignatureFiles": 14,
+  "dataRootEnvPairs": 33,
+  "dirnameRawDirDerivations": 11
+}

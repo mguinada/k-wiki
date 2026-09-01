@@ -1,16 +1,17 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { collectMetrics, main } from "../../src/quality/refactor-metrics.ts";
 
 const run = promisify(execFile);
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(scriptDir, "..", "..");
 const launcher = join(repoRoot, "dev", "refactor-metrics.ts");
+const baselinePath = join(scriptDir, "refactor-metrics.baseline.json");
 
 const tempDirs: string[] = [];
 
@@ -144,6 +145,49 @@ describe("collectMetrics (fixture tree)", () => {
       dirnameRawDirDerivations: 2,
     });
   });
+});
+
+describe("baseline freeze (real src/ tree)", () => {
+  /**
+   * The campaign's regression guard: the committed budget freezes
+   * the scanner's output at landing. A PR may lower a counter
+   * freely, but raising one without editing this budget fails here
+   * — the budget is the seed of the structure guard the campaign
+   * lands last.
+   */
+  let fresh: Awaited<ReturnType<typeof collectMetrics>>;
+  let budget: Record<string, number>;
+
+  beforeAll(async () => {
+    fresh = await collectMetrics(join(repoRoot, "src"));
+    budget = JSON.parse(await readFile(baselinePath, "utf8")) as Record<
+      string,
+      number
+    >;
+  });
+
+  const counters = [
+    "filesOver800",
+    "filesOver500",
+    "filesOver350",
+    "maxFileLines",
+    "crossDomainEdges",
+    "parseArgsCopies",
+    "directoryWalkers",
+    "repoRootDerivations",
+    "unquoteDefinitions",
+    "envSignatures",
+    "envSignatureFiles",
+    "dataRootEnvPairs",
+    "dirnameRawDirDerivations",
+  ] as const;
+
+  for (const counter of counters) {
+    it(`${counter} stays at or below the frozen baseline`, () => {
+      expect(budget[counter]).toBeDefined();
+      expect(fresh[counter]).toBeLessThanOrEqual(budget[counter] ?? 0);
+    });
+  }
 });
 
 describe("main (in-process)", () => {
