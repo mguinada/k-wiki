@@ -1,7 +1,16 @@
 import { spawn } from "node:child_process";
-import { mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
+import {
+  link,
+  mkdir,
+  open,
+  readFile,
+  rename,
+  rm,
+  stat,
+} from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import type { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { errorMessage } from "../cli/colors.ts";
 import { flagValueError, readFlagValues } from "../cli/flag-args.ts";
@@ -134,19 +143,49 @@ export async function acquireLock(
   return reacquired === "busy" ? "busy" : "took-over";
 }
 
-/** Release the lock only when its recorded pid is this process's:
- *  a run whose stale lock was taken over must not delete its
- *  successor's fresh lock (mutual exclusion survives takeovers). An
- *  absent or foreign lock is left alone. */
+/** Release the lock only when the recorded pid is this process's,
+ *  and delete it by atomic claim (issue #244): the lock is first
+ *  renamed to a private path, so the unlink can never hit a
+ *  successor's fresh lock — a run outliving LOCK_STALE_MS whose
+ *  lock was taken over would otherwise rm by path and delete the
+ *  successor's lock in the read-to-delete window, breaking mutual
+ *  exclusion exactly in the long-run scenario. A claim that raced
+ *  such a takeover is given back; an absent or foreign lock is
+ *  never touched. */
 export async function releaseLock(
   lockPath: string,
   pid: number = process.pid,
 ): Promise<void> {
   const existing = lockData(await readFile(lockPath, "utf8").catch(() => ""));
 
-  if (existing?.pid === pid) {
-    await rm(lockPath, { force: true });
+  if (existing?.pid !== pid) {
+    return;
   }
+
+  const claimed = `${lockPath}.releasing.${pid}`;
+
+  await rename(lockPath, claimed).catch(() => undefined);
+
+  const claim = lockData(await readFile(claimed, "utf8").catch(() => ""));
+
+  if (claim?.pid === pid) {
+    await rm(claimed, { force: true });
+
+    return;
+  }
+
+  await restoreClaimedLock(claimed, lockPath);
+}
+
+/** Give a claimed-but-foreign lock back: the hard link lands only
+ *  while the lock path is free — an EEXIST means another run
+ *  already re-holds the path, and the claim is dropped instead. */
+async function restoreClaimedLock(
+  claimed: string,
+  lockPath: string,
+): Promise<void> {
+  await link(claimed, lockPath).catch(() => undefined);
+  await rm(claimed, { force: true });
 }
 
 /** The PATH a scheduled run gets: node's bin dir first (the wrapper
@@ -412,6 +451,39 @@ async function pushWithRetry(
   }
 }
 
+/** Stream one child pipe into the log without tearing lines
+ *  (issue #244): a chunk can end mid-line, so each pipe
+ *  buffers its own tail and only complete `\n`-terminated lines are
+ *  recorded; a final fragment without a newline is flushed at end. */
+function streamChildLines(source: Readable, log: (line: string) => void): void {
+  let pending = "";
+
+  source.setEncoding("utf8");
+  source.on("data", (chunk: string) => {
+    pending += chunk;
+    const cut = pending.lastIndexOf("\n");
+
+    if (cut === -1) {
+      return;
+    }
+
+    const complete = pending.slice(0, cut);
+    pending = pending.slice(cut + 1);
+
+    for (const line of complete.split("\n")) {
+      if (line !== "") {
+        log(line);
+      }
+    }
+  });
+  source.on("end", () => {
+    if (pending !== "") {
+      log(pending);
+      pending = "";
+    }
+  });
+}
+
 /** Run bin/wiki-sync.ts as a child with the scheduled env, streaming
  *  its stdout and stderr into the log. */
 async function spawnWikiSync(
@@ -429,20 +501,8 @@ async function spawnWikiSync(
     { env, stdio: ["ignore", "pipe", "pipe"] },
   );
 
-  child.stdout.on("data", (chunk: Buffer) => {
-    for (const line of chunk.toString().split("\n")) {
-      if (line !== "") {
-        log(line);
-      }
-    }
-  });
-  child.stderr.on("data", (chunk: Buffer) => {
-    for (const line of chunk.toString().split("\n")) {
-      if (line !== "") {
-        log(line);
-      }
-    }
-  });
+  streamChildLines(child.stdout, log);
+  streamChildLines(child.stderr, log);
 
   const code = await new Promise<number | null>((resolveCode, reject) => {
     child.on("error", reject);
@@ -450,7 +510,13 @@ async function spawnWikiSync(
   });
 
   if (code !== 0) {
-    throw new Error(`wiki-sync exited ${code}`);
+    // code is null exactly when a signal killed the child — name it
+    // instead of reporting "exited null" (issue #244).
+    throw new Error(
+      child.signalCode === null
+        ? `wiki-sync exited ${code}`
+        : `wiki-sync exited by signal ${child.signalCode}`,
+    );
   }
 }
 
@@ -492,6 +558,33 @@ export async function appendLog(logPath: string, line: string): Promise<void> {
   } catch (error) {
     console.error(`scheduled-run: log write failed — ${errorMessage(error)}`);
   }
+}
+
+/** The run's serialized log writer (issue #244): one append in
+ *  flight, every line recorded in arrival order. */
+export interface RunLogWriter {
+  readonly log: (line: string) => void;
+  readonly flush: () => Promise<void>;
+}
+
+/** Serialize log appends through one queue: fire-and-forget appends
+ *  raced each other and the rotation (two concurrent appends can both
+ *  pass the 5 MiB check and both rename — one generation is lost),
+ *  and interleaved opens recorded lines out of order. The queue
+ *  keeps exactly one appendLog in flight and orders the rest; flush
+ *  settles when the last line is on disk. */
+export function createRunLog(
+  logPath: string,
+  append: (logPath: string, line: string) => Promise<void> = appendLog,
+): RunLogWriter {
+  let tail: Promise<void> = Promise.resolve();
+
+  return {
+    log: (line: string): void => {
+      tail = tail.then(() => append(logPath, line));
+    },
+    flush: (): Promise<void> => tail,
+  };
 }
 
 async function appendFileLine(logPath: string, line: string): Promise<void> {
@@ -692,20 +785,18 @@ export async function main(): Promise<void> {
   }
 
   const logPath = process.env.KWIKI_SCHEDULED_LOG ?? scheduledLogPath();
-  const pendingWrites: Promise<void>[] = [];
+  const runLog = createRunLog(logPath);
   const outcome = await runScheduledCycle({
     dataRoot,
     repoRoot,
     lockPath: join(dataRoot, ".scheduled-run.lock"),
     args,
-    log: (line) => {
-      pendingWrites.push(appendLog(logPath, line));
-    },
+    log: runLog.log,
   });
 
   // Flush the log before reporting: an exit must never outrun its own
   // audit trail.
-  await Promise.all(pendingWrites);
+  await runLog.flush();
   reportOutcome(outcome);
 }
 
