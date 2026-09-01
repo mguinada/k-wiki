@@ -194,7 +194,7 @@ Launchers come in two classes, matching the two agent contexts.
 outside this repo (create, operate, consume, observe, audit, migrate
 the wiki). `dev/<name>.ts` launches development-lifecycle commands
 that exist only to build and maintain this repo (`generate`,
-`mutation-*`, `board-triage`). Every CLI runs through a shebanged
+`mutation-*`, `board-triage`, `refactor-metrics`). Every CLI runs through a shebanged
 launcher of its class (`#!/usr/bin/env node`, committed `100755`);
 npm scripts invoke `node bin/<name>.ts` or `node dev/<name>.ts`.
 `src/` and `scripts/` modules are libraries:
