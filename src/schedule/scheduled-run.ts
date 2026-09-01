@@ -494,6 +494,33 @@ export async function appendLog(logPath: string, line: string): Promise<void> {
   }
 }
 
+/** The run's serialized log writer (issue #244): one append in
+ *  flight, every line recorded in arrival order. */
+export interface RunLogWriter {
+  readonly log: (line: string) => void;
+  readonly flush: () => Promise<void>;
+}
+
+/** Serialize log appends through one queue: fire-and-forget appends
+ *  raced each other and the rotation (two concurrent appends can both
+ *  pass the 5 MiB check and both rename — one generation is lost),
+ *  and interleaved opens recorded lines out of order. The queue
+ *  keeps exactly one appendLog in flight and orders the rest; flush
+ *  settles when the last line is on disk. */
+export function createRunLog(
+  logPath: string,
+  append: (logPath: string, line: string) => Promise<void> = appendLog,
+): RunLogWriter {
+  let tail: Promise<void> = Promise.resolve();
+
+  return {
+    log: (line: string): void => {
+      tail = tail.then(() => append(logPath, line));
+    },
+    flush: (): Promise<void> => tail,
+  };
+}
+
 async function appendFileLine(logPath: string, line: string): Promise<void> {
   const handle = await open(logPath, "a");
 
@@ -692,20 +719,18 @@ export async function main(): Promise<void> {
   }
 
   const logPath = process.env.KWIKI_SCHEDULED_LOG ?? scheduledLogPath();
-  const pendingWrites: Promise<void>[] = [];
+  const runLog = createRunLog(logPath);
   const outcome = await runScheduledCycle({
     dataRoot,
     repoRoot,
     lockPath: join(dataRoot, ".scheduled-run.lock"),
     args,
-    log: (line) => {
-      pendingWrites.push(appendLog(logPath, line));
-    },
+    log: runLog.log,
   });
 
   // Flush the log before reporting: an exit must never outrun its own
   // audit trail.
-  await Promise.all(pendingWrites);
+  await runLog.flush();
   reportOutcome(outcome);
 }
 

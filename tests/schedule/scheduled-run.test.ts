@@ -15,6 +15,7 @@ import {
   acquireLock,
   appendLog,
   buildScheduledEnv,
+  createRunLog,
   LOCK_STALE_MS,
   lockData,
   main,
@@ -1217,6 +1218,82 @@ describe("gitStdout defensiveness", () => {
     const { calls } = await statusReturns(null);
 
     expect(calls.some((args) => args[0] === "pull")).toBe(true);
+  });
+});
+
+describe("createRunLog", () => {
+  it("holds the next line back while one append is in flight", async () => {
+    let releaseFirst: () => void = () => {};
+    const gate = new Promise<void>((resolveGate) => {
+      releaseFirst = resolveGate;
+    });
+    const started: string[] = [];
+    const append = async (_logPath: string, line: string): Promise<void> => {
+      started.push(line);
+
+      if (line === "first") {
+        await gate;
+      }
+    };
+    const runLog = createRunLog("/tmp/unused.log", append);
+
+    runLog.log("first");
+    runLog.log("second");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(started).toEqual(["first"]);
+
+    releaseFirst();
+    await runLog.flush();
+  });
+
+  it("records queued lines in arrival order once the gate opens", async () => {
+    let releaseFirst: () => void = () => {};
+    const gate = new Promise<void>((resolveGate) => {
+      releaseFirst = resolveGate;
+    });
+    const appended: string[] = [];
+    const append = async (_logPath: string, line: string): Promise<void> => {
+      if (line === "first") {
+        await gate;
+      }
+
+      appended.push(line);
+    };
+    const runLog = createRunLog("/tmp/unused.log", append);
+
+    runLog.log("first");
+    runLog.log("second");
+    runLog.log("third");
+    releaseFirst();
+    await runLog.flush();
+
+    expect(appended).toEqual(["first", "second", "third"]);
+  });
+
+  it("writes every queued line through appendLog into the file", async () => {
+    const dir = await tempDir();
+    const logPath = join(dir, "run.log");
+    const lines = Array.from({ length: 50 }, (_, index) => `line-${index}`);
+    const runLog = createRunLog(logPath);
+
+    for (const line of lines) {
+      runLog.log(line);
+    }
+
+    await runLog.flush();
+
+    expect((await readFile(logPath, "utf8")).split("\n").filter(Boolean)).toEqual(
+      lines,
+    );
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("resolves flush immediately when nothing was logged", async () => {
+    const runLog = createRunLog("/tmp/unused.log");
+
+    await expect(runLog.flush()).resolves.toBeUndefined();
   });
 });
 
