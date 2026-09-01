@@ -24,7 +24,9 @@ urgency of an error.
 
 ## Boundary rules
 
-- `onProgress` messages are uncolored strings. Severity is detected at
+- `onProgress` messages are uncolored: plain strings on the agent and
+  repo-sync seams, typed `SyncProgress` events (uncolored `text`) on
+  the vault-sync seam. Severity is detected at
   the sink (`createAgentProgressSink`, `colorizeProgress`) via the
   shared `isWarning` predicate (`src/cli/progress.ts`), not at the
   call site.
