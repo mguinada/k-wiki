@@ -539,8 +539,6 @@ async function appliedMovesReport(
     return "none";
   }
 
-  const described = applied.map(describeMove);
-
   try {
     const mismatched = await unverifiedMoves(
       graphql,
@@ -553,16 +551,17 @@ async function appliedMovesReport(
     );
 
     return applied
-      .map((move, index) => {
+      .map((move) => {
+        const text = describeMove(move);
         const unverified = byId.get(move.item.id);
 
         return unverified === undefined
-          ? `${described[index]} — verified`
-          : `${described[index]} not verified — still on ${unverified.actual}`;
+          ? `${text} — verified`
+          : `${text} not verified — still on ${unverified.actual}`;
       })
       .join("; ");
   } catch (error) {
-    return `${described.join("; ")} — verification unavailable (${errorMessage(error)})`;
+    return `${applied.map(describeMove).join("; ")} — verification unavailable (${errorMessage(error)})`;
   }
 }
 
