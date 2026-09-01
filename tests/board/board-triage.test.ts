@@ -691,27 +691,29 @@ describe("fetchBoardState", () => {
   });
 });
 
+/** The mixed-lane board the runBoardTriage tests plan against:
+ *  moves I1 → Ready and I3 → Done, keeps I2 and I4. */
+function mixedBoard() {
+  return [
+    issueNode({ id: "I1", number: 101, status: "Backlog" }),
+    issueNode({
+      id: "I2",
+      number: 102,
+      status: "Backlog",
+      blockers: [{ number: 9, state: "OPEN" }],
+    }),
+    issueNode({
+      id: "I3",
+      number: 103,
+      status: "In progress",
+      state: "CLOSED",
+    }),
+    issueNode({ id: "I4", number: 104, status: "Ready" }),
+  ];
+}
+
 describe("runBoardTriage", () => {
   const OPTIONS = { owner: "mguinada", projectNumber: 2, dryRun: false };
-
-  function mixedBoard() {
-    return [
-      issueNode({ id: "I1", number: 101, status: "Backlog" }),
-      issueNode({
-        id: "I2",
-        number: 102,
-        status: "Backlog",
-        blockers: [{ number: 9, state: "OPEN" }],
-      }),
-      issueNode({
-        id: "I3",
-        number: 103,
-        status: "In progress",
-        state: "CLOSED",
-      }),
-      issueNode({ id: "I4", number: 104, status: "Ready" }),
-    ];
-  }
 
   it("plans every move and stay with its evidence clause without writing in dry run", async () => {
     const { graphql, mutations } = fakeBoard(mixedBoard());
@@ -962,6 +964,83 @@ describe("runBoardTriage", () => {
       );
     },
   );
+});
+
+describe("runBoardTriage mid-failure reporting (issue #245)", () => {
+  const OPTIONS = { owner: "mguinada", projectNumber: 2, dryRun: false };
+
+  /** A fake board whose mutation for `failItemId` throws mid-loop
+   *  (after earlier moves applied); `failFirst` keeps its usual
+   *  lost-write meaning, `failBoardReads` makes that board read
+   *  throw instead. */
+  function throwingBoard(
+    nodes: Record<string, unknown>[],
+    failItemId: string,
+    fakeOptions: { failFirst?: readonly string[] } = {},
+    failBoardReads = 0,
+  ): GraphQLFn {
+    const { graphql } = fakeBoard(nodes, fakeOptions);
+    let reads = 0;
+
+    return async (query, variables) => {
+      if (
+        query.includes("updateProjectV2ItemFieldValue") &&
+        variables.itemId === failItemId
+      ) {
+        throw new Error("mutation exploded");
+      }
+
+      if (!query.includes("updateProjectV2ItemFieldValue")) {
+        reads++;
+
+        if (reads > 1 && reads <= 1 + failBoardReads) {
+          throw new Error("board unreadable");
+        }
+      }
+
+      return graphql(query, variables);
+    };
+  }
+
+  it("reports an applied move as verified when a later mutation throws mid-loop", async () => {
+    const graphql = throwingBoard(mixedBoard(), "I3");
+
+    await expect(runBoardTriage(graphql, OPTIONS)).rejects.toThrow(
+      "applied moves: #101 Backlog → Ready — verified",
+    );
+  });
+
+  it("reports an applied move that did not land as not verified when a mutation throws mid-loop", async () => {
+    const graphql = throwingBoard(mixedBoard(), "I3", { failFirst: ["I1"] });
+
+    await expect(runBoardTriage(graphql, OPTIONS)).rejects.toThrow(
+      "#101 Backlog → Ready not verified — still on Backlog",
+    );
+  });
+
+  it("keeps the original failure's message in the mid-loop rejection", async () => {
+    const graphql = throwingBoard(mixedBoard(), "I3");
+
+    await expect(runBoardTriage(graphql, OPTIONS)).rejects.toThrow(
+      "mutation exploded",
+    );
+  });
+
+  it("reports that no moves were applied when the first mutation throws", async () => {
+    const graphql = throwingBoard(mixedBoard(), "I1");
+
+    await expect(runBoardTriage(graphql, OPTIONS)).rejects.toThrow(
+      "applied moves: none",
+    );
+  });
+
+  it("falls back to an unverified report when the verification re-read fails", async () => {
+    const graphql = throwingBoard(mixedBoard(), "I3", {}, 1);
+
+    await expect(runBoardTriage(graphql, OPTIONS)).rejects.toThrow(
+      "#101 Backlog → Ready — verification unavailable (board unreadable)",
+    );
+  });
 });
 
 describe("stepSummaryMarkdown", () => {
