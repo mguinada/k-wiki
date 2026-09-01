@@ -6523,6 +6523,24 @@ describe("wikiPages vanished untracked detection", () => {
     expect(pages.updated).toEqual(["wiki/index.md"]);
   });
 
+  it("counts a staged rename's target as created and its origin as deleted", async () => {
+    const dataRoot = await makeDataRepo({ "a.md": "a" });
+
+    await run("git", [
+      "-C",
+      dataRoot,
+      "mv",
+      "wiki/index.md",
+      "wiki/renamed.md",
+    ]);
+
+    const pages = await wikiPages(dataRoot, process.env);
+
+    expect(pages.created).toEqual(["wiki/renamed.md"]);
+    expect(pages.updated).toEqual([]);
+    expect(pages.deleted).toEqual(["wiki/index.md"]);
+  });
+
   it("reports git as unavailable outside a repository instead of throwing", async () => {
     const dataRoot = await makeDataRepo({ "a.md": "a" });
 

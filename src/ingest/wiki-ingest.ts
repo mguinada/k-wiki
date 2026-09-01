@@ -16,7 +16,12 @@ import { refuseDirectExecution } from "../cli/is-main.ts";
 import { formatDuration } from "../cli/progress.ts";
 import { isPlainObject, readTextIfExists } from "../cli/shared.ts";
 import { writeDashboard } from "../dashboard/generate.ts";
-import { parseStatus, runGit, type StatusEntry } from "../data/git.ts";
+import {
+  isPreExisting,
+  parseStatus,
+  runGit,
+  type StatusEntry,
+} from "../data/git.ts";
 import { loadSyncConfig, resolveRawDir } from "../sync/config.ts";
 import { sha256 } from "../sync/hash.ts";
 import {
@@ -911,9 +916,22 @@ export function formatDigest(run: IngestRun): string {
   return `${lines.join("\n")}\n`;
 }
 
-/** Bucket the post-run status entries: created (added or
- *  untracked), updated (modified), deleted (deleted now but not
- *  already deleted pre-run). */
+/** A rename entry this run introduced: absent, code and origin
+ *  alike, from the pre-run snapshot — a rename staged before the
+ *  run is not the run's doing. */
+function isFreshRename(
+  entry: StatusEntry,
+  before: ReadonlyMap<string, StatusEntry>,
+): boolean {
+  return (
+    entry.code.includes("R") && !isPreExisting(before.get(entry.path), entry)
+  );
+}
+
+/** Bucket the post-run status entries: created (added, untracked,
+ *  or a rename this run introduced — the rename's target), updated
+ *  (modified), deleted (deleted now but not already deleted
+ *  pre-run; likewise a fresh rename's origin). */
 function currentEntryBuckets(
   entries: readonly StatusEntry[],
   before: ReadonlyMap<string, StatusEntry>,
@@ -922,13 +940,23 @@ function currentEntryBuckets(
   const updated: string[] = [];
   const deleted: string[] = [];
 
-  for (const { code, path } of entries) {
-    if (code.includes("A") || code.includes("?")) {
+  for (const entry of entries) {
+    const { code, path, origin } = entry;
+
+    if (
+      code.includes("A") ||
+      code.includes("?") ||
+      isFreshRename(entry, before)
+    ) {
       created.push(path);
     } else if (code.includes("M")) {
       updated.push(path);
     } else if (code.includes("D") && !before.get(path)?.code.includes("D")) {
       deleted.push(path);
+    }
+
+    if (origin !== undefined && isFreshRename(entry, before)) {
+      deleted.push(origin);
     }
   }
 
@@ -961,7 +989,8 @@ function vanishedUntracked(
 /**
  * Wiki pages created, updated, and deleted by the run, from the data
  * repo's git status: untracked or added paths count as created,
- * modified paths as updated, deleted paths (staged or not) as deleted.
+ * modified paths as updated, deleted paths (staged or not) as deleted;
+ * a rename counts its target as created and its origin as deleted.
  * Deleting a page that was still untracked leaves no status entry at
  * all, so with the pre-run state those pages count as deleted when
  * their file is gone; a deletion that predates the run (already `D`
