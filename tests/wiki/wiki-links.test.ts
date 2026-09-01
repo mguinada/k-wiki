@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { unfencedLines } from "../src/wiki-links.ts";
+import { unfencedLines } from "../../src/wiki/wiki-links.ts";
 
 /** The fence rule of the shared scanner (issue #246 C-10): an opening
  *  fence is any 3+ backtick/tilde marker (info string allowed); a

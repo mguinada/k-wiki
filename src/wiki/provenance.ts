@@ -1,6 +1,5 @@
 import { readFile, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { stem } from "../wiki-links.ts";
 import { anchorResolves } from "./chapter-headings.ts";
 import {
   buildPageIndex,
@@ -19,6 +18,7 @@ import {
   type SourceHubIndex,
   wikilinkFor,
 } from "./source-hubs.ts";
+import { stem } from "./wiki-links.ts";
 
 /**
  * Dead-provenance core (issue #65): the deterministic backstop that

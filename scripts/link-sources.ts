@@ -17,7 +17,7 @@ import {
   loadSourceHubIndex,
   wikilinkFor,
 } from "../src/wiki/source-hubs.ts";
-import { stem } from "../src/wiki-links.ts";
+import { stem } from "../src/wiki/wiki-links.ts";
 
 /**
  * One-shot `sources` wikilink migration (issue #126, Part A): every

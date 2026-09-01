@@ -13,7 +13,7 @@ import {
   extractWikilinks,
   wikilinkBodyAnchor,
   wikilinkBodyTarget,
-} from "../../src/wiki-links.ts";
+} from "../../src/wiki/wiki-links.ts";
 
 const script = join(
   dirname(fileURLToPath(import.meta.url)),

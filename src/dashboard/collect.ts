@@ -7,7 +7,7 @@ import {
   listWikiPages,
   parsePageFields,
 } from "../wiki/pages.ts";
-import { extractWikilinks, listFiles } from "../wiki-links.ts";
+import { extractWikilinks, listFiles } from "../wiki/wiki-links.ts";
 import type {
   AdditionFact,
   CommitFact,

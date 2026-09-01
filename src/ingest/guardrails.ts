@@ -26,7 +26,7 @@ import {
   buildPageIndex,
   crossWikiTarget,
   extractWikilinks,
-} from "../wiki-links.ts";
+} from "../wiki/wiki-links.ts";
 
 /**
  * Post-run guardrails (guide §1, §7, §9; issue #12): three mechanical

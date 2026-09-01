@@ -7,7 +7,7 @@ import {
   buildPageIndex,
   crossWikiTarget,
   extractWikilinks,
-} from "./wiki-links.ts";
+} from "./wiki/wiki-links.ts";
 
 /**
  * The cross-wiki link audit (issue #81): the library core behind

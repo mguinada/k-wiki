@@ -21,7 +21,7 @@ import {
   citationChapter,
   loadSourceHubIndex,
 } from "../src/wiki/source-hubs.ts";
-import { stem } from "../src/wiki-links.ts";
+import { stem } from "../src/wiki/wiki-links.ts";
 
 /**
  * One-shot chapter-anchor migration: every aliased hub citation
