@@ -1,7 +1,7 @@
 # Scheduled board triage (issue #209): the mechanical half of the
 # triage-issues skill, every 6 hours.
 #
-# The workflow runs `bin/board-triage.ts` — Backlog → Ready for
+# The workflow runs `dev/board-triage.ts` — Backlog → Ready for
 # unblocked, non-research issues; open-PR → In progress; closed →
 # Done — writing Status field values only. Lane order and the issues
 # themselves are never touched, and every move is verified by
@@ -49,6 +49,6 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Run board triage
-        run: node bin/board-triage.ts
+        run: node dev/board-triage.ts
         env:
           GH_TOKEN: ${{ secrets.KWIKI_BOARD_TRIAGE_TOKEN }}

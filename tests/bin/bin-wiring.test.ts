@@ -7,8 +7,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterAll, describe, expect, it, vi } from "vitest";
 
 /**
- * Spawn-every-entry wiring (issue #135): `bin/<name>.ts` launchers are
- * the only entry path, so each one must import the module it claims
+ * Spawn-every-entry wiring (issue #135): the shebanged launchers —
+ * `bin/<name>.ts` for the wiki runtime, `dev/<name>.ts` for
+ * development-lifecycle commands (issue #253) — are the only entry
+ * path, so each one must import the module it claims
  * (wrong-path/wrong-CLI launchers die here), and each library module
  * must refuse direct execution with the launcher hint and exit 1.
  * Runs against the repo tree next to this test — under Stryker that
@@ -24,6 +26,8 @@ interface Entry {
   readonly launcher: string;
   readonly module: string;
   readonly usage: string;
+  /** The launcher's class: runtime `bin/` (default) or dev `dev/`. */
+  readonly dir?: "bin" | "dev";
 }
 
 const ENTRIES: readonly Entry[] = [
@@ -36,6 +40,7 @@ const ENTRIES: readonly Entry[] = [
     launcher: "board-triage.ts",
     module: "src/board/board-triage.ts",
     usage: "Usage: board-triage",
+    dir: "dev",
   },
   {
     launcher: "check-crosslinks.ts",
@@ -71,6 +76,7 @@ const ENTRIES: readonly Entry[] = [
     launcher: "generate.ts",
     module: "src/fixtures/generate.ts",
     usage: "Usage: fixtures",
+    dir: "dev",
   },
   {
     launcher: "init-data-repo.ts",
@@ -91,16 +97,19 @@ const ENTRIES: readonly Entry[] = [
     launcher: "mutation-report.ts",
     module: "src/quality/mutation-report.ts",
     usage: "Usage: mutation-report",
+    dir: "dev",
   },
   {
     launcher: "mutation-scope.ts",
     module: "src/quality/mutation-scope.ts",
     usage: "Usage: mutation-scope",
+    dir: "dev",
   },
   {
     launcher: "mutation-survivors.ts",
     module: "src/quality/mutation-survivors.ts",
     usage: "Usage: mutation-survivors",
+    dir: "dev",
   },
   {
     launcher: "open-origin.ts",
@@ -170,11 +179,13 @@ function runNode(args: readonly string[]): Promise<RunResult> {
   });
 }
 
-describe("bin launcher wiring (issue #135)", () => {
+describe("launcher wiring (issue #135)", () => {
   for (const entry of ENTRIES) {
-    it(`bin/${entry.launcher} --help prints its own usage and exits 0`, async () => {
+    const dir = entry.dir ?? "bin";
+
+    it(`${dir}/${entry.launcher} --help prints its own usage and exits 0`, async () => {
       const result = await runNode([
-        join(repoRoot, "bin", entry.launcher),
+        join(repoRoot, dir, entry.launcher),
         "--help",
       ]);
 
@@ -187,12 +198,14 @@ describe("bin launcher wiring (issue #135)", () => {
 
 describe("library modules refuse direct execution (issue #135)", () => {
   for (const entry of ENTRIES) {
+    const dir = entry.dir ?? "bin";
+
     it(`${entry.module} prints the launcher hint and exits 1`, async () => {
       const result = await runNode([join(repoRoot, entry.module)]);
       const stem = entry.launcher.replace(/\.ts$/, "");
 
       expect(`${result.code}|${result.err.trimEnd()}`).toBe(
-        `1|library module — run bin/${stem}`,
+        `1|library module — run ${dir}/${stem}`,
       );
     });
   }
@@ -228,6 +241,8 @@ async function stageRepo(): Promise<string> {
 
 describe("library modules refuse in-process direct imports (issue #135)", () => {
   for (const entry of ENTRIES) {
+    const dir = entry.dir ?? "bin";
+
     it(`importing ${entry.module} with argv[1] at itself prints the hint and exits 1`, async () => {
       const repo = await stageRepo();
       const modulePath = join(repo, entry.module);
@@ -258,7 +273,9 @@ describe("library modules refuse in-process direct imports (issue #135)", () => 
         exitSpy.mockRestore();
       }
 
-      expect(`${exitArg}|${err[0]}`).toBe(`1|library module — run bin/${stem}`);
+      expect(`${exitArg}|${err[0]}`).toBe(
+        `1|library module — run ${dir}/${stem}`,
+      );
     });
   }
 });

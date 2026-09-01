@@ -512,7 +512,7 @@ sources directly, so there is no build step — install dependencies with
 
 | Command | Tool | Purpose |
 |---|---|---|
-| `npm run typecheck` | tsc | Type-check `src/`, `bin/`, and `tests/` without emitting code |
+| `npm run typecheck` | tsc | Type-check `src/`, `bin/`, `dev/`, and `tests/` without emitting code |
 | `npm run lint` | Biome | Lint and verify formatting across the repo |
 | `npm run format` | Biome | Rewrite files to the canonical format — the fix command for lint findings, not a gate |
 | `npm test` | vitest | Run the unit test suite |
@@ -599,7 +599,7 @@ not part of the sync run.
 
 The mechanical half of the K-Wiki Kanban triage contract runs on a
 schedule:
-`.github/workflows/board-triage.yml` runs `bin/board-triage.ts` every
+`.github/workflows/board-triage.yml` runs `dev/board-triage.ts` every
 6 hours — Backlog → Ready for issues with no open blocker and no
 `research` label, → In progress for Backlog issues with an open PR
 cross-reference, → Done for closed issues on any non-Done lane. Writes go
@@ -622,7 +622,7 @@ keyring login directly; `--dry-run` previews the plan with zero
 writes.
 
 **Re-verifying the automation** (GraphQL schema drift, behavior
-changes, a new board): `scripts/rehearse-board-triage.sh` rebuilds a
+changes, a new board): `dev/rehearse-board-triage.sh` rebuilds a
 scratch board — never the live one — carrying one issue per contract
 state and proves the lane verdicts, the dry-run zero-write property,
 verify-on-apply, evidence lines, Ready-order preservation, and

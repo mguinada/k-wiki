@@ -9,11 +9,11 @@ import { describe, expect, it } from "vitest";
  * user-facing surfaces (issue #202): `--help` output and README.md
  * explain behavior to end users; tracker history belongs in the
  * design record (docs/karpathy_wiki_implementation_guide.md) and
- * dev-facing code comments. Every bin/*.ts launcher is executed
- * with --help — which must exit 0 without side effects — and its
- * output plus README.md are matched against the citation pattern.
- * `issues? #` so "issue #11" and "issues #67 and #72" both trip;
- * the text is whitespace-normalized first so a citation broken
+ * dev-facing code comments. Every bin/*.ts and dev/*.ts launcher is
+ * executed with --help — which must exit 0 without side effects —
+ * and its output plus README.md are matched against the citation
+ * pattern. `issues? #` so "issue #11" and "issues #67 and #72" both
+ * trip; the text is whitespace-normalized first so a citation broken
  * across lines ("(issue\n  #95)") cannot slip through.
  */
 
@@ -25,8 +25,11 @@ function normalize(text: string): string {
   return text.replace(/\s+/g, " ");
 }
 
-async function collectBinLaunchers(): Promise<string[]> {
-  const entries = await readdir(join(repoRoot, "bin"), {
+/** The launcher directories: the runtime bin/ class and the dev/ one. */
+const LAUNCHER_DIRS = ["bin", "dev"] as const;
+
+async function collectLaunchers(dir: string): Promise<string[]> {
+  const entries = await readdir(join(repoRoot, dir), {
     withFileTypes: true,
   });
 
@@ -36,10 +39,10 @@ async function collectBinLaunchers(): Promise<string[]> {
     .sort();
 }
 
-function runHelp(launcher: string): string {
+function runHelp(dir: string, launcher: string): string {
   return execFileSync(
     process.execPath,
-    [join(repoRoot, "bin", launcher), "--help"],
+    [join(repoRoot, dir, launcher), "--help"],
     {
       encoding: "utf8",
       timeout: 30_000,
@@ -54,14 +57,18 @@ describe("user-facing surfaces carry no issue references (issue #202 guard)", ()
     expect(normalize(readme).match(ISSUE_REFERENCE)).toBeNull();
   });
 
-  it("bin/*.ts help output contains no issue reference", async () => {
+  it("bin/*.ts and dev/*.ts help output contains no issue reference", async () => {
     const offenders: string[] = [];
 
-    for (const launcher of await collectBinLaunchers()) {
-      const citation = normalize(runHelp(launcher)).match(ISSUE_REFERENCE);
+    for (const dir of LAUNCHER_DIRS) {
+      for (const launcher of await collectLaunchers(dir)) {
+        const citation = normalize(runHelp(dir, launcher)).match(
+          ISSUE_REFERENCE,
+        );
 
-      if (citation !== null) {
-        offenders.push(`${launcher}: ${citation[0]}`);
+        if (citation !== null) {
+          offenders.push(`${dir}/${launcher}: ${citation[0]}`);
+        }
       }
     }
 

@@ -5,7 +5,7 @@
 # Builds a scratch board — a standing scratch repo (the keyring token
 # has no delete_repo scope) plus a scratch user project whose Status
 # field carries the board's exact lanes — places one issue in every
-# contract state, then runs bin/board-triage.ts against it and checks:
+# contract state, then runs dev/board-triage.ts against it and checks:
 #
 #   - the dry run plans moves but writes nothing
 #   - every lane verdict (plain -> Ready, research stays, open-blocked
@@ -18,7 +18,7 @@
 #
 # Usage: run from the repo root with the gh keyring login (project
 # scope; a local GITHUB_TOKEN is stripped per AGENTS.md):
-#   bash scripts/rehearse-board-triage.sh
+#   bash dev/rehearse-board-triage.sh
 #
 # GraphQL secondary rate limits bite on burst polling: the script
 # spaces its calls, retries the project-add (eventually consistent,
@@ -155,16 +155,16 @@ lane_of() { jq -r --argjson n "$1" '.items[] | select(.content.number == $n) | .
 
 # --- dry run: zero writes ----------------------------------------------
 sleep 10
-DRY=$(node bin/board-triage.ts --dry-run --owner mguinada --project "$PROJ_N" || true)
-if echo "$DRY" | grep -q "rate limit"; then say "rate-limited; waiting 90s"; sleep 90; DRY=$(node bin/board-triage.ts --dry-run --owner mguinada --project "$PROJ_N"); fi
+DRY=$(node dev/board-triage.ts --dry-run --owner mguinada --project "$PROJ_N" || true)
+if echo "$DRY" | grep -q "rate limit"; then say "rate-limited; waiting 90s"; sleep 90; DRY=$(node dev/board-triage.ts --dry-run --owner mguinada --project "$PROJ_N"); fi
 echo "$DRY"
 $GHU project item-list "$PROJ_N" --owner mguinada --format json --limit 100 > "$SNAPSHOT_FILE"
 check "$(lane_of "$I_PLAIN")" Backlog "dry run wrote nothing (I_PLAIN still Backlog)"
 
 # --- the real run -------------------------------------------------------
 sleep 5
-OUT=$(node bin/board-triage.ts --owner mguinada --project "$PROJ_N" || true)
-if echo "$OUT" | grep -q "rate limit"; then say "rate-limited; waiting 90s"; sleep 90; OUT=$(node bin/board-triage.ts --owner mguinada --project "$PROJ_N"); fi
+OUT=$(node dev/board-triage.ts --owner mguinada --project "$PROJ_N" || true)
+if echo "$OUT" | grep -q "rate limit"; then say "rate-limited; waiting 90s"; sleep 90; OUT=$(node dev/board-triage.ts --owner mguinada --project "$PROJ_N"); fi
 echo "$OUT"
 $GHU project item-list "$PROJ_N" --owner mguinada --format json --limit 100 > "$SNAPSHOT_FILE"
 
@@ -185,7 +185,7 @@ echo "$OUT" | grep -q "#$I_RESEARCH stays Backlog — research label" && ok "res
 
 # --- idempotency --------------------------------------------------------
 sleep 5
-SECOND=$(node bin/board-triage.ts --owner mguinada --project "$PROJ_N")
+SECOND=$(node dev/board-triage.ts --owner mguinada --project "$PROJ_N")
 echo "$SECOND"
 check "$(echo "$SECOND" | tail -1 | grep -oE '[0-9]+ moves')" "0 moves" "second run plans zero moves"
 

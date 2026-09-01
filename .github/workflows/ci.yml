@@ -224,7 +224,7 @@ jobs:
       - name: Compute this chunk's mutate list
         id: globs
         run: >
-          echo "globs=$(node bin/mutation-chunk.ts --index
+          echo "globs=$(node dev/mutation-chunk.ts --index
           ${{ matrix.chunk }} --total 4)" >> "$GITHUB_OUTPUT"
       - name: Mutation testing run (chunk ${{ matrix.chunk }} of 4)
         id: mutation
@@ -289,7 +289,7 @@ jobs:
       - name: Merge chunk reports
         id: merge
         run: >
-          mkdir -p reports/mutation && node bin/mutation-merge.ts
+          mkdir -p reports/mutation && node dev/mutation-merge.ts
           reports/mutation/mutation.json
           chunks/mutation-report-chunk-*/mutation.json --expect 4
       - name: Surface a failed advisory merge

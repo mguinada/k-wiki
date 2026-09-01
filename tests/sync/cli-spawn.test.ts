@@ -107,7 +107,7 @@ async function makeTmpRepo(): Promise<string> {
 
   tempDirs.push(dir);
 
-  // Resolve src/ and bin/ relative to this test file, not
+  // Resolve src/, bin/, and dev/ relative to this test file, not
   // process.cwd(): under Stryker the mutated sources live in the
   // sandbox next to the tests, while cwd still points at the original
   // repo root.
@@ -117,6 +117,9 @@ async function makeTmpRepo(): Promise<string> {
     recursive: true,
   });
   await cp(join(testsDir, "../../bin"), join(dir, "bin"), {
+    recursive: true,
+  });
+  await cp(join(testsDir, "../../dev"), join(dir, "dev"), {
     recursive: true,
   });
 
@@ -140,9 +143,9 @@ async function makeTmpRepo(): Promise<string> {
 }
 
 /**
- * A staged copy of src/ and bin/ inside the test tree, importable
- * in-process. Returns the staged repo root (holds sync.json, src/,
- * and bin/).
+ * A staged copy of src/, bin/, and dev/ inside the test tree,
+ * importable in-process. Returns the staged repo root (holds
+ * sync.json, src/, bin/, and dev/).
  */
 async function stageRepo(): Promise<string> {
   const dir = join(stagingRoot, randomUUID());
@@ -151,6 +154,7 @@ async function stageRepo(): Promise<string> {
   await mkdir(join(dir, "raw"), { recursive: true });
   await cp(join(testsDir, "../../src"), join(dir, "src"), { recursive: true });
   await cp(join(testsDir, "../../bin"), join(dir, "bin"), { recursive: true });
+  await cp(join(testsDir, "../../dev"), join(dir, "dev"), { recursive: true });
 
   const vaultRoot = await generateFixtureVault(join(dir, "vault"));
 
@@ -207,7 +211,7 @@ describe("generate CLI", () => {
   it("exits with a usage error when no target directory is given", async () => {
     const dir = await makeTmpRepo();
 
-    const result = await runNode([join(dir, "bin", "generate.ts")]);
+    const result = await runNode([join(dir, "dev", "generate.ts")]);
 
     expect({ code: result.code, err: result.err }).toMatchObject({
       code: 1,
@@ -219,7 +223,7 @@ describe("generate CLI", () => {
     const dir = await makeTmpRepo();
     const target = join(dir, "target");
 
-    const result = await runNode([join(dir, "bin", "generate.ts"), target]);
+    const result = await runNode([join(dir, "dev", "generate.ts"), target]);
 
     expect({ code: result.code, out: result.out }).toMatchObject({
       code: 0,
@@ -237,9 +241,9 @@ describe("generate CLI", () => {
     expect(`${result.code}${result.out}${result.err}`).toBe("0");
   });
 
-  it("runs main when imported through its bin launcher, with the given target", async () => {
+  it("runs main when imported through its dev launcher, with the given target", async () => {
     const repo = await stageRepo();
-    const launcherPath = join(repo, "bin", "generate.ts");
+    const launcherPath = join(repo, "dev", "generate.ts");
     const target = join(repo, "target");
 
     const { out } = await importWithArgv(launcherPath, launcherPath, [target]);

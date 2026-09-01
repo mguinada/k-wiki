@@ -166,4 +166,4 @@ export function main(
 }
 
 /* v8 ignore next: covered only under direct `node src/quality/mutation-chunk.ts` runs */
-refuseDirectExecution(import.meta.url, "mutation-chunk");
+refuseDirectExecution(import.meta.url, "mutation-chunk", "dev");

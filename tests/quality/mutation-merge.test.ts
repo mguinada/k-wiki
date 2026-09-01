@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { main, mergeReports } from "../../src/quality/mutation-merge.ts";
 
-const script = realpathSync("bin/mutation-merge.ts");
+const script = realpathSync("dev/mutation-merge.ts");
 
 const tempDirs: string[] = [];
 

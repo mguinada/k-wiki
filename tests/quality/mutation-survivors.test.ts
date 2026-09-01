@@ -91,7 +91,7 @@ describe("actionableLines", () => {
 
 const script = join(
   dirname(fileURLToPath(import.meta.url)),
-  "../../bin/mutation-survivors.ts",
+  "../../dev/mutation-survivors.ts",
 );
 
 interface RunResult {

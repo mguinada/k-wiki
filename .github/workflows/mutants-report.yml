@@ -100,7 +100,7 @@ jobs:
           artifact_id=$(gh api \
             "repos/${{ github.repository }}/actions/runs/${{ steps.run.outputs.id }}/artifacts" \
             --jq '.artifacts[] | select(.name == "mutation-report") | .id')
-          node bin/mutation-report.ts dl/mutation.json \
+          node dev/mutation-report.ts dl/mutation.json \
             --run-url "$RUN_URL" \
             --html-url "$RUN_URL/artifacts/$artifact_id" \
             > body.md

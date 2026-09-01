@@ -181,4 +181,4 @@ export function main(baseDir: string = process.cwd()): void {
 }
 
 /* v8 ignore next: covered only under direct `node src/quality/mutation-survivors.ts` runs */
-refuseDirectExecution(import.meta.url, "mutation-survivors");
+refuseDirectExecution(import.meta.url, "mutation-survivors", "dev");

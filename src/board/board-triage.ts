@@ -857,4 +857,4 @@ export async function main(graphql?: GraphQLFn): Promise<void> {
 }
 
 /* v8 ignore next: covered only under direct `node src/board/board-triage.ts` runs */
-refuseDirectExecution(import.meta.url, "board-triage");
+refuseDirectExecution(import.meta.url, "board-triage", "dev");

@@ -175,4 +175,4 @@ export function main(argv: readonly string[] = process.argv.slice(2)): void {
 }
 
 /* v8 ignore next: covered only under direct `node src/quality/mutation-report.ts` runs */
-refuseDirectExecution(import.meta.url, "mutation-report");
+refuseDirectExecution(import.meta.url, "mutation-report", "dev");

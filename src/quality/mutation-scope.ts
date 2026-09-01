@@ -195,4 +195,4 @@ export function main(argv: readonly string[], git: GitText = runGitText) {
 }
 
 /* v8 ignore next: covered only under direct `node src/quality/mutation-scope.ts` runs */
-refuseDirectExecution(import.meta.url, "mutation-scope");
+refuseDirectExecution(import.meta.url, "mutation-scope", "dev");
