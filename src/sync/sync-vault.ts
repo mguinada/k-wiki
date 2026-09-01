@@ -61,7 +61,7 @@ export interface SyncOptions {
   /** Read-loop heartbeat cadence in files read; default: every 500. */
   readonly progressEvery?: number | undefined;
   /** Progress sink (uncolored messages); default: silent. */
-  readonly onProgress?: (message: string) => void;
+  readonly onProgress?: (message: SyncProgress) => void;
 }
 
 export interface VaultSyncReport {
@@ -212,7 +212,7 @@ async function selectNotes(
   vault: VaultSourceConfig,
   candidates: readonly string[],
   progressEvery: number,
-  onProgress: (message: string) => void,
+  onProgress: (message: SyncProgress) => void,
 ): Promise<ProjectedNote[]> {
   const selected: ProjectedNote[] = [];
   const decoder = new TextDecoder();
@@ -225,9 +225,10 @@ async function selectNotes(
     }
 
     if ((index + 1) % progressEvery === 0) {
-      onProgress(
-        `vault "${vault.name}": ${index + 1}/${candidates.length} read, ${selected.length} selected`,
-      );
+      onProgress({
+        kind: "heartbeat",
+        text: `vault "${vault.name}": ${index + 1}/${candidates.length} read, ${selected.length} selected`,
+      });
     }
   }
 
@@ -238,27 +239,34 @@ async function selectNotes(
 async function scanAndSelect(
   vault: VaultSourceConfig,
   progressEvery: number,
-  onProgress: (message: string) => void,
+  onProgress: (message: SyncProgress) => void,
 ): Promise<{
   candidates: readonly string[];
   selected: readonly ProjectedNote[];
 }> {
   await assertDirectory(vault);
 
-  onProgress(`vault "${vault.name}": scanning ${vault.root}`);
+  onProgress({
+    kind: "event",
+    text: `vault "${vault.name}": scanning ${vault.root}`,
+  });
 
   const walkStartedAt = Date.now();
   const candidates = await scanVault(vault.root, (visited) => {
     if (visited % SCAN_HEARTBEAT_EVERY === 0) {
       const elapsed = formatDuration(Date.now() - walkStartedAt);
 
-      onProgress(
-        `vault "${vault.name}": scanning (${elapsed}, ${visited} dirs)`,
-      );
+      onProgress({
+        kind: "heartbeat",
+        text: `vault "${vault.name}": scanning (${elapsed}, ${visited} dirs)`,
+      });
     }
   });
 
-  onProgress(`vault "${vault.name}": ${candidates.length} candidates`);
+  onProgress({
+    kind: "event",
+    text: `vault "${vault.name}": ${candidates.length} candidates`,
+  });
 
   const selected = await selectNotes(
     vault,
@@ -276,7 +284,7 @@ async function syncVault(
   now: () => Date,
   previous: VaultNotes,
   progressEvery: number,
-  onProgress: (message: string) => void,
+  onProgress: (message: SyncProgress) => void,
 ): Promise<{ notes: VaultNotes; report: VaultSyncReport }> {
   const { candidates, selected } = await scanAndSelect(
     vault,
@@ -409,7 +417,10 @@ export async function runSync(options: SyncOptions): Promise<SyncReport> {
   const now = options.now ?? (() => new Date());
   const onProgress = options.onProgress ?? (() => {});
 
-  onProgress(`sync-vault: raw dir ${options.rawDir}`);
+  onProgress({
+    kind: "event",
+    text: `sync-vault: raw dir ${options.rawDir}`,
+  });
 
   const config = await loadSyncConfig(options.configPath, home);
   const vaults = vaultSourcesOnly(config.vaults);
@@ -437,7 +448,7 @@ export async function runSync(options: SyncOptions): Promise<SyncReport> {
     nextManifest,
     notesRoot,
     "vault",
-    onProgress,
+    (text) => onProgress({ kind: "event", text }),
   );
 
   for (const vault of vaults) {
@@ -473,7 +484,10 @@ export async function runDryRun(
   const home = options.home ?? homedir();
   const onProgress = options.onProgress ?? (() => {});
 
-  onProgress("sync-vault: dry run, nothing will be written");
+  onProgress({
+    kind: "event",
+    text: "sync-vault: dry run, nothing will be written",
+  });
 
   const config = await loadSyncConfig(options.configPath, home);
   const reports: VaultDryRunReport[] = [];
@@ -673,30 +687,34 @@ status line - a braille spinner plus the sentence - rewritten in
 place; piped, redirected, CI, or NO_COLOR runs get plain appended
 lines instead (read heartbeat every 500 files by default).`;
 
-/** Live status patterns: the read heartbeat and the scan-walk heartbeat. */
-const LIVE_PROGRESS =
-  /^[^:]+: (\d+\/\d+ read, \d+ selected|scanning \([^)]* dirs\))$/;
+/** One progress message from a sync pass: an `event` scrolls as its own
+ *  line, a `heartbeat` rewrites the animated status line in place. The
+ *  emitter constructs the kind, so classification never depends on
+ *  message wording and vault names may contain `:` (issue #246 C-9). */
+export type SyncProgress =
+  | { readonly kind: "event"; readonly text: string }
+  | { readonly kind: "heartbeat"; readonly text: string };
 
 /** A stderr progress surface: plain lines, or one animated line. */
 export interface ProgressSink {
-  render(message: string): void;
+  render(message: SyncProgress): void;
   end(): void;
 }
 
 /**
- * The stderr presentation for one sync run: read and scan heartbeats
- * keep one animated line (spinner + sentence) on a TTY; every other
- * message scrolls. Non-animated runs append plain lines only.
+ * The stderr presentation for one sync run: heartbeat messages keep
+ * one animated line (spinner + sentence) on a TTY; event messages
+ * scroll. Non-animated runs append plain lines only.
  */
 export function createSyncProgressSink(
   write: (text: string) => void,
   writeLine: (text: string) => void,
   animated: boolean,
-  colorize: (message: string) => string,
+  colorize: (text: string) => string,
 ): ProgressSink {
   if (!animated) {
     return {
-      render: (message) => writeLine(colorize(message)),
+      render: (message) => writeLine(colorize(message.text)),
       end: () => {},
     };
   }
@@ -705,10 +723,10 @@ export function createSyncProgressSink(
 
   return {
     render: (message) => {
-      if (LIVE_PROGRESS.test(message)) {
-        renderer.live(colorize(message));
+      if (message.kind === "heartbeat") {
+        renderer.live(colorize(message.text));
       } else {
-        renderer.event(colorize(message));
+        renderer.event(colorize(message.text));
       }
     },
     end: () => renderer.end(),

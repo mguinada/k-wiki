@@ -28,6 +28,7 @@ import {
   reportColors,
   runDryRun,
   runSync,
+  type SyncProgress,
   type SyncReport,
   type VaultDryRunReport,
   type VaultSyncReport,
@@ -103,7 +104,7 @@ async function run(ws: Workspace, iso: string = T1) {
 
 /** Run with a progress collector; returns reports and messages. */
 async function runWithProgress(ws: Workspace, iso: string = T1) {
-  const messages: string[] = [];
+  const messages: SyncProgress[] = [];
   const report = await runSync({
     configPath: ws.configPath,
     rawDir: ws.rawDir,
@@ -591,18 +592,30 @@ describe("runSync progress", () => {
     const ws = await makeWorkspace();
     const { messages } = await runWithProgress(ws);
 
-    expect(messages[0]).toBe(`sync-vault: raw dir ${ws.rawDir}`);
+    expect(messages).toContainEqual({
+      kind: "event",
+      text: `sync-vault: raw dir ${ws.rawDir}`,
+    });
   });
 
   it("announces scanning and the candidate count right after the raw dir", async () => {
     const ws = await makeWorkspace();
     const { messages } = await runWithProgress(ws);
 
-    expect(messages.slice(0, 3)).toEqual([
+    expect(messages.slice(0, 3).map((message) => message.text)).toEqual([
       `sync-vault: raw dir ${ws.rawDir}`,
       `vault "${VAULT_NAME}": scanning ${ws.vaultRoot}`,
       `vault "${VAULT_NAME}": 9 candidates`,
     ]);
+  });
+
+  it("tags the scanning announcement and candidate count as events", async () => {
+    const ws = await makeWorkspace();
+    const { messages } = await runWithProgress(ws);
+
+    expect(
+      messages.slice(0, 3).every((message) => message.kind === "event"),
+    ).toBe(true);
   });
 
   it("emits a heartbeat every PROGRESS_EVERY files read", async () => {
@@ -619,7 +632,7 @@ describe("runSync progress", () => {
 
     const { messages } = await runWithProgress(ws);
 
-    expect(messages).toEqual([
+    expect(messages.map((message) => message.text)).toEqual([
       `sync-vault: raw dir ${ws.rawDir}`,
       `vault "${VAULT_NAME}": scanning ${ws.vaultRoot}`,
       `vault "${VAULT_NAME}": ${PROGRESS_EVERY + 9} candidates`,
@@ -627,16 +640,35 @@ describe("runSync progress", () => {
     ]);
   });
 
+  it("tags the read heartbeat as a heartbeat", async () => {
+    const ws = await makeWorkspace();
+
+    await mkdir(join(ws.vaultRoot, "AAbulk"), { recursive: true });
+
+    for (let index = 0; index < PROGRESS_EVERY; index += 1) {
+      await writeFile(
+        join(ws.vaultRoot, "AAbulk", `note-${index}.md`),
+        "# filler\n",
+      );
+    }
+
+    const { messages } = await runWithProgress(ws);
+
+    expect(messages.at(-1)?.kind).toBe("heartbeat");
+  });
+
   it("delivers uncolored progress messages", async () => {
     const ws = await makeWorkspace();
     const { messages } = await runWithProgress(ws);
 
-    expect(messages.every((message) => !message.includes("\x1b["))).toBe(true);
+    expect(messages.every((message) => !message.text.includes("\x1b["))).toBe(
+      true,
+    );
   });
 
   it("emits a read heartbeat after every file when progressEvery is 1", async () => {
     const ws = await makeWorkspace();
-    const messages: string[] = [];
+    const messages: SyncProgress[] = [];
 
     await runSync({
       configPath: ws.configPath,
@@ -645,12 +677,15 @@ describe("runSync progress", () => {
       onProgress: (message) => messages.push(message),
     });
 
-    expect(messages).toContain(`vault "${VAULT_NAME}": 1/9 read, 1 selected`);
+    expect(messages).toContainEqual({
+      kind: "heartbeat",
+      text: `vault "${VAULT_NAME}": 1/9 read, 1 selected`,
+    });
   });
 
   it("emits a read heartbeat after the second file when progressEvery is 1", async () => {
     const ws = await makeWorkspace();
-    const messages: string[] = [];
+    const messages: SyncProgress[] = [];
 
     await runSync({
       configPath: ws.configPath,
@@ -659,7 +694,10 @@ describe("runSync progress", () => {
       onProgress: (message) => messages.push(message),
     });
 
-    expect(messages).toContain(`vault "${VAULT_NAME}": 2/9 read, 2 selected`);
+    expect(messages).toContainEqual({
+      kind: "heartbeat",
+      text: `vault "${VAULT_NAME}": 2/9 read, 2 selected`,
+    });
   });
 
   it("emits a scanning heartbeat every thousand directories visited", async () => {
@@ -672,17 +710,19 @@ describe("runSync progress", () => {
     const { messages } = await runWithProgress(ws);
 
     expect(
-      messages.some((message) =>
-        new RegExp(
-          `^vault "${VAULT_NAME}": scanning \\([^)]+, 1000 dirs\\)$`,
-        ).test(message),
+      messages.some(
+        (message) =>
+          message.kind === "heartbeat" &&
+          new RegExp(
+            `^vault "${VAULT_NAME}": scanning \\([^)]+, 1000 dirs\\)$`,
+          ).test(message.text),
       ),
     ).toBe(true);
   });
 
   it("honors progressEvery in a dry run too", async () => {
     const ws = await makeWorkspace();
-    const messages: string[] = [];
+    const messages: SyncProgress[] = [];
 
     await runDryRun({
       configPath: ws.configPath,
@@ -691,12 +731,15 @@ describe("runSync progress", () => {
       onProgress: (message) => messages.push(message),
     });
 
-    expect(messages).toContain(`vault "${VAULT_NAME}": 1/9 read, 1 selected`);
+    expect(messages).toContainEqual({
+      kind: "heartbeat",
+      text: `vault "${VAULT_NAME}": 1/9 read, 1 selected`,
+    });
   });
 });
 
 describe("createSyncProgressSink", () => {
-  const colorize = (message: string) => `[${message}]`;
+  const colorize = (text: string) => `[${text}]`;
 
   function makeSink(animated: boolean) {
     const written: string[] = [];
@@ -711,10 +754,15 @@ describe("createSyncProgressSink", () => {
     return { sink, written, lines };
   }
 
+  const heartbeat = {
+    kind: "heartbeat",
+    text: `vault "${VAULT_NAME}": 1/9 read, 1 selected`,
+  } as const;
+
   it("appends plain lines when not animated", () => {
     const { sink, written } = makeSink(false);
 
-    sink.render(`vault "${VAULT_NAME}": 1/9 read, 1 selected`);
+    sink.render(heartbeat);
 
     expect(written).toEqual([]);
   });
@@ -722,15 +770,15 @@ describe("createSyncProgressSink", () => {
   it("appends the rendered line to the log when not animated", () => {
     const { sink, lines } = makeSink(false);
 
-    sink.render(`vault "${VAULT_NAME}": 1/9 read, 1 selected`);
+    sink.render(heartbeat);
 
     expect(lines).toEqual([`[vault "${VAULT_NAME}": 1/9 read, 1 selected]`]);
   });
 
-  it("keeps read heartbeats on the animated line", () => {
+  it("keeps heartbeats on the animated line", () => {
     const { sink, written } = makeSink(true);
 
-    sink.render(`vault "${VAULT_NAME}": 1/9 read, 1 selected`);
+    sink.render(heartbeat);
 
     expect(written).toEqual([
       `\r⠋ [vault "${VAULT_NAME}": 1/9 read, 1 selected]`,
@@ -740,15 +788,21 @@ describe("createSyncProgressSink", () => {
   it("keeps scan heartbeats on the animated line", () => {
     const { sink, written } = makeSink(true);
 
-    sink.render(`vault "${VAULT_NAME}": scanning (0s, 1000 dirs)`);
+    sink.render({
+      kind: "heartbeat",
+      text: `vault "${VAULT_NAME}": scanning (0s, 1000 dirs)`,
+    });
 
     expect(written[0]).toMatch(/^\r⠋ \[.*scanning \(0s, 1000 dirs\)\]$/);
   });
 
-  it("scrolls announcements as events on the animated sink", () => {
+  it("scrolls events on the animated sink", () => {
     const { sink, written } = makeSink(true);
 
-    sink.render(`vault "${VAULT_NAME}": scanning /some/root`);
+    sink.render({
+      kind: "event",
+      text: `vault "${VAULT_NAME}": scanning /some/root`,
+    });
 
     expect(written).toEqual([`[vault "${VAULT_NAME}": scanning /some/root]\n`]);
   });
@@ -756,15 +810,32 @@ describe("createSyncProgressSink", () => {
   it("keeps multi-digit read heartbeats on the animated line", () => {
     const { sink, written } = makeSink(true);
 
-    sink.render(`vault "${VAULT_NAME}": 12/345 read, 67 selected`);
+    sink.render({
+      kind: "heartbeat",
+      text: `vault "${VAULT_NAME}": 12/345 read, 67 selected`,
+    });
 
     expect(written[0]).toMatch(/^\r⠋ \[.*12\/345 read, 67 selected\]$/);
   });
 
-  it("treats a message merely containing a heartbeat as an event", () => {
+  it("keeps a heartbeat for a vault name containing a colon on the animated line", () => {
     const { sink, written } = makeSink(true);
 
-    sink.render(`note: vault "${VAULT_NAME}": 1/9 read, 1 selected (quoted)`);
+    sink.render({
+      kind: "heartbeat",
+      text: 'vault "notes:work": 1/9 read, 1 selected',
+    });
+
+    expect(written[0]).toMatch(/^\r⠋ /);
+  });
+
+  it("classifies by kind, not wording: heartbeat-shaped text tagged event scrolls", () => {
+    const { sink, written } = makeSink(true);
+
+    sink.render({
+      kind: "event",
+      text: `note: vault "${VAULT_NAME}": 1/9 read, 1 selected (quoted)`,
+    });
 
     expect(written).toEqual([
       `[note: vault "${VAULT_NAME}": 1/9 read, 1 selected (quoted)]\n`,
@@ -774,7 +845,7 @@ describe("createSyncProgressSink", () => {
   it("clears the animated line on end", () => {
     const { sink, written } = makeSink(true);
 
-    sink.render(`vault "${VAULT_NAME}": 1/9 read, 1 selected`);
+    sink.render(heartbeat);
     sink.end();
 
     expect(written[1]).toMatch(/^\r\s+\r$/);
@@ -1081,9 +1152,10 @@ describe("runSync stale namespace pruning", () => {
     await seedRetiredNamespace(ws);
     const { messages } = await runWithProgress(ws);
 
-    expect(messages).toContain(
-      'vault "Retired": removed stale namespace (not configured)',
-    );
+    expect(messages).toContainEqual({
+      kind: "event",
+      text: 'vault "Retired": removed stale namespace (not configured)',
+    });
   });
 
   it("lists pruned namespaces in the run report", async () => {
@@ -1176,7 +1248,7 @@ describe("runDryRun", () => {
 
   it("announces the dry run as the first progress message", async () => {
     const ws = await makeWorkspace();
-    const messages: string[] = [];
+    const messages: SyncProgress[] = [];
 
     await runDryRun({
       configPath: ws.configPath,
@@ -1184,12 +1256,15 @@ describe("runDryRun", () => {
       onProgress: (message) => messages.push(message),
     });
 
-    expect(messages[0]).toBe("sync-vault: dry run, nothing will be written");
+    expect(messages[0]).toEqual({
+      kind: "event",
+      text: "sync-vault: dry run, nothing will be written",
+    });
   });
 
   it("emits the same scanning progress as a real run", async () => {
     const ws = await makeWorkspace();
-    const messages: string[] = [];
+    const messages: SyncProgress[] = [];
 
     await runDryRun({
       configPath: ws.configPath,
@@ -1197,7 +1272,7 @@ describe("runDryRun", () => {
       onProgress: (message) => messages.push(message),
     });
 
-    expect(messages.slice(1, 3)).toEqual([
+    expect(messages.slice(1, 3).map((message) => message.text)).toEqual([
       `vault "${VAULT_NAME}": scanning ${ws.vaultRoot}`,
       `vault "${VAULT_NAME}": 9 candidates`,
     ]);

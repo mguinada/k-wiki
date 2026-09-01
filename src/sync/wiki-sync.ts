@@ -651,7 +651,7 @@ async function runSyncStage(
         configPath: options.configPath,
         rawDir: options.rawDir,
         now,
-        onProgress,
+        onProgress: (message) => onProgress(message.text),
       });
 }
 
