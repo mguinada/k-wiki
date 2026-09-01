@@ -1527,6 +1527,14 @@ function startHeartbeat(beat: {
   }, beat.intervalMs ?? HEARTBEAT_MS);
 }
 
+/** Heartbeat sentence prefixes this CLI emits (plain or expunge-
+ *  labeled; see startHeartbeat); the TTY renderer keeps matching
+ *  messages on one animated line (spinner + clock). */
+export const AGENT_HEARTBEAT_PREFIX = [
+  "wiki-ingest: agent still running",
+  "wiki-ingest: expunge agent still running",
+] as const;
+
 /** Write the digest of a guardrail-reverted run: no page counts, the
  *  tripped check named, the agent output kept for review. */
 async function writeFailureDigest(
@@ -2198,6 +2206,7 @@ export async function main(): Promise<void> {
     (text) => console.error(text),
     animated,
     colors(),
+    AGENT_HEARTBEAT_PREFIX,
   );
 
   await runCliIngest({

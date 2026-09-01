@@ -24,15 +24,8 @@ export type AgentRunner = (
 const AGENT_TIMEOUT_MS = 30 * 60_000;
 
 /** Interval for the progress-sink liveness line while the agent
- *  runs (see AGENT_HEARTBEAT_PREFIX for the line's wording). */
+ *  runs; the wording is each consumer's heartbeat prefix. */
 export const HEARTBEAT_MS = 60_000;
-
-/** Heartbeat sentence prefixes (plain or expunge-labeled); the TTY
- *  renderer keeps matching messages on one animated line (spinner + clock). */
-export const AGENT_HEARTBEAT_PREFIX = [
-  "wiki-ingest: agent still running",
-  "wiki-ingest: expunge agent still running",
-] as const;
 
 /** Collected output cap: 16 MB, far above any final agent report. */
 const AGENT_MAX_BUFFER = 16 * 1024 * 1024;
@@ -154,7 +147,7 @@ export function createAgentProgressSink(
   writeLine: (text: string) => void,
   animated: boolean,
   tones: ProgressTones,
-  heartbeatPrefix: string | readonly string[] = AGENT_HEARTBEAT_PREFIX,
+  heartbeatPrefix: string | readonly string[],
 ): ProgressSink {
   const prefixes =
     typeof heartbeatPrefix === "string" ? [heartbeatPrefix] : heartbeatPrefix;

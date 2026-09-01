@@ -13,7 +13,6 @@ import { refuseDirectExecution } from "../cli/is-main.ts";
 import { formatDuration } from "../cli/progress.ts";
 import { parseStatus, runGit } from "../data/git.ts";
 import {
-  AGENT_HEARTBEAT_PREFIX,
   type AgentRunner,
   createAgentProgressSink,
   readPrompt,
@@ -32,6 +31,7 @@ import {
   runGuardrails,
 } from "../ingest/guardrails.ts";
 import {
+  AGENT_HEARTBEAT_PREFIX,
   type IngestResult,
   runWikiIngest,
   sourceCount,

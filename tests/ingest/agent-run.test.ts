@@ -166,6 +166,7 @@ describe("createAgentProgressSink", () => {
     dim: (text: string) => `<${text}>`,
     yellow: (text: string) => `[${text}]`,
   };
+  const ingestPrefix = "wiki-ingest: agent still running";
 
   function makeSink(animated: boolean) {
     const written: string[] = [];
@@ -175,10 +176,16 @@ describe("createAgentProgressSink", () => {
       (text) => lines.push(text),
       animated,
       tones,
+      ingestPrefix,
     );
 
     return { sink, written, lines };
   }
+
+  it("requires the heartbeat prefix argument", () => {
+    // @ts-expect-error heartbeatPrefix has no consumer-specific default
+    createAgentProgressSink(() => {}, () => {}, false, tones);
+  });
 
   it("keeps the animated channel quiet when not animated", () => {
     const { sink, written } = makeSink(false);
@@ -219,6 +226,7 @@ describe("createAgentProgressSink", () => {
       (text) => lines.push(text),
       false,
       createColors(false),
+      ingestPrefix,
     );
 
     sink.render("wiki-ingest: WARNING — snapshot is foreign");
