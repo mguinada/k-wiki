@@ -598,10 +598,7 @@ export async function fileLastQuery(
 
     await writeFile(
       logPath,
-      appendWikiLog(
-        textOrEmpty(log.state),
-        logEntry(artifact.question, date),
-      ),
+      appendWikiLog(textOrEmpty(log.state), logEntry(artifact.question, date)),
       "utf8",
     );
   } catch (cause) {

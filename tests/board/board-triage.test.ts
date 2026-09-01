@@ -1069,9 +1069,12 @@ describe("runBoardTriage mid-failure reporting (issue #245)", () => {
   });
 
   it("reports the applied moves when the final verification read fails", async () => {
-    const graphql = throwingBoard(mixedBoard(), "I9", { failFirst: ["I1"] }, [
-      3,
-    ]);
+    const graphql = throwingBoard(
+      mixedBoard(),
+      "I9",
+      { failFirst: ["I1"] },
+      [3],
+    );
 
     await expect(runBoardTriage(graphql, OPTIONS)).rejects.toThrow(
       "board unreadable — triage aborted; applied moves: #101 Backlog → Ready — verified; #103 In progress → Done — verified",
