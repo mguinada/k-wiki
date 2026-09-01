@@ -221,6 +221,24 @@ describe("serializeManifest", () => {
     );
   });
 
+  it("sorts three note keys from mixed insertion order", () => {
+    const manifest: Manifest = {
+      vaults: {
+        work: {
+          "b.md": ONE_ENTRY,
+          "c.md": ONE_ENTRY,
+          "a.md": ONE_ENTRY,
+        },
+      },
+    };
+
+    const noteKeys = [
+      ...serializeManifest(manifest).matchAll(/"([^"]+)": \{/g),
+    ].map((match) => match[1]);
+
+    expect(noteKeys).toEqual(["vaults", "work", "a.md", "b.md", "c.md"]);
+  });
+
   it("serializes three or more keys of every kind in default string order", () => {
     const manifest: Manifest = {
       vaults: {

@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
 import { errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
+import { readTextIfExists } from "../cli/shared.ts";
 import { runGit } from "../data/git.ts";
 import {
   loadSyncConfig,
@@ -15,7 +16,6 @@ import { sha256 } from "./hash.ts";
 import {
   type Manifest,
   parseManifest,
-  readManifestText,
   serializeManifest,
   type VaultNotes,
   writeManifest,
@@ -378,7 +378,7 @@ export async function runRepoSync(
 
   const commit = await repoHead(source.root, env);
   const manifestPath = join(options.rawDir, "manifest.json");
-  const previousText = await readManifestText(manifestPath);
+  const previousText = await readTextIfExists(manifestPath);
   const manifest: Manifest =
     previousText === undefined
       ? { vaults: {} }

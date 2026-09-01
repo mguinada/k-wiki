@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { isPlainObject, RESERVED_NAMES } from "../cli/shared.ts";
 
 /**
  * Loader for `sync.json`, the human-owned sync configuration at the
@@ -86,23 +87,9 @@ export function parseExclude(exclude: string): ExcludeExpression {
   return { key, value: "false" };
 }
 
-/** Whether the value is a non-array, non-null object. */
-export function isPlainObject(
-  value: unknown,
-): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
 }
-
-/** Names that would corrupt plain-object bookkeeping as keys. */
-export const RESERVED_NAMES = new Set([
-  "__proto__",
-  "constructor",
-  "prototype",
-]);
 
 function parseVaultName(value: unknown): string {
   if (!isNonEmptyString(value)) {

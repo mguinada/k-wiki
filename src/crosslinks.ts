@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
-import { parseManifest, readManifestText } from "./sync/manifest.ts";
+import { readTextIfExists } from "./cli/shared.ts";
+import { parseManifest } from "./sync/manifest.ts";
 import { listWikiPages, pageReportPath } from "./wiki/pages.ts";
 import {
   buildPageIndex,
@@ -51,7 +52,7 @@ async function loadDomainWiki(dirInput: string): Promise<DomainWiki> {
   const dir = resolve(dirInput);
   const files = await listWikiPages(dirInput);
   const manifestPath = join(dir, "..", "raw", "manifest.json");
-  const manifestText = await readManifestText(manifestPath);
+  const manifestText = await readTextIfExists(manifestPath);
 
   if (manifestText === undefined) {
     throw new Error(

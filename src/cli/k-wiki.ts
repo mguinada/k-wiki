@@ -11,16 +11,12 @@ import {
   runWikiQuery,
   terminalColors,
 } from "../query/wiki-query.ts";
-import {
-  expandHome,
-  isPlainObject,
-  loadSyncConfig,
-  resolveRawDir,
-} from "../sync/config.ts";
+import { expandHome, loadSyncConfig, resolveRawDir } from "../sync/config.ts";
 import { listWikiPages, readPageFields } from "../wiki/pages.ts";
 import { cliFail } from "./colors.ts";
 import { timeoutArgError } from "./flag-args.ts";
 import { refuseDirectExecution } from "./is-main.ts";
+import { isPlainObject } from "./shared.ts";
 
 /**
  * k-wiki: the agent-facing query entry point (guide §16, issue #76).
