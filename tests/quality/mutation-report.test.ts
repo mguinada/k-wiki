@@ -153,7 +153,7 @@ describe("renderIssueBody", () => {
 
 const script = join(
   dirname(fileURLToPath(import.meta.url)),
-  "../../bin/mutation-report.ts",
+  "../../dev/mutation-report.ts",
 );
 
 interface RunResult {

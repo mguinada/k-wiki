@@ -12,7 +12,7 @@ import {
 } from "../../src/quality/mutation-chunk.ts";
 import type { GitText } from "../../src/quality/mutation-scope.ts";
 
-const script = realpathSync("bin/mutation-chunk.ts");
+const script = realpathSync("dev/mutation-chunk.ts");
 
 const tempDirs: string[] = [];
 
@@ -310,7 +310,7 @@ describe("mutation-chunk direct execution", () => {
       child.on("close", resolve);
     });
 
-    expect(`${stderr}|${code}`).toMatch(/run bin\/mutation-chunk[\s\S]*\|1$/);
+    expect(`${stderr}|${code}`).toMatch(/run dev\/mutation-chunk[\s\S]*\|1$/);
   });
 });
 

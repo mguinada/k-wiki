@@ -189,17 +189,33 @@ infrastructure, free to use for any unit or e2e work; the snapshot at
 
 ### CLI scripts
 
-Every CLI runs through a shebanged `bin/<name>.ts` launcher
-(`#!/usr/bin/env node`, committed `100755`); npm scripts invoke
-`node bin/<name>.ts`. `src/` and `scripts/` modules are libraries:
+Launchers come in two classes, matching the two agent contexts.
+`bin/<name>.ts` launches the wiki runtime — commands meaningful
+outside this repo (create, operate, consume, observe, audit, migrate
+the wiki). `dev/<name>.ts` launches development-lifecycle commands
+that exist only to build and maintain this repo (`generate`,
+`mutation-*`, `board-triage`). Every CLI runs through a shebanged
+launcher of its class (`#!/usr/bin/env node`, committed `100755`);
+npm scripts invoke `node bin/<name>.ts` or `node dev/<name>.ts>`.
+`src/` and `scripts/` modules are libraries:
 they export `main()` but never invoke it at module scope — no Stryker
 mutant can fire a CLI as an import side effect with live defaults
 (issue #123's hazard class, eliminated by construction, issue #135).
-Patches of the pattern fail CI in `tests/bin/bin-structure.test.ts`.
+Patches of the pattern — and launchers whose class mismatches their
+module's domain — fail CI in `tests/bin/bin-structure.test.ts`.
 Every library module that exports `main()` keeps a direct-execution
 tail — `refuseDirectExecution(import.meta.url, "<name>")` from
-`src/cli/is-main.ts` — so `node src/sync/sync-vault.ts` prints
+`src/cli/is-main.ts`, with `"dev"` for dev-class modules — so
+`node src/sync/sync-vault.ts` prints
 `library module — run bin/sync-vault` and exits 1.
+
+The src domains sort by the same razor — is the module meaningful
+outside this repo?
+
+| Class | src domains | Launchers |
+| --- | --- | --- |
+| Runtime (11 modules) | `cli/`, `dashboard/`, `data/`, `health/`, `ingest/`, `query/`, `schedule/`, `sync/`, `wiki/`, `crosslinks.ts`, `wiki-links.ts` | `bin/` |
+| Dev-only (3 domains) | `board/`, `fixtures/`, `quality/` | `dev/` |
 
 Every script meant to run on the terminal — every `main()` entry point
 under `src/` or `scripts/` — responds to `-h` and `--help`. The help must state the
@@ -208,14 +224,15 @@ default, say what the script writes (or that it writes nothing), and
 exit 0 without filesystem side effects. Help prints before any
 argument is validated or any file is read, so `--help` never fails.
 A new switch lands together with its help entry and its tests in the
-same change. A new CLI lands as a library module plus a `bin/`
-launcher, wired into `package.json` in the same change.
+same change. A new CLI lands as a library module plus a launcher of the right
+class (`bin/` or `dev/`), wired into `package.json` in the same change.
 
 CLI help text and `README.md` must not reference internal GitHub
 issues; issue citations belong only in
 `docs/karpathy_wiki_implementation_guide.md` and dev-facing code
 comments. Enforced mechanically by `tests/no-issue-refs.test.ts`,
-which runs `--help` for every `bin/*.ts` and scans `README.md`.
+which runs `--help` for every `bin/*.ts` and `dev/*.ts` and scans
+`README.md`.
 
 ### CLI colors
 
@@ -241,9 +258,9 @@ tests, and the run page carries an error annotation while the job
 stays advisory-green (#215). The nightly/dispatch full run is
 **chunked** (#236): the full run once outgrew GitHub's 6 h per-job
 limit and was cancelled before any report existed, so
-`bin/mutation-chunk.ts` splits the mutate list into four
+`dev/mutation-chunk.ts` splits the mutate list into four
 size-balanced, disjoint parallel chunk jobs (each runs the same
-dry run first), and `bin/mutation-merge.ts` stitches the chunk
+dry run first), and `dev/mutation-merge.ts` stitches the chunk
 reports into the one `mutation-report` artifact — refusing
 (`--expect`) to merge a partial picture, so a failed or cancelled
 chunk still files no report and the #208 starvation signal survives.

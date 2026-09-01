@@ -221,4 +221,4 @@ export function main(argv: readonly string[]): void {
 }
 
 /* v8 ignore next: covered only under direct `node src/quality/mutation-merge.ts` runs */
-refuseDirectExecution(import.meta.url, "mutation-merge");
+refuseDirectExecution(import.meta.url, "mutation-merge", "dev");

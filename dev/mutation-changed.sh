@@ -9,7 +9,7 @@ set -eu
 
 usage() {
   cat <<'EOF'
-usage: src/quality/mutation-changed.sh [--full]
+usage: dev/mutation-changed.sh [--full]
        (same as: npm run mutation:changed [--full])
 
 Advisory StrykerJS mutation testing — a signal, never a gate.
@@ -39,7 +39,7 @@ EOF
 case "${1:-}" in
   --full)
     npx stryker run
-    node bin/mutation-survivors.ts
+    node dev/mutation-survivors.ts
     exit 0
     ;;
   --help|-h)
@@ -60,7 +60,7 @@ esac
 # diff (not `origin/main...HEAD`): it includes uncommitted work, so the
 # local run sees what the agent actually changed. src/quality/
 # mutation-scope.ts turns that diff into hunk-range --mutate patterns.
-patterns=$(node bin/mutation-scope.ts)
+patterns=$(node dev/mutation-scope.ts)
 
 if [ -z "$patterns" ]; then
   changed=$(git diff --name-only origin/main -- 'src/*.ts'; git ls-files --others --exclude-standard -- 'src/*.ts')
@@ -80,4 +80,4 @@ printf '%s' "$patterns" | tr ',' '\n' | sed 's/^/  /'
 # Stryker's --mutate takes one comma-separated list; unquoted $patterns
 # would word-split into extra positional arguments.
 npx stryker run --mutate "$patterns" --concurrency 4
-node bin/mutation-survivors.ts
+node dev/mutation-survivors.ts

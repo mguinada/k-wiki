@@ -68,7 +68,7 @@ function isMainInvocationLine(line: string): boolean {
     !MAIN_DEFINITION.test(line)
   );
 }
-const QUOTED_BIN_PATH = /["'][^"']*\/?bin\//;
+const QUOTED_LAUNCHER_PATH = /["'][^"']*\/?(?:bin|dev)\//;
 const IMPORT_SYNTAX = /^\s*import[\s(]|\bfrom\s+["']/;
 const LAUNCHER_IMPORT = /^import\s+\{[^}]*\}\s+from\s+"(\.[^"]+)";/m;
 
@@ -140,14 +140,14 @@ describe("bin/ launcher structure (issue #135)", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("no src/ module imports from bin/", async () => {
+  it("no src/ module imports from bin/ or dev/", async () => {
     const offenders: string[] = [];
 
     for (const file of await collectTsFiles(join(repoRoot, "src"), "src")) {
       const lines = (await readFile(join(repoRoot, file), "utf8")).split("\n");
 
       lines.forEach((line, index) => {
-        if (!isCommentLine(line) && QUOTED_BIN_PATH.test(line)) {
+        if (!isCommentLine(line) && QUOTED_LAUNCHER_PATH.test(line)) {
           if (IMPORT_SYNTAX.test(line)) {
             offenders.push(`${file}:${index + 1}: ${line.trim()}`);
           }
@@ -158,13 +158,15 @@ describe("bin/ launcher structure (issue #135)", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("every npm node script runs an existing bin launcher whose import resolves to a main module", async () => {
+  it("every npm node script runs an existing bin/ or dev/ launcher whose import resolves to a main module", async () => {
     const pkg = await readPackageJson();
     const problems: string[] = [];
 
     for (const target of nodeScriptTargets(pkg)) {
-      if (!target.startsWith("bin/")) {
-        problems.push(`${target}: npm node script does not point into bin/`);
+      if (!target.startsWith("bin/") && !target.startsWith("dev/")) {
+        problems.push(
+          `${target}: npm node script points into neither bin/ nor dev/`,
+        );
 
         continue;
       }
@@ -191,7 +193,7 @@ describe("bin/ launcher structure (issue #135)", () => {
         continue;
       }
 
-      const modulePath = resolve(join(repoRoot, "bin"), imported);
+      const modulePath = resolve(dirname(launcherPath), imported);
 
       if (
         !(await stat(modulePath).then(
@@ -209,8 +211,11 @@ describe("bin/ launcher structure (issue #135)", () => {
     expect(problems).toEqual([]);
   });
 
-  it("every main()-exporting module under src/ or scripts/ is imported by some bin launcher", async () => {
-    const launcherFiles = await collectTsFiles(join(repoRoot, "bin"), "bin");
+  it("every main()-exporting module under src/ or scripts/ is imported by some bin/ or dev/ launcher", async () => {
+    const launcherFiles = [
+      ...(await collectTsFiles(join(repoRoot, "bin"), "bin")),
+      ...(await collectTsFiles(join(repoRoot, "dev"), "dev")),
+    ];
     const launcherText = await Promise.all(
       launcherFiles.map((file) => readFile(join(repoRoot, file), "utf8")),
     );
@@ -230,7 +235,7 @@ describe("bin/ launcher structure (issue #135)", () => {
 
         if (!imported) {
           problems.push(
-            `${file}: exports main() but no bin launcher imports it`,
+            `${file}: exports main() but no bin/ or dev/ launcher imports it`,
           );
         }
       }
@@ -239,17 +244,22 @@ describe("bin/ launcher structure (issue #135)", () => {
     expect(problems).toEqual([]);
   });
 
-  it("every bin launcher is committed 100755 with a node shebang and referenced by package.json or src/quality/mutation-changed.sh", async () => {
-    const binFiles = await collectTsFiles(join(repoRoot, "bin"), "bin");
+  it("every bin/ and dev/ launcher is committed 100755 with a node shebang and referenced by package.json or dev/mutation-changed.sh", async () => {
+    const launcherFiles = [
+      ...(await collectTsFiles(join(repoRoot, "bin"), "bin")),
+      ...(await collectTsFiles(join(repoRoot, "dev"), "dev")),
+    ];
     const pkg = await readPackageJson();
     const shell = await readFile(
-      join(repoRoot, "src", "quality", "mutation-changed.sh"),
+      join(repoRoot, "dev", "mutation-changed.sh"),
       "utf8",
     );
 
     const referenced = new Set<string>([
       ...nodeScriptTargets(pkg),
-      ...[...shell.matchAll(/(bin\/[\w.-]+\.ts)/g)].map((m) => m[1] ?? ""),
+      ...[...shell.matchAll(/((?:bin|dev)\/[\w.-]+\.ts)/g)].map(
+        (m) => m[1] ?? "",
+      ),
     ]);
 
     // Under Stryker the test tree is the sandbox (an untracked copy
@@ -261,7 +271,7 @@ describe("bin/ launcher structure (issue #135)", () => {
     }).trim();
 
     const modes = new Map<string, string>(
-      execFileSync("git", ["ls-files", "-s", "--", "bin"], {
+      execFileSync("git", ["ls-files", "-s", "--", "bin", "dev"], {
         cwd: gitRoot,
         encoding: "utf8",
       })
@@ -276,7 +286,7 @@ describe("bin/ launcher structure (issue #135)", () => {
 
     const problems: string[] = [];
 
-    for (const file of binFiles) {
+    for (const file of launcherFiles) {
       const firstLine = (await readFile(join(repoRoot, file), "utf8")).split(
         "\n",
         1,
