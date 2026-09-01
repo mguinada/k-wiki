@@ -82,7 +82,7 @@ type ParsedSettingLine =
  *  mid-word apostrophe (`it's`) never starts a quoted span. */
 function opensQuotedSpan(line: string, index: number): boolean {
   for (let at = index - 1; at >= 0; at--) {
-    const char = line[at];
+    const char = line.charAt(at);
 
     if (!/\s/.test(char)) {
       return char === ":" || char === "[" || char === ",";
