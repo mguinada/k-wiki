@@ -221,6 +221,27 @@ describe("serializeManifest", () => {
     );
   });
 
+  it("sorts three note keys from mixed insertion order", () => {
+    const manifest: Manifest = {
+      vaults: {
+        work: {
+          "b.md": ONE_ENTRY,
+          "c.md": ONE_ENTRY,
+          "a.md": ONE_ENTRY,
+        },
+      },
+    };
+
+    const text = serializeManifest(manifest);
+
+    expect(text.indexOf('      "a.md": {')).toBeLessThan(
+      text.indexOf('      "b.md": {'),
+    );
+    expect(text.indexOf('      "b.md": {')).toBeLessThan(
+      text.indexOf('      "c.md": {'),
+    );
+  });
+
   it("serializes three or more keys of every kind in default string order", () => {
     const manifest: Manifest = {
       vaults: {

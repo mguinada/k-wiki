@@ -1,5 +1,5 @@
 import { rename, writeFile } from "node:fs/promises";
-import { isPlainObject, RESERVED_NAMES } from "./config.ts";
+import { isPlainObject, RESERVED_NAMES } from "../shared.ts";
 
 /**
  * Sync state (guide §8, §25 Scenario A): `raw/manifest.json` records, per

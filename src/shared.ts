@@ -22,3 +22,17 @@ export async function readTextIfExists(
     throw error;
   }
 }
+
+/** Whether the value is a non-array, non-null object. */
+export function isPlainObject(
+  value: unknown,
+): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Names that would corrupt plain-object bookkeeping as keys. */
+export const RESERVED_NAMES = new Set([
+  "__proto__",
+  "constructor",
+  "prototype",
+]);

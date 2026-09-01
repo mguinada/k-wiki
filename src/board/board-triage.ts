@@ -4,7 +4,7 @@ import { promisify } from "node:util";
 import { cliFail, errorMessage, terminalColors } from "../cli/colors.ts";
 import { readFlagValues } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
-import { isPlainObject } from "../sync/config.ts";
+import { isPlainObject } from "../shared.ts";
 
 /**
  * Scheduled board triage (issue #209): the mechanical half of the

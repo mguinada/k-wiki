@@ -16,12 +16,8 @@ import { refuseDirectExecution } from "../cli/is-main.ts";
 import { formatDuration } from "../cli/progress.ts";
 import { writeDashboard } from "../dashboard/generate.ts";
 import { runGit } from "../data/git.ts";
-import { readTextIfExists } from "../shared.ts";
-import {
-  isPlainObject,
-  loadSyncConfig,
-  resolveRawDir,
-} from "../sync/config.ts";
+import { isPlainObject, readTextIfExists } from "../shared.ts";
+import { loadSyncConfig, resolveRawDir } from "../sync/config.ts";
 import { sha256 } from "../sync/hash.ts";
 import {
   emptyManifest,

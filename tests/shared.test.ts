@@ -2,7 +2,11 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { readTextIfExists } from "../src/shared.ts";
+import {
+  isPlainObject,
+  RESERVED_NAMES,
+  readTextIfExists,
+} from "../src/shared.ts";
 
 const tempDirs: string[] = [];
 
@@ -19,6 +23,30 @@ async function makeTempDir(): Promise<string> {
 
   return dir;
 }
+
+describe("isPlainObject", () => {
+  it("accepts a plain object", () => {
+    expect(isPlainObject({ a: 1 })).toBe(true);
+  });
+
+  it("rejects null, arrays, and primitives", () => {
+    expect(isPlainObject(null)).toBe(false);
+    expect(isPlainObject([1, 2])).toBe(false);
+    expect(isPlainObject("object")).toBe(false);
+    expect(isPlainObject(42)).toBe(false);
+    expect(isPlainObject(undefined)).toBe(false);
+  });
+});
+
+describe("RESERVED_NAMES", () => {
+  it("holds exactly the plain-object prototype hazards", () => {
+    expect([...RESERVED_NAMES].sort()).toEqual([
+      "__proto__",
+      "constructor",
+      "prototype",
+    ]);
+  });
+});
 
 describe("readTextIfExists", () => {
   it("returns the file's text when the file exists", async () => {
