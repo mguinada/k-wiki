@@ -50,14 +50,20 @@ Do not edit by hand — the pipeline writes here. This repository can hold
 personal material: push it only to a private remote you control.
 `;
 
-/** The data root counts as seeded once the seed's commit landed: the
- *  commit is seed()'s final step, so a resolvable HEAD marks a completed
- *  seed — a partially copied skeleton (an interrupted run) does not
- *  count (issue #246 C-8). */
+/** The data root counts as seeded only when both halves of a
+ *  completed seed are present: the skeleton marker (wiki/index.md) and
+ *  a resolvable HEAD — the commit is seed()'s final step. Either half
+ *  alone — a partially copied skeleton (an interrupted run), or an
+ *  unrelated committed repo at a wrong dataRoot — falls through to the
+ *  non-empty-directory refusal (issue #246 C-8). */
 async function isSeeded(
   dataRoot: string,
   env: NodeJS.ProcessEnv,
 ): Promise<boolean> {
+  if (!existsSync(join(dataRoot, "wiki", "index.md"))) {
+    return false;
+  }
+
   try {
     await runGit(dataRoot, ["rev-parse", "--verify", "HEAD"], env);
 

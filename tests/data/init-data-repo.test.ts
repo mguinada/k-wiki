@@ -400,6 +400,23 @@ describe("seedDataRepo", () => {
     ).rejects.toThrow("refusing to seed into it");
   });
 
+  it("refuses to seed into an unrelated committed git repo at the data root", async () => {
+    const dataRoot = await makeTempDir();
+
+    await writeFile(join(dataRoot, "notes.md"), "personal notes");
+    await git(dataRoot, "init", "--quiet");
+    await git(dataRoot, "add", "-A");
+    await git(dataRoot, "commit", "--quiet", "-m", "personal notes repo");
+
+    await expect(
+      seedDataRepo({
+        configPath: await writeConfig(dataRoot),
+        repoRoot: await makeCodeRepoFixture(),
+        env: GIT_ENV,
+      }),
+    ).rejects.toThrow("refusing to seed into it");
+  });
+
   it("writes the k-wiki data README at the data root", async () => {
     const dataRoot = await makeTempDir();
 
