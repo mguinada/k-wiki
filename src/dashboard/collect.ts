@@ -300,6 +300,44 @@ async function collectStatusFlips(
   return log === undefined ? [] : parseCommitLog(log);
 }
 
+/** The `--format=A%as` date marker: an `A` directly followed by the
+ *  short-ISO author date, anchored to the full line. The format, not
+ *  content, tells marker lines from path lines — a file named
+ *  `A2025-01-01.md` stays a path (issue #246 C-13).
+ *  Today the `-- wiki` pathspec prefixes every printed path with
+ *  `wiki/`, so only marker lines can start with `A`; the anchor keeps
+ *  that guarantee local to the format instead of distant. */
+const DATE_MARKER = /^A(\d{4}-\d{2}-\d{2})$/;
+
+/** First-add facts from one `git log --diff-filter=A --no-renames
+ *  --format=A%as --name-only` stream: marker lines switch the date,
+ *  .md path lines (minus contract files) become facts. */
+export function parseAdditionLog(log: string): AdditionFact[] {
+  const additions: AdditionFact[] = [];
+  let date: string | undefined;
+
+  for (const line of log.split("\n")) {
+    const marker = DATE_MARKER.exec(line);
+
+    if (marker !== null) {
+      date = marker[1];
+
+      continue;
+    }
+
+    if (
+      line !== "" &&
+      date !== undefined &&
+      line.endsWith(".md") &&
+      !CONTRACT_FILES.has(basename(line))
+    ) {
+      additions.push({ path: line, date });
+    }
+  }
+
+  return additions;
+}
+
 /** First-add facts for wiki pages, from git history. */
 async function collectFirstAdded(
   dataRoot: string,
@@ -319,31 +357,7 @@ async function collectFirstAdded(
     env,
   );
 
-  if (log === undefined) {
-    return [];
-  }
-
-  const additions: AdditionFact[] = [];
-  let date: string | undefined;
-
-  for (const line of log.split("\n")) {
-    if (line.startsWith("A")) {
-      date = line.slice(1);
-
-      continue;
-    }
-
-    if (
-      line !== "" &&
-      date !== undefined &&
-      line.endsWith(".md") &&
-      !CONTRACT_FILES.has(basename(line))
-    ) {
-      additions.push({ path: line, date });
-    }
-  }
-
-  return additions;
+  return log === undefined ? [] : parseAdditionLog(log);
 }
 
 /** Read every artifact the dashboard consumes into one pure input. */

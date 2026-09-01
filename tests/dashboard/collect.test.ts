@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, describe, expect, it } from "vitest";
-import { collectData } from "../../src/dashboard/collect.ts";
+import { collectData, parseAdditionLog } from "../../src/dashboard/collect.ts";
 
 /**
  * The collector's contract (issue #73): read every artifact the
@@ -171,6 +171,24 @@ async function makeRichRepo(): Promise<{
 }
 
 describe("collectData", () => {
+  it("counts a wiki file named like a date marker in the growth series", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "k-wiki-collect-datename-"));
+
+    tempDirs.push(dataRoot);
+    await mkdir(join(dataRoot, "wiki"), { recursive: true });
+    await writeFile(join(dataRoot, "wiki", "A2025-01-01.md"), "body\n");
+    await writeFile(join(dataRoot, "wiki", "normal.md"), "body\n");
+    await run("git", ["init", "--quiet"], { cwd: dataRoot });
+    await git(dataRoot, "add", "-A");
+    await commit(dataRoot, "2026-08-10", "add pages");
+
+    const input = await collectData(dataRoot, { now: () => NOW });
+
+    expect(input.firstAdded).toContainEqual({
+      path: "wiki/A2025-01-01.md",
+      date: "2026-08-10",
+    });
+  });
   it("reads every artifact of a fully populated data repo into the exact expected input", async () => {
     const { dataRoot, head } = await makeRichRepo();
 
@@ -369,5 +387,24 @@ describe("collectData page fields", () => {
     const input = await collectData(dataRoot, { now: () => NOW });
 
     expect(input.lastQuery).toBe("2026-08-29T08:00:00.000Z");
+  });
+});
+
+describe("parseAdditionLog", () => {
+  it("treats a path named like the format marker as a path, not a date marker", () => {
+    const additions = parseAdditionLog("A2026-02-02\n\nA2025-01-01.md\n");
+
+    expect(additions).toEqual([{ path: "A2025-01-01.md", date: "2026-02-02" }]);
+  });
+
+  it("switches the date only on the full-line A + short-ISO marker", () => {
+    const additions = parseAdditionLog(
+      "A2026-02-02\nnormal.md\nAnot-a-date.md\n",
+    );
+
+    expect(additions).toEqual([
+      { path: "normal.md", date: "2026-02-02" },
+      { path: "Anot-a-date.md", date: "2026-02-02" },
+    ]);
   });
 });
