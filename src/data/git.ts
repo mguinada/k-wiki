@@ -106,7 +106,9 @@ function decodeGitQuotedPath(path: string): string {
 
   flushPending();
 
-  return new TextDecoder().decode(Uint8Array.from(bytes));
+  return new TextDecoder("utf-8", { ignoreBOM: true }).decode(
+    Uint8Array.from(bytes),
+  );
 }
 
 /** The ` -> ` separating a rename's two paths: a quoted origin may

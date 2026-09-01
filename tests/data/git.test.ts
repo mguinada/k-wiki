@@ -275,6 +275,15 @@ describe("parseStatus", () => {
     ]);
   });
 
+  it("keeps a leading byte-order mark in a quoted path", () => {
+    // A U+FEFF-prefixed filename is quoted for the space with the
+    // mark raw (quotePath=false); a decoder that honors the BOM
+    // would strip it and yield a path that does not exist.
+    expect(parseStatus('?? "\uFEFFname with space.md"\n')).toEqual([
+      { code: "??", path: "\uFEFFname with space.md" },
+    ]);
+  });
+
   it("unquotes both paths of a quoted rename", () => {
     expect(parseStatus('R  "wiki/a b.md" -> "wiki/c d.md"\n')).toEqual([
       { code: "R ", path: "wiki/c d.md", origin: "wiki/a b.md" },
