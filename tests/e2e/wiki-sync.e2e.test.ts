@@ -599,7 +599,7 @@ describe("wiki-sync e2e", () => {
     expect(result.code).toBe(0);
     expect(result.out).toContain("# wiki-sync cycle digest");
     expect(result.out).toContain("2 sources copied, 0 sources removed");
-    expect(result.err).toContain("wiki-sync: stage 1/5 — sync-repo");
+    expect(result.err).toContain("wiki-sync: stage 1/5 — sync");
 
     await expect(
       readFile(

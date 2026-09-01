@@ -644,6 +644,35 @@ const DRIVERS: Record<
   repo: runRepoSync,
 };
 
+/** The cycle's stage names in run order (the stage table, issue
+ *  #250): crosslinks only for instances whose settings carry a
+ *  `secondBrain.domains` key, publish only for configs with a
+ *  publish section. Every stage line numbers itself from this
+ *  table — no scattered stage arithmetic. */
+export function stageNames(options: {
+  readonly domains: readonly string[] | undefined;
+  readonly publish: PublishConfig | undefined;
+}): readonly string[] {
+  const names = ["sync", "ingest", "lint"];
+
+  if (options.domains !== undefined) {
+    names.push("crosslinks");
+  }
+
+  names.push("verification", "commit");
+
+  if (options.publish !== undefined) {
+    names.push("publish");
+  }
+
+  return names;
+}
+
+/** One stage's progress line, numbered by its table position. */
+export function stageLine(stages: readonly string[], name: string): string {
+  return `wiki-sync: stage ${stages.indexOf(name) + 1}/${stages.length} — ${name}`;
+}
+
 /** Stage 1 (issue #145 dispatch): refuse mixed source kinds, then run
  *  the driver table's row for the config's kind — same cycle, same
  *  lint → verification → commit flow, whatever the source kind. */
@@ -653,13 +682,11 @@ async function runSyncStage(
   env: NodeJS.ProcessEnv,
   now: () => Date,
   onProgress: (message: string) => void,
-  total: number,
+  stages: readonly string[],
 ): Promise<SyncReport> {
   const kind = syncKindOf(config, options.configPath);
 
-  onProgress(
-    `wiki-sync: stage 1/${total} — ${kind === "repo" ? "sync-repo" : "sync-vault"}`,
-  );
+  onProgress(stageLine(stages, "sync"));
 
   return await DRIVERS[kind]({
     configPath: options.configPath,
@@ -678,16 +705,16 @@ async function runLintOrSkip(
   env: NodeJS.ProcessEnv,
   now: () => Date,
   onProgress: (message: string) => void,
-  total: number,
+  stages: readonly string[],
   pre: PreRunState,
 ): Promise<LintResult | undefined> {
   if (ingest.status !== "ran") {
-    onProgress(`wiki-sync: stage 3/${total} — lint skipped (no ingest ran)`);
+    onProgress(`${stageLine(stages, "lint")} skipped (no ingest ran)`);
 
     return undefined;
   }
 
-  onProgress(`wiki-sync: stage 3/${total} — lint`);
+  onProgress(stageLine(stages, "lint"));
 
   return await runLintStage({
     settingsPath: options.settingsPath,
@@ -709,13 +736,13 @@ async function runCrosslinksOrSkip(
   options: WikiSyncOptions,
   domains: readonly string[] | undefined,
   onProgress: (message: string) => void,
-  total: number,
+  stages: readonly string[],
 ): Promise<CrosslinksResult | undefined> {
   if (domains === undefined) {
     return undefined;
   }
 
-  onProgress(`wiki-sync: stage 4/${total} — crosslinks`);
+  onProgress(stageLine(stages, "crosslinks"));
 
   return await runCrosslinksStage({
     rawDir: options.rawDir,
@@ -732,13 +759,10 @@ async function runVerificationWithRevert(
   dataRoot: string,
   env: NodeJS.ProcessEnv,
   preLint: PreRunState,
-  domains: readonly string[] | undefined,
   onProgress: (message: string) => void,
-  total: number,
+  stages: readonly string[],
 ): Promise<VerificationResult> {
-  onProgress(
-    `wiki-sync: stage ${domains === undefined ? 4 : 5}/${total} — verification`,
-  );
+  onProgress(stageLine(stages, "verification"));
 
   try {
     return await runVerificationStage({
@@ -765,13 +789,13 @@ async function runPublishOrSkip(
   options: WikiSyncOptions,
   publish: PublishConfig | undefined,
   onProgress: (message: string) => void,
-  total: number,
+  stages: readonly string[],
 ): Promise<PublishResult | undefined> {
   if (publish === undefined) {
     return undefined;
   }
 
-  onProgress(`wiki-sync: stage ${total}/${total} — publish`);
+  onProgress(stageLine(stages, "publish"));
 
   return await runPublishStage({
     dataRoot: dirname(options.rawDir),
@@ -815,13 +839,17 @@ export async function runWikiSync(
     options.settingsPath,
   );
   const config = await loadSyncConfig(options.configPath, homedir());
-  const total =
-    5 +
-    (domains === undefined ? 0 : 1) +
-    (config.publish === undefined ? 0 : 1);
-  const sync = await runSyncStage(config, options, env, now, onProgress, total);
+  const stages = stageNames({ domains, publish: config.publish });
+  const sync = await runSyncStage(
+    config,
+    options,
+    env,
+    now,
+    onProgress,
+    stages,
+  );
 
-  onProgress(`wiki-sync: stage 2/${total} — wiki-ingest`);
+  onProgress(stageLine(stages, "ingest"));
 
   const ingest = await runWikiIngest({
     settingsPath: options.settingsPath,
@@ -846,30 +874,25 @@ export async function runWikiSync(
     env,
     now,
     onProgress,
-    total,
+    stages,
     preLint,
   );
   const crosslinks = await runCrosslinksOrSkip(
     options,
     domains,
     onProgress,
-    total,
+    stages,
   );
   const verification = await runVerificationWithRevert(
     options,
     dataRoot,
     env,
     preLint,
-    domains,
     onProgress,
-    total,
+    stages,
   );
 
-  // The commit stage is the last one when publish is not configured;
-  // the publish stage follows it otherwise (issue #15).
-  const commitStage = total - (config.publish === undefined ? 0 : 1);
-
-  onProgress(`wiki-sync: stage ${commitStage}/${total} — commit`);
+  onProgress(stageLine(stages, "commit"));
 
   const summary = await commitSummaryOf(sync, ingest, lint, dataRoot, env);
 
@@ -880,7 +903,12 @@ export async function runWikiSync(
     crosslinks,
     verification,
     commit: await commitDataRepo(dataRoot, env, formatCommitMessage(summary)),
-    publish: await runPublishOrSkip(options, config.publish, onProgress, total),
+    publish: await runPublishOrSkip(
+      options,
+      config.publish,
+      onProgress,
+      stages,
+    ),
   };
 }
 
