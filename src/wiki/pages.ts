@@ -50,13 +50,18 @@ const EMPTY_FIELDS: PageFields = {
   sources: [],
 };
 
-/** Unquote one frontmatter scalar or list-item value: a wrapping
- *  single or double quote is stripped, anything else stays as
- *  written. Shared by the migration scripts' line-based rewrites. */
+/** Unquote one frontmatter scalar or list-item value: only a value
+ *  wrapped in a pair of matching single or double quotes is stripped;
+ *  a lone quote stays as written (issue #243). Shared by the
+ *  migration scripts' line-based rewrites. */
 export function unquote(value: string): string {
   const quote = value[0];
 
-  return quote === '"' || quote === "'" ? value.slice(1, -1) : value;
+  return value.length > 1 &&
+    (quote === '"' || quote === "'") &&
+    value[value.length - 1] === quote
+    ? value.slice(1, -1)
+    : value;
 }
 
 /** Index of the closing frontmatter fence — trim-tolerant — in a

@@ -76,6 +76,34 @@ type ParsedSettingLine =
       readonly value: string;
     };
 
+/** Strip a trailing ` #` comment, but only outside quoted spans —
+ *  a quoted value like `"my #1 model"` keeps its hash (issue #243).
+ *  A `#` at the line start (full-line comment) is left for the
+ *  caller's own check. */
+function stripComment(line: string): string {
+  let quote: '"' | "'" | undefined;
+
+  for (let index = 0; index < line.length; index++) {
+    const char = line[index];
+
+    if (quote === undefined) {
+      if (char === '"' || char === "'") {
+        quote = char;
+      } else if (
+        char === "#" &&
+        index > 0 &&
+        /\s/.test(line.slice(index - 1, index))
+      ) {
+        return line.slice(0, index - 1);
+      }
+    } else if (char === quote) {
+      quote = undefined;
+    }
+  }
+
+  return line;
+}
+
 /** Parse one settings line: reject nesting and malformed pairs,
  *  drop blanks and comments, split `key: value`. */
 function parseSettingLine(rawLine: string, origin: string): ParsedSettingLine {
@@ -91,7 +119,7 @@ function parseSettingLine(rawLine: string, origin: string): ParsedSettingLine {
     return { kind: "skip" };
   }
 
-  const line = rawLine.replace(/\s+#.*$/, "").trim();
+  const line = stripComment(rawLine).trim();
 
   if (line === "" || line.startsWith("#")) {
     return { kind: "skip" };
