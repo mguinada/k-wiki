@@ -275,7 +275,7 @@ describe("printSurvivors", () => {
     }
   });
 
-  it("prints the missing-report hint for text that is not valid JSON", () => {
+  it("prints a corrupt-report diagnosis for text that is not valid JSON", () => {
     const errors: string[] = [];
     const spy = vi
       .spyOn(console, "error")
@@ -287,7 +287,7 @@ describe("printSurvivors", () => {
 
     try {
       printSurvivors("{not json");
-      expect(errors[0]).toContain("No report at");
+      expect(errors[0]).toContain("corrupt");
     } finally {
       process.exitCode = undefined;
       spy.mockRestore();
@@ -549,9 +549,7 @@ describe("mutation-survivors main in-process", () => {
     const logSpy = vi
       .spyOn(console, "log")
       .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
-    const argv = process.argv;
 
-    process.argv = [...argv.slice(0, 2)];
     process.exitCode = undefined;
 
     try {
@@ -564,13 +562,12 @@ describe("mutation-survivors main in-process", () => {
                 JSON.stringify(report),
               ),
           ),
-        () => main(),
+        () => main([]),
       );
       expect(out.join("\n")).toContain(
         "Survived  src/sync/config.ts:7  ConditionalExpression",
       );
     } finally {
-      process.argv = argv;
       process.exitCode = undefined;
       logSpy.mockRestore();
     }
@@ -583,56 +580,93 @@ describe("mutation-survivors main in-process", () => {
       .mockImplementation((...parts: unknown[]) =>
         errors.push(parts.join(" ")),
       );
-    const argv = process.argv;
 
-    process.argv = [...argv.slice(0, 2)];
     process.exitCode = undefined;
 
     try {
       await withTempCwd(
         async () => {},
-        () => main(),
+        () => main([]),
       );
       expect(`${errors[0]}|${process.exitCode}`).toMatch(/No report at.*\|1$/);
     } finally {
-      process.argv = argv;
+      process.exitCode = undefined;
+      spy.mockRestore();
+    }
+  });
+
+  it("prints a corrupt-report diagnosis when the report file holds invalid JSON", async () => {
+    const errors: string[] = [];
+    const spy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) =>
+        errors.push(parts.join(" ")),
+      );
+
+    process.exitCode = undefined;
+
+    try {
+      await withTempCwd(
+        (dir) =>
+          mkdir(join(dir, "reports", "mutation"), { recursive: true }).then(
+            () =>
+              writeFile(
+                join(dir, "reports", "mutation", "mutation.json"),
+                "{not json",
+              ),
+          ),
+        () => main([]),
+      );
+      expect(`${errors[0]}|${process.exitCode}`).toMatch(/corrupt.*\|1$/);
+    } finally {
       process.exitCode = undefined;
       spy.mockRestore();
     }
   });
 
   it("prints help for --help without reading any report", () => {
-    const argv = process.argv;
     const out: string[] = [];
     const logSpy = vi
       .spyOn(console, "log")
       .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
 
-    process.argv = [...argv.slice(0, 2), "--help"];
     process.exitCode = undefined;
 
     try {
-      main();
+      main(["--help"]);
       expect(out[0]).toContain("Usage: mutation-survivors");
     } finally {
-      process.argv = argv;
+      process.exitCode = undefined;
+      logSpy.mockRestore();
+    }
+  });
+
+  it("reads the help request from the argv parameter, not process.argv", () => {
+    const out: string[] = [];
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+
+    process.exitCode = undefined;
+
+    try {
+      main(["-h"]);
+      expect(out[0]).toContain("Usage: mutation-survivors");
+    } finally {
       process.exitCode = undefined;
       logSpy.mockRestore();
     }
   });
 
   it("leaves the exit code unset for --help", () => {
-    const argv = process.argv;
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
-    process.argv = [...argv.slice(0, 2), "--help"];
     process.exitCode = undefined;
 
     try {
-      main();
+      main(["--help"]);
       expect(process.exitCode).toBeUndefined();
     } finally {
-      process.argv = argv;
       process.exitCode = undefined;
       logSpy.mockRestore();
     }
