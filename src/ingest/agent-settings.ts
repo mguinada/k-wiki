@@ -263,8 +263,9 @@ function finalizeSettings(
 
 /**
  * Parse the settings file: a YAML subset of top-level `key: value`
- * scalars, `#` comments on their own line or trailing the value, and
- * optionally quoted values — plus the list-valued keys
+ * scalars, `#` comments on their own line or trailing the value
+ * (outside quotes), and optionally quoted values — plus the
+ * list-valued keys
  * `secondBrain.domains`, `isolate.skills`, and `isolate.extensions`.
  * Anything else (nesting, other lists) is rejected so a typo cannot
  * silently change the agent configuration.
