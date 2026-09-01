@@ -257,6 +257,14 @@ describe("parseStatus", () => {
     ]);
   });
 
+  it("decodes a quoted path holding both a quote and non-ASCII (core.quotePath=false, C-2)", () => {
+    // Real git, quotePath=false, emits exactly this form: the path
+    // is quoted for the quote character, the non-ASCII stays raw.
+    expect(parseStatus('?? "wiki/caf\u00e9 \\"quoted\\".md"\n')).toEqual([
+      { code: "??", path: 'wiki/caf\u00e9 "quoted".md' },
+    ]);
+  });
+
   it("unquotes both paths of a quoted rename", () => {
     expect(parseStatus('R  "wiki/a b.md" -> "wiki/c d.md"\n')).toEqual([
       { code: "R ", path: "wiki/c d.md", origin: "wiki/a b.md" },
