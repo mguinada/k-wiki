@@ -1,13 +1,13 @@
 import { readFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
-import { readTextIfExists } from "./cli/shared.ts";
-import { parseManifest } from "./sync/manifest.ts";
-import { listWikiPages, pageReportPath } from "./wiki/pages.ts";
+import { readTextIfExists } from "../cli/shared.ts";
+import { parseManifest } from "../sync/manifest.ts";
+import { listWikiPages, pageReportPath } from "./pages.ts";
 import {
   buildPageIndex,
   crossWikiTarget,
   extractWikilinks,
-} from "./wiki/wiki-links.ts";
+} from "./wiki-links.ts";
 
 /**
  * The cross-wiki link audit (issue #81): the library core behind

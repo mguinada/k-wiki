@@ -214,7 +214,7 @@ outside this repo?
 
 | Class | src domains | Launchers |
 | --- | --- | --- |
-| Runtime (11 modules) | `cli/`, `dashboard/`, `data/`, `health/`, `ingest/`, `query/`, `schedule/`, `sync/`, `wiki/`, `crosslinks.ts`, `wiki-links.ts` | `bin/` |
+| Runtime (9 domains) | `cli/`, `dashboard/`, `data/`, `health/`, `ingest/`, `query/`, `schedule/`, `sync/`, `wiki/` | `bin/` |
 | Dev-only (3 domains) | `board/`, `fixtures/`, `quality/` | `dev/` |
 
 Every script meant to run on the terminal — every `main()` entry point

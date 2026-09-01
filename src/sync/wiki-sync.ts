@@ -11,7 +11,6 @@ import {
 import { flagValueError, readFlagValues } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { formatDuration } from "../cli/progress.ts";
-import { checkCrossWikiLinks } from "../crosslinks.ts";
 import { parseStatus, runGit } from "../data/git.ts";
 import {
   AGENT_HEARTBEAT_PREFIX,
@@ -38,6 +37,7 @@ import {
   sourceCount,
   wikiPages,
 } from "../ingest/wiki-ingest.ts";
+import { checkCrossWikiLinks } from "../wiki/crosslinks.ts";
 import {
   checkWikiFidelity,
   type FidelityReport,
@@ -86,7 +86,8 @@ import { runVaultSync } from "./sync-vault.ts";
  * The crosslink stage (issue #96) enforces the wiki/AGENTS.md contract
  * that the cross-wiki audit runs after every run: an instance whose
  * settings carry `secondBrain.domains: [<wiki dirs>]` gets the
- * check-crosslinks core (src/crosslinks.ts) run over its wiki against
+ * check-crosslinks core (src/wiki/crosslinks.ts) run over its wiki
+ * against
  * every listed domain wiki, after lint and before the commit. A
  * failed audit fails the cycle like lint does; instances without the
  * key skip the stage, so the default instance is unchanged.

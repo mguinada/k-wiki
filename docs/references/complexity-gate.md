@@ -68,7 +68,7 @@ arrows, class methods). Nested functions — a closure or generator
 inside a function — are neither folded into the parent's score nor
 reported as separate entries. ESLint counts each nested function
 separately; at calibration time `checkCrossWikiLinks` in
-`src/crosslinks.ts` read 11 here where ESLint read 24 for the nested
+`src/wiki/crosslinks.ts` read 11 here where ESLint read 24 for the nested
 generator inside it (since extracted to a module-scope helper by the
 issue #179 debt refactor — inline callbacks inside a function remain
 invisible to the engine). The gate is
