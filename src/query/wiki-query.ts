@@ -258,7 +258,9 @@ Stage 2 (human-only): wiki-query --file-last
   answer byte-exactly into wiki/queries/<slug>.md (slug derived from
   the question; -2, -3, … suffixes on collision), append the
   index.md entry under ## Queries, and append the log.md entry
-  (## [date] query | <question>). Fails cleanly when no saved answer
+  (## [date] query | <question>). The three writes are a unit: a
+  failure anywhere in the filing rolls all of them back — no
+  half-filed wiki is left behind. Fails cleanly when no saved answer
   exists. Warns when the data repo's raw/ or wiki/ changed after the
   saved timestamp (the answer cites pages that may have moved); the
   warning does not block the filing.

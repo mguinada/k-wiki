@@ -521,9 +521,55 @@ interface TriageOutcome {
 
 const DRY_OUTCOME: TriageOutcome = { reconciled: 0, failed: [] };
 
-/** Apply every planned move, then verify by re-reading the board; a
- *  lost write is retried once, and whatever still fails verification
- *  comes back in `failed`. */
+/** One applied move as a report fragment: `#101 Backlog → Ready`. */
+function describeMove(move: PlannedMove): string {
+  return `#${move.item.number} ${move.item.status ?? "no Status"} → ${move.to}`;
+}
+
+/** The mid-failure partial-state report (issue #245): every move
+ *  already applied, verified against a fresh board read when one is
+ *  possible — so the error that fails the run still records what
+ *  did land on the board. */
+async function appliedMovesReport(
+  graphql: GraphQLFn,
+  options: TriageOptions,
+  applied: readonly PlannedMove[],
+): Promise<string> {
+  if (applied.length === 0) {
+    return "none";
+  }
+
+  try {
+    const mismatched = await unverifiedMoves(
+      graphql,
+      options.owner,
+      options.projectNumber,
+      applied,
+    );
+    const byId = new Map(
+      mismatched.map((entry) => [entry.move.item.id, entry]),
+    );
+
+    return applied
+      .map((move) => {
+        const text = describeMove(move);
+        const unverified = byId.get(move.item.id);
+
+        return unverified === undefined
+          ? `${text} — verified`
+          : `${text} not verified — still on ${unverified.actual}`;
+      })
+      .join("; ");
+  } catch (error) {
+    return `${applied.map(describeMove).join("; ")} — verification unavailable (${errorMessage(error)})`;
+  }
+}
+
+/** Apply every planned move, then verify by re-reading the board;
+ *  a lost write is retried once, and whatever still fails
+ *  verification comes back in `failed`. Every failure after the
+ *  first write is rethrown with the applied moves verified and
+ *  reported — the partial state is never lost (issue #245). */
 async function applyAndVerify(
   graphql: GraphQLFn,
   options: TriageOptions,
@@ -534,32 +580,44 @@ async function applyAndVerify(
     return DRY_OUTCOME;
   }
 
-  for (const move of moves) {
-    await moveItem(graphql, state.ids, move);
+  const applied: PlannedMove[] = [];
+
+  try {
+    for (const move of moves) {
+      await moveItem(graphql, state.ids, move);
+      applied.push(move);
+    }
+
+    const mismatched = await unverifiedMoves(
+      graphql,
+      options.owner,
+      options.projectNumber,
+      moves,
+    );
+
+    for (const unverified of mismatched) {
+      await moveItem(graphql, state.ids, unverified.move);
+    }
+
+    const failed =
+      mismatched.length === 0
+        ? []
+        : await unverifiedMoves(
+            graphql,
+            options.owner,
+            options.projectNumber,
+            moves,
+          );
+
+    return { reconciled: mismatched.length, failed };
+  } catch (cause) {
+    const report = await appliedMovesReport(graphql, options, applied);
+
+    throw new Error(
+      `${errorMessage(cause)} — triage aborted; applied moves: ${report}`,
+      { cause },
+    );
   }
-
-  const mismatched = await unverifiedMoves(
-    graphql,
-    options.owner,
-    options.projectNumber,
-    moves,
-  );
-
-  for (const unverified of mismatched) {
-    await moveItem(graphql, state.ids, unverified.move);
-  }
-
-  const failed =
-    mismatched.length === 0
-      ? []
-      : await unverifiedMoves(
-          graphql,
-          options.owner,
-          options.projectNumber,
-          moves,
-        );
-
-  return { reconciled: mismatched.length, failed };
 }
 
 function pluralized(count: number, noun: string): string {
@@ -612,10 +670,8 @@ export async function runBoardTriage(
     : await applyAndVerify(graphql, options, state, moves);
 
   for (const unverified of outcome.failed) {
-    const from = unverified.move.item.status ?? "no Status";
-
     lines.push({
-      text: `#${unverified.move.item.number} ${from} → ${unverified.move.to} not verified — still on ${unverified.actual}`,
+      text: `${describeMove(unverified.move)} not verified — still on ${unverified.actual}`,
       level: "error",
     });
   }
@@ -736,7 +792,9 @@ only, never the issues themselves:
 Project, Status field, and option IDs are resolved fresh from the board
 every run; nothing is hardcoded. Every applied move is verified by
 re-reading the board; a mismatch is retried once, and a move that
-still fails verification is reported as an error (exit 1).
+still fails verification is reported as an error (exit 1). A
+mid-run API failure fails the run naming the moves already applied,
+each verified against a fresh board read.
 
 Authentication is the gh CLI: the keyring login locally (a local
 GITHUB_TOKEN env var is ignored — its repo scope cannot write
