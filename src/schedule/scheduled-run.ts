@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import type { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { errorMessage } from "../cli/colors.ts";
 import { flagValueError, readFlagValues } from "../cli/flag-args.ts";
@@ -412,6 +413,35 @@ async function pushWithRetry(
   }
 }
 
+/** Stream one child pipe into the log without tearing lines
+ *  (issue #244): a chunk can end mid-line at any byte, so each pipe
+ *  buffers its own tail and only complete `\n`-terminated lines are
+ *  recorded; a final fragment without a newline is flushed at end. */
+function streamChildLines(
+  source: Readable,
+  log: (line: string) => void,
+): void {
+  let pending = "";
+
+  source.on("data", (chunk: Buffer) => {
+    pending += chunk.toString();
+    const complete = pending.split("\n");
+    pending = complete.pop() ?? "";
+
+    for (const line of complete) {
+      if (line !== "") {
+        log(line);
+      }
+    }
+  });
+  source.on("end", () => {
+    if (pending !== "") {
+      log(pending);
+      pending = "";
+    }
+  });
+}
+
 /** Run bin/wiki-sync.ts as a child with the scheduled env, streaming
  *  its stdout and stderr into the log. */
 async function spawnWikiSync(
@@ -429,20 +459,8 @@ async function spawnWikiSync(
     { env, stdio: ["ignore", "pipe", "pipe"] },
   );
 
-  child.stdout.on("data", (chunk: Buffer) => {
-    for (const line of chunk.toString().split("\n")) {
-      if (line !== "") {
-        log(line);
-      }
-    }
-  });
-  child.stderr.on("data", (chunk: Buffer) => {
-    for (const line of chunk.toString().split("\n")) {
-      if (line !== "") {
-        log(line);
-      }
-    }
-  });
+  streamChildLines(child.stdout, log);
+  streamChildLines(child.stderr, log);
 
   const code = await new Promise<number | null>((resolveCode, reject) => {
     child.on("error", reject);

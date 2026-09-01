@@ -1391,4 +1391,88 @@ describe("runScheduledCycle streamed output hygiene", () => {
 
     await rm(dir, { recursive: true, force: true });
   });
+
+  it("joins a child line torn across stdout chunk boundaries before recording it", async () => {
+    const dir = await tempDir();
+    const repoRoot = join(dir, "repo");
+    const { runGitStep } = fakeGit();
+    const lines: string[] = [];
+
+    await mkdir(join(repoRoot, "bin"), { recursive: true });
+    await writeFile(
+      join(repoRoot, "bin", "wiki-sync.ts"),
+      [
+        'process.stdout.write("torn-");',
+        "setTimeout(() => { process.stdout.write(\"line\\n\"); }, 30);",
+      ].join("\n"),
+    );
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      args: [],
+      log: (line) => lines.push(line),
+    });
+
+    expect(lines).toContain("torn-line");
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("joins a child line torn across stderr chunk boundaries before recording it", async () => {
+    const dir = await tempDir();
+    const repoRoot = join(dir, "repo");
+    const { runGitStep } = fakeGit();
+    const lines: string[] = [];
+
+    await mkdir(join(repoRoot, "bin"), { recursive: true });
+    await writeFile(
+      join(repoRoot, "bin", "wiki-sync.ts"),
+      [
+        'process.stderr.write("torn-err");',
+        "setTimeout(() => { process.stderr.write(\"or\\n\"); }, 30);",
+      ].join("\n"),
+    );
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      args: [],
+      log: (line) => lines.push(line),
+    });
+
+    expect(lines).toContain("torn-error");
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("records a final fragment that ends without a newline", async () => {
+    const dir = await tempDir();
+    const repoRoot = join(dir, "repo");
+    const { runGitStep } = fakeGit();
+    const lines: string[] = [];
+
+    await mkdir(join(repoRoot, "bin"), { recursive: true });
+    await writeFile(
+      join(repoRoot, "bin", "wiki-sync.ts"),
+      'process.stdout.write("tail-without-newline");',
+    );
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      args: [],
+      log: (line) => lines.push(line),
+    });
+
+    expect(lines).toContain("tail-without-newline");
+
+    await rm(dir, { recursive: true, force: true });
+  });
 });
