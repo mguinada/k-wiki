@@ -18,7 +18,11 @@ import {
   type RepoSyncReport,
   type SyncReport,
 } from "../../src/sync/projection.ts";
-import { runRepoSync, selectRepoFiles } from "../../src/sync/sync-repo.ts";
+import {
+  repoRowOf,
+  runRepoSync,
+  selectRepoFiles,
+} from "../../src/sync/sync-repo.ts";
 import { collectFiles } from "../e2e/helpers.ts";
 
 /**
@@ -35,20 +39,6 @@ afterAll(async () => {
     tempDirs.map((dir) => rm(dir, { recursive: true, force: true })),
   );
 }, 120_000);
-
-/** The single repo row of a repo run's report (the driver always
- *  produces exactly one). */
-function repoRowOf(report: SyncReport): RepoSyncReport {
-  const row = report.sources.find(
-    (row): row is RepoSyncReport => row.kind === "repo",
-  );
-
-  if (row === undefined) {
-    throw new Error("repo sync report carries no repo source row");
-  }
-
-  return row;
-}
 
 const GIT_ENV = {
   PATH: process.env.PATH,
@@ -1241,6 +1231,32 @@ describe("sync-repo CLI main", () => {
     const reset = "\u001b[22m";
 
     expect(err.join("\n")).toContain(`repo ${bold}"k-wiki"${reset}:`);
+  });
+});
+
+describe("repoRowOf", () => {
+  it("returns the repo row of a report that carries one", () => {
+    const row: RepoSyncReport = {
+      kind: "repo",
+      name: NAME,
+      commit: "a1b2c3d4e5f6a7b8",
+      candidates: 8,
+      selected: 7,
+      copied: [],
+      unchanged: [],
+      removed: [],
+    };
+    const report: SyncReport = { sources: [row], prunedNamespaces: [] };
+
+    expect(repoRowOf(report)).toBe(row);
+  });
+
+  it("rejects a report that carries no repo row", () => {
+    const report: SyncReport = { sources: [], prunedNamespaces: [] };
+
+    expect(() => repoRowOf(report)).toThrow(
+      "repo sync report carries no repo source row",
+    );
   });
 });
 

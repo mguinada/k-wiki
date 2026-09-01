@@ -1076,6 +1076,32 @@ describe("runDryRun", () => {
 });
 
 describe("sync-vault CLI", () => {
+  it("writes the manifest under the config dataRoot when the raw dir arg is absent", async () => {
+    const ws = await makeWorkspace();
+    const dataRoot = join(ws.dir, "data");
+    const configPath = join(ws.dir, "sync-dataroot.json");
+
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        dataRoot,
+        vaults: [
+          {
+            name: VAULT_NAME,
+            root: ws.vaultRoot,
+            exclude: "wiki:false",
+          },
+        ],
+      }),
+    );
+
+    await runCli([configPath]);
+
+    expect(
+      await readFile(join(dataRoot, "raw", "manifest.json"), "utf8"),
+    ).toContain(VAULT_NAME);
+  });
+
   async function runCli(
     args: string[],
     options: { color?: boolean } = {},

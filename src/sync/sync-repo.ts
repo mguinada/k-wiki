@@ -363,8 +363,8 @@ export async function runRepoSync(options: DriverOptions): Promise<SyncReport> {
 
 /** The run's single repo row — the commit line's source; the driver
  *  produces exactly one repo row, so its absence is a bug, not a
- *  state to render. */
-function repoRowOf(report: SyncReport): RepoSyncReport {
+ *  state to render. Exported for the report-shape contract tests. */
+export function repoRowOf(report: SyncReport): RepoSyncReport {
   const row = report.sources.find(
     (row): row is RepoSyncReport => row.kind === "repo",
   );

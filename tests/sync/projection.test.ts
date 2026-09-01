@@ -1,5 +1,8 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createColors } from "picocolors";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { VAULT_NAME } from "../../src/fixtures/generate.ts";
 import {
   colorizeError,
@@ -8,6 +11,7 @@ import {
   createSyncProgressSink,
   formatDryRunReport,
   formatReport,
+  listNamespaceDirs,
   reportColors,
   type SyncReport,
   type VaultDryRunReport,
@@ -18,6 +22,36 @@ import { SELECTED_PATHS } from "../e2e/helpers.ts";
 /** projection unit tests (issue #250): the shared sync library — the
  *  include pattern language, the report/progress rendering, and the
  *  progress sink presentation both adapters render through. */
+
+const tempDirs: string[] = [];
+
+afterAll(async () => {
+  await Promise.all(
+    tempDirs.map((dir) => rm(dir, { recursive: true, force: true })),
+  );
+}, 120_000);
+
+describe("listNamespaceDirs", () => {
+  it("returns an empty list when the notes root is absent", async () => {
+    expect(await listNamespaceDirs(join(tmpdir(), "k-wiki-absent"))).toEqual(
+      [],
+    );
+  });
+
+  it("rethrows a read error that is not a missing directory", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-projection-"));
+
+    tempDirs.push(dir);
+
+    const filePath = join(dir, "notes.txt");
+
+    await writeFile(filePath, "not a directory\n");
+
+    await expect(listNamespaceDirs(filePath)).rejects.toMatchObject({
+      code: "ENOTDIR",
+    });
+  });
+});
 
 describe("compileIncludePattern", () => {
   it("matches an exact path pattern at that path", () => {
