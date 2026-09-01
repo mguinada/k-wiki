@@ -1,0 +1,55 @@
+{
+  "skill_name": "campaign-ops",
+  "evals": [
+    {
+      "id": 1,
+      "eval_name": "projection-audit",
+      "prompt": "Audit the k-wiki src/ refactor campaign's projection against what is actually on GitHub right now. The campaign epic is mguinada/k-wiki issue #242. Save your full audit report as Markdown to <outputs>/audit-report.md. Read-only: do not edit, comment on, or create any GitHub issue or PR.",
+      "expected_output": "A per-issue state table for every campaign sub-issue (#243-#260) matching live GitHub state, plus a violations list naming where the epic's projection (slice map, wiring, per-issue recording) diverges from reality.",
+      "files": [],
+      "assertions": [
+        {
+          "text": "The report covers every campaign sub-issue #243 through #260 (18 issues), each with its live state",
+          "type": "script"
+        },
+        {
+          "text": "Every state reported matches the live gh state (closed: 243, 244, 245, 246, 247, 253; open: all others)",
+          "type": "script"
+        },
+        {
+          "text": "The report states slice D is complete (issue #247 closed), not incomplete",
+          "type": "script"
+        },
+        {
+          "text": "The report flags the out-of-order landing (#253 closed while #248-#252 open) or otherwise does not claim slice A complete",
+          "type": "script"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "eval_name": "slice-checkpoint-rollup",
+      "prompt": "Checkpoint time: the D slice of the k-wiki refactor campaign (epic mguinada/k-wiki #242) has just had its last sub-issue merged. Draft the epic rollup refresh: save to <outputs>/rollup.md the updated rollup-table section exactly as you would write it into the epic body, plus a short checkpoint comment draft below it. Draft only - do NOT edit, comment on, or create any GitHub issue.",
+      "expected_output": "A rollup table whose After D column carries the live instrument's fresh counter values (from npm run refactor-metrics -- --json), with the baseline column and all other rows preserved byte-for-byte, and a checkpoint comment draft.",
+      "files": [],
+      "assertions": [
+        {
+          "text": "The After D column values equal the fresh npm run refactor-metrics -- --json output for every counter row (files >500, cross-domain edges, env signatures, parseArgs copies, complexity, coverage carried or explicitly omitted)",
+          "type": "script"
+        },
+        {
+          "text": "The baseline column values are preserved unchanged from the epic body (35, 11, 50, 9, 12/58, 0/22, ~91%)",
+          "type": "script"
+        },
+        {
+          "text": "No later-slice column (After A, After B, After C) is filled in",
+          "type": "script"
+        },
+        {
+          "text": "The draft includes a checkpoint comment naming the slice and its merged PRs or sub-issues",
+          "type": "script"
+        }
+      ]
+    }
+  ]
+}
