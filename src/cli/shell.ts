@@ -73,10 +73,75 @@ function inlineValue(
   return undefined;
 }
 
+/** Collect every token from `start` on — the `--` tail — as
+ *  positionals, applying the spec's count rule; the error at the
+ *  first overflow, undefined when all fit. */
+function positionalTail(
+  args: readonly (string | undefined)[],
+  start: number,
+  spec: CliSpec,
+  positional: string[],
+): string | undefined {
+  for (let index = start; index < args.length; index++) {
+    const arg = args[index];
+
+    if (arg === undefined) {
+      continue;
+    }
+
+    positional.push(arg);
+
+    const overflow = positionalOverflowError(spec, arg, positional.length);
+
+    if (overflow !== undefined) {
+      return overflow;
+    }
+  }
+
+  return undefined;
+}
+
+/** Consume one option token per the spec: boolean flags record, value
+ *  flags take the next argument or an inline `--flag=value`. The token
+ *  count consumed — 0 when `arg` is not an option token the spec knows,
+ *  2 when a value flag took the next argument, else 1. */
+function consumeFlag(
+  arg: string,
+  args: readonly (string | undefined)[],
+  index: number,
+  valueFlags: ReadonlySet<string>,
+  booleanFlags: ReadonlySet<string>,
+  values: Map<string, string | undefined>,
+  flags: Set<string>,
+): number {
+  if (booleanFlags.has(arg)) {
+    flags.add(arg);
+
+    return 1;
+  }
+
+  if (valueFlags.has(arg)) {
+    values.set(arg, args[index + 1]);
+
+    return 2;
+  }
+
+  const inline = inlineValue(arg, valueFlags);
+
+  if (inline !== undefined) {
+    values.set(inline[0], inline[1]);
+
+    return 1;
+  }
+
+  return 0;
+}
+
 /** Split argv per the spec: value flags, boolean flags, positionals.
  *  The first usage error — an unknown option, or a positional beyond
- *  the maximum — stops the parse and is the result's `error`. An
- *  absent array entry reads as no argument. */
+ *  the maximum — stops the parse and is the result's `error`. A bare
+ *  `--` ends option parsing; every token after it is a positional,
+ *  dashes included. An absent array entry reads as no argument. */
 export function parseArgs(
   args: readonly (string | undefined)[],
   spec: CliSpec = {},
@@ -94,25 +159,26 @@ export function parseArgs(
       continue;
     }
 
-    if (booleanFlags.has(arg)) {
-      flags.add(arg);
+    const consumed = consumeFlag(
+      arg,
+      args,
+      index,
+      valueFlags,
+      booleanFlags,
+      values,
+      flags,
+    );
+
+    if (consumed > 0) {
+      index += consumed - 1;
 
       continue;
     }
 
-    if (valueFlags.has(arg)) {
-      values.set(arg, args[index + 1]);
-      index++;
+    if (arg === "--") {
+      const overflow = positionalTail(args, index + 1, spec, positional);
 
-      continue;
-    }
-
-    const inline = inlineValue(arg, valueFlags);
-
-    if (inline !== undefined) {
-      values.set(inline[0], inline[1]);
-
-      continue;
+      return { values, flags, positional, error: overflow };
     }
 
     if (arg.startsWith("-")) {

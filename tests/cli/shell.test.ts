@@ -147,6 +147,34 @@ describe("parseArgs", () => {
 
     expect(parsed.error).toBe('unknown option "--print=x"');
   });
+
+  it("collects every token after -- verbatim as positionals", () => {
+    const parsed = parseArgs(["read", "--", "-weird-slug"]);
+
+    expect(parsed.positional).toEqual(["read", "-weird-slug"]);
+    expect(parsed.error).toBeUndefined();
+  });
+
+  it("stops flag parsing at -- even for known flags", () => {
+    const parsed = parseArgs(["--", "--dry-run"], { boolean: ["--dry-run"] });
+
+    expect(parsed.flags.has("--dry-run")).toBe(false);
+    expect(parsed.positional).toEqual(["--dry-run"]);
+  });
+
+  it("keeps a later -- a positional after the first", () => {
+    const parsed = parseArgs(["--", "--"]);
+
+    expect(parsed.positional).toEqual(["--"]);
+  });
+
+  it("applies the count rule to positionals gathered after --", () => {
+    const parsed = parseArgs(["--", "a", "b", "c"], {
+      positionals: { max: 2, error: (_arg, count) => `got ${count}` },
+    });
+
+    expect(parsed.error).toBe("got 3");
+  });
 });
 
 describe("agentRunFlags", () => {
