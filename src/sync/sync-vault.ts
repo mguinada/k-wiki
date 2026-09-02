@@ -70,7 +70,7 @@ async function readSourceNote(
   try {
     return await readFileTolerant(toAbsolute(vault.root, relPath));
   } catch (cause) {
-    const reason = cause instanceof Error ? cause.message : String(cause);
+    const reason = errorMessage(cause);
 
     throw new Error(
       `failed to read note "${relPath}" in vault "${vault.name}": ${reason}`,

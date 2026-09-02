@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { actionableLines, parseReport } from "./mutation-survivors.ts";
 
@@ -140,7 +141,7 @@ export function main(argv: readonly string[] = process.argv.slice(2)): void {
   try {
     options = parseArgs(argv);
   } catch (cause) {
-    console.error(cause instanceof Error ? cause.message : String(cause));
+    console.error(errorMessage(cause));
     process.exitCode = 1;
 
     return;

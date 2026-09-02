@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync } from "node:fs";
+import { errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { parseReport } from "./mutation-survivors.ts";
 
@@ -26,7 +27,7 @@ function parseChunk(text: string, position: number): ChunkReport {
   try {
     return parseReport(text) as ChunkReport;
   } catch (cause) {
-    const detail = cause instanceof Error ? cause.message : String(cause);
+    const detail = errorMessage(cause);
 
     throw new Error(`input ${position}: ${detail}`);
   }
@@ -188,7 +189,7 @@ function runMerge(options: Options): void {
       options.inputs.map((path) => readFileSync(path, "utf8")),
     );
   } catch (cause) {
-    console.error(cause instanceof Error ? cause.message : String(cause));
+    console.error(errorMessage(cause));
     process.exitCode = 1;
 
     return;
@@ -215,7 +216,7 @@ export function main(argv: readonly string[]): void {
   try {
     runMerge(parseArgs(argv));
   } catch (cause) {
-    console.error(cause instanceof Error ? cause.message : String(cause));
+    console.error(errorMessage(cause));
     process.exitCode = 1;
   }
 }

@@ -1,4 +1,5 @@
 import { statSync } from "node:fs";
+import { errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { type GitText, runGitText } from "./mutation-scope.ts";
 
@@ -160,7 +161,7 @@ export function main(
   try {
     console.log(chunkList(argv, collect, git));
   } catch (cause) {
-    console.error(cause instanceof Error ? cause.message : String(cause));
+    console.error(errorMessage(cause));
     process.exitCode = 1;
   }
 }

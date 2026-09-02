@@ -161,7 +161,7 @@ async function repoHead(root: string, env: NodeJS.ProcessEnv): Promise<string> {
 
     return stdout.trim();
   } catch (cause) {
-    const reason = cause instanceof Error ? cause.message : String(cause);
+    const reason = errorMessage(cause);
 
     throw new Error(`cannot read HEAD of source repo ${root}: ${reason}`, {
       cause,

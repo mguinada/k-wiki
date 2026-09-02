@@ -1,5 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
+import { errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { repoRoot } from "../cli/shared.ts";
 
@@ -364,9 +365,7 @@ export async function main(
       console.log(renderTable(metrics).trimEnd());
     }
   } catch (cause) {
-    console.error(
-      `refactor-metrics: ${cause instanceof Error ? cause.message : String(cause)}`,
-    );
+    console.error(`refactor-metrics: ${errorMessage(cause)}`);
     process.exitCode = 1;
   }
 }

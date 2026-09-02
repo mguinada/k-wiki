@@ -141,7 +141,7 @@ async function checkFreshness(
 
     head = stdout.trim();
   } catch (cause) {
-    const reason = cause instanceof Error ? cause.message : String(cause);
+    const reason = errorMessage(cause);
 
     return {
       warning: `cannot verify freshness of source repo ${root}: ${reason}`,
@@ -175,7 +175,7 @@ async function loadVaultEntries(
     return parseManifest(manifestText, displayPath(manifestPath, rawDir))
       .vaults;
   } catch (cause) {
-    problems.push(cause instanceof Error ? cause.message : String(cause));
+    problems.push(errorMessage(cause));
 
     return {};
   }
