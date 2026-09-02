@@ -913,10 +913,32 @@ function isFreshRename(
   );
 }
 
-/** Bucket the post-run status entries: created (added, untracked,
- *  or a rename this run introduced — the rename's target), updated
- *  (modified), deleted (deleted now but not already deleted
- *  pre-run; likewise a fresh rename's origin). */
+/** Bucket an entry's own path by its status code. */
+function bucketOwnPath(
+  entry: StatusEntry,
+  before: ReadonlyMap<string, StatusEntry>,
+  buckets: { created: string[]; updated: string[]; deleted: string[] },
+): void {
+  const { code, path } = entry;
+
+  if (
+    code.includes("A") ||
+    code.includes("?") ||
+    isFreshRename(entry, before)
+  ) {
+    buckets.created.push(path);
+  } else if (code.includes("M")) {
+    buckets.updated.push(path);
+  } else if (code.includes("D") && !before.get(path)?.code.includes("D")) {
+    buckets.deleted.push(path);
+  }
+}
+
+/** Bucket the post-run status entries, each path scoped to the
+ *  wiki tree: created (added, untracked, or a rename this run
+ *  introduced — the rename's target), updated (modified), deleted
+ *  (deleted now but not already deleted pre-run; likewise a fresh
+ *  rename's origin). */
 function currentEntryBuckets(
   entries: readonly StatusEntry[],
   before: ReadonlyMap<string, StatusEntry>,
@@ -926,22 +948,16 @@ function currentEntryBuckets(
   const deleted: string[] = [];
 
   for (const entry of entries) {
-    const { code, path, origin } = entry;
-
-    if (
-      code.includes("A") ||
-      code.includes("?") ||
-      isFreshRename(entry, before)
-    ) {
-      created.push(path);
-    } else if (code.includes("M")) {
-      updated.push(path);
-    } else if (code.includes("D") && !before.get(path)?.code.includes("D")) {
-      deleted.push(path);
+    if (underWikiTree(entry.path)) {
+      bucketOwnPath(entry, before, { created, updated, deleted });
     }
 
-    if (origin !== undefined && isFreshRename(entry, before)) {
-      deleted.push(origin);
+    if (
+      entry.origin !== undefined &&
+      underWikiTree(entry.origin) &&
+      isFreshRename(entry, before)
+    ) {
+      deleted.push(entry.origin);
     }
   }
 
@@ -963,18 +979,15 @@ async function vanishedUntrackedPages(
   return await vanishedUntrackedPaths(
     dataRoot,
     pre.status,
-    (path) => path.startsWith("wiki/") && path.endsWith(".md"),
+    (path) => underWikiTree(path) && path.endsWith(".md"),
   );
 }
 
-/** Whether either side of an entry sits under the wiki tree: the
- *  scope a `git status -- wiki` pathspec would have produced,
- *  narrowed from the guardrails' full-repo snapshot. */
-function underWiki(entry: StatusEntry): boolean {
-  return (
-    entry.path.startsWith("wiki/") ||
-    (entry.origin !== undefined && entry.origin.startsWith("wiki/"))
-  );
+/** Whether a status path sits under the wiki tree: the scope a
+ *  `git status -- wiki` pathspec would have produced, narrowed
+ *  from the guardrails' full-repo snapshot. */
+function underWikiTree(path: string): boolean {
+  return path.startsWith("wiki/");
 }
 
 /**
@@ -998,10 +1011,7 @@ export async function wikiPages(
   const before = new Map(
     (pre?.status ?? []).map((entry) => [entry.path, entry] as const),
   );
-  const { created, updated, deleted } = currentEntryBuckets(
-    entries.filter(underWiki),
-    before,
-  );
+  const { created, updated, deleted } = currentEntryBuckets(entries, before);
 
   return {
     created: created.sort(),

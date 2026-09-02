@@ -6587,6 +6587,42 @@ describe("wikiPages vanished untracked detection", () => {
     expect(pages.deleted).toEqual(["wiki/index.md"]);
   });
 
+  it("counts a rename out of the wiki tree as its origin's deletion only", async () => {
+    const dataRoot = await makeDataRepo({ "a.md": "a" });
+
+    await run("git", ["-C", dataRoot, "mv", "wiki/A-page.md", "moved-out.md"]);
+
+    const pages = await wikiPages(
+      dataRoot,
+      await porcelainStatus(dataRoot, process.env),
+    );
+
+    expect(pages.created).toEqual([]);
+    expect(pages.updated).toEqual([]);
+    expect(pages.deleted).toEqual(["wiki/A-page.md"]);
+  });
+
+  it("counts a rename into the wiki tree as its target's creation only", async () => {
+    const dataRoot = await makeDataRepo({ "a.md": "a" });
+
+    await run("git", [
+      "-C",
+      dataRoot,
+      "mv",
+      "raw/notes/Engineering/a.md",
+      "wiki/imported.md",
+    ]);
+
+    const pages = await wikiPages(
+      dataRoot,
+      await porcelainStatus(dataRoot, process.env),
+    );
+
+    expect(pages.created).toEqual(["wiki/imported.md"]);
+    expect(pages.updated).toEqual([]);
+    expect(pages.deleted).toEqual([]);
+  });
+
   it("counts a rename staged before the run nowhere when a pre-run state is given", async () => {
     const dataRoot = await makeDataRepo({ "a.md": "a" });
 
