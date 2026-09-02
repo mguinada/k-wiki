@@ -427,7 +427,7 @@ describe("formatReport all-blocked hint", () => {
 });
 
 describe("pruneEmptyDirs", () => {
-  it("removes every empty parent up to and excluding the stop root", async () => {
+  it("removes the emptied directories below the stop root", async () => {
     const root = await mkdtemp(join(tmpdir(), "k-wiki-prune-"));
     tempDirs.push(root);
     const leaf = join(root, "notes", "Vault", "Sub", "Leaf.md");
@@ -439,10 +439,37 @@ describe("pruneEmptyDirs", () => {
     await pruneEmptyDirs(dirname(leaf), join(root, "notes", "Vault"));
 
     expect(await pathExists(join(root, "notes", "Vault", "Sub"))).toBe(false);
+  });
+
+  it("keeps the stop root itself", async () => {
+    const root = await mkdtemp(join(tmpdir(), "k-wiki-prune-"));
+    tempDirs.push(root);
+    const leaf = join(root, "notes", "Vault", "Sub", "Leaf.md");
+
+    await mkdir(dirname(leaf), { recursive: true });
+    await writeFile(leaf, "");
+    await rm(leaf);
+
+    await pruneEmptyDirs(dirname(leaf), join(root, "notes", "Vault"));
+
     expect(await pathExists(join(root, "notes", "Vault"))).toBe(true);
   });
 
-  it("stops silently at a directory that still holds entries", async () => {
+  it("removes the empty directory it was pointed at", async () => {
+    const root = await mkdtemp(join(tmpdir(), "k-wiki-prune-"));
+    tempDirs.push(root);
+    const kept = join(root, "ns", "Sub", "Kept");
+    const pruned = join(root, "ns", "Sub", "Gone");
+
+    await mkdir(kept, { recursive: true });
+    await mkdir(pruned, { recursive: true });
+
+    await pruneEmptyDirs(pruned, join(root, "ns"));
+
+    expect(await pathExists(pruned)).toBe(false);
+  });
+
+  it("stops at a directory that still holds entries", async () => {
     const root = await mkdtemp(join(tmpdir(), "k-wiki-prune-"));
     tempDirs.push(root);
     const shared = join(root, "ns", "Sub");
@@ -454,7 +481,6 @@ describe("pruneEmptyDirs", () => {
 
     await pruneEmptyDirs(pruned, join(root, "ns"));
 
-    expect(await pathExists(pruned)).toBe(false);
     expect(await pathExists(shared)).toBe(true);
   });
 });

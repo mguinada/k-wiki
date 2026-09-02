@@ -68,11 +68,13 @@ describe("readTextIfExists", () => {
     const dir = await makeTempDir();
     const path = join(dir, "file.txt");
     await writeFile(path, "contents", "utf8");
+
     expect(await readTextIfExists(path)).toBe("contents");
   });
 
   it("returns undefined for a missing file", async () => {
     const dir = await makeTempDir();
+
     expect(await readTextIfExists(join(dir, "missing.txt"))).toBeUndefined();
   });
 
@@ -80,6 +82,7 @@ describe("readTextIfExists", () => {
     const dir = await makeTempDir();
     const path = join(dir, "as-directory");
     await mkdir(path);
+
     await expect(readTextIfExists(path)).rejects.toThrow(/EISDIR/);
   });
 });
@@ -90,6 +93,7 @@ describe("listFiles", () => {
     await mkdir(join(dir, "sub"));
     await writeFile(join(dir, "a.md"), "");
     await writeFile(join(dir, "sub", "b.md"), "");
+
     expect(await listFiles(dir)).toEqual(["a.md", "sub/b.md"]);
   });
 
@@ -100,6 +104,7 @@ describe("listFiles", () => {
     await writeFile(join(dir, ".obsidian", "x.md"), "");
     await writeFile(join(dir, ".obsidian", "deep", "x.md"), "");
     await writeFile(join(dir, "keep", ".obsidian"), "");
+
     expect(
       await listFiles(dir, "", { skipDirs: new Set([".obsidian"]) }),
     ).toEqual(["keep/.obsidian"]);
@@ -112,6 +117,7 @@ describe("listFiles", () => {
     await writeFile(join(dir, ".git", "config"), "");
     await writeFile(join(dir, "src", ".git", "config"), "");
     await writeFile(join(dir, "src", "a.ts"), "");
+
     expect(
       await listFiles(dir, "", { skipRootDirs: new Set([".git"]) }),
     ).toEqual(["src/.git/config", "src/a.ts"]);
@@ -121,6 +127,7 @@ describe("listFiles", () => {
     const dir = await makeTempDir();
     await writeFile(join(dir, ".DS_Store"), "");
     await writeFile(join(dir, "a.md"), "");
+
     expect(
       await listFiles(dir, "", { skipFiles: new Set([".DS_Store"]) }),
     ).toEqual(["a.md"]);
@@ -132,6 +139,7 @@ describe("listFiles", () => {
     await writeFile(join(dir, "a.md"), "");
     await writeFile(join(dir, "a.txt"), "");
     await writeFile(join(dir, "sub", "b.md"), "");
+
     expect(await listFiles(dir, "", { extension: ".md" })).toEqual([
       "a.md",
       "sub/b.md",
@@ -143,9 +151,9 @@ describe("listFiles", () => {
     await mkdir(join(dir, "sub", "deeper"), { recursive: true });
     await writeFile(join(dir, "sub", "deeper", "b.md"), "");
     const visited: number[] = [];
-    expect(await listFiles(dir, "", { onDir: (n) => visited.push(n) })).toEqual(
-      ["sub/deeper/b.md"],
-    );
+
+    await listFiles(dir, "", { onDir: (n) => visited.push(n) });
+
     expect(visited).toEqual([1, 2, 3]);
   });
 
@@ -172,6 +180,7 @@ describe("listFiles", () => {
     await mkdir(join(dir, "src", "sync"), { recursive: true });
     await writeFile(join(dir, "src", "a.ts"), "");
     await writeFile(join(dir, "src", "sync", "b.ts"), "");
+
     expect(await listFiles(join(dir, "src"), "src")).toEqual([
       "src/a.ts",
       "src/sync/b.ts",
@@ -250,15 +259,21 @@ describe("pluralized", () => {
     expect(pluralized(1, "move")).toBe("1 move");
   });
 
-  it("appends s for zero and many", () => {
+  it("appends s for zero", () => {
     expect(pluralized(0, "namespace")).toBe("0 namespaces");
+  });
+
+  it("appends s for many", () => {
     expect(pluralized(3, "source")).toBe("3 sources");
   });
 });
 
 describe("repoRoot", () => {
-  it("points at the repository root holding package.json and src/", () => {
+  it("points at the directory holding package.json", () => {
     expect(existsSync(join(repoRoot, "package.json"))).toBe(true);
+  });
+
+  it("points at the directory holding src/cli/shared.ts", () => {
     expect(existsSync(join(repoRoot, "src", "cli", "shared.ts"))).toBe(true);
   });
 });
