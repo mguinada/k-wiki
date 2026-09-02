@@ -6507,6 +6507,28 @@ describe("wikiPages vanished untracked detection", () => {
     expect(pages.deleted).toEqual(["wiki/a.md", "wiki/z.md"]);
   });
 
+  it("does not count as deleted a pre-run untracked page the run only got ignored", async () => {
+    const dataRoot = await makeDataRepo({ "a.md": "a" });
+
+    await writeFile(join(dataRoot, "wiki", "a.md"), "# A\n");
+
+    const pre: PreRunState = {
+      commit: "0123456789abcdef0123456789abcdef01234567",
+      status: [{ code: "??", path: "wiki/a.md", origin: undefined }],
+      hashes: new Map<string, string>(),
+      contents: new Map<string, Buffer | null>(),
+    };
+
+    // Mid-run: an ignore rule now covers the page — git status stops
+    // listing it, but the disk witness sees the file still exists, so
+    // it is not deleted (issue #256, D-1).
+    await writeFile(join(dataRoot, ".gitignore"), "wiki/a.md\n");
+
+    const pages = await wikiPages(dataRoot, process.env, "wiki", pre);
+
+    expect(pages.deleted).toEqual([]);
+  });
+
   it("lists created and updated pages in sorted order with no stray entries", async () => {
     const dataRoot = await makeDataRepo({ "a.md": "a" });
 

@@ -58,6 +58,7 @@ import {
   type PreRunState,
   revertToPreRun,
   runGuardrails,
+  vanishedUntrackedPaths,
 } from "./guardrails.ts";
 
 /**
@@ -959,27 +960,24 @@ function currentEntryBuckets(
   return { created, updated, deleted };
 }
 
-/** Pre-run untracked pages whose file vanished during the run: git
- *  status never lists them, so the pre-run state is the only witness. */
-function vanishedUntracked(
-  before: ReadonlyMap<string, StatusEntry>,
-  entries: readonly StatusEntry[],
+/** Pre-run untracked pages under the pathspec whose file vanished
+ *  during the run: the disk witness — the guardrails' rule — decides
+ *  (D-1), so a page that only became gitignored mid-run does not
+ *  count as deleted. */
+async function vanishedUntrackedPages(
+  dataRoot: string,
+  pre: PreRunState | undefined,
   pathspec: string,
-): string[] {
-  const deleted: string[] = [];
-
-  for (const entry of before.values()) {
-    if (
-      entry.code.includes("?") &&
-      entry.path.startsWith(`${pathspec}/`) &&
-      entry.path.endsWith(".md") &&
-      !entries.some((current) => current.path === entry.path)
-    ) {
-      deleted.push(entry.path);
-    }
+): Promise<string[]> {
+  if (pre === undefined) {
+    return [];
   }
 
-  return deleted;
+  return await vanishedUntrackedPaths(
+    dataRoot,
+    pre.status,
+    (path) => path.startsWith(`${pathspec}/`) && path.endsWith(".md"),
+  );
 }
 
 /**
@@ -1032,7 +1030,7 @@ export async function wikiPages(
     updated: updated.sort(),
     deleted: [
       ...deleted,
-      ...vanishedUntracked(before, entries, pathspec),
+      ...(await vanishedUntrackedPages(dataRoot, pre, pathspec)),
     ].sort(),
     unavailable: undefined,
   };
