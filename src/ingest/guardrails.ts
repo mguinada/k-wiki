@@ -1,5 +1,6 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+import { sha256 } from "../cli/shared.ts";
 import {
   hashMatches,
   headCommit,
@@ -10,7 +11,6 @@ import {
   type StatusEntry,
   statusIndex,
 } from "../data/git.ts";
-import { sha256 } from "../sync/hash.ts";
 import {
   isWikilinkEntry,
   listWikiPages,

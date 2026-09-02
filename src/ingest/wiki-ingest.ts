@@ -18,7 +18,7 @@ import {
   type ProgressSink,
   stderrSink,
 } from "../cli/progress.ts";
-import { isPlainObject, readTextIfExists } from "../cli/shared.ts";
+import { isPlainObject, readTextIfExists, sha256 } from "../cli/shared.ts";
 import { writeDashboard } from "../dashboard/generate.ts";
 import {
   isPreExisting,
@@ -27,7 +27,6 @@ import {
   type StatusEntry,
 } from "../data/git.ts";
 import { loadSyncConfig, resolveRawDir } from "../sync/config.ts";
-import { sha256 } from "../sync/hash.ts";
 import {
   emptyManifest,
   type Manifest,

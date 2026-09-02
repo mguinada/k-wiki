@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { canAnimate, errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { formatDuration } from "../cli/progress.ts";
-import { readTextIfExists } from "../cli/shared.ts";
+import { readTextIfExists, sha256 } from "../cli/shared.ts";
 import {
   loadSyncConfig,
   resolveRawDir,
@@ -14,7 +14,6 @@ import {
 } from "./config.ts";
 import { readFileTolerant } from "./eagain.ts";
 import { isSelectedNote } from "./frontmatter.ts";
-import { sha256 } from "./hash.ts";
 import {
   emptyManifest,
   type Manifest,

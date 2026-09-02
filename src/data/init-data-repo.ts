@@ -8,23 +8,22 @@ import {
 } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { errorMessage } from "../cli/colors.ts";
-import { refuseDirectExecution } from "../cli/is-main.ts";
-import { loadSyncConfig } from "../sync/config.ts";
 import { runGit } from "./git.ts";
 
 /**
- * data:init — seed the data repo named by `sync.json`'s `dataRoot`
- * (issue #29). The code repo versions only the directory skeleton; the
- * contents of `raw/` and `wiki/` live in, and are versioned by, the data
- * repo. Seeding copies the skeleton (`git ls-files`, so the copy cannot
+ * data:init — seed the data repo at a given `dataRoot` (issue #29).
+ * The code repo versions only the directory skeleton; the contents
+ * of `raw/` and `wiki/` live in, and are versioned by, the data repo.
+ * Seeding copies the skeleton (`git ls-files`, so the copy cannot
  * drift from what the code repo versions), writes a README, and makes
  * the initial commit. Idempotent: a seeded data root is left untouched.
+ * The sync.json read lives in the cli shell (RC1 split): this module
+ * is a pure library with no config access.
  */
 
 export interface SeedOptions {
-  /** Path to `sync.json`. */
-  readonly configPath: string;
+  /** Data repo root to seed. */
+  readonly dataRoot: string;
   /** Code repo root; defaults to this module's repository. */
   readonly repoRoot?: string;
   /** Environment for git child processes; defaults to `process.env`. */
@@ -183,28 +182,24 @@ async function seed(options: {
   await runGit(dataRoot, ["commit", "--quiet", "-m", message], env);
 }
 
-/** Seed the data repo at the configured `dataRoot`. */
+/** Seed the data repo at the given `dataRoot`. */
 export async function seedDataRepo(
   options: SeedOptions,
 ): Promise<"seeded" | "already-seeded"> {
   const repoRoot = options.repoRoot ?? defaultRepoRoot;
   const env = options.env ?? process.env;
-  const config = await loadSyncConfig(options.configPath);
+  const dataRoot = options.dataRoot;
 
-  if (config.dataRoot === undefined) {
-    throw new Error(`no "dataRoot" in ${options.configPath}: nothing to seed`);
-  }
-
-  if (await isSeeded(config.dataRoot, env)) {
+  if (await isSeeded(dataRoot, env)) {
     return "already-seeded";
   }
 
-  if (existsSync(config.dataRoot)) {
-    const entries = await readdir(config.dataRoot);
+  if (existsSync(dataRoot)) {
+    const entries = await readdir(dataRoot);
 
     if (entries.length > 0) {
       throw new Error(
-        `${config.dataRoot} is not empty and is not a seeded data repo; ` +
+        `${dataRoot} is not empty and is not a seeded data repo; ` +
           'refusing to seed into it — move its contents or point "dataRoot" ' +
           "at an empty directory",
       );
@@ -212,7 +207,7 @@ export async function seedDataRepo(
   }
 
   await seed({
-    dataRoot: config.dataRoot,
+    dataRoot,
     repoRoot,
     env,
     secondBrain: options.secondBrain === true,
@@ -222,69 +217,9 @@ export async function seedDataRepo(
   return "seeded";
 }
 
-const defaultRepoRoot = resolve(
+/** The code repo root of this repository (derived from this module's
+ *  own location; the cli shell reuses it for its default config path). */
+export const defaultRepoRoot = resolve(
   dirname(fileURLToPath(import.meta.url)),
   "../..",
 );
-
-/** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
-const HELP = `Usage: init-data-repo [-h | --help] [--second-brain] [--meta] [<config>]
-
-Create and seed the data repo at the config's dataRoot: git init, copy
-the raw/ and wiki/ skeleton from the code repo, write the standing
-.gitignore (Obsidian UI state and the ingest snapshot — gitignore
-does not apply to tracked files, so the rules must precede the
-files), first commit.
-Idempotent — an already-seeded data repo is left untouched.
-
-  --second-brain  Also write .second-brain, the operator-owned
-                  second-brain identity marker, at the data root and
-                  commit it with the seed. The marker — not the
-                  agent-writable wiki/second-brain/profile.md — is
-                  what the ingest guardrails read as second-brain
-                  identity. Mark an already-seeded repo
-                  by hand: create and commit .second-brain at its
-                  root.
-  --meta          Seed the meta contract as the data
-                  repo's wiki/AGENTS.md instead of the canonical
-                  wiki contract: the repo-as-source wiki that
-                  documents k-wiki itself, describe-don't-prescribe.
-  -h, --help      Print this help and exit; no side effects.
-  <config>        Path to sync.json.
-                  Default: the repo's own sync.json.`;
-
-/** data:init entry point: `init-data-repo [-h | --help] [--second-brain] [<config>]`. */
-export async function main(): Promise<void> {
-  const args = process.argv.slice(2);
-
-  if (args.includes("-h") || args.includes("--help")) {
-    console.log(HELP);
-
-    return;
-  }
-
-  const secondBrain = args.includes("--second-brain");
-  const meta = args.includes("--meta");
-  const configArg = args.find(
-    (arg) => arg !== "--second-brain" && arg !== "--meta",
-  );
-  const configPath = configArg ?? join(defaultRepoRoot, "sync.json");
-
-  try {
-    const config = await loadSyncConfig(configPath);
-    const result = await seedDataRepo({ configPath, secondBrain, meta });
-
-    console.log(
-      result === "seeded"
-        ? `data:init: seeded ${config.dataRoot}`
-        : `data:init: ${config.dataRoot} already seeded`,
-    );
-  } catch (error) {
-    console.error(`data:init: ${errorMessage(error)}`);
-
-    process.exitCode = 1;
-  }
-}
-
-/* v8 ignore next: covered only under direct `node src/data/init-data-repo.ts` runs */
-refuseDirectExecution(import.meta.url, "init-data-repo");

@@ -1,4 +1,4 @@
 #!/usr/bin/env node
-import { main } from "../src/data/init-data-repo.ts";
+import { main } from "../src/cli/init-data-repo.ts";
 
 await main();

@@ -7,6 +7,7 @@ import {
   listFiles,
   RESERVED_NAMES,
   readTextIfExists,
+  sha256,
 } from "../../src/cli/shared.ts";
 
 const tempDirs: string[] = [];
@@ -75,5 +76,15 @@ describe("listFiles", () => {
     await writeFile(join(dir, "a.md"), "");
     await writeFile(join(dir, "sub", "b.md"), "");
     expect(await listFiles(dir)).toEqual(["a.md", "sub/b.md"]);
+  });
+});
+
+describe("sha256", () => {
+  const encoder = new TextEncoder();
+
+  it("returns the lowercase hex digest of the given bytes", () => {
+    expect(sha256(encoder.encode("karpathy"))).toBe(
+      "b618269306c82a1526022ad1e60392d23d2775ecb480f06b0da81b6654790778",
+    );
   });
 });

@@ -1,0 +1,360 @@
+import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { main } from "../../src/cli/init-data-repo.ts";
+import { runGit } from "../../src/data/git.ts";
+import { seedDataRepo } from "../../src/data/init-data-repo.ts";
+
+const tempDirs: string[] = [];
+
+const GIT_ENV = {
+  PATH: process.env.PATH,
+  GIT_AUTHOR_NAME: "k-wiki test",
+  GIT_AUTHOR_EMAIL: "test@example.com",
+  GIT_COMMITTER_NAME: "k-wiki test",
+  GIT_COMMITTER_EMAIL: "test@example.com",
+  HOME: process.env.HOME,
+};
+
+afterAll(async () => {
+  await Promise.all(
+    tempDirs.map((dir) => rm(dir, { recursive: true, force: true })),
+  );
+});
+
+afterEach(() => {
+  process.exitCode = undefined;
+});
+
+async function makeTempDir(): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), "k-wiki-data-init-"));
+
+  tempDirs.push(dir);
+
+  return dir;
+}
+
+async function writeConfig(dataRoot: string): Promise<string> {
+  const dir = await makeTempDir();
+  const path = join(dir, "sync.json");
+
+  await writeFile(
+    path,
+    JSON.stringify({
+      vaults: [],
+      dataRoot,
+    }),
+  );
+
+  return path;
+}
+
+function git(dataRoot: string, ...args: string[]) {
+  return runGit(dataRoot, args, GIT_ENV);
+}
+
+/**
+ * A hermetic stand-in for the code repo: a temp git repo whose tracked
+ * files are the raw/wiki skeleton. Tests must not depend on the outer
+ * repository — under Stryker's sandbox, `git ls-files` against the real
+ * repo returns nothing (the sandbox has no .git and a mismatched
+ * pathspec prefix), which breaks the seeding logic under test.
+ */
+async function makeCodeRepoFixture(): Promise<string> {
+  const dir = await makeTempDir();
+
+  await mkdir(join(dir, "raw", "notes"), { recursive: true });
+  await writeFile(join(dir, "raw", "notes", ".gitkeep"), "");
+  await mkdir(join(dir, "wiki"), { recursive: true });
+  await writeFile(join(dir, "wiki", "AGENTS.md"), "# wiki contract\n");
+  await writeFile(join(dir, "wiki", "AGENTS.meta.md"), "# meta contract\n");
+  await writeFile(join(dir, "wiki", "index.md"), "# index\n");
+  await git(dir, "init", "--quiet");
+  await git(dir, "add", "-A");
+  await git(dir, "commit", "--quiet", "-m", "fixture skeleton");
+
+  return dir;
+}
+
+async function runInitCli(args: string[]): Promise<{
+  out: string;
+  err: string;
+}> {
+  const argv = process.argv;
+  const out: string[] = [];
+  const err: string[] = [];
+
+  const savedEnv = new Map(
+    Object.keys(GIT_ENV).map((key) => [key, process.env[key]]),
+  );
+
+  process.argv = [...argv.slice(0, 2), ...args];
+  Object.assign(process.env, GIT_ENV);
+
+  const logSpy = vi
+    .spyOn(console, "log")
+    .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+  const errorSpy = vi
+    .spyOn(console, "error")
+    .mockImplementation((...parts: unknown[]) => err.push(parts.join(" ")));
+
+  try {
+    await main();
+  } finally {
+    process.argv = argv;
+
+    for (const [key, value] of savedEnv) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+
+    logSpy.mockRestore();
+    errorSpy.mockRestore();
+  }
+
+  return { out: out.join("\n"), err: err.join("\n") };
+}
+
+describe("data:init CLI help", () => {
+  it("prints the usage line for --help", async () => {
+    expect((await runInitCli(["--help"])).out).toContain(
+      "init-data-repo [-h | --help] [--second-brain] [--meta] [<config>]",
+    );
+  });
+
+  it("prints the same help for -h as for --help", async () => {
+    expect((await runInitCli(["-h"])).out).toBe(
+      (await runInitCli(["--help"])).out,
+    );
+  });
+
+  it("documents the -h and --help switches themselves", async () => {
+    expect((await runInitCli(["--help"])).out).toContain("-h, --help");
+  });
+
+  it("states the default config path", async () => {
+    expect((await runInitCli(["--help"])).out).toContain(
+      "Default: the repo's own sync.json",
+    );
+  });
+
+  it("documents the seeded standing .gitignore", async () => {
+    expect((await runInitCli(["--help"])).out).toContain(".gitignore");
+  });
+
+  it("leaves the exit code unset for --help", async () => {
+    await runInitCli(["--help"]);
+
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("prints the config-read failure", async () => {
+    const dir = await makeTempDir();
+
+    const { err } = await runInitCli([join(dir, "nope.json")]);
+
+    expect(err).toContain("cannot read sync config");
+  });
+
+  it("exits 1 when the config is missing", async () => {
+    const dir = await makeTempDir();
+
+    const { err: _err } = await runInitCli([join(dir, "nope.json")]);
+
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("rejects a config without a data root", async () => {
+    const dir = await makeTempDir();
+    const configPath = join(dir, "sync.json");
+
+    await writeFile(configPath, JSON.stringify({ vaults: [] }));
+
+    const { err } = await runInitCli([configPath]);
+
+    expect(err).toContain('no "dataRoot"');
+  });
+
+  it("exits 1 when the config has no data root", async () => {
+    const dir = await makeTempDir();
+    const configPath = join(dir, "sync.json");
+
+    await writeFile(configPath, JSON.stringify({ vaults: [] }));
+
+    await runInitCli([configPath]);
+
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("reports an already-seeded data root without reseeding", async () => {
+    const dataRoot = await makeTempDir();
+    const configPath = await writeConfig(dataRoot);
+
+    await seedDataRepo({
+      dataRoot,
+      repoRoot: await makeCodeRepoFixture(),
+      env: GIT_ENV,
+    });
+
+    const { out } = await runInitCli([configPath]);
+
+    expect(out).toBe(`data:init: ${dataRoot} already seeded`);
+  });
+
+  it("leaves the exit code unset when already seeded", async () => {
+    const dataRoot = await makeTempDir();
+    const configPath = await writeConfig(dataRoot);
+
+    await seedDataRepo({
+      dataRoot,
+      repoRoot: await makeCodeRepoFixture(),
+      env: GIT_ENV,
+    });
+
+    await runInitCli([configPath]);
+
+    expect(process.exitCode).toBeUndefined();
+  });
+});
+
+describe("data:init bin launcher", () => {
+  /**
+   * A staged copy of src/ and bin/ inside the test tree, importable
+   * in-process with a controlled argv — the same trick as
+   * tests/sync/cli-spawn.test.ts: under Stryker the sandbox holds the
+   * mutated sources next to the tests, and a dynamic import executes
+   * them here, where the active-mutant globals live.
+   */
+  const stagingRoot = join(
+    dirname(fileURLToPath(import.meta.url)),
+    ".data-init-import-staging",
+  );
+
+  afterAll(async () => {
+    await rm(stagingRoot, { recursive: true, force: true });
+  });
+
+  /** A staged code repo: skeleton tracked in git, plus sync.json. */
+  async function stageRepo(): Promise<string> {
+    const dir = join(stagingRoot, randomUUID());
+    const testsDir = dirname(fileURLToPath(import.meta.url));
+
+    await mkdir(join(dir, "raw", "notes"), { recursive: true });
+    await writeFile(join(dir, "raw", "notes", ".gitkeep"), "");
+    await mkdir(join(dir, "wiki"), { recursive: true });
+    await writeFile(join(dir, "wiki", "index.md"), "# index\n");
+    await cp(join(testsDir, "../../src"), join(dir, "src"), {
+      recursive: true,
+    });
+    await cp(join(testsDir, "../../bin"), join(dir, "bin"), {
+      recursive: true,
+    });
+    await writeFile(
+      join(dir, "sync.json"),
+      JSON.stringify({ vaults: [], dataRoot: join(dir, "data") }),
+    );
+    await git(dir, "init", "--quiet");
+    await git(dir, "add", "-A");
+    await git(dir, "commit", "--quiet", "-m", "staged skeleton");
+
+    return dir;
+  }
+
+  interface ImportOutcome {
+    readonly out: string;
+    readonly err: string;
+  }
+
+  async function importWithArgv(
+    modulePath: string,
+    args: readonly string[],
+  ): Promise<ImportOutcome> {
+    const argv = process.argv;
+    const out: string[] = [];
+    const err: string[] = [];
+
+    process.argv = [argv[0] ?? "node", modulePath, ...args];
+
+    const savedEnv = new Map(
+      Object.keys(GIT_ENV).map((key) => [key, process.env[key]]),
+    );
+
+    Object.assign(process.env, GIT_ENV);
+
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) => err.push(parts.join(" ")));
+
+    try {
+      await import(pathToFileURL(modulePath).href);
+    } finally {
+      process.argv = argv;
+
+      for (const [key, value] of savedEnv) {
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      }
+
+      logSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
+
+    return { out: out.join("\n"), err: err.join("\n") };
+  }
+
+  it("seeds the data root named by the default sync.json when imported through its bin launcher", async () => {
+    const repo = await stageRepo();
+    const modulePath = join(repo, "bin", "init-data-repo.ts");
+
+    const { out } = await importWithArgv(modulePath, []);
+
+    expect(out).toBe(`data:init: seeded ${join(repo, "data")}`);
+  });
+
+  it("seeds the data root of the config given as an argument, not the default one", async () => {
+    const repo = await stageRepo();
+    const modulePath = join(repo, "bin", "init-data-repo.ts");
+    const argDataRoot = join(repo, "data-arg");
+    const configPath = join(repo, "arg-sync.json");
+
+    await writeFile(
+      configPath,
+      JSON.stringify({ vaults: [], dataRoot: argDataRoot }),
+    );
+
+    const { out } = await importWithArgv(modulePath, [configPath]);
+
+    expect(out).toBe(`data:init: seeded ${argDataRoot}`);
+  });
+
+  it("seeds the second-brain marker when --second-brain is passed", async () => {
+    const repo = await stageRepo();
+    const modulePath = join(repo, "bin", "init-data-repo.ts");
+
+    const { out } = await importWithArgv(modulePath, ["--second-brain"]);
+
+    expect(out).toBe(`data:init: seeded ${join(repo, "data")}`);
+  });
+
+  it("creates the marker file from the --second-brain flag", async () => {
+    const repo = await stageRepo();
+    const modulePath = join(repo, "bin", "init-data-repo.ts");
+
+    await importWithArgv(modulePath, ["--second-brain"]);
+
+    expect(existsSync(join(repo, "data", ".second-brain"))).toBe(true);
+  });
+});
