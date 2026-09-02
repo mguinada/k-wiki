@@ -1,7 +1,6 @@
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { cliFail, errorMessage, terminalColors } from "../cli/colors.ts";
-import { flagValueError } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import {
   formatDuration,
@@ -10,6 +9,7 @@ import {
   stderrSink,
 } from "../cli/progress.ts";
 import { repoRoot } from "../cli/shared.ts";
+import { agentRunFlags, type AgentRunFlags, parseArgs } from "../cli/shell.ts";
 import { statusSince } from "../data/git.ts";
 import {
   type AgentRunner,
@@ -303,58 +303,6 @@ function fail(message: string): void {
   cliFail("wiki-query", message);
 }
 
-/** What parseArgs lifted out of argv: switch values, positionals, mode. */
-interface ParsedArgs {
-  readonly values: Map<string, string | undefined>;
-  readonly positional: string[];
-  readonly fileLast: boolean;
-  readonly error: string | undefined;
-}
-
-/** Split argv into switch values, positionals, and the --file-last mode. */
-function parseArgs(args: readonly string[]): ParsedArgs {
-  const values = new Map<string, string | undefined>();
-  const positional: string[] = [];
-  let fileLast = false;
-  let error: string | undefined;
-
-  for (let index = 0; index < args.length; index++) {
-    const arg = args[index];
-
-    if (arg === undefined) {
-      continue;
-    }
-
-    if (arg === "--file-last") {
-      fileLast = true;
-
-      continue;
-    }
-
-    if (
-      arg === "--settings" ||
-      arg === "--outputs" ||
-      arg === "--raw-dir" ||
-      arg === "--timeout"
-    ) {
-      values.set(arg, args[index + 1]);
-      index++;
-
-      continue;
-    }
-
-    if (arg.startsWith("-")) {
-      error = `unknown option ${JSON.stringify(arg)}`;
-
-      break;
-    }
-
-    positional.push(arg);
-  }
-
-  return { values, positional, fileLast, error };
-}
-
 /** The first usage error in the positional question, if any. */
 function questionError(
   positional: readonly string[],
@@ -403,22 +351,22 @@ async function fileLastStage(
 
 /** Stage 1: ask the question, print the answer and the filing hint. */
 async function answerStage(
-  parsed: ParsedArgs,
-  colors: ReturnType<typeof terminalColors>,
+  question: string,
+  settingsPath: string,
+  timeoutMs: number | undefined,
   rawDir: string,
   outputsDir: string,
+  colors: ReturnType<typeof terminalColors>,
   animated: boolean,
   sink: ProgressSink,
 ): Promise<void> {
-  const timeoutArg = parsed.values.get("--timeout");
   const result = await runWikiQuery({
-    settingsPath:
-      parsed.values.get("--settings") ?? join(repoRoot, "settings.yml"),
+    settingsPath,
     rawDir,
     promptsDir: join(repoRoot, "prompts"),
     outputsDir,
-    question: parsed.positional[0] ?? "",
-    timeoutMs: timeoutArg === undefined ? undefined : Number(timeoutArg) * 1000,
+    question,
+    timeoutMs,
     heartbeatMs: animated ? 100 : undefined,
     onProgress: sink.render,
   });
@@ -432,24 +380,33 @@ async function answerStage(
 
 /** Run the stage the arguments selected, in the data repo it resolved. */
 async function dispatchStage(
-  parsed: ParsedArgs,
+  parsed: ReturnType<typeof parseArgs>,
+  runFlags: AgentRunFlags,
   colors: ReturnType<typeof terminalColors>,
   animated: boolean,
   sink: ProgressSink,
 ): Promise<void> {
-  const outputsDir =
-    parsed.values.get("--outputs") ?? join(repoRoot, "outputs");
+  const outputsDir = runFlags.outputs ?? join(repoRoot, "outputs");
   const config = await loadSyncConfig(join(repoRoot, "sync.json"), homedir());
   const rawDir =
     parsed.values.get("--raw-dir") ?? resolveRawDir(config.dataRoot, repoRoot);
 
-  if (parsed.fileLast) {
+  if (parsed.flags.has("--file-last")) {
     await fileLastStage(colors, rawDir, outputsDir);
 
     return;
   }
 
-  await answerStage(parsed, colors, rawDir, outputsDir, animated, sink);
+  await answerStage(
+    parsed.positional[0] ?? "",
+    runFlags.settings ?? join(repoRoot, "settings.yml"),
+    runFlags.timeoutMs,
+    rawDir,
+    outputsDir,
+    colors,
+    animated,
+    sink,
+  );
 }
 
 /** Print the failure red and set the exit code; the sink is closed first. */
@@ -473,7 +430,10 @@ export async function main(): Promise<void> {
     return;
   }
 
-  const parsed = parseArgs(args);
+  const parsed = parseArgs(args, {
+    value: ["--settings", "--outputs", "--raw-dir", "--timeout"],
+    boolean: ["--file-last"],
+  });
 
   if (parsed.error !== undefined) {
     fail(parsed.error);
@@ -481,9 +441,10 @@ export async function main(): Promise<void> {
     return;
   }
 
+  const fileLast = parsed.flags.has("--file-last");
+  const runFlags = agentRunFlags(parsed.values);
   const usageError =
-    flagValueError(parsed.values) ??
-    questionError(parsed.positional, parsed.fileLast);
+    runFlags.error ?? questionError(parsed.positional, fileLast);
 
   if (usageError !== undefined) {
     fail(usageError);
@@ -495,7 +456,7 @@ export async function main(): Promise<void> {
   const { sink, animated } = stderrSink(QUERY_HEARTBEAT_PREFIX);
 
   try {
-    await dispatchStage(parsed, colors, animated, sink);
+    await dispatchStage(parsed, runFlags, colors, animated, sink);
   } catch (error) {
     reportFailure(sink, colors, error);
   }
