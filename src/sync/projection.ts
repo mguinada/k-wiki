@@ -75,8 +75,15 @@ export async function listNamespaceDirs(notesRoot: string): Promise<string[]> {
   }
 }
 
-/** Remove now-empty parent directories of a deleted projection. */
-async function pruneEmptyDirs(dir: string, stopAt: string): Promise<void> {
+/** Remove `dir` and every now-empty parent up to (not including)
+ *  `stopAt` — the one prune loop (issue #255, dedup D-6), shared by
+ *  the projection's removals and the publish stage's mirror
+ *  cleanup. Pruning stops when a directory has entries (ENOTEMPTY)
+ *  or no longer exists (ENOENT); any other rmdir error surfaces. */
+export async function pruneEmptyDirs(
+  dir: string,
+  stopAt: string,
+): Promise<void> {
   let current = dir;
 
   while (current.startsWith(stopAt) && current !== stopAt) {

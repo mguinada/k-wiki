@@ -1,8 +1,8 @@
-import { mkdir, readFile, rm, rmdir } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { listFiles } from "../cli/shared.ts";
 import { copyFileTolerant } from "./eagain.ts";
-import { compileIncludePattern } from "./projection.ts";
+import { compileIncludePattern, pruneEmptyDirs } from "./projection.ts";
 
 /**
  * The publish stage (guide §26, issue #15): copy the data repo's
@@ -82,17 +82,7 @@ async function sameBytes(source: string, target: string): Promise<boolean> {
 async function removeAndPrune(mirror: string, absPath: string): Promise<void> {
   await rm(absPath);
 
-  let dir = dirname(absPath);
-
-  while (dir !== mirror) {
-    try {
-      await rmdir(dir);
-    } catch {
-      return;
-    }
-
-    dir = dirname(dir);
-  }
+  await pruneEmptyDirs(dirname(absPath), mirror);
 }
 
 /** Delete every mirror file the selected source set no longer has. */
