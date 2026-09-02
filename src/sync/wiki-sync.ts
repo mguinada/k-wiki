@@ -8,7 +8,7 @@ import {
 import { flagValueError, readFlagValues } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { formatDuration, stderrSink } from "../cli/progress.ts";
-import { pathExists, repoRoot } from "../cli/shared.ts";
+import { pathExists, pluralized, repoRoot } from "../cli/shared.ts";
 import { parseStatus, runGit, type StatusEntry } from "../data/git.ts";
 import {
   type AgentRunner,
@@ -912,10 +912,6 @@ export async function runWikiSync(
       stages,
     ),
   };
-}
-
-function pluralized(count: number, noun: string): string {
-  return count === 1 ? `1 ${noun}` : `${count} ${noun}s`;
 }
 
 /** One line per source: what sync copied and removed; a repo run

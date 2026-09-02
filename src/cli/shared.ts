@@ -62,6 +62,12 @@ export async function assertDirectory(
   }
 }
 
+/** `<count> <noun>` with the noun pluralized for zero and many —
+ *  the one pluralize helper (issue #255, dedup D-16). */
+export function pluralized(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
 /** Read a text file if it exists; undefined when it does not.
  *  Any other read error propagates. */
 export async function readTextIfExists(

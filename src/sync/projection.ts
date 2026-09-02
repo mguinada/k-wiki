@@ -8,6 +8,7 @@ import {
   formatDuration,
   isWarning,
 } from "../cli/progress.ts";
+import { pluralized } from "../cli/shared.ts";
 import { loadSyncConfig, type SyncConfig } from "./config.ts";
 import type { Manifest, ManifestEntry, VaultNotes } from "./manifest.ts";
 
@@ -370,9 +371,7 @@ function summaryLine(
   }
 
   const prunedClause =
-    pruned === 0
-      ? ""
-      : `, ${pruned} namespace${pruned === 1 ? "" : "s"} pruned`;
+    pruned === 0 ? "" : `, ${pluralized(pruned, "namespace")} pruned`;
 
   return colors[removed > 0 || pruned > 0 ? "red" : "green"](
     `sync complete: ${copied} copied, ${removed} removed${prunedClause}${duration}`,

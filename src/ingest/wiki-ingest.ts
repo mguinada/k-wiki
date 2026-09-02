@@ -19,6 +19,7 @@ import {
 } from "../cli/progress.ts";
 import {
   isPlainObject,
+  pluralized,
   readTextIfExists,
   repoRoot,
   sha256,
@@ -1488,7 +1489,7 @@ async function composeRunPrompt(
   );
 
   run.onProgress(
-    `wiki-ingest: expunge — ${removedCount} removed source${removedCount === 1 ? "" : "s"}; direct set: ${directSet.map((page) => `wiki/${page}`).join(", ")}`,
+    `wiki-ingest: expunge — ${pluralized(removedCount, "removed source")}; direct set: ${directSet.map((page) => `wiki/${page}`).join(", ")}`,
   );
 
   return { composed, directSet };

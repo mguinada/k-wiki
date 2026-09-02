@@ -8,6 +8,7 @@ import {
   isPlainObject,
   listFiles,
   pathExists,
+  pluralized,
   RESERVED_NAMES,
   readTextIfExists,
   repoRoot,
@@ -241,6 +242,17 @@ describe("assertDirectory", () => {
     await expect(
       assertDirectory("raw directory", file, "input/path"),
     ).rejects.toThrow("raw directory is not a directory: input/path");
+  });
+});
+
+describe("pluralized", () => {
+  it("keeps the noun singular for one", () => {
+    expect(pluralized(1, "move")).toBe("1 move");
+  });
+
+  it("appends s for zero and many", () => {
+    expect(pluralized(0, "namespace")).toBe("0 namespaces");
+    expect(pluralized(3, "source")).toBe("3 sources");
   });
 });
 

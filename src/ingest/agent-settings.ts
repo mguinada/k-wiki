@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { pathExists } from "../cli/shared.ts";
+import { pathExists, pluralized } from "../cli/shared.ts";
 import { expandHome } from "../sync/config.ts";
 import { unquote } from "../wiki/pages.ts";
 
@@ -352,10 +352,8 @@ export function isolationLabel(settings: AgentSettings): string {
   const skills = settings.isolateSkills?.length ?? 0;
   const extensions = settings.isolateExtensions?.length ?? 0;
   const parts = [
-    ...(skills > 0 ? [`+${skills} skill${skills === 1 ? "" : "s"}`] : []),
-    ...(extensions > 0
-      ? [`+${extensions} extension${extensions === 1 ? "" : "s"}`]
-      : []),
+    ...(skills > 0 ? [`+${pluralized(skills, "skill")}`] : []),
+    ...(extensions > 0 ? [`+${pluralized(extensions, "extension")}`] : []),
   ];
 
   return parts.length > 0 ? `isolated ${parts.join(" ")}` : "isolated";

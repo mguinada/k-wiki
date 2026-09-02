@@ -6,6 +6,7 @@ import {
   assertDirectory,
   isPlainObject,
   listFiles,
+  pluralized,
   readTextIfExists,
   repoRoot,
   sha256,
@@ -349,7 +350,7 @@ export async function checkRaw(
   return {
     healthy: true,
     problems: [],
-    summary: `healthy: manifest and projection agree (${matched} ${matched === 1 ? "note" : "notes"}, ${activeVaults} ${activeVaults === 1 ? "vault" : "vaults"})`,
+    summary: `healthy: manifest and projection agree (${pluralized(matched, "note")}, ${pluralized(activeVaults, "vault")})`,
     warnings,
     stale: freshness.stale,
   };
