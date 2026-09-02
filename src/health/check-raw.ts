@@ -1,4 +1,4 @@
-import { readdir, readFile, stat } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { terminalColors as colors, errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
@@ -13,6 +13,7 @@ import {
 } from "../cli/shared.ts";
 import { runGit } from "../data/git.ts";
 import { parseManifest, type VaultNotes } from "../sync/manifest.ts";
+import { listNamespaceDirs } from "../sync/projection.ts";
 
 /**
  * raw/ health check: a read-only, vault-free coherence check of the
@@ -49,37 +50,6 @@ export function displayPath(
   return repoRelative.startsWith("..")
     ? relative(rawDir, absPath)
     : repoRelative;
-}
-
-/** Vault namespaces under the notes root, following directory symlinks. */
-async function listNamespaceDirs(notesRoot: string): Promise<string[]> {
-  try {
-    const names = await readdir(notesRoot);
-    const namespaces: string[] = [];
-
-    for (const name of names) {
-      if (await resolvesToDirectory(join(notesRoot, name))) {
-        namespaces.push(name);
-      }
-    }
-
-    return namespaces;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return [];
-    }
-
-    throw error;
-  }
-}
-
-/** Whether the path exists and resolves to a directory. */
-async function resolvesToDirectory(path: string): Promise<boolean> {
-  try {
-    return (await stat(path)).isDirectory();
-  } catch {
-    return false;
-  }
 }
 
 /**

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createColors } from "picocolors";
@@ -34,6 +34,17 @@ afterAll(async () => {
 }, 120_000);
 
 describe("listNamespaceDirs", () => {
+  it("lists a symlinked namespace directory", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-projection-"));
+
+    tempDirs.push(dir);
+    await mkdir(join(dir, "notes"));
+    await mkdir(join(dir, "elsewhere"));
+    await symlink(join(dir, "elsewhere"), join(dir, "notes", "Linked"));
+
+    expect(await listNamespaceDirs(join(dir, "notes"))).toEqual(["Linked"]);
+  });
+
   it("returns an empty list when the notes root is absent", async () => {
     expect(await listNamespaceDirs(join(tmpdir(), "k-wiki-absent"))).toEqual(
       [],
