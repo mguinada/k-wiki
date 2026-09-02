@@ -5,14 +5,13 @@ import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
 import { errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
-import { readTextIfExists } from "../cli/shared.ts";
+import { readTextIfExists, sha256 } from "../cli/shared.ts";
 import { runGit } from "../data/git.ts";
 import {
   loadSyncConfig,
   type RepoSourceConfig,
   resolveRawDir,
 } from "./config.ts";
-import { sha256 } from "./hash.ts";
 import {
   type Manifest,
   parseManifest,

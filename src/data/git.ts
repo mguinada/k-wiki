@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { createColors } from "picocolors";
-import { sha256 } from "../sync/hash.ts";
+import { sha256 } from "../cli/shared.ts";
 
 const run = promisify(execFile);
 

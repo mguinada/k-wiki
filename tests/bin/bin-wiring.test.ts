@@ -80,7 +80,7 @@ const ENTRIES: readonly Entry[] = [
   },
   {
     launcher: "init-data-repo.ts",
-    module: "src/data/init-data-repo.ts",
+    module: "src/cli/init-data-repo.ts",
     usage: "Usage: init-data-repo",
   },
   {

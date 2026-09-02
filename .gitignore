@@ -41,8 +41,8 @@ tests/sync/.cli-import-staging/
 # In-process health-CLI import staging (transient; see tests/health/check-raw.test.ts)
 tests/health/.health-import-staging/
 
-# In-process data-init CLI import staging (transient; see tests/data/init-data-repo.test.ts)
-tests/data/.data-init-import-staging/
+# In-process data-init CLI import staging (transient; see tests/cli/init-data-repo.test.ts)
+tests/cli/.data-init-import-staging/
 
 # In-process bin-wiring import staging (transient; see tests/bin/bin-wiring.test.ts)
 tests/bin/.bin-wiring-staging/
