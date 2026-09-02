@@ -11,7 +11,7 @@ import {
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Readable } from "node:stream";
-import { errorMessage } from "../cli/colors.ts";
+import { cliFail, errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { pathExists, repoRoot } from "../cli/shared.ts";
 import { agentRunFlags, parseSyncRunArgs } from "../cli/shell.ts";
@@ -635,22 +635,28 @@ Behavior, failure mode by failure mode:
 
 Exits 0 on a completed or skipped cycle, 1 on failure.`;
 
-/** Print one usage error to stderr. */
+/** Print one usage error red on stderr and set the exit code
+ *  (H-5: the shared rendering, like every sibling CLI). */
 function fail(message: string): void {
-  console.error(`scheduled-run: ${message}`);
+  cliFail("scheduled-run", message);
 }
+
+/** The cycle's data repo, or the fail-loud reason it could not be
+ *  resolved — the resolver returns errors; the shell renders them
+ *  (B-12: no printing as a resolver side effect). */
+export type DataRootResolution =
+  | { readonly dataRoot: string; readonly error?: undefined }
+  | { readonly dataRoot?: undefined; readonly error: string };
 
 /** The data repo for the cycle — the same one wiki-sync resolves
  *  for the forwarded arguments: dirname(<raw-dir>) when the raw-dir
- *  positional is passed, else the config's expanded dataRoot.
- *  undefined after printing the fail-loud reason (no config, no
- *  dataRoot). */
+ *  positional is passed, else the config's expanded dataRoot. */
 export async function resolveDataRoot(
   configPath: string,
   rawDir: string | undefined,
-): Promise<string | undefined> {
+): Promise<DataRootResolution> {
   if (rawDir !== undefined) {
-    return dirname(rawDir);
+    return { dataRoot: dirname(rawDir) };
   }
 
   let config: Awaited<ReturnType<typeof loadSyncConfig>>;
@@ -658,27 +664,22 @@ export async function resolveDataRoot(
   try {
     config = await loadSyncConfig(configPath, homedir());
   } catch (error) {
-    fail(errorMessage(error));
-
-    return undefined;
+    return { error: errorMessage(error) };
   }
 
   if (config.dataRoot === undefined) {
-    fail(
-      `no dataRoot in ${configPath} — the scheduled run's pull, push, and lock stage needs a data repo`,
-    );
-
-    return undefined;
+    return {
+      error: `no dataRoot in ${configPath} — the scheduled run's pull, push, and lock stage needs a data repo`,
+    };
   }
 
-  return config.dataRoot;
+  return { dataRoot: config.dataRoot };
 }
 
 /** Exit-code and stderr handling for one outcome. */
 function reportOutcome(outcome: CycleOutcome): void {
   if (outcome.status === "failed") {
     fail(outcome.error);
-    process.exitCode = 1;
 
     return;
   }
@@ -702,7 +703,6 @@ export async function main(): Promise<void> {
 
   if (parsed.error !== undefined) {
     fail(parsed.error);
-    process.exitCode = 1;
 
     return;
   }
@@ -711,21 +711,22 @@ export async function main(): Promise<void> {
 
   if (runFlags.error !== undefined) {
     fail(runFlags.error);
-    process.exitCode = 1;
 
     return;
   }
 
-  const dataRoot = await resolveDataRoot(
+  const resolved = await resolveDataRoot(
     parsed.positional[0] ?? join(repoRoot, "sync.json"),
     parsed.positional[1],
   );
 
-  if (dataRoot === undefined) {
-    process.exitCode = 1;
+  if (resolved.error !== undefined) {
+    fail(resolved.error);
 
     return;
   }
+
+  const dataRoot = resolved.dataRoot;
 
   const logPath = process.env.KWIKI_SCHEDULED_LOG ?? scheduledLogPath();
   const runLog = createRunLog(logPath);
