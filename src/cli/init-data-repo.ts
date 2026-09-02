@@ -1,8 +1,5 @@
 import { join } from "node:path";
-import {
-  defaultRepoRoot,
-  seedDataRepo,
-} from "../data/init-data-repo.ts";
+import { defaultRepoRoot, seedDataRepo } from "../data/init-data-repo.ts";
 import { loadSyncConfig } from "../sync/config.ts";
 import { errorMessage } from "./colors.ts";
 import { refuseDirectExecution } from "./is-main.ts";
@@ -40,7 +37,7 @@ Idempotent — an already-seeded data repo is left untouched.
   <config>        Path to sync.json.
                   Default: the repo's own sync.json.`;
 
-/** data:init entry point: `init-data-repo [-h | --help] [--second-brain] [<config>]`. */
+/** data:init entry point: `init-data-repo [-h | --help] [--second-brain] [--meta] [<config>]`. */
 export async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
