@@ -19,6 +19,7 @@ import {
   type SyncConfig,
 } from "./config.ts";
 import {
+  emptyManifest,
   type Manifest,
   parseManifest,
   serializeManifest,
@@ -296,7 +297,7 @@ export async function runRepoSync(options: DriverOptions): Promise<SyncReport> {
   const previousText = await readTextIfExists(manifestPath);
   const manifest: Manifest =
     previousText === undefined
-      ? { vaults: {} }
+      ? emptyManifest()
       : parseManifest(previousText, manifestPath);
   const notesRoot = join(options.rawDir, "notes");
   const staleNames = [
