@@ -153,6 +153,7 @@ describe("parsePageFields", () => {
 
     expect(fields.origin).toBeUndefined();
   });
+
   it("does not read origin from the page body", () => {
     expect(
       parsePageFields("---\ntitle: T\n---\norigin: raw/notes/V/a.md"),

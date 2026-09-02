@@ -533,6 +533,7 @@ describe("checkWikiFidelity", () => {
 
     expect(`${report.skipped}:${report.problems.length}`).toBe("1:0");
   });
+
   it("skips the title check for a page without a title", async () => {
     const { wikiDir, rawDir } = await makeFixture(
       { "concepts/plain.md": "no frontmatter, no title\n" },

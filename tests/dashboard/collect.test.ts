@@ -189,6 +189,7 @@ describe("collectData", () => {
       date: "2026-08-10",
     });
   });
+
   it("reads every artifact of a fully populated data repo into the exact expected input", async () => {
     const { dataRoot, head } = await makeRichRepo();
 
