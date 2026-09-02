@@ -50,10 +50,10 @@ const SKIP_DIRS = new Set([".git", ".obsidian", ".trash", "node_modules"]);
 const SKIP_FILES = new Set([".DS_Store"]);
 
 /** Collect every publishable file under `root` as
- *  `<relative path> -> <absolute path>`. Both walked roots exist by
- *  the time this runs: the mirror is created first, the data repo is
+ *  `<relative path> -> <absolute path>`. Both roots exist by the
+ *  time this runs: the mirror is created first, the data repo is
  *  the raw dir's parent. */
-async function walkFiles(
+async function collectFileMap(
   root: string,
   files: Map<string, string>,
 ): Promise<void> {
@@ -92,7 +92,7 @@ async function removeStale(
 ): Promise<number> {
   const mirrorFiles = new Map<string, string>();
 
-  await walkFiles(mirror, mirrorFiles);
+  await collectFileMap(mirror, mirrorFiles);
 
   let removed = 0;
 
@@ -153,7 +153,7 @@ export async function runPublishStage(
   const matchers = options.include.map(compileIncludePattern);
   const all = new Map<string, string>();
 
-  await walkFiles(options.dataRoot, all);
+  await collectFileMap(options.dataRoot, all);
 
   const selected = new Map(
     [...all]
