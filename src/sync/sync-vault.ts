@@ -1,11 +1,10 @@
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { canAnimate, errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { formatDuration } from "../cli/progress.ts";
-import { readTextIfExists, sha256 } from "../cli/shared.ts";
+import { readTextIfExists, repoRoot, sha256 } from "../cli/shared.ts";
 import {
   loadSyncConfig,
   resolveRawDir,
@@ -310,8 +309,6 @@ export async function runDryRun(
 
   return reports;
 }
-
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
 const HELP = `Usage: sync-vault [--dry-run] [-h | --help] [<config>] [<raw-dir>]

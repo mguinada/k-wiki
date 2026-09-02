@@ -1,6 +1,5 @@
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { cliFail, errorMessage, terminalColors } from "../cli/colors.ts";
 import { flagValueError } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
@@ -10,6 +9,7 @@ import {
   type ProgressSink,
   stderrSink,
 } from "../cli/progress.ts";
+import { repoRoot } from "../cli/shared.ts";
 import { statusSince } from "../data/git.ts";
 import {
   type AgentRunner,
@@ -229,8 +229,6 @@ export async function runWikiQuery(
 
   return { answer, artifactPath };
 }
-
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
 const HELP = `Usage: wiki-query [-h | --help] [--file-last] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>

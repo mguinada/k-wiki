@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -181,5 +182,12 @@ describe("sha256", () => {
     expect(sha256(encoder.encode("karpathy"))).toBe(
       "b618269306c82a1526022ad1e60392d23d2775ecb480f06b0da81b6654790778",
     );
+  });
+});
+
+describe("repoRoot", () => {
+  it("points at the repository root holding package.json and src/", () => {
+    expect(existsSync(join(repoRoot, "package.json"))).toBe(true);
+    expect(existsSync(join(repoRoot, "src", "cli", "shared.ts"))).toBe(true);
   });
 });

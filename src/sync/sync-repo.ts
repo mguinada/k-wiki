@@ -1,11 +1,15 @@
 import { mkdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { createColors } from "picocolors";
 import { errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
-import { listFiles, readTextIfExists, sha256 } from "../cli/shared.ts";
+import {
+  listFiles,
+  readTextIfExists,
+  repoRoot,
+  sha256,
+} from "../cli/shared.ts";
 import { runGit } from "../data/git.ts";
 import {
   loadSyncConfig,
@@ -353,8 +357,6 @@ export function repoRowOf(report: SyncReport): RepoSyncReport {
 
   return row;
 }
-
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
 const HELP = `Usage: sync-repo [-h | --help] [<config>] [<raw-dir>]

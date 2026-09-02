@@ -1,7 +1,6 @@
 import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import {
   cliFail,
   terminalColors as colors,
@@ -10,6 +9,7 @@ import {
 import { flagValueError, readFlagValues } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { formatDuration, stderrSink } from "../cli/progress.ts";
+import { repoRoot } from "../cli/shared.ts";
 import { parseStatus, runGit, type StatusEntry } from "../data/git.ts";
 import {
   type AgentRunner,
@@ -1048,8 +1048,6 @@ export function formatFinalDigest(result: WikiSyncResult): string {
 
   return `${lines.join("\n")}\n`;
 }
-
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
 const HELP = `Usage: wiki-sync [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<config>] [<raw-dir>]

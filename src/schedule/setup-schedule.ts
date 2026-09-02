@@ -2,12 +2,12 @@ import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, isAbsolute, join } from "node:path";
 import { promisify } from "node:util";
 import { errorMessage } from "../cli/colors.ts";
 import { readFlagValues } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
+import { repoRoot } from "../cli/shared.ts";
 
 /**
  * setup-schedule: register the scheduled pipeline with the OS
@@ -160,8 +160,6 @@ async function launchctl(args: readonly string[]): Promise<void> {
     );
   });
 }
-
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 /** Help text: every switch and default (AGENTS.md CLI rule). */
 const HELP = `Usage: setup-schedule [-h | --help] [--interval <duration>] [--print] [--uninstall]

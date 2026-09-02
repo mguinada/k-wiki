@@ -1,12 +1,12 @@
 import { readdir, readFile, stat } from "node:fs/promises";
-import { dirname, join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, relative, resolve } from "node:path";
 import { terminalColors as colors, errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import {
   isPlainObject,
   listFiles,
   readTextIfExists,
+  repoRoot,
   sha256,
 } from "../cli/shared.ts";
 import { runGit } from "../data/git.ts";
@@ -32,8 +32,6 @@ export interface HealthReport {
   /** True when the projection is stale (drove a warning). */
   readonly stale: boolean;
 }
-
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 /**
  * The display path for an absolute path: repo-relative when it lies

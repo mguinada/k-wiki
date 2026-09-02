@@ -1,7 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
 import { refuseDirectExecution } from "../cli/is-main.ts";
+import { repoRoot } from "../cli/shared.ts";
 
 /**
  * The src/ refactor campaign's measuring instrument: a zero-dependency
@@ -340,9 +340,7 @@ function parseArgs(argv: readonly string[]): {
   }
 
   return {
-    root:
-      rest[0] ??
-      resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "src"),
+    root: rest[0] ?? join(repoRoot, "src"),
     json: argv.includes("--json"),
   };
 }

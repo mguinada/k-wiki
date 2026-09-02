@@ -1,7 +1,6 @@
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import {
   cliFail,
   terminalColors as colors,
@@ -18,7 +17,12 @@ import {
   type ProgressSink,
   stderrSink,
 } from "../cli/progress.ts";
-import { isPlainObject, readTextIfExists, sha256 } from "../cli/shared.ts";
+import {
+  isPlainObject,
+  readTextIfExists,
+  repoRoot,
+  sha256,
+} from "../cli/shared.ts";
 import { writeDashboard } from "../dashboard/generate.ts";
 import { isPreExisting, runGit, type StatusEntry } from "../data/git.ts";
 import { loadSyncConfig, resolveRawDir } from "../sync/config.ts";
@@ -1882,8 +1886,6 @@ export async function runWikiIngest(
 
   return { status: "ran", mode, digestPath, digest, pages, diff };
 }
-
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
 const HELP = `Usage: wiki-ingest [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [--note <text>] [<raw-dir>]

@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import type { Dirent } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 /**
  * Shared runtime helpers: generic primitives with no domain of their
@@ -11,6 +12,15 @@ import { join } from "node:path";
  * campaign's helper home (epic #242); the fs micro-helper
  * consolidation lands here too.
  */
+
+/** This repository's root, derived from this module's own location.
+ *  Every src/ module sits exactly two levels below it (src/<area>/),
+ *  so the one derivation serves every default path that anchors at
+ *  the repo root (issue #255, dedup D-14). */
+export const repoRoot = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "../..",
+);
 
 /** Read a text file if it exists; undefined when it does not.
  *  Any other read error propagates. */
@@ -138,8 +148,7 @@ function shouldCollect(entry: Dirent, options: ListFilesOptions): boolean {
   }
 
   return (
-    options.extension === undefined ||
-    entry.name.endsWith(options.extension)
+    options.extension === undefined || entry.name.endsWith(options.extension)
   );
 }
 
