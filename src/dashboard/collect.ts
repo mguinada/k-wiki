@@ -3,6 +3,7 @@ import { readdir } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { listFiles, readTextIfExists } from "../cli/shared.ts";
 import { runGit } from "../data/git.ts";
+import { parseManifest } from "../sync/manifest.ts";
 import {
   CONTRACT_FILES,
   listWikiPages,
@@ -108,57 +109,23 @@ async function collectRawNoteKeys(dataRoot: string): Promise<string[]> {
   return keys.sort();
 }
 
-/** The value as a record; null when it is not an object. */
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-/** The `vaults` map of a JSON artifact; null when the file is missing,
- *  unparsable, or shaped wrong. */
-async function readVaults(
-  path: string,
-): Promise<Record<string, unknown> | null> {
+/** Snapshot keys of ingested sources; null when no snapshot exists.
+ *  The snapshot is a manifest (guide §8): the canonical parser reads
+ *  it, so a malformed one surfaces instead of reading as absent. */
+async function collectIngestedKeys(dataRoot: string): Promise<string[] | null> {
+  const path = join(dataRoot, "outputs", "last-ingested-manifest.json");
   const text = await readTextIfExists(path);
 
   if (text === undefined) {
     return null;
   }
 
-  let parsed: unknown;
-
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    return null;
-  }
-
-  const parsedRecord = asRecord(parsed);
-
-  return parsedRecord === null ? null : asRecord(parsedRecord.vaults);
-}
-
-/** Snapshot keys of ingested sources; null when no snapshot exists. */
-async function collectIngestedKeys(dataRoot: string): Promise<string[] | null> {
-  const vaults = await readVaults(
-    join(dataRoot, "outputs", "last-ingested-manifest.json"),
-  );
-
-  if (vaults === null) {
-    return null;
-  }
-
   const keys: string[] = [];
 
-  for (const [vault, notes] of Object.entries(vaults)) {
-    const record = asRecord(notes);
-
-    if (record === null) {
-      continue;
-    }
-
-    for (const rel of Object.keys(record)) {
+  for (const [vault, notes] of Object.entries(
+    parseManifest(text, path).vaults,
+  )) {
+    for (const rel of Object.keys(notes)) {
       keys.push(`${vault}/${rel}`);
     }
   }
@@ -166,58 +133,33 @@ async function collectIngestedKeys(dataRoot: string): Promise<string[] | null> {
   return keys;
 }
 
-/** One vault's manifest entries → note sync stamps; also that vault's
- *  newest `last_synced` stamp. */
-function collectVaultNotes(
-  vault: string,
-  entries: Record<string, unknown>,
-  notes: { key: string; lastSynced: string }[],
-): string | null {
-  let newest: string | null = null;
-
-  for (const [rel, entry] of Object.entries(entries)) {
-    const stamp = asRecord(entry)?.last_synced;
-
-    if (typeof stamp !== "string") {
-      continue;
-    }
-
-    notes.push({ key: `${vault}/${rel}`, lastSynced: stamp });
-
-    if (newest === null || stamp > newest) {
-      newest = stamp;
-    }
-  }
-
-  return newest;
-}
-
 /** The raw manifest's note sync stamps: the newest `last_synced`
- *  plus one entry per note (content-change age per note). */
+ *  plus one entry per note (content-change age per note). A missing
+ *  manifest means sync has not run; a malformed one surfaces — the
+ *  same failure policy check-raw reports (issue #255, dedup D-2). */
 async function collectManifestNotes(dataRoot: string): Promise<{
   newest: string | null;
   notes: { key: string; lastSynced: string }[];
 }> {
-  const vaults = await readVaults(join(dataRoot, "raw", "manifest.json"));
+  const path = join(dataRoot, "raw", "manifest.json");
+  const text = await readTextIfExists(path);
 
-  if (vaults === null) {
+  if (text === undefined) {
     return { newest: null, notes: [] };
   }
 
   let newest: string | null = null;
   const notes: { key: string; lastSynced: string }[] = [];
 
-  for (const [vault, entries] of Object.entries(vaults)) {
-    const record = asRecord(entries);
+  for (const [vault, entries] of Object.entries(
+    parseManifest(text, path).vaults,
+  )) {
+    for (const [rel, entry] of Object.entries(entries)) {
+      notes.push({ key: `${vault}/${rel}`, lastSynced: entry.last_synced });
 
-    if (record === null) {
-      continue;
-    }
-
-    const vaultNewest = collectVaultNotes(vault, record, notes);
-
-    if (vaultNewest !== null && (newest === null || vaultNewest > newest)) {
-      newest = vaultNewest;
+      if (newest === null || entry.last_synced > newest) {
+        newest = entry.last_synced;
+      }
     }
   }
 

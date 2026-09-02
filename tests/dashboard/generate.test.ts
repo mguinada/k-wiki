@@ -467,7 +467,7 @@ describe("writeDashboard", () => {
     expect(await readFile(path, "utf8")).toContain("2 raw notes total");
   });
 
-  it("treats an unparseable snapshot as absent", async () => {
+  it("rejects an unparseable snapshot instead of rendering an empty dashboard", async () => {
     const dataRoot = await makeDataRepo();
 
     await writeFile(
@@ -475,14 +475,11 @@ describe("writeDashboard", () => {
       "not json",
     );
 
-    const html = await readFile(
-      await writeDashboard(dataRoot, {
+    await expect(
+      writeDashboard(dataRoot, {
         now: () => new Date("2026-09-01T12:00:00.000Z"),
       }),
-      "utf8",
-    );
-
-    expect(html).toContain("no ingest snapshot found");
+    ).rejects.toThrow(/invalid manifest at .*not valid JSON/);
   });
 });
 
@@ -515,11 +512,6 @@ describe("collectData", () => {
     Beta: {
       "c.md": { hash: "c", last_synced: "2026-07-01T00:00:00.000Z" },
     },
-    Delta: {
-      "d.md": null,
-      "e.md": { hash: "e" },
-      "f.md": "junk",
-    },
   };
 
   it("returns the newest sync stamp across vaults", async () => {
@@ -544,7 +536,7 @@ describe("collectData", () => {
     expect(input.lastSync).toBe("2026-09-25T00:00:00.000Z");
   });
 
-  it("lists one sync entry per manifest note that has a string last_synced", async () => {
+  it("lists one sync entry per manifest note", async () => {
     const input = await collectData(await makeManifestRepo(orderedVaults));
 
     expect(input.rawNoteSyncDates).toEqual([
@@ -574,32 +566,30 @@ describe("collectData", () => {
     expect(input.lastSync).toBeNull();
   });
 
-  it("treats a non-object raw manifest as absent", async () => {
+  it("rejects a raw manifest that is not an object", async () => {
     const dataRoot = await makeDataRepo();
 
     await writeFile(join(dataRoot, "raw", "manifest.json"), "42\n");
 
-    const input = await collectData(dataRoot);
-
-    expect(input.lastSync).toBeNull();
-  });
-
-  it("skips manifest vaults whose entries are not objects", async () => {
-    const input = await collectData(
-      await makeManifestRepo({
-        Good: {
-          "x.md": { hash: "x", last_synced: "2026-01-01T00:00:00.000Z" },
-        },
-        Bad: null,
-      }),
+    await expect(collectData(dataRoot)).rejects.toThrow(
+      /expected an object with a "vaults" object/,
     );
-
-    expect(input.rawNoteSyncDates).toEqual([
-      { key: "Good/x.md", lastSynced: "2026-01-01T00:00:00.000Z" },
-    ]);
   });
 
-  it("collects the ingest snapshot's note keys, skipping non-object vaults", async () => {
+  it("rejects a manifest whose vault entries are not objects", async () => {
+    await expect(
+      collectData(
+        await makeManifestRepo({
+          Good: {
+            "x.md": { hash: "x", last_synced: "2026-01-01T00:00:00.000Z" },
+          },
+          Bad: null,
+        }),
+      ),
+    ).rejects.toThrow(/must map note paths to entries/);
+  });
+
+  it("collects the ingest snapshot's note keys", async () => {
     const dataRoot = await makeDataRepo();
 
     await writeFile(
@@ -607,7 +597,6 @@ describe("collectData", () => {
       `${JSON.stringify({
         vaults: {
           Engineering: { "a.md": { hash: "x", last_synced: "t" } },
-          Bad: null,
         },
       })}\n`,
     );

@@ -53,7 +53,7 @@ function page(lines: string[], body = ""): string {
 }
 
 /** A data repo with every artifact present: two vaults of raw notes,
- *  a manifest with junk entries, an ingest snapshot, wiki pages that
+ *  a manifest, an ingest snapshot, wiki pages that
  *  exercise every frontmatter edge, git history with ingest runs, a
  *  status flip, and page additions. */
 async function makeRichRepo(): Promise<{
@@ -83,14 +83,11 @@ async function makeRichRepo(): Promise<{
       vaults: {
         Research: {
           "c.md": { hash: "c", last_synced: "2026-08-20T00:00:00.000Z" },
-          junk: "not-an-object",
         },
         Engineering: {
           "b.md": { hash: "b", last_synced: "2026-08-25T00:00:00.000Z" },
           "a.md": { hash: "a", last_synced: "2026-08-10T00:00:00.000Z" },
-          "null.md": null,
         },
-        Broken: "not-a-vault",
       },
     })}\n`,
   );
@@ -99,8 +96,9 @@ async function makeRichRepo(): Promise<{
     join(dataRoot, "outputs", "last-ingested-manifest.json"),
     `${JSON.stringify({
       vaults: {
-        Engineering: { "a.md": { hash: "a" } },
-        Bad: null,
+        Engineering: {
+          "a.md": { hash: "a", last_synced: "2026-08-10T00:00:00.000Z" },
+        },
       },
     })}\n`,
   );
@@ -264,6 +262,33 @@ describe("collectData", () => {
       ],
       lastQuery: "2026-08-30T10:00:00.000Z",
     });
+  });
+
+  it("rejects when the raw manifest is malformed instead of emptying the dashboard", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "k-wiki-collect-bad-"));
+
+    tempDirs.push(dataRoot);
+    await mkdir(join(dataRoot, "raw"), { recursive: true });
+    await writeFile(join(dataRoot, "raw", "manifest.json"), "{ not json");
+
+    await expect(collectData(dataRoot, { now: () => NOW })).rejects.toThrow(
+      /invalid manifest at .*manifest\.json: not valid JSON/,
+    );
+  });
+
+  it("rejects when the ingest snapshot is malformed instead of reading it as absent", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "k-wiki-collect-badsnap-"));
+
+    tempDirs.push(dataRoot);
+    await mkdir(join(dataRoot, "outputs"), { recursive: true });
+    await writeFile(
+      join(dataRoot, "outputs", "last-ingested-manifest.json"),
+      "{ not json",
+    );
+
+    await expect(collectData(dataRoot, { now: () => NOW })).rejects.toThrow(
+      /invalid manifest at .*last-ingested-manifest\.json: not valid JSON/,
+    );
   });
 
   it("degrades to pure defaults in an empty directory with no git repo", async () => {
