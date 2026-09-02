@@ -5,6 +5,7 @@ import {
   hashMatches,
   headCommit,
   isPreExisting,
+  pathUntouched,
   porcelainStatus,
   renameOriginsOf,
   runGit,
@@ -219,11 +220,14 @@ async function changedWikiPages(
       continue;
     }
 
-    const isDirty =
-      !isPreExisting(before.get(entry.path), entry) ||
-      !(await hashMatches(dataRoot, entry.path, pre.hashes.get(entry.path)));
+    const untouched = await pathUntouched(
+      dataRoot,
+      isPreExisting(before.get(entry.path), entry),
+      entry.path,
+      pre.hashes.get(entry.path),
+    );
 
-    if (isDirty) {
+    if (!untouched) {
       changed.push(entry.path);
     }
   }

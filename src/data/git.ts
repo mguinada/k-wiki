@@ -246,6 +246,21 @@ export function renameOriginsOf(status: readonly StatusEntry[]): Set<string> {
   );
 }
 
+/** Whether one path is untouched by the run: the pre-run snapshot
+ *  already carried it — however the caller computes presence:
+ *  status-entry identity for a path, origin membership for a rename
+ *  origin — and its content hash still matches that snapshot. One
+ *  untouched rule (D-18) for the guardrails' changed-page scan and
+ *  statusSince's two changed-path scans. */
+export async function pathUntouched(
+  dataRoot: string,
+  prior: boolean,
+  path: string,
+  expected: string | undefined,
+): Promise<boolean> {
+  return prior && (await hashMatches(dataRoot, path, expected));
+}
+
 /** The pre-run git baseline a statusSince comparison starts from:
  *  HEAD, the full status, and the content hashes captured before
  *  the run. The guardrails' PreRunState satisfies this structurally
@@ -273,9 +288,12 @@ async function changedRenameOrigins(
       continue;
     }
 
-    const untouched =
-      preRunOrigins.has(entry.origin) &&
-      (await hashMatches(dataRoot, entry.origin, hashes.get(entry.origin)));
+    const untouched = await pathUntouched(
+      dataRoot,
+      preRunOrigins.has(entry.origin),
+      entry.origin,
+      hashes.get(entry.origin),
+    );
 
     if (!untouched) {
       changed.push(entry.origin);
@@ -303,9 +321,12 @@ async function changedStatusPaths(
       continue;
     }
 
-    const untouched =
-      isPreExisting(before.get(entry.path), entry) &&
-      (await hashMatches(dataRoot, entry.path, hashes.get(entry.path)));
+    const untouched = await pathUntouched(
+      dataRoot,
+      isPreExisting(before.get(entry.path), entry),
+      entry.path,
+      hashes.get(entry.path),
+    );
 
     if (!untouched) {
       changed.push(entry.path);
