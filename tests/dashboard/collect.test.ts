@@ -335,22 +335,22 @@ describe("collectData page fields", () => {
     };
   }
 
-  it("returns the first matching scalar field when a key repeats", async () => {
+  it("lets the last matching scalar field win when a key repeats", async () => {
     const fields = await collectPagesFrom(
       "repeat.md",
       page(["updated: 2026-08-01", "updated: 2026-08-02", "status: stable"]),
     );
 
-    expect(fields).toEqual({ updated: "2026-08-01", status: "stable" });
+    expect(fields).toEqual({ updated: "2026-08-02", status: "stable" });
   });
 
-  it("parses scalar fields when the frontmatter has no closing delimiter", async () => {
+  it("reads no scalar fields when the frontmatter has no closing delimiter", async () => {
     const fields = await collectPagesFrom(
       "unclosed.md",
       "---\nupdated: 2026-08-03\nstatus: filed\nbody text\n",
     );
 
-    expect(fields).toEqual({ updated: "2026-08-03", status: "filed" });
+    expect(fields).toEqual({ updated: null, status: null });
   });
 
   it("trims matching quotes from both ends of a scalar value", async () => {

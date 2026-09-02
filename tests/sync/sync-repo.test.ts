@@ -958,6 +958,19 @@ describe("selectRepoFiles walker gaps", () => {
     expect(selected).toEqual(["README.md"]);
   });
 
+  it("skips a missing allowlisted walk root without failing", async () => {
+    const dir = await makeTempDir();
+    const root = await makeSourceRepo(dir);
+
+    const { candidates, selected } = await selectRepoFiles(root, [
+      "README.md",
+      "absent-dir/**",
+    ]);
+
+    expect(candidates).toBe(1);
+    expect(selected).toEqual(["README.md"]);
+  });
+
   it("skips .git and node_modules while keeping every other markdown file", async () => {
     const dir = await makeTempDir();
     const root = await makeSourceRepo(dir);

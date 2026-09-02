@@ -25,29 +25,6 @@ import type {
  * Reads only; the generator's single write is dashboard.html.
  */
 
-/** The scalar value of a top-level frontmatter key; null when absent. */
-function scalarField(text: string, key: string): string | null {
-  const lines = text.split("\n");
-
-  if (lines[0] !== "---") {
-    return null;
-  }
-
-  const closing = lines.indexOf("---", 1);
-
-  for (const line of lines.slice(1, closing === -1 ? undefined : closing)) {
-    const match = new RegExp(`^${key}:\\s*(.*)$`).exec(line);
-
-    if (match !== null) {
-      const value = match[1]?.trim().replace(/^["']|["']$/g, "") ?? "";
-
-      return value === "" ? null : value;
-    }
-  }
-
-  return null;
-}
-
 /** Every wiki page as a PageSnapshot; empty when wiki/ is missing. */
 async function collectPages(wikiRoot: string): Promise<PageSnapshot[]> {
   let files: string[];
@@ -69,8 +46,8 @@ async function collectPages(wikiRoot: string): Promise<PageSnapshot[]> {
       title:
         fields.title ?? file.split("/").pop()?.replace(/\.md$/, "") ?? file,
       type: fields.type ?? "unset",
-      updated: scalarField(text, "updated"),
-      status: scalarField(text, "status"),
+      updated: fields.updated ?? null,
+      status: fields.status ?? null,
       sourcesCount: fields.sources.length,
       sources: fields.sources,
       outbound: extractWikilinks(text).map((link) => link.target),
