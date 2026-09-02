@@ -1,11 +1,11 @@
-import { mkdir, readdir, readFile, stat } from "node:fs/promises";
+import { mkdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
 import { errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
-import { readTextIfExists, sha256 } from "../cli/shared.ts";
+import { listFiles, readTextIfExists, sha256 } from "../cli/shared.ts";
 import { runGit } from "../data/git.ts";
 import {
   loadSyncConfig,
@@ -81,29 +81,6 @@ async function isFile(path: string): Promise<boolean> {
   }
 }
 
-async function walkFiles(
-  dir: string,
-  prefix: string,
-  atRoot: boolean,
-  files: string[],
-): Promise<void> {
-  const entries = await readdir(dir, { withFileTypes: true });
-
-  for (const entry of entries) {
-    const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
-
-    if (entry.isDirectory()) {
-      if (atRoot && SKIPPED_ROOT_DIRS.has(entry.name)) {
-        continue;
-      }
-
-      await walkFiles(join(dir, entry.name), rel, false, files);
-    } else if (entry.isFile()) {
-      files.push(rel);
-    }
-  }
-}
-
 /** Split the patterns into fully-literal exact files and the
  *  directory roots the walk must cover. */
 function classifyPatterns(patterns: readonly string[]): {
@@ -153,19 +130,20 @@ export async function selectRepoFiles(
   }
 
   for (const walkRoot of walkRoots) {
-    const files: string[] = [];
+    let files: string[];
 
     try {
-      await walkFiles(
+      files = await listFiles(
         walkRoot === "" ? root : join(root, walkRoot),
         walkRoot,
-        walkRoot === "",
-        files,
+        { skipRootDirs: SKIPPED_ROOT_DIRS },
       );
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
         throw error;
       }
+
+      files = [];
     }
 
     for (const relPath of files) {

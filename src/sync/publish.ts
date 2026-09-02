@@ -1,5 +1,6 @@
-import { mkdir, readdir, readFile, rm, rmdir } from "node:fs/promises";
+import { mkdir, readFile, rm, rmdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import { listFiles } from "../cli/shared.ts";
 import { copyFileTolerant } from "./eagain.ts";
 import { compileIncludePattern } from "./projection.ts";
 
@@ -49,28 +50,18 @@ const SKIP_DIRS = new Set([".git", ".obsidian", ".trash", "node_modules"]);
 const SKIP_FILES = new Set([".DS_Store"]);
 
 /** Collect every publishable file under `root` as
- *  `<relative path> -> <absolute path>` into `files`. Both walked
- *  roots exist by the time this runs: the mirror is created first,
- *  the data repo is the raw dir's parent. */
+ *  `<relative path> -> <absolute path>`. Both walked roots exist by
+ *  the time this runs: the mirror is created first, the data repo is
+ *  the raw dir's parent. */
 async function walkFiles(
   root: string,
-  prefix: string,
   files: Map<string, string>,
 ): Promise<void> {
-  const entries = await readdir(join(root, prefix), {
-    withFileTypes: true,
-  });
-
-  for (const entry of entries) {
-    const relPath = `${prefix}${entry.name}`;
-
-    if (entry.isDirectory()) {
-      if (!SKIP_DIRS.has(entry.name)) {
-        await walkFiles(root, `${relPath}/`, files);
-      }
-    } else if (entry.isFile() && !SKIP_FILES.has(entry.name)) {
-      files.set(relPath, join(root, relPath));
-    }
+  for (const relPath of await listFiles(root, "", {
+    skipDirs: SKIP_DIRS,
+    skipFiles: SKIP_FILES,
+  })) {
+    files.set(relPath, join(root, relPath));
   }
 }
 
@@ -110,7 +101,7 @@ async function removeStale(
 ): Promise<number> {
   const mirrorFiles = new Map<string, string>();
 
-  await walkFiles(mirror, "", mirrorFiles);
+  await walkFiles(mirror, mirrorFiles);
 
   let removed = 0;
 
@@ -171,7 +162,7 @@ export async function runPublishStage(
   const matchers = options.include.map(compileIncludePattern);
   const all = new Map<string, string>();
 
-  await walkFiles(options.dataRoot, "", all);
+  await walkFiles(options.dataRoot, all);
 
   const selected = new Map(
     [...all]

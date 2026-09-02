@@ -86,6 +86,73 @@ describe("listFiles", () => {
     await writeFile(join(dir, "sub", "b.md"), "");
     expect(await listFiles(dir)).toEqual(["a.md", "sub/b.md"]);
   });
+
+  it("skips the skipDirs directories at every depth", async () => {
+    const dir = await makeTempDir();
+    await mkdir(join(dir, ".obsidian", "deep"), { recursive: true });
+    await mkdir(join(dir, "keep"));
+    await writeFile(join(dir, ".obsidian", "x.md"), "");
+    await writeFile(join(dir, ".obsidian", "deep", "x.md"), "");
+    await writeFile(join(dir, "keep", ".obsidian"), "");
+    expect(
+      await listFiles(dir, "", { skipDirs: new Set([".obsidian"]) }),
+    ).toEqual(["keep/.obsidian"]);
+  });
+
+  it("skips the skipRootDirs directories only at the walk root", async () => {
+    const dir = await makeTempDir();
+    await mkdir(join(dir, ".git", "objects"), { recursive: true });
+    await mkdir(join(dir, "src", ".git"), { recursive: true });
+    await writeFile(join(dir, ".git", "config"), "");
+    await writeFile(join(dir, "src", ".git", "config"), "");
+    await writeFile(join(dir, "src", "a.ts"), "");
+    expect(
+      await listFiles(dir, "", { skipRootDirs: new Set([".git"]) }),
+    ).toEqual(["src/.git/config", "src/a.ts"]);
+  });
+
+  it("skips the skipFiles file names", async () => {
+    const dir = await makeTempDir();
+    await writeFile(join(dir, ".DS_Store"), "");
+    await writeFile(join(dir, "a.md"), "");
+    expect(
+      await listFiles(dir, "", { skipFiles: new Set([".DS_Store"]) }),
+    ).toEqual(["a.md"]);
+  });
+
+  it("collects only files ending in the extension when set", async () => {
+    const dir = await makeTempDir();
+    await mkdir(join(dir, "sub"));
+    await writeFile(join(dir, "a.md"), "");
+    await writeFile(join(dir, "a.txt"), "");
+    await writeFile(join(dir, "sub", "b.md"), "");
+    expect(await listFiles(dir, "", { extension: ".md" })).toEqual([
+      "a.md",
+      "sub/b.md",
+    ]);
+  });
+
+  it("reports the running count of directories read to onDir", async () => {
+    const dir = await makeTempDir();
+    await mkdir(join(dir, "sub", "deeper"), { recursive: true });
+    await writeFile(join(dir, "sub", "deeper", "b.md"), "");
+    const visited: number[] = [];
+    expect(await listFiles(dir, "", { onDir: (n) => visited.push(n) })).toEqual(
+      ["sub/deeper/b.md"],
+    );
+    expect(visited).toEqual([1, 2, 3]);
+  });
+
+  it("walks below a non-empty prefix, reporting paths under it", async () => {
+    const dir = await makeTempDir();
+    await mkdir(join(dir, "src", "sync"), { recursive: true });
+    await writeFile(join(dir, "src", "a.ts"), "");
+    await writeFile(join(dir, "src", "sync", "b.ts"), "");
+    expect(await listFiles(join(dir, "src"), "src")).toEqual([
+      "src/a.ts",
+      "src/sync/b.ts",
+    ]);
+  });
 });
 
 describe("sha256", () => {

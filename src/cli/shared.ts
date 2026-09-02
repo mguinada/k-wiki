@@ -41,26 +41,76 @@ export const RESERVED_NAMES = new Set([
   "prototype",
 ]);
 
+/** What `listFiles` skips and reports while walking. */
+export interface ListFilesOptions {
+  /** Directory names never descended, at any depth. */
+  readonly skipDirs?: ReadonlySet<string>;
+  /** Directory names never descended at the walk root only. */
+  readonly skipRootDirs?: ReadonlySet<string>;
+  /** File names never collected. */
+  readonly skipFiles?: ReadonlySet<string>;
+  /** When set, only file names ending in this extension are collected. */
+  readonly extension?: string;
+  /** Receives the running count of directories read, for a progress
+   *  heartbeat. */
+  readonly onDir?: ((visited: number) => void) | undefined;
+}
+
 /** Recursively list every file under `dir`, as `/`-separated paths
- *  relative to it. */
+ *  relative to it — the one directory walker (issue #255): the
+ *  vault scan, the repo-adapter allowlist walk, and the publish
+ *  stage's two-sided copy all funnel through it, each declaring
+ *  its own skip sets. Skipped directories are never read, so their
+ *  subtrees never enter the candidate set. */
 export async function listFiles(
   dir: string,
   prefix = "",
-  files: string[] = [],
+  options: ListFilesOptions = {},
 ): Promise<string[]> {
+  const files: string[] = [];
+
+  await walkInto(dir, prefix, options, files, { visited: 0 });
+
+  return files;
+}
+
+/** Running state of one walk: how many directories were read. */
+interface WalkState {
+  visited: number;
+}
+
+async function walkInto(
+  dir: string,
+  prefix: string,
+  options: ListFilesOptions,
+  files: string[],
+  state: WalkState,
+): Promise<void> {
   const entries = await readdir(dir, { withFileTypes: true });
+
+  state.visited++;
+  options.onDir?.(state.visited);
 
   for (const entry of entries) {
     const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
 
     if (entry.isDirectory()) {
-      await listFiles(join(dir, entry.name), rel, files);
-    } else {
+      const skipped = options.skipDirs?.has(entry.name) === true;
+      const skippedAtRoot =
+        prefix === "" && options.skipRootDirs?.has(entry.name) === true;
+
+      if (!skipped && !skippedAtRoot) {
+        await walkInto(join(dir, entry.name), rel, options, files, state);
+      }
+    } else if (
+      entry.isFile() &&
+      options.skipFiles?.has(entry.name) !== true &&
+      (options.extension === undefined ||
+        entry.name.endsWith(options.extension))
+    ) {
       files.push(rel);
     }
   }
-
-  return files;
 }
 
 /** Lowercase hex SHA-256 digest of the given bytes. */

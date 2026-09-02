@@ -1,11 +1,11 @@
-import { readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { listFiles } from "../cli/shared.ts";
 
 /**
  * Vault walker: collects every markdown file below the vault root as a
  * POSIX-style relative path, pruning vault noise (guide §26 operating
  * rules 5): `.obsidian/`, `.trash/`, and `.DS_Store` never enter the
- * candidate set.
+ * candidate set. The walk itself is the shared `listFiles` walker
+ * (issue #255); only the vault's skip sets live here.
  */
 
 const SKIPPED_DIRECTORIES = new Set([".obsidian", ".trash"]);
@@ -21,44 +21,14 @@ export async function scanVault(
   root: string,
   onDir?: (visited: number) => void,
 ): Promise<string[]> {
-  const files: string[] = [];
-
-  await walk(root, "", files, onDir, { visited: 0 });
+  const files = await listFiles(root, "", {
+    skipDirs: SKIPPED_DIRECTORIES,
+    skipFiles: SKIPPED_FILES,
+    extension: MARKDOWN_EXTENSION,
+    onDir,
+  });
 
   files.sort();
 
   return files;
-}
-
-interface WalkState {
-  visited: number;
-}
-
-async function walk(
-  dir: string,
-  prefix: string,
-  files: string[],
-  onDir: ((visited: number) => void) | undefined,
-  state: WalkState,
-): Promise<void> {
-  const entries = await readdir(dir, { withFileTypes: true });
-
-  state.visited++;
-  onDir?.(state.visited);
-
-  for (const entry of entries) {
-    const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
-
-    if (entry.isDirectory()) {
-      if (!SKIPPED_DIRECTORIES.has(entry.name)) {
-        await walk(join(dir, entry.name), rel, files, onDir, state);
-      }
-    } else if (
-      entry.isFile() &&
-      !SKIPPED_FILES.has(entry.name) &&
-      entry.name.endsWith(MARKDOWN_EXTENSION)
-    ) {
-      files.push(rel);
-    }
-  }
 }
