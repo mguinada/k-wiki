@@ -213,6 +213,36 @@ describe("mutation-scope CLI", () => {
     }
   });
 
+  it("rejects an unexpected argument instead of ignoring it", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const git: GitText = () => "";
+
+    try {
+      main(["bogus"], git);
+
+      expect(error.mock.calls[0]?.[0]).toContain("unexpected argument: bogus");
+      expect(process.exitCode).toBe(1);
+    } finally {
+      error.mockRestore();
+      process.exitCode = undefined;
+    }
+  });
+
+  it("rejects an unknown option instead of ignoring it", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const git: GitText = () => "";
+
+    try {
+      main(["--bogus"], git);
+
+      expect(error.mock.calls[0]?.[0]).toContain('unknown option "--bogus"');
+      expect(process.exitCode).toBe(1);
+    } finally {
+      error.mockRestore();
+      process.exitCode = undefined;
+    }
+  });
+
   it("prints nothing when the collected pattern list is empty", () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     const git: GitText = () => "";

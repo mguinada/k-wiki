@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
+import { parseArgs } from "../cli/shell.ts";
 import { actionableLines, parseReport } from "./mutation-survivors.ts";
 
 // Renders the rolling survivor-issue body from a Stryker JSON report
@@ -89,44 +90,37 @@ interface Options {
   htmlUrl?: string | undefined;
 }
 
-/** Parse argv into the report path and link options; throws on
- *  unknown flags or a missing positional. */
-function parseArgs(argv: readonly string[]): Options {
-  const options: {
-    reportPath?: string | undefined;
-    runUrl?: string | undefined;
-    htmlUrl?: string | undefined;
-  } = {};
+/** Parse argv through the shared CLI shell — unknown options are
+ *  rejected, never read as the report path — keeping the link flags'
+ *  own value message; throws on a missing positional. */
+function reportOptions(argv: readonly string[]): Options {
+  const parsed = parseArgs(argv, {
+    value: ["--run-url", "--html-url"],
+    maxPositionals: 1,
+    positionalError: (arg) => `unexpected argument: ${arg}`,
+  });
 
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
+  if (parsed.error !== undefined) {
+    throw new Error(parsed.error);
+  }
 
-    if (arg === "--run-url" || arg === "--html-url") {
-      const value = argv[i + 1];
-
-      if (value === undefined) {
-        throw new Error(`${arg} requires a value`);
-      }
-
-      i += 1;
-
-      if (arg === "--run-url") {
-        options.runUrl = value;
-      } else {
-        options.htmlUrl = value;
-      }
-    } else if (options.reportPath === undefined) {
-      options.reportPath = arg;
-    } else {
-      throw new Error(`unexpected argument: ${arg}`);
+  for (const flag of ["--run-url", "--html-url"] as const) {
+    if (parsed.values.has(flag) && parsed.values.get(flag) === undefined) {
+      throw new Error(`${flag} requires a value`);
     }
   }
 
-  if (options.reportPath === undefined) {
+  const reportPath = parsed.positional[0];
+
+  if (reportPath === undefined) {
     throw new Error("missing <report.json> — see --help");
   }
 
-  return options as Options;
+  return {
+    reportPath,
+    runUrl: parsed.values.get("--run-url"),
+    htmlUrl: parsed.values.get("--html-url"),
+  } as Options;
 }
 
 export function main(argv: readonly string[] = process.argv.slice(2)): void {
@@ -139,7 +133,7 @@ export function main(argv: readonly string[] = process.argv.slice(2)): void {
   let options: Options;
 
   try {
-    options = parseArgs(argv);
+    options = reportOptions(argv);
   } catch (cause) {
     console.error(errorMessage(cause));
     process.exitCode = 1;

@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { refuseDirectExecution } from "../cli/is-main.ts";
+import { parseArgs } from "../cli/shell.ts";
 
 // Hunk scoping for the advisory mutation run (issue #99, phase 1a).
 //
@@ -199,6 +200,18 @@ export function collectPatterns(git: GitText): string {
 export function main(argv: readonly string[], git: GitText = runGitText) {
   if (argv.includes("-h") || argv.includes("--help")) {
     console.log(HELP);
+
+    return;
+  }
+
+  const parsed = parseArgs(argv, {
+    maxPositionals: 0,
+    positionalError: (arg) => `unexpected argument: ${arg}`,
+  });
+
+  if (parsed.error !== undefined) {
+    console.error(parsed.error);
+    process.exitCode = 1;
 
     return;
   }

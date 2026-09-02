@@ -1,9 +1,10 @@
 import { statSync } from "node:fs";
 import { errorMessage } from "../cli/colors.ts";
+import { intFlagError } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
+import { parseArgs } from "../cli/shell.ts";
 import {
   type GitText,
-  nextIntArg,
   runGitText,
   SRC_PATHSPEC,
 } from "./mutation-scope.ts";
@@ -95,26 +96,32 @@ interface Options {
   total?: number | undefined;
 }
 
-/** Parse argv into --index/--total; throws naming the missing or
- *  malformed switch. */
-function parseArgs(argv: readonly string[]): Options {
+/** Parse argv through the shared CLI shell and validate the two int
+ *  flags with the shared helper; throws naming the malformed part. */
+function chunkOptions(argv: readonly string[]): Options {
+  const parsed = parseArgs(argv, {
+    value: ["--index", "--total"],
+    maxPositionals: 0,
+    positionalError: (arg) => `unexpected argument: ${arg}`,
+  });
+
+  if (parsed.error !== undefined) {
+    throw new Error(parsed.error);
+  }
+
   const options: { index?: number; total?: number } = {};
 
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
+  for (const flag of ["--index", "--total"] as const) {
+    const raw = parsed.values.get(flag);
 
-    if (arg === "--index" || arg === "--total") {
-      const value = nextIntArg(argv, i);
+    if (parsed.values.has(flag)) {
+      const error = intFlagError(flag, raw);
 
-      i += 1;
-
-      if (arg === "--index") {
-        options.index = value;
-      } else {
-        options.total = value;
+      if (error !== undefined) {
+        throw new Error(error);
       }
-    } else {
-      throw new Error(`unexpected argument: ${arg}`);
+
+      options[flag === "--index" ? "index" : "total"] = Number(raw);
     }
   }
 
@@ -128,7 +135,7 @@ function chunkList(
   collect: (git: GitText) => SrcFile[],
   git: GitText,
 ): string {
-  const options = parseArgs(argv);
+  const options = chunkOptions(argv);
 
   if (options.index === undefined) {
     throw new Error("--index is required — see --help");

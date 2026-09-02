@@ -1,7 +1,8 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { errorMessage } from "../cli/colors.ts";
+import { intFlagError } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
-import { nextIntArg } from "./mutation-scope.ts";
+import { parseArgs } from "../cli/shell.ts";
 import { parseReport } from "./mutation-survivors.ts";
 
 // Report stitching for chunked full mutation runs (issue #236): each
@@ -123,30 +124,33 @@ interface Options {
   expect?: number | undefined;
 }
 
-/** Parse argv into the output path, input paths, and --expect;
- *  throws naming the malformed part. */
-function parseArgs(argv: readonly string[]): Options {
-  const collected: { expect?: number } = {};
+/** Parse argv through the shared CLI shell — unknown options are
+ *  rejected, never read as input paths — and validate --expect with
+ *  the shared int-flag helper; throws naming the malformed part. */
+function mergeOptions(argv: readonly string[]): Options {
+  const parsed = parseArgs(argv, { value: ["--expect"] });
 
-  const positional: string[] = [];
+  if (parsed.error !== undefined) {
+    throw new Error(parsed.error);
+  }
 
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
+  if (parsed.values.has("--expect")) {
+    const error = intFlagError("--expect", parsed.values.get("--expect"));
 
-    if (arg === "--expect") {
-      const value = nextIntArg(argv, i);
-
-      i += 1;
-
-      collected.expect = value;
-    } else if (arg !== undefined) {
-      positional.push(arg);
+    if (error !== undefined) {
+      throw new Error(error);
     }
   }
 
-  const [outPath, ...inputs] = positional;
+  const [outPath, ...inputs] = parsed.positional;
 
-  return { ...collected, outPath, inputs };
+  return {
+    outPath,
+    inputs,
+    expect: parsed.values.has("--expect")
+      ? Number(parsed.values.get("--expect"))
+      : undefined,
+  };
 }
 
 /** The merged report's mutant count, for the summary line. */
@@ -211,7 +215,7 @@ export function main(argv: readonly string[]): void {
   }
 
   try {
-    runMerge(parseArgs(argv));
+    runMerge(mergeOptions(argv));
   } catch (cause) {
     console.error(errorMessage(cause));
     process.exitCode = 1;
