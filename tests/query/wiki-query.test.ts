@@ -13,7 +13,6 @@ import {
   main,
   QUERY_HEARTBEAT_PREFIX,
   runWikiQuery,
-  terminalColors,
 } from "../../src/query/wiki-query.ts";
 
 const SETTINGS_YML = `command: pi
@@ -62,16 +61,6 @@ describe("composeQueryPrompt", () => {
         "Mode: answer-only — write nothing: no query page, no index.md or log.md change, no edit anywhere under wiki/; the reply is the only output. The wrapper saves it; the human alone decides later whether to file it.",
       ].join("\n"),
     );
-  });
-});
-
-describe("terminalColors", () => {
-  it("disables bold under NO_COLOR", () => {
-    expect(terminalColors({ NO_COLOR: "1" }).bold("x")).toBe("x");
-  });
-
-  it("emits bold codes when color is enabled", () => {
-    expect(terminalColors({}).bold("x")).not.toBe("x");
   });
 });
 

@@ -2,12 +2,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { cliFail, errorMessage, terminalColors } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
-import {
-  formatDuration,
-  HEARTBEAT_MS,
-  type ProgressSink,
-  stderrSink,
-} from "../cli/progress.ts";
+import { formatDuration, HEARTBEAT_MS } from "../cli/progress.ts";
 import { repoRoot } from "../cli/shared.ts";
 import { agentRunFlags, type AgentRunFlags, parseArgs } from "../cli/shell.ts";
 import { statusSince } from "../data/git.ts";
@@ -27,6 +22,7 @@ import {
 } from "../ingest/guardrails.ts";
 import { loadSyncConfig, resolveRawDir } from "../sync/config.ts";
 import { citedPages, fileLastQuery, writeQueryArtifact } from "./file-last.ts";
+import { runQueryCli } from "./query-shell.ts";
 
 /**
  * wiki-query: the terminal front-end for asking questions against the
@@ -293,11 +289,6 @@ in place; piped, redirected, CI, or NO_COLOR runs get one plain
 heartbeat line per 60 seconds instead. Live progress goes to stderr;
 the answer and the Filed line go to stdout.`;
 
-/** Colors honoring NO_COLOR, like every CLI in this repo — moved to
- *  the shared presentation kit (src/cli/colors.ts) and re-exported
- *  here for the query surface's existing importers. */
-export { terminalColors } from "../cli/colors.ts";
-
 /** Print one CLI usage error red on stderr and set the exit code. */
 function fail(message: string): void {
   cliFail("wiki-query", message);
@@ -349,42 +340,11 @@ async function fileLastStage(
   }
 }
 
-/** Stage 1: ask the question, print the answer and the filing hint. */
-async function answerStage(
-  question: string,
-  settingsPath: string,
-  timeoutMs: number | undefined,
-  rawDir: string,
-  outputsDir: string,
-  colors: ReturnType<typeof terminalColors>,
-  animated: boolean,
-  sink: ProgressSink,
-): Promise<void> {
-  const result = await runWikiQuery({
-    settingsPath,
-    rawDir,
-    promptsDir: join(repoRoot, "prompts"),
-    outputsDir,
-    question,
-    timeoutMs,
-    heartbeatMs: animated ? 100 : undefined,
-    onProgress: sink.render,
-  });
-
-  sink.end();
-
-  console.log(result.answer);
-  console.error();
-  console.error(colors.dim(`To file this answer: wiki-query --file-last`));
-}
-
-/** Run the stage the arguments selected, in the data repo it resolved. */
+/** Run the stage the arguments selected, in the data repo it resolved:
+ *  stage 1 through the shared query shell, stage 2 deterministically. */
 async function dispatchStage(
   parsed: ReturnType<typeof parseArgs>,
   runFlags: AgentRunFlags,
-  colors: ReturnType<typeof terminalColors>,
-  animated: boolean,
-  sink: ProgressSink,
 ): Promise<void> {
   const outputsDir = runFlags.outputs ?? join(repoRoot, "outputs");
   const config = await loadSyncConfig(join(repoRoot, "sync.json"), homedir());
@@ -392,32 +352,21 @@ async function dispatchStage(
     parsed.values.get("--raw-dir") ?? resolveRawDir(config.dataRoot, repoRoot);
 
   if (parsed.flags.has("--file-last")) {
-    await fileLastStage(colors, rawDir, outputsDir);
+    await fileLastStage(terminalColors(process.env), rawDir, outputsDir);
 
     return;
   }
 
-  await answerStage(
-    parsed.positional[0] ?? "",
-    runFlags.settings ?? join(repoRoot, "settings.yml"),
-    runFlags.timeoutMs,
+  await runQueryCli({
+    prefix: "wiki-query",
+    settingsPath: runFlags.settings ?? join(repoRoot, "settings.yml"),
     rawDir,
+    promptsDir: join(repoRoot, "prompts"),
     outputsDir,
-    colors,
-    animated,
-    sink,
-  );
-}
-
-/** Print the failure red and set the exit code; the sink is closed first. */
-function reportFailure(
-  sink: ProgressSink,
-  colors: ReturnType<typeof terminalColors>,
-  error: unknown,
-): void {
-  sink.end();
-  console.error(colors.red(`wiki-query: ${errorMessage(error)}`));
-  process.exitCode = 1;
+    question: parsed.positional[0] ?? "",
+    timeoutMs: runFlags.timeoutMs,
+    hint: "To file this answer: wiki-query --file-last",
+  });
 }
 
 /** wiki-query entry point: `wiki-query [-h | --help] [--file-last] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>`. */
@@ -452,13 +401,10 @@ export async function main(): Promise<void> {
     return;
   }
 
-  const colors = terminalColors(process.env);
-  const { sink, animated } = stderrSink(QUERY_HEARTBEAT_PREFIX);
-
   try {
-    await dispatchStage(parsed, runFlags, colors, animated, sink);
+    await dispatchStage(parsed, runFlags);
   } catch (error) {
-    reportFailure(sink, colors, error);
+    cliFail("wiki-query", errorMessage(error));
   }
 }
 

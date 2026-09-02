@@ -2,19 +2,14 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { errorMessage } from "../cli/colors.ts";
+import { errorMessage, terminalColors } from "../cli/colors.ts";
 import { checkRaw } from "../health/check-raw.ts";
-import {
-  QUERY_HEARTBEAT_PREFIX,
-  runWikiQuery,
-  terminalColors,
-} from "../query/wiki-query.ts";
+import { runQueryCli } from "../query/query-shell.ts";
 import { expandHome, loadSyncConfig, resolveRawDir } from "../sync/config.ts";
 import { listWikiPages, readPageFields } from "../wiki/pages.ts";
 import { cliFail } from "./colors.ts";
 import { timeoutArgError } from "./flag-args.ts";
 import { refuseDirectExecution } from "./is-main.ts";
-import { stderrSink } from "./progress.ts";
 import { isPlainObject, statIfExists } from "./shared.ts";
 
 /**
@@ -697,46 +692,27 @@ async function runReadOnlyCommand(
   return false;
 }
 
-/** Run the one LLM command: query — the answer plus the filing hint. */
+/** Run the one LLM command: query — the shared query shell (sink,
+ *  runWikiQuery mapping, answer + dim hint, failure rendering). */
 async function runQueryCommand(
   resolution: CheckoutResolution,
   paths: { readonly rawDir: string; readonly wikiDir: string },
-  timeoutArg: string | undefined,
-  rest: readonly string[],
+  timeoutMs: number | undefined,
+  question: string,
 ): Promise<void> {
-  const colors = terminalColors(process.env);
-  const { sink, animated } = stderrSink(QUERY_HEARTBEAT_PREFIX);
-
-  try {
-    const result = await runWikiQuery({
-      settingsPath: join(
-        resolution.checkout,
-        resolution.settings ?? "settings.yml",
-      ),
-      rawDir: paths.rawDir,
-      promptsDir: join(resolution.checkout, "prompts"),
-      outputsDir: join(resolution.checkout, "outputs"),
-      question: rest[0] ?? "",
-      timeoutMs:
-        timeoutArg === undefined ? undefined : Number(timeoutArg) * 1000,
-      heartbeatMs: animated ? 100 : undefined,
-      onProgress: sink.render,
-    });
-
-    sink.end();
-
-    console.log(result.answer);
-    console.error();
-    console.error(
-      colors.dim(
-        "To file this answer (human step): wiki-query --file-last, run inside the checkout",
-      ),
-    );
-  } catch (error) {
-    sink.end();
-    console.error(colors.red(`k-wiki: ${errorMessage(error)}`));
-    process.exitCode = 1;
-  }
+  await runQueryCli({
+    prefix: "k-wiki",
+    settingsPath: join(
+      resolution.checkout,
+      resolution.settings ?? "settings.yml",
+    ),
+    rawDir: paths.rawDir,
+    promptsDir: join(resolution.checkout, "prompts"),
+    outputsDir: join(resolution.checkout, "outputs"),
+    question,
+    timeoutMs,
+    hint: "To file this answer (human step): wiki-query --file-last, run inside the checkout",
+  });
 }
 
 /** k-wiki entry point: `k-wiki [-h | --help] | k-wiki <command> [<args>]` — query, status, list, read, health. */
@@ -756,6 +732,7 @@ export async function main(cwd: string = process.cwd()): Promise<void> {
   }
 
   const timeout = cli.values.timeout;
+  const timeoutMs = timeout === undefined ? undefined : Number(timeout) * 1000;
   const timeoutError =
     timeout === undefined ? undefined : timeoutArgError(timeout);
 
@@ -800,7 +777,7 @@ export async function main(cwd: string = process.cwd()): Promise<void> {
       return;
     }
 
-    await runQueryCommand(resolution, paths, cli.values.timeout, rest);
+    await runQueryCommand(resolution, paths, timeoutMs, rest[0] ?? "");
   } catch (error) {
     fail(errorMessage(error));
   }
