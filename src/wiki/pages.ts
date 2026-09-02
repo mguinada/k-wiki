@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
 import { assertDirectory, listFiles } from "../cli/shared.ts";
-import { wikilinkBodyTarget } from "./wiki-links.ts";
+import { wikilinkBody, wikilinkBodyTarget } from "./wiki-links.ts";
 /**
  * Deterministic wiki-page reading, shared by the expunge seed
  * (wiki-ingest) and the dead-provenance check (scripts/): which pages
@@ -92,7 +92,7 @@ export function isWikilinkEntry(entry: string): boolean {
 
 /** The page-name part of a bracketed `sources` entry; empty when malformed. */
 export function wikilinkTarget(entry: string): string {
-  return wikilinkBodyTarget(entry.slice(2, -2));
+  return wikilinkBodyTarget(wikilinkBody(entry));
 }
 
 /** `raw/notes/…` with an optional `raw/` prefix removed. */
