@@ -1,4 +1,5 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
 
 /**
  * Shared runtime helpers: generic primitives with no domain of their
@@ -38,3 +39,25 @@ export const RESERVED_NAMES = new Set([
   "constructor",
   "prototype",
 ]);
+
+/** Recursively list every file under `dir`, as `/`-separated paths
+ *  relative to it. */
+export async function listFiles(
+  dir: string,
+  prefix = "",
+  files: string[] = [],
+): Promise<string[]> {
+  const entries = await readdir(dir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
+
+    if (entry.isDirectory()) {
+      await listFiles(join(dir, entry.name), rel, files);
+    } else {
+      files.push(rel);
+    }
+  }
+
+  return files;
+}

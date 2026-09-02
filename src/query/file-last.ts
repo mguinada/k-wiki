@@ -8,7 +8,7 @@ import {
   listWikiPages,
   readPageFields,
 } from "../wiki/pages.ts";
-import { buildPageIndex, extractWikilinks } from "../wiki-links.ts";
+import { buildPageIndex, extractWikilinks } from "../wiki/wiki-links.ts";
 
 /**
  * wiki-query stage 2 (issue #72): deterministic filing of the saved

@@ -1,13 +1,14 @@
 import type { Dirent } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
+import { listFiles } from "../cli/shared.ts";
 import { runGit } from "../data/git.ts";
 import {
   CONTRACT_FILES,
   listWikiPages,
   parsePageFields,
 } from "../wiki/pages.ts";
-import { extractWikilinks, listFiles } from "../wiki-links.ts";
+import { extractWikilinks } from "../wiki/wiki-links.ts";
 import type {
   AdditionFact,
   CommitFact,

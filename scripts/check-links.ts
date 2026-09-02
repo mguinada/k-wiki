@@ -13,7 +13,7 @@ import {
   buildPageIndex,
   crossWikiTarget,
   extractWikilinks,
-} from "../src/wiki-links.ts";
+} from "../src/wiki/wiki-links.ts";
 
 /**
  * Wikilink checker: scans every Markdown page under wiki/, extracts

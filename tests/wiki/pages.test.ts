@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import {
   bodyAfterFrontmatter,
-  buildPageIndex,
   isWikilinkEntry,
   kebab,
   listWikiPages,
@@ -317,25 +316,6 @@ describe("normalizeRawPath", () => {
 
   it("keeps an inner raw/ segment", () => {
     expect(normalizeRawPath("notes/raw/a.md")).toBe("notes/raw/a.md");
-  });
-});
-
-describe("buildPageIndex", () => {
-  it("maps page names to their wiki-relative paths", () => {
-    expect(
-      buildPageIndex(["index.md", "sources/temp research.md", "img.png"]),
-    ).toEqual(
-      new Map([
-        ["index", "index.md"],
-        ["temp research", "sources/temp research.md"],
-      ]),
-    );
-  });
-
-  it("lets later files win when two pages share one name", () => {
-    expect(buildPageIndex(["concepts/temp.md", "sources/temp.md"])).toEqual(
-      new Map([["temp", "sources/temp.md"]]),
-    );
   });
 });
 

@@ -1,6 +1,5 @@
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { stem } from "../wiki-links.ts";
 import {
   bodyAfterFrontmatter,
   kebab,
@@ -10,6 +9,7 @@ import {
   parsePageFields,
 } from "./pages.ts";
 import { assertRawDir } from "./provenance.ts";
+import { stem } from "./wiki-links.ts";
 
 /**
  * Citation-fidelity core (issue #125): the deterministic tier of the

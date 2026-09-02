@@ -1,18 +1,18 @@
 import { terminalColors as colors, errorMessage } from "../src/cli/colors.ts";
 import { refuseDirectExecution } from "../src/cli/is-main.ts";
-import { checkCrossWikiLinks } from "../src/crosslinks.ts";
+import { checkCrossWikiLinks } from "../src/wiki/crosslinks.ts";
 
 /**
  * Cross-wiki link checker CLI (issue #81): validates the one-way link
  * discipline between a wiki and its domain wikis — the audit core
- * lives in `src/crosslinks.ts` (the wiki-sync cycle stage runs it
- * too, issue #96).
+ * lives in `src/wiki/crosslinks.ts` (the wiki-sync cycle stage runs
+ * it too, issue #96).
  *
  * Prints one `file:line -> [[link]]` line per problem and exits 1;
  * exits 0 when the discipline holds.
  */
 
-export { checkCrossWikiLinks } from "../src/crosslinks.ts";
+export { checkCrossWikiLinks } from "../src/wiki/crosslinks.ts";
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
 const HELP = `Usage: check-crosslinks [-h | --help] <wiki-dir> <domain-wiki-dir> [<domain-wiki-dir>...]

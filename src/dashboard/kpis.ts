@@ -1,4 +1,4 @@
-import { buildPageIndex, crossWikiTarget } from "../wiki-links.ts";
+import { buildPageIndex, crossWikiTarget } from "../wiki/wiki-links.ts";
 
 /**
  * Pure KPI computation for the static dashboard (issue #73): every

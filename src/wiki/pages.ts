@@ -1,13 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
-import {
-  buildPageIndex,
-  listFiles,
-  wikilinkBodyTarget,
-} from "../wiki-links.ts";
-
-export { buildPageIndex };
-
+import { listFiles } from "../cli/shared.ts";
+import { wikilinkBodyTarget } from "./wiki-links.ts";
 /**
  * Deterministic wiki-page reading, shared by the expunge seed
  * (wiki-ingest) and the dead-provenance check (scripts/): which pages

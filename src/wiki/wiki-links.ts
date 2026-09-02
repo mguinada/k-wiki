@@ -1,5 +1,4 @@
-import { readdir } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename } from "node:path";
 
 /** The page-name stem of a wiki-relative path: the file name without
  *  the .md suffix — the name a [[wikilink]] targets. */
@@ -10,8 +9,7 @@ export function stem(file: string): string {
 /**
  * Wikilink primitives shared by `scripts/check-links.ts` (the lint a
  * human runs) and the ingest guardrails (issue #12, check 3): extract
- * every `[[wikilink]]` from markdown, map page names to files, and
- * list the pages under a wiki root.
+ * every `[[wikilink]]` from markdown and map page names to files.
  */
 
 export interface Wikilink {
@@ -31,6 +29,7 @@ export interface Wikilink {
 
 /** The page-name part of a wikilink's inner text; empty when blank. */
 export function wikilinkBodyTarget(body: string): string {
+  /* v8 ignore next: split never yields undefined — the fallback satisfies the type system only */
   return body.split("|")[0]?.split("#")[0]?.trim() ?? "";
 }
 
@@ -41,6 +40,7 @@ export function wikilinkBodyTarget(body: string): string {
  *  body-text link checking (issue #235) and `sources` citations
  *  (issue #226, via citationAnchor) — so the surfaces cannot drift. */
 export function wikilinkBodyAnchor(body: string): string | undefined {
+  /* v8 ignore next: split never yields undefined — the fallback satisfies the type system only */
   const anchor = body.split("|")[0]?.split("#").slice(1).join("#") ?? "";
 
   return anchor === "" || anchor.startsWith("^") ? undefined : anchor;
@@ -122,6 +122,7 @@ export function extractWikilinks(text: string): Wikilink[] {
 
   for (const [i, line] of unfencedLines(text)) {
     for (const match of line.matchAll(/\[\[([^\]]+)\]\]/g)) {
+      /* v8 ignore next: the regex guarantees group 1 on every match — fallback is for the type system */
       const inner = match[1] ?? "";
       const target = wikilinkBodyTarget(inner);
 
@@ -192,25 +193,4 @@ export function buildPageIndex(files: readonly string[]): Map<string, string> {
   }
 
   return index;
-}
-
-/** Recursively list every wiki-relative path under `dir`. */
-export async function listFiles(
-  dir: string,
-  prefix = "",
-  files: string[] = [],
-): Promise<string[]> {
-  const entries = await readdir(dir, { withFileTypes: true });
-
-  for (const entry of entries) {
-    const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
-
-    if (entry.isDirectory()) {
-      await listFiles(join(dir, entry.name), rel, files);
-    } else {
-      files.push(rel);
-    }
-  }
-
-  return files;
 }

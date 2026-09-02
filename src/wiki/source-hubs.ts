@@ -1,6 +1,5 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { stem, wikilinkBodyAnchor } from "../wiki-links.ts";
 import {
   isWikilinkEntry,
   listWikiPages,
@@ -9,6 +8,7 @@ import {
   parsePageFields,
   wikilinkTarget,
 } from "./pages.ts";
+import { stem, wikilinkBodyAnchor } from "./wiki-links.ts";
 
 /**
  * The source-hub coverage index (issue #126): which raw paths a

@@ -1,5 +1,5 @@
-import { unfencedLines } from "../wiki-links.ts";
 import { bodyAfterFrontmatter } from "./pages.ts";
+import { unfencedLines } from "./wiki-links.ts";
 
 /**
  * Chapter headings (issue #226): a hub citation anchors to a real

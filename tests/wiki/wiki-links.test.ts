@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { unfencedLines } from "../src/wiki-links.ts";
+import { buildPageIndex, unfencedLines } from "../../src/wiki/wiki-links.ts";
 
 /** The fence rule of the shared scanner (issue #246 C-10): an opening
  *  fence is any 3+ backtick/tilde marker (info string allowed); a
@@ -39,5 +39,24 @@ describe("unfencedLines fence rules", () => {
     const lines = unfenced("~~~\nfenced\n```\nstill fenced\n~~~\nafter");
 
     expect(lines).toEqual(["after"]);
+  });
+});
+
+describe("buildPageIndex", () => {
+  it("maps page names to their wiki-relative paths", () => {
+    expect(
+      buildPageIndex(["index.md", "sources/temp research.md", "img.png"]),
+    ).toEqual(
+      new Map([
+        ["index", "index.md"],
+        ["temp research", "sources/temp research.md"],
+      ]),
+    );
+  });
+
+  it("lets later files win when two pages share one name", () => {
+    expect(buildPageIndex(["concepts/temp.md", "sources/temp.md"])).toEqual(
+      new Map([["temp", "sources/temp.md"]]),
+    );
   });
 });
