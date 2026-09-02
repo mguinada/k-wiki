@@ -119,7 +119,7 @@ function reportOptions(argv: readonly string[]): Options {
     reportPath,
     runUrl: parsed.values.get("--run-url"),
     htmlUrl: parsed.values.get("--html-url"),
-  } as Options;
+  };
 }
 
 export function main(argv: readonly string[] = process.argv.slice(2)): void {

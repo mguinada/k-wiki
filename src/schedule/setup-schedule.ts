@@ -4,7 +4,7 @@ import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import { promisify } from "node:util";
-import { errorMessage } from "../cli/colors.ts";
+import { cliFail, errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { repoRoot } from "../cli/shared.ts";
 import { parseArgs } from "../cli/shell.ts";
@@ -288,8 +288,7 @@ export async function main(
   const parsed = parseScheduleArgs(argv);
 
   if (parsed.error !== undefined) {
-    console.error(`setup-schedule: ${parsed.error}`);
-    process.exitCode = 1;
+    cliFail("setup-schedule", parsed.error);
 
     return;
   }
@@ -309,8 +308,7 @@ export async function main(
   }
 
   if (platform !== "darwin") {
-    console.error(`setup-schedule: ${schedulerUnsupportedError(platform)}`);
-    process.exitCode = 1;
+    cliFail("setup-schedule", schedulerUnsupportedError(platform));
 
     return;
   }

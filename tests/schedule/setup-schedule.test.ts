@@ -591,6 +591,44 @@ describe("setup-schedule help", () => {
   });
 });
 
+describe("setup-schedule main: failure rendering", () => {
+  /** Run main() with captured stderr and a clean exit code. */
+  async function runFail(
+    args: readonly string[],
+    platform: NodeJS.Platform,
+  ): Promise<string> {
+    const err: string[] = [];
+
+    process.exitCode = undefined;
+
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) => err.push(parts.join(" ")));
+
+    try {
+      await main(args, platform);
+    } finally {
+      errorSpy.mockRestore();
+    }
+
+    const exitCode = process.exitCode === undefined ? "0" : process.exitCode;
+
+    return `${exitCode}|${err.join("\n")}`;
+  }
+
+  it("renders a usage error red on stderr with exit 1", async () => {
+    expect(await runFail(["--bogus"], "darwin")).toBe(
+      '1|\u001b[31msetup-schedule: unknown option "--bogus"\u001b[39m',
+    );
+  });
+
+  it("renders the unsupported-platform refusal red on stderr with exit 1", async () => {
+    expect(await runFail([], "linux")).toBe(
+      "1|\u001b[31msetup-schedule: scheduling on linux is not implemented yet — the backend is a systemd timer, a follow-up issue (out of scope); use --print to inspect the macOS artifact or run wiki-sync manually\u001b[39m",
+    );
+  });
+});
+
 describe("setup-schedule main: install and uninstall", () => {
   async function tempHome(): Promise<string> {
     return await mkdtemp(join(tmpdir(), "k-wiki-setup-"));

@@ -4,8 +4,9 @@ import { flagValueError } from "./flag-args.ts";
  * The shared CLI shell (issue #254): one argv parser every CLI
  * consumes, replacing the ~10 hand-rolled parsers it collapsed. The
  * rules are the ones the surviving CLIs already shared — value flags
- * consume the next argument, unknown options are rejected with the
- * flag named, positionals collect under a per-CLI count rule — so the
+ * consume the next argument or an inline `--flag=value`, unknown
+ * options are rejected with the flag named, positionals collect under
+ * a per-CLI count rule — so the
  * unknown-arg policy is one policy, not one per CLI (finding D-11).
  * Help stays with each CLI's main: the shell parses, never prints.
  */
@@ -14,8 +15,9 @@ import { flagValueError } from "./flag-args.ts";
  *  positional count rule with its overflow message. */
 export interface CliSpec {
   /** Value-taking flags (`--settings <path>`); each consumes the next
-   *  argument as its value. A missing final value stays undefined —
-   *  validation catches it. A repeated flag's last value wins. */
+   *  argument as its value, or takes it inline (`--settings=path`).
+   *  A missing final value stays undefined — validation catches it.
+   *  A repeated flag's last value wins. */
   readonly value?: readonly string[];
   /** Boolean flags, present or absent. */
   readonly boolean?: readonly string[];
@@ -82,6 +84,18 @@ export function parseArgs(
     if (valueFlags.has(arg)) {
       values.set(arg, args[index + 1]);
       index++;
+
+      continue;
+    }
+
+    const equals = arg.indexOf("=");
+
+    if (
+      arg.startsWith("-") &&
+      equals !== -1 &&
+      valueFlags.has(arg.slice(0, equals))
+    ) {
+      values.set(arg.slice(0, equals), arg.slice(equals + 1));
 
       continue;
     }

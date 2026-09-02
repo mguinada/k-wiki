@@ -47,6 +47,19 @@ describe("parseArgs", () => {
     expect(parsed.values.get("--settings")).toBe("b.yml");
   });
 
+  it("reads a value flag's inline = form as its value", () => {
+    const parsed = parseArgs(["--timeout=5", "q"], { value: ["--timeout"] });
+
+    expect(parsed.values.get("--timeout")).toBe("5");
+    expect(parsed.positional).toEqual(["q"]);
+  });
+
+  it("keeps the value whole when it contains further = signs", () => {
+    const parsed = parseArgs(["--settings=a=b.yml"], { value: ["--settings"] });
+
+    expect(parsed.values.get("--settings")).toBe("a=b.yml");
+  });
+
   it("records the boolean flags that are present", () => {
     const parsed = parseArgs(["--dry-run", "pos", "--json"], {
       boolean: ["--dry-run", "--json"],
@@ -121,6 +134,18 @@ describe("parseArgs", () => {
     const parsed = parseArgs(["--weird", "pos"]);
 
     expect(parsed.error).toBe('unknown option "--weird"');
+  });
+
+  it("names an inline = form of an unknown flag with the whole token", () => {
+    const parsed = parseArgs(["--nope=5"], { value: ["--timeout"] });
+
+    expect(parsed.error).toBe('unknown option "--nope=5"');
+  });
+
+  it("rejects an inline = value on a boolean flag as unknown", () => {
+    const parsed = parseArgs(["--print=x"], { boolean: ["--print"] });
+
+    expect(parsed.error).toBe('unknown option "--print=x"');
   });
 });
 
