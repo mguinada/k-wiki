@@ -1,8 +1,11 @@
+import { createColors } from "picocolors";
 import { describe, expect, it, vi } from "vitest";
 import {
+  createAgentProgressSink,
   createProgressRenderer,
   createStatusLine,
   formatDuration,
+  stderrSink,
 } from "../../src/cli/progress.ts";
 
 describe("formatDuration", () => {
@@ -236,5 +239,227 @@ describe("createProgressRenderer", () => {
     createProgressRenderer(write);
 
     expect(write).not.toHaveBeenCalled();
+  });
+});
+
+describe("createAgentProgressSink", () => {
+  const tones = {
+    dim: (text: string) => `<${text}>`,
+    yellow: (text: string) => `[${text}]`,
+  };
+  const ingestPrefix = "wiki-ingest: agent still running";
+
+  function makeSink(animated: boolean) {
+    const written: string[] = [];
+    const lines: string[] = [];
+    const sink = createAgentProgressSink(
+      (text) => written.push(text),
+      (text) => lines.push(text),
+      animated,
+      tones,
+      ingestPrefix,
+    );
+
+    return { sink, written, lines };
+  }
+
+  it("requires the heartbeat prefix argument", () => {
+    // @ts-expect-error heartbeatPrefix has no consumer-specific default
+    createAgentProgressSink(
+      () => {},
+      () => {},
+      false,
+      tones,
+    );
+  });
+
+  it("keeps the animated channel quiet when not animated", () => {
+    const { sink, written } = makeSink(false);
+
+    sink.render("wiki-ingest: agent finished");
+
+    expect(written).toEqual([]);
+  });
+
+  it("appends plain lines when not animated", () => {
+    const { sink, lines } = makeSink(false);
+
+    sink.render("wiki-ingest: agent finished");
+
+    expect(lines).toEqual(["<wiki-ingest: agent finished>"]);
+  });
+
+  it("renders a WARNING-severity message yellow, not dim, when not animated", () => {
+    const { sink, lines } = makeSink(false);
+
+    sink.render("wiki-ingest: WARNING — snapshot is foreign");
+
+    expect(lines).toEqual(["[wiki-ingest: WARNING — snapshot is foreign]"]);
+  });
+
+  it("renders a WARNING-severity message yellow on the animated sink", () => {
+    const { sink, written } = makeSink(true);
+
+    sink.render("wiki-ingest: WARNING — snapshot is foreign");
+
+    expect(written).toEqual(["[wiki-ingest: WARNING — snapshot is foreign]\n"]);
+  });
+
+  it("renders a WARNING-severity message plain under NO_COLOR", () => {
+    const lines: string[] = [];
+    const sink = createAgentProgressSink(
+      () => {},
+      (text) => lines.push(text),
+      false,
+      createColors(false),
+      ingestPrefix,
+    );
+
+    sink.render("wiki-ingest: WARNING — snapshot is foreign");
+
+    expect(lines).toEqual(["wiki-ingest: WARNING — snapshot is foreign"]);
+  });
+
+  it("keeps heartbeat messages on the animated line", () => {
+    const { sink, written } = makeSink(true);
+
+    sink.render("wiki-ingest: agent still running (2m07s)");
+
+    expect(written).toEqual(["\r⠋ <wiki-ingest: agent still running (2m07s)>"]);
+  });
+
+  it("scrolls non-heartbeat messages as events on the animated sink", () => {
+    const { sink, written } = makeSink(true);
+
+    sink.render("wiki-ingest: agent finished");
+
+    expect(written).toEqual(["<wiki-ingest: agent finished>\n"]);
+  });
+
+  it("clears the animated line on end", () => {
+    const { sink, written } = makeSink(true);
+
+    sink.render("wiki-ingest: agent still running (0s)");
+    sink.end();
+
+    expect(written[1]).toMatch(/^\r\s+\r$/);
+  });
+
+  it("does nothing on end when not animated", () => {
+    const { sink, written } = makeSink(false);
+
+    sink.end();
+
+    expect(written).toEqual([]);
+  });
+
+  it("keeps the scroll lines empty on end when not animated", () => {
+    const { sink, lines } = makeSink(false);
+
+    sink.end();
+
+    expect(lines).toEqual([]);
+  });
+});
+
+describe("stderrSink", () => {
+  /** Force `process.stderr.isTTY`; returns the restore function. */
+  function forceTty(tty: boolean): () => void {
+    const priorValue = process.stderr.isTTY;
+
+    Object.defineProperty(process.stderr, "isTTY", {
+      value: tty,
+      configurable: true,
+    });
+
+    return () =>
+      Object.defineProperty(process.stderr, "isTTY", {
+        value: priorValue,
+        configurable: true,
+      });
+  }
+
+  it("builds a plain-line sink when stderr is not a TTY", () => {
+    const restore = forceTty(false);
+    const lines: string[] = [];
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation((text) => lines.push(String(text)));
+
+    try {
+      const { sink, animated } = stderrSink("pfx:");
+
+      sink.render("pfx: agent still running (0s)");
+
+      expect(animated).toBe(false);
+      expect(lines[0]).toContain("pfx: agent still running (0s)");
+      expect(lines[0]).not.toContain("\r");
+    } finally {
+      errorSpy.mockRestore();
+      restore();
+    }
+  });
+
+  it("builds an animated sink when stderr is a TTY with color on", () => {
+    const restore = forceTty(true);
+    const writes: string[] = [];
+    const writeSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation((text) => {
+        writes.push(String(text));
+
+        return true;
+      });
+    const priorNoColor = process.env.NO_COLOR;
+
+    delete process.env.NO_COLOR;
+
+    try {
+      const { sink, animated } = stderrSink("pfx:");
+
+      sink.render("pfx: agent still running (0s)");
+
+      expect(animated).toBe(true);
+      expect(writes[0]?.startsWith("\r⠋")).toBe(true);
+      expect(writes[0]).toContain("pfx: agent still running (0s)");
+    } finally {
+      writeSpy.mockRestore();
+      restore();
+
+      if (priorNoColor === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = priorNoColor;
+      }
+    }
+  });
+
+  it("builds a plain non-animated sink under NO_COLOR", () => {
+    const restore = forceTty(true);
+    const lines: string[] = [];
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation((text) => lines.push(String(text)));
+    const priorNoColor = process.env.NO_COLOR;
+
+    process.env.NO_COLOR = "1";
+
+    try {
+      const { sink, animated } = stderrSink("pfx:");
+
+      sink.render("pfx: agent still running (0s)");
+
+      expect(animated).toBe(false);
+      expect(lines).toEqual(["pfx: agent still running (0s)"]);
+    } finally {
+      errorSpy.mockRestore();
+      restore();
+
+      if (priorNoColor === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = priorNoColor;
+      }
+    }
   });
 });

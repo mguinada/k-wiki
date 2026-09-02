@@ -1,9 +1,11 @@
+import { canAnimate, terminalColors } from "./colors.ts";
+
 /**
  * Terminal progress presentation shared by the long-running CLIs:
  * plain events scroll up, one live status line (spinner frame +
  * sentence) is rewritten in place, and every write goes through an
- * injected sink so tests never need a TTY. Braille frames only; the
- * caller gates animation on `stderr.isTTY && !NO_COLOR`.
+ * injected sink so tests never need a TTY. Braille frames only;
+ * `stderrSink` gates animation on `stderr.isTTY && !NO_COLOR`.
  */
 
 /** Braille spinner frames, in animation order. */
@@ -132,4 +134,86 @@ export function createProgressRenderer(
  *  (docs/references/colors.md). */
 export function isWarning(message: string): boolean {
   return message.includes("WARNING");
+}
+
+/** Interval for the progress-sink liveness line while the agent
+ *  runs; the wording is each consumer's heartbeat prefix. */
+export const HEARTBEAT_MS = 60_000;
+
+/**
+ * The shared stderr sink construction for every agent-driving CLI:
+ * the canAnimate gate (TTY + NO_COLOR policy) plus the five-arg
+ * createAgentProgressSink wiring. Returns the sink and the animation
+ * flag, which callers need for cadence decisions (fast heartbeat on
+ * a TTY, plain otherwise).
+ */
+export function stderrSink(heartbeatPrefix: string | readonly string[]): {
+  sink: ProgressSink;
+  animated: boolean;
+} {
+  const animated = canAnimate(process.stderr.isTTY === true, process.env);
+
+  return {
+    animated,
+    sink: createAgentProgressSink(
+      (text) => process.stderr.write(text),
+      (text) => console.error(text),
+      animated,
+      terminalColors(),
+      heartbeatPrefix,
+    ),
+  };
+}
+
+/** A stderr progress surface: plain lines, or one animated line. */
+export interface ProgressSink {
+  render(message: string): void;
+  end(): void;
+}
+
+export interface ProgressTones {
+  /** Routine progress lines. */
+  readonly dim: (text: string) => string;
+  /** WARNING-severity lines. */
+  readonly yellow: (text: string) => string;
+}
+
+/**
+ * The stderr presentation for one agent-driven run: agent heartbeats
+ * keep one animated line (spinner + clock) on a TTY; every other
+ * message scrolls. Non-animated runs append plain lines only.
+ * Severity is detected here, at the render boundary: WARNING messages
+ * render yellow, everything else dim.
+ */
+export function createAgentProgressSink(
+  write: (text: string) => void,
+  writeLine: (text: string) => void,
+  animated: boolean,
+  tones: ProgressTones,
+  heartbeatPrefix: string | readonly string[],
+): ProgressSink {
+  const prefixes =
+    typeof heartbeatPrefix === "string" ? [heartbeatPrefix] : heartbeatPrefix;
+  const styled = (message: string) =>
+    isWarning(message) ? tones.yellow(message) : tones.dim(message);
+
+  if (!animated) {
+    return {
+      render: (message) => writeLine(styled(message)),
+      end: () => {},
+    };
+  }
+
+  const renderer = createProgressRenderer(write);
+
+  return {
+    render: (message) => {
+      if (prefixes.some((prefix) => message.startsWith(prefix))) {
+        renderer.live(styled(message));
+      } else {
+        renderer.event(styled(message));
+      }
+    },
+    end: () => renderer.end(),
+  };
 }

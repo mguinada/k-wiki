@@ -1,21 +1,18 @@
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  canAnimate,
-  cliFail,
-  errorMessage,
-  terminalColors,
-} from "../cli/colors.ts";
+import { cliFail, errorMessage, terminalColors } from "../cli/colors.ts";
 import { flagValueError } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
-import { formatDuration } from "../cli/progress.ts";
+import {
+  formatDuration,
+  HEARTBEAT_MS,
+  type ProgressSink,
+  stderrSink,
+} from "../cli/progress.ts";
 import { statusSince } from "../data/git.ts";
 import {
   type AgentRunner,
-  createAgentProgressSink,
-  HEARTBEAT_MS,
-  type ProgressSink,
   readPrompt,
   spawnAgent,
 } from "../ingest/agent-run.ts";
@@ -301,7 +298,7 @@ the answer and the Filed line go to stdout.`;
 /** Colors honoring NO_COLOR, like every CLI in this repo — moved to
  *  the shared presentation kit (src/cli/colors.ts) and re-exported
  *  here for the query surface's existing importers. */
-export { canAnimate, terminalColors } from "../cli/colors.ts";
+export { terminalColors } from "../cli/colors.ts";
 
 /** Print one CLI usage error red on stderr and set the exit code. */
 function fail(message: string): void {
@@ -497,14 +494,7 @@ export async function main(): Promise<void> {
   }
 
   const colors = terminalColors(process.env);
-  const animated = canAnimate(process.stderr.isTTY === true, process.env);
-  const sink = createAgentProgressSink(
-    (text) => process.stderr.write(text),
-    (text) => console.error(text),
-    animated,
-    colors,
-    QUERY_HEARTBEAT_PREFIX,
-  );
+  const { sink, animated } = stderrSink(QUERY_HEARTBEAT_PREFIX);
 
   try {
     await dispatchStage(parsed, colors, animated, sink);
