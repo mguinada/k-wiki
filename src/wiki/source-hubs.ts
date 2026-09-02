@@ -231,9 +231,13 @@ export function isUnmigratableSelfCitation(
 
 /** Build the index over every page under `wikiDir`; unreadable
  *  frontmatter contributes nothing, matching the shared parser.
- *  Throws when the wiki directory is missing, via `listWikiPages`. */
+ *  `texts`, when given, replaces the per-page reads (R-3: a caller
+ *  that already read every page — checkWikiProvenance — feeds one
+ *  pass through). Throws when the wiki directory is missing, via
+ *  `listWikiPages`. */
 export async function loadSourceHubIndex(
   wikiDir: string,
+  texts?: ReadonlyMap<string, string>,
 ): Promise<SourceHubIndex> {
   const files = await listWikiPages(wikiDir);
   const fields = new Map<string, PageFields>();
@@ -243,7 +247,9 @@ export async function loadSourceHubIndex(
   const ambiguous = new Set<string>();
 
   for (const file of files) {
-    const parsed = parsePageFields(await readFile(join(wikiDir, file), "utf8"));
+    const text =
+      texts?.get(file) ?? (await readFile(join(wikiDir, file), "utf8"));
+    const parsed = parsePageFields(text);
 
     fields.set(stem(file), parsed);
 
