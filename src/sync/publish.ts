@@ -53,10 +53,9 @@ const SKIP_FILES = new Set([".DS_Store"]);
  *  `<relative path> -> <absolute path>`. Both roots exist by the
  *  time this runs: the mirror is created first, the data repo is
  *  the raw dir's parent. */
-async function collectFileMap(
-  root: string,
-  files: Map<string, string>,
-): Promise<void> {
+async function collectFileMap(root: string): Promise<Map<string, string>> {
+  const files = new Map<string, string>();
+
   for (const relPath of await listFiles(root, "", {
     skipDirs: SKIP_DIRS,
     skipFiles: SKIP_FILES,
@@ -64,6 +63,8 @@ async function collectFileMap(
   })) {
     files.set(relPath, join(root, relPath));
   }
+
+  return files;
 }
 
 /** Whether both paths exist and hold identical bytes. */
@@ -90,9 +91,7 @@ async function removeStale(
   mirror: string,
   selected: ReadonlyMap<string, unknown>,
 ): Promise<number> {
-  const mirrorFiles = new Map<string, string>();
-
-  await collectFileMap(mirror, mirrorFiles);
+  const mirrorFiles = await collectFileMap(mirror);
 
   let removed = 0;
 
@@ -151,9 +150,7 @@ export async function runPublishStage(
   const onProgress = options.onProgress ?? (() => {});
   const mirror = resolve(options.mirror);
   const matchers = options.include.map(compileIncludePattern);
-  const all = new Map<string, string>();
-
-  await collectFileMap(options.dataRoot, all);
+  const all = await collectFileMap(options.dataRoot);
 
   const selected = new Map(
     [...all]
