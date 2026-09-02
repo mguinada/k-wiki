@@ -6587,7 +6587,7 @@ describe("wikiPages vanished untracked detection", () => {
     expect(pages.deleted).toEqual(["wiki/index.md"]);
   });
 
-  it("counts a rename out of the wiki tree as its origin's deletion only", async () => {
+  it("buckets a rename out of the wiki tree as its origin's deletion only", async () => {
     const dataRoot = await makeDataRepo({ "a.md": "a" });
 
     await run("git", ["-C", dataRoot, "mv", "wiki/A-page.md", "moved-out.md"]);
@@ -6597,12 +6597,15 @@ describe("wikiPages vanished untracked detection", () => {
       await porcelainStatus(dataRoot, process.env),
     );
 
-    expect(pages.created).toEqual([]);
-    expect(pages.updated).toEqual([]);
-    expect(pages.deleted).toEqual(["wiki/A-page.md"]);
+    expect(pages).toEqual({
+      created: [],
+      updated: [],
+      deleted: ["wiki/A-page.md"],
+      unavailable: undefined,
+    });
   });
 
-  it("counts a rename into the wiki tree as its target's creation only", async () => {
+  it("buckets a rename into the wiki tree as its target's creation only", async () => {
     const dataRoot = await makeDataRepo({ "a.md": "a" });
 
     await run("git", [
@@ -6618,9 +6621,12 @@ describe("wikiPages vanished untracked detection", () => {
       await porcelainStatus(dataRoot, process.env),
     );
 
-    expect(pages.created).toEqual(["wiki/imported.md"]);
-    expect(pages.updated).toEqual([]);
-    expect(pages.deleted).toEqual([]);
+    expect(pages).toEqual({
+      created: ["wiki/imported.md"],
+      updated: [],
+      deleted: [],
+      unavailable: undefined,
+    });
   });
 
   it("counts a rename staged before the run nowhere when a pre-run state is given", async () => {
@@ -6649,9 +6655,12 @@ describe("wikiPages vanished untracked detection", () => {
       pre,
     );
 
-    expect(pages.created).toEqual([]);
-    expect(pages.updated).toEqual([]);
-    expect(pages.deleted).toEqual([]);
+    expect(pages).toEqual({
+      created: [],
+      updated: [],
+      deleted: [],
+      unavailable: undefined,
+    });
   });
 
   it("buckets caller-supplied entries without spawning git", async () => {
@@ -6668,10 +6677,12 @@ describe("wikiPages vanished untracked detection", () => {
       { code: "??", path: "raw/manifest.json", origin: undefined },
     ]);
 
-    expect(pages.created).toEqual(["wiki/new.md"]);
-    expect(pages.updated).toEqual(["wiki/index.md"]);
-    expect(pages.deleted).toEqual(["wiki/gone.md"]);
-    expect(pages.unavailable).toBeUndefined();
+    expect(pages).toEqual({
+      created: ["wiki/new.md"],
+      updated: ["wiki/index.md"],
+      deleted: ["wiki/gone.md"],
+      unavailable: undefined,
+    });
   });
 });
 
