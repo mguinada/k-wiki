@@ -1466,7 +1466,6 @@ async function composeRunPrompt(
   }
 
   const removedNotes = await collectRemovedNotes(dataRoot, diff, env);
-
   const directSet = await directSetForRemovals(
     join(dataRoot, "wiki"),
     removedNotes.map((note) => note.rawPath),

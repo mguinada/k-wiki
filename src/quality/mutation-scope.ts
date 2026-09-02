@@ -143,9 +143,25 @@ function parseFileDiffs(diffText: string): FileDiff[] {
   return files;
 }
 
-/** The mutation scope's pathspec: the two git invocations below
- *  must agree on it exactly. */
-const SRC_PATHSPEC = "src/*.ts";
+/** The mutation tools' pathspec — every git invocation that scopes
+ *  a mutation run to src/ (the changed-mode diff here, the nightly
+ *  chunk split's ls-files in mutation-chunk) must agree on it
+ *  exactly (issue #255, dedup D-20). */
+export const SRC_PATHSPEC = "src/*.ts";
+
+/** The integer value after argv[i]; throws naming argv[i] when it is
+ *  missing or not an integer — the shared int-flag parse of the
+ *  mutation tools' --expect/--index/--total (issue #255, dedup
+ *  D-20). */
+export function nextIntArg(argv: readonly string[], i: number): number {
+  const value = Number(argv[i + 1]);
+
+  if (argv[i + 1] === undefined || !Number.isInteger(value)) {
+    throw new Error(`${argv[i]} requires an integer value`);
+  }
+
+  return value;
+}
 
 /** The changed src/ files — hunk-ranged, whole, or absent when deleted. */
 export function collectChangedFiles(git: GitText): FileDiff[] {

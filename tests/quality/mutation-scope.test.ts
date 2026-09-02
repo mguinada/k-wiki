@@ -6,6 +6,7 @@ import {
   type GitText,
   main,
   mergeRanges,
+  nextIntArg,
   parseNewRanges,
   runGitText,
 } from "../../src/quality/mutation-scope.ts";
@@ -20,6 +21,24 @@ const HUNK_FILE = [
   "@@ -40,3 +50,0 @@ function b() {",
   "-deleted",
 ].join("\n");
+
+describe("nextIntArg", () => {
+  it("returns the integer value after the flag at the index", () => {
+    expect(nextIntArg(["--index", "2"], 0)).toBe(2);
+  });
+
+  it("names the flag when the value is missing", () => {
+    expect(() => nextIntArg(["--index"], 0)).toThrow(
+      "--index requires an integer value",
+    );
+  });
+
+  it("names the flag when the value is not an integer", () => {
+    expect(() => nextIntArg(["--total", "half"], 0)).toThrow(
+      "--total requires an integer value",
+    );
+  });
+});
 
 describe("parseNewRanges", () => {
   it("returns the new-side line range of a hunk header", () => {
