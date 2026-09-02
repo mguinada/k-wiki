@@ -54,6 +54,25 @@ function positionalOverflowError(
   return rule.error(arg, count);
 }
 
+/** The inline `--flag=value` form of a value flag, as the
+ *  [flag, value] pair to record, undefined when `arg` is not one. */
+function inlineValue(
+  arg: string,
+  valueFlags: ReadonlySet<string>,
+): readonly [string, string] | undefined {
+  const equals = arg.indexOf("=");
+
+  if (
+    arg.startsWith("-") &&
+    equals !== -1 &&
+    valueFlags.has(arg.slice(0, equals))
+  ) {
+    return [arg.slice(0, equals), arg.slice(equals + 1)];
+  }
+
+  return undefined;
+}
+
 /** Split argv per the spec: value flags, boolean flags, positionals.
  *  The first usage error — an unknown option, or a positional beyond
  *  the maximum — stops the parse and is the result's `error`. An
@@ -88,14 +107,10 @@ export function parseArgs(
       continue;
     }
 
-    const equals = arg.indexOf("=");
+    const inline = inlineValue(arg, valueFlags);
 
-    if (
-      arg.startsWith("-") &&
-      equals !== -1 &&
-      valueFlags.has(arg.slice(0, equals))
-    ) {
-      values.set(arg.slice(0, equals), arg.slice(equals + 1));
+    if (inline !== undefined) {
+      values.set(inline[0], inline[1]);
 
       continue;
     }
