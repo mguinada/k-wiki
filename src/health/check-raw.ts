@@ -2,7 +2,6 @@ import { readFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { terminalColors as colors, errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
-import { parseArgs } from "../cli/shell.ts";
 import {
   assertDirectory,
   isPlainObject,
@@ -12,6 +11,7 @@ import {
   repoRoot,
   sha256,
 } from "../cli/shared.ts";
+import { parseArgs } from "../cli/shell.ts";
 import { runGit } from "../data/git.ts";
 import { parseManifest, type VaultNotes } from "../sync/manifest.ts";
 import { listNamespaceDirs } from "../sync/projection.ts";
