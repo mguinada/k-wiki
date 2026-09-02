@@ -171,6 +171,40 @@ describe("data:init CLI help", () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it("rejects an unknown option instead of treating it as the config", async () => {
+    const dir = await makeTempDir();
+    const configPath = join(dir, "sync.json");
+
+    await writeFile(configPath, JSON.stringify({ vaults: [], dataRoot: dir }));
+
+    const { err } = await runInitCli(["--nope", configPath]);
+
+    expect(err).toContain('data:init: unknown option "--nope"');
+  });
+
+  it("exits 1 for an unknown option", async () => {
+    const dir = await makeTempDir();
+    const configPath = join(dir, "sync.json");
+
+    await writeFile(configPath, JSON.stringify({ vaults: [], dataRoot: dir }));
+
+    await runInitCli(["--nope", configPath]);
+
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("rejects a second positional argument", async () => {
+    const dir = await makeTempDir();
+    const configPath = join(dir, "sync.json");
+
+    await writeFile(configPath, JSON.stringify({ vaults: [], dataRoot: dir }));
+
+    const { err } = await runInitCli([configPath, "extra"]);
+
+    expect(err).toContain("expected at most one <config> argument");
+    expect(process.exitCode).toBe(1);
+  });
+
   it("rejects a config without a data root", async () => {
     const dir = await makeTempDir();
     const configPath = join(dir, "sync.json");

@@ -1412,6 +1412,31 @@ describe("sync-vault CLI", () => {
     expect(err).toContain("sync-vault: dry run, nothing will be written");
   });
 
+
+  it("rejects an unknown option instead of treating it as a positional", async () => {
+    const ws = await makeWorkspace();
+
+    const { err } = await runCli(["--nope", ws.configPath]);
+
+    expect(err).toContain('sync-vault: unknown option "--nope"');
+  });
+
+  it("exits 1 for an unknown option", async () => {
+    const ws = await makeWorkspace();
+
+    await runCli(["--nope", ws.configPath]);
+
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("rejects more than two positionals", async () => {
+    const ws = await makeWorkspace();
+
+    const { err } = await runCli([ws.configPath, ws.rawDir, "extra"]);
+
+    expect(err).toContain("expected at most two arguments");
+    expect(process.exitCode).toBe(1);
+  });
   describe("sync-vault CLI help", () => {
     it("prints the usage line for --help", async () => {
       const { out } = await runCli(["--help"]);

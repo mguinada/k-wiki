@@ -1,9 +1,10 @@
 import { join } from "node:path";
 import { seedDataRepo } from "../data/init-data-repo.ts";
 import { loadSyncConfig } from "../sync/config.ts";
-import { errorMessage } from "./colors.ts";
+import { cliFail, errorMessage } from "./colors.ts";
 import { refuseDirectExecution } from "./is-main.ts";
 import { repoRoot } from "./shared.ts";
+import { parseArgs } from "./shell.ts";
 
 /**
  * data:init CLI shell (RC1 split): argument parsing, help, and the
@@ -48,12 +49,22 @@ export async function main(): Promise<void> {
     return;
   }
 
-  const secondBrain = args.includes("--second-brain");
-  const meta = args.includes("--meta");
-  const configArg = args.find(
-    (arg) => arg !== "--second-brain" && arg !== "--meta",
-  );
-  const configPath = configArg ?? join(repoRoot, "sync.json");
+  const parsed = parseArgs(args, {
+    boolean: ["--second-brain", "--meta"],
+    maxPositionals: 1,
+    positionalError: (_arg, count) =>
+      `expected at most one <config> argument, got ${count}`,
+  });
+
+  if (parsed.error !== undefined) {
+    cliFail("data:init", parsed.error);
+
+    return;
+  }
+
+  const secondBrain = parsed.flags.has("--second-brain");
+  const meta = parsed.flags.has("--meta");
+  const configPath = parsed.positional[0] ?? join(repoRoot, "sync.json");
 
   try {
     const config = await loadSyncConfig(configPath);
@@ -74,9 +85,7 @@ export async function main(): Promise<void> {
         : `data:init: ${config.dataRoot} already seeded`,
     );
   } catch (error) {
-    console.error(`data:init: ${errorMessage(error)}`);
-
-    process.exitCode = 1;
+    cliFail("data:init", errorMessage(error));
   }
 }
 
