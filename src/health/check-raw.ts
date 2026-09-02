@@ -348,11 +348,17 @@ reported as a warning.
 Exit status: 0 = coherent (healthy-empty counts; a stale warning
 alone stays exit 0), 1 = one line per problem.`;
 
-/** Print a check-raw report: warnings first, then the healthy summary
- *  or one red line per problem; sets the exit code accordingly. */
-function printReport(report: HealthReport, failOnStale: boolean): void {
+/** Print a health report under one CLI prefix: warnings first,
+ *  then the healthy summary or one red line per problem, honoring
+ *  --fail-on-stale. The one renderer check-raw and k-wiki health
+ *  share (finding D-9); only the prefix differs. */
+export function printHealthReport(
+  report: HealthReport,
+  prefix: string,
+  failOnStale: boolean,
+): void {
   for (const warning of report.warnings) {
-    console.error(colors().yellow(`check-raw: ${warning}`));
+    console.error(colors().yellow(`${prefix}: ${warning}`));
   }
 
   if (report.healthy) {
@@ -398,7 +404,7 @@ export async function main(): Promise<void> {
   const rawDir = positional[0] ?? join(repoRoot, "raw");
 
   try {
-    printReport(await checkRaw(rawDir), failOnStale);
+    printHealthReport(await checkRaw(rawDir), "check-raw", failOnStale);
   } catch (error) {
     console.error(colors().red(`check-raw: ${errorMessage(error)}`));
     process.exitCode = 1;

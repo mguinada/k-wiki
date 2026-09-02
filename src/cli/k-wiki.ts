@@ -2,8 +2,8 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { errorMessage, terminalColors } from "../cli/colors.ts";
-import { checkRaw } from "../health/check-raw.ts";
+import { errorMessage } from "../cli/colors.ts";
+import { checkRaw, printHealthReport } from "../health/check-raw.ts";
 import { runQueryCli } from "../query/query-shell.ts";
 import { expandHome, loadSyncConfig, resolveRawDir } from "../sync/config.ts";
 import { listWikiPages, readPageFields } from "../wiki/pages.ts";
@@ -502,26 +502,7 @@ async function runRead(wikiDir: string, slug: string): Promise<void> {
 
 /** Check the bound projection (delegates to check-raw, read-only). */
 async function runHealth(rawDir: string, failOnStale: boolean): Promise<void> {
-  const colors = terminalColors(process.env);
-  const report = await checkRaw(rawDir);
-
-  for (const warning of report.warnings) {
-    console.error(colors.yellow(`k-wiki: ${warning}`));
-  }
-
-  if (report.healthy) {
-    console.log(colors.green(report.summary));
-  } else {
-    for (const line of report.problems) {
-      console.error(colors.red(line));
-    }
-
-    process.exitCode = 1;
-  }
-
-  if (failOnStale && report.stale) {
-    process.exitCode = 1;
-  }
+  printHealthReport(await checkRaw(rawDir), "k-wiki", failOnStale);
 }
 
 /** The argv shape main consumes after util.parseArgs. */
