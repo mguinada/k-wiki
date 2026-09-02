@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { terminalColors as colors, errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
+import { parseArgs } from "../cli/shell.ts";
 import {
   assertDirectory,
   isPlainObject,
@@ -388,23 +389,29 @@ export async function main(): Promise<void> {
     return;
   }
 
-  const failOnStale = args.includes("--fail-on-stale");
-  const positional = args.filter((arg) => arg !== "--fail-on-stale");
-  const unknown = positional.find((arg) => arg.startsWith("-"));
+  const parsed = parseArgs(args, {
+    boolean: ["--fail-on-stale"],
+    positionals: {
+      max: 1,
+      error: (arg) => `unexpected argument: ${arg}`,
+    },
+  });
 
-  if (unknown !== undefined) {
-    console.error(
-      colors().red(`check-raw: unknown option ${JSON.stringify(unknown)}`),
-    );
+  if (parsed.error !== undefined) {
+    console.error(colors().red(`check-raw: ${parsed.error}`));
     process.exitCode = 1;
 
     return;
   }
 
-  const rawDir = positional[0] ?? join(repoRoot, "raw");
+  const rawDir = parsed.positional[0] ?? join(repoRoot, "raw");
 
   try {
-    printHealthReport(await checkRaw(rawDir), "check-raw", failOnStale);
+    printHealthReport(
+      await checkRaw(rawDir),
+      "check-raw",
+      parsed.flags.has("--fail-on-stale"),
+    );
   } catch (error) {
     console.error(colors().red(`check-raw: ${errorMessage(error)}`));
     process.exitCode = 1;

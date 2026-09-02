@@ -548,6 +548,13 @@ describe("health CLI", () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it("rejects a second positional argument instead of ignoring it", async () => {
+    const { err } = await runHealthCli(["raw-one", "raw-two"]);
+
+    expect(err).toContain("unexpected argument: raw-two");
+    expect(process.exitCode).toBe(1);
+  });
+
   it("prints the usage line for --help", async () => {
     const { out } = await runHealthCli(["--help"]);
 
