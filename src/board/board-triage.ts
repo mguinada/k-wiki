@@ -2,9 +2,9 @@ import { execFile } from "node:child_process";
 import { appendFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { cliFail, errorMessage, terminalColors } from "../cli/colors.ts";
-import { readFlagValues } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { isPlainObject, pluralized } from "../cli/shared.ts";
+import { parseArgs } from "../cli/shell.ts";
 
 /**
  * Scheduled board triage (issue #209): the mechanical half of the
@@ -810,31 +810,30 @@ with zero writes.
 Exit status: 0 = triage applied or planned, 1 = usage error, board or
 API failure, or a move that failed verification.`;
 
-function parseCliArgs(args: readonly string[]): {
-  readonly values: Map<string, string | undefined>;
+function parseCliFlags(args: readonly string[]): {
+  readonly values: ReadonlyMap<string, string | undefined>;
   readonly dryRun: boolean;
-  readonly unexpected: string | undefined;
+  readonly error: string | undefined;
 } {
-  const { values, consumed } = readFlagValues(["--owner", "--project"], args);
-  const rest = args.filter((_, index) => !consumed.has(index));
+  const parsed = parseArgs(args, {
+    value: ["--owner", "--project"],
+    boolean: ["--dry-run"],
+    positionals: {
+      max: 0,
+      error: (arg) =>
+        `unexpected argument ${JSON.stringify(arg)} — board-triage takes no positionals`,
+    },
+  });
 
   return {
-    values,
-    dryRun: rest.includes("--dry-run"),
-    unexpected: rest.find((arg) => arg !== "--dry-run"),
+    values: parsed.values,
+    dryRun: parsed.flags.has("--dry-run"),
+    error: parsed.error,
   };
 }
 
-/** The first argument that is neither a known flag nor a flag value,
- *  as a usage error message; board-triage takes no positionals. */
-function unexpectedArgError(arg: string): string {
-  return arg.startsWith("-")
-    ? `unknown option ${JSON.stringify(arg)}`
-    : `unexpected argument ${JSON.stringify(arg)} — board-triage takes no positionals`;
-}
-
 function usageErrorOf(
-  values: Map<string, string | undefined>,
+  values: ReadonlyMap<string, string | undefined>,
 ): string | undefined {
   const projectText = values.get("--project");
 
@@ -854,7 +853,7 @@ function usageErrorOf(
 }
 
 function triageOptionsOf(parsed: {
-  readonly values: Map<string, string | undefined>;
+  readonly values: ReadonlyMap<string, string | undefined>;
   readonly dryRun: boolean;
 }): TriageOptions {
   const projectText = parsed.values.get("--project");
@@ -877,10 +876,10 @@ export async function main(graphql?: GraphQLFn): Promise<void> {
     return;
   }
 
-  const parsed = parseCliArgs(args);
+  const parsed = parseCliFlags(args);
 
-  if (parsed.unexpected !== undefined) {
-    cliFail("board-triage", unexpectedArgError(parsed.unexpected));
+  if (parsed.error !== undefined) {
+    cliFail("board-triage", parsed.error);
 
     return;
   }

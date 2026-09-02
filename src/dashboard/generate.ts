@@ -10,6 +10,7 @@ import {
 } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { repoRoot } from "../cli/shared.ts";
+import { parseArgs } from "../cli/shell.ts";
 import { loadSyncConfig, resolveRawDir } from "../sync/config.ts";
 import { collectData } from "./collect.ts";
 import { computeKpis } from "./kpis.ts";
@@ -151,22 +152,6 @@ function openInBrowser(path: string): Promise<void> {
   return execFile(opener.command, [...opener.argsPrefix, path]).then(() => {});
 }
 
-/** Parsed CLI arguments: the open flag, positionals, first unknown
- *  option (undefined when every option is recognized). */
-function parseArgs(args: readonly string[]): {
-  wantsOpen: boolean;
-  positional: string[];
-  unknown: string | undefined;
-} {
-  const wantsOpen = args.includes("-o") || args.includes("--open");
-  const positional = args.filter((arg) => !arg.startsWith("-"));
-  const unknown = args.find(
-    (arg) => arg.startsWith("-") && arg !== "-o" && arg !== "--open",
-  );
-
-  return { wantsOpen, positional, unknown };
-}
-
 /** One red `dashboard: …` error line, plus exit code 1. */
 function fail(message: string): void {
   cliFail("dashboard", message);
@@ -192,19 +177,23 @@ export async function main(): Promise<void> {
     return;
   }
 
-  const { wantsOpen, positional, unknown } = parseArgs(args);
+  const parsed = parseArgs(args, {
+    boolean: ["-o", "--open"],
+    positionals: {
+      max: 1,
+      error: (_arg, count) =>
+        `expected at most one <data-repo> argument, got ${count}`,
+    },
+  });
 
-  if (unknown !== undefined) {
-    fail(`unknown option ${JSON.stringify(unknown)}`);
+  if (parsed.error !== undefined) {
+    fail(parsed.error);
 
     return;
   }
 
-  if (positional.length > 1) {
-    fail(`expected at most one <data-repo> argument, got ${positional.length}`);
-
-    return;
-  }
+  const wantsOpen = parsed.flags.has("-o") || parsed.flags.has("--open");
+  const positional = parsed.positional;
 
   try {
     const config = await loadSyncConfig(join(repoRoot, "sync.json"), homedir());

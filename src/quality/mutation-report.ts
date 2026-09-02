@@ -96,8 +96,7 @@ interface Options {
 function reportOptions(argv: readonly string[]): Options {
   const parsed = parseArgs(argv, {
     value: ["--run-url", "--html-url"],
-    maxPositionals: 1,
-    positionalError: (arg) => `unexpected argument: ${arg}`,
+    positionals: { max: 1, error: (arg) => `unexpected argument: ${arg}` },
   });
 
   if (parsed.error !== undefined) {

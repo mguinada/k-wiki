@@ -9,8 +9,8 @@ import { refuseDirectExecution } from "../cli/is-main.ts";
 import { formatDuration, stderrSink } from "../cli/progress.ts";
 import { pathExists, pluralized, repoRoot } from "../cli/shared.ts";
 import {
-  agentRunFlags,
   type AgentRunFlags,
+  agentRunFlags,
   parseSyncRunArgs,
 } from "../cli/shell.ts";
 import { parseStatus, runGit, type StatusEntry } from "../data/git.ts";

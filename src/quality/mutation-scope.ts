@@ -205,8 +205,7 @@ export function main(argv: readonly string[], git: GitText = runGitText) {
   }
 
   const parsed = parseArgs(argv, {
-    maxPositionals: 0,
-    positionalError: (arg) => `unexpected argument: ${arg}`,
+    positionals: { max: 0, error: (arg) => `unexpected argument: ${arg}` },
   });
 
   if (parsed.error !== undefined) {

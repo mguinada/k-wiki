@@ -51,9 +51,11 @@ export async function main(): Promise<void> {
 
   const parsed = parseArgs(args, {
     boolean: ["--second-brain", "--meta"],
-    maxPositionals: 1,
-    positionalError: (_arg, count) =>
-      `expected at most one <config> argument, got ${count}`,
+    positionals: {
+      max: 1,
+      error: (_arg, count) =>
+        `expected at most one <config> argument, got ${count}`,
+    },
   });
 
   if (parsed.error !== undefined) {

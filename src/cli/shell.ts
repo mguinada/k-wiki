@@ -19,11 +19,12 @@ export interface CliSpec {
   readonly value?: readonly string[];
   /** Boolean flags, present or absent. */
   readonly boolean?: readonly string[];
-  /** Reject positionals beyond this count. */
-  readonly maxPositionals?: number;
-  /** The usage error for a positional beyond `maxPositionals`,
-   *  given the offending argument and the actual count. */
-  readonly positionalError?: (arg: string, count: number) => string;
+  /** Reject positionals beyond `max`, reporting them through
+   *  `error` with the offending argument and the actual count. */
+  readonly positionals?: {
+    readonly max: number;
+    readonly error: (arg: string, count: number) => string;
+  };
 }
 
 /** One parsed command line: flag values, boolean flags, positionals,
@@ -42,21 +43,21 @@ function positionalOverflowError(
   arg: string,
   count: number,
 ): string | undefined {
-  if (spec.maxPositionals === undefined || count <= spec.maxPositionals) {
+  const rule = spec.positionals;
+
+  if (rule === undefined || count <= rule.max) {
     return undefined;
   }
 
-  return (
-    spec.positionalError?.(arg, count) ??
-    `expected at most ${spec.maxPositionals} positional argument, got ${count}`
-  );
+  return rule.error(arg, count);
 }
 
 /** Split argv per the spec: value flags, boolean flags, positionals.
  *  The first usage error — an unknown option, or a positional beyond
- *  the maximum — stops the parse and is the result's `error`. */
+ *  the maximum — stops the parse and is the result's `error`. An
+ *  absent array entry reads as no argument. */
 export function parseArgs(
-  args: readonly string[],
+  args: readonly (string | undefined)[],
   spec: CliSpec = {},
 ): ParsedCli {
   const valueFlags = new Set(spec.value ?? []);
@@ -154,8 +155,10 @@ export function agentRunFlags(
 export function parseSyncRunArgs(args: readonly string[]): ParsedCli {
   return parseArgs(args, {
     value: ["--settings", "--outputs", "--timeout"],
-    maxPositionals: 2,
-    positionalError: (_arg, count) =>
-      `expected at most two arguments (<config> and <raw-dir>), got ${count}`,
+    positionals: {
+      max: 2,
+      error: (_arg, count) =>
+        `expected at most two arguments (<config> and <raw-dir>), got ${count}`,
+    },
   });
 }

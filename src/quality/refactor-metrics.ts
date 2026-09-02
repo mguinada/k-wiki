@@ -3,6 +3,7 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import { errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { repoRoot } from "../cli/shared.ts";
+import { parseArgs } from "../cli/shell.ts";
 
 /**
  * The src/ refactor campaign's measuring instrument: a zero-dependency
@@ -324,25 +325,24 @@ Counters:
 Writes the counter table (or JSON object) to stdout. Exit 0 after
 printing; exit 1 when the scan directory is missing or unreadable.`;
 
-/** Parse argv into the scan root and the JSON switch. */
-function parseArgs(argv: readonly string[]): {
+/** Parse argv through the shared CLI shell into the scan root and
+ *  the JSON switch. */
+function metricsOptions(argv: readonly string[]): {
   root: string;
   json: boolean;
 } {
-  const rest = argv.filter((arg) => arg !== "--json");
-  const unknownSwitch = rest.find((arg) => arg.startsWith("-"));
+  const parsed = parseArgs(argv, {
+    boolean: ["--json"],
+    positionals: { max: 1, error: (arg) => `unexpected argument: ${arg}` },
+  });
 
-  if (unknownSwitch !== undefined) {
-    throw new Error(`unexpected argument: ${unknownSwitch}`);
-  }
-
-  if (rest.length > 1) {
-    throw new Error(`unexpected argument: ${rest[1]}`);
+  if (parsed.error !== undefined) {
+    throw new Error(parsed.error);
   }
 
   return {
-    root: rest[0] ?? join(repoRoot, "src"),
-    json: argv.includes("--json"),
+    root: parsed.positional[0] ?? join(repoRoot, "src"),
+    json: parsed.flags.has("--json"),
   };
 }
 
@@ -356,7 +356,7 @@ export async function main(
   }
 
   try {
-    const options = parseArgs(argv);
+    const options = metricsOptions(argv);
     const metrics = await collectMetrics(options.root);
 
     if (options.json) {

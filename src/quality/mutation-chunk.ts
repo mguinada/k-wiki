@@ -101,8 +101,7 @@ interface Options {
 function chunkOptions(argv: readonly string[]): Options {
   const parsed = parseArgs(argv, {
     value: ["--index", "--total"],
-    maxPositionals: 0,
-    positionalError: (arg) => `unexpected argument: ${arg}`,
+    positionals: { max: 0, error: (arg) => `unexpected argument: ${arg}` },
   });
 
   if (parsed.error !== undefined) {

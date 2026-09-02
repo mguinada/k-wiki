@@ -17,8 +17,8 @@ import {
   LAUNCHD_LABEL,
   launchdPlist,
   main,
-  parseCliArgs,
   parseIntervalDuration,
+  parseScheduleArgs,
   plistPath,
   schedulerUnsupportedError,
   stableNodePath,
@@ -327,57 +327,57 @@ describe("launchdPlist", () => {
   });
 });
 
-describe("parseCliArgs", () => {
+describe("parseScheduleArgs", () => {
   it("rejects an unknown option instead of silently using defaults", () => {
-    const parsed = parseCliArgs(["--inteval", "15minutes"]);
+    const parsed = parseScheduleArgs(["--inteval", "15minutes"]);
 
     expect(parsed.error).toContain("unknown option");
   });
 
   it("rejects a positional argument", () => {
-    const parsed = parseCliArgs(["15minutes"]);
+    const parsed = parseScheduleArgs(["15minutes"]);
 
     expect(parsed.error).toContain("unexpected argument");
   });
 
   it("rejects --interval without a value", () => {
-    const parsed = parseCliArgs(["--interval"]);
+    const parsed = parseScheduleArgs(["--interval"]);
 
     expect(parsed.error).toContain("needs a duration value");
   });
 
   it("rejects an invalid --interval value", () => {
-    const parsed = parseCliArgs(["--interval", "soon"]);
+    const parsed = parseScheduleArgs(["--interval", "soon"]);
 
     expect(parsed.error).toContain("invalid --interval value");
   });
 
   it("reads --interval 15minutes", () => {
-    const parsed = parseCliArgs(["--interval", "15minutes"]);
+    const parsed = parseScheduleArgs(["--interval", "15minutes"]);
 
     expect(parsed.interval).toBe(900);
   });
 
   it("defaults the interval to the agreed 30 minutes", () => {
-    const parsed = parseCliArgs(["--print"]);
+    const parsed = parseScheduleArgs(["--print"]);
 
     expect(parsed.interval).toBe(DEFAULT_INTERVAL_SECONDS);
   });
 
   it("reads --print", () => {
-    const parsed = parseCliArgs(["--print"]);
+    const parsed = parseScheduleArgs(["--print"]);
 
     expect(parsed.print).toBe(true);
   });
 
   it("reads --uninstall", () => {
-    const parsed = parseCliArgs(["--uninstall"]);
+    const parsed = parseScheduleArgs(["--uninstall"]);
 
     expect(parsed.uninstall).toBe(true);
   });
 
   it("errors on nothing when only the known flags are passed", () => {
-    const parsed = parseCliArgs([
+    const parsed = parseScheduleArgs([
       "--interval",
       "45seconds",
       "--print",

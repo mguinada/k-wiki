@@ -5,9 +5,9 @@ import { homedir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import { promisify } from "node:util";
 import { errorMessage } from "../cli/colors.ts";
-import { readFlagValues } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { repoRoot } from "../cli/shared.ts";
+import { parseArgs } from "../cli/shell.ts";
 
 /**
  * setup-schedule: register the scheduled pipeline with the OS
@@ -218,37 +218,42 @@ function usageError(message: string): ParsedArgs {
   };
 }
 
-/** The first argument that is neither a known flag nor an --interval
- *  value, as a usage error; undefined when argv holds only knowns. */
-function unknownArgError(
-  args: readonly string[],
-  consumed: ReadonlySet<number>,
-): string | undefined {
-  for (const [index, arg] of args.entries()) {
-    if (!consumed.has(index) && arg !== "--print" && arg !== "--uninstall") {
-      return arg.startsWith("-")
-        ? `unknown option ${JSON.stringify(arg)}`
-        : `unexpected argument ${JSON.stringify(arg)} — setup-schedule takes no positionals`;
-    }
+/** The installer's parsed args; the shell parses, this validates. */
+export function parseScheduleArgs(args: readonly string[]): ParsedArgs {
+  const parsed = parseArgs(args, {
+    value: ["--interval"],
+    boolean: ["--print", "--uninstall"],
+    positionals: {
+      max: 0,
+      error: (arg) =>
+        `unexpected argument ${JSON.stringify(arg)} — setup-schedule takes no positionals`,
+    },
+  });
+  const resolved =
+    parsed.error === undefined
+      ? resolveInterval(parsed.values)
+      : { error: parsed.error };
+
+  if (typeof resolved !== "number") {
+    return usageError(resolved.error);
   }
 
-  return undefined;
+  return {
+    interval: resolved,
+    print: parsed.flags.has("--print"),
+    uninstall: parsed.flags.has("--uninstall"),
+    error: undefined,
+  };
 }
 
-/** Pull the installer's flags out of argv; any other option or a
- *  positional is a usage error, as are --interval value errors. */
-export function parseCliArgs(args: readonly string[]): ParsedArgs {
-  const { values, consumed } = readFlagValues(["--interval"], args);
-  const unknown = unknownArgError(args, consumed);
-
-  if (unknown !== undefined) {
-    return usageError(unknown);
-  }
-
+/** The --interval seconds: the default when absent, else the error. */
+function resolveInterval(
+  values: ReadonlyMap<string, string | undefined>,
+): number | { readonly error: string } {
   const intervalText = values.get("--interval");
 
   if (values.has("--interval") && intervalText === undefined) {
-    return usageError("--interval needs a duration value (e.g. 15minutes)");
+    return { error: "--interval needs a duration value (e.g. 15minutes)" };
   }
 
   const interval =
@@ -257,17 +262,12 @@ export function parseCliArgs(args: readonly string[]): ParsedArgs {
       : parseIntervalDuration(intervalText);
 
   if (interval === undefined) {
-    return usageError(
-      `invalid --interval value ${JSON.stringify(intervalText)} — use <n><unit> with unit seconds|minutes|hours (e.g. 15minutes)`,
-    );
+    return {
+      error: `invalid --interval value ${JSON.stringify(intervalText)} — use <n><unit> with unit seconds|minutes|hours (e.g. 15minutes)`,
+    };
   }
 
-  return {
-    interval,
-    print: args.includes("--print"),
-    uninstall: args.includes("--uninstall"),
-    error: undefined,
-  };
+  return interval;
 }
 
 /** setup-schedule entry point. `runLaunchctl` and `home` are
@@ -285,7 +285,7 @@ export async function main(
     return;
   }
 
-  const parsed = parseCliArgs(argv);
+  const parsed = parseScheduleArgs(argv);
 
   if (parsed.error !== undefined) {
     console.error(`setup-schedule: ${parsed.error}`);

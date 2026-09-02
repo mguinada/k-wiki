@@ -74,10 +74,15 @@ async function makeHarness(agent: string): Promise<Harness> {
   );
 
   await run("git", ["init", "--quiet"], { cwd: dataRoot });
-  await run(
-    "git",
-    ["-C", dataRoot, "commit", "--quiet", "--allow-empty", "-m", "seed"],
-  );
+  await run("git", [
+    "-C",
+    dataRoot,
+    "commit",
+    "--quiet",
+    "--allow-empty",
+    "-m",
+    "seed",
+  ]);
 
   return {
     dataRoot,
@@ -124,9 +129,7 @@ describe("runQueryCli", () => {
     const h = await makeHarness(STUB_AGENT);
     const { out } = await runShell(h);
 
-    expect(out).toContain(
-      "Prefer RAG when the knowledge base changes often.",
-    );
+    expect(out).toContain("Prefer RAG when the knowledge base changes often.");
   });
 
   it("prints the caller's filing hint after a blank stderr line", async () => {
@@ -140,9 +143,7 @@ describe("runQueryCli", () => {
         hint: "To file this answer (human step): wiki-query --file-last",
       });
 
-      expect(
-        err.includes("\n\nTo file this answer (human step)"),
-      ).toBe(true);
+      expect(err.includes("\n\nTo file this answer (human step)")).toBe(true);
     } finally {
       if (prior === undefined) {
         delete process.env.NO_COLOR;

@@ -9,9 +9,9 @@ import { runGit } from "../../src/data/git.ts";
 import {
   checkRaw,
   displayPath,
+  type HealthReport,
   main,
   printHealthReport,
-  type HealthReport,
 } from "../../src/health/check-raw.ts";
 import {
   type Manifest,

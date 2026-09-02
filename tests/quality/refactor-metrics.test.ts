@@ -281,7 +281,7 @@ describe("main (in-process)", () => {
     await main(["--bogus"]);
 
     expect(error).toHaveBeenCalledWith(
-      expect.stringContaining("unexpected argument: --bogus"),
+      expect.stringContaining('unknown option "--bogus"'),
     );
     expect(process.exitCode).toBe(1);
   });

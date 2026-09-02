@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { canAnimate, cliFail, errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { formatDuration } from "../cli/progress.ts";
-import { parseArgs } from "../cli/shell.ts";
 import { readTextIfExists, repoRoot, sha256 } from "../cli/shared.ts";
+import { parseArgs } from "../cli/shell.ts";
 import {
   loadSyncConfig,
   resolveRawDir,
@@ -343,9 +343,11 @@ export async function main(): Promise<void> {
 
   const parsed = parseArgs(args, {
     boolean: ["--dry-run"],
-    maxPositionals: 2,
-    positionalError: (_arg, count) =>
-      `expected at most two arguments (<config> and <raw-dir>), got ${count}`,
+    positionals: {
+      max: 2,
+      error: (_arg, count) =>
+        `expected at most two arguments (<config> and <raw-dir>), got ${count}`,
+    },
   });
 
   if (parsed.error !== undefined) {

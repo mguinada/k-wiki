@@ -91,9 +91,11 @@ describe("parseArgs", () => {
 
   it("reports the spec's message for a positional beyond the maximum", () => {
     const parsed = parseArgs(["a", "b", "c"], {
-      maxPositionals: 2,
-      positionalError: (arg, count) =>
-        `expected at most two arguments (<config> and <raw-dir>), got ${count} first ${arg}`,
+      positionals: {
+        max: 2,
+        error: (arg, count) =>
+          `expected at most two arguments (<config> and <raw-dir>), got ${count} first ${arg}`,
+      },
     });
 
     expect(parsed.error).toBe(
@@ -101,10 +103,12 @@ describe("parseArgs", () => {
     );
   });
 
-  it("reports a default message for a positional beyond the maximum", () => {
-    const parsed = parseArgs(["a", "b"], { maxPositionals: 1 });
+  it("skips a hole in the argv array without recording an argument", () => {
+    const argv: readonly (string | undefined)[] = ["a", undefined, "b"];
+    const parsed = parseArgs(argv as readonly string[]);
 
-    expect(parsed.error).toBe("expected at most 1 positional argument, got 2");
+    expect(parsed.positional).toEqual(["a", "b"]);
+    expect(parsed.error).toBeUndefined();
   });
 
   it("accepts any number of positionals without a maximum", () => {
