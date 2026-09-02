@@ -59,6 +59,7 @@ import type {
   RepoSyncReport,
   SyncReport,
 } from "./projection.ts";
+import { toAbsolute } from "./projection.ts";
 import { type PublishResult, runPublishStage } from "./publish.ts";
 import { runRepoSync } from "./sync-repo.ts";
 import { runVaultSync } from "./sync-vault.ts";
@@ -158,11 +159,6 @@ export interface LintOptions {
    *  captures it once so its verification stage can revert to the
    *  same point); captured here when absent. */
   readonly pre?: PreRunState | undefined;
-}
-
-/** The agent's expected report path as an absolute check path. */
-function absoluteReportPath(dataRoot: string, reportPath: string): string {
-  return join(dataRoot, ...reportPath.split("/"));
 }
 
 /** The lint agent run's outcome: its stdout, or the failure that
@@ -279,9 +275,7 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
     throw agentError;
   }
 
-  const reportWritten = await pathExists(
-    absoluteReportPath(dataRoot, reportPath),
-  );
+  const reportWritten = await pathExists(toAbsolute(dataRoot, reportPath));
 
   return {
     reportPath,
