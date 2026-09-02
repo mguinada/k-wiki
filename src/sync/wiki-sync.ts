@@ -5,10 +5,14 @@ import {
   terminalColors as colors,
   errorMessage,
 } from "../cli/colors.ts";
-import { flagValueError, readFlagValues } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { formatDuration, stderrSink } from "../cli/progress.ts";
 import { pathExists, pluralized, repoRoot } from "../cli/shared.ts";
+import {
+  agentRunFlags,
+  type AgentRunFlags,
+  parseSyncRunArgs,
+} from "../cli/shell.ts";
 import { parseStatus, runGit, type StatusEntry } from "../data/git.ts";
 import {
   type AgentRunner,
@@ -1146,60 +1150,14 @@ function fail(message: string): void {
   cliFail("wiki-sync", message);
 }
 
-/** The parsed command line: the flag values and positionals, or the
- *  first usage error (`fail` prints it verbatim). */
-interface ParsedArgs {
-  readonly error: string | undefined;
-  readonly positional: readonly string[];
-  readonly values: Map<string, string | undefined>;
-}
-
-/** Pull the three value flags and the positionals out of argv,
- *  rejecting unknown options and more than two positionals. */
-function parseCliArgs(args: readonly string[]): ParsedArgs {
-  const { values, consumed } = readFlagValues(
-    ["--settings", "--outputs", "--timeout"],
-    args,
-  );
-
-  const positional: string[] = [];
-
-  for (const [index, arg] of args.entries()) {
-    if (consumed.has(index)) {
-      continue;
-    }
-
-    if (arg.startsWith("-")) {
-      return {
-        error: `unknown option ${JSON.stringify(arg)}`,
-        positional,
-        values,
-      };
-    }
-
-    positional.push(arg);
-  }
-
-  if (positional.length > 2) {
-    return {
-      error: `expected at most two arguments (<config> and <raw-dir>), got ${positional.length}`,
-      positional,
-      values,
-    };
-  }
-
-  return { error: undefined, positional, values };
-}
-
 /** Run the whole cycle for the parsed arguments and return its
  *  result for the digest. */
 async function runCycle(
-  parsed: ParsedArgs,
+  positional: readonly string[],
+  runFlags: AgentRunFlags,
   onProgress: (message: string) => void,
   animated: boolean,
 ): Promise<WikiSyncResult> {
-  const { positional, values } = parsed;
-  const timeoutArg = values.get("--timeout");
   const configPath = positional[0] ?? join(repoRoot, "sync.json");
   const config = await loadSyncConfig(configPath, homedir());
   const rawDir = positional[1] ?? resolveRawDir(config.dataRoot, repoRoot);
@@ -1208,10 +1166,10 @@ async function runCycle(
     configPath,
     config,
     rawDir,
-    settingsPath: values.get("--settings") ?? join(repoRoot, "settings.yml"),
-    outputsDir: values.get("--outputs") ?? join(repoRoot, "outputs"),
+    settingsPath: runFlags.settings ?? join(repoRoot, "settings.yml"),
+    outputsDir: runFlags.outputs ?? join(repoRoot, "outputs"),
     promptsDir: join(repoRoot, "prompts"),
-    timeoutMs: timeoutArg === undefined ? undefined : Number(timeoutArg) * 1000,
+    timeoutMs: runFlags.timeoutMs,
     heartbeatMs: animated ? 100 : undefined,
     onProgress,
   });
@@ -1227,7 +1185,7 @@ export async function main(): Promise<void> {
     return;
   }
 
-  const parsed = parseCliArgs(args);
+  const parsed = parseSyncRunArgs(args);
 
   if (parsed.error !== undefined) {
     fail(parsed.error);
@@ -1235,10 +1193,10 @@ export async function main(): Promise<void> {
     return;
   }
 
-  const flagError = flagValueError(parsed.values);
+  const runFlags = agentRunFlags(parsed.values);
 
-  if (flagError !== undefined) {
-    fail(flagError);
+  if (runFlags.error !== undefined) {
+    fail(runFlags.error);
 
     return;
   }
@@ -1249,7 +1207,12 @@ export async function main(): Promise<void> {
   ]);
 
   try {
-    const result = await runCycle(parsed, sink.render, animated);
+    const result = await runCycle(
+      parsed.positional,
+      runFlags,
+      sink.render,
+      animated,
+    );
 
     sink.end();
     console.log(formatFinalDigest(result));

@@ -12,9 +12,9 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Readable } from "node:stream";
 import { errorMessage } from "../cli/colors.ts";
-import { flagValueError, readFlagValues } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { pathExists, repoRoot } from "../cli/shared.ts";
+import { agentRunFlags, parseSyncRunArgs } from "../cli/shell.ts";
 import { runGit } from "../data/git.ts";
 import { loadSyncConfig } from "../sync/config.ts";
 
@@ -640,51 +640,6 @@ function fail(message: string): void {
   console.error(`scheduled-run: ${message}`);
 }
 
-/** The parsed command line, or the first usage error. */
-interface ParsedArgs {
-  readonly error: string | undefined;
-  readonly positional: readonly string[];
-  readonly values: Map<string, string | undefined>;
-}
-
-/** Same flag set and positional rules as wiki-sync — the wrapper
- *  forwards everything verbatim and uses the flags to resolve the
- *  same data repo for its lock, pull, and push. */
-function parseCliArgs(args: readonly string[]): ParsedArgs {
-  const { values, consumed } = readFlagValues(
-    ["--settings", "--outputs", "--timeout"],
-    args,
-  );
-
-  const positional: string[] = [];
-
-  for (const [index, arg] of args.entries()) {
-    if (consumed.has(index)) {
-      continue;
-    }
-
-    if (arg.startsWith("-")) {
-      return {
-        error: `unknown option ${JSON.stringify(arg)}`,
-        positional,
-        values,
-      };
-    }
-
-    positional.push(arg);
-  }
-
-  if (positional.length > 2) {
-    return {
-      error: `expected at most two arguments (<config> and <raw-dir>), got ${positional.length}`,
-      positional,
-      values,
-    };
-  }
-
-  return { error: undefined, positional, values };
-}
-
 /** The data repo for the cycle — the same one wiki-sync resolves
  *  for the forwarded arguments: dirname(<raw-dir>) when the raw-dir
  *  positional is passed, else the config's expanded dataRoot.
@@ -743,7 +698,7 @@ export async function main(): Promise<void> {
     return;
   }
 
-  const parsed = parseCliArgs(args);
+  const parsed = parseSyncRunArgs(args);
 
   if (parsed.error !== undefined) {
     fail(parsed.error);
@@ -752,10 +707,10 @@ export async function main(): Promise<void> {
     return;
   }
 
-  const flagError = flagValueError(parsed.values);
+  const runFlags = agentRunFlags(parsed.values);
 
-  if (flagError !== undefined) {
-    fail(flagError);
+  if (runFlags.error !== undefined) {
+    fail(runFlags.error);
     process.exitCode = 1;
 
     return;

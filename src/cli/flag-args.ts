@@ -72,7 +72,7 @@ export function isIsoDate(value: string | undefined): value is string {
  *  wiki-ingest, wiki-query, and wiki-sync CLIs — keep the error
  *  strings byte-identical; tests pin them. */
 export function flagValueError(
-  values: Map<string, string | undefined>,
+  values: ReadonlyMap<string, string | undefined>,
   sourcesRaw?: readonly (string | undefined)[],
 ): string | undefined {
   for (const [flag, value] of values) {
