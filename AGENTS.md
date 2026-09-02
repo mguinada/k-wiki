@@ -186,6 +186,12 @@ infrastructure, free to use for any unit or e2e work; the snapshot at
   mutation run (issue #193). Mock `process.cwd` or spawn a child
   process instead; `tests/quality/no-process-chdir.test.ts` enforces
   it in CI.
+- Tests that scan the real `src/` tree must skip inside Stryker's
+  sandbox: instrumentation injects lines into `src/`, inflating counts
+  so tree-shape assertions fail the dry run and the nightly mutation
+  report dies before it exists (issue #276). Detect the sandbox and
+  `ctx.skip(reason)` — see `insideStrykerSandbox()` in
+  `tests/quality/refactor-metrics.test.ts`.
 
 ### CLI scripts
 
