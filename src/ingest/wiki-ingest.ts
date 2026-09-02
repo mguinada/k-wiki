@@ -1028,6 +1028,11 @@ export async function wikiPages(
 export interface IngestOptions {
   /** Path to the agent settings file (settings.yml). */
   readonly settingsPath: string;
+  /** Agent settings when the caller already loaded them — the
+   *  wiki-sync cycle loads once and threads them (R-1, one
+   *  settings.yml parse per run); loaded from `settingsPath`
+   *  otherwise. */
+  readonly settings?: AgentSettings | undefined;
   /** The raw dir holding manifest.json; its parent is the data repo. */
   readonly rawDir: string;
   /** Digest destination (the repo's outputs/); a legacy snapshot
@@ -1714,9 +1719,9 @@ export async function runWikiIngest(
   options: IngestOptions,
 ): Promise<IngestResult> {
   const { env, now, onProgress } = runContext(options);
-  const settings = await loadAgentSettings(options.settingsPath, {
-    onProgress,
-  });
+  const settings =
+    options.settings ??
+    (await loadAgentSettings(options.settingsPath, { onProgress }));
 
   onProgress(`wiki-ingest: raw dir ${options.rawDir}`);
 

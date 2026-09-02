@@ -16,6 +16,7 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { createAgentProgressSink } from "../../src/cli/progress.ts";
 import { runGit } from "../../src/data/git.ts";
 import type { AgentRunner } from "../../src/ingest/agent-run.ts";
+import { loadSyncConfig } from "../../src/sync/config.ts";
 import { serializeManifest } from "../../src/sync/manifest.ts";
 import {
   type CommitResult,
@@ -302,6 +303,18 @@ async function configureDomains(h: Harness, domainWiki: string) {
 }
 
 describe("runWikiSync", () => {
+  it("uses the threaded config instead of re-parsing the file", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const config = await loadSyncConfig(h.configPath);
+
+    // A config file the parser must refuse: only the threaded object
+    // can drive the cycle (R-1, one sync.json parse per run).
+    await writeFile(h.configPath, "{ not json");
+
+    const result = await runWikiSync({ ...optionsFor(h), config });
+
+    expect(result.ingest.status).toBe("ran");
+  });
   it("commits the whole cycle in the data repo", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
     const result = await runWikiSync(optionsFor(h));

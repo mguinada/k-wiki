@@ -1838,6 +1838,19 @@ describe("runWikiIngest", () => {
     expect(result.status).toBe("ran");
   });
 
+  it("uses threaded agent settings instead of re-reading the file", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const settings = await loadAgentSettings(h.settingsPath);
+
+    // A settings file the parser must refuse: only the threaded
+    // object can carry the run (R-1, one settings.yml parse per run).
+    await writeFile(h.settingsPath, "command: [broken\n");
+
+    const result = await runWikiIngest({ ...optionsFor(h), settings });
+
+    expect(result.status).toBe("ran");
+  });
+
   it("uses the full ingest prompt when no snapshot exists", async () => {
     const h = await makeHarness({ "a.md": "a" });
     await runWikiIngest(optionsFor(h));

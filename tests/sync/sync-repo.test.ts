@@ -162,6 +162,23 @@ async function head(root: string): Promise<string> {
  *  the e2e suite via tests/e2e/helpers.ts. */
 
 describe("runRepoSync first run", () => {
+  it("uses the threaded config instead of re-parsing the file", async () => {
+    const ws = await makeWorkspace();
+    const config = await loadSyncConfig(ws.configPath);
+
+    // A config file the parser must refuse: only the threaded object
+    // can drive the projection (R-1, one sync.json parse per run).
+    await writeFile(ws.configPath, "{ not json");
+
+    const report = await runRepoSync({
+      configPath: ws.configPath,
+      config,
+      rawDir: ws.rawDir,
+      env: GIT_ENV,
+    });
+
+    expect(report.sources).toHaveLength(1);
+  });
   it("projects exactly the allowlisted files, namespaced under raw/notes/<name>/", async () => {
     const ws = await makeWorkspace();
 

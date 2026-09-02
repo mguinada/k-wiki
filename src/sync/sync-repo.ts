@@ -11,6 +11,7 @@ import {
   loadSyncConfig,
   type RepoSourceConfig,
   resolveRawDir,
+  type SyncConfig,
 } from "./config.ts";
 import {
   type Manifest,
@@ -31,6 +32,7 @@ import {
   pruneNamespaces,
   type RepoSyncReport,
   reportColors,
+  resolveDriverConfig,
   type SyncProgress,
   type SyncReport,
   toAbsolute,
@@ -214,11 +216,9 @@ async function assertCommittedTree(
 // ponytail: exactly one repo source per config; extend the manifest
 // extras per source before allowing a second one.
 async function theRepoSource(
+  config: SyncConfig,
   configPath: string,
-  home: string,
 ): Promise<RepoSourceConfig> {
-  const config = await loadSyncConfig(configPath, home);
-
   for (const source of config.vaults) {
     if (source.kind === "vault") {
       throw new Error(
@@ -310,7 +310,8 @@ export async function runRepoSync(options: DriverOptions): Promise<SyncReport> {
 
   onProgress({ kind: "event", text: `sync-repo: raw dir ${options.rawDir}` });
 
-  const source = await theRepoSource(options.configPath, home);
+  const config = await resolveDriverConfig(options, home);
+  const source = await theRepoSource(config, options.configPath);
 
   await assertSourceDirectory("source", source.name, source.root);
 
@@ -419,6 +420,7 @@ export async function main(): Promise<void> {
     const rawDir = args[1] ?? resolveRawDir(config.dataRoot, repoRoot);
     const report = await runRepoSync({
       configPath,
+      config,
       rawDir,
       onProgress: (message) =>
         console.error(colorizeProgress(message.text, "repo")),
