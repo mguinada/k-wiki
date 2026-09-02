@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
+import { sha256 } from "../../src/cli/shared.ts";
 import {
   assertCleanTree,
   gitRepoRoot,
@@ -12,7 +13,6 @@ import {
   runGit,
   statusSince,
 } from "../../src/data/git.ts";
-import { sha256 } from "../../src/cli/shared.ts";
 import { capturePreRunState } from "../../src/ingest/guardrails.ts";
 
 const tempDirs: string[] = [];

@@ -133,9 +133,10 @@ describe("loadSourceHubIndex", () => {
     const texts = new Map([
       [
         "sources/hub.md",
-        page({ title: "Hub", type: "source", origin: "raw/notes/V/threaded.md" }, [
-          "notes/V/threaded.md",
-        ]),
+        page(
+          { title: "Hub", type: "source", origin: "raw/notes/V/threaded.md" },
+          ["notes/V/threaded.md"],
+        ),
       ],
     ]);
 

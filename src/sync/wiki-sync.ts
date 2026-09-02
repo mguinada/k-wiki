@@ -33,8 +33,8 @@ import {
   type IngestResult,
   runWikiIngest,
   sourceCount,
-  wikiPages,
   type WikiPages,
+  wikiPages,
 } from "../ingest/wiki-ingest.ts";
 import { checkCrossWikiLinks } from "../wiki/crosslinks.ts";
 import {

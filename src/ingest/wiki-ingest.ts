@@ -20,11 +20,7 @@ import {
 } from "../cli/progress.ts";
 import { isPlainObject, readTextIfExists, sha256 } from "../cli/shared.ts";
 import { writeDashboard } from "../dashboard/generate.ts";
-import {
-  isPreExisting,
-  runGit,
-  type StatusEntry,
-} from "../data/git.ts";
+import { isPreExisting, runGit, type StatusEntry } from "../data/git.ts";
 import { loadSyncConfig, resolveRawDir } from "../sync/config.ts";
 import {
   emptyManifest,
@@ -387,9 +383,7 @@ function vaultEntryLines(vault: VaultSourceChange): string[] {
   }
 
   for (const rename of vault.renamed) {
-    lines.push(
-      `→ ${vault.vault}/${rename.from} → ${vault.vault}/${rename.to}`,
-    );
+    lines.push(`→ ${vault.vault}/${rename.from} → ${vault.vault}/${rename.to}`);
   }
 
   for (const path of vault.removed) {
