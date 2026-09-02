@@ -14,7 +14,7 @@ import type { Readable } from "node:stream";
 import { errorMessage } from "../cli/colors.ts";
 import { flagValueError, readFlagValues } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
-import { repoRoot } from "../cli/shared.ts";
+import { pathExists, repoRoot } from "../cli/shared.ts";
 import { runGit } from "../data/git.ts";
 import { loadSyncConfig } from "../sync/config.ts";
 
@@ -342,16 +342,6 @@ async function gitStdout(
   return typeof result === "object" && result !== null && "stdout" in result
     ? String(result.stdout)
     : "";
-}
-
-/** True when the path exists; a failed stat — missing, or a parent
- *  that is a regular file (a linked worktree's `.git`) — reads as
- *  false. */
-async function pathExists(path: string): Promise<boolean> {
-  return await stat(path).then(
-    () => true,
-    () => false,
-  );
 }
 
 /** True when the data repo sits mid-rebase: git marks the state with

@@ -1,7 +1,7 @@
 import type { Dirent } from "node:fs";
-import { readdir, readFile } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { listFiles } from "../cli/shared.ts";
+import { listFiles, readTextIfExists } from "../cli/shared.ts";
 import { runGit } from "../data/git.ts";
 import {
   CONTRACT_FILES,
@@ -23,19 +23,6 @@ import type {
  * returns the pure DashboardInput the KPI functions compute from.
  * Reads only; the generator's single write is dashboard.html.
  */
-
-/** Read a file's text, or undefined when it does not exist. */
-async function readText(path: string): Promise<string | undefined> {
-  try {
-    return await readFile(path, "utf8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return undefined;
-    }
-
-    throw error;
-  }
-}
 
 /** The scalar value of a top-level frontmatter key; null when absent. */
 function scalarField(text: string, key: string): string | null {
@@ -73,7 +60,7 @@ async function collectPages(wikiRoot: string): Promise<PageSnapshot[]> {
   const pages: PageSnapshot[] = [];
 
   for (const file of files) {
-    const text = (await readText(join(wikiRoot, file))) ?? "";
+    const text = (await readTextIfExists(join(wikiRoot, file))) ?? "";
     const fields = parsePageFields(text);
 
     pages.push({
@@ -133,7 +120,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 async function readVaults(
   path: string,
 ): Promise<Record<string, unknown> | null> {
-  const text = await readText(path);
+  const text = await readTextIfExists(path);
 
   if (text === undefined) {
     return null;
@@ -239,7 +226,9 @@ async function collectManifestNotes(dataRoot: string): Promise<{
 
 /** The timestamp recorded in outputs/last-query.md; null when absent. */
 async function collectLastQuery(dataRoot: string): Promise<string | null> {
-  const text = await readText(join(dataRoot, "outputs", "last-query.md"));
+  const text = await readTextIfExists(
+    join(dataRoot, "outputs", "last-query.md"),
+  );
 
   if (text === undefined) {
     return null;

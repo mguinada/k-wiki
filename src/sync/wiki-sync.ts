@@ -1,4 +1,3 @@
-import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import {
@@ -9,7 +8,7 @@ import {
 import { flagValueError, readFlagValues } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { formatDuration, stderrSink } from "../cli/progress.ts";
-import { repoRoot } from "../cli/shared.ts";
+import { pathExists, repoRoot } from "../cli/shared.ts";
 import { parseStatus, runGit, type StatusEntry } from "../data/git.ts";
 import {
   type AgentRunner,
@@ -280,11 +279,8 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
     throw agentError;
   }
 
-  const reportWritten = await stat(
+  const reportWritten = await pathExists(
     absoluteReportPath(dataRoot, reportPath),
-  ).then(
-    () => true,
-    () => false,
   );
 
   return {
@@ -464,12 +460,7 @@ async function commitPathspecs(
 ): Promise<readonly string[]> {
   const pathspecs = ["wiki", "raw"];
 
-  if (
-    await stat(join(dataRoot, "outputs")).then(
-      () => true,
-      () => false,
-    )
-  ) {
+  if (await pathExists(join(dataRoot, "outputs"))) {
     const { stdout } = await runGit(
       dataRoot,
       [

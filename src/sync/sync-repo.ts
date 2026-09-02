@@ -1,4 +1,4 @@
-import { mkdir, readFile, stat } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { createColors } from "picocolors";
@@ -9,6 +9,7 @@ import {
   readTextIfExists,
   repoRoot,
   sha256,
+  statIfExists,
 } from "../cli/shared.ts";
 import { runGit } from "../data/git.ts";
 import {
@@ -76,15 +77,6 @@ function literalPrefix(pattern: string): string[] {
  *  allowlist says: `.git` and `node_modules`. */
 const SKIPPED_ROOT_DIRS = new Set([".git", "node_modules"]);
 
-/** Whether the path exists and is a file. */
-async function isFile(path: string): Promise<boolean> {
-  try {
-    return (await stat(path)).isFile();
-  } catch {
-    return false;
-  }
-}
-
 /** Split the patterns into fully-literal exact files and the
  *  directory roots the walk must cover. */
 function classifyPatterns(patterns: readonly string[]): {
@@ -128,7 +120,7 @@ export async function selectRepoFiles(
   const selected = new Set<string>();
 
   for (const relPath of exactFiles) {
-    if (await isFile(toAbsolute(root, relPath))) {
+    if ((await statIfExists(toAbsolute(root, relPath)))?.isFile() === true) {
       selected.add(relPath);
     }
   }

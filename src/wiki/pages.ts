@@ -1,6 +1,6 @@
-import { readFile, stat } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
-import { listFiles } from "../cli/shared.ts";
+import { assertDirectory, listFiles } from "../cli/shared.ts";
 import { wikilinkBodyTarget } from "./wiki-links.ts";
 /**
  * Deterministic wiki-page reading, shared by the expunge seed
@@ -207,17 +207,7 @@ export const CONTRACT_FILES = new Set(["AGENTS.md", "AGENTS.meta.md"]);
  * does not exist.
  */
 export async function listWikiPages(dir: string): Promise<string[]> {
-  let isDirectory: boolean;
-
-  try {
-    isDirectory = (await stat(dir)).isDirectory();
-  } catch {
-    throw new Error(`wiki directory does not exist: ${dir}`);
-  }
-
-  if (!isDirectory) {
-    throw new Error(`wiki directory is not a directory: ${dir}`);
-  }
+  await assertDirectory("wiki directory", dir);
 
   return (await listFiles(dir))
     .filter(

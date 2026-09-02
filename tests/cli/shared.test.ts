@@ -4,12 +4,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import {
+  assertDirectory,
   isPlainObject,
   listFiles,
+  pathExists,
   RESERVED_NAMES,
   readTextIfExists,
   repoRoot,
   sha256,
+  statIfExists,
 } from "../../src/cli/shared.ts";
 
 const tempDirs: string[] = [];
@@ -182,6 +185,62 @@ describe("sha256", () => {
     expect(sha256(encoder.encode("karpathy"))).toBe(
       "b618269306c82a1526022ad1e60392d23d2775ecb480f06b0da81b6654790778",
     );
+  });
+});
+
+describe("statIfExists", () => {
+  it("returns the stats of an existing path", async () => {
+    const dir = await makeTempDir();
+    const path = join(dir, "file.txt");
+    await writeFile(path, "contents");
+
+    expect((await statIfExists(path))?.isFile()).toBe(true);
+  });
+
+  it("returns undefined for a missing path", async () => {
+    const dir = await makeTempDir();
+
+    expect(await statIfExists(join(dir, "missing.txt"))).toBeUndefined();
+  });
+});
+
+describe("pathExists", () => {
+  it("is true for an existing path of any kind", async () => {
+    const dir = await makeTempDir();
+    await mkdir(join(dir, "sub"));
+
+    expect(await pathExists(join(dir, "sub"))).toBe(true);
+  });
+
+  it("is false for a missing path", async () => {
+    expect(await pathExists(join(tmpdir(), "k-wiki-absent-path"))).toBe(false);
+  });
+});
+
+describe("assertDirectory", () => {
+  it("passes when the path is a directory", async () => {
+    const dir = await makeTempDir();
+    await mkdir(join(dir, "sub"));
+
+    await assertDirectory("wiki directory", join(dir, "sub"));
+  });
+
+  it("names the noun and display path when it does not exist", async () => {
+    const dir = await makeTempDir();
+
+    await expect(
+      assertDirectory("wiki directory", join(dir, "absent"), "input/path"),
+    ).rejects.toThrow("wiki directory does not exist: input/path");
+  });
+
+  it("names the noun and display path when it is not a directory", async () => {
+    const dir = await makeTempDir();
+    const file = join(dir, "plain.txt");
+    await writeFile(file, "");
+
+    await expect(
+      assertDirectory("raw directory", file, "input/path"),
+    ).rejects.toThrow("raw directory is not a directory: input/path");
   });
 });
 

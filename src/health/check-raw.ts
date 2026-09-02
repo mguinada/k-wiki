@@ -3,6 +3,7 @@ import { join, relative, resolve } from "node:path";
 import { terminalColors as colors, errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import {
+  assertDirectory,
   isPlainObject,
   listFiles,
   readTextIfExists,
@@ -299,7 +300,7 @@ export async function checkRaw(
 ): Promise<HealthReport> {
   const rawDir = resolve(rawDirInput);
 
-  await assertRawDir(rawDir, rawDirInput);
+  await assertDirectory("raw directory", rawDir, rawDirInput);
 
   const notesRoot = join(rawDir, "notes");
   const manifestPath = join(rawDir, "manifest.json");
@@ -352,23 +353,6 @@ export async function checkRaw(
     warnings,
     stale: freshness.stale,
   };
-}
-
-async function assertRawDir(
-  rawDir: string,
-  rawDirInput: string,
-): Promise<void> {
-  let isDirectory: boolean;
-
-  try {
-    isDirectory = (await stat(rawDir)).isDirectory();
-  } catch {
-    throw new Error(`raw directory does not exist: ${rawDirInput}`);
-  }
-
-  if (!isDirectory) {
-    throw new Error(`raw directory is not a directory: ${rawDirInput}`);
-  }
 }
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */

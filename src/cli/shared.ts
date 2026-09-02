@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import type { Dirent } from "node:fs";
-import { readdir, readFile } from "node:fs/promises";
+import type { Dirent, Stats } from "node:fs";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -21,6 +21,46 @@ export const repoRoot = resolve(
   dirname(fileURLToPath(import.meta.url)),
   "../..",
 );
+
+/** The path's stats, or undefined when the stat fails (missing path,
+ *  a parent that is a regular file, no permission). The one stat
+ *  predicate — existence and type checks derive from it (issue #255,
+ *  dedup D-15). */
+export async function statIfExists(path: string): Promise<Stats | undefined> {
+  try {
+    return await stat(path);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Whether the path exists — a successful stat on anything: file,
+ *  directory, symlink to an existing target. A failed stat — missing,
+ *  or a parent that is a regular file (a linked worktree's `.git`) —
+ *  reads as false. */
+export async function pathExists(path: string): Promise<boolean> {
+  return (await statIfExists(path)) !== undefined;
+}
+
+/** Assert the path is an accessible directory, naming the noun in
+ *  the error; `displayPath` (default: `path`) is what the message
+ *  shows — the input the operator typed, when it differs from the
+ *  resolved path. */
+export async function assertDirectory(
+  noun: string,
+  path: string,
+  displayPath = path,
+): Promise<void> {
+  const info = await statIfExists(path);
+
+  if (info === undefined) {
+    throw new Error(`${noun} does not exist: ${displayPath}`);
+  }
+
+  if (!info.isDirectory()) {
+    throw new Error(`${noun} is not a directory: ${displayPath}`);
+  }
+}
 
 /** Read a text file if it exists; undefined when it does not.
  *  Any other read error propagates. */
