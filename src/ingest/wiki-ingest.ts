@@ -372,31 +372,37 @@ export function explicitSourceDiff(
 const DEFAULT_OPERATOR_NOTE =
   "Sources re-opened by the operator: unchanged content does not imply a no-op; re-adjudicate filing decisions; if declining, state per concept why its treatment fails the page bar.";
 
-/** Render the changed-source list appended below incremental and expunge prompts. */
-function changedSourceLines(diff: ManifestDiff): string[] {
+/** The changed-source entry lines of one vault: one line per note,
+ *  sign first — `+` added, `~` changed, `→` renamed, `-` removed.
+ *  The one per-vault rule (D-19) the prompt list and the digest
+ *  listing both render; one minus sign (ASCII) in both. */
+function vaultEntryLines(vault: VaultSourceChange): string[] {
   const lines: string[] = [];
 
-  for (const vault of diff.vaults) {
-    for (const path of vault.added) {
-      lines.push(`+ ${vault.vault}/${path}`);
-    }
+  for (const path of vault.added) {
+    lines.push(`+ ${vault.vault}/${path}`);
+  }
 
-    for (const path of vault.changed) {
-      lines.push(`~ ${vault.vault}/${path}`);
-    }
+  for (const path of vault.changed) {
+    lines.push(`~ ${vault.vault}/${path}`);
+  }
 
-    for (const rename of vault.renamed) {
-      lines.push(
-        `→ ${vault.vault}/${rename.from} → ${vault.vault}/${rename.to}`,
-      );
-    }
+  for (const rename of vault.renamed) {
+    lines.push(
+      `→ ${vault.vault}/${rename.from} → ${vault.vault}/${rename.to}`,
+    );
+  }
 
-    for (const path of vault.removed) {
-      lines.push(`- ${vault.vault}/${path}`);
-    }
+  for (const path of vault.removed) {
+    lines.push(`- ${vault.vault}/${path}`);
   }
 
   return lines;
+}
+
+/** Render the changed-source list appended below incremental and expunge prompts. */
+function changedSourceLines(diff: ManifestDiff): string[] {
+  return diff.vaults.flatMap(vaultEntryLines);
 }
 
 /**
@@ -747,30 +753,13 @@ export function sourceCount(
   return diff.vaults.reduce((total, vault) => total + vault[key].length, 0);
 }
 
-/** Render the digest's per-vault changed-source listing. */
+/** Render the digest's per-vault changed-source listing: the same
+ *  entry lines under a bold vault heading (D-19). */
 function digestVaultLines(diff: ManifestDiff): string[] {
   const lines: string[] = [];
 
   for (const vault of diff.vaults) {
-    lines.push(`**${vault.vault}**`);
-
-    for (const path of vault.added) {
-      lines.push(`- + ${vault.vault}/${path}`);
-    }
-
-    for (const path of vault.changed) {
-      lines.push(`~ ${vault.vault}/${path}`);
-    }
-
-    for (const rename of vault.renamed) {
-      lines.push(
-        `→ ${vault.vault}/${rename.from} → ${vault.vault}/${rename.to}`,
-      );
-    }
-
-    for (const path of vault.removed) {
-      lines.push(`- − ${vault.vault}/${path}`);
-    }
+    lines.push(`**${vault.vault}**`, ...vaultEntryLines(vault));
   }
 
   return lines;

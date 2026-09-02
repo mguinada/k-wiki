@@ -932,15 +932,15 @@ describe("formatDigest", () => {
   });
 
   it("lists an added source path in the digest", () => {
-    expect(formatDigest(digestRun())).toContain("- + Engineering/d.md");
+    expect(formatDigest(digestRun())).toContain("+ Engineering/d.md");
   });
 
   it("lists a changed source path in the digest", () => {
     expect(formatDigest(digestRun())).toContain("~ Engineering/a.md");
   });
 
-  it("lists a removed source path in the digest", () => {
-    expect(formatDigest(digestRun())).toContain("- − Engineering/c.md");
+  it("lists a removed source path in the digest with the prompt's minus sign", () => {
+    expect(formatDigest(digestRun())).toContain("- Engineering/c.md");
   });
 
   it("carries a Changed sources section heading", () => {
@@ -1280,7 +1280,7 @@ describe("formatDigest", () => {
 
     expect(digest).toContain(
       [
-        "- − Engineering/c.md",
+        "- Engineering/c.md",
         "",
         "## Expunge direct set",
         "",
@@ -1364,9 +1364,9 @@ describe("formatDigest", () => {
         "## Changed sources",
         "",
         "**Engineering**",
-        "- + Engineering/d.md",
+        "+ Engineering/d.md",
         "~ Engineering/a.md",
-        "- − Engineering/c.md",
+        "- Engineering/c.md",
         "",
         "## Wiki pages (git diff)",
         "",
