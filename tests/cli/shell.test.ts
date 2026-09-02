@@ -104,8 +104,7 @@ describe("parseArgs", () => {
   });
 
   it("skips a hole in the argv array without recording an argument", () => {
-    const argv: readonly (string | undefined)[] = ["a", undefined, "b"];
-    const parsed = parseArgs(argv as readonly string[]);
+    const parsed = parseArgs(["a", undefined, "b"]);
 
     expect(parsed.positional).toEqual(["a", "b"]);
     expect(parsed.error).toBeUndefined();
