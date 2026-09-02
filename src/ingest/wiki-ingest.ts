@@ -692,8 +692,8 @@ export async function directSetForRemovals(
 async function readUnverifiedFrontier(
   dataRoot: string,
   pages: WikiPages,
-): Promise<{ path: string; sources: readonly string[] }[]> {
-  const result: { path: string; sources: readonly string[] }[] = [];
+): Promise<UnverifiedFrontierPage[]> {
+  const result: UnverifiedFrontierPage[] = [];
 
   for (const path of [...pages.created, ...pages.updated]) {
     const fields = await readPageFields(join(dataRoot, path));
@@ -1512,20 +1512,28 @@ export const AGENT_HEARTBEAT_PREFIX = [
   "wiki-ingest: expunge agent still running",
 ] as const;
 
+/** The failure digest's input (C-16): the run's identity fields —
+ *  an IngestRun minus the fields meaningless after the revert (page
+ *  buckets, direct set, frontier, outcome flags) — plus the tripped
+ *  check and the explicit-diff marker; no re-declared IngestRun
+ *  shape that must stay in sync by hand. */
+type FailureDigestRun = Omit<
+  IngestRun,
+  | "pages"
+  | "directSet"
+  | "unverifiedFrontier"
+  | "guardrailFailure"
+  | "explicitSources"
+> & {
+  readonly failure: GuardrailFailure;
+  readonly explicitDiff: ManifestDiff | undefined;
+};
+
 /** Write the digest of a guardrail-reverted run: no page counts, the
  *  tripped check named, the agent output kept for review. */
 async function writeFailureDigest(
   digestPath: string,
-  run: {
-    startedAt: Date;
-    mode: "full" | "incremental" | "expunge";
-    promptFile: string;
-    settings: AgentSettings;
-    diff: ManifestDiff;
-    agentOutput: string;
-    failure: GuardrailFailure;
-    explicitDiff: ManifestDiff | undefined;
-  },
+  run: FailureDigestRun,
 ): Promise<void> {
   const { failure } = run;
 
