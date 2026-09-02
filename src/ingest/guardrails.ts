@@ -5,6 +5,7 @@ import {
   hashMatches,
   headCommit,
   isPreExisting,
+  pathUntouched,
   porcelainStatus,
   renameOriginsOf,
   runGit,
@@ -219,11 +220,14 @@ async function changedWikiPages(
       continue;
     }
 
-    const isDirty =
-      !isPreExisting(before.get(entry.path), entry) ||
-      !(await hashMatches(dataRoot, entry.path, pre.hashes.get(entry.path)));
+    const untouched = await pathUntouched(
+      dataRoot,
+      isPreExisting(before.get(entry.path), entry),
+      entry.path,
+      pre.hashes.get(entry.path),
+    );
 
-    if (isDirty) {
+    if (!untouched) {
       changed.push(entry.path);
     }
   }
@@ -497,17 +501,21 @@ function preRunGonePaths(status: readonly StatusEntry[]): Set<string> {
   return gone;
 }
 
-/** Pre-run untracked wiki pages whose file is now gone: deleting an
- *  untracked page leaves no status trace, so the disk is the witness. */
-async function vanishedUntrackedWikiPaths(
+/** Pre-run untracked paths whose file is now gone: deleting an
+ *  untracked file leaves no status trace, so the disk is the
+ *  witness — a file that only became gitignored mid-run still
+ *  exists on disk and does not count as deleted (D-1: the one
+ *  vanished-page rule, shared with wiki-ingest's page buckets). */
+export async function vanishedUntrackedPaths(
   dataRoot: string,
   status: readonly StatusEntry[],
+  isWatched: (path: string) => boolean,
 ): Promise<string[]> {
   const paths: string[] = [];
 
   for (const entry of status) {
     if (
-      isWikiPage(entry.path) &&
+      isWatched(entry.path) &&
       isUntracked(entry) &&
       (await readContent(join(dataRoot, entry.path))) === null
     ) {
@@ -550,7 +558,7 @@ async function deletedWikiPageNames(
 ): Promise<Set<string>> {
   const alreadyGone = preRunGonePaths(pre.status);
   const removed = [
-    ...(await vanishedUntrackedWikiPaths(dataRoot, pre.status)),
+    ...(await vanishedUntrackedPaths(dataRoot, pre.status, isWikiPage)),
     ...runRemovedWikiPaths(entries),
   ];
 

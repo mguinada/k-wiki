@@ -190,17 +190,21 @@ export async function checkWikiProvenance(
   const files = await listWikiPages(wikiDir);
 
   await assertRawDir(rawDir);
-  const index = buildPageIndex(files);
-  const hubs = await loadSourceHubIndex(wikiDir);
-  const problems: string[] = [];
+
+  // One read per page (R-3): the same texts feed the hub index and
+  // the per-page checks below.
   const texts = new Map<string, string>();
-  let sources = 0;
-  let origins = 0;
-  let missingOrigins = 0;
 
   for (const file of files) {
     texts.set(file, await readFile(join(wikiDir, file), "utf8"));
   }
+
+  const index = buildPageIndex(files);
+  const hubs = await loadSourceHubIndex(wikiDir, texts);
+  const problems: string[] = [];
+  let sources = 0;
+  let origins = 0;
+  let missingOrigins = 0;
 
   for (const file of files) {
     const text = texts.get(file) ?? "";

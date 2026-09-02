@@ -20,12 +20,7 @@ import {
 } from "../cli/progress.ts";
 import { isPlainObject, readTextIfExists, sha256 } from "../cli/shared.ts";
 import { writeDashboard } from "../dashboard/generate.ts";
-import {
-  isPreExisting,
-  parseStatus,
-  runGit,
-  type StatusEntry,
-} from "../data/git.ts";
+import { isPreExisting, runGit, type StatusEntry } from "../data/git.ts";
 import { loadSyncConfig, resolveRawDir } from "../sync/config.ts";
 import {
   emptyManifest,
@@ -58,6 +53,7 @@ import {
   type PreRunState,
   revertToPreRun,
   runGuardrails,
+  vanishedUntrackedPaths,
 } from "./guardrails.ts";
 
 /**
@@ -371,31 +367,35 @@ export function explicitSourceDiff(
 const DEFAULT_OPERATOR_NOTE =
   "Sources re-opened by the operator: unchanged content does not imply a no-op; re-adjudicate filing decisions; if declining, state per concept why its treatment fails the page bar.";
 
-/** Render the changed-source list appended below incremental and expunge prompts. */
-function changedSourceLines(diff: ManifestDiff): string[] {
+/** The changed-source entry lines of one vault: one line per note,
+ *  sign first — `+` added, `~` changed, `→` renamed, `-` removed.
+ *  The one per-vault rule (D-19) the prompt list and the digest
+ *  listing both render; one minus sign (ASCII) in both. */
+function vaultEntryLines(vault: VaultSourceChange): string[] {
   const lines: string[] = [];
 
-  for (const vault of diff.vaults) {
-    for (const path of vault.added) {
-      lines.push(`+ ${vault.vault}/${path}`);
-    }
+  for (const path of vault.added) {
+    lines.push(`+ ${vault.vault}/${path}`);
+  }
 
-    for (const path of vault.changed) {
-      lines.push(`~ ${vault.vault}/${path}`);
-    }
+  for (const path of vault.changed) {
+    lines.push(`~ ${vault.vault}/${path}`);
+  }
 
-    for (const rename of vault.renamed) {
-      lines.push(
-        `→ ${vault.vault}/${rename.from} → ${vault.vault}/${rename.to}`,
-      );
-    }
+  for (const rename of vault.renamed) {
+    lines.push(`→ ${vault.vault}/${rename.from} → ${vault.vault}/${rename.to}`);
+  }
 
-    for (const path of vault.removed) {
-      lines.push(`- ${vault.vault}/${path}`);
-    }
+  for (const path of vault.removed) {
+    lines.push(`- ${vault.vault}/${path}`);
   }
 
   return lines;
+}
+
+/** Render the changed-source list appended below incremental and expunge prompts. */
+function changedSourceLines(diff: ManifestDiff): string[] {
+  return diff.vaults.flatMap(vaultEntryLines);
 }
 
 /**
@@ -686,8 +686,8 @@ export async function directSetForRemovals(
 async function readUnverifiedFrontier(
   dataRoot: string,
   pages: WikiPages,
-): Promise<{ path: string; sources: readonly string[] }[]> {
-  const result: { path: string; sources: readonly string[] }[] = [];
+): Promise<UnverifiedFrontierPage[]> {
+  const result: UnverifiedFrontierPage[] = [];
 
   for (const path of [...pages.created, ...pages.updated]) {
     const fields = await readPageFields(join(dataRoot, path));
@@ -746,30 +746,13 @@ export function sourceCount(
   return diff.vaults.reduce((total, vault) => total + vault[key].length, 0);
 }
 
-/** Render the digest's per-vault changed-source listing. */
+/** Render the digest's per-vault changed-source listing: the same
+ *  entry lines under a bold vault heading (D-19). */
 function digestVaultLines(diff: ManifestDiff): string[] {
   const lines: string[] = [];
 
   for (const vault of diff.vaults) {
-    lines.push(`**${vault.vault}**`);
-
-    for (const path of vault.added) {
-      lines.push(`- + ${vault.vault}/${path}`);
-    }
-
-    for (const path of vault.changed) {
-      lines.push(`~ ${vault.vault}/${path}`);
-    }
-
-    for (const rename of vault.renamed) {
-      lines.push(
-        `→ ${vault.vault}/${rename.from} → ${vault.vault}/${rename.to}`,
-      );
-    }
-
-    for (const path of vault.removed) {
-      lines.push(`- − ${vault.vault}/${path}`);
-    }
+    lines.push(`**${vault.vault}**`, ...vaultEntryLines(vault));
   }
 
   return lines;
@@ -924,10 +907,32 @@ function isFreshRename(
   );
 }
 
-/** Bucket the post-run status entries: created (added, untracked,
- *  or a rename this run introduced — the rename's target), updated
- *  (modified), deleted (deleted now but not already deleted
- *  pre-run; likewise a fresh rename's origin). */
+/** Bucket an entry's own path by its status code. */
+function bucketOwnPath(
+  entry: StatusEntry,
+  before: ReadonlyMap<string, StatusEntry>,
+  buckets: { created: string[]; updated: string[]; deleted: string[] },
+): void {
+  const { code, path } = entry;
+
+  if (
+    code.includes("A") ||
+    code.includes("?") ||
+    isFreshRename(entry, before)
+  ) {
+    buckets.created.push(path);
+  } else if (code.includes("M")) {
+    buckets.updated.push(path);
+  } else if (code.includes("D") && !before.get(path)?.code.includes("D")) {
+    buckets.deleted.push(path);
+  }
+}
+
+/** Bucket the post-run status entries, each path scoped to the
+ *  wiki tree: created (added, untracked, or a rename this run
+ *  introduced — the rename's target), updated (modified), deleted
+ *  (deleted now but not already deleted pre-run; likewise a fresh
+ *  rename's origin). */
 function currentEntryBuckets(
   entries: readonly StatusEntry[],
   before: ReadonlyMap<string, StatusEntry>,
@@ -937,91 +942,66 @@ function currentEntryBuckets(
   const deleted: string[] = [];
 
   for (const entry of entries) {
-    const { code, path, origin } = entry;
-
-    if (
-      code.includes("A") ||
-      code.includes("?") ||
-      isFreshRename(entry, before)
-    ) {
-      created.push(path);
-    } else if (code.includes("M")) {
-      updated.push(path);
-    } else if (code.includes("D") && !before.get(path)?.code.includes("D")) {
-      deleted.push(path);
+    if (underWikiTree(entry.path)) {
+      bucketOwnPath(entry, before, { created, updated, deleted });
     }
 
-    if (origin !== undefined && isFreshRename(entry, before)) {
-      deleted.push(origin);
+    if (
+      entry.origin !== undefined &&
+      underWikiTree(entry.origin) &&
+      isFreshRename(entry, before)
+    ) {
+      deleted.push(entry.origin);
     }
   }
 
   return { created, updated, deleted };
 }
 
-/** Pre-run untracked pages whose file vanished during the run: git
- *  status never lists them, so the pre-run state is the only witness. */
-function vanishedUntracked(
-  before: ReadonlyMap<string, StatusEntry>,
-  entries: readonly StatusEntry[],
-  pathspec: string,
-): string[] {
-  const deleted: string[] = [];
-
-  for (const entry of before.values()) {
-    if (
-      entry.code.includes("?") &&
-      entry.path.startsWith(`${pathspec}/`) &&
-      entry.path.endsWith(".md") &&
-      !entries.some((current) => current.path === entry.path)
-    ) {
-      deleted.push(entry.path);
-    }
+/** Pre-run untracked wiki pages whose file vanished during the
+ *  run: the disk witness — the guardrails' rule — decides (D-1), so
+ *  a page that only became gitignored mid-run does not count as
+ *  deleted. */
+async function vanishedUntrackedPages(
+  dataRoot: string,
+  pre: PreRunState | undefined,
+): Promise<string[]> {
+  if (pre === undefined) {
+    return [];
   }
 
-  return deleted;
+  return await vanishedUntrackedPaths(
+    dataRoot,
+    pre.status,
+    (path) => underWikiTree(path) && path.endsWith(".md"),
+  );
+}
+
+/** Whether a status path sits under the wiki tree: the scope a
+ *  `git status -- wiki` pathspec would have produced, narrowed
+ *  from the guardrails' full-repo snapshot. */
+function underWikiTree(path: string): boolean {
+  return path.startsWith("wiki/");
 }
 
 /**
- * Wiki pages created, updated, and deleted by the run, from the data
- * repo's git status: untracked or added paths count as created,
- * modified paths as updated, deleted paths (staged or not) as deleted;
- * a rename counts its target as created and its origin as deleted.
+ * Wiki pages created, updated, and deleted by the run, bucketed from
+ * the post-run status entries the guardrails already produced (R-2:
+ * no second full `git status` spawn): untracked or added paths count
+ * as created, modified paths as updated, deleted paths (staged or
+ * not) as deleted; a rename this run introduced counts its target as
+ * created and its origin as deleted, while a rename already staged
+ * before the run counts nowhere (the pre-run attribution gate).
  * Deleting a page that was still untracked leaves no status entry at
  * all, so with the pre-run state those pages count as deleted when
- * their file is gone; a deletion that predates the run (already `D`
- * pre-run) is not the run's doing. When git cannot report, the digest
- * says so instead of failing a run that did update the wiki.
+ * their file is gone (the disk witness); a deletion that predates
+ * the run (already `D` pre-run) is not the run's doing.
  */
 export async function wikiPages(
   dataRoot: string,
-  env: NodeJS.ProcessEnv,
-  pathspec = "wiki",
+  entries: readonly StatusEntry[],
   pre?: PreRunState,
 ): Promise<WikiPages> {
-  let stdout: string;
-
-  try {
-    ({ stdout } = await runGit(
-      dataRoot,
-      [
-        "-c",
-        "core.quotePath=false",
-        "status",
-        "--porcelain",
-        "-uall",
-        "--",
-        pathspec,
-      ],
-      env,
-    ));
-  } catch (cause) {
-    const reason = cause instanceof Error ? cause.message : String(cause);
-
-    return { created: [], updated: [], deleted: [], unavailable: reason };
-  }
-
-  const entries = parseStatus(stdout);
   const before = new Map(
     (pre?.status ?? []).map((entry) => [entry.path, entry] as const),
   );
@@ -1032,7 +1012,7 @@ export async function wikiPages(
     updated: updated.sort(),
     deleted: [
       ...deleted,
-      ...vanishedUntracked(before, entries, pathspec),
+      ...(await vanishedUntrackedPages(dataRoot, pre)),
     ].sort(),
     unavailable: undefined,
   };
@@ -1041,6 +1021,11 @@ export async function wikiPages(
 export interface IngestOptions {
   /** Path to the agent settings file (settings.yml). */
   readonly settingsPath: string;
+  /** Agent settings when the caller already loaded them — the
+   *  wiki-sync cycle loads once and threads them (R-1, one
+   *  settings.yml parse per run); loaded from `settingsPath`
+   *  otherwise. */
+  readonly settings?: AgentSettings | undefined;
   /** The raw dir holding manifest.json; its parent is the data repo. */
   readonly rawDir: string;
   /** Digest destination (the repo's outputs/); a legacy snapshot
@@ -1531,20 +1516,28 @@ export const AGENT_HEARTBEAT_PREFIX = [
   "wiki-ingest: expunge agent still running",
 ] as const;
 
+/** The failure digest's input (C-16): the run's identity fields —
+ *  an IngestRun minus the fields meaningless after the revert (page
+ *  buckets, direct set, frontier, outcome flags) — plus the tripped
+ *  check and the explicit-diff marker; no re-declared IngestRun
+ *  shape that must stay in sync by hand. */
+type FailureDigestRun = Omit<
+  IngestRun,
+  | "pages"
+  | "directSet"
+  | "unverifiedFrontier"
+  | "guardrailFailure"
+  | "explicitSources"
+> & {
+  readonly failure: GuardrailFailure;
+  readonly explicitDiff: ManifestDiff | undefined;
+};
+
 /** Write the digest of a guardrail-reverted run: no page counts, the
  *  tripped check named, the agent output kept for review. */
 async function writeFailureDigest(
   digestPath: string,
-  run: {
-    startedAt: Date;
-    mode: "full" | "incremental" | "expunge";
-    promptFile: string;
-    settings: AgentSettings;
-    diff: ManifestDiff;
-    agentOutput: string;
-    failure: GuardrailFailure;
-    explicitDiff: ManifestDiff | undefined;
-  },
+  run: FailureDigestRun,
 ): Promise<void> {
   const { failure } = run;
 
@@ -1727,9 +1720,9 @@ export async function runWikiIngest(
   options: IngestOptions,
 ): Promise<IngestResult> {
   const { env, now, onProgress } = runContext(options);
-  const settings = await loadAgentSettings(options.settingsPath, {
-    onProgress,
-  });
+  const settings =
+    options.settings ??
+    (await loadAgentSettings(options.settingsPath, { onProgress }));
 
   onProgress(`wiki-ingest: raw dir ${options.rawDir}`);
 
@@ -1859,7 +1852,7 @@ export async function runWikiIngest(
     throw agentError;
   }
 
-  const pages = await wikiPages(dataRoot, env, "wiki", pre);
+  const pages = await wikiPages(dataRoot, post.entries, pre);
   const unverifiedFrontier = await readUnverifiedFrontier(dataRoot, pages);
 
   const run: IngestRun = {

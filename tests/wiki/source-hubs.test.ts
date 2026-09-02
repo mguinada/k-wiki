@@ -123,6 +123,28 @@ describe("citationChapter", () => {
 });
 
 describe("loadSourceHubIndex", () => {
+  it("indexes the caller's texts instead of re-reading the wiki", async () => {
+    const wikiDir = await makeWiki({
+      "sources/hub.md": page(
+        { title: "Hub", type: "source", origin: "raw/notes/V/disk.md" },
+        ["notes/V/disk.md"],
+      ),
+    });
+    const texts = new Map([
+      [
+        "sources/hub.md",
+        page(
+          { title: "Hub", type: "source", origin: "raw/notes/V/threaded.md" },
+          ["notes/V/threaded.md"],
+        ),
+      ],
+    ]);
+
+    const index = await loadSourceHubIndex(wikiDir, texts);
+
+    expect(index.byOrigin.get("notes/V/threaded.md")).toBe("hub");
+  });
+
   it("maps a source page's normalized origin to its page name", async () => {
     const wikiDir = await makeWiki({
       "sources/hub.md": page(

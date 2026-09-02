@@ -26,10 +26,11 @@ async function collectTsFiles(root: string, prefix = ""): Promise<string[]> {
   for (const entry of entries) {
     const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
 
-    // sync-cli-spawn stages transient launcher copies here while this
-    // scan may be walking tests/ in parallel; skipping the directory
-    // kills the read-vs-delete race (ENOENT) outright.
-    if (entry.isDirectory() && entry.name === ".cli-import-staging") {
+    // cli-spawn and data:init stage transient launcher copies here
+    // (`.*-import-staging`) while this scan may be walking tests/ in
+    // parallel; skipping the staging directories kills the
+    // read-vs-delete race (ENOENT) outright.
+    if (entry.isDirectory() && entry.name.endsWith("-import-staging")) {
       continue;
     }
 

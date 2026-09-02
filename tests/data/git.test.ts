@@ -3,10 +3,12 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
+import { sha256 } from "../../src/cli/shared.ts";
 import {
   assertCleanTree,
   gitRepoRoot,
   parseStatus,
+  pathUntouched,
   renameOriginsOf,
   runGit,
   statusSince,
@@ -221,6 +223,44 @@ async function commit(dataRoot: string, message: string): Promise<void> {
     message,
   );
 }
+
+describe("pathUntouched", () => {
+  it("holds when the pre-run snapshot carried the path and the content still matches", async () => {
+    const dataRoot = await makeRepo();
+
+    expect(
+      await pathUntouched(
+        dataRoot,
+        true,
+        "raw/notes/src.md",
+        sha256(Buffer.from("# src\n")),
+      ),
+    ).toBe(true);
+  });
+
+  it("fails when the pre-run snapshot did not carry the path", async () => {
+    const dataRoot = await makeRepo();
+
+    expect(
+      await pathUntouched(dataRoot, false, "raw/notes/src.md", "absent"),
+    ).toBe(false);
+  });
+
+  it("fails when the content no longer matches the snapshot", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(join(dataRoot, "raw", "notes", "src.md"), "# edited\n");
+
+    expect(
+      await pathUntouched(
+        dataRoot,
+        true,
+        "raw/notes/src.md",
+        sha256(Buffer.from("# src\n")),
+      ),
+    ).toBe(false);
+  });
+});
 
 describe("parseStatus", () => {
   it("splits each porcelain line into code and path", () => {

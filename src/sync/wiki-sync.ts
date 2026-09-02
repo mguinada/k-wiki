@@ -10,7 +10,7 @@ import {
 import { flagValueError, readFlagValues } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { formatDuration, stderrSink } from "../cli/progress.ts";
-import { parseStatus, runGit } from "../data/git.ts";
+import { parseStatus, runGit, type StatusEntry } from "../data/git.ts";
 import {
   type AgentRunner,
   readPrompt,
@@ -33,6 +33,7 @@ import {
   type IngestResult,
   runWikiIngest,
   sourceCount,
+  type WikiPages,
   wikiPages,
 } from "../ingest/wiki-ingest.ts";
 import { checkCrossWikiLinks } from "../wiki/crosslinks.ts";
@@ -120,6 +121,10 @@ export interface LintResult {
   readonly reportWritten: boolean;
   /** The agent's final report (stdout). */
   readonly summary: string;
+  /** The post-run status the stage's guardrails produced; the cycle's
+   *  commit summary reuses it instead of spawning git again (B-10:
+   *  no hidden child-process run inside the summary builder). */
+  readonly entries: readonly StatusEntry[];
 }
 
 /** The data-repo-relative lint report path for a run's date. */
@@ -130,6 +135,10 @@ export function lintReportPath(now: () => Date): string {
 export interface LintOptions {
   /** Path to the agent settings file (settings.yml). */
   readonly settingsPath: string;
+  /** Agent settings when the caller already loaded them — the cycle
+   *  loads once and threads them (R-1, one settings.yml parse per
+   *  run); loaded from `settingsPath` otherwise. */
+  readonly settings?: AgentSettings | undefined;
   /** The raw dir; its parent is the data repo the agent runs in. */
   readonly rawDir: string;
   /** Directory holding lint.md. */
@@ -218,9 +227,9 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
   const now = options.now ?? (() => new Date());
   const onProgress = options.onProgress ?? (() => {});
   const dataRoot = dirname(options.rawDir);
-  const settings = await loadAgentSettings(options.settingsPath, {
-    onProgress,
-  });
+  const settings =
+    options.settings ??
+    (await loadAgentSettings(options.settingsPath, { onProgress }));
 
   onProgress("wiki-sync: lint — reading prompts/lint.md");
 
@@ -278,7 +287,12 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
     () => false,
   );
 
-  return { reportPath, reportWritten, summary: stdout };
+  return {
+    reportPath,
+    reportWritten,
+    summary: stdout,
+    entries: post.entries,
+  };
 }
 
 /** What the crosslink stage reports back to the cycle digest. */
@@ -535,6 +549,10 @@ export interface WikiSyncResult {
 export interface WikiSyncOptions {
   /** Path to `sync.json`. */
   readonly configPath: string;
+  /** The parsed sync config when the caller already holds it — the
+   *  CLI parses once (raw-dir resolution) and threads it (R-1, one
+   *  sync.json parse per run); parsed from `configPath` otherwise. */
+  readonly config?: SyncConfig | undefined;
   /** The `raw/` directory; its parent is the data repo. */
   readonly rawDir: string;
   /** Path to the agent settings file (settings.yml). */
@@ -577,16 +595,15 @@ function syncChangeCounts(sync: SyncReport): {
 }
 
 /** The commit summary of one cycle: ingest diff counts when the agent
- *  ran, the sync report's counts otherwise. */
-async function commitSummaryOf(
+ *  ran, the sync report's counts otherwise. The page counts come from
+ *  the caller — the status snapshot the cycle already holds (B-10:
+ *  the summary builder hides no git child-process run). */
+function commitSummaryOf(
   sync: SyncReport,
   ingest: IngestResult,
   lint: LintResult | undefined,
-  dataRoot: string,
-  env: NodeJS.ProcessEnv,
-): Promise<CommitSummary> {
-  const pages = await wikiPages(dataRoot, env);
-
+  pages: WikiPages,
+): CommitSummary {
   if (ingest.status === "ran") {
     const added = sourceCount(ingest.diff, "added");
     const changed = sourceCount(ingest.diff, "changed");
@@ -688,6 +705,7 @@ async function runSyncStage(
 
   return await DRIVERS[kind]({
     configPath: options.configPath,
+    config,
     rawDir: options.rawDir,
     env,
     now,
@@ -700,12 +718,12 @@ async function runSyncStage(
 async function runLintOrSkip(
   options: WikiSyncOptions,
   ingest: IngestResult,
-  env: NodeJS.ProcessEnv,
-  now: () => Date,
-  onProgress: (message: string) => void,
   stages: readonly string[],
-  pre: PreRunState,
+  preLint: PreRunState,
+  settings: AgentSettings,
 ): Promise<LintResult | undefined> {
+  const onProgress = options.onProgress ?? (() => {});
+
   if (ingest.status !== "ran") {
     onProgress(`${stageLine(stages, "lint")} skipped (no ingest ran)`);
 
@@ -716,15 +734,16 @@ async function runLintOrSkip(
 
   return await runLintStage({
     settingsPath: options.settingsPath,
+    settings,
     rawDir: options.rawDir,
     promptsDir: options.promptsDir,
-    env,
-    now,
+    env: options.env ?? process.env,
+    now: options.now ?? (() => new Date()),
     runAgent: options.runAgent,
     timeoutMs: options.timeoutMs,
     heartbeatMs: options.heartbeatMs,
     onProgress,
-    pre,
+    pre: preLint,
   });
 }
 
@@ -833,10 +852,12 @@ export async function runWikiSync(
   const now = options.now ?? (() => new Date());
   const onProgress = options.onProgress ?? (() => {});
   const dataRoot = dirname(options.rawDir);
-  const { secondBrainDomains: domains } = await loadAgentSettings(
-    options.settingsPath,
-  );
-  const config = await loadSyncConfig(options.configPath, homedir());
+  const settings = await loadAgentSettings(options.settingsPath, {
+    onProgress,
+  });
+  const { secondBrainDomains: domains } = settings;
+  const config =
+    options.config ?? (await loadSyncConfig(options.configPath, homedir()));
   const stages = stageNames({ domains, publish: config.publish });
   const sync = await runSyncStage(
     config,
@@ -851,6 +872,7 @@ export async function runWikiSync(
 
   const ingest = await runWikiIngest({
     settingsPath: options.settingsPath,
+    settings,
     rawDir: options.rawDir,
     outputsDir: options.outputsDir,
     promptsDir: options.promptsDir,
@@ -866,15 +888,7 @@ export async function runWikiSync(
   // stage left, before the lint agent runs.
   const preLint = await capturePreRunState(dataRoot, env);
 
-  const lint = await runLintOrSkip(
-    options,
-    ingest,
-    env,
-    now,
-    onProgress,
-    stages,
-    preLint,
-  );
+  const lint = await runLintOrSkip(options, ingest, stages, preLint, settings);
   const crosslinks = await runCrosslinksOrSkip(
     options,
     domains,
@@ -892,7 +906,12 @@ export async function runWikiSync(
 
   onProgress(stageLine(stages, "commit"));
 
-  const summary = await commitSummaryOf(sync, ingest, lint, dataRoot, env);
+  // The commit summary's page counts, from the status snapshot the
+  // cycle already holds: the lint stage's post-run entries when lint
+  // ran; otherwise the pre-lint capture (nothing changes between it
+  // and the commit on a lint-skip path — verification is read-only).
+  const pages = await wikiPages(dataRoot, lint?.entries ?? preLint.status);
+  const summary = commitSummaryOf(sync, ingest, lint, pages);
 
   return {
     sync,
@@ -1208,6 +1227,7 @@ async function runCycle(
 
   return await runWikiSync({
     configPath,
+    config,
     rawDir,
     settingsPath: values.get("--settings") ?? join(repoRoot, "settings.yml"),
     outputsDir: values.get("--outputs") ?? join(repoRoot, "outputs"),

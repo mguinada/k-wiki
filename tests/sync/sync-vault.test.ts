@@ -15,6 +15,7 @@ import {
   generateFixtureVault,
   VAULT_NAME,
 } from "../../src/fixtures/generate.ts";
+import { loadSyncConfig } from "../../src/sync/config.ts";
 import { parseManifest } from "../../src/sync/manifest.ts";
 import type { SyncProgress } from "../../src/sync/projection.ts";
 import {
@@ -137,6 +138,22 @@ async function readdRetiredNamespace(ws: Workspace): Promise<void> {
 }
 
 describe("runVaultSync first run", () => {
+  it("uses the threaded config instead of re-parsing the file", async () => {
+    const ws = await makeWorkspace();
+    const config = await loadSyncConfig(ws.configPath);
+
+    // A config file the parser must refuse: only the threaded object
+    // can drive the sync (R-1, one sync.json parse per run).
+    await writeFile(ws.configPath, "{ not json");
+
+    const { sources } = await runVaultSync({
+      configPath: ws.configPath,
+      config,
+      rawDir: ws.rawDir,
+    });
+
+    expect(sources).toHaveLength(1);
+  });
   it("copies exactly the wiki:true notes into raw/notes/<vault>", async () => {
     const ws = await makeWorkspace();
 

@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { createAgentProgressSink } from "../../src/cli/progress.ts";
-import { runGit } from "../../src/data/git.ts";
+import { porcelainStatus, runGit } from "../../src/data/git.ts";
 import { type AgentRunner, readPrompt } from "../../src/ingest/agent-run.ts";
 import {
   type AgentSettings,
@@ -932,15 +932,15 @@ describe("formatDigest", () => {
   });
 
   it("lists an added source path in the digest", () => {
-    expect(formatDigest(digestRun())).toContain("- + Engineering/d.md");
+    expect(formatDigest(digestRun())).toContain("+ Engineering/d.md");
   });
 
   it("lists a changed source path in the digest", () => {
     expect(formatDigest(digestRun())).toContain("~ Engineering/a.md");
   });
 
-  it("lists a removed source path in the digest", () => {
-    expect(formatDigest(digestRun())).toContain("- − Engineering/c.md");
+  it("lists a removed source path in the digest with the prompt's minus sign", () => {
+    expect(formatDigest(digestRun())).toContain("- Engineering/c.md");
   });
 
   it("carries a Changed sources section heading", () => {
@@ -1280,7 +1280,7 @@ describe("formatDigest", () => {
 
     expect(digest).toContain(
       [
-        "- − Engineering/c.md",
+        "- Engineering/c.md",
         "",
         "## Expunge direct set",
         "",
@@ -1364,9 +1364,9 @@ describe("formatDigest", () => {
         "## Changed sources",
         "",
         "**Engineering**",
-        "- + Engineering/d.md",
+        "+ Engineering/d.md",
         "~ Engineering/a.md",
-        "- − Engineering/c.md",
+        "- Engineering/c.md",
         "",
         "## Wiki pages (git diff)",
         "",
@@ -1834,6 +1834,19 @@ describe("runWikiIngest", () => {
   it("runs the agent when no snapshot exists", async () => {
     const h = await makeHarness({ "a.md": "a" });
     const result = await runWikiIngest(optionsFor(h));
+
+    expect(result.status).toBe("ran");
+  });
+
+  it("uses threaded agent settings instead of re-reading the file", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    const settings = await loadAgentSettings(h.settingsPath);
+
+    // A settings file the parser must refuse: only the threaded
+    // object can carry the run (R-1, one settings.yml parse per run).
+    await writeFile(h.settingsPath, "command: [broken\n");
+
+    const result = await runWikiIngest({ ...optionsFor(h), settings });
 
     expect(result.status).toBe("ran");
   });
@@ -6502,9 +6515,39 @@ describe("wikiPages vanished untracked detection", () => {
       contents: new Map<string, Buffer | null>(),
     };
 
-    const pages = await wikiPages(dataRoot, process.env, "wiki", pre);
+    const pages = await wikiPages(
+      dataRoot,
+      await porcelainStatus(dataRoot, process.env),
+      pre,
+    );
 
     expect(pages.deleted).toEqual(["wiki/a.md", "wiki/z.md"]);
+  });
+
+  it("does not count as deleted a pre-run untracked page the run only got ignored", async () => {
+    const dataRoot = await makeDataRepo({ "a.md": "a" });
+
+    await writeFile(join(dataRoot, "wiki", "a.md"), "# A\n");
+
+    const pre: PreRunState = {
+      commit: "0123456789abcdef0123456789abcdef01234567",
+      status: [{ code: "??", path: "wiki/a.md", origin: undefined }],
+      hashes: new Map<string, string>(),
+      contents: new Map<string, Buffer | null>(),
+    };
+
+    // Mid-run: an ignore rule now covers the page — git status stops
+    // listing it, but the disk witness sees the file still exists, so
+    // it is not deleted (issue #256, D-1).
+    await writeFile(join(dataRoot, ".gitignore"), "wiki/a.md\n");
+
+    const pages = await wikiPages(
+      dataRoot,
+      await porcelainStatus(dataRoot, process.env),
+      pre,
+    );
+
+    expect(pages.deleted).toEqual([]);
   });
 
   it("lists created and updated pages in sorted order with no stray entries", async () => {
@@ -6514,7 +6557,10 @@ describe("wikiPages vanished untracked detection", () => {
     await writeFile(join(dataRoot, "wiki", "a.md"), "# A\n");
     await writeFile(join(dataRoot, "wiki", "index.md"), "# Index changed\n");
 
-    const pages = await wikiPages(dataRoot, process.env);
+    const pages = await wikiPages(
+      dataRoot,
+      await porcelainStatus(dataRoot, process.env),
+    );
 
     expect(pages.created).toEqual(["wiki/a.md", "wiki/z.md"]);
     expect(pages.updated).toEqual(["wiki/index.md"]);
@@ -6531,11 +6577,56 @@ describe("wikiPages vanished untracked detection", () => {
       "wiki/renamed.md",
     ]);
 
-    const pages = await wikiPages(dataRoot, process.env);
+    const pages = await wikiPages(
+      dataRoot,
+      await porcelainStatus(dataRoot, process.env),
+    );
 
     expect(pages.created).toEqual(["wiki/renamed.md"]);
     expect(pages.updated).toEqual([]);
     expect(pages.deleted).toEqual(["wiki/index.md"]);
+  });
+
+  it("buckets a rename out of the wiki tree as its origin's deletion only", async () => {
+    const dataRoot = await makeDataRepo({ "a.md": "a" });
+
+    await run("git", ["-C", dataRoot, "mv", "wiki/A-page.md", "moved-out.md"]);
+
+    const pages = await wikiPages(
+      dataRoot,
+      await porcelainStatus(dataRoot, process.env),
+    );
+
+    expect(pages).toEqual({
+      created: [],
+      updated: [],
+      deleted: ["wiki/A-page.md"],
+      unavailable: undefined,
+    });
+  });
+
+  it("buckets a rename into the wiki tree as its target's creation only", async () => {
+    const dataRoot = await makeDataRepo({ "a.md": "a" });
+
+    await run("git", [
+      "-C",
+      dataRoot,
+      "mv",
+      "raw/notes/Engineering/a.md",
+      "wiki/imported.md",
+    ]);
+
+    const pages = await wikiPages(
+      dataRoot,
+      await porcelainStatus(dataRoot, process.env),
+    );
+
+    expect(pages).toEqual({
+      created: ["wiki/imported.md"],
+      updated: [],
+      deleted: [],
+      unavailable: undefined,
+    });
   });
 
   it("counts a rename staged before the run nowhere when a pre-run state is given", async () => {
@@ -6558,21 +6649,40 @@ describe("wikiPages vanished untracked detection", () => {
       contents: new Map<string, Buffer | null>(),
     };
 
-    const pages = await wikiPages(dataRoot, process.env, "wiki", pre);
+    const pages = await wikiPages(
+      dataRoot,
+      await porcelainStatus(dataRoot, process.env),
+      pre,
+    );
 
-    expect(pages.created).toEqual([]);
-    expect(pages.updated).toEqual([]);
-    expect(pages.deleted).toEqual([]);
+    expect(pages).toEqual({
+      created: [],
+      updated: [],
+      deleted: [],
+      unavailable: undefined,
+    });
   });
 
-  it("reports git as unavailable outside a repository instead of throwing", async () => {
+  it("buckets caller-supplied entries without spawning git", async () => {
     const dataRoot = await makeDataRepo({ "a.md": "a" });
 
+    // No repository and no pre-run state: the entries the guardrails
+    // produced are the only input (R-2) — wikiPages never runs git.
     await rm(join(dataRoot, ".git"), { recursive: true });
 
-    const pages = await wikiPages(dataRoot, process.env);
+    const pages = await wikiPages(dataRoot, [
+      { code: "??", path: "wiki/new.md", origin: undefined },
+      { code: " M", path: "wiki/index.md", origin: undefined },
+      { code: " D", path: "wiki/gone.md", origin: undefined },
+      { code: "??", path: "raw/manifest.json", origin: undefined },
+    ]);
 
-    expect(pages.unavailable).toMatch(/not a git repository/);
+    expect(pages).toEqual({
+      created: ["wiki/new.md"],
+      updated: ["wiki/index.md"],
+      deleted: ["wiki/gone.md"],
+      unavailable: undefined,
+    });
   });
 });
 

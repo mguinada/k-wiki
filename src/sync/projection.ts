@@ -8,6 +8,7 @@ import {
   formatDuration,
   isWarning,
 } from "../cli/progress.ts";
+import { loadSyncConfig, type SyncConfig } from "./config.ts";
 import type { Manifest, ManifestEntry, VaultNotes } from "./manifest.ts";
 
 /**
@@ -282,6 +283,11 @@ export interface SyncReport {
 export interface DriverOptions {
   /** Path to the sync config (e.g. `sync.json`, `sync-meta.json`). */
   readonly configPath: string;
+  /** The parsed sync config when the caller already holds it — the
+   *  wiki-sync cycle and the CLIs parse once and thread it (R-1,
+   *  one sync.json parse per run); parsed from `configPath`
+   *  otherwise. */
+  readonly config?: SyncConfig | undefined;
   /** The `raw/` directory that receives `notes/` and `manifest.json`. */
   readonly rawDir: string;
   /** Home directory for `~` expansion; defaults to the real home. */
@@ -294,6 +300,15 @@ export interface DriverOptions {
   readonly progressEvery?: number | undefined;
   /** Progress sink (uncolored messages); default: silent. */
   readonly onProgress?: (message: SyncProgress) => void;
+}
+
+/** The driver's sync config: the caller's threaded parse when given,
+ *  the file at `configPath` otherwise (R-1: one parse per run). */
+export async function resolveDriverConfig(
+  options: Pick<DriverOptions, "config" | "configPath">,
+  home: string,
+): Promise<SyncConfig> {
+  return options.config ?? (await loadSyncConfig(options.configPath, home));
 }
 
 /** One vault's would-ingest listing; produced by a dry run. */

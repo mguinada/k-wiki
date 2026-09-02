@@ -35,6 +35,7 @@ import {
   projectNotes,
   pruneNamespaces,
   reportColors,
+  resolveDriverConfig,
   type SyncProgress,
   type SyncReport,
   toAbsolute,
@@ -223,7 +224,7 @@ export async function runVaultSync(
     text: `sync-vault: raw dir ${options.rawDir}`,
   });
 
-  const config = await loadSyncConfig(options.configPath, home);
+  const config = await resolveDriverConfig(options, home);
   const vaults = vaultSourcesOnly(config.vaults);
   const manifestPath = join(options.rawDir, "manifest.json");
   const previousText = await readTextIfExists(manifestPath);
@@ -290,7 +291,7 @@ export async function runDryRun(
     text: "sync-vault: dry run, nothing will be written",
   });
 
-  const config = await loadSyncConfig(options.configPath, home);
+  const config = await resolveDriverConfig(options, home);
   const reports: VaultDryRunReport[] = [];
 
   for (const vault of vaultSourcesOnly(config.vaults)) {
@@ -363,6 +364,7 @@ export async function main(): Promise<void> {
       const startedAt = Date.now();
       const reports = await runDryRun({
         configPath,
+        config,
         rawDir,
         progressEvery,
         onProgress: sink.render,
@@ -378,6 +380,7 @@ export async function main(): Promise<void> {
     const startedAt = Date.now();
     const report = await runVaultSync({
       configPath,
+      config,
       rawDir,
       progressEvery,
       onProgress: sink.render,
