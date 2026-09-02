@@ -718,13 +718,12 @@ async function runSyncStage(
 async function runLintOrSkip(
   options: WikiSyncOptions,
   ingest: IngestResult,
-  env: NodeJS.ProcessEnv,
-  now: () => Date,
-  onProgress: (message: string) => void,
   stages: readonly string[],
-  pre: PreRunState,
+  preLint: PreRunState,
   settings: AgentSettings,
 ): Promise<LintResult | undefined> {
+  const onProgress = options.onProgress ?? (() => {});
+
   if (ingest.status !== "ran") {
     onProgress(`${stageLine(stages, "lint")} skipped (no ingest ran)`);
 
@@ -738,13 +737,13 @@ async function runLintOrSkip(
     settings,
     rawDir: options.rawDir,
     promptsDir: options.promptsDir,
-    env,
-    now,
+    env: options.env ?? process.env,
+    now: options.now ?? (() => new Date()),
     runAgent: options.runAgent,
     timeoutMs: options.timeoutMs,
     heartbeatMs: options.heartbeatMs,
     onProgress,
-    pre,
+    pre: preLint,
   });
 }
 
@@ -889,16 +888,7 @@ export async function runWikiSync(
   // stage left, before the lint agent runs.
   const preLint = await capturePreRunState(dataRoot, env);
 
-  const lint = await runLintOrSkip(
-    options,
-    ingest,
-    env,
-    now,
-    onProgress,
-    stages,
-    preLint,
-    settings,
-  );
+  const lint = await runLintOrSkip(options, ingest, stages, preLint, settings);
   const crosslinks = await runCrosslinksOrSkip(
     options,
     domains,
