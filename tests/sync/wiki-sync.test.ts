@@ -419,6 +419,15 @@ describe("runWikiSync", () => {
     expect(result.lint?.reportWritten).toBe(true);
   });
 
+  it("exposes the lint stage's post-run status entries", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const result = await runWikiSync(optionsFor(h));
+
+    expect(result.lint?.entries.map((entry) => entry.path)).toContain(
+      "outputs/lint-2026-08-20.md",
+    );
+  });
+
   it("writes the lint report into the data repo outputs", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
     await runWikiSync(optionsFor(h));
@@ -3110,6 +3119,7 @@ describe("formatFinalDigest sections", () => {
         reportPath: "outputs/lint-2026-08-20.md",
         reportWritten: true,
         summary: overrides.lintSummary ?? "lint summary body",
+        entries: [],
       },
       crosslinks: overrides.crosslinks,
       verification: {

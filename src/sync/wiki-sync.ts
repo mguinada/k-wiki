@@ -10,7 +10,7 @@ import {
 import { flagValueError, readFlagValues } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { formatDuration, stderrSink } from "../cli/progress.ts";
-import { parseStatus, runGit } from "../data/git.ts";
+import { parseStatus, runGit, type StatusEntry } from "../data/git.ts";
 import {
   type AgentRunner,
   readPrompt,
@@ -34,6 +34,7 @@ import {
   runWikiIngest,
   sourceCount,
   wikiPages,
+  type WikiPages,
 } from "../ingest/wiki-ingest.ts";
 import { checkCrossWikiLinks } from "../wiki/crosslinks.ts";
 import {
@@ -120,6 +121,10 @@ export interface LintResult {
   readonly reportWritten: boolean;
   /** The agent's final report (stdout). */
   readonly summary: string;
+  /** The post-run status the stage's guardrails produced; the cycle's
+   *  commit summary reuses it instead of spawning git again (B-10:
+   *  no hidden child-process run inside the summary builder). */
+  readonly entries: readonly StatusEntry[];
 }
 
 /** The data-repo-relative lint report path for a run's date. */
@@ -282,7 +287,12 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
     () => false,
   );
 
-  return { reportPath, reportWritten, summary: stdout };
+  return {
+    reportPath,
+    reportWritten,
+    summary: stdout,
+    entries: post.entries,
+  };
 }
 
 /** What the crosslink stage reports back to the cycle digest. */
@@ -585,16 +595,15 @@ function syncChangeCounts(sync: SyncReport): {
 }
 
 /** The commit summary of one cycle: ingest diff counts when the agent
- *  ran, the sync report's counts otherwise. */
-async function commitSummaryOf(
+ *  ran, the sync report's counts otherwise. The page counts come from
+ *  the caller — the status snapshot the cycle already holds (B-10:
+ *  the summary builder hides no git child-process run). */
+function commitSummaryOf(
   sync: SyncReport,
   ingest: IngestResult,
   lint: LintResult | undefined,
-  dataRoot: string,
-  env: NodeJS.ProcessEnv,
-): Promise<CommitSummary> {
-  const pages = await wikiPages(dataRoot, env);
-
+  pages: WikiPages,
+): CommitSummary {
   if (ingest.status === "ran") {
     const added = sourceCount(ingest.diff, "added");
     const changed = sourceCount(ingest.diff, "changed");
@@ -907,7 +916,12 @@ export async function runWikiSync(
 
   onProgress(stageLine(stages, "commit"));
 
-  const summary = await commitSummaryOf(sync, ingest, lint, dataRoot, env);
+  // The commit summary's page counts, from the status snapshot the
+  // cycle already holds: the lint stage's post-run entries when lint
+  // ran; otherwise the pre-lint capture (nothing changes between it
+  // and the commit on a lint-skip path — verification is read-only).
+  const pages = await wikiPages(dataRoot, lint?.entries ?? preLint.status);
+  const summary = commitSummaryOf(sync, ingest, lint, pages);
 
   return {
     sync,

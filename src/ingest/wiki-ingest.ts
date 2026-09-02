@@ -22,7 +22,6 @@ import { isPlainObject, readTextIfExists, sha256 } from "../cli/shared.ts";
 import { writeDashboard } from "../dashboard/generate.ts";
 import {
   isPreExisting,
-  parseStatus,
   runGit,
   type StatusEntry,
 } from "../data/git.ts";
@@ -949,14 +948,13 @@ function currentEntryBuckets(
   return { created, updated, deleted };
 }
 
-/** Pre-run untracked pages under the pathspec whose file vanished
- *  during the run: the disk witness — the guardrails' rule — decides
- *  (D-1), so a page that only became gitignored mid-run does not
- *  count as deleted. */
+/** Pre-run untracked wiki pages whose file vanished during the
+ *  run: the disk witness — the guardrails' rule — decides (D-1), so
+ *  a page that only became gitignored mid-run does not count as
+ *  deleted. */
 async function vanishedUntrackedPages(
   dataRoot: string,
   pre: PreRunState | undefined,
-  pathspec: string,
 ): Promise<string[]> {
   if (pre === undefined) {
     return [];
@@ -965,61 +963,52 @@ async function vanishedUntrackedPages(
   return await vanishedUntrackedPaths(
     dataRoot,
     pre.status,
-    (path) => path.startsWith(`${pathspec}/`) && path.endsWith(".md"),
+    (path) => path.startsWith("wiki/") && path.endsWith(".md"),
+  );
+}
+
+/** Whether either side of an entry sits under the wiki tree: the
+ *  scope a `git status -- wiki` pathspec would have produced,
+ *  narrowed from the guardrails' full-repo snapshot. */
+function underWiki(entry: StatusEntry): boolean {
+  return (
+    entry.path.startsWith("wiki/") ||
+    (entry.origin !== undefined && entry.origin.startsWith("wiki/"))
   );
 }
 
 /**
- * Wiki pages created, updated, and deleted by the run, from the data
- * repo's git status: untracked or added paths count as created,
- * modified paths as updated, deleted paths (staged or not) as deleted;
- * a rename counts its target as created and its origin as deleted.
+ * Wiki pages created, updated, and deleted by the run, bucketed from
+ * the post-run status entries the guardrails already produced (R-2:
+ * no second full `git status` spawn): untracked or added paths count
+ * as created, modified paths as updated, deleted paths (staged or
+ * not) as deleted; a rename this run introduced counts its target as
+ * created and its origin as deleted, while a rename already staged
+ * before the run counts nowhere (the pre-run attribution gate).
  * Deleting a page that was still untracked leaves no status entry at
  * all, so with the pre-run state those pages count as deleted when
- * their file is gone; a deletion that predates the run (already `D`
- * pre-run) is not the run's doing. When git cannot report, the digest
- * says so instead of failing a run that did update the wiki.
+ * their file is gone (the disk witness); a deletion that predates
+ * the run (already `D` pre-run) is not the run's doing.
  */
 export async function wikiPages(
   dataRoot: string,
-  env: NodeJS.ProcessEnv,
-  pathspec = "wiki",
+  entries: readonly StatusEntry[],
   pre?: PreRunState,
 ): Promise<WikiPages> {
-  let stdout: string;
-
-  try {
-    ({ stdout } = await runGit(
-      dataRoot,
-      [
-        "-c",
-        "core.quotePath=false",
-        "status",
-        "--porcelain",
-        "-uall",
-        "--",
-        pathspec,
-      ],
-      env,
-    ));
-  } catch (cause) {
-    const reason = cause instanceof Error ? cause.message : String(cause);
-
-    return { created: [], updated: [], deleted: [], unavailable: reason };
-  }
-
-  const entries = parseStatus(stdout);
   const before = new Map(
     (pre?.status ?? []).map((entry) => [entry.path, entry] as const),
   );
-  const { created, updated, deleted } = currentEntryBuckets(entries, before);
+  const { created, updated, deleted } = currentEntryBuckets(
+    entries.filter(underWiki),
+    before,
+  );
 
   return {
     created: created.sort(),
     updated: updated.sort(),
     deleted: [
       ...deleted,
-      ...(await vanishedUntrackedPages(dataRoot, pre, pathspec)),
+      ...(await vanishedUntrackedPages(dataRoot, pre)),
     ].sort(),
     unavailable: undefined,
   };
@@ -1851,7 +1840,7 @@ export async function runWikiIngest(
     throw agentError;
   }
 
-  const pages = await wikiPages(dataRoot, env, "wiki", pre);
+  const pages = await wikiPages(dataRoot, post.entries, pre);
   const unverifiedFrontier = await readUnverifiedFrontier(dataRoot, pages);
 
   const run: IngestRun = {
