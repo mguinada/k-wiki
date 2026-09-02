@@ -136,7 +136,7 @@ export async function selectRepoFiles(
       files = await listFiles(
         walkRoot === "" ? root : join(root, walkRoot),
         walkRoot,
-        { skipRootDirs: SKIPPED_ROOT_DIRS },
+        { skipRootDirs: SKIPPED_ROOT_DIRS, regularFilesOnly: true },
       );
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") {

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -7,6 +7,7 @@ import {
   listFiles,
   RESERVED_NAMES,
   readTextIfExists,
+  repoRoot,
   sha256,
 } from "../../src/cli/shared.ts";
 
@@ -141,6 +142,24 @@ describe("listFiles", () => {
       ["sub/deeper/b.md"],
     );
     expect(visited).toEqual([1, 2, 3]);
+  });
+
+  it("collects a non-directory entry by default so health can flag it", async () => {
+    const dir = await makeTempDir();
+    await writeFile(join(dir, "real.md"), "");
+    await symlink("real.md", join(dir, "link.md"));
+
+    expect(await listFiles(dir)).toEqual(["link.md", "real.md"]);
+  });
+
+  it("skips non-directory entries when regularFilesOnly is set", async () => {
+    const dir = await makeTempDir();
+    await writeFile(join(dir, "real.md"), "");
+    await symlink("real.md", join(dir, "link.md"));
+
+    expect(await listFiles(dir, "", { regularFilesOnly: true })).toEqual([
+      "real.md",
+    ]);
   });
 
   it("walks below a non-empty prefix, reporting paths under it", async () => {

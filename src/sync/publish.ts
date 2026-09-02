@@ -60,6 +60,7 @@ async function walkFiles(
   for (const relPath of await listFiles(root, "", {
     skipDirs: SKIP_DIRS,
     skipFiles: SKIP_FILES,
+    regularFilesOnly: true,
   })) {
     files.set(relPath, join(root, relPath));
   }

@@ -25,6 +25,7 @@ export async function scanVault(
     skipDirs: SKIPPED_DIRECTORIES,
     skipFiles: SKIPPED_FILES,
     extension: MARKDOWN_EXTENSION,
+    regularFilesOnly: true,
     onDir,
   });
 

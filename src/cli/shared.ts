@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { Dirent } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -49,6 +50,11 @@ export interface ListFilesOptions {
   readonly skipRootDirs?: ReadonlySet<string>;
   /** File names never collected. */
   readonly skipFiles?: ReadonlySet<string>;
+  /** When set, only regular files are collected — symlinked and
+   *  other non-directory entries are skipped. The default collects
+   *  every entry that is not a directory, so health checks can flag
+   *  stray symlinks as orphans. */
+  readonly regularFilesOnly?: boolean | undefined;
   /** When set, only file names ending in this extension are collected. */
   readonly extension?: string;
   /** Receives the running count of directories read, for a progress
@@ -95,22 +101,46 @@ async function walkInto(
     const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
 
     if (entry.isDirectory()) {
-      const skipped = options.skipDirs?.has(entry.name) === true;
-      const skippedAtRoot =
-        prefix === "" && options.skipRootDirs?.has(entry.name) === true;
-
-      if (!skipped && !skippedAtRoot) {
+      if (shouldDescend(entry, prefix, options)) {
         await walkInto(join(dir, entry.name), rel, options, files, state);
       }
-    } else if (
-      entry.isFile() &&
-      options.skipFiles?.has(entry.name) !== true &&
-      (options.extension === undefined ||
-        entry.name.endsWith(options.extension))
-    ) {
+    } else if (shouldCollect(entry, options)) {
       files.push(rel);
     }
   }
+}
+
+/** Whether the walk descends into this directory entry: never into
+ *  a skipDirs name, and at the walk root not into a skipRootDirs
+ *  name either. */
+function shouldDescend(
+  entry: Dirent,
+  prefix: string,
+  options: ListFilesOptions,
+): boolean {
+  if (options.skipDirs?.has(entry.name) === true) {
+    return false;
+  }
+
+  return prefix !== "" || options.skipRootDirs?.has(entry.name) !== true;
+}
+
+/** Whether the walk collects this file entry: not a skipFiles
+ *  name, a regular file when the walk is regular-files-only, and
+ *  matching the extension filter when set. */
+function shouldCollect(entry: Dirent, options: ListFilesOptions): boolean {
+  if (options.skipFiles?.has(entry.name) === true) {
+    return false;
+  }
+
+  if (options.regularFilesOnly === true && !entry.isFile()) {
+    return false;
+  }
+
+  return (
+    options.extension === undefined ||
+    entry.name.endsWith(options.extension)
+  );
 }
 
 /** Lowercase hex SHA-256 digest of the given bytes. */
