@@ -1,8 +1,9 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { createColors } from "picocolors";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { pathExists } from "../../src/cli/shared.ts";
 import { VAULT_NAME } from "../../src/fixtures/generate.ts";
 import {
   colorizeError,
@@ -12,6 +13,7 @@ import {
   formatDryRunReport,
   formatReport,
   listNamespaceDirs,
+  pruneEmptyDirs,
   reportColors,
   type SyncReport,
   type VaultDryRunReport,
@@ -32,6 +34,17 @@ afterAll(async () => {
 }, 120_000);
 
 describe("listNamespaceDirs", () => {
+  it("lists a symlinked namespace directory", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-projection-"));
+
+    tempDirs.push(dir);
+    await mkdir(join(dir, "notes"));
+    await mkdir(join(dir, "elsewhere"));
+    await symlink(join(dir, "elsewhere"), join(dir, "notes", "Linked"));
+
+    expect(await listNamespaceDirs(join(dir, "notes"))).toEqual(["Linked"]);
+  });
+
   it("returns an empty list when the notes root is absent", async () => {
     expect(await listNamespaceDirs(join(tmpdir(), "k-wiki-absent"))).toEqual(
       [],
@@ -410,6 +423,65 @@ describe("formatReport all-blocked hint", () => {
     expect(formatReport(report).split("\n").at(-1)).toBe(
       "sync complete: no changes (0s)",
     );
+  });
+});
+
+describe("pruneEmptyDirs", () => {
+  it("removes the emptied directories below the stop root", async () => {
+    const root = await mkdtemp(join(tmpdir(), "k-wiki-prune-"));
+    tempDirs.push(root);
+    const leaf = join(root, "notes", "Vault", "Sub", "Leaf.md");
+
+    await mkdir(dirname(leaf), { recursive: true });
+    await writeFile(leaf, "");
+    await rm(leaf);
+
+    await pruneEmptyDirs(dirname(leaf), join(root, "notes", "Vault"));
+
+    expect(await pathExists(join(root, "notes", "Vault", "Sub"))).toBe(false);
+  });
+
+  it("keeps the stop root itself", async () => {
+    const root = await mkdtemp(join(tmpdir(), "k-wiki-prune-"));
+    tempDirs.push(root);
+    const leaf = join(root, "notes", "Vault", "Sub", "Leaf.md");
+
+    await mkdir(dirname(leaf), { recursive: true });
+    await writeFile(leaf, "");
+    await rm(leaf);
+
+    await pruneEmptyDirs(dirname(leaf), join(root, "notes", "Vault"));
+
+    expect(await pathExists(join(root, "notes", "Vault"))).toBe(true);
+  });
+
+  it("removes the empty directory it was pointed at", async () => {
+    const root = await mkdtemp(join(tmpdir(), "k-wiki-prune-"));
+    tempDirs.push(root);
+    const kept = join(root, "ns", "Sub", "Kept");
+    const pruned = join(root, "ns", "Sub", "Gone");
+
+    await mkdir(kept, { recursive: true });
+    await mkdir(pruned, { recursive: true });
+
+    await pruneEmptyDirs(pruned, join(root, "ns"));
+
+    expect(await pathExists(pruned)).toBe(false);
+  });
+
+  it("stops at a directory that still holds entries", async () => {
+    const root = await mkdtemp(join(tmpdir(), "k-wiki-prune-"));
+    tempDirs.push(root);
+    const shared = join(root, "ns", "Sub");
+    const kept = join(root, "ns", "Sub", "Kept");
+    const pruned = join(root, "ns", "Sub", "Gone");
+
+    await mkdir(kept, { recursive: true });
+    await mkdir(pruned, { recursive: true });
+
+    await pruneEmptyDirs(pruned, join(root, "ns"));
+
+    expect(await pathExists(shared)).toBe(true);
   });
 });
 

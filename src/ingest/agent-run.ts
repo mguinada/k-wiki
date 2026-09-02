@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
+import { pluralized } from "../cli/shared.ts";
 
 /**
  * The agent run primitives: AgentRunner, spawnAgent (non-interactive
@@ -64,7 +65,7 @@ export function spawnAgent(
 
       reject(
         new Error(
-          `agent ${command} timed out after ${seconds} second${seconds === 1 ? "" : "s"}`,
+          `agent ${command} timed out after ${pluralized(seconds, "second")}`,
         ),
       );
     }, timeoutMs);

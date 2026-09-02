@@ -1,7 +1,5 @@
-import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import {
   cliFail,
   terminalColors as colors,
@@ -10,6 +8,7 @@ import {
 import { flagValueError, readFlagValues } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { formatDuration, stderrSink } from "../cli/progress.ts";
+import { pathExists, pluralized, repoRoot } from "../cli/shared.ts";
 import { parseStatus, runGit, type StatusEntry } from "../data/git.ts";
 import {
   type AgentRunner,
@@ -60,6 +59,7 @@ import type {
   RepoSyncReport,
   SyncReport,
 } from "./projection.ts";
+import { toAbsolute } from "./projection.ts";
 import { type PublishResult, runPublishStage } from "./publish.ts";
 import { runRepoSync } from "./sync-repo.ts";
 import { runVaultSync } from "./sync-vault.ts";
@@ -159,11 +159,6 @@ export interface LintOptions {
    *  captures it once so its verification stage can revert to the
    *  same point); captured here when absent. */
   readonly pre?: PreRunState | undefined;
-}
-
-/** The agent's expected report path as an absolute check path. */
-function absoluteReportPath(dataRoot: string, reportPath: string): string {
-  return join(dataRoot, ...reportPath.split("/"));
 }
 
 /** The lint agent run's outcome: its stdout, or the failure that
@@ -280,12 +275,7 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
     throw agentError;
   }
 
-  const reportWritten = await stat(
-    absoluteReportPath(dataRoot, reportPath),
-  ).then(
-    () => true,
-    () => false,
-  );
+  const reportWritten = await pathExists(toAbsolute(dataRoot, reportPath));
 
   return {
     reportPath,
@@ -464,12 +454,7 @@ async function commitPathspecs(
 ): Promise<readonly string[]> {
   const pathspecs = ["wiki", "raw"];
 
-  if (
-    await stat(join(dataRoot, "outputs")).then(
-      () => true,
-      () => false,
-    )
-  ) {
+  if (await pathExists(join(dataRoot, "outputs"))) {
     const { stdout } = await runGit(
       dataRoot,
       [
@@ -929,10 +914,6 @@ export async function runWikiSync(
   };
 }
 
-function pluralized(count: number, noun: string): string {
-  return count === 1 ? `1 ${noun}` : `${count} ${noun}s`;
-}
-
 /** One line per source: what sync copied and removed; a repo run
  *  also names the commit its projection is stamped with. */
 function syncSummaryLines(sync: SyncReport): string[] {
@@ -1048,8 +1029,6 @@ export function formatFinalDigest(result: WikiSyncResult): string {
 
   return `${lines.join("\n")}\n`;
 }
-
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
 const HELP = `Usage: wiki-sync [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<config>] [<raw-dir>]

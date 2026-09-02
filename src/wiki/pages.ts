@@ -1,12 +1,13 @@
-import { readFile, stat } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
-import { listFiles } from "../cli/shared.ts";
-import { wikilinkBodyTarget } from "./wiki-links.ts";
+import { assertDirectory, listFiles } from "../cli/shared.ts";
+import { wikilinkBody, wikilinkBodyTarget } from "./wiki-links.ts";
 /**
  * Deterministic wiki-page reading, shared by the expunge seed
  * (wiki-ingest) and the dead-provenance check (scripts/): which pages
  * exist, and the frontmatter fields the pipeline treats as
- * machine-readable provenance — `type`, `origin`, and `sources`.
+ * machine-readable provenance — `type`, `updated`, `status`,
+ * `origin`, and `sources`.
  * Agent-written frontmatter is tolerant input: a page whose fields
  * cannot be read simply contributes nothing to the deterministic
  * layer.
@@ -18,6 +19,10 @@ export interface PageFields {
   readonly title: string | undefined;
   /** The page type scalar (e.g. `source`), as written. */
   readonly type: string | undefined;
+  /** The `updated` date scalar, as written. */
+  readonly updated: string | undefined;
+  /** The `status` scalar (e.g. `needs-review`), as written. */
+  readonly status: string | undefined;
   /** The raw projection path backing a source page, as written. */
   readonly origin: string | undefined;
   /** `sources` list entries as written (wikilinks still bracketed). */
@@ -40,6 +45,8 @@ export const FRONTMATTER_FENCE = "---";
 const EMPTY_FIELDS: PageFields = {
   title: undefined,
   type: undefined,
+  updated: undefined,
+  status: undefined,
   origin: undefined,
   sources: [],
 };
@@ -85,7 +92,7 @@ export function isWikilinkEntry(entry: string): boolean {
 
 /** The page-name part of a bracketed `sources` entry; empty when malformed. */
 export function wikilinkTarget(entry: string): string {
-  return wikilinkBodyTarget(entry.slice(2, -2));
+  return wikilinkBodyTarget(wikilinkBody(entry));
 }
 
 /** `raw/notes/…` with an optional `raw/` prefix removed. */
@@ -106,6 +113,8 @@ function scalar(value: string | undefined): string | undefined {
 interface MutablePageFields {
   title: string | undefined;
   type: string | undefined;
+  updated: string | undefined;
+  status: string | undefined;
   origin: string | undefined;
   sources: string[];
   inSources: boolean;
@@ -128,6 +137,14 @@ function applyKeyLine(line: string, fields: MutablePageFields): boolean {
 
   if (key[1] === "type") {
     fields.type = scalar(key[2]);
+  }
+
+  if (key[1] === "updated") {
+    fields.updated = scalar(key[2]);
+  }
+
+  if (key[1] === "status") {
+    fields.status = scalar(key[2]);
   }
 
   if (key[1] === "origin") {
@@ -159,6 +176,8 @@ function parseFrontmatterBody(lines: readonly string[]): PageFields {
   const fields: MutablePageFields = {
     title: undefined,
     type: undefined,
+    updated: undefined,
+    status: undefined,
     origin: undefined,
     sources: [],
     inSources: false,
@@ -169,6 +188,8 @@ function parseFrontmatterBody(lines: readonly string[]): PageFields {
       return {
         title: fields.title,
         type: fields.type,
+        updated: fields.updated,
+        status: fields.status,
         origin: fields.origin,
         sources: fields.sources,
       };
@@ -182,10 +203,10 @@ function parseFrontmatterBody(lines: readonly string[]): PageFields {
   return EMPTY_FIELDS;
 }
 
-/** Parse `title`, `type`, `origin`, and `sources` from a wiki page's
- *  YAML frontmatter: top-level scalars and one list of single-line
- *  items, nothing more. Returns empty fields when there is no closed
- *  frontmatter block. */
+/** Parse `title`, `type`, `updated`, `status`, `origin`, and
+ *  `sources` from a wiki page's YAML frontmatter: top-level scalars
+ *  and one list of single-line items, nothing more. Returns empty
+ *  fields when there is no closed frontmatter block. */
 export function parsePageFields(text: string): PageFields {
   const lines = text.split("\n");
 
@@ -207,17 +228,7 @@ export const CONTRACT_FILES = new Set(["AGENTS.md", "AGENTS.meta.md"]);
  * does not exist.
  */
 export async function listWikiPages(dir: string): Promise<string[]> {
-  let isDirectory: boolean;
-
-  try {
-    isDirectory = (await stat(dir)).isDirectory();
-  } catch {
-    throw new Error(`wiki directory does not exist: ${dir}`);
-  }
-
-  if (!isDirectory) {
-    throw new Error(`wiki directory is not a directory: ${dir}`);
-  }
+  await assertDirectory("wiki directory", dir);
 
   return (await listFiles(dir))
     .filter(

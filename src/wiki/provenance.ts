@@ -1,5 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { assertDirectory } from "../cli/shared.ts";
 import { anchorResolves } from "./chapter-headings.ts";
 import {
   closingFence,
@@ -53,17 +54,7 @@ export interface ProvenanceReport {
 /** The raw projection must be a directory; named on failure. Shared
  *  with the fidelity core (issue #125). */
 export async function assertRawDir(rawDir: string): Promise<void> {
-  let isDirectory: boolean;
-
-  try {
-    isDirectory = (await stat(rawDir)).isDirectory();
-  } catch {
-    throw new Error(`raw directory does not exist: ${rawDir}`);
-  }
-
-  if (!isDirectory) {
-    throw new Error(`raw directory is not a directory: ${rawDir}`);
-  }
+  await assertDirectory("raw directory", rawDir);
 }
 
 /** The 1-based line a `sources` entry sits on inside its page's

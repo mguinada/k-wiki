@@ -1,6 +1,7 @@
-import { readFile, stat } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { pathExists, pluralized } from "../cli/shared.ts";
 import { expandHome } from "../sync/config.ts";
 import { unquote } from "../wiki/pages.ts";
 
@@ -351,10 +352,8 @@ export function isolationLabel(settings: AgentSettings): string {
   const skills = settings.isolateSkills?.length ?? 0;
   const extensions = settings.isolateExtensions?.length ?? 0;
   const parts = [
-    ...(skills > 0 ? [`+${skills} skill${skills === 1 ? "" : "s"}`] : []),
-    ...(extensions > 0
-      ? [`+${extensions} extension${extensions === 1 ? "" : "s"}`]
-      : []),
+    ...(skills > 0 ? [`+${pluralized(skills, "skill")}`] : []),
+    ...(extensions > 0 ? [`+${pluralized(extensions, "extension")}`] : []),
   ];
 
   return parts.length > 0 ? `isolated ${parts.join(" ")}` : "isolated";
@@ -381,18 +380,6 @@ export interface LoadAgentSettingsContext {
    *  to `PI_CODING_AGENT_DIR` when set (pi's own override), else
    *  ~/.pi/agent (issue #144). */
   readonly piInstallRoot?: string | undefined;
-}
-
-/** Whether a filesystem path exists (stat succeeds on anything:
- *  file, dir, symlink). */
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await stat(path);
-
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /** The `npm:<package>` dir under pi's install root; pi installs

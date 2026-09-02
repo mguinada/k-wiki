@@ -43,6 +43,52 @@ describe("kebab", () => {
   });
 });
 
+describe("parsePageFields updated and status", () => {
+  it("reads the updated scalar like the other fields", () => {
+    const fields = parsePageFields(
+      ["---", "title: T", "updated: 2026-08-20", "---", "Body."].join("\n"),
+    );
+
+    expect(fields.updated).toBe("2026-08-20");
+  });
+
+  it("reads the status scalar like the other fields", () => {
+    const fields = parsePageFields(
+      ["---", "title: T", "status: needs-review", "---", "Body."].join("\n"),
+    );
+
+    expect(fields.status).toBe("needs-review");
+  });
+
+  it("unquotes and trims the updated scalar", () => {
+    const fields = parsePageFields(
+      ["---", 'updated: "2026-08-20"', "---"].join("\n"),
+    );
+
+    expect(fields.updated).toBe("2026-08-20");
+  });
+
+  it("unquotes and trims the status scalar", () => {
+    const fields = parsePageFields(
+      ["---", "status: 'stable'", "---"].join("\n"),
+    );
+
+    expect(fields.status).toBe("stable");
+  });
+
+  it("leaves updated undefined when the frontmatter never closes", () => {
+    const fields = parsePageFields(["---", "updated: 2026-08-20"].join("\n"));
+
+    expect(fields.updated).toBeUndefined();
+  });
+
+  it("leaves status undefined when the frontmatter never closes", () => {
+    const fields = parsePageFields(["---", "status: filed"].join("\n"));
+
+    expect(fields.status).toBeUndefined();
+  });
+});
+
 describe("parsePageFields", () => {
   it("reads a plain origin scalar", () => {
     expect(
@@ -153,6 +199,7 @@ describe("parsePageFields", () => {
 
     expect(fields.origin).toBeUndefined();
   });
+
   it("does not read origin from the page body", () => {
     expect(
       parsePageFields("---\ntitle: T\n---\norigin: raw/notes/V/a.md"),

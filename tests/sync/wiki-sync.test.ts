@@ -1959,6 +1959,7 @@ describe("runWikiSync lint stage", () => {
 
     expect(result.reportPath).toBe(expectedPath);
   });
+
   it("reports an unwritten lint report", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 

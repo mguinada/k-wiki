@@ -1,11 +1,16 @@
-import { mkdir, readdir, readFile, stat } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { createColors } from "picocolors";
 import { errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
-import { readTextIfExists, sha256 } from "../cli/shared.ts";
+import {
+  listFiles,
+  readTextIfExists,
+  repoRoot,
+  sha256,
+  statIfExists,
+} from "../cli/shared.ts";
 import { runGit } from "../data/git.ts";
 import {
   loadSyncConfig,
@@ -14,6 +19,7 @@ import {
   type SyncConfig,
 } from "./config.ts";
 import {
+  emptyManifest,
   type Manifest,
   parseManifest,
   serializeManifest,
@@ -72,38 +78,6 @@ function literalPrefix(pattern: string): string[] {
  *  allowlist says: `.git` and `node_modules`. */
 const SKIPPED_ROOT_DIRS = new Set([".git", "node_modules"]);
 
-/** Whether the path exists and is a file. */
-async function isFile(path: string): Promise<boolean> {
-  try {
-    return (await stat(path)).isFile();
-  } catch {
-    return false;
-  }
-}
-
-async function walkFiles(
-  dir: string,
-  prefix: string,
-  atRoot: boolean,
-  files: string[],
-): Promise<void> {
-  const entries = await readdir(dir, { withFileTypes: true });
-
-  for (const entry of entries) {
-    const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
-
-    if (entry.isDirectory()) {
-      if (atRoot && SKIPPED_ROOT_DIRS.has(entry.name)) {
-        continue;
-      }
-
-      await walkFiles(join(dir, entry.name), rel, false, files);
-    } else if (entry.isFile()) {
-      files.push(rel);
-    }
-  }
-}
-
 /** Split the patterns into fully-literal exact files and the
  *  directory roots the walk must cover. */
 function classifyPatterns(patterns: readonly string[]): {
@@ -147,25 +121,26 @@ export async function selectRepoFiles(
   const selected = new Set<string>();
 
   for (const relPath of exactFiles) {
-    if (await isFile(toAbsolute(root, relPath))) {
+    if ((await statIfExists(toAbsolute(root, relPath)))?.isFile() === true) {
       selected.add(relPath);
     }
   }
 
   for (const walkRoot of walkRoots) {
-    const files: string[] = [];
+    let files: string[];
 
     try {
-      await walkFiles(
+      files = await listFiles(
         walkRoot === "" ? root : join(root, walkRoot),
         walkRoot,
-        walkRoot === "",
-        files,
+        { skipRootDirs: SKIPPED_ROOT_DIRS, regularFilesOnly: true },
       );
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
         throw error;
       }
+
+      files = [];
     }
 
     for (const relPath of files) {
@@ -187,7 +162,7 @@ async function repoHead(root: string, env: NodeJS.ProcessEnv): Promise<string> {
 
     return stdout.trim();
   } catch (cause) {
-    const reason = cause instanceof Error ? cause.message : String(cause);
+    const reason = errorMessage(cause);
 
     throw new Error(`cannot read HEAD of source repo ${root}: ${reason}`, {
       cause,
@@ -322,7 +297,7 @@ export async function runRepoSync(options: DriverOptions): Promise<SyncReport> {
   const previousText = await readTextIfExists(manifestPath);
   const manifest: Manifest =
     previousText === undefined
-      ? { vaults: {} }
+      ? emptyManifest()
       : parseManifest(previousText, manifestPath);
   const notesRoot = join(options.rawDir, "notes");
   const staleNames = [
@@ -375,8 +350,6 @@ export function repoRowOf(report: SyncReport): RepoSyncReport {
 
   return row;
 }
-
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
 const HELP = `Usage: sync-repo [-h | --help] [<config>] [<raw-dir>]

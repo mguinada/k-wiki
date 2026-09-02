@@ -8,7 +8,7 @@ import {
   parsePageFields,
   wikilinkTarget,
 } from "./pages.ts";
-import { stem, wikilinkBodyAnchor } from "./wiki-links.ts";
+import { stem, wikilinkBody, wikilinkBodyAnchor } from "./wiki-links.ts";
 
 /**
  * The source-hub coverage index (issue #126): which raw paths a
@@ -158,7 +158,7 @@ function cover(
  * (wikilinkBodyAnchor) so citation anchors and body-text anchors
  * can never drift apart. */
 export function citationAnchor(entry: string): string | undefined {
-  return wikilinkBodyAnchor(entry.slice(2, -2));
+  return wikilinkBodyAnchor(wikilinkBody(entry));
 }
 
 /** The chapter a hub citation names: the `#anchor` segment of an
@@ -172,7 +172,7 @@ export function citationChapter(entry: string): string | undefined {
 /** The alias part of a wikilink entry (`[[hub|Chapter]]` →
  *  `Chapter`); undefined when the entry carries none. */
 function wikilinkAlias(entry: string): string | undefined {
-  const alias = entry.slice(2, -2).split("|")[1]?.trim();
+  const alias = wikilinkBody(entry).split("|")[1]?.trim();
 
   return alias === undefined || alias === "" ? undefined : alias;
 }

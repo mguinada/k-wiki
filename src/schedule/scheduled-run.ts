@@ -9,12 +9,12 @@ import {
   stat,
 } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import type { Readable } from "node:stream";
-import { fileURLToPath } from "node:url";
 import { errorMessage } from "../cli/colors.ts";
 import { flagValueError, readFlagValues } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
+import { pathExists, repoRoot } from "../cli/shared.ts";
 import { runGit } from "../data/git.ts";
 import { loadSyncConfig } from "../sync/config.ts";
 
@@ -344,16 +344,6 @@ async function gitStdout(
     : "";
 }
 
-/** True when the path exists; a failed stat — missing, or a parent
- *  that is a regular file (a linked worktree's `.git`) — reads as
- *  false. */
-async function pathExists(path: string): Promise<boolean> {
-  return await stat(path).then(
-    () => true,
-    () => false,
-  );
-}
-
 /** True when the data repo sits mid-rebase: git marks the state with
  *  a `rebase-merge` (merge backend) or `rebase-apply` (apply backend)
  *  directory under `.git` — the residue of a conflicted
@@ -593,8 +583,6 @@ async function appendFileLine(logPath: string, line: string): Promise<void> {
   await handle.writeFile(`${line}\n`);
   await handle.close();
 }
-
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 /** Help text: every switch and default (AGENTS.md CLI rule). */
 const HELP = `Usage: scheduled-run [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<config>] [<raw-dir>]

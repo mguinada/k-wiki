@@ -297,6 +297,7 @@ describe("runVaultSync idempotence", () => {
 
     expect((await stat(manifestPath)).mtimeMs).toBe(before);
   });
+
   it("copies and removes nothing on the second run", async () => {
     const ws = await makeWorkspace();
 
@@ -1410,6 +1411,7 @@ describe("sync-vault CLI", () => {
 
     expect(err).toContain("sync-vault: dry run, nothing will be written");
   });
+
   describe("sync-vault CLI help", () => {
     it("prints the usage line for --help", async () => {
       const { out } = await runCli(["--help"]);

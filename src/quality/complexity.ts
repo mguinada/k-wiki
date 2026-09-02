@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { terminalColors as colors } from "../cli/colors.ts";
+import { repoRoot } from "../cli/shared.ts";
 import { type FileDiff, mergeRanges } from "./mutation-scope.ts";
 
 // Cyclomatic complexity gate (issue #178): pure library, no main() and
@@ -48,8 +48,6 @@ export interface GateResult {
   readonly filesChecked: number;
   readonly functionsGated: number;
 }
-
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 /** Parse `complexity-guard -f json` output into the fields the gate
  *  uses; a report whose shape has drifted throws instead of gating

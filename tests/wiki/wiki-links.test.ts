@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildPageIndex, unfencedLines } from "../../src/wiki/wiki-links.ts";
+import {
+  buildPageIndex,
+  unfencedLines,
+  wikilinkBody,
+} from "../../src/wiki/wiki-links.ts";
 
 /** The fence rule of the shared scanner (issue #246 C-10): an opening
  *  fence is any 3+ backtick/tilde marker (info string allowed); a
@@ -9,6 +13,16 @@ import { buildPageIndex, unfencedLines } from "../../src/wiki/wiki-links.ts";
 function unfenced(text: string): string[] {
   return [...unfencedLines(text)].map(([, line]) => line);
 }
+
+describe("wikilinkBody", () => {
+  it("strips the surrounding double brackets of a wikilink entry", () => {
+    expect(wikilinkBody("[[hub#Chapter]]")).toBe("hub#Chapter");
+  });
+
+  it("yields the empty body of bare brackets", () => {
+    expect(wikilinkBody("[[]]")).toBe("");
+  });
+});
 
 describe("unfencedLines fence rules", () => {
   it("does not close a fence on a same-char marker with an info string", () => {

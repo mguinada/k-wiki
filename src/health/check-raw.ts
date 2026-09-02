@@ -1,16 +1,19 @@
-import { readdir, readFile, stat } from "node:fs/promises";
-import { dirname, join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { readFile } from "node:fs/promises";
+import { join, relative, resolve } from "node:path";
 import { terminalColors as colors, errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import {
+  assertDirectory,
   isPlainObject,
   listFiles,
+  pluralized,
   readTextIfExists,
+  repoRoot,
   sha256,
 } from "../cli/shared.ts";
 import { runGit } from "../data/git.ts";
 import { parseManifest, type VaultNotes } from "../sync/manifest.ts";
+import { listNamespaceDirs } from "../sync/projection.ts";
 
 /**
  * raw/ health check: a read-only, vault-free coherence check of the
@@ -33,8 +36,6 @@ export interface HealthReport {
   readonly stale: boolean;
 }
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-
 /**
  * The display path for an absolute path: repo-relative when it lies
  * inside the repository, otherwise relative to the raw directory.
@@ -49,37 +50,6 @@ export function displayPath(
   return repoRelative.startsWith("..")
     ? relative(rawDir, absPath)
     : repoRelative;
-}
-
-/** Vault namespaces under the notes root, following directory symlinks. */
-async function listNamespaceDirs(notesRoot: string): Promise<string[]> {
-  try {
-    const names = await readdir(notesRoot);
-    const namespaces: string[] = [];
-
-    for (const name of names) {
-      if (await resolvesToDirectory(join(notesRoot, name))) {
-        namespaces.push(name);
-      }
-    }
-
-    return namespaces;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return [];
-    }
-
-    throw error;
-  }
-}
-
-/** Whether the path exists and resolves to a directory. */
-async function resolvesToDirectory(path: string): Promise<boolean> {
-  try {
-    return (await stat(path)).isDirectory();
-  } catch {
-    return false;
-  }
 }
 
 /**
@@ -141,7 +111,7 @@ async function checkFreshness(
 
     head = stdout.trim();
   } catch (cause) {
-    const reason = cause instanceof Error ? cause.message : String(cause);
+    const reason = errorMessage(cause);
 
     return {
       warning: `cannot verify freshness of source repo ${root}: ${reason}`,
@@ -175,7 +145,7 @@ async function loadVaultEntries(
     return parseManifest(manifestText, displayPath(manifestPath, rawDir))
       .vaults;
   } catch (cause) {
-    problems.push(cause instanceof Error ? cause.message : String(cause));
+    problems.push(errorMessage(cause));
 
     return {};
   }
@@ -301,7 +271,7 @@ export async function checkRaw(
 ): Promise<HealthReport> {
   const rawDir = resolve(rawDirInput);
 
-  await assertRawDir(rawDir, rawDirInput);
+  await assertDirectory("raw directory", rawDir, rawDirInput);
 
   const notesRoot = join(rawDir, "notes");
   const manifestPath = join(rawDir, "manifest.json");
@@ -350,27 +320,10 @@ export async function checkRaw(
   return {
     healthy: true,
     problems: [],
-    summary: `healthy: manifest and projection agree (${matched} ${matched === 1 ? "note" : "notes"}, ${activeVaults} ${activeVaults === 1 ? "vault" : "vaults"})`,
+    summary: `healthy: manifest and projection agree (${pluralized(matched, "note")}, ${pluralized(activeVaults, "vault")})`,
     warnings,
     stale: freshness.stale,
   };
-}
-
-async function assertRawDir(
-  rawDir: string,
-  rawDirInput: string,
-): Promise<void> {
-  let isDirectory: boolean;
-
-  try {
-    isDirectory = (await stat(rawDir)).isDirectory();
-  } catch {
-    throw new Error(`raw directory does not exist: ${rawDirInput}`);
-  }
-
-  if (!isDirectory) {
-    throw new Error(`raw directory is not a directory: ${rawDirInput}`);
-  }
 }
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */

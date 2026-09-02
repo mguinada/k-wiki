@@ -344,6 +344,7 @@ describe("sync-vault CLI", () => {
       `${out.includes("sync complete: 7 copied")}${noteStat.isFile()}`,
     ).toBe("truetrue");
   });
+
   it("runs nothing when argv[1] is undefined", async () => {
     const repo = await stageRepo();
     const modulePath = join(repo, "src", "sync", "sync-vault.ts");

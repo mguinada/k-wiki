@@ -27,6 +27,13 @@ export interface Wikilink {
   readonly anchor?: string | undefined;
 }
 
+/** The body of a bracketed wikilink entry — the text between the
+ *  double brackets — the one `[[…]]` strip (issue #255, dedup
+ *  D-21) shared by page-name, anchor, and alias readers. */
+export function wikilinkBody(entry: string): string {
+  return entry.slice(2, -2);
+}
+
 /** The page-name part of a wikilink's inner text; empty when blank. */
 export function wikilinkBodyTarget(body: string): string {
   /* v8 ignore next: split never yields undefined — the fallback satisfies the type system only */

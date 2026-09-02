@@ -2,7 +2,6 @@ import { execFile as execFileCb } from "node:child_process";
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import {
   cliFail,
@@ -10,6 +9,7 @@ import {
   errorMessage,
 } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
+import { repoRoot } from "../cli/shared.ts";
 import { loadSyncConfig, resolveRawDir } from "../sync/config.ts";
 import { collectData } from "./collect.ts";
 import { computeKpis } from "./kpis.ts";
@@ -84,8 +84,6 @@ export async function writeDashboard(
 }
 
 const execFile = promisify(execFileCb);
-
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
 const HELP = `Usage: dashboard [-h | --help] [-o | --open] [<data-repo>]

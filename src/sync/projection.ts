@@ -8,6 +8,7 @@ import {
   formatDuration,
   isWarning,
 } from "../cli/progress.ts";
+import { pluralized, statIfExists } from "../cli/shared.ts";
 import { loadSyncConfig, type SyncConfig } from "./config.ts";
 import type { Manifest, ManifestEntry, VaultNotes } from "./manifest.ts";
 
@@ -58,14 +59,14 @@ export async function assertSourceDirectory(
   }
 }
 
-/** Namespace directories under the notes root; empty when it is absent. */
+/** Namespace directories under the notes root, following directory
+ *  symlinks (a linked namespace is still on disk, so staleness and
+ *  health both see it); empty when the root is absent. */
 export async function listNamespaceDirs(notesRoot: string): Promise<string[]> {
-  try {
-    const entries = await readdir(notesRoot, { withFileTypes: true });
+  let names: string[];
 
-    return entries
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name);
+  try {
+    names = await readdir(notesRoot);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       return [];
@@ -73,10 +74,27 @@ export async function listNamespaceDirs(notesRoot: string): Promise<string[]> {
 
     throw error;
   }
+
+  const namespaces: string[] = [];
+
+  for (const name of names) {
+    if ((await statIfExists(join(notesRoot, name)))?.isDirectory() === true) {
+      namespaces.push(name);
+    }
+  }
+
+  return namespaces;
 }
 
-/** Remove now-empty parent directories of a deleted projection. */
-async function pruneEmptyDirs(dir: string, stopAt: string): Promise<void> {
+/** Remove `dir` and every now-empty parent up to (not including)
+ *  `stopAt` — the one prune loop (issue #255, dedup D-6), shared by
+ *  the projection's removals and the publish stage's mirror
+ *  cleanup. Pruning stops when a directory has entries (ENOTEMPTY)
+ *  or no longer exists (ENOENT); any other rmdir error surfaces. */
+export async function pruneEmptyDirs(
+  dir: string,
+  stopAt: string,
+): Promise<void> {
   let current = dir;
 
   while (current.startsWith(stopAt) && current !== stopAt) {
@@ -363,9 +381,7 @@ function summaryLine(
   }
 
   const prunedClause =
-    pruned === 0
-      ? ""
-      : `, ${pruned} namespace${pruned === 1 ? "" : "s"} pruned`;
+    pruned === 0 ? "" : `, ${pluralized(pruned, "namespace")} pruned`;
 
   return colors[removed > 0 || pruned > 0 ? "red" : "green"](
     `sync complete: ${copied} copied, ${removed} removed${prunedClause}${duration}`,

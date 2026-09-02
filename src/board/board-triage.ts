@@ -4,7 +4,7 @@ import { promisify } from "node:util";
 import { cliFail, errorMessage, terminalColors } from "../cli/colors.ts";
 import { readFlagValues } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
-import { isPlainObject } from "../cli/shared.ts";
+import { isPlainObject, pluralized } from "../cli/shared.ts";
 
 /**
  * Scheduled board triage (issue #209): the mechanical half of the
@@ -618,10 +618,6 @@ async function applyAndVerify(
       { cause },
     );
   }
-}
-
-function pluralized(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
 function triageSummary(

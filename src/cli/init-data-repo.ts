@@ -1,8 +1,9 @@
 import { join } from "node:path";
-import { defaultRepoRoot, seedDataRepo } from "../data/init-data-repo.ts";
+import { seedDataRepo } from "../data/init-data-repo.ts";
 import { loadSyncConfig } from "../sync/config.ts";
 import { errorMessage } from "./colors.ts";
 import { refuseDirectExecution } from "./is-main.ts";
+import { repoRoot } from "./shared.ts";
 
 /**
  * data:init CLI shell (RC1 split): argument parsing, help, and the
@@ -52,7 +53,7 @@ export async function main(): Promise<void> {
   const configArg = args.find(
     (arg) => arg !== "--second-brain" && arg !== "--meta",
   );
-  const configPath = configArg ?? join(defaultRepoRoot, "sync.json");
+  const configPath = configArg ?? join(repoRoot, "sync.json");
 
   try {
     const config = await loadSyncConfig(configPath);

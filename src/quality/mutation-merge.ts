@@ -1,5 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
+import { errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
+import { nextIntArg } from "./mutation-scope.ts";
 import { parseReport } from "./mutation-survivors.ts";
 
 // Report stitching for chunked full mutation runs (issue #236): each
@@ -26,7 +28,7 @@ function parseChunk(text: string, position: number): ChunkReport {
   try {
     return parseReport(text) as ChunkReport;
   } catch (cause) {
-    const detail = cause instanceof Error ? cause.message : String(cause);
+    const detail = errorMessage(cause);
 
     throw new Error(`input ${position}: ${detail}`);
   }
@@ -132,11 +134,7 @@ function parseArgs(argv: readonly string[]): Options {
     const arg = argv[i];
 
     if (arg === "--expect") {
-      const value = Number(argv[i + 1]);
-
-      if (argv[i + 1] === undefined || !Number.isInteger(value)) {
-        throw new Error("--expect requires an integer value");
-      }
+      const value = nextIntArg(argv, i);
 
       i += 1;
 
@@ -188,7 +186,7 @@ function runMerge(options: Options): void {
       options.inputs.map((path) => readFileSync(path, "utf8")),
     );
   } catch (cause) {
-    console.error(cause instanceof Error ? cause.message : String(cause));
+    console.error(errorMessage(cause));
     process.exitCode = 1;
 
     return;
@@ -215,7 +213,7 @@ export function main(argv: readonly string[]): void {
   try {
     runMerge(parseArgs(argv));
   } catch (cause) {
-    console.error(cause instanceof Error ? cause.message : String(cause));
+    console.error(errorMessage(cause));
     process.exitCode = 1;
   }
 }

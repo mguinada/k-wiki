@@ -6,8 +6,8 @@ import {
   readFile,
   writeFile,
 } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+import { repoRoot } from "../cli/shared.ts";
 import { runGit } from "./git.ts";
 
 /**
@@ -186,7 +186,7 @@ async function seed(options: {
 export async function seedDataRepo(
   options: SeedOptions,
 ): Promise<"seeded" | "already-seeded"> {
-  const repoRoot = options.repoRoot ?? defaultRepoRoot;
+  const root = options.repoRoot ?? repoRoot;
   const env = options.env ?? process.env;
   const dataRoot = options.dataRoot;
 
@@ -208,7 +208,7 @@ export async function seedDataRepo(
 
   await seed({
     dataRoot,
-    repoRoot,
+    repoRoot: root,
     env,
     secondBrain: options.secondBrain === true,
     meta: options.meta === true,
@@ -216,10 +216,3 @@ export async function seedDataRepo(
 
   return "seeded";
 }
-
-/** The code repo root of this repository (derived from this module's
- *  own location; the cli shell reuses it for its default config path). */
-export const defaultRepoRoot = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  "../..",
-);

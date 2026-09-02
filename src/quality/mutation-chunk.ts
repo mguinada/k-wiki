@@ -1,6 +1,12 @@
 import { statSync } from "node:fs";
+import { errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
-import { type GitText, runGitText } from "./mutation-scope.ts";
+import {
+  type GitText,
+  nextIntArg,
+  runGitText,
+  SRC_PATHSPEC,
+} from "./mutation-scope.ts";
 
 // Chunked full mutation runs (issue #236): the nightly Stryker run
 // outgrew GitHub's 6 h per-job limit (8619 mutants, cancelled at
@@ -76,7 +82,7 @@ export function assignChunks(
 
 /** The src/ files git tracks, with their byte sizes. */
 export function collectSrcFiles(git: GitText): SrcFile[] {
-  const listed = git(["ls-files", "--", "src/*.ts"]);
+  const listed = git(["ls-files", "--", SRC_PATHSPEC]);
 
   return listed
     .split("\n")
@@ -98,11 +104,7 @@ function parseArgs(argv: readonly string[]): Options {
     const arg = argv[i];
 
     if (arg === "--index" || arg === "--total") {
-      const value = Number(argv[i + 1]);
-
-      if (argv[i + 1] === undefined || !Number.isInteger(value)) {
-        throw new Error(`${arg} requires an integer value`);
-      }
+      const value = nextIntArg(argv, i);
 
       i += 1;
 
@@ -160,7 +162,7 @@ export function main(
   try {
     console.log(chunkList(argv, collect, git));
   } catch (cause) {
-    console.error(cause instanceof Error ? cause.message : String(cause));
+    console.error(errorMessage(cause));
     process.exitCode = 1;
   }
 }

@@ -1,7 +1,8 @@
-import { mkdir, readdir, readFile, rm, rmdir } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import { listFiles } from "../cli/shared.ts";
 import { copyFileTolerant } from "./eagain.ts";
-import { compileIncludePattern } from "./projection.ts";
+import { compileIncludePattern, pruneEmptyDirs } from "./projection.ts";
 
 /**
  * The publish stage (guide §26, issue #15): copy the data repo's
@@ -49,29 +50,21 @@ const SKIP_DIRS = new Set([".git", ".obsidian", ".trash", "node_modules"]);
 const SKIP_FILES = new Set([".DS_Store"]);
 
 /** Collect every publishable file under `root` as
- *  `<relative path> -> <absolute path>` into `files`. Both walked
- *  roots exist by the time this runs: the mirror is created first,
- *  the data repo is the raw dir's parent. */
-async function walkFiles(
-  root: string,
-  prefix: string,
-  files: Map<string, string>,
-): Promise<void> {
-  const entries = await readdir(join(root, prefix), {
-    withFileTypes: true,
-  });
+ *  `<relative path> -> <absolute path>`. Both roots exist by the
+ *  time this runs: the mirror is created first, the data repo is
+ *  the raw dir's parent. */
+async function collectFileMap(root: string): Promise<Map<string, string>> {
+  const files = new Map<string, string>();
 
-  for (const entry of entries) {
-    const relPath = `${prefix}${entry.name}`;
-
-    if (entry.isDirectory()) {
-      if (!SKIP_DIRS.has(entry.name)) {
-        await walkFiles(root, `${relPath}/`, files);
-      }
-    } else if (entry.isFile() && !SKIP_FILES.has(entry.name)) {
-      files.set(relPath, join(root, relPath));
-    }
+  for (const relPath of await listFiles(root, "", {
+    skipDirs: SKIP_DIRS,
+    skipFiles: SKIP_FILES,
+    regularFilesOnly: true,
+  })) {
+    files.set(relPath, join(root, relPath));
   }
+
+  return files;
 }
 
 /** Whether both paths exist and hold identical bytes. */
@@ -90,17 +83,7 @@ async function sameBytes(source: string, target: string): Promise<boolean> {
 async function removeAndPrune(mirror: string, absPath: string): Promise<void> {
   await rm(absPath);
 
-  let dir = dirname(absPath);
-
-  while (dir !== mirror) {
-    try {
-      await rmdir(dir);
-    } catch {
-      return;
-    }
-
-    dir = dirname(dir);
-  }
+  await pruneEmptyDirs(dirname(absPath), mirror);
 }
 
 /** Delete every mirror file the selected source set no longer has. */
@@ -108,9 +91,7 @@ async function removeStale(
   mirror: string,
   selected: ReadonlyMap<string, unknown>,
 ): Promise<number> {
-  const mirrorFiles = new Map<string, string>();
-
-  await walkFiles(mirror, "", mirrorFiles);
+  const mirrorFiles = await collectFileMap(mirror);
 
   let removed = 0;
 
@@ -169,9 +150,7 @@ export async function runPublishStage(
   const onProgress = options.onProgress ?? (() => {});
   const mirror = resolve(options.mirror);
   const matchers = options.include.map(compileIncludePattern);
-  const all = new Map<string, string>();
-
-  await walkFiles(options.dataRoot, "", all);
+  const all = await collectFileMap(options.dataRoot);
 
   const selected = new Map(
     [...all]

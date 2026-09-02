@@ -1,4 +1,4 @@
-import { readFile, stat } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
@@ -15,7 +15,7 @@ import { cliFail } from "./colors.ts";
 import { timeoutArgError } from "./flag-args.ts";
 import { refuseDirectExecution } from "./is-main.ts";
 import { stderrSink } from "./progress.ts";
-import { isPlainObject } from "./shared.ts";
+import { isPlainObject, statIfExists } from "./shared.ts";
 
 /**
  * k-wiki: the agent-facing query entry point (guide §16, issue #76).
@@ -148,14 +148,6 @@ export function parseBinding(
   };
 }
 
-async function isFile(path: string): Promise<boolean> {
-  try {
-    return (await stat(path)).isFile();
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Find the nearest binding file walking up from `startDir`, stopping
  * at the home directory or the filesystem root (each checked last).
@@ -170,7 +162,7 @@ export async function findBindingFile(
   while (true) {
     const candidate = join(dir, BINDING_FILE);
 
-    if (await isFile(candidate)) {
+    if ((await statIfExists(candidate))?.isFile() === true) {
       return candidate;
     }
 

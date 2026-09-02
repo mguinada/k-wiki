@@ -53,7 +53,7 @@ function page(lines: string[], body = ""): string {
 }
 
 /** A data repo with every artifact present: two vaults of raw notes,
- *  a manifest with junk entries, an ingest snapshot, wiki pages that
+ *  a manifest, an ingest snapshot, wiki pages that
  *  exercise every frontmatter edge, git history with ingest runs, a
  *  status flip, and page additions. */
 async function makeRichRepo(): Promise<{
@@ -83,14 +83,11 @@ async function makeRichRepo(): Promise<{
       vaults: {
         Research: {
           "c.md": { hash: "c", last_synced: "2026-08-20T00:00:00.000Z" },
-          junk: "not-an-object",
         },
         Engineering: {
           "b.md": { hash: "b", last_synced: "2026-08-25T00:00:00.000Z" },
           "a.md": { hash: "a", last_synced: "2026-08-10T00:00:00.000Z" },
-          "null.md": null,
         },
-        Broken: "not-a-vault",
       },
     })}\n`,
   );
@@ -99,8 +96,9 @@ async function makeRichRepo(): Promise<{
     join(dataRoot, "outputs", "last-ingested-manifest.json"),
     `${JSON.stringify({
       vaults: {
-        Engineering: { "a.md": { hash: "a" } },
-        Bad: null,
+        Engineering: {
+          "a.md": { hash: "a", last_synced: "2026-08-10T00:00:00.000Z" },
+        },
       },
     })}\n`,
   );
@@ -189,6 +187,7 @@ describe("collectData", () => {
       date: "2026-08-10",
     });
   });
+
   it("reads every artifact of a fully populated data repo into the exact expected input", async () => {
     const { dataRoot, head } = await makeRichRepo();
 
@@ -265,6 +264,33 @@ describe("collectData", () => {
     });
   });
 
+  it("rejects when the raw manifest is malformed instead of emptying the dashboard", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "k-wiki-collect-bad-"));
+
+    tempDirs.push(dataRoot);
+    await mkdir(join(dataRoot, "raw"), { recursive: true });
+    await writeFile(join(dataRoot, "raw", "manifest.json"), "{ not json");
+
+    await expect(collectData(dataRoot, { now: () => NOW })).rejects.toThrow(
+      /invalid manifest at .*manifest\.json: not valid JSON/,
+    );
+  });
+
+  it("rejects when the ingest snapshot is malformed instead of reading it as absent", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "k-wiki-collect-badsnap-"));
+
+    tempDirs.push(dataRoot);
+    await mkdir(join(dataRoot, "outputs"), { recursive: true });
+    await writeFile(
+      join(dataRoot, "outputs", "last-ingested-manifest.json"),
+      "{ not json",
+    );
+
+    await expect(collectData(dataRoot, { now: () => NOW })).rejects.toThrow(
+      /invalid manifest at .*last-ingested-manifest\.json: not valid JSON/,
+    );
+  });
+
   it("degrades to pure defaults in an empty directory with no git repo", async () => {
     const dataRoot = await mkdtemp(join(tmpdir(), "k-wiki-collect-empty-"));
 
@@ -309,22 +335,22 @@ describe("collectData page fields", () => {
     };
   }
 
-  it("returns the first matching scalar field when a key repeats", async () => {
+  it("lets the last matching scalar field win when a key repeats", async () => {
     const fields = await collectPagesFrom(
       "repeat.md",
       page(["updated: 2026-08-01", "updated: 2026-08-02", "status: stable"]),
     );
 
-    expect(fields).toEqual({ updated: "2026-08-01", status: "stable" });
+    expect(fields).toEqual({ updated: "2026-08-02", status: "stable" });
   });
 
-  it("parses scalar fields when the frontmatter has no closing delimiter", async () => {
+  it("reads no scalar fields when the frontmatter has no closing delimiter", async () => {
     const fields = await collectPagesFrom(
       "unclosed.md",
       "---\nupdated: 2026-08-03\nstatus: filed\nbody text\n",
     );
 
-    expect(fields).toEqual({ updated: "2026-08-03", status: "filed" });
+    expect(fields).toEqual({ updated: null, status: null });
   });
 
   it("trims matching quotes from both ends of a scalar value", async () => {
