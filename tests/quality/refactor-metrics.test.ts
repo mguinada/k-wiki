@@ -161,6 +161,17 @@ describe("collectMetrics (fixture tree)", () => {
   });
 });
 
+/**
+ * True inside Stryker's sandbox, where the instrumented src/ tree
+ * carries injected mutant switches that inflate line counts — the
+ * freeze must not evaluate that tree (issue #276).
+ */
+function insideStrykerSandbox(): boolean {
+  return (
+    import.meta.url.includes(".stryker-tmp") || "__stryker__" in globalThis
+  );
+}
+
 describe("baseline freeze (real src/ tree)", () => {
   /**
    * The campaign's regression guard: the committed budget freezes
@@ -169,10 +180,17 @@ describe("baseline freeze (real src/ tree)", () => {
    * — the budget is the seed of the structure guard the campaign
    * lands last.
    */
+  const skipNote =
+    "Stryker sandbox instruments src/; line counts are inflated (issue #276)";
+
   let fresh: Awaited<ReturnType<typeof collectMetrics>>;
   let budget: Record<string, number>;
 
   beforeAll(async () => {
+    if (insideStrykerSandbox()) {
+      return;
+    }
+
     fresh = await collectMetrics(join(repoRoot, "src"));
     budget = JSON.parse(await readFile(baselinePath, "utf8")) as Record<
       string,
@@ -197,7 +215,13 @@ describe("baseline freeze (real src/ tree)", () => {
   ] as const;
 
   for (const counter of counters) {
-    it(`${counter} stays at or below the frozen baseline`, () => {
+    it(`${counter} stays at or below the frozen baseline`, ({ skip }) => {
+      if (insideStrykerSandbox()) {
+        skip(skipNote);
+
+        return;
+      }
+
       expect(budget[counter]).toBeDefined();
       expect(fresh[counter]).toBeLessThanOrEqual(budget[counter] ?? 0);
     });
