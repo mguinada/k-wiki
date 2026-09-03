@@ -177,6 +177,60 @@ describe("parseArgs", () => {
   });
 });
 
+describe("parseArgs repeatable flags", () => {
+  it("collects every occurrence's value in argv order", () => {
+    const parsed = parseArgs(
+      ["--sources", "a/x.md", "--sources", "b/y.md"],
+      { repeat: ["--sources"] },
+    );
+
+    expect(parsed.repeated.get("--sources")).toEqual(["a/x.md", "b/y.md"]);
+  });
+
+  it("keeps an undefined entry when a repeat flag ends argv", () => {
+    const parsed = parseArgs(["--sources", "a/x.md", "--sources"], {
+      repeat: ["--sources"],
+    });
+
+    expect(parsed.repeated.get("--sources")).toEqual(["a/x.md", undefined]);
+  });
+
+  it("reads the inline = form as one collected value", () => {
+    const parsed = parseArgs(["--sources=a/x.md", "pos"], {
+      repeat: ["--sources"],
+    });
+
+    expect(parsed.repeated.get("--sources")).toEqual(["a/x.md"]);
+    expect(parsed.positional).toEqual(["pos"]);
+  });
+
+  it("never reads a repeat flag's value as a positional", () => {
+    const parsed = parseArgs(["--sources", "-weird"], {
+      repeat: ["--sources"],
+    });
+
+    expect(parsed.repeated.get("--sources")).toEqual(["-weird"]);
+    expect(parsed.positional).toEqual([]);
+  });
+
+  it("collects repeat values beside single value flags and positionals", () => {
+    const parsed = parseArgs(
+      ["--settings", "a.yml", "--sources", "a/x.md", "raw", "--sources", "b/y.md"],
+      { value: ["--settings"], repeat: ["--sources"] },
+    );
+
+    expect(parsed.values.get("--settings")).toBe("a.yml");
+    expect(parsed.repeated.get("--sources")).toEqual(["a/x.md", "b/y.md"]);
+    expect(parsed.positional).toEqual(["raw"]);
+  });
+
+  it("omits a repeat flag that never occurs", () => {
+    const parsed = parseArgs(["pos"], { repeat: ["--sources"] });
+
+    expect(parsed.repeated.has("--sources")).toBe(false);
+  });
+});
+
 describe("agentRunFlags", () => {
   it("maps the settings flag's value", () => {
     const flags = agentRunFlags(new Map([["--settings", "a.yml"]]));

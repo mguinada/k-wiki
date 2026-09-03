@@ -11,8 +11,9 @@ import { flagValueError } from "./flag-args.ts";
  * Help stays with each CLI's main: the shell parses, never prints.
  */
 
-/** What one CLI accepts: its value flags, boolean flags, and the
- *  positional count rule with its overflow message. */
+/** What one CLI accepts: its value flags, boolean flags, repeatable
+ *  value flags, and the positional count rule with its overflow
+ *  message. */
 export interface CliSpec {
   /** Value-taking flags (`--settings <path>`); each consumes the next
    *  argument as its value, or takes it inline (`--settings=path`).
@@ -21,6 +22,11 @@ export interface CliSpec {
   readonly value?: readonly string[];
   /** Boolean flags, present or absent. */
   readonly boolean?: readonly string[];
+  /** Repeatable value flags (`--sources <path>`): every occurrence
+   *  collects one value, in argv order, into `repeated`. A missing
+   *  final value collects an undefined entry — validation catches
+   *  it. */
+  readonly repeat?: readonly string[];
   /** Reject positionals beyond `max`, reporting them through
    *  `error` with the offending argument and the actual count. */
   readonly positionals?: {
@@ -29,11 +35,13 @@ export interface CliSpec {
   };
 }
 
-/** One parsed command line: flag values, boolean flags, positionals,
- *  and the first usage error (undefined when argv is valid). */
+/** One parsed command line: flag values, boolean flags, repeatable
+ *  flag values, positionals, and the first usage error (undefined
+ *  when argv is valid). */
 export interface ParsedCli {
   readonly values: ReadonlyMap<string, string | undefined>;
   readonly flags: ReadonlySet<string>;
+  readonly repeated: ReadonlyMap<string, readonly (string | undefined)[]>;
   readonly positional: readonly string[];
   readonly error: string | undefined;
 }
@@ -54,18 +62,18 @@ function positionalOverflowError(
   return rule.error(arg, count);
 }
 
-/** The inline `--flag=value` form of a value flag, as the
+/** The inline `--flag=value` form of a value or repeat flag, as the
  *  [flag, value] pair to record, undefined when `arg` is not one. */
 function inlineValue(
   arg: string,
-  valueFlags: ReadonlySet<string>,
+  knownFlags: ReadonlySet<string>,
 ): readonly [string, string] | undefined {
   const equals = arg.indexOf("=");
 
   if (
     arg.startsWith("-") &&
     equals !== -1 &&
-    valueFlags.has(arg.slice(0, equals))
+    knownFlags.has(arg.slice(0, equals))
   ) {
     return [arg.slice(0, equals), arg.slice(equals + 1)];
   }
@@ -101,18 +109,34 @@ function positionalTail(
   return undefined;
 }
 
+/** Record one repeat-flag value under its flag, creating the list on
+ *  first occurrence. */
+function collectRepeated(
+  repeated: Map<string, (string | undefined)[]>,
+  flag: string,
+  value: string | undefined,
+): void {
+  const collected = repeated.get(flag) ?? [];
+
+  collected.push(value);
+  repeated.set(flag, collected);
+}
+
 /** Consume one option token per the spec: boolean flags record, value
- *  flags take the next argument or an inline `--flag=value`. The token
- *  count consumed — 0 when `arg` is not an option token the spec knows,
- *  2 when a value flag took the next argument, else 1. */
+ *  flags take the next argument or an inline `--flag=value`, repeat
+ *  flags collect one value per occurrence the same two ways. The
+ *  token count consumed — 0 when `arg` is not an option token the
+ *  spec knows, 2 when a value flag took the next argument, else 1. */
 function consumeFlag(
   arg: string,
   args: readonly (string | undefined)[],
   index: number,
   valueFlags: ReadonlySet<string>,
   booleanFlags: ReadonlySet<string>,
+  repeatFlags: ReadonlySet<string>,
   values: Map<string, string | undefined>,
   flags: Set<string>,
+  repeated: Map<string, (string | undefined)[]>,
 ): number {
   if (booleanFlags.has(arg)) {
     flags.add(arg);
@@ -126,15 +150,25 @@ function consumeFlag(
     return 2;
   }
 
-  const inline = inlineValue(arg, valueFlags);
+  if (repeatFlags.has(arg)) {
+    collectRepeated(repeated, arg, args[index + 1]);
 
-  if (inline !== undefined) {
-    values.set(inline[0], inline[1]);
-
-    return 1;
+    return 2;
   }
 
-  return 0;
+  const inline = inlineValue(arg, new Set([...valueFlags, ...repeatFlags]));
+
+  if (inline === undefined) {
+    return 0;
+  }
+
+  if (valueFlags.has(inline[0])) {
+    values.set(inline[0], inline[1]);
+  } else {
+    collectRepeated(repeated, inline[0], inline[1]);
+  }
+
+  return 1;
 }
 
 /** Split argv per the spec: value flags, boolean flags, positionals.
@@ -148,8 +182,10 @@ export function parseArgs(
 ): ParsedCli {
   const valueFlags = new Set(spec.value ?? []);
   const booleanFlags = new Set(spec.boolean ?? []);
+  const repeatFlags = new Set(spec.repeat ?? []);
   const values = new Map<string, string | undefined>();
   const flags = new Set<string>();
+  const repeated = new Map<string, (string | undefined)[]>();
   const positional: string[] = [];
 
   for (let index = 0; index < args.length; index++) {
@@ -165,8 +201,10 @@ export function parseArgs(
       index,
       valueFlags,
       booleanFlags,
+      repeatFlags,
       values,
       flags,
+      repeated,
     );
 
     if (consumed > 0) {
@@ -178,13 +216,14 @@ export function parseArgs(
     if (arg === "--") {
       const overflow = positionalTail(args, index + 1, spec, positional);
 
-      return { values, flags, positional, error: overflow };
+      return { values, flags, repeated, positional, error: overflow };
     }
 
     if (arg.startsWith("-")) {
       return {
         values,
         flags,
+        repeated,
         positional,
         error: `unknown option ${JSON.stringify(arg)}`,
       };
@@ -195,11 +234,11 @@ export function parseArgs(
     const overflow = positionalOverflowError(spec, arg, positional.length);
 
     if (overflow !== undefined) {
-      return { values, flags, positional, error: overflow };
+      return { values, flags, repeated, positional, error: overflow };
     }
   }
 
-  return { values, flags, positional, error: undefined };
+  return { values, flags, repeated, positional, error: undefined };
 }
 
 /** The agent-run flag set — `--settings`, `--outputs`, `--timeout` —
