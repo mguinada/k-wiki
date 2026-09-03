@@ -1,11 +1,19 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { errorMessage } from "../cli/colors.ts";
 import { checkRaw, printHealthReport } from "../health/check-raw.ts";
 import { runQueryCli } from "../query/query-shell.ts";
 import { expandHome, loadSyncConfig, resolveRawDir } from "../sync/config.ts";
-import { listWikiPages, readPageFields } from "../wiki/pages.ts";
+import {
+  filteredLines,
+  groupedLines,
+  groupPages,
+  isPageType,
+  listablePages,
+  lookupPage,
+  PAGE_TYPES,
+} from "../wiki/browse.ts";
 import { cliFail } from "./colors.ts";
 import { refuseDirectExecution } from "./is-main.ts";
 import { type RunContext, runContext } from "./run-context.ts";
@@ -27,22 +35,6 @@ export const BINDING_FILE = ".k-wiki.json";
 
 /** Environment variable naming a checkout without a binding file. */
 export const CHECKOUT_ENV = "K_WIKI_CHECKOUT";
-
-/** The wiki page types (guide §9), listed in index.md order (guide §11). */
-const PAGE_TYPES = [
-  "concept",
-  "entity",
-  "source",
-  "query",
-  "comparison",
-] as const;
-
-/** Navigation pages: listed by neither `list` nor typed, readable by name. */
-const NAV_PAGES = new Set(["index.md", "log.md", "overview.md"]);
-
-/** The type/command vocabularies widened to strings for membership
- *  checks on runtime input (cast the receiver, never the argument). */
-const PAGE_TYPE_NAMES = PAGE_TYPES as readonly string[];
 
 /** Human phrase for each checkout resolution origin. */
 const ORIGIN_LABELS = {
@@ -343,110 +335,12 @@ async function runStatus(
   );
 }
 
-/** One listed page: its slug and frontmatter fields. */
-interface ListedPage {
-  readonly path: string;
-  readonly slug: string;
-  readonly type: string | undefined;
-  readonly title: string | undefined;
-}
-
-/** Collect the listable pages: every page except the navigation trio. */
-async function listablePages(wikiDir: string): Promise<ListedPage[]> {
-  const pages: ListedPage[] = [];
-
-  for (const path of await listWikiPages(wikiDir)) {
-    if (NAV_PAGES.has(basename(path))) {
-      continue;
-    }
-
-    const fields = await readPageFields(join(wikiDir, path));
-
-    pages.push({
-      path,
-      slug: basename(path, ".md"),
-      type: fields.type,
-      title: fields.title,
-    });
-  }
-
-  return pages;
-}
-
-const PLURAL: Record<string, string> = {
-  concept: "concepts",
-  entity: "entities",
-  source: "sources",
-  query: "queries",
-  comparison: "comparisons",
-};
-
-/** One 'slug — title' line per page of one type filter. */
-function filteredLines(
-  pages: readonly ListedPage[],
-  typeFilter: string,
-): string[] {
-  return pages
-    .filter((page) => page.type === typeFilter)
-    .map((page) => `${page.slug} — ${page.title ?? page.slug}`);
-}
-
-/** Group the pages by frontmatter type; pages without one go to "untyped". */
-function groupPages(pages: readonly ListedPage[]): Map<string, ListedPage[]> {
-  const groups = new Map<string, ListedPage[]>();
-
-  for (const page of pages) {
-    const key = page.type ?? "untyped";
-    const bucket = groups.get(key);
-
-    if (bucket === undefined) {
-      groups.set(key, [page]);
-    } else {
-      bucket.push(page);
-    }
-  }
-
-  return groups;
-}
-
-/** Section order: known types in index.md order, then unknown types
- *  sorted, then untyped last. */
-function sectionOrder(groups: ReadonlyMap<string, ListedPage[]>) {
-  return [
-    ...PAGE_TYPES.filter((type) => groups.has(type)).map((type) => ({
-      key: type,
-      header: PLURAL[type],
-    })),
-    ...[...groups.keys()]
-      .filter((key) => !PAGE_TYPE_NAMES.includes(key) && key !== "untyped")
-      .sort()
-      .map((key) => ({ key, header: `${key}s` })),
-    ...(groups.has("untyped") ? [{ key: "untyped", header: "untyped" }] : []),
-  ];
-}
-
-/** Render the grouped listing: a '## header' line per section and one
- *  'slug — title' line per page under it. */
-function groupedLines(groups: ReadonlyMap<string, ListedPage[]>): string[] {
-  const lines: string[] = [];
-
-  for (const section of sectionOrder(groups)) {
-    lines.push(`## ${section.header}`);
-
-    for (const page of groups.get(section.key) ?? []) {
-      lines.push(`${page.slug} — ${page.title ?? page.slug}`);
-    }
-  }
-
-  return lines;
-}
-
 /** Print the structured wiki listing, grouped (or filtered) by type. */
 async function runList(
   wikiDir: string,
   typeFilter: string | undefined,
 ): Promise<void> {
-  if (typeFilter !== undefined && !PAGE_TYPE_NAMES.includes(typeFilter)) {
+  if (typeFilter !== undefined && !isPageType(typeFilter)) {
     fail(
       `unknown type ${JSON.stringify(typeFilter)}; valid types: ${PAGE_TYPES.join("|")}`,
     );
@@ -467,35 +361,27 @@ async function runList(
 
 /** Print one wiki page verbatim, resolved by file name. */
 async function runRead(wikiDir: string, slug: string): Promise<void> {
-  const pages = await listWikiPages(wikiDir);
-  const matches = pages.filter((path) => basename(path) === `${slug}.md`);
+  const lookup = await lookupPage(wikiDir, slug);
 
-  if (matches.length === 0) {
-    const lower = slug.toLowerCase();
-    const near = pages
-      .map((path) => basename(path, ".md"))
-      .filter(
-        (name) =>
-          name.toLowerCase().includes(lower) ||
-          lower.includes(name.toLowerCase()),
-      );
+  if (lookup.kind === "page") {
+    process.stdout.write(lookup.content);
 
+    return;
+  }
+
+  if (lookup.kind === "ambiguous") {
     fail(
-      near.length === 0
-        ? `no page named ${JSON.stringify(slug)}`
-        : `no page named ${JSON.stringify(slug)}; near matches: ${near.join(", ")}`,
+      `ambiguous page name ${JSON.stringify(slug)}: ${lookup.matches.join(", ")}`,
     );
 
     return;
   }
 
-  if (matches.length > 1) {
-    fail(`ambiguous page name ${JSON.stringify(slug)}: ${matches.join(", ")}`);
-
-    return;
-  }
-
-  process.stdout.write(await readFile(join(wikiDir, matches[0] ?? ""), "utf8"));
+  fail(
+    lookup.nearMatches.length === 0
+      ? `no page named ${JSON.stringify(slug)}`
+      : `no page named ${JSON.stringify(slug)}; near matches: ${lookup.nearMatches.join(", ")}`,
+  );
 }
 
 /** Check the bound projection (delegates to check-raw, read-only). */
