@@ -3,8 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import {
-  type BoardItem,
-  decideTriage,
   fetchBoardState,
   type GraphQLFn,
   ghGraphQL,
@@ -14,6 +12,7 @@ import {
   runBoardTriage,
   stepSummaryMarkdown,
 } from "../../src/board/board-triage.ts";
+import { type BoardItem, decideTriage } from "../../src/board/triage-rules.ts";
 
 /**
  * The board-triage contract (issue #209): the mechanical half of the
