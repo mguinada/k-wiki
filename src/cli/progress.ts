@@ -217,3 +217,29 @@ export function createAgentProgressSink(
     end: () => renderer.end(),
   };
 }
+
+/** Start the agent liveness heartbeat; the caller clears it when the
+ *  agent settles. */
+export function startHeartbeat(beat: {
+  mode: "full" | "incremental" | "expunge";
+  now: () => Date;
+  intervalMs: number | undefined;
+  onProgress: (message: string) => void;
+}): ReturnType<typeof setInterval> {
+  const agentStartedAt = beat.now().getTime();
+
+  return setInterval(() => {
+    const elapsed = formatDuration(beat.now().getTime() - agentStartedAt);
+    const label = beat.mode === "expunge" ? "expunge " : "";
+
+    beat.onProgress(`wiki-ingest: ${label}agent still running (${elapsed})`);
+  }, beat.intervalMs ?? HEARTBEAT_MS);
+}
+
+/** Heartbeat sentence prefixes this CLI emits (plain or expunge-
+ *  labeled; see startHeartbeat); the TTY renderer keeps matching
+ *  messages on one animated line (spinner + clock). */
+export const AGENT_HEARTBEAT_PREFIX = [
+  "wiki-ingest: agent still running",
+  "wiki-ingest: expunge agent still running",
+] as const;

@@ -458,3 +458,100 @@ export async function assertCleanTree(
     );
   }
 }
+
+/** A git command's stdout, or undefined when git fails for any reason. */
+export async function tryGit(
+  dataRoot: string,
+  args: readonly string[],
+  env: NodeJS.ProcessEnv,
+): Promise<string | undefined> {
+  try {
+    const { stdout } = await runGit(dataRoot, args, env);
+
+    return stdout;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The last synced content of a removed raw note, from the data repo's
+ * git history. The note is absent from the working tree (sync removed
+ * it), so HEAD either still holds it (removal not yet committed) or the
+ * last commit that touched the path is its deletion — whose parent
+ * tree holds the final content. Undefined when git never knew the path.
+ *
+ * With `expectedHash` (the manifest snapshot's recorded hash for the
+ * path), the content is instead the newest committed blob whose
+ * full-file hash equals it — the state the snapshot saw, not the
+ * note's final content, so edits a failed ingest never processed are
+ * not mistaken for the snapshot's state. Undefined when no committed
+ * blob matches (the state is unrecoverable).
+ */
+export async function removedNoteContent(
+  dataRoot: string,
+  rawRelPath: string,
+  env: NodeJS.ProcessEnv,
+  expectedHash?: string,
+): Promise<string | undefined> {
+  if (expectedHash !== undefined) {
+    return snapshotNoteContent(dataRoot, rawRelPath, env, expectedHash);
+  }
+
+  const atHead = await tryGit(dataRoot, ["show", `HEAD:${rawRelPath}`], env);
+
+  if (atHead !== undefined) {
+    return atHead;
+  }
+
+  const sha = (
+    await tryGit(dataRoot, ["rev-list", "-1", "HEAD", "--", rawRelPath], env)
+  )?.trim();
+
+  if (sha === undefined || sha === "") {
+    return undefined;
+  }
+
+  return tryGit(dataRoot, ["show", `${sha}^:${rawRelPath}`], env);
+}
+
+/** The newest committed blob of a raw path whose full-file hash
+ *  equals `expectedHash`, walking the path's history from HEAD;
+ *  undefined when no committed blob ever matched. */
+async function snapshotNoteContent(
+  dataRoot: string,
+  rawRelPath: string,
+  env: NodeJS.ProcessEnv,
+  expectedHash: string,
+): Promise<string | undefined> {
+  const log = await tryGit(
+    dataRoot,
+    ["log", "--format=%H", "HEAD", "--", rawRelPath],
+    env,
+  );
+
+  if (log === undefined) {
+    return undefined;
+  }
+
+  for (const sha of log.split("\n")) {
+    if (sha === "") {
+      continue;
+    }
+
+    const content = await tryGit(
+      dataRoot,
+      ["show", `${sha}:${rawRelPath}`],
+      env,
+    );
+
+    if (
+      content !== undefined &&
+      sha256(Buffer.from(content, "utf8")) === expectedHash
+    ) {
+      return content;
+    }
+  }
+
+  return undefined;
+}

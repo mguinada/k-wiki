@@ -128,7 +128,7 @@ const ENTRIES: readonly Entry[] = [
   },
   {
     launcher: "wiki-ingest.ts",
-    module: "src/ingest/wiki-ingest.ts",
+    module: "src/ingest/wiki-ingest-cli.ts",
     usage: "Usage: wiki-ingest",
   },
   {
