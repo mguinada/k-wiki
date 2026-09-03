@@ -12,8 +12,8 @@ is detected at the sink via the shared predicate `isWarning`
 
 | Color | Feedback kind | Examples |
 |---|---|---|
-| dim | progress and heartbeat lines | `createAgentProgressSink` / `stderrSink` in `src/cli/progress.ts` (consumed by `src/ingest/wiki-ingest.ts`, `src/sync/wiki-sync.ts`, and both query CLIs through the shared runner `src/query/query-shell.ts`), the dim human-step filing hint in `src/query/query-shell.ts`, and the no-change summary in `formatReport` (`src/sync/projection.ts`) |
-| yellow | warning severity | any progress message containing `WARNING` — today the foreign-snapshot warning in `readSnapshot` (`src/ingest/wiki-ingest.ts`) — and the freshness warning rendered at the sink in `src/health/check-raw.ts` |
+| dim | progress and heartbeat lines | `createAgentProgressSink` / `stderrSink` in `src/cli/progress.ts` (consumed by `src/ingest/wiki-ingest-cli.ts`, `src/sync/wiki-sync.ts`, and both query CLIs through the shared runner `src/query/query-shell.ts`), the dim human-step filing hint in `src/query/query-shell.ts`, and the no-change summary in `formatReport` (`src/sync/projection.ts`) |
+| yellow | warning severity | any progress message containing `WARNING` — today the foreign-snapshot warning in `readSnapshot` (`src/ingest/snapshot.ts`) — and the freshness warning rendered at the sink in `src/health/check-raw.ts` |
 | red | error | `cliFail` (`src/cli/colors.ts`) in every entry point, broken crosslinks, removed files, health problems in `src/health/check-raw.ts` |
 | green | ok / healthy / added | `src/health/check-raw.ts`, the ok summary in `scripts/check-crosslinks.ts`, copied files in `formatReport` (`src/sync/projection.ts`) |
 | bold | emphasis | source names — vault or repo — in `formatReport` and progress lines (`colorizeProgress`, `src/sync/projection.ts`; its `noun` argument picks vault or repo), the `Filed:` line in `src/query/wiki-query.ts` |
