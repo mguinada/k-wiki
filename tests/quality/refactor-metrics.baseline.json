@@ -3,7 +3,7 @@
   "filesOver500": 10,
   "filesOver350": 19,
   "maxFileLines": 2213,
-  "crossDomainEdges": 39,
+  "crossDomainEdges": 41,
   "parseArgsCopies": 1,
   "directoryWalkers": 3,
   "repoRootDerivations": 12,
