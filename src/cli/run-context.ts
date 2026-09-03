@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
  * object. Each CLI boundary builds it once and threads it through
  * the options interfaces and stage plumbing (wiki-sync stages,
  * runWikiIngest, runWikiQuery, lint/verification), so no stage
- * re-derives `dirname(rawDir)` or re-defaults the trio; leaf helpers
+ * re-derives the raw dir's parent or re-defaults the trio; leaf helpers
  * keep their explicit `(dataRoot, env)` params.
  */
 export interface RunContext {
