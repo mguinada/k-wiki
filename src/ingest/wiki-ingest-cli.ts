@@ -286,7 +286,6 @@ async function runCliIngest(parsed: {
   heartbeatMs: number | undefined;
   sink: ProgressSink;
 }): Promise<void> {
-
   try {
     const config = await loadSyncConfig(join(repoRoot, "sync.json"), homedir());
     const rawDir =

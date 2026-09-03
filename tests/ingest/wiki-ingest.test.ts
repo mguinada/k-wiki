@@ -3,14 +3,13 @@ import { dirname, join } from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { createAgentProgressSink } from "../../src/cli/progress.ts";
 import { runContext } from "../../src/cli/run-context.ts";
-import { runGit } from "../../src/data/git.ts";
+import { removedNoteContent, runGit } from "../../src/data/git.ts";
 import { type AgentRunner, readPrompt } from "../../src/ingest/agent-run.ts";
 import { loadAgentSettings } from "../../src/ingest/agent-settings.ts";
 import { diffManifests } from "../../src/ingest/manifest-diff.ts";
 import {
   composeExpungePrompt,
   composePrompt,
-  removedNoteContent,
   runWikiIngest,
 } from "../../src/ingest/wiki-ingest.ts";
 import { parseManifest, serializeManifest } from "../../src/sync/manifest.ts";
@@ -296,135 +295,6 @@ describe("composeExpungePrompt", () => {
     expect(composed).toContain(
       "`````markdown\n````\nnested fence\n````\n`````",
     );
-  });
-});
-
-describe("removedNoteContent", () => {
-  it("returns the HEAD content while the removal is uncommitted", async () => {
-    const dataRoot = await makeDataRepo({ "a.md": "last body" }, track);
-
-    await rm(join(dataRoot, "raw", "notes", "Engineering", "a.md"));
-
-    await expect(
-      removedNoteContent(dataRoot, "raw/notes/Engineering/a.md", process.env),
-    ).resolves.toBe("last body");
-  });
-
-  it("returns the parent-tree content after the deletion is committed", async () => {
-    const dataRoot = await makeDataRepo({ "a.md": "final body" }, track);
-
-    await rm(join(dataRoot, "raw", "notes", "Engineering", "a.md"));
-    await run("git", ["-C", dataRoot, "add", "-A"]);
-    await run("git", [
-      "-C",
-      dataRoot,
-      "-c",
-      "user.email=t@t",
-      "-c",
-      "user.name=t",
-      "commit",
-      "--quiet",
-      "-m",
-      "remove note",
-    ]);
-
-    await expect(
-      removedNoteContent(dataRoot, "raw/notes/Engineering/a.md", process.env),
-    ).resolves.toBe("final body");
-  });
-
-  it("returns undefined for a path git never knew", async () => {
-    const dataRoot = await makeDataRepo({ "a.md": "a" }, track);
-
-    await expect(
-      removedNoteContent(
-        dataRoot,
-        "raw/notes/Engineering/never.md",
-        process.env,
-      ),
-    ).resolves.toBeUndefined();
-  });
-
-  it("returns undefined outside a git repository", async () => {
-    const dataRoot = await makeDataRepo({ "a.md": "a" }, track);
-
-    await rm(join(dataRoot, ".git"), { recursive: true });
-
-    await expect(
-      removedNoteContent(dataRoot, "raw/notes/Engineering/a.md", process.env),
-    ).resolves.toBeUndefined();
-  });
-
-  it("returns undefined for an expected hash outside a git repository", async () => {
-    const dataRoot = await makeDataRepo({ "a.md": "a" }, track);
-
-    await rm(join(dataRoot, ".git"), { recursive: true });
-
-    await expect(
-      removedNoteContent(
-        dataRoot,
-        "raw/notes/Engineering/a.md",
-        process.env,
-        hashOf("a"),
-      ),
-    ).resolves.toBeUndefined();
-  });
-
-  it("returns the blob matching the expected hash, skipping newer committed edits", async () => {
-    const dataRoot = await makeDataRepo({ "a.md": "first body" }, track);
-
-    await writeFile(
-      join(dataRoot, "raw", "notes", "Engineering", "a.md"),
-      "second body",
-    );
-    await commitAll(dataRoot, "edit body");
-    await rm(join(dataRoot, "raw", "notes", "Engineering", "a.md"));
-    await commitAll(dataRoot, "remove note");
-
-    await expect(
-      removedNoteContent(
-        dataRoot,
-        "raw/notes/Engineering/a.md",
-        process.env,
-        hashOf("first body"),
-      ),
-    ).resolves.toBe("first body");
-  });
-
-  it("returns the HEAD blob when it matches the expected hash", async () => {
-    const dataRoot = await makeDataRepo({ "a.md": "last body" }, track);
-
-    await rm(join(dataRoot, "raw", "notes", "Engineering", "a.md"));
-
-    await expect(
-      removedNoteContent(
-        dataRoot,
-        "raw/notes/Engineering/a.md",
-        process.env,
-        hashOf("last body"),
-      ),
-    ).resolves.toBe("last body");
-  });
-
-  it("returns undefined when no committed blob matches the expected hash", async () => {
-    const dataRoot = await makeDataRepo({ "a.md": "first body" }, track);
-
-    await writeFile(
-      join(dataRoot, "raw", "notes", "Engineering", "a.md"),
-      "second body",
-    );
-    await commitAll(dataRoot, "edit body");
-    await rm(join(dataRoot, "raw", "notes", "Engineering", "a.md"));
-    await commitAll(dataRoot, "remove note");
-
-    await expect(
-      removedNoteContent(
-        dataRoot,
-        "raw/notes/Engineering/a.md",
-        process.env,
-        hashOf("never committed"),
-      ),
-    ).resolves.toBeUndefined();
   });
 });
 
