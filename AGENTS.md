@@ -68,6 +68,18 @@ until all three pass. Run them before every handoff.
   hunk changed vs `origin/main` (uncommitted work included; new files
   whole; deleted files skipped) must stay at cyclomatic ≤ 10; it also
   runs as part of `npm test` — this script targets it alone.
+- `npm run structure` — structure budget gate (blocking, whole
+  `src/`): `tests/quality/structure.test.ts` fails when any
+  `refactor-metrics` counter exceeds its `.structureguard.json`
+  budget (`dataToSyncEdges` pinned at 0 — no import from `src/data/`
+  into `src/sync/`); failures name the counter, budget, fresh value,
+  and the offending files; it also runs as part of `npm test` — this
+  script targets it alone. Lowering a budget is a one-line reviewed
+  diff; raising one, or adding a per-counter `exclude` entry, demands
+  a written justification in the PR body — no inline suppressions.
+  The G2 mirrored-tree (`tests/quality/mirrored-tests.test.ts`) and
+  G3 no-re-export-shim (`tests/quality/no-reexport-shims.test.ts`)
+  guards also run as part of `npm test`.
 - `npm run test:coverage` — unit tests with coverage; the run fails
   below the 90% thresholds in `vitest.config.ts`.
 - `npm run e2e` — end-to-end suite (`vitest.e2e.config.ts`): real CLI
@@ -123,6 +135,7 @@ npm run typecheck   # gate — always
 npm run lint        # gate — always
 npm test            # gate — always (unit only; e2e is NOT included; includes the complexity gate)
 npm run complexity  # gate — fast targeted re-run of the gate when only it matters
+npm run structure   # gate — fast targeted re-run of the gate when only it matters
 npm run e2e         # when the change touches src/sync/, src/ingest/, src/query/, src/data/, src/dashboard/, src/wiki/, src/cli/, src/schedule/, src/fixtures/, tests/e2e/, or raw/
 npm run health      # same trigger as e2e; also safe to run any time — read-only, no vault access
 ```
