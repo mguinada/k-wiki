@@ -22,11 +22,12 @@ import {
 import {
   directSetForRemovals,
   formatDigest,
-  type IngestRun,
   writeFailureDigest,
 } from "./digest.ts";
 import {
   capturePreRunState,
+  type PostRunState,
+  type PreRunState,
   revertToPreRun,
   runGuardrails,
 } from "./guardrails.ts";
@@ -445,16 +446,333 @@ async function composeRunPrompt(
   return { composed, directSet };
 }
 
-/** Post-run hook (issue #73): refresh the static dashboard after the
- *  digest and snapshot — the dashboard reflects the last good state,
- *  so a failure path (revert, agent error) never regenerates it. A
+/**
+ * One headless ingest run. The snapshot is written only after a
+ * successful agent run, so a failure retries the same sources next
+ * time instead of silently skipping them. An ordinary run records
+ * the full current manifest; a scoped run writes a merged snapshot
+ * (issue #150) that keeps pending manifest changes outside
+ * `--sources` pending. A manifest diff with removed
+ * entries routes to the expunge flow (issue #65); removed entries that
+ * pair with an addition by equal full-file hash or identical body
+ * text are renames and never route there (issue #143).
+ */
+/** The run's immutable inputs, loaded once before any step. */
+interface RunInputs {
+  readonly options: IngestOptions;
+  readonly run: RunContext;
+  readonly settings: AgentSettings;
+  readonly current: Manifest;
+  readonly snapshotPath: string;
+}
+
+/** Load the run's inputs: settings (caller-threaded or read), the
+ *  current manifest, and the snapshot path. */
+async function prepareRun(options: IngestOptions): Promise<RunInputs> {
+  const { run } = options;
+  const settings =
+    options.settings ??
+    (await loadAgentSettings(options.settingsPath, {
+      onProgress: run.onProgress,
+    }));
+
+  run.onProgress(`wiki-ingest: raw dir ${run.rawDir}`);
+
+  return {
+    options,
+    run,
+    settings,
+    current: await readRunManifest(run.rawDir),
+    snapshotPath: join(run.dataRoot, "outputs", SNAPSHOT_FILENAME),
+  };
+}
+
+/** The housekeeping step: keep the snapshot and dashboard out of the
+ *  data repo's history, adopt a legacy snapshot, warn about
+ *  tracked-but-ignored files, and read the last-ingested snapshot. */
+async function housekeepingStep(
+  inputs: RunInputs,
+): Promise<Manifest | undefined> {
+  const { dataRoot, env, onProgress } = inputs.run;
+
+  await ensureSnapshotIgnored(dataRoot, onProgress);
+  await ensureDashboardIgnored(dataRoot, onProgress);
+  await adoptLegacySnapshot(
+    join(inputs.options.outputsDir, SNAPSHOT_FILENAME),
+    inputs.snapshotPath,
+    onProgress,
+  );
+  await warnTrackedIgnored(dataRoot, env, onProgress);
+
+  return await readSnapshot(
+    inputs.snapshotPath,
+    dataRoot,
+    onProgress,
+    hasExplicitSources(inputs.options),
+  );
+}
+
+/** What the diff step produced: the change set this run ingests. */
+interface RunChange {
+  readonly diff: ManifestDiff;
+  readonly explicitDiff: ManifestDiff | undefined;
+  readonly previous: Manifest | undefined;
+}
+
+/** The diff step: snapshot vs current (or the explicit `--sources`
+ *  set), with body-identical pairs paired as renames. Undefined when
+ *  nothing changed — the run then skips. */
+async function diffStep(
+  inputs: RunInputs,
+  previous: Manifest | undefined,
+): Promise<RunChange | undefined> {
+  const { diff, explicitDiff } = await computeRunDiff(
+    inputs.run,
+    inputs.current,
+    previous,
+    inputs.options,
+    inputs.snapshotPath,
+  );
+
+  if (diff.empty) {
+    return undefined;
+  }
+
+  return { diff, explicitDiff, previous };
+}
+
+/** The skip result of an empty diff: nothing runs. */
+function noChangesSkip(run: RunContext): IngestResult {
+  const reason = "no changed sources since the last ingest; nothing to do";
+
+  run.onProgress(reason);
+
+  return { status: "skipped", reason };
+}
+
+/** The run's resolved mode and its prompt file. */
+interface RunMode {
+  readonly mode: "full" | "incremental" | "expunge";
+  readonly removedCount: number;
+  readonly promptFile: string;
+}
+
+/** The mode step: first run full, removals expunge, everything else
+ *  incremental — and the prompt file it names. */
+function modeStep(change: RunChange): RunMode {
+  const { mode, removedCount } = resolveRunMode(change.previous, change.diff);
+
+  return { mode, removedCount, promptFile: promptFileFor(mode) };
+}
+
+/** The composed agent message, with the expunge direct set when one
+ *  is due. */
+interface RunPrompt {
+  readonly composed: string;
+  readonly directSet: readonly string[] | undefined;
+}
+
+/** The prompt step: read the mode's prompt file and compose the
+ *  agent message. */
+async function promptStep(
+  inputs: RunInputs,
+  change: RunChange,
+  mode: RunMode,
+): Promise<RunPrompt> {
+  const promptText = await readPrompt(
+    join(inputs.options.promptsDir, mode.promptFile),
+  );
+
+  return await composeRunPrompt({
+    mode: mode.mode,
+    removedCount: mode.removedCount,
+    promptText,
+    promptsDir: inputs.options.promptsDir,
+    dataRoot: inputs.run.dataRoot,
+    diff: change.diff,
+    env: inputs.run.env,
+    onProgress: inputs.run.onProgress,
+    note: scopedNote(inputs.options),
+  });
+}
+
+/** The agent run's outcome, held for the guardrail step: its stdout,
+ *  or the failure that must wait for the guardrail check before it
+ *  escapes. */
+interface AgentRun {
+  readonly pre: PreRunState;
+  readonly stdout: string;
+  readonly agentError: unknown;
+}
+
+/** The spawn step: capture the pre-run state, invoke the agent under
+ *  its heartbeat, and hold the outcome for the guardrail step. */
+async function spawnStep(
+  inputs: RunInputs,
+  mode: RunMode,
+  composed: string,
+): Promise<AgentRun> {
+  const { dataRoot, env, now, onProgress } = inputs.run;
+  const args = agentArgs(inputs.settings, composed);
+  const runAgent = inputs.options.runAgent ?? spawnAgent;
+  const pre = await capturePreRunState(dataRoot, env);
+
+  onProgress(
+    `wiki-ingest: mode ${mode.mode}, invoking agent: ${formatAgentInvocation(inputs.settings)}`,
+  );
+
+  const heartbeat = startHeartbeat({
+    mode: mode.mode,
+    now,
+    intervalMs: inputs.options.heartbeatMs,
+    onProgress,
+  });
+
+  let stdout = "";
+  let agentError: unknown;
+
+  try {
+    ({ stdout } = await runAgent(inputs.settings.command, args, {
+      cwd: dataRoot,
+      env,
+      timeoutMs: inputs.options.timeoutMs,
+    }));
+  } catch (error) {
+    agentError = error;
+  } finally {
+    clearInterval(heartbeat);
+  }
+
+  if (agentError === undefined) {
+    onProgress("wiki-ingest: agent finished");
+  }
+
+  return { pre, stdout, agentError };
+}
+
+/** The digest destination of this run, under the outputs dir. */
+async function runDigestPath(
+  outputsDir: string,
+  startedAt: Date,
+): Promise<string> {
+  const runsDir = join(outputsDir, "runs");
+
+  await mkdir(outputsDir, { recursive: true });
+  await mkdir(runsDir, { recursive: true });
+
+  return join(runsDir, `${startedAt.toISOString().replaceAll(":", "-")}.md`);
+}
+
+/** What the guardrail step leaves for the success path. */
+interface CheckedRun {
+  readonly post: PostRunState;
+  readonly startedAt: Date;
+  readonly digestPath: string;
+}
+
+/** The guardrail-or-fail step: run the post-run guardrails. A tripped
+ *  check reverts the data repo to its pre-run state, writes the
+ *  failure digest, and rejects; a passed check with a failed agent
+ *  rejects with the agent's error (the changes stay, uncommitted). */
+async function guardrailStep(
+  inputs: RunInputs,
+  change: RunChange,
+  mode: RunMode,
+  agent: AgentRun,
+): Promise<CheckedRun> {
+  const { dataRoot, env, now, onProgress } = inputs.run;
+  const post = await runGuardrails(dataRoot, env, agent.pre);
+  const startedAt = now();
+  const digestPath = await runDigestPath(inputs.options.outputsDir, startedAt);
+  const failure = post.failure;
+
+  if (failure === undefined) {
+    onProgress("wiki-ingest: guardrails passed");
+
+    if (agent.agentError !== undefined) {
+      onProgress("wiki-ingest: agent failed — guardrails passed, changes kept");
+
+      throw agent.agentError;
+    }
+
+    return { post, startedAt, digestPath };
+  }
+
+  onProgress(
+    `wiki-ingest: guardrail check ${failure.check} (${failure.name}) failed — reverting to ${agent.pre.commit.slice(0, 8)}`,
+  );
+
+  await revertToPreRun(dataRoot, env, agent.pre, post.entries);
+  await writeFailureDigest(digestPath, {
+    startedAt,
+    mode: mode.mode,
+    promptFile: `prompts/${mode.promptFile}`,
+    settings: inputs.settings,
+    diff: change.diff,
+    agentOutput: agent.stdout,
+    failure,
+    explicitDiff: change.explicitDiff,
+  });
+
+  throw new Error(
+    `guardrail check ${failure.check} (${failure.name}) failed; run reverted to ${agent.pre.commit.slice(0, 8)} — ${failure.problems.join("; ")}`,
+    { cause: agent.agentError },
+  );
+}
+
+/** The success step: bucket the run's wiki pages, write the digest
+ *  and the snapshot, and report the run. */
+async function successStep(
+  inputs: RunInputs,
+  change: RunChange,
+  mode: RunMode,
+  prompt: RunPrompt,
+  agent: AgentRun,
+  checked: CheckedRun,
+): Promise<IngestResult> {
+  const { dataRoot } = inputs.run;
+  const pages = await wikiPages(dataRoot, checked.post.entries, agent.pre);
+  const unverifiedFrontier = await readUnverifiedFrontier(dataRoot, pages);
+  const digest = formatDigest({
+    startedAt: checked.startedAt,
+    mode: mode.mode,
+    promptFile: `prompts/${mode.promptFile}`,
+    settings: inputs.settings,
+    diff: change.diff,
+    pages,
+    directSet: prompt.directSet,
+    agentOutput: agent.stdout,
+    unverifiedFrontier,
+    ...(change.explicitDiff !== undefined && { explicitSources: true }),
+  });
+
+  await writeFile(checked.digestPath, digest, "utf8");
+  await writeSnapshotIfNeeded(
+    inputs.run,
+    change.explicitDiff,
+    change.previous,
+    inputs.snapshotPath,
+    inputs.current,
+  );
+
+  return {
+    status: "ran",
+    mode: mode.mode,
+    digestPath: checked.digestPath,
+    digest,
+    pages,
+    diff: change.diff,
+  };
+}
+
+/** The dashboard step (issue #73, an explicit run step since issue
+ *  #258, B-9): refresh the static dashboard after the digest and
+ *  snapshot — the dashboard reflects the last good state, so a
+ *  failure path (revert, agent error) never regenerates it. A
  *  refresh failure must not fail the run: the dashboard is derived. */
-async function refreshDashboard(
-  dataRoot: string,
-  env: NodeJS.ProcessEnv,
-  now: () => Date,
-  onProgress: (message: string) => void,
-): Promise<void> {
+async function dashboardStep(run: RunContext): Promise<void> {
+  const { dataRoot, env, now, onProgress } = run;
+
   try {
     const dashboardPath = await writeDashboard(dataRoot, {
       env,
@@ -471,179 +789,45 @@ async function refreshDashboard(
 }
 
 /**
- * One headless ingest run. The snapshot is written only after a
+ * One headless ingest run, as its named steps in run order: prepare,
+ * housekeeping, diff, mode, prompt, spawn, guardrail-or-fail,
+ * success, dashboard. The snapshot is written only after a
  * successful agent run, so a failure retries the same sources next
  * time instead of silently skipping them. An ordinary run records
  * the full current manifest; a scoped run writes a merged snapshot
  * (issue #150) that keeps pending manifest changes outside
- * `--sources` pending. A manifest diff with removed
- * entries routes to the expunge flow (issue #65); removed entries that
- * pair with an addition by equal full-file hash or identical body
- * text are renames and never route there (issue #143).
+ * `--sources` pending. A manifest diff with removed entries routes
+ * to the expunge flow (issue #65); removed entries that pair with an
+ * addition by equal full-file hash or identical body text are
+ * renames and never route there (issue #143).
  */
 export async function runWikiIngest(
   options: IngestOptions,
 ): Promise<IngestResult> {
-  const { dataRoot, rawDir, env, now, onProgress } = options.run;
-  const settings =
-    options.settings ??
-    (await loadAgentSettings(options.settingsPath, { onProgress }));
+  const inputs = await prepareRun(options);
+  const previous = await housekeepingStep(inputs);
+  const change = await diffStep(inputs, previous);
 
-  onProgress(`wiki-ingest: raw dir ${rawDir}`);
-
-  const current = await readRunManifest(rawDir);
-  const snapshotPath = join(dataRoot, "outputs", SNAPSHOT_FILENAME);
-  const legacySnapshotPath = join(options.outputsDir, SNAPSHOT_FILENAME);
-
-  await ensureSnapshotIgnored(dataRoot, onProgress);
-  await ensureDashboardIgnored(dataRoot, onProgress);
-  await adoptLegacySnapshot(legacySnapshotPath, snapshotPath, onProgress);
-  await warnTrackedIgnored(dataRoot, env, onProgress);
-
-  const previous = await readSnapshot(
-    snapshotPath,
-    dataRoot,
-    onProgress,
-    hasExplicitSources(options),
-  );
-  const { diff, explicitDiff } = await computeRunDiff(
-    options.run,
-    current,
-    previous,
-    options,
-    snapshotPath,
-  );
-
-  if (diff.empty) {
-    const reason = "no changed sources since the last ingest; nothing to do";
-
-    onProgress(reason);
-
-    return { status: "skipped", reason };
+  if (change === undefined) {
+    return noChangesSkip(inputs.run);
   }
 
-  const { mode, removedCount } = resolveRunMode(previous, diff);
-  const promptFile = promptFileFor(mode);
-  const promptText = await readPrompt(join(options.promptsDir, promptFile));
-  const { composed, directSet } = await composeRunPrompt({
+  const mode = modeStep(change);
+  const prompt = await promptStep(inputs, change, mode);
+  const agent = await spawnStep(inputs, mode, prompt.composed);
+  const checked = await guardrailStep(inputs, change, mode, agent);
+  const result = await successStep(
+    inputs,
+    change,
     mode,
-    removedCount,
-    promptText,
-    promptsDir: options.promptsDir,
-    dataRoot,
-    diff,
-    env,
-    onProgress,
-    note: scopedNote(options),
-  });
-
-  const args = agentArgs(settings, composed);
-  const runAgent = options.runAgent ?? spawnAgent;
-  const pre = await capturePreRunState(dataRoot, env);
-
-  onProgress(
-    `wiki-ingest: mode ${mode}, invoking agent: ${formatAgentInvocation(settings)}`,
+    prompt,
+    agent,
+    checked,
   );
 
-  const heartbeat = startHeartbeat({
-    mode,
-    now,
-    intervalMs: options.heartbeatMs,
-    onProgress,
-  });
+  await dashboardStep(inputs.run);
 
-  let stdout = "";
-  let agentError: unknown;
-
-  try {
-    ({ stdout } = await runAgent(settings.command, args, {
-      cwd: dataRoot,
-      env,
-      timeoutMs: options.timeoutMs,
-    }));
-  } catch (error) {
-    agentError = error;
-  } finally {
-    clearInterval(heartbeat);
-  }
-
-  if (agentError === undefined) {
-    onProgress("wiki-ingest: agent finished");
-  }
-
-  const post = await runGuardrails(dataRoot, env, pre);
-  const startedAt = now();
-
-  await mkdir(options.outputsDir, { recursive: true });
-  await mkdir(join(options.outputsDir, "runs"), { recursive: true });
-
-  const digestPath = join(
-    options.outputsDir,
-    "runs",
-    `${startedAt.toISOString().replaceAll(":", "-")}.md`,
-  );
-
-  if (post.failure !== undefined) {
-    const failure = post.failure;
-
-    onProgress(
-      `wiki-ingest: guardrail check ${failure.check} (${failure.name}) failed — reverting to ${pre.commit.slice(0, 8)}`,
-    );
-
-    await revertToPreRun(dataRoot, env, pre, post.entries);
-    await writeFailureDigest(digestPath, {
-      startedAt,
-      mode,
-      promptFile: `prompts/${promptFile}`,
-      settings,
-      diff,
-      agentOutput: stdout,
-      failure,
-      explicitDiff,
-    });
-
-    throw new Error(
-      `guardrail check ${failure.check} (${failure.name}) failed; run reverted to ${pre.commit.slice(0, 8)} — ${failure.problems.join("; ")}`,
-      { cause: agentError },
-    );
-  }
-
-  onProgress("wiki-ingest: guardrails passed");
-
-  if (agentError !== undefined) {
-    onProgress("wiki-ingest: agent failed — guardrails passed, changes kept");
-
-    throw agentError;
-  }
-
-  const pages = await wikiPages(dataRoot, post.entries, pre);
-  const unverifiedFrontier = await readUnverifiedFrontier(dataRoot, pages);
-
-  const run: IngestRun = {
-    startedAt,
-    mode,
-    promptFile: `prompts/${promptFile}`,
-    settings,
-    diff,
-    pages,
-    directSet,
-    agentOutput: stdout,
-    unverifiedFrontier,
-    ...(explicitDiff !== undefined && { explicitSources: true }),
-  };
-  const digest = formatDigest(run);
-
-  await writeFile(digestPath, digest, "utf8");
-  await writeSnapshotIfNeeded(
-    options.run,
-    explicitDiff,
-    previous,
-    snapshotPath,
-    current,
-  );
-  await refreshDashboard(dataRoot, env, now, onProgress);
-
-  return { status: "ran", mode, digestPath, digest, pages, diff };
+  return result;
 }
 
 /* v8 ignore next: covered only under direct `node src/ingest/wiki-ingest.ts` runs */
