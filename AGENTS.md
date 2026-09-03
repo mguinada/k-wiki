@@ -177,6 +177,12 @@ infrastructure, free to use for any unit or e2e work; the snapshot at
   function. A blank line does not block extraction: when a step needs
   a name, a test, or reuse, extract it into a helper function.
 
+### Comment blast radius
+
+- When code moves or changes, its comments move with it and stay true:
+  check every comment in the blast radius and rewrite stale ones in the
+  same change.
+
 ### wiki-sync stage table
 
 - The wiki-sync cycle's stage numbers come from the stage table
