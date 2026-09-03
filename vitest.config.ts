@@ -16,6 +16,16 @@ export default defineConfig({
     // fixed the earlier escalations. The e2e config sets 30 s for
     // the CLI suites for the same reason.
     testTimeout: 300_000,
+    // The same load history, attacked at its amplifier instead of its
+    // symptom: the default maxWorkers is one fork per core, and every
+    // worker spawns real git/agent children, so a cores-worth of
+    // workers on an already-loaded machine oversubscribes it into
+    // multi-minute global stalls (one stall inflates every in-flight
+    // test equally — the gate run showed unrelated tests all at
+    // ~92.8 s and one afterAll rm past the 120 s hook ceiling). A
+    // fixed cap of 4 leaves CPU headroom for the spawned children;
+    // CI's 4-core runners already run at or below it.
+    maxWorkers: 4,
     // afterAll cleanup rm's many git-heavy temp dirs; under load the
     // 10 s default kills the hook (guardrails flake, issue #145 run).
     // Same value the heaviest suites already declare per-file.

@@ -6,7 +6,13 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createColors } from "picocolors";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { runGit } from "../../src/data/git.ts";
-import { checkRaw, displayPath, main } from "../../src/health/check-raw.ts";
+import {
+  checkRaw,
+  displayPath,
+  type HealthReport,
+  main,
+  printHealthReport,
+} from "../../src/health/check-raw.ts";
 import {
   type Manifest,
   serializeManifest,
@@ -539,6 +545,13 @@ describe("health CLI", () => {
   it("exits 1 for an unknown option", async () => {
     await runHealthCli(["--bogus"]);
 
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("rejects a second positional argument instead of ignoring it", async () => {
+    const { err } = await runHealthCli(["raw-one", "raw-two"]);
+
+    expect(err).toContain("unexpected argument: raw-two");
     expect(process.exitCode).toBe(1);
   });
 
@@ -1246,5 +1259,102 @@ describe("orphan scan ordering", () => {
       "notes/Documents/mm-middle.md: orphan (no manifest entry)",
       "notes/Documents/zz-last.md: orphan (no manifest entry)",
     ]);
+  });
+});
+
+describe("printHealthReport", () => {
+  afterEach(() => {
+    process.exitCode = undefined;
+    vi.restoreAllMocks();
+  });
+
+  /** Capture the console while the renderer prints, colors forced on. */
+  async function capture(
+    report: HealthReport,
+    prefix: string,
+    failOnStale = false,
+  ): Promise<{ out: string[]; err: string[] }> {
+    const out: string[] = [];
+    const err: string[] = [];
+    const hadNoColor = process.env.NO_COLOR;
+
+    delete process.env.NO_COLOR;
+
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) => err.push(parts.join(" ")));
+
+    try {
+      printHealthReport(report, prefix, failOnStale);
+    } finally {
+      if (hadNoColor === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = hadNoColor;
+      }
+
+      logSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
+
+    return { out, err };
+  }
+
+  const healthy: HealthReport = {
+    healthy: true,
+    problems: [],
+    summary: "healthy: manifest and projection agree (2 notes, 1 vault)",
+    warnings: ["stale projection: re-run sync-repo"],
+    stale: true,
+  };
+
+  it("prints the healthy summary green to stdout", async () => {
+    const { out } = await capture(healthy, "check-raw");
+
+    expect(out).toEqual([
+      paint.green("healthy: manifest and projection agree (2 notes, 1 vault)"),
+    ]);
+  });
+
+  it("prefixes each warning, colored, with the caller's prefix", async () => {
+    const { err } = await capture(healthy, "k-wiki");
+
+    expect(err).toEqual([
+      paint.yellow("k-wiki: stale projection: re-run sync-repo"),
+    ]);
+  });
+
+  it("prints one red problem line per problem and sets exit 1", async () => {
+    const { out, err } = await capture(
+      {
+        healthy: false,
+        problems: ["notes/Documents/a.md: orphan (no manifest entry)"],
+        summary: "",
+        warnings: [],
+        stale: false,
+      },
+      "k-wiki",
+    );
+
+    expect(out).toEqual([]);
+    expect(err).toEqual([
+      paint.red("notes/Documents/a.md: orphan (no manifest entry)"),
+    ]);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("sets exit 1 for a stale healthy report under --fail-on-stale", async () => {
+    await capture(healthy, "check-raw", true);
+
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("leaves the exit code unset for a stale warning without --fail-on-stale", async () => {
+    await capture(healthy, "check-raw", false);
+
+    expect(process.exitCode).toBeUndefined();
   });
 });

@@ -1,21 +1,15 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
-import { parseArgs } from "node:util";
 import { errorMessage } from "../cli/colors.ts";
-import { checkRaw } from "../health/check-raw.ts";
-import {
-  QUERY_HEARTBEAT_PREFIX,
-  runWikiQuery,
-  terminalColors,
-} from "../query/wiki-query.ts";
+import { checkRaw, printHealthReport } from "../health/check-raw.ts";
+import { runQueryCli } from "../query/query-shell.ts";
 import { expandHome, loadSyncConfig, resolveRawDir } from "../sync/config.ts";
 import { listWikiPages, readPageFields } from "../wiki/pages.ts";
 import { cliFail } from "./colors.ts";
-import { timeoutArgError } from "./flag-args.ts";
 import { refuseDirectExecution } from "./is-main.ts";
-import { stderrSink } from "./progress.ts";
 import { isPlainObject, statIfExists } from "./shared.ts";
+import { agentRunFlags, parseArgs } from "./shell.ts";
 
 /**
  * k-wiki: the agent-facing query entry point (guide §16, issue #76).
@@ -24,7 +18,7 @@ import { isPlainObject, statIfExists } from "./shared.ts";
  * exists — and delegates to the answer-only `runWikiQuery`. There is
  * no filing passthrough: filing stays the human-run
  * `wiki-query --file-last` inside the checkout (issue #72's two-stage
- * design). One command, `util.parseArgs`, no framework (§27).
+ * design). One command, the shared CLI shell, no framework (§27).
  */
 
 /** The per-project binding file name, at the bound project's root. */
@@ -244,7 +238,7 @@ const HELP = `Usage: k-wiki [-h | --help] | k-wiki <command> [<args>]
 The agent-facing entry point (guide §16): one LLM command
 (query) and four read-only deterministic ones (status, list, read,
 health), usable from any cwd with zero flags once the project is
-bound. One command set — util.parseArgs, no CLI framework. None of
+bound. One command set — the shared CLI shell, no CLI framework. None of
 them can write to the wiki.
 
 Binding file .k-wiki.json (at the bound project's root):
@@ -507,55 +501,7 @@ async function runRead(wikiDir: string, slug: string): Promise<void> {
 
 /** Check the bound projection (delegates to check-raw, read-only). */
 async function runHealth(rawDir: string, failOnStale: boolean): Promise<void> {
-  const colors = terminalColors(process.env);
-  const report = await checkRaw(rawDir);
-
-  for (const warning of report.warnings) {
-    console.error(colors.yellow(`k-wiki: ${warning}`));
-  }
-
-  if (report.healthy) {
-    console.log(colors.green(report.summary));
-  } else {
-    for (const line of report.problems) {
-      console.error(colors.red(line));
-    }
-
-    process.exitCode = 1;
-  }
-
-  if (failOnStale && report.stale) {
-    process.exitCode = 1;
-  }
-}
-
-/** The argv shape main consumes after util.parseArgs. */
-interface CliArguments {
-  readonly values: {
-    checkout?: string;
-    timeout?: string;
-    "fail-on-stale"?: boolean;
-  };
-  readonly positionals: string[];
-}
-
-/** Parse argv; undefined (already failed) when the syntax is invalid. */
-function parseCliArguments(args: string[]): CliArguments | undefined {
-  try {
-    return parseArgs({
-      args,
-      allowPositionals: true,
-      options: {
-        checkout: { type: "string" },
-        timeout: { type: "string" },
-        "fail-on-stale": { type: "boolean" },
-      },
-    });
-  } catch (error) {
-    fail(errorMessage(error));
-
-    return undefined;
-  }
+  printHealthReport(await checkRaw(rawDir), "k-wiki", failOnStale);
 }
 
 /** Usage error for k-wiki read's argument count, undefined when valid. */
@@ -697,46 +643,27 @@ async function runReadOnlyCommand(
   return false;
 }
 
-/** Run the one LLM command: query — the answer plus the filing hint. */
+/** Run the one LLM command: query — the shared query shell (sink,
+ *  runWikiQuery mapping, answer + dim hint, failure rendering). */
 async function runQueryCommand(
   resolution: CheckoutResolution,
   paths: { readonly rawDir: string; readonly wikiDir: string },
-  timeoutArg: string | undefined,
-  rest: readonly string[],
+  timeoutMs: number | undefined,
+  question: string,
 ): Promise<void> {
-  const colors = terminalColors(process.env);
-  const { sink, animated } = stderrSink(QUERY_HEARTBEAT_PREFIX);
-
-  try {
-    const result = await runWikiQuery({
-      settingsPath: join(
-        resolution.checkout,
-        resolution.settings ?? "settings.yml",
-      ),
-      rawDir: paths.rawDir,
-      promptsDir: join(resolution.checkout, "prompts"),
-      outputsDir: join(resolution.checkout, "outputs"),
-      question: rest[0] ?? "",
-      timeoutMs:
-        timeoutArg === undefined ? undefined : Number(timeoutArg) * 1000,
-      heartbeatMs: animated ? 100 : undefined,
-      onProgress: sink.render,
-    });
-
-    sink.end();
-
-    console.log(result.answer);
-    console.error();
-    console.error(
-      colors.dim(
-        "To file this answer (human step): wiki-query --file-last, run inside the checkout",
-      ),
-    );
-  } catch (error) {
-    sink.end();
-    console.error(colors.red(`k-wiki: ${errorMessage(error)}`));
-    process.exitCode = 1;
-  }
+  await runQueryCli({
+    prefix: "k-wiki",
+    settingsPath: join(
+      resolution.checkout,
+      resolution.settings ?? "settings.yml",
+    ),
+    rawDir: paths.rawDir,
+    promptsDir: join(resolution.checkout, "prompts"),
+    outputsDir: join(resolution.checkout, "outputs"),
+    question,
+    timeoutMs,
+    hint: "To file this answer (human step): wiki-query --file-last, run inside the checkout",
+  });
 }
 
 /** k-wiki entry point: `k-wiki [-h | --help] | k-wiki <command> [<args>]` — query, status, list, read, health. */
@@ -749,24 +676,21 @@ export async function main(cwd: string = process.cwd()): Promise<void> {
     return;
   }
 
-  const cli = parseCliArguments(args);
+  const cli = parseArgs(args, {
+    value: ["--checkout", "--timeout"],
+    boolean: ["--fail-on-stale"],
+  });
 
-  if (cli === undefined) {
-    return;
-  }
-
-  const timeout = cli.values.timeout;
-  const timeoutError =
-    timeout === undefined ? undefined : timeoutArgError(timeout);
-
-  if (timeoutError !== undefined) {
-    fail(timeoutError);
+  if (cli.error !== undefined) {
+    fail(cli.error);
 
     return;
   }
 
-  const rest = cli.positionals.slice(1);
-  const usageError = commandUsageError(cli.positionals[0], rest);
+  const rest = cli.positional.slice(1);
+  const runFlags = agentRunFlags(cli.values);
+  const usageError =
+    runFlags.error ?? commandUsageError(cli.positional[0], rest);
 
   if (usageError !== undefined) {
     fail(usageError);
@@ -776,7 +700,7 @@ export async function main(cwd: string = process.cwd()): Promise<void> {
 
   const home = homedir();
   const resolution = await resolveCheckoutOrFail({
-    flag: cli.values.checkout,
+    flag: cli.values.get("--checkout"),
     env: process.env,
     cwd,
     home,
@@ -789,18 +713,18 @@ export async function main(cwd: string = process.cwd()): Promise<void> {
   try {
     const paths = await checkoutPaths(resolution, home);
     const handled = await runReadOnlyCommand(
-      cli.positionals[0],
+      cli.positional[0],
       rest,
       resolution,
       paths,
-      cli.values["fail-on-stale"] === true,
+      cli.flags.has("--fail-on-stale"),
     );
 
     if (handled) {
       return;
     }
 
-    await runQueryCommand(resolution, paths, cli.values.timeout, rest);
+    await runQueryCommand(resolution, paths, runFlags.timeoutMs, rest[0] ?? "");
   } catch (error) {
     fail(errorMessage(error));
   }

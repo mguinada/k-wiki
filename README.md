@@ -1240,7 +1240,8 @@ k-wiki health                                               # projection coheren
 
 `k-wiki` is the agent-facing CLI (guide §16): a thin
 wrapper — one LLM `query` command plus four read-only deterministic
-ones, `util.parseArgs`, no CLI framework — that resolves the current
+ones, the shared CLI shell (`src/cli/shell.ts`), no CLI framework —
+that resolves the current
 project's wiki and
 delegates to the answer-only stage-1 query above. The
 query is answer-only by construction, so exposing it to agents is

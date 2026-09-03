@@ -11,6 +11,7 @@ import {
   repoRoot,
   sha256,
 } from "../cli/shared.ts";
+import { parseArgs } from "../cli/shell.ts";
 import { runGit } from "../data/git.ts";
 import { parseManifest, type VaultNotes } from "../sync/manifest.ts";
 import { listNamespaceDirs } from "../sync/projection.ts";
@@ -348,11 +349,17 @@ reported as a warning.
 Exit status: 0 = coherent (healthy-empty counts; a stale warning
 alone stays exit 0), 1 = one line per problem.`;
 
-/** Print a check-raw report: warnings first, then the healthy summary
- *  or one red line per problem; sets the exit code accordingly. */
-function printReport(report: HealthReport, failOnStale: boolean): void {
+/** Print a health report under one CLI prefix: warnings first,
+ *  then the healthy summary or one red line per problem, honoring
+ *  --fail-on-stale. The one renderer check-raw and k-wiki health
+ *  share (finding D-9); only the prefix differs. */
+export function printHealthReport(
+  report: HealthReport,
+  prefix: string,
+  failOnStale: boolean,
+): void {
   for (const warning of report.warnings) {
-    console.error(colors().yellow(`check-raw: ${warning}`));
+    console.error(colors().yellow(`${prefix}: ${warning}`));
   }
 
   if (report.healthy) {
@@ -382,23 +389,29 @@ export async function main(): Promise<void> {
     return;
   }
 
-  const failOnStale = args.includes("--fail-on-stale");
-  const positional = args.filter((arg) => arg !== "--fail-on-stale");
-  const unknown = positional.find((arg) => arg.startsWith("-"));
+  const parsed = parseArgs(args, {
+    boolean: ["--fail-on-stale"],
+    positionals: {
+      max: 1,
+      error: (arg) => `unexpected argument: ${arg}`,
+    },
+  });
 
-  if (unknown !== undefined) {
-    console.error(
-      colors().red(`check-raw: unknown option ${JSON.stringify(unknown)}`),
-    );
+  if (parsed.error !== undefined) {
+    console.error(colors().red(`check-raw: ${parsed.error}`));
     process.exitCode = 1;
 
     return;
   }
 
-  const rawDir = positional[0] ?? join(repoRoot, "raw");
+  const rawDir = parsed.positional[0] ?? join(repoRoot, "raw");
 
   try {
-    printReport(await checkRaw(rawDir), failOnStale);
+    printHealthReport(
+      await checkRaw(rawDir),
+      "check-raw",
+      parsed.flags.has("--fail-on-stale"),
+    );
   } catch (error) {
     console.error(colors().red(`check-raw: ${errorMessage(error)}`));
     process.exitCode = 1;

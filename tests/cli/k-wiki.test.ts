@@ -687,6 +687,18 @@ describe("k-wiki CLI", () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it("reads the --timeout inline = form instead of rejecting the flag", async () => {
+    const { err } = await runKWiki(process.cwd(), [
+      "query",
+      "--timeout=5x",
+      "q",
+    ]);
+
+    expect(err).toContain(
+      "--timeout needs a positive integer number of seconds",
+    );
+  });
+
   it("names the --timeout trailing-junk error", async () => {
     const { err } = await runKWiki(process.cwd(), [
       "query",

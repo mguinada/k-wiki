@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   flagValueError,
+  intFlagError,
   isIsoDate,
   readDateFlag,
   timeoutArgError,
@@ -198,5 +199,23 @@ describe("isIsoDate", () => {
 
   it("rejects leading text before the date", () => {
     expect(isIsoDate("x2026-08-28")).toBe(false);
+  });
+});
+
+describe("intFlagError", () => {
+  it("accepts an integer value", () => {
+    expect(intFlagError("--index", "3")).toBeUndefined();
+  });
+
+  it("rejects a non-integer value with the flag named", () => {
+    expect(intFlagError("--index", "x")).toBe(
+      "--index requires an integer value",
+    );
+  });
+
+  it("rejects a missing value with the flag named", () => {
+    expect(intFlagError("--expect", undefined)).toBe(
+      "--expect requires an integer value",
+    );
   });
 });

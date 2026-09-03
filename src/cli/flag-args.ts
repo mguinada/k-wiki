@@ -65,6 +65,22 @@ export function isIsoDate(value: string | undefined): value is string {
   return value !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
+/** Usage error for an int-valued flag, undefined when it is valid.
+ *  `undefined` counts as invalid: the caller must only invoke this
+ *  for a flag that was actually passed. Shared by the mutation
+ *  CLIs' --index/--total/--expect validation — keep the error string
+ *  byte-identical; tests pin it across those CLIs. */
+export function intFlagError(
+  flag: string,
+  value: string | undefined,
+): string | undefined {
+  if (value === undefined || !Number.isInteger(Number(value))) {
+    return `${flag} requires an integer value`;
+  }
+
+  return undefined;
+}
+
 /** The first usage error among the CLI flag values, or undefined
  *  when they are valid: every path flag needs a value (`--timeout`
  *  excepted), optional `--sources` values must all be present, and
@@ -72,7 +88,7 @@ export function isIsoDate(value: string | undefined): value is string {
  *  wiki-ingest, wiki-query, and wiki-sync CLIs — keep the error
  *  strings byte-identical; tests pin them. */
 export function flagValueError(
-  values: Map<string, string | undefined>,
+  values: ReadonlyMap<string, string | undefined>,
   sourcesRaw?: readonly (string | undefined)[],
 ): string | undefined {
   for (const [flag, value] of values) {

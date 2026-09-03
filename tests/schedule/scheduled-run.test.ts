@@ -710,7 +710,9 @@ describe("LOCK_STALE_MS", () => {
 
 describe("resolveDataRoot", () => {
   it("derives the data repo from the raw-dir positional like wiki-sync", async () => {
-    expect(await resolveDataRoot("/no/sync.json", "/other/raw")).toBe("/other");
+    const resolution = await resolveDataRoot("/no/sync.json", "/other/raw");
+
+    expect(resolution.dataRoot).toBe("/other");
   });
 
   it("reads the config's dataRoot when no raw-dir positional is given", async () => {
@@ -722,12 +724,14 @@ describe("resolveDataRoot", () => {
       JSON.stringify({ vaults: [], dataRoot: "/data/repo" }),
     );
 
-    expect(await resolveDataRoot(configPath, undefined)).toBe("/data/repo");
+    expect((await resolveDataRoot(configPath, undefined)).dataRoot).toBe(
+      "/data/repo",
+    );
 
     await rm(dir, { recursive: true, force: true });
   });
 
-  it("fails loud when the config has no dataRoot", async () => {
+  it("returns the no-dataRoot reason instead of printing it", async () => {
     const dir = await tempDir();
     const configPath = join(dir, "sync.json");
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -735,11 +739,38 @@ describe("resolveDataRoot", () => {
     await writeFile(configPath, JSON.stringify({ vaults: [] }));
 
     try {
-      expect(await resolveDataRoot(configPath, undefined)).toBeUndefined();
+      const resolution = await resolveDataRoot(configPath, undefined);
+
+      expect(resolution.error).toContain("no dataRoot");
+      expect(resolution.dataRoot).toBeUndefined();
     } finally {
       errors.mockRestore();
       await rm(dir, { recursive: true, force: true });
     }
+  });
+
+  it("prints nothing while resolving the data repo", async () => {
+    const dir = await tempDir();
+    const configPath = join(dir, "sync.json");
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await writeFile(configPath, JSON.stringify({ vaults: [] }));
+
+    try {
+      await resolveDataRoot(configPath, undefined);
+
+      expect(errors).not.toHaveBeenCalled();
+    } finally {
+      errors.mockRestore();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns the config loader's error for an unreadable config", async () => {
+    const resolution = await resolveDataRoot("/no/such/sync.json", undefined);
+
+    expect(resolution.error).toContain("/no/such/sync.json");
+    expect(resolution.dataRoot).toBeUndefined();
   });
 });
 
@@ -1202,11 +1233,11 @@ describe("scheduled-run main: help", () => {
 });
 
 describe("scheduled-run main: usage errors", () => {
-  it("rejects an unknown option with exit 1", async () => {
+  it("rejects an unknown option with exit 1, red per the shared rendering", async () => {
     const { err, exitCode } = await runMain(["--bogus"]);
 
     expect(`${exitCode}|${err}`).toBe(
-      '1|scheduled-run: unknown option "--bogus"',
+      '1|\u001b[31mscheduled-run: unknown option "--bogus"\u001b[39m',
     );
   });
 

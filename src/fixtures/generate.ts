@@ -1,6 +1,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { cliFail } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
+import { parseArgs } from "../cli/shell.ts";
 
 /**
  * Synthetic Obsidian vault fixture generator.
@@ -216,7 +218,21 @@ export async function main(): Promise<void> {
     return;
   }
 
-  const targetDir = args[0];
+  const parsed = parseArgs(args, {
+    positionals: {
+      max: 1,
+      error: (_arg, count) =>
+        `expected at most one <target-dir> argument, got ${count}`,
+    },
+  });
+
+  if (parsed.error !== undefined) {
+    cliFail("fixtures", parsed.error);
+
+    return;
+  }
+
+  const targetDir = parsed.positional[0];
 
   if (targetDir === undefined) {
     console.error("Usage: npm run fixtures -- <target-dir>");

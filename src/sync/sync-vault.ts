@@ -1,10 +1,11 @@
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { canAnimate, errorMessage } from "../cli/colors.ts";
+import { canAnimate, cliFail, errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { formatDuration } from "../cli/progress.ts";
 import { readTextIfExists, repoRoot, sha256 } from "../cli/shared.ts";
+import { parseArgs } from "../cli/shell.ts";
 import {
   loadSyncConfig,
   resolveRawDir,
@@ -340,8 +341,23 @@ export async function main(): Promise<void> {
     return;
   }
 
-  const dryRun = args.includes("--dry-run");
-  const [configArg, rawArg] = args.filter((arg) => arg !== "--dry-run");
+  const parsed = parseArgs(args, {
+    boolean: ["--dry-run"],
+    positionals: {
+      max: 2,
+      error: (_arg, count) =>
+        `expected at most two arguments (<config> and <raw-dir>), got ${count}`,
+    },
+  });
+
+  if (parsed.error !== undefined) {
+    cliFail("sync-vault", parsed.error);
+
+    return;
+  }
+
+  const dryRun = parsed.flags.has("--dry-run");
+  const [configArg, rawArg] = parsed.positional;
   const configPath = configArg ?? join(repoRoot, "sync.json");
   const animated = canAnimate(process.stderr.isTTY === true, process.env);
   const sink = createSyncProgressSink(
