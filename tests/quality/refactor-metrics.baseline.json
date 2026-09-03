@@ -9,7 +9,7 @@
   "repoRootDerivations": 12,
   "unquoteDefinitions": 1,
   "envSignatures": 50,
-  "envSignatureFiles": 14,
+  "envSignatureFiles": 16,
   "dataRootEnvPairs": 33,
   "dirnameRawDirDerivations": 11
 }
