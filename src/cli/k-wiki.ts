@@ -1,15 +1,26 @@
-import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { join } from "node:path";
 import { errorMessage } from "../cli/colors.ts";
 import { checkRaw, printHealthReport } from "../health/check-raw.ts";
 import { runQueryCli } from "../query/query-shell.ts";
-import { expandHome, loadSyncConfig, resolveRawDir } from "../sync/config.ts";
-import { listWikiPages, readPageFields } from "../wiki/pages.ts";
+import { loadSyncConfig, resolveRawDir } from "../sync/config.ts";
+import {
+  filteredLines,
+  groupedLines,
+  groupPages,
+  isPageType,
+  listablePages,
+  lookupPage,
+  PAGE_TYPES,
+} from "../wiki/browse.ts";
 import { cliFail } from "./colors.ts";
 import { refuseDirectExecution } from "./is-main.ts";
+import {
+  CHECKOUT_ENV,
+  type CheckoutResolution,
+  resolveCheckout,
+} from "./k-wiki-binding.ts";
 import { type RunContext, runContext } from "./run-context.ts";
-import { isPlainObject, statIfExists } from "./shared.ts";
 import { agentRunFlags, parseArgs } from "./shell.ts";
 
 /**
@@ -20,29 +31,9 @@ import { agentRunFlags, parseArgs } from "./shell.ts";
  * no filing passthrough: filing stays the human-run
  * `wiki-query --file-last` inside the checkout (issue #72's two-stage
  * design). One command, the shared CLI shell, no framework (§27).
+ * The binding-file schema and checkout resolution live in
+ * k-wiki-binding.ts; the browsing domain logic in src/wiki/browse.ts.
  */
-
-/** The per-project binding file name, at the bound project's root. */
-export const BINDING_FILE = ".k-wiki.json";
-
-/** Environment variable naming a checkout without a binding file. */
-export const CHECKOUT_ENV = "K_WIKI_CHECKOUT";
-
-/** The wiki page types (guide §9), listed in index.md order (guide §11). */
-const PAGE_TYPES = [
-  "concept",
-  "entity",
-  "source",
-  "query",
-  "comparison",
-] as const;
-
-/** Navigation pages: listed by neither `list` nor typed, readable by name. */
-const NAV_PAGES = new Set(["index.md", "log.md", "overview.md"]);
-
-/** The type/command vocabularies widened to strings for membership
- *  checks on runtime input (cast the receiver, never the argument). */
-const PAGE_TYPE_NAMES = PAGE_TYPES as readonly string[];
 
 /** Human phrase for each checkout resolution origin. */
 const ORIGIN_LABELS = {
@@ -59,174 +50,6 @@ export const COMMANDS = ["query", "status", "list", "read", "health"] as const;
 /** COMMANDS widened to strings for membership checks on runtime
  *  input (cast the receiver, never the argument). */
 const COMMAND_NAMES = COMMANDS as readonly string[];
-
-/** One parsed binding: exactly one wiki (issue #76's 1:1 rule). */
-export interface KWikiBinding {
-  /** k-wiki checkout path, `~` already expanded. */
-  readonly checkout: string;
-  /** Non-default settings file inside the checkout, when set. */
-  readonly settings: string | undefined;
-}
-
-const BINDING_SHAPE =
-  'a single JSON object: { "checkout": "<k-wiki checkout>", "settings": "<optional settings file>" }';
-
-/** Reject any key beyond checkout and settings (the one-wiki shape). */
-function rejectUnknownKeys(
-  parsed: Record<string, unknown>,
-  source: string,
-): void {
-  for (const key of Object.keys(parsed)) {
-    if (key !== "checkout" && key !== "settings") {
-      throw new Error(
-        `invalid binding at ${source}: unknown key ${JSON.stringify(key)}; expected ${BINDING_SHAPE}`,
-      );
-    }
-  }
-}
-
-/** Validate the optional settings field: absent, or a non-empty string. */
-function parseSettingsField(
-  settings: unknown,
-  source: string,
-): string | undefined {
-  if (typeof settings === "string" && settings.length > 0) {
-    return settings;
-  }
-
-  if (settings !== undefined) {
-    throw new Error(
-      `invalid binding at ${source}: "settings" must be a non-empty string`,
-    );
-  }
-
-  return undefined;
-}
-
-/**
- * Parse and validate a binding file. The schema deliberately rejects
- * every list or multi-wiki form: one project binds exactly one wiki
- * (no ambient path between work and personal knowledge).
- */
-export function parseBinding(
-  text: string,
-  source: string,
-  home: string,
-): KWikiBinding {
-  let parsed: unknown;
-
-  try {
-    parsed = JSON.parse(text);
-  } catch (cause) {
-    throw new Error(`invalid binding at ${source}: not valid JSON`, { cause });
-  }
-
-  if (!isPlainObject(parsed)) {
-    throw new Error(
-      `invalid binding at ${source}: expected ${BINDING_SHAPE} — one project binds exactly one wiki; lists and multi-wiki forms are rejected`,
-    );
-  }
-
-  rejectUnknownKeys(parsed, source);
-
-  const checkout = parsed.checkout;
-
-  if (typeof checkout !== "string" || checkout.length === 0) {
-    throw new Error(
-      `invalid binding at ${source}: "checkout" must be a non-empty string`,
-    );
-  }
-
-  return {
-    checkout: expandHome(checkout, home),
-    settings: parseSettingsField(parsed.settings, source),
-  };
-}
-
-/**
- * Find the nearest binding file walking up from `startDir`, stopping
- * at the home directory or the filesystem root (each checked last).
- * Undefined when no binding exists on the walk.
- */
-export async function findBindingFile(
-  startDir: string,
-  home: string,
-): Promise<string | undefined> {
-  let dir = resolve(startDir);
-
-  while (true) {
-    const candidate = join(dir, BINDING_FILE);
-
-    if ((await statIfExists(candidate))?.isFile() === true) {
-      return candidate;
-    }
-
-    if (dir === home || dirname(dir) === dir) {
-      return undefined;
-    }
-
-    dir = dirname(dir);
-  }
-}
-
-/** Where the resolved checkout came from, for progress and errors. */
-export type CheckoutOrigin = "flag" | "env" | "file" | "cwd";
-
-export interface CheckoutResolution {
-  /** The k-wiki checkout, `~` already expanded. */
-  readonly checkout: string;
-  /** Binding's non-default settings file, when the binding was used. */
-  readonly settings: string | undefined;
-  readonly origin: CheckoutOrigin;
-}
-
-/**
- * Resolve the k-wiki checkout (issue #76): explicit flag > env var >
- * binding file (cwd-upward walk) > the cwd itself — today's behavior
- * of running from inside the checkout, preserved.
- */
-export async function resolveCheckout(input: {
-  readonly flag: string | undefined;
-  readonly env: NodeJS.ProcessEnv;
-  readonly cwd: string;
-  readonly home: string;
-}): Promise<CheckoutResolution> {
-  if (input.flag !== undefined) {
-    return {
-      checkout: expandHome(input.flag, input.home),
-      settings: undefined,
-      origin: "flag",
-    };
-  }
-
-  const fromEnv = input.env[CHECKOUT_ENV];
-
-  if (fromEnv !== undefined && fromEnv !== "") {
-    return {
-      checkout: expandHome(fromEnv, input.home),
-      settings: undefined,
-      origin: "env",
-    };
-  }
-
-  const bindingPath = await findBindingFile(input.cwd, input.home);
-
-  if (bindingPath === undefined) {
-    return { checkout: input.cwd, settings: undefined, origin: "cwd" };
-  }
-
-  const binding = parseBinding(
-    await readFile(bindingPath, "utf8"),
-    bindingPath,
-    input.home,
-  );
-
-  return {
-    checkout: binding.checkout,
-    settings: binding.settings,
-    origin: "file",
-  };
-}
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
 const HELP = `Usage: k-wiki [-h | --help] | k-wiki <command> [<args>]
@@ -343,110 +166,12 @@ async function runStatus(
   );
 }
 
-/** One listed page: its slug and frontmatter fields. */
-interface ListedPage {
-  readonly path: string;
-  readonly slug: string;
-  readonly type: string | undefined;
-  readonly title: string | undefined;
-}
-
-/** Collect the listable pages: every page except the navigation trio. */
-async function listablePages(wikiDir: string): Promise<ListedPage[]> {
-  const pages: ListedPage[] = [];
-
-  for (const path of await listWikiPages(wikiDir)) {
-    if (NAV_PAGES.has(basename(path))) {
-      continue;
-    }
-
-    const fields = await readPageFields(join(wikiDir, path));
-
-    pages.push({
-      path,
-      slug: basename(path, ".md"),
-      type: fields.type,
-      title: fields.title,
-    });
-  }
-
-  return pages;
-}
-
-const PLURAL: Record<string, string> = {
-  concept: "concepts",
-  entity: "entities",
-  source: "sources",
-  query: "queries",
-  comparison: "comparisons",
-};
-
-/** One 'slug — title' line per page of one type filter. */
-function filteredLines(
-  pages: readonly ListedPage[],
-  typeFilter: string,
-): string[] {
-  return pages
-    .filter((page) => page.type === typeFilter)
-    .map((page) => `${page.slug} — ${page.title ?? page.slug}`);
-}
-
-/** Group the pages by frontmatter type; pages without one go to "untyped". */
-function groupPages(pages: readonly ListedPage[]): Map<string, ListedPage[]> {
-  const groups = new Map<string, ListedPage[]>();
-
-  for (const page of pages) {
-    const key = page.type ?? "untyped";
-    const bucket = groups.get(key);
-
-    if (bucket === undefined) {
-      groups.set(key, [page]);
-    } else {
-      bucket.push(page);
-    }
-  }
-
-  return groups;
-}
-
-/** Section order: known types in index.md order, then unknown types
- *  sorted, then untyped last. */
-function sectionOrder(groups: ReadonlyMap<string, ListedPage[]>) {
-  return [
-    ...PAGE_TYPES.filter((type) => groups.has(type)).map((type) => ({
-      key: type,
-      header: PLURAL[type],
-    })),
-    ...[...groups.keys()]
-      .filter((key) => !PAGE_TYPE_NAMES.includes(key) && key !== "untyped")
-      .sort()
-      .map((key) => ({ key, header: `${key}s` })),
-    ...(groups.has("untyped") ? [{ key: "untyped", header: "untyped" }] : []),
-  ];
-}
-
-/** Render the grouped listing: a '## header' line per section and one
- *  'slug — title' line per page under it. */
-function groupedLines(groups: ReadonlyMap<string, ListedPage[]>): string[] {
-  const lines: string[] = [];
-
-  for (const section of sectionOrder(groups)) {
-    lines.push(`## ${section.header}`);
-
-    for (const page of groups.get(section.key) ?? []) {
-      lines.push(`${page.slug} — ${page.title ?? page.slug}`);
-    }
-  }
-
-  return lines;
-}
-
 /** Print the structured wiki listing, grouped (or filtered) by type. */
 async function runList(
   wikiDir: string,
   typeFilter: string | undefined,
 ): Promise<void> {
-  if (typeFilter !== undefined && !PAGE_TYPE_NAMES.includes(typeFilter)) {
+  if (typeFilter !== undefined && !isPageType(typeFilter)) {
     fail(
       `unknown type ${JSON.stringify(typeFilter)}; valid types: ${PAGE_TYPES.join("|")}`,
     );
@@ -467,35 +192,27 @@ async function runList(
 
 /** Print one wiki page verbatim, resolved by file name. */
 async function runRead(wikiDir: string, slug: string): Promise<void> {
-  const pages = await listWikiPages(wikiDir);
-  const matches = pages.filter((path) => basename(path) === `${slug}.md`);
+  const lookup = await lookupPage(wikiDir, slug);
 
-  if (matches.length === 0) {
-    const lower = slug.toLowerCase();
-    const near = pages
-      .map((path) => basename(path, ".md"))
-      .filter(
-        (name) =>
-          name.toLowerCase().includes(lower) ||
-          lower.includes(name.toLowerCase()),
-      );
+  if (lookup.kind === "page") {
+    process.stdout.write(lookup.content);
 
+    return;
+  }
+
+  if (lookup.kind === "ambiguous") {
     fail(
-      near.length === 0
-        ? `no page named ${JSON.stringify(slug)}`
-        : `no page named ${JSON.stringify(slug)}; near matches: ${near.join(", ")}`,
+      `ambiguous page name ${JSON.stringify(slug)}: ${lookup.matches.join(", ")}`,
     );
 
     return;
   }
 
-  if (matches.length > 1) {
-    fail(`ambiguous page name ${JSON.stringify(slug)}: ${matches.join(", ")}`);
-
-    return;
-  }
-
-  process.stdout.write(await readFile(join(wikiDir, matches[0] ?? ""), "utf8"));
+  fail(
+    lookup.nearMatches.length === 0
+      ? `no page named ${JSON.stringify(slug)}`
+      : `no page named ${JSON.stringify(slug)}; near matches: ${lookup.nearMatches.join(", ")}`,
+  );
 }
 
 /** Check the bound projection (delegates to check-raw, read-only). */
