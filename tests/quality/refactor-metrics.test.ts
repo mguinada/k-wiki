@@ -74,6 +74,11 @@ async function makeFixtureTree(): Promise<string> {
       'import { t } from "./alpha/tiny.ts";',
       "",
     ].join("\n"),
+    // Layering inversion: an import from the data domain into the
+    // sync domain — the dataToSyncEdges counter counts it, and it
+    // also crosses domains for crossDomainEdges (six edges total).
+    "data/db.ts": 'import { sha } from "../sync/hash.ts";\n',
+    "sync/hash.ts": "export const sha = 1;\n",
     // Duplication counters, each at a known count.
     "dup/a.ts": [
       "function parseArgs(args: readonly string[]): void {}",
@@ -148,7 +153,8 @@ describe("collectMetrics (fixture tree)", () => {
       filesOver500: 2,
       filesOver350: 3,
       maxFileLines: 820,
-      crossDomainEdges: 5,
+      crossDomainEdges: 6,
+      dataToSyncEdges: 1,
       parseArgsCopies: 3,
       directoryWalkers: 3,
       repoRootDerivations: 2,
@@ -240,7 +246,7 @@ describe("main (in-process)", () => {
     await main([await makeFixtureTree()]);
 
     expect(log).toHaveBeenCalledWith(
-      expect.stringContaining("cross-domain edges (excl. cli): 5"),
+      expect.stringContaining("cross-domain edges (excl. cli): 6"),
     );
   });
 
@@ -250,7 +256,8 @@ describe("main (in-process)", () => {
     await main(["--json", await makeFixtureTree()]);
 
     expect(JSON.parse(log.mock.calls[0]?.[0] ?? "")).toMatchObject({
-      crossDomainEdges: 5,
+      crossDomainEdges: 6,
+      dataToSyncEdges: 1,
       maxFileLines: 820,
     });
   });
@@ -322,6 +329,7 @@ describe("CLI (dev/refactor-metrics.ts)", () => {
       "files >800",
       "max file lines",
       "cross-domain edges",
+      "data\u2192sync edges",
       "parseArgs copies",
       "directory walkers",
       "repoRoot derivations",

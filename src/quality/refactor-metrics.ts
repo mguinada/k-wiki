@@ -29,6 +29,10 @@ export interface StructureMetrics {
   /** Relative imports whose file's domain differs from the target's
    *  (cli endpoints excluded). */
   readonly crossDomainEdges: number;
+  /** Relative imports from the data domain into the sync domain —
+   *  the layering inversion the refactor campaign solved; the
+   *  structure guard pins this at zero. */
+  readonly dataToSyncEdges: number;
   /** Local parseArgs/parseCliArgs definitions. */
   readonly parseArgsCopies: number;
   /** Local walk-named directory-walker definitions. */
@@ -66,6 +70,7 @@ const METRIC_LABELS: readonly (readonly [keyof StructureMetrics, string])[] = [
   ["filesOver350", "files >350 lines"],
   ["maxFileLines", "max file lines"],
   ["crossDomainEdges", "cross-domain edges (excl. cli)"],
+  ["dataToSyncEdges", "data\u2192sync edges"],
   ["parseArgsCopies", "parseArgs copies"],
   ["directoryWalkers", "directory walkers"],
   ["repoRootDerivations", "repoRoot derivations"],
@@ -149,6 +154,16 @@ function relativeImports(files: readonly ScannedFile[]): ImportEdge[] {
   return edges;
 }
 
+/** The root-relative import target of an edge, normalized. */
+function importTarget(root: string, edge: ImportEdge): string {
+  return relative(
+    root,
+    resolve(root, dirname(edge.importer.relPath), edge.specifier),
+  )
+    .split(sep)
+    .join("/");
+}
+
 /** Import edges crossing domain boundaries, `cli`-endpoint ones
  *  excluded (the shared layer everyone may use). */
 function countCrossDomainEdges(
@@ -158,12 +173,7 @@ function countCrossDomainEdges(
   let count = 0;
 
   for (const edge of edges) {
-    const target = relative(
-      root,
-      resolve(root, dirname(edge.importer.relPath), edge.specifier),
-    )
-      .split(sep)
-      .join("/");
+    const target = importTarget(root, edge);
     const importerDomain = domainOf(edge.importer.relPath);
     const targetDomain = domainOf(target);
 
@@ -172,6 +182,27 @@ function countCrossDomainEdges(
       importerDomain !== "cli" &&
       targetDomain !== "cli" &&
       importerDomain !== targetDomain
+    ) {
+      count += 1;
+    }
+  }
+
+  return count;
+}
+
+/** Import edges from the data domain into the sync domain. */
+function countDataToSyncEdges(
+  root: string,
+  edges: readonly ImportEdge[],
+): number {
+  let count = 0;
+
+  for (const edge of edges) {
+    const target = importTarget(root, edge);
+
+    if (
+      domainOf(edge.importer.relPath) === "data" &&
+      domainOf(target) === "sync"
     ) {
       count += 1;
     }
@@ -240,13 +271,15 @@ export async function collectMetrics(
   const lineCounts = files.map((file) => countLines(file.text));
   const signatures = scanSignatures(files);
   const envSignatures = countEnvSignatures(signatures);
+  const edges = relativeImports(files);
 
   return {
     filesOver800: lineCounts.filter((lines) => lines > 800).length,
     filesOver500: lineCounts.filter((lines) => lines > 500).length,
     filesOver350: lineCounts.filter((lines) => lines > 350).length,
     maxFileLines: lineCounts.reduce((max, lines) => Math.max(max, lines), 0),
-    crossDomainEdges: countCrossDomainEdges(root, relativeImports(files)),
+    crossDomainEdges: countCrossDomainEdges(root, edges),
+    dataToSyncEdges: countDataToSyncEdges(root, edges),
     parseArgsCopies: countMatches(files, PARSE_ARGS_PATTERN),
     directoryWalkers: countMatches(files, WALKER_PATTERN),
     repoRootDerivations: countMatches(files, REPO_ROOT_PATTERN),
@@ -289,6 +322,10 @@ Counters:
                   Imports whose importer or target is the cli
                   shared layer never count. Fewer boundary
                   crossings is better.
+  data\u2192sync edges
+                  Relative imports from the data domain into the
+                  sync domain — a layering inversion. Zero is the
+                  goal and the structure budget pins it there.
   parseArgs copies
                   Local parseArgs/parseCliArgs definitions, in
                   declaration or arrow form. Fewer copies is
