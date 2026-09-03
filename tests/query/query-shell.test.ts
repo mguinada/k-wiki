@@ -77,6 +77,10 @@ async function makeHarness(agent: string): Promise<Harness> {
   await run("git", [
     "-C",
     dataRoot,
+    "-c",
+    "user.email=t@t",
+    "-c",
+    "user.name=t",
     "commit",
     "--quiet",
     "--allow-empty",
