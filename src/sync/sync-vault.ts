@@ -154,26 +154,33 @@ async function scanAndSelect(
   return { candidates, selected };
 }
 
+/** One vault's projection inputs: the raw dir and clock it projects
+ *  under, the manifest state it diffs against, and the read-loop
+ *  cadence with its progress sink. */
+interface VaultSyncInputs {
+  readonly rawDir: string;
+  readonly now: () => Date;
+  readonly previous: VaultNotes;
+  readonly progressEvery: number;
+  readonly onProgress: (message: SyncProgress) => void;
+}
+
 async function syncVault(
   vault: VaultSourceConfig,
-  rawDir: string,
-  now: () => Date,
-  previous: VaultNotes,
-  progressEvery: number,
-  onProgress: (message: SyncProgress) => void,
+  inputs: VaultSyncInputs,
 ): Promise<{ notes: VaultNotes; report: VaultSyncReport }> {
   const { candidates, selected } = await scanAndSelect(
     vault,
-    progressEvery,
-    onProgress,
+    inputs.progressEvery,
+    inputs.onProgress,
   );
 
-  const namespaceRoot = join(rawDir, "notes", vault.name);
+  const namespaceRoot = join(inputs.rawDir, "notes", vault.name);
   const { notes, copied, unchanged, removed } = await projectNotes(
     selected,
     namespaceRoot,
-    previous,
-    now,
+    inputs.previous,
+    inputs.now,
   );
 
   return {
@@ -254,14 +261,13 @@ export async function runVaultSync(
   );
 
   for (const vault of vaults) {
-    const { notes, report } = await syncVault(
-      vault,
-      options.rawDir,
+    const { notes, report } = await syncVault(vault, {
+      rawDir: options.rawDir,
       now,
-      manifest.vaults[vault.name] ?? {},
-      options.progressEvery ?? PROGRESS_EVERY,
+      previous: manifest.vaults[vault.name] ?? {},
+      progressEvery: options.progressEvery ?? PROGRESS_EVERY,
       onProgress,
-    );
+    });
 
     nextManifest.vaults[vault.name] = notes;
     reports.push(report);
