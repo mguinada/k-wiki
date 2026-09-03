@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
@@ -488,5 +488,28 @@ describe("main", () => {
       out.some((line) => line.includes("verified against the board")),
     ).toBe(true);
     expect(process.exitCode).toBeUndefined();
+  });
+
+  it("drives the real gh binary from PATH when no client is injected", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-triage-main-gh-"));
+
+    tempDirs.push(dir);
+    await writeFile(
+      join(dir, "page.json"),
+      JSON.stringify(boardPage([issueNode({ id: "I1", number: 7, status: "Backlog" })])),
+    );
+    await writeFile(
+      join(dir, "gh"),
+      '#!/bin/sh\nif [ "$1" != "api" ]; then exit 9; fi\ncat ' + JSON.stringify(join(dir, "page.json")) + "\n",
+      { mode: 0o755 },
+    );
+
+    const { out } = await runCli(["--dry-run"], undefined, {
+      PATH: `${dir}:${process.env.PATH ?? ""}`,
+    });
+
+    expect(
+      out.some((line) => line.includes("#7 Backlog → Ready")),
+    ).toBe(true);
   });
 });
