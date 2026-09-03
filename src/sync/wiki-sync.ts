@@ -33,12 +33,14 @@ import {
   runGuardrails,
 } from "../ingest/guardrails.ts";
 import {
-  AGENT_HEARTBEAT_PREFIX,
-  type IngestResult,
-  runWikiIngest,
   sourceCount,
   type WikiPages,
   wikiPages,
+} from "../ingest/manifest-diff.ts";
+import {
+  AGENT_HEARTBEAT_PREFIX,
+  type IngestResult,
+  runWikiIngest,
 } from "../ingest/wiki-ingest.ts";
 import { checkCrossWikiLinks } from "../wiki/crosslinks.ts";
 import {
