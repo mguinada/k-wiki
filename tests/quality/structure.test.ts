@@ -127,8 +127,6 @@ describe("parseStructureBudget", () => {
 });
 
 describe("breachesOf", () => {
-  const budget = zeroBudget();
-
   it("reports no breach while every fresh counter stays within budget", () => {
     const fresh = metricsOfOffenders({
       ...emptyOffenders(),

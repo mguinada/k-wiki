@@ -1,10 +1,10 @@
 import { isPlainObject } from "../cli/shared.ts";
 import {
+  counterKeys,
   METRIC_LABELS,
   type OffenderSite,
   type StructureMetrics,
   type StructureOffenders,
-  counterKeys,
 } from "./refactor-metrics.ts";
 
 /**
