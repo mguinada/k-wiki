@@ -4270,6 +4270,28 @@ describe("runWikiIngest --sources", () => {
     );
   }
 
+  it("completes when a rename candidate is missing from raw", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    await seedSnapshot(h, { "a.md": "a", "old.md": "old" });
+
+    // The manifest swaps old.md for new.md — a rename candidate —
+    // but new.md's projection never reached disk: the pairing read
+    // misses, the run must treat it as plain added and complete.
+    await writeFile(
+      join(h.dataRoot, "raw", "manifest.json"),
+      serializeManifest(
+        manifestWith("Engineering", {
+          "a.md": entry("a"),
+          "new.md": entry("new"),
+        }),
+      ),
+    );
+
+    const result = await runWikiIngest(optionsFor(h));
+
+    expect(result.status).toBe("ran");
+  });
+
   it("bypasses the empty-diff skip and runs the agent", async () => {
     const h = await makeHarness({ "a.md": "a" });
     await seedSnapshot(h, { "a.md": "a" });

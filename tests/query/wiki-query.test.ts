@@ -933,6 +933,22 @@ console.log("Prefer RAG when the knowledge base changes often. See [[retrieval-a
     expect((await runCli(["--help"])).out).toContain("--outputs");
   });
 
+  it("reaches the settings load when --outputs is absent, failing at the invalid settings file", async () => {
+    const h = await makeHarness();
+
+    await writeFile(h.settingsPath, "this line has no colon\n");
+
+    const { err } = await runCli([
+      "--settings",
+      h.settingsPath,
+      "--raw-dir",
+      join(h.dataRoot, "raw"),
+      "a question?",
+    ]);
+
+    expect(err).toContain("invalid agent settings");
+  });
+
   it("documents the --raw-dir switch in the help", async () => {
     expect((await runCli(["--help"])).out).toContain("--raw-dir");
   });
