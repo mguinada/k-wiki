@@ -48,7 +48,8 @@ function isCommentLine(line: string): boolean {
   );
 }
 
-const RE_EXPORT = /\bexport\s+(?:type\s+)?(?:\{[^}]*\}|\*)\s*from\s/;
+const RE_EXPORT =
+  /\bexport\s+(?:type\s+)?(?:\{[^}]*\}|\*(?:\s+as\s+\w+)?)\s*from\s/;
 
 /** Whether a file re-exports another module's symbols. Matched on the
  *  non-comment lines joined with single spaces — not per line —
@@ -67,6 +68,8 @@ describe("re-export shim detector (G3, issue #260)", () => {
   const regressionForms: readonly (readonly string[])[] = [
     ['export { checkCrossWikiLinks } from "../src/wiki/crosslinks.ts";'],
     ['export * from "./colors.ts";'],
+    ['export * as colors from "./colors.ts";'],
+    ['export type * as types from "./types.ts";'],
     ['export type { Foo } from "./types.ts";'],
     ['export { canAnimate, terminalColors } from "./colors.ts";'],
     ["export {", "  canAnimate,", "  terminalColors,", '} from "./colors.ts";'],
