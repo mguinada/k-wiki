@@ -42,10 +42,14 @@ function counterLabel(key: keyof StructureMetrics): string {
   return METRIC_LABELS.find(([labelKey]) => labelKey === key)?.[1] ?? key;
 }
 
+/** The counter key set shared by both validators. */
+const KNOWN_COUNTERS = new Set<string>(counterKeys);
+
 /** The specific validation problems of a budget object, if any. */
 function counterProblems(entry: Record<string, unknown>): string[] {
-  const known = new Set<string>(counterKeys);
-  const unknownKeys = Object.keys(entry).filter((key) => !known.has(key));
+  const unknownKeys = Object.keys(entry).filter(
+    (key) => !KNOWN_COUNTERS.has(key),
+  );
   const missing = counterKeys.filter((key) => !(key in entry));
   const problems: string[] = [];
 
@@ -70,11 +74,10 @@ function counterProblems(entry: Record<string, unknown>): string[] {
 
 /** The specific validation problems of an exclude object, if any. */
 function excludeProblems(entry: Record<string, unknown>): string[] {
-  const known = new Set<string>(counterKeys);
   const problems: string[] = [];
 
   for (const [key, paths] of Object.entries(entry)) {
-    if (!known.has(key)) {
+    if (!KNOWN_COUNTERS.has(key)) {
       problems.push(`exclude names a non-counter ${key}`);
     } else if (
       !Array.isArray(paths) ||
