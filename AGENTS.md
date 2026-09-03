@@ -164,6 +164,12 @@ infrastructure, free to use for any unit or e2e work; the snapshot at
   function. A blank line does not block extraction: when a step needs
   a name, a test, or reuse, extract it into a helper function.
 
+### wiki-sync stage table
+
+- The wiki-sync cycle's stage numbers come from the stage table
+  (`stageNames` in `src/sync/wiki-sync.ts`, landed in A3): a new
+  stage is one row in the table — never scattered stage arithmetic.
+
 ### Unit tests
 
 - **Mirrored test tree.** Every unit test file mirrors its subject's
