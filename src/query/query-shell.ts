@@ -1,5 +1,6 @@
 import { errorMessage, terminalColors } from "../cli/colors.ts";
 import { stderrSink } from "../cli/progress.ts";
+import { runContext } from "../cli/run-context.ts";
 import { QUERY_HEARTBEAT_PREFIX, runWikiQuery } from "./wiki-query.ts";
 
 /**
@@ -36,16 +37,22 @@ export async function runQueryCli(options: QueryCliOptions): Promise<void> {
   const colors = terminalColors(process.env);
   const { sink, animated } = stderrSink(QUERY_HEARTBEAT_PREFIX);
 
+  // The shell owns the sink, so it builds the run context (issue
+  // #257): the calling mains resolve only the raw dir.
+  const run = runContext({
+    rawDir: options.rawDir,
+    onProgress: sink.render,
+  });
+
   try {
     const result = await runWikiQuery({
       settingsPath: options.settingsPath,
-      rawDir: options.rawDir,
+      run,
       promptsDir: options.promptsDir,
       outputsDir: options.outputsDir,
       question: options.question,
       timeoutMs: options.timeoutMs,
       heartbeatMs: animated ? 100 : undefined,
-      onProgress: sink.render,
     });
 
     sink.end();
