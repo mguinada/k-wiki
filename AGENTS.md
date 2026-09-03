@@ -178,7 +178,13 @@ infrastructure, free to use for any unit or e2e work; the snapshot at
   `tests/wiki-contract-sync.test.ts` (contract guard with no single
   src subject, stays at `tests/` root), and the
   `tests/fixtures/Documents/` snapshot data (not test code). Use
-  `git mv` for every move.
+  `git mv` for every move. Enforced by the mirrored-tree guard
+  `tests/quality/mirrored-tests.test.ts`: a `src/` module without
+  its mirrored test needs an allowlist entry there with a written
+  justification.
+- **No re-export shims.** One canonical import path per symbol:
+  `src/` and `scripts/` modules never re-export another module's
+  exports; enforced by `tests/quality/no-reexport-shims.test.ts`.
 - Put exactly one expectation in each `it` block.
 - Name each `it` block after the fact that its expectation verifies.
 - Test code never calls `process.chdir()`: Stryker's dry run executes

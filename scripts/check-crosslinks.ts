@@ -12,8 +12,6 @@ import { checkCrossWikiLinks } from "../src/wiki/crosslinks.ts";
  * exits 0 when the discipline holds.
  */
 
-export { checkCrossWikiLinks } from "../src/wiki/crosslinks.ts";
-
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
 const HELP = `Usage: check-crosslinks [-h | --help] <wiki-dir> <domain-wiki-dir> [<domain-wiki-dir>...]
 
