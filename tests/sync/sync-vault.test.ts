@@ -1412,7 +1412,6 @@ describe("sync-vault CLI", () => {
     expect(err).toContain("sync-vault: dry run, nothing will be written");
   });
 
-
   it("rejects an unknown option instead of treating it as a positional", async () => {
     const ws = await makeWorkspace();
 

@@ -4,7 +4,7 @@ import { cliFail, errorMessage, terminalColors } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { formatDuration, HEARTBEAT_MS } from "../cli/progress.ts";
 import { repoRoot } from "../cli/shared.ts";
-import { agentRunFlags, type AgentRunFlags, parseArgs } from "../cli/shell.ts";
+import { type AgentRunFlags, agentRunFlags, parseArgs } from "../cli/shell.ts";
 import { statusSince } from "../data/git.ts";
 import {
   type AgentRunner,

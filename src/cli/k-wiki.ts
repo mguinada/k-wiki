@@ -8,8 +8,8 @@ import { expandHome, loadSyncConfig, resolveRawDir } from "../sync/config.ts";
 import { listWikiPages, readPageFields } from "../wiki/pages.ts";
 import { cliFail } from "./colors.ts";
 import { refuseDirectExecution } from "./is-main.ts";
-import { agentRunFlags, parseArgs } from "./shell.ts";
 import { isPlainObject, statIfExists } from "./shared.ts";
+import { agentRunFlags, parseArgs } from "./shell.ts";
 
 /**
  * k-wiki: the agent-facing query entry point (guide §16, issue #76).

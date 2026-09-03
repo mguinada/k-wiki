@@ -3,11 +3,7 @@ import { errorMessage } from "../cli/colors.ts";
 import { intFlagError } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { parseArgs } from "../cli/shell.ts";
-import {
-  type GitText,
-  runGitText,
-  SRC_PATHSPEC,
-} from "./mutation-scope.ts";
+import { type GitText, runGitText, SRC_PATHSPEC } from "./mutation-scope.ts";
 
 // Chunked full mutation runs (issue #236): the nightly Stryker run
 // outgrew GitHub's 6 h per-job limit (8619 mutants, cancelled at
