@@ -7,11 +7,13 @@ import {
   type GraphQLFn,
   ghGraphQL,
   main,
-  parseBoardIds,
-  parseBoardItems,
   runBoardTriage,
   stepSummaryMarkdown,
 } from "../../src/board/board-triage.ts";
+import {
+  parseBoardIds,
+  parseBoardItems,
+} from "../../src/board/triage-decode.ts";
 import { type BoardItem, decideTriage } from "../../src/board/triage-rules.ts";
 
 /**
