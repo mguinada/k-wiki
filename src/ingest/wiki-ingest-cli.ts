@@ -14,12 +14,16 @@ import {
 } from "../cli/colors.ts";
 import { flagValueError } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
-import { type ProgressSink, stderrSink } from "../cli/progress.ts";
+import {
+  AGENT_HEARTBEAT_PREFIX,
+  type ProgressSink,
+  stderrSink,
+} from "../cli/progress.ts";
 import { runContext } from "../cli/run-context.ts";
 import { repoRoot } from "../cli/shared.ts";
 import { type CliSpec, type ParsedCli, parseArgs } from "../cli/shell.ts";
 import { loadSyncConfig, resolveRawDir } from "../sync/config.ts";
-import { AGENT_HEARTBEAT_PREFIX, runWikiIngest } from "./wiki-ingest.ts";
+import { runWikiIngest } from "./wiki-ingest.ts";
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */

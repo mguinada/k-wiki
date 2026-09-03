@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
-import { formatDuration, HEARTBEAT_MS } from "../cli/progress.ts";
+import { startHeartbeat } from "../cli/progress.ts";
 import type { RunContext } from "../cli/run-context.ts";
 import { pluralized, readTextIfExists } from "../cli/shared.ts";
 import { writeDashboard } from "../dashboard/generate.ts";
@@ -444,32 +444,6 @@ async function composeRunPrompt(
 
   return { composed, directSet };
 }
-
-/** Start the agent liveness heartbeat; the caller clears it when the
- *  agent settles. */
-function startHeartbeat(beat: {
-  mode: "full" | "incremental" | "expunge";
-  now: () => Date;
-  intervalMs: number | undefined;
-  onProgress: (message: string) => void;
-}): ReturnType<typeof setInterval> {
-  const agentStartedAt = beat.now().getTime();
-
-  return setInterval(() => {
-    const elapsed = formatDuration(beat.now().getTime() - agentStartedAt);
-    const label = beat.mode === "expunge" ? "expunge " : "";
-
-    beat.onProgress(`wiki-ingest: ${label}agent still running (${elapsed})`);
-  }, beat.intervalMs ?? HEARTBEAT_MS);
-}
-
-/** Heartbeat sentence prefixes this CLI emits (plain or expunge-
- *  labeled; see startHeartbeat); the TTY renderer keeps matching
- *  messages on one animated line (spinner + clock). */
-export const AGENT_HEARTBEAT_PREFIX = [
-  "wiki-ingest: agent still running",
-  "wiki-ingest: expunge agent still running",
-] as const;
 
 /** Post-run hook (issue #73): refresh the static dashboard after the
  *  digest and snapshot — the dashboard reflects the last good state,

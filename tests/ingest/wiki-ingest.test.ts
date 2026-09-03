@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { createAgentProgressSink } from "../../src/cli/progress.ts";
 import { runContext } from "../../src/cli/run-context.ts";
-import { removedNoteContent, runGit } from "../../src/data/git.ts";
+import { runGit } from "../../src/data/git.ts";
 import { type AgentRunner, readPrompt } from "../../src/ingest/agent-run.ts";
 import { loadAgentSettings } from "../../src/ingest/agent-settings.ts";
 import { diffManifests } from "../../src/ingest/manifest-diff.ts";

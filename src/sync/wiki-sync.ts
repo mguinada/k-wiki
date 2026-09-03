@@ -6,7 +6,11 @@ import {
   errorMessage,
 } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
-import { formatDuration, stderrSink } from "../cli/progress.ts";
+import {
+  AGENT_HEARTBEAT_PREFIX,
+  formatDuration,
+  stderrSink,
+} from "../cli/progress.ts";
 import { type RunContext, runContext } from "../cli/run-context.ts";
 import { pathExists, pluralized, repoRoot } from "../cli/shared.ts";
 import {
@@ -37,11 +41,7 @@ import {
   type WikiPages,
   wikiPages,
 } from "../ingest/manifest-diff.ts";
-import {
-  AGENT_HEARTBEAT_PREFIX,
-  type IngestResult,
-  runWikiIngest,
-} from "../ingest/wiki-ingest.ts";
+import { type IngestResult, runWikiIngest } from "../ingest/wiki-ingest.ts";
 import { checkCrossWikiLinks } from "../wiki/crosslinks.ts";
 import {
   checkWikiFidelity,
