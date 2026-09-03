@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { createAgentProgressSink } from "../../src/cli/progress.ts";
+import { type RunContextInput, runContext } from "../../src/cli/run-context.ts";
 import { porcelainStatus, runGit } from "../../src/data/git.ts";
 import { type AgentRunner, readPrompt } from "../../src/ingest/agent-run.ts";
 import {
@@ -1776,14 +1777,19 @@ async function makeHarness(notes: Record<string, string>): Promise<Harness> {
   };
 }
 
-function optionsFor(h: Harness) {
+/** The ingest options for `h`, with optional run-context overrides
+ *  (a recording sink, a controllable clock) folded into the run. */
+function optionsFor(h: Harness, run: Partial<RunContextInput> = {}) {
   return {
     settingsPath: h.settingsPath,
-    rawDir: join(h.dataRoot, "raw"),
+    run: runContext({
+      rawDir: join(h.dataRoot, "raw"),
+      now: () => new Date("2026-08-20T18:00:00.000Z"),
+      ...run,
+    }),
     outputsDir: h.outputsDir,
     promptsDir: h.promptsDir,
     runAgent: h.runAgent,
-    now: () => new Date("2026-08-20T18:00:00.000Z"),
   };
 }
 
@@ -2004,8 +2010,7 @@ describe("runWikiIngest", () => {
       `${SETTINGS_YML}isolate.skills: [.agents/skills/absent]\n`,
     );
     await runWikiIngest({
-      ...optionsFor(h),
-      onProgress: (message) => progress.push(message),
+      ...optionsFor(h, { onProgress: (message) => progress.push(message) }),
     });
 
     expect(progress).toContain(
@@ -2224,8 +2229,7 @@ describe("runWikiIngest", () => {
     );
 
     await runWikiIngest({
-      ...optionsFor(h),
-      onProgress: (message) => messages.push(message),
+      ...optionsFor(h, { onProgress: (message) => messages.push(message) }),
     });
 
     expect(
@@ -2249,8 +2253,7 @@ describe("runWikiIngest", () => {
     );
 
     await runWikiIngest({
-      ...optionsFor(h),
-      onProgress: (message) => messages.push(message),
+      ...optionsFor(h, { onProgress: (message) => messages.push(message) }),
     });
 
     expect(
@@ -2315,8 +2318,7 @@ describe("runWikiIngest", () => {
     );
 
     await runWikiIngest({
-      ...optionsFor(h),
-      onProgress: (message) => messages.push(message),
+      ...optionsFor(h, { onProgress: (message) => messages.push(message) }),
     });
 
     expect(
@@ -2342,8 +2344,7 @@ describe("runWikiIngest", () => {
     );
 
     await runWikiIngest({
-      ...optionsFor(h),
-      onProgress: (message) => messages.push(message),
+      ...optionsFor(h, { onProgress: (message) => messages.push(message) }),
     });
 
     expect(
@@ -2384,8 +2385,7 @@ describe("runWikiIngest", () => {
     );
 
     await runWikiIngest({
-      ...optionsFor(h),
-      onProgress: (message) => messages.push(message),
+      ...optionsFor(h, { onProgress: (message) => messages.push(message) }),
     });
 
     expect(
@@ -2410,8 +2410,7 @@ describe("runWikiIngest", () => {
     );
 
     await runWikiIngest({
-      ...optionsFor(h),
-      onProgress: (message) => messages.push(message),
+      ...optionsFor(h, { onProgress: (message) => messages.push(message) }),
     });
 
     expect(
@@ -2470,8 +2469,7 @@ describe("runWikiIngest", () => {
 
     await runWikiIngest(optionsFor(h));
     await runWikiIngest({
-      ...optionsFor(h),
-      onProgress: (message) => messages.push(message),
+      ...optionsFor(h, { onProgress: (message) => messages.push(message) }),
     });
 
     expect(messages).toContain(
@@ -3293,8 +3291,7 @@ describe("runWikiIngest", () => {
       serializeManifest(manifestWith("Engineering", {})),
     );
     await runWikiIngest({
-      ...optionsFor(h),
-      onProgress: (message) => messages.push(message),
+      ...optionsFor(h, { onProgress: (message) => messages.push(message) }),
     });
 
     expect(messages).toContain(
@@ -3312,8 +3309,7 @@ describe("runWikiIngest", () => {
       serializeManifest(manifestWith("Engineering", {})),
     );
     await runWikiIngest({
-      ...optionsFor(h),
-      onProgress: (message) => messages.push(message),
+      ...optionsFor(h, { onProgress: (message) => messages.push(message) }),
     });
 
     expect(messages).toContain(
@@ -3384,8 +3380,7 @@ describe("runWikiIngest", () => {
       serializeManifest(manifestWith("Engineering", {})),
     );
     await runWikiIngest({
-      ...optionsFor(h),
-      onProgress: (message) => messages.push(message),
+      ...optionsFor(h, { onProgress: (message) => messages.push(message) }),
     });
 
     expect(messages.some((m) => m.includes("wiki/sources/gone note.md"))).toBe(
@@ -3403,7 +3398,7 @@ describe("runWikiIngest", () => {
       return { stdout: "report", stderr: "" };
     };
 
-    await runWikiIngest({ ...optionsFor(h), env, runAgent: recording });
+    await runWikiIngest({ ...optionsFor(h, { env }), runAgent: recording });
 
     expect(seen).toBe(env);
   });
@@ -3575,10 +3570,9 @@ describe("runWikiIngest", () => {
       serializeManifest(manifestWith("Engineering", {})),
     );
     await runWikiIngest({
-      ...optionsFor(h),
+      ...optionsFor(h, { onProgress: (message) => messages.push(message) }),
       runAgent: slow,
       heartbeatMs: 40,
-      onProgress: (message) => messages.push(message),
     });
 
     expect(messages).toContain("wiki-ingest: expunge agent still running (0s)");
@@ -3823,7 +3817,7 @@ describe("runWikiIngest", () => {
     const h = await makeHarness({ "a.md": "a" });
     const result = await runWikiIngest({
       settingsPath: h.settingsPath,
-      rawDir: join(h.dataRoot, "raw"),
+      run: runContext({ rawDir: join(h.dataRoot, "raw") }),
       outputsDir: h.outputsDir,
       promptsDir: h.promptsDir,
       runAgent: h.runAgent,
@@ -3836,7 +3830,7 @@ describe("runWikiIngest", () => {
     const h = await makeHarness({ "a.md": "a" });
     const result = await runWikiIngest({
       settingsPath: h.settingsPath,
-      rawDir: join(h.dataRoot, "raw"),
+      run: runContext({ rawDir: join(h.dataRoot, "raw") }),
       outputsDir: h.outputsDir,
       promptsDir: h.promptsDir,
       runAgent: h.runAgent,
@@ -3856,8 +3850,7 @@ describe("runWikiIngest", () => {
     const messages: string[] = [];
 
     await runWikiIngest({
-      ...optionsFor(h),
-      onProgress: (message) => messages.push(message),
+      ...optionsFor(h, { onProgress: (message) => messages.push(message) }),
     });
 
     expect(messages).toEqual([
@@ -3880,8 +3873,7 @@ describe("runWikiIngest", () => {
     const messages: string[] = [];
 
     await runWikiIngest({
-      ...optionsFor(h),
-      onProgress: (message) => messages.push(message),
+      ...optionsFor(h, { onProgress: (message) => messages.push(message) }),
     });
 
     expect(messages.join("\n")).toContain(
@@ -3899,10 +3891,9 @@ describe("runWikiIngest", () => {
     };
 
     await runWikiIngest({
-      ...optionsFor(h),
+      ...optionsFor(h, { onProgress: (message) => messages.push(message) }),
       runAgent: slow,
       heartbeatMs: 40,
-      onProgress: (message) => messages.push(message),
     });
 
     expect(messages).toEqual(
@@ -3923,11 +3914,12 @@ describe("runWikiIngest", () => {
     };
 
     await runWikiIngest({
-      ...optionsFor(h),
+      ...optionsFor(h, {
+        now: () => clock,
+        onProgress: (message) => messages.push(message),
+      }),
       runAgent: slow,
       heartbeatMs: 20,
-      now: () => clock,
-      onProgress: (message) => messages.push(message),
     });
 
     expect(messages).toContain("wiki-ingest: agent still running (2m07s)");
@@ -3942,10 +3934,9 @@ describe("runWikiIngest", () => {
     });
 
     await runWikiIngest({
-      ...optionsFor(h),
+      ...optionsFor(h, { onProgress: (message) => messages.push(message) }),
       runAgent: fast,
       heartbeatMs: 40,
-      onProgress: (message) => messages.push(message),
     });
 
     await new Promise((resolve) => setTimeout(resolve, 120));
@@ -3974,7 +3965,7 @@ describe("runWikiIngest", () => {
     try {
       await runWikiIngest({
         settingsPath: h.settingsPath,
-        rawDir: join(h.dataRoot, "raw"),
+        run: runContext({ rawDir: join(h.dataRoot, "raw") }),
         outputsDir: h.outputsDir,
         promptsDir: h.promptsDir,
         timeoutMs: 200,
@@ -4083,8 +4074,7 @@ describe("runWikiIngest tracked-but-ignored pre-flight (issue #146)", () => {
     await trackIgnoredObsidianState(h);
 
     await runWikiIngest({
-      ...optionsFor(h),
-      onProgress: (message) => messages.push(message),
+      ...optionsFor(h, { onProgress: (message) => messages.push(message) }),
     });
 
     expect(
@@ -4108,8 +4098,7 @@ describe("runWikiIngest tracked-but-ignored pre-flight (issue #146)", () => {
     await writeFile(join(h.dataRoot, ".gitignore"), ".obsidian/\n");
 
     await runWikiIngest({
-      ...optionsFor(h),
-      onProgress: (message) => messages.push(message),
+      ...optionsFor(h, { onProgress: (message) => messages.push(message) }),
     });
 
     const warnings = messages.filter((message) => message.includes("WARNING"));
@@ -4126,8 +4115,7 @@ describe("runWikiIngest tracked-but-ignored pre-flight (issue #146)", () => {
     await writeFile(join(h.dataRoot, ".gitignore"), ".obsidian/\n");
 
     await runWikiIngest({
-      ...optionsFor(h),
-      onProgress: (message) => messages.push(message),
+      ...optionsFor(h, { onProgress: (message) => messages.push(message) }),
     });
 
     expect(messages.some((message) => message.includes("WARNING"))).toBe(false);
@@ -4145,8 +4133,7 @@ describe("runWikiIngest tracked-but-ignored pre-flight (issue #146)", () => {
     await commitAll(h.dataRoot, "track the snapshot");
 
     await runWikiIngest({
-      ...optionsFor(h),
-      onProgress: (message) => messages.push(message),
+      ...optionsFor(h, { onProgress: (message) => messages.push(message) }),
     });
 
     expect(
@@ -4282,6 +4269,28 @@ describe("runWikiIngest --sources", () => {
       ),
     );
   }
+
+  it("completes when a rename candidate is missing from raw", async () => {
+    const h = await makeHarness({ "a.md": "a" });
+    await seedSnapshot(h, { "a.md": "a", "old.md": "old" });
+
+    // The manifest swaps old.md for new.md — a rename candidate —
+    // but new.md's projection never reached disk: the pairing read
+    // misses, the run must treat it as plain added and complete.
+    await writeFile(
+      join(h.dataRoot, "raw", "manifest.json"),
+      serializeManifest(
+        manifestWith("Engineering", {
+          "a.md": entry("a"),
+          "new.md": entry("new"),
+        }),
+      ),
+    );
+
+    const result = await runWikiIngest(optionsFor(h));
+
+    expect(result.status).toBe("ran");
+  });
 
   it("bypasses the empty-diff skip and runs the agent", async () => {
     const h = await makeHarness({ "a.md": "a" });
@@ -4540,9 +4549,8 @@ describe("runWikiIngest --sources", () => {
     const messages: string[] = [];
 
     await runWikiIngest({
-      ...optionsFor(h),
+      ...optionsFor(h, { onProgress: (message) => messages.push(message) }),
       sources: ["Engineering/a.md"],
-      onProgress: (message) => messages.push(message),
     });
 
     expect(
@@ -4558,9 +4566,8 @@ describe("runWikiIngest --sources", () => {
     const messages: string[] = [];
 
     await runWikiIngest({
-      ...optionsFor(h),
+      ...optionsFor(h, { onProgress: (message) => messages.push(message) }),
       sources: ["Engineering/a.md", "Engineering/new.md"],
-      onProgress: (message) => messages.push(message),
     });
 
     expect(
@@ -4582,9 +4589,8 @@ describe("runWikiIngest --sources", () => {
     const messages: string[] = [];
 
     await runWikiIngest({
-      ...optionsFor(h),
+      ...optionsFor(h, { onProgress: (message) => messages.push(message) }),
       sources: ["Engineering/a.md"],
-      onProgress: (message) => messages.push(message),
     });
 
     expect(
@@ -4600,9 +4606,8 @@ describe("runWikiIngest --sources", () => {
     const messages: string[] = [];
 
     await runWikiIngest({
-      ...optionsFor(h),
+      ...optionsFor(h, { onProgress: (message) => messages.push(message) }),
       sources: ["Engineering/moved.md"],
-      onProgress: (message) => messages.push(message),
     });
 
     expect(
@@ -4618,9 +4623,8 @@ describe("runWikiIngest --sources", () => {
     const messages: string[] = [];
 
     await runWikiIngest({
-      ...optionsFor(h),
+      ...optionsFor(h, { onProgress: (message) => messages.push(message) }),
       sources: ["Engineering/moved.md"],
-      onProgress: (message) => messages.push(message),
     });
 
     expect(
@@ -4663,9 +4667,8 @@ describe("runWikiIngest --sources", () => {
     const messages: string[] = [];
 
     await runWikiIngest({
-      ...optionsFor(h),
+      ...optionsFor(h, { onProgress: (message) => messages.push(message) }),
       sources: ["Engineering/a.md"],
-      onProgress: (message) => messages.push(message),
     });
 
     expect(
@@ -4803,9 +4806,8 @@ describe("runWikiIngest --sources", () => {
     const messages: string[] = [];
 
     await runWikiIngest({
-      ...optionsFor(h),
+      ...optionsFor(h, { onProgress: (message) => messages.push(message) }),
       sources: ["Engineering/a.md"],
-      onProgress: (message) => messages.push(message),
     }).catch(() => undefined);
 
     expect(
@@ -4821,9 +4823,8 @@ describe("runWikiIngest --sources", () => {
     const messages: string[] = [];
 
     await runWikiIngest({
-      ...optionsFor(h),
+      ...optionsFor(h, { onProgress: (message) => messages.push(message) }),
       sources: ["Engineering/a.md"],
-      onProgress: (message) => messages.push(message),
     }).catch(() => undefined);
 
     const warning = messages.find((message) => message.includes("WARNING"));
@@ -6168,9 +6169,8 @@ describe("runWikiIngest failure reporting detail", () => {
 
     await expect(
       runWikiIngest({
-        ...optionsFor(h),
+        ...optionsFor(h, { onProgress: (message) => progress.push(message) }),
         runAgent: frontmatterSaboteur("bad.md"),
-        onProgress: (message) => progress.push(message),
       }),
     ).rejects.toThrow("guardrail check 2 (frontmatter)");
 
@@ -6293,9 +6293,8 @@ describe("runWikiIngest failure reporting detail", () => {
 
     await expect(
       runWikiIngest({
-        ...optionsFor(h),
+        ...optionsFor(h, { onProgress: (message) => progress.push(message) }),
         runAgent: failing,
-        onProgress: (message) => progress.push(message),
       }),
     ).rejects.toThrow("agent exited with code 9");
 
@@ -6473,8 +6472,7 @@ describe("runWikiIngest dashboard hook (issue #73)", () => {
     const h = await makeHarness({ "a.md": "a" });
 
     await runWikiIngest({
-      ...optionsFor(h),
-      now: () => new Date("2031-03-04T05:06:07.000Z"),
+      ...optionsFor(h, { now: () => new Date("2031-03-04T05:06:07.000Z") }),
     });
 
     const html = await readFile(join(h.dataRoot, "dashboard.html"), "utf8");
@@ -6488,8 +6486,7 @@ describe("runWikiIngest dashboard hook (issue #73)", () => {
 
     await mkdir(join(h.dataRoot, "dashboard.html"));
     await runWikiIngest({
-      ...optionsFor(h),
-      onProgress: (message) => progress.push(message),
+      ...optionsFor(h, { onProgress: (message) => progress.push(message) }),
     });
 
     expect(progress.join("\n")).toContain("dashboard refresh failed");
@@ -6691,8 +6688,7 @@ describe("gitignore guard progress", () => {
     const h = await makeHarness({ "a.md": "a" });
     const messages: string[] = [];
     const options = {
-      ...optionsFor(h),
-      onProgress: (m: string) => messages.push(m),
+      ...optionsFor(h, { onProgress: (m: string) => messages.push(m) }),
     };
 
     await runWikiIngest(options);
@@ -6708,8 +6704,7 @@ describe("gitignore guard progress", () => {
     const h = await makeHarness({ "a.md": "a" });
     const messages: string[] = [];
     const options = {
-      ...optionsFor(h),
-      onProgress: (m: string) => messages.push(m),
+      ...optionsFor(h, { onProgress: (m: string) => messages.push(m) }),
     };
 
     await runWikiIngest(options);
@@ -6726,8 +6721,7 @@ describe("gitignore guard progress", () => {
 
     const messages: string[] = [];
     const options = {
-      ...optionsFor(h),
-      onProgress: (m: string) => messages.push(m),
+      ...optionsFor(h, { onProgress: (m: string) => messages.push(m) }),
     };
 
     await runWikiIngest(options);

@@ -17,6 +17,7 @@ import {
   type ProgressSink,
   stderrSink,
 } from "../cli/progress.ts";
+import { type RunContext, runContext } from "../cli/run-context.ts";
 import {
   isPlainObject,
   pluralized,
@@ -1031,25 +1032,21 @@ export interface IngestOptions {
    *  settings.yml parse per run); loaded from `settingsPath`
    *  otherwise. */
   readonly settings?: AgentSettings | undefined;
-  /** The raw dir holding manifest.json; its parent is the data repo. */
-  readonly rawDir: string;
+  /** The run context: raw dir, data root, wiki dir, environment,
+   *  clock, progress sink — built once at the CLI boundary (issue
+   *  #257). */
+  readonly run: RunContext;
   /** Digest destination (the repo's outputs/); a legacy snapshot
    *  found here is adopted into the data repo (issue #112). */
   readonly outputsDir: string;
   /** Directory holding ingest.md and incremental.md. */
   readonly promptsDir: string;
-  /** Environment for child processes; defaults to process.env. */
-  readonly env?: NodeJS.ProcessEnv;
-  /** Clock for the digest timestamp; defaults to the wall clock. */
-  readonly now?: () => Date;
   /** Agent runner; defaults to the real non-interactive invocation. */
   readonly runAgent?: AgentRunner | undefined;
   /** Kill the agent run after this many milliseconds; default 30 min. */
   readonly timeoutMs?: number | undefined;
   /** Heartbeat interval while the agent runs; default 60 s. */
   readonly heartbeatMs?: number | undefined;
-  /** Progress sink (uncolored messages); default: silent. */
-  readonly onProgress?: (message: string) => void;
   /** Explicit `--sources` paths (issue #133): scoped re-ingest. The
    *  deduped list replaces the manifest diff as the run's
    *  changed-source set (every path a sorted `~` line) and bypasses
@@ -1316,25 +1313,10 @@ export async function warnTrackedIgnored(
   }
 }
 
-/** The run's ambient context — environment, clock, progress sink —
- *  with their defaults applied. */
-function runContext(options: IngestOptions): {
-  env: NodeJS.ProcessEnv;
-  now: () => Date;
-  onProgress: (message: string) => void;
-} {
-  return {
-    env: options.env ?? process.env,
-    now: options.now ?? (() => new Date()),
-    onProgress: options.onProgress ?? (() => {}),
-  };
-}
-
-/** The run's manifest and data repo root; a missing manifest means
- *  sync-vault has not run. */
-async function readRunManifest(
-  rawDir: string,
-): Promise<{ dataRoot: string; current: Manifest }> {
+/** The run's manifest; a missing manifest means sync-vault has not
+ *  run. The data root comes from the run context, not the manifest
+ *  read. */
+async function readRunManifest(rawDir: string): Promise<Manifest> {
   const manifestPath = join(rawDir, "manifest.json");
   const manifestText = await readTextIfExists(manifestPath);
 
@@ -1342,10 +1324,7 @@ async function readRunManifest(
     throw new Error(`no manifest at ${manifestPath}: run sync-vault first`);
   }
 
-  return {
-    dataRoot: dirname(rawDir),
-    current: parseManifest(manifestText, manifestPath),
-  };
+  return parseManifest(manifestText, manifestPath);
 }
 
 /** The removed-content reader for rename pairing: each removed
@@ -1382,11 +1361,10 @@ function scopedNote(options: IngestOptions): string | undefined {
  *  when given (which requires a valid snapshot), else snapshot vs
  *  current — with body-identical remove+add pairs paired as renames. */
 async function computeRunDiff(
+  run: RunContext,
   current: Manifest,
   previous: Manifest | undefined,
   options: IngestOptions,
-  dataRoot: string,
-  env: NodeJS.ProcessEnv,
   snapshotPath: string,
 ): Promise<{ diff: ManifestDiff; explicitDiff: ManifestDiff | undefined }> {
   const explicitSources = hasExplicitSources(options)
@@ -1405,9 +1383,9 @@ async function computeRunDiff(
 
   const diff = await pairBodyIdenticalRenames(
     explicitDiff ?? diffManifests(previous ?? emptyManifest(), current),
-    removedContentReader(dataRoot, env, previous),
+    removedContentReader(run.dataRoot, run.env, previous),
     (vault, path) =>
-      readFile(join(options.rawDir, "notes", vault, path), "utf8").catch(
+      readFile(join(run.rawDir, "notes", vault, path), "utf8").catch(
         () => undefined,
       ),
   );
@@ -1655,17 +1633,16 @@ function heldBackMessage(
  *  survive for the next ordinary run, announced with a held-back
  *  progress line when any are skipped. */
 async function writeSnapshotIfNeeded(
+  run: RunContext,
   explicitDiff: ManifestDiff | undefined,
   previous: Manifest | undefined,
   snapshotPath: string,
   current: Manifest,
-  dataRoot: string,
-  onProgress: (message: string) => void,
 ): Promise<void> {
   await mkdir(dirname(snapshotPath), { recursive: true });
 
   if (explicitDiff === undefined) {
-    await writeManifest(snapshotPath, current, { snapshotFor: dataRoot });
+    await writeManifest(snapshotPath, current, { snapshotFor: run.dataRoot });
 
     return;
   }
@@ -1674,13 +1651,13 @@ async function writeSnapshotIfNeeded(
   const message = heldBackMessage(base, current, explicitDiff);
 
   if (message !== undefined) {
-    onProgress(message);
+    run.onProgress(message);
   }
 
   await writeManifest(
     snapshotPath,
     mergedSnapshot(base, current, explicitDiff),
-    { snapshotFor: dataRoot },
+    { snapshotFor: run.dataRoot },
   );
 }
 
@@ -1723,14 +1700,14 @@ async function refreshDashboard(
 export async function runWikiIngest(
   options: IngestOptions,
 ): Promise<IngestResult> {
-  const { env, now, onProgress } = runContext(options);
+  const { dataRoot, rawDir, env, now, onProgress } = options.run;
   const settings =
     options.settings ??
     (await loadAgentSettings(options.settingsPath, { onProgress }));
 
-  onProgress(`wiki-ingest: raw dir ${options.rawDir}`);
+  onProgress(`wiki-ingest: raw dir ${rawDir}`);
 
-  const { dataRoot, current } = await readRunManifest(options.rawDir);
+  const current = await readRunManifest(rawDir);
   const snapshotPath = join(dataRoot, "outputs", SNAPSHOT_FILENAME);
   const legacySnapshotPath = join(options.outputsDir, SNAPSHOT_FILENAME);
 
@@ -1746,11 +1723,10 @@ export async function runWikiIngest(
     hasExplicitSources(options),
   );
   const { diff, explicitDiff } = await computeRunDiff(
+    options.run,
     current,
     previous,
     options,
-    dataRoot,
-    env,
     snapshotPath,
   );
 
@@ -1875,12 +1851,11 @@ export async function runWikiIngest(
 
   await writeFile(digestPath, digest, "utf8");
   await writeSnapshotIfNeeded(
+    options.run,
     explicitDiff,
     previous,
     snapshotPath,
     current,
-    dataRoot,
-    onProgress,
   );
   await refreshDashboard(dataRoot, env, now, onProgress);
 
@@ -2118,7 +2093,7 @@ async function runCliIngest(parsed: {
       parsed.positional[0] ?? resolveRawDir(config.dataRoot, repoRoot);
     const result = await runWikiIngest({
       settingsPath: parsed.settingsPath,
-      rawDir,
+      run: runContext({ rawDir, onProgress: parsed.sink.render }),
       outputsDir: parsed.values.get("--outputs") ?? join(repoRoot, "outputs"),
       promptsDir: join(repoRoot, "prompts"),
       sources: parsed.sources,
@@ -2126,7 +2101,6 @@ async function runCliIngest(parsed: {
       timeoutMs:
         timeoutArg === undefined ? undefined : Number(timeoutArg) * 1000,
       heartbeatMs: parsed.heartbeatMs,
-      onProgress: parsed.sink.render,
     });
 
     parsed.sink.end();

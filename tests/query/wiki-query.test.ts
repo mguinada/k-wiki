@@ -6,6 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { type RunContextInput, runContext } from "../../src/cli/run-context.ts";
 import type { AgentRunner } from "../../src/ingest/agent-run.ts";
 import { readQueryArtifact } from "../../src/query/file-last.ts";
 import {
@@ -175,15 +176,16 @@ async function makeHarness(): Promise<Harness> {
   };
 }
 
-function optionsFor(h: Harness, overrides: Record<string, unknown> = {}) {
+/** The query options for `h`, with optional run-context overrides
+ *  (a recording sink, a controllable clock) folded into the run. */
+function optionsFor(h: Harness, run: Partial<RunContextInput> = {}) {
   return {
     settingsPath: h.settingsPath,
-    rawDir: join(h.dataRoot, "raw"),
+    run: runContext({ rawDir: join(h.dataRoot, "raw"), ...run }),
     promptsDir: h.promptsDir,
     outputsDir: h.outputsDir,
     question: "When should I prefer RAG over fine-tuning?",
     runAgent: h.runAgent,
-    ...overrides,
   };
 }
 
@@ -250,8 +252,7 @@ describe("runWikiQuery", () => {
     );
     const messages: string[] = [];
     await runWikiQuery({
-      ...optionsFor(h),
-      onProgress: (message) => messages.push(message),
+      ...optionsFor(h, { onProgress: (message) => messages.push(message) }),
     });
 
     expect(messages.join("\n")).toContain(
@@ -341,8 +342,7 @@ describe("runWikiQuery", () => {
   it("saves the run to outputs/last-query.md", async () => {
     const h = await makeHarness();
     const result = await runWikiQuery({
-      ...optionsFor(h),
-      now: () => new Date("2026-08-21T09:00:00Z"),
+      ...optionsFor(h, { now: () => new Date("2026-08-21T09:00:00Z") }),
     });
 
     expect(result.artifactPath).toBe(join(h.outputsDir, "last-query.md"));
@@ -351,8 +351,7 @@ describe("runWikiQuery", () => {
   it("records the question in the saved artifact", async () => {
     const h = await makeHarness();
     const result = await runWikiQuery({
-      ...optionsFor(h),
-      now: () => new Date("2026-08-21T09:00:00Z"),
+      ...optionsFor(h, { now: () => new Date("2026-08-21T09:00:00Z") }),
     });
 
     const artifact = await readQueryArtifact(result.artifactPath);
@@ -365,8 +364,7 @@ describe("runWikiQuery", () => {
   it("records the answer in the saved artifact", async () => {
     const h = await makeHarness();
     const result = await runWikiQuery({
-      ...optionsFor(h),
-      now: () => new Date("2026-08-21T09:00:00Z"),
+      ...optionsFor(h, { now: () => new Date("2026-08-21T09:00:00Z") }),
     });
 
     const artifact = await readQueryArtifact(result.artifactPath);
@@ -377,8 +375,7 @@ describe("runWikiQuery", () => {
   it("stamps the run time in the saved artifact", async () => {
     const h = await makeHarness();
     const result = await runWikiQuery({
-      ...optionsFor(h),
-      now: () => new Date("2026-08-21T09:00:00Z"),
+      ...optionsFor(h, { now: () => new Date("2026-08-21T09:00:00Z") }),
     });
 
     const artifact = await readQueryArtifact(result.artifactPath);
@@ -389,8 +386,7 @@ describe("runWikiQuery", () => {
   it("derives the cited pages in the saved artifact", async () => {
     const h = await makeHarness();
     const result = await runWikiQuery({
-      ...optionsFor(h),
-      now: () => new Date("2026-08-21T09:00:00Z"),
+      ...optionsFor(h, { now: () => new Date("2026-08-21T09:00:00Z") }),
     });
 
     const artifact = await readQueryArtifact(result.artifactPath);
@@ -718,8 +714,7 @@ describe("runWikiQuery", () => {
     const messages: string[] = [];
 
     await runWikiQuery({
-      ...optionsFor(h),
-      onProgress: (message) => messages.push(message),
+      ...optionsFor(h, { onProgress: (message) => messages.push(message) }),
     });
 
     expect(messages).toEqual([
@@ -742,10 +737,9 @@ describe("runWikiQuery", () => {
     };
 
     await runWikiQuery({
-      ...optionsFor(h),
+      ...optionsFor(h, { onProgress: (message) => messages.push(message) }),
       runAgent: slow,
       heartbeatMs: 40,
-      onProgress: (message) => messages.push(message),
     });
 
     expect(messages).toEqual(
@@ -759,10 +753,9 @@ describe("runWikiQuery", () => {
     const fast: AgentRunner = async () => ({ stdout: "A.", stderr: "" });
 
     await runWikiQuery({
-      ...optionsFor(h),
+      ...optionsFor(h, { onProgress: (message) => messages.push(message) }),
       runAgent: fast,
       heartbeatMs: 40,
-      onProgress: (message) => messages.push(message),
     });
 
     await new Promise((resolve) => setTimeout(resolve, 120));
@@ -791,7 +784,7 @@ describe("runWikiQuery", () => {
     try {
       await runWikiQuery({
         settingsPath: h.settingsPath,
-        rawDir: join(h.dataRoot, "raw"),
+        run: runContext({ rawDir: join(h.dataRoot, "raw") }),
         promptsDir: h.promptsDir,
         outputsDir: h.outputsDir,
         question: "q",
@@ -938,6 +931,22 @@ console.log("Prefer RAG when the knowledge base changes often. See [[retrieval-a
 
   it("documents the --outputs switch in the help", async () => {
     expect((await runCli(["--help"])).out).toContain("--outputs");
+  });
+
+  it("reaches the settings load when --outputs is absent, failing at the invalid settings file", async () => {
+    const h = await makeHarness();
+
+    await writeFile(h.settingsPath, "this line has no colon\n");
+
+    const { err } = await runCli([
+      "--settings",
+      h.settingsPath,
+      "--raw-dir",
+      join(h.dataRoot, "raw"),
+      "a question?",
+    ]);
+
+    expect(err).toContain("invalid agent settings");
   });
 
   it("documents the --raw-dir switch in the help", async () => {
@@ -1793,9 +1802,8 @@ describe("runWikiQuery violation reporting", () => {
 
     try {
       await runWikiQuery({
-        ...optionsFor(h),
+        ...optionsFor(h, { onProgress: (message) => messages.push(message) }),
         runAgent: rogue,
-        onProgress: (message) => messages.push(message),
       });
     } catch {
       // expected: the violation throws after the progress line
@@ -1870,7 +1878,7 @@ describe("runWikiQuery caller env", () => {
     const h = await makeHarness();
     const env = { ...process.env, K_WIKI_QUERY_ENV_PROBE: "1" };
 
-    await runWikiQuery({ ...optionsFor(h), env });
+    await runWikiQuery(optionsFor(h, { env }));
 
     expect(invocation(h, 0).env).toBe(env);
   });
@@ -1913,9 +1921,8 @@ describe("runWikiQuery HEAD-only move", () => {
 
     try {
       await runWikiQuery({
-        ...optionsFor(h),
+        ...optionsFor(h, { onProgress: (message) => messages.push(message) }),
         runAgent: rogueHeadMover(),
-        onProgress: (message) => messages.push(message),
       });
     } catch {
       // expected: the violation throws after the progress line

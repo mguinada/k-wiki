@@ -8,6 +8,7 @@ import { expandHome, loadSyncConfig, resolveRawDir } from "../sync/config.ts";
 import { listWikiPages, readPageFields } from "../wiki/pages.ts";
 import { cliFail } from "./colors.ts";
 import { refuseDirectExecution } from "./is-main.ts";
+import { type RunContext, runContext } from "./run-context.ts";
 import { isPlainObject, statIfExists } from "./shared.ts";
 import { agentRunFlags, parseArgs } from "./shell.ts";
 
@@ -329,17 +330,15 @@ function fail(message: string): void {
 /** Print the resolved binding: origin, checkout, paths (issue #76). */
 async function runStatus(
   resolution: CheckoutResolution,
-  paths: { readonly rawDir: string; readonly wikiDir: string },
+  run: RunContext,
 ): Promise<void> {
-  const dataRoot = dirname(paths.rawDir);
-
   console.log(
     [
       `checkout:  ${resolution.checkout} (from ${ORIGIN_LABELS[resolution.origin]})`,
       `settings:  ${join(resolution.checkout, resolution.settings ?? "settings.yml")}`,
-      `data repo: ${dataRoot}`,
-      `wiki:      ${paths.wikiDir}`,
-      `index:     ${join(paths.wikiDir, "index.md")}`,
+      `data repo: ${run.dataRoot}`,
+      `wiki:      ${run.wikiDir}`,
+      `index:     ${join(run.wikiDir, "index.md")}`,
     ].join("\n"),
   );
 }
@@ -594,18 +593,20 @@ async function resolveCheckoutOrFail(input: {
   }
 }
 
-/** The bound data repo's raw and wiki dirs, from the checkout's sync.json. */
+/** The bound data repo's run context, from the checkout's sync.json:
+ *  the boundary builds it once (issue #257) and every k-wiki command
+ *  reads its paths from it. */
 async function checkoutPaths(
   resolution: CheckoutResolution,
   home: string,
-): Promise<{ readonly rawDir: string; readonly wikiDir: string }> {
+): Promise<RunContext> {
   const config = await loadSyncConfig(
     join(resolution.checkout, "sync.json"),
     home,
   );
   const rawDir = resolveRawDir(config.dataRoot, resolution.checkout);
 
-  return { rawDir, wikiDir: join(dirname(rawDir), "wiki") };
+  return runContext({ rawDir });
 }
 
 /** Run status, list, read, or health; true when one of them ran. */
@@ -613,29 +614,29 @@ async function runReadOnlyCommand(
   command: string | undefined,
   rest: readonly string[],
   resolution: CheckoutResolution,
-  paths: { readonly rawDir: string; readonly wikiDir: string },
+  run: RunContext,
   failOnStale: boolean,
 ): Promise<boolean> {
   if (command === "status") {
-    await runStatus(resolution, paths);
+    await runStatus(resolution, run);
 
     return true;
   }
 
   if (command === "list") {
-    await runList(paths.wikiDir, rest[0]);
+    await runList(run.wikiDir, rest[0]);
 
     return true;
   }
 
   if (command === "read") {
-    await runRead(paths.wikiDir, rest[0] ?? "");
+    await runRead(run.wikiDir, rest[0] ?? "");
 
     return true;
   }
 
   if (command === "health") {
-    await runHealth(paths.rawDir, failOnStale);
+    await runHealth(run.rawDir, failOnStale);
 
     return true;
   }
@@ -647,7 +648,7 @@ async function runReadOnlyCommand(
  *  runWikiQuery mapping, answer + dim hint, failure rendering). */
 async function runQueryCommand(
   resolution: CheckoutResolution,
-  paths: { readonly rawDir: string; readonly wikiDir: string },
+  run: RunContext,
   timeoutMs: number | undefined,
   question: string,
 ): Promise<void> {
@@ -657,7 +658,7 @@ async function runQueryCommand(
       resolution.checkout,
       resolution.settings ?? "settings.yml",
     ),
-    rawDir: paths.rawDir,
+    rawDir: run.rawDir,
     promptsDir: join(resolution.checkout, "prompts"),
     outputsDir: join(resolution.checkout, "outputs"),
     question,
@@ -711,12 +712,12 @@ export async function main(cwd: string = process.cwd()): Promise<void> {
   }
 
   try {
-    const paths = await checkoutPaths(resolution, home);
+    const run = await checkoutPaths(resolution, home);
     const handled = await runReadOnlyCommand(
       cli.positional[0],
       rest,
       resolution,
-      paths,
+      run,
       cli.flags.has("--fail-on-stale"),
     );
 
@@ -724,7 +725,7 @@ export async function main(cwd: string = process.cwd()): Promise<void> {
       return;
     }
 
-    await runQueryCommand(resolution, paths, runFlags.timeoutMs, rest[0] ?? "");
+    await runQueryCommand(resolution, run, runFlags.timeoutMs, rest[0] ?? "");
   } catch (error) {
     fail(errorMessage(error));
   }

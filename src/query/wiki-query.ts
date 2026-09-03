@@ -1,8 +1,9 @@
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { cliFail, errorMessage, terminalColors } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { formatDuration, HEARTBEAT_MS } from "../cli/progress.ts";
+import { type RunContext, runContext } from "../cli/run-context.ts";
 import { repoRoot } from "../cli/shared.ts";
 import { type AgentRunFlags, agentRunFlags, parseArgs } from "../cli/shell.ts";
 import { statusSince } from "../data/git.ts";
@@ -69,26 +70,22 @@ export const LAST_QUERY_FILE = "last-query.md";
 export interface QueryOptions {
   /** Path to the agent settings file (settings.yml). */
   readonly settingsPath: string;
-  /** The raw dir of the data repo; its parent is the data repo root. */
-  readonly rawDir: string;
+  /** The run context: raw dir, data root, wiki dir, environment,
+   *  clock, progress sink — built once at the CLI boundary (issue
+   *  #257). The agent runs in the context's data root. */
+  readonly run: RunContext;
   /** Directory holding query.md. */
   readonly promptsDir: string;
   /** Directory the saved answer is written to. */
   readonly outputsDir: string;
   /** The question, passed to the agent inside the composed prompt. */
   readonly question: string;
-  /** Environment for child processes; defaults to process.env. */
-  readonly env?: NodeJS.ProcessEnv;
-  /** Clock for the saved timestamp; defaults to the wall clock. */
-  readonly now?: () => Date;
   /** Agent runner; defaults to the real non-interactive invocation. */
   readonly runAgent?: AgentRunner;
   /** Kill the agent run after this many milliseconds. */
   readonly timeoutMs?: number | undefined;
   /** Heartbeat interval while the agent runs; default 60 s. */
   readonly heartbeatMs?: number | undefined;
-  /** Progress sink (uncolored messages); default: silent. */
-  readonly onProgress?: (message: string) => void;
 }
 
 export interface QueryResult {
@@ -169,10 +166,9 @@ async function assertWikiUnchanged(
 export async function runWikiQuery(
   options: QueryOptions,
 ): Promise<QueryResult> {
-  const env = options.env ?? process.env;
-  const onProgress = options.onProgress ?? (() => {});
+  const { run } = options;
+  const { env, now, onProgress, dataRoot } = run;
   const settings = await loadAgentSettings(options.settingsPath);
-  const dataRoot = dirname(options.rawDir);
 
   onProgress(`wiki-query: data repo ${dataRoot}`);
 
@@ -217,7 +213,7 @@ export async function runWikiQuery(
 
   await writeQueryArtifact(artifactPath, {
     question: options.question,
-    timestamp: (options.now ?? (() => new Date()))().toISOString(),
+    timestamp: now().toISOString(),
     pages: citedPages(answer),
     answer,
   });
@@ -325,12 +321,12 @@ function questionError(
 /** Stage 2: file the saved answer and print the Filed line. */
 async function fileLastStage(
   colors: ReturnType<typeof terminalColors>,
-  rawDir: string,
+  dataRoot: string,
   outputsDir: string,
 ): Promise<void> {
   const result = await fileLastQuery({
     artifactPath: join(outputsDir, LAST_QUERY_FILE),
-    dataRoot: dirname(rawDir),
+    dataRoot,
   });
 
   console.log(colors.bold(`Filed: ${result.pagePath}`));
@@ -351,8 +347,12 @@ async function dispatchStage(
   const rawDir =
     parsed.values.get("--raw-dir") ?? resolveRawDir(config.dataRoot, repoRoot);
 
+  // The run context, built once at this CLI boundary (issue #257):
+  // stage 2 files into its data root, stage 1 queries its raw dir.
+  const run = runContext({ rawDir });
+
   if (parsed.flags.has("--file-last")) {
-    await fileLastStage(terminalColors(process.env), rawDir, outputsDir);
+    await fileLastStage(terminalColors(process.env), run.dataRoot, outputsDir);
 
     return;
   }
@@ -360,7 +360,7 @@ async function dispatchStage(
   await runQueryCli({
     prefix: "wiki-query",
     settingsPath: runFlags.settings ?? join(repoRoot, "settings.yml"),
-    rawDir,
+    rawDir: run.rawDir,
     promptsDir: join(repoRoot, "prompts"),
     outputsDir,
     question: parsed.positional[0] ?? "",

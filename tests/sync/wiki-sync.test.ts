@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { createAgentProgressSink } from "../../src/cli/progress.ts";
+import { type RunContextInput, runContext } from "../../src/cli/run-context.ts";
 import { runGit } from "../../src/data/git.ts";
 import type { AgentRunner } from "../../src/ingest/agent-run.ts";
 import { loadSyncConfig } from "../../src/sync/config.ts";
@@ -241,7 +242,9 @@ async function makeHarness(
   return harness;
 }
 
-function optionsFor(h: Harness) {
+/** The cycle options for `h`, with optional run-context overrides
+ *  (a recording sink, a controllable clock) folded into the run. */
+function optionsFor(h: Harness, run: Partial<RunContextInput> = {}) {
   const runAgent: AgentRunner = async (command, args, options) => {
     const prompt = args[args.indexOf("--print") + 1] ?? "";
 
@@ -257,13 +260,16 @@ function optionsFor(h: Harness) {
 
   return {
     configPath: h.configPath,
-    rawDir: join(h.dataRoot, "raw"),
+    run: runContext({
+      rawDir: join(h.dataRoot, "raw"),
+      now: NOW,
+      env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_COMMITTER_NAME: "t" },
+      ...run,
+    }),
     settingsPath: h.settingsPath,
     outputsDir: h.outputsDir,
     promptsDir: h.promptsDir,
     runAgent,
-    now: NOW,
-    env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_COMMITTER_NAME: "t" },
   };
 }
 
@@ -726,8 +732,7 @@ describe("runWikiSync ingest pre-flight (issue #146)", () => {
     await trackIgnoredObsidianState(h);
 
     await runWikiSync({
-      ...optionsFor(h),
-      onProgress: (message) => progress.push(message),
+      ...optionsFor(h, { onProgress: (message) => progress.push(message) }),
     });
 
     expect(
@@ -746,8 +751,7 @@ describe("runWikiSync ingest pre-flight (issue #146)", () => {
     await trackIgnoredObsidianState(h);
 
     await runWikiSync({
-      ...optionsFor(h),
-      onProgress: (message) => progress.push(message),
+      ...optionsFor(h, { onProgress: (message) => progress.push(message) }),
     });
 
     expect(
@@ -928,8 +932,7 @@ describe("runWikiSync repo-sourced instances", () => {
     const progress: string[] = [];
 
     await runWikiSync({
-      ...optionsFor(h),
-      onProgress: (m) => progress.push(m),
+      ...optionsFor(h, { onProgress: (m) => progress.push(m) }),
     });
 
     expect(progress).toContainEqual("wiki-sync: stage 1/5 — sync");
@@ -943,8 +946,7 @@ describe("runWikiSync repo-sourced instances", () => {
     const progress: string[] = [];
 
     await runWikiSync({
-      ...optionsFor(h),
-      onProgress: (m) => progress.push(m),
+      ...optionsFor(h, { onProgress: (m) => progress.push(m) }),
     });
 
     expect(progress.join("\n")).not.toMatch(/^vault ".*": scanning /m);
@@ -1078,8 +1080,7 @@ describe("runWikiSync publish stage (issue #15)", () => {
 
     await configurePublish(h, mirror);
     await runWikiSync({
-      ...optionsFor(h),
-      onProgress: (m) => progress.push(m),
+      ...optionsFor(h, { onProgress: (m) => progress.push(m) }),
     });
 
     expect(progress).toContainEqual("wiki-sync: stage 5/6 — commit");
@@ -1339,8 +1340,7 @@ describe("runWikiSync crosslinks stage", () => {
     await configureDomains(h, domainWiki);
     h.ingestAgent = crosslinkAgent("[[engineering/stub]]");
     await runWikiSync({
-      ...optionsFor(h),
-      onProgress: (m) => progress.push(m),
+      ...optionsFor(h, { onProgress: (m) => progress.push(m) }),
     });
 
     expect(progress).toContainEqual("wiki-sync: stage 4/6 — crosslinks");
@@ -1350,7 +1350,9 @@ describe("runWikiSync crosslinks stage", () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 
     await expect(
-      runCrosslinksStage({ rawDir: join(h.dataRoot, "raw") }),
+      runCrosslinksStage({
+        run: runContext({ rawDir: join(h.dataRoot, "raw") }),
+      }),
     ).resolves.toBeUndefined();
   });
 
@@ -1360,9 +1362,11 @@ describe("runWikiSync crosslinks stage", () => {
     const progress: string[] = [];
 
     await runCrosslinksStage({
-      rawDir: join(h.dataRoot, "raw"),
+      run: runContext({
+        rawDir: join(h.dataRoot, "raw"),
+        onProgress: (message) => progress.push(message),
+      }),
       domains: [domainWiki],
-      onProgress: (message) => progress.push(message),
     });
 
     expect(progress).toContainEqual(
@@ -1376,7 +1380,7 @@ describe("runWikiSync crosslinks stage", () => {
 
     await expect(
       runCrosslinksStage({
-        rawDir: join(h.dataRoot, "raw"),
+        run: runContext({ rawDir: join(h.dataRoot, "raw") }),
         domains: [domainWiki],
       }),
     ).resolves.toBeDefined();
@@ -1395,7 +1399,7 @@ describe("runWikiSync crosslinks stage", () => {
 
     await expect(
       runCrosslinksStage({
-        rawDir: join(h.dataRoot, "raw"),
+        run: runContext({ rawDir: join(h.dataRoot, "raw") }),
         domains: [domainWiki],
       }),
     ).resolves.toBeDefined();
@@ -1432,8 +1436,7 @@ describe("runWikiSync crosslinks stage", () => {
     const progress: string[] = [];
 
     await runWikiSync({
-      ...optionsFor(h),
-      onProgress: (m) => progress.push(m),
+      ...optionsFor(h, { onProgress: (m) => progress.push(m) }),
     });
 
     expect(progress).not.toContainEqual(expect.stringMatching(/crosslinks/));
@@ -1476,7 +1479,7 @@ describe("runWikiSync crosslinks stage", () => {
     // `os.homedir()` reads the process's C environ, which worker
     // threads (Stryker's vitest pool) do not share with `process.env`.
     const result = await runCrosslinksStage({
-      rawDir: join(h.dataRoot, "raw"),
+      run: runContext({ rawDir: join(h.dataRoot, "raw") }),
       domains: ["~/domain/wiki"],
       home: dirname(dirname(domainWiki)),
     });
@@ -1551,7 +1554,9 @@ describe("runVerificationStage", () => {
   it("reports no fidelity problems for a faithful wiki", async () => {
     const root = await makeVerificationRoot();
 
-    const result = await runVerificationStage({ rawDir: join(root, "raw") });
+    const result = await runVerificationStage({
+      run: runContext({ rawDir: join(root, "raw") }),
+    });
 
     expect(result.fidelity.problems).toEqual([]);
   });
@@ -1559,7 +1564,9 @@ describe("runVerificationStage", () => {
   it("reports no provenance problems for a coherent wiki", async () => {
     const root = await makeVerificationRoot();
 
-    const result = await runVerificationStage({ rawDir: join(root, "raw") });
+    const result = await runVerificationStage({
+      run: runContext({ rawDir: join(root, "raw") }),
+    });
 
     expect(result.provenance.problems).toEqual([]);
   });
@@ -1590,7 +1597,9 @@ describe("runVerificationStage", () => {
     );
 
     await expect(
-      runVerificationStage({ rawDir: join(root, "raw") }),
+      runVerificationStage({
+        run: runContext({ rawDir: join(root, "raw") }),
+      }),
     ).rejects.toThrow(
       "fidelity check failed:\n" +
         'wiki/concepts/drifted.md -> title "Elsewhere" does not kebab to drifted\n' +
@@ -1622,7 +1631,9 @@ describe("runVerificationStage", () => {
     );
 
     await expect(
-      runVerificationStage({ rawDir: join(root, "raw") }),
+      runVerificationStage({
+        run: runContext({ rawDir: join(root, "raw") }),
+      }),
     ).rejects.toThrow(
       "provenance check failed:\n" +
         "wiki/sources/dead-link.md -> [[gone-page]] (missing source page)\n" +
@@ -1635,8 +1646,10 @@ describe("runVerificationStage", () => {
     const progress: string[] = [];
 
     await runVerificationStage({
-      rawDir: join(root, "raw"),
-      onProgress: (message) => progress.push(message),
+      run: runContext({
+        rawDir: join(root, "raw"),
+        onProgress: (message) => progress.push(message),
+      }),
     });
 
     expect(progress).toContain(
@@ -1669,8 +1682,7 @@ describe("runWikiSync verification stage", () => {
     const progress: string[] = [];
 
     await runWikiSync({
-      ...optionsFor(h),
-      onProgress: (m) => progress.push(m),
+      ...optionsFor(h, { onProgress: (m) => progress.push(m) }),
     });
 
     expect(progress).toContainEqual("wiki-sync: stage 4/5 — verification");
@@ -1681,8 +1693,7 @@ describe("runWikiSync verification stage", () => {
     const progress: string[] = [];
 
     await runWikiSync({
-      ...optionsFor(h),
-      onProgress: (m) => progress.push(m),
+      ...optionsFor(h, { onProgress: (m) => progress.push(m) }),
     });
 
     expect(progress).toContainEqual("wiki-sync: stage 5/5 — commit");
@@ -1696,8 +1707,7 @@ describe("runWikiSync verification stage", () => {
     await configureDomains(h, domainWiki);
 
     await runWikiSync({
-      ...optionsFor(h),
-      onProgress: (m) => progress.push(m),
+      ...optionsFor(h, { onProgress: (m) => progress.push(m) }),
     });
 
     expect(progress).toContain("wiki-sync: stage 4/6 — crosslinks");
@@ -1711,8 +1721,7 @@ describe("runWikiSync verification stage", () => {
     await configureDomains(h, domainWiki);
 
     await runWikiSync({
-      ...optionsFor(h),
-      onProgress: (m) => progress.push(m),
+      ...optionsFor(h, { onProgress: (m) => progress.push(m) }),
     });
 
     const crosslinks = progress.indexOf("wiki-sync: stage 4/6 — crosslinks");
@@ -1771,7 +1780,7 @@ describe("runWikiSync verification stage", () => {
     const progress: string[] = [];
 
     await expect(
-      runWikiSync({ ...optionsFor(h), onProgress: (m) => progress.push(m) }),
+      runWikiSync(optionsFor(h, { onProgress: (m) => progress.push(m) })),
     ).rejects.toThrow();
 
     expect(progress).toContain(
@@ -1936,10 +1945,12 @@ describe("runWikiSync lint stage", () => {
     await expect(
       runLintStage({
         settingsPath: h.settingsPath,
-        rawDir: join(h.dataRoot, "raw"),
+        run: runContext({
+          rawDir: join(h.dataRoot, "raw"),
+          env: optionsFor(h).run.env,
+          now: NOW,
+        }),
         promptsDir: h.promptsDir,
-        env: optionsFor(h).env,
-        now: NOW,
         runAgent: saboteur,
       }),
     ).rejects.toThrow(/lint guardrail check 2 \(frontmatter\)/);
@@ -1951,9 +1962,11 @@ describe("runWikiSync lint stage", () => {
 
     const result = await runLintStage({
       settingsPath: h.settingsPath,
-      rawDir: join(h.dataRoot, "raw"),
+      run: runContext({
+        rawDir: join(h.dataRoot, "raw"),
+        env: optionsFor(h).run.env,
+      }),
       promptsDir: h.promptsDir,
-      env: optionsFor(h).env,
       runAgent: lintStub,
     });
 
@@ -2003,9 +2016,8 @@ describe("runWikiSync lint stage", () => {
     };
 
     await runWikiSync({
-      ...optionsFor(h),
+      ...optionsFor(h, { onProgress: (message) => progress.push(message) }),
       heartbeatMs: 5,
-      onProgress: (message) => progress.push(message),
     });
 
     expect(progress).toContainEqual(
@@ -2500,8 +2512,7 @@ describe("runWikiSync progress and invocation contract", () => {
     const progress: string[] = [];
 
     await runWikiSync({
-      ...optionsFor(h),
-      onProgress: (message) => progress.push(message),
+      ...optionsFor(h, { onProgress: (message) => progress.push(message) }),
     });
 
     for (const expected of [
@@ -2523,8 +2534,7 @@ describe("runWikiSync progress and invocation contract", () => {
     const progress: string[] = [];
 
     await runWikiSync({
-      ...optionsFor(h),
-      onProgress: (message) => progress.push(message),
+      ...optionsFor(h, { onProgress: (message) => progress.push(message) }),
     });
 
     expect(progress.join("\n")).toContain(
@@ -2576,8 +2586,7 @@ describe("runWikiSync progress and invocation contract", () => {
       `${SETTINGS_YML}isolate.skills: [skills/absent]\n`,
     );
     await runWikiSync({
-      ...optionsFor(h),
-      onProgress: (message) => progress.push(message),
+      ...optionsFor(h, { onProgress: (message) => progress.push(message) }),
     });
 
     expect(progress.join("\n")).toContain(
@@ -2605,8 +2614,7 @@ describe("runWikiSync progress and invocation contract", () => {
       `${SETTINGS_YML}isolate.skills: [skills/obsidian-markdown]\n`,
     );
     await runWikiSync({
-      ...optionsFor(h),
-      onProgress: (message) => progress.push(message),
+      ...optionsFor(h, { onProgress: (message) => progress.push(message) }),
     });
 
     expect(progress.join("\n")).toContain(
@@ -2726,9 +2734,8 @@ describe("runWikiSync progress and invocation contract", () => {
     };
 
     await runWikiSync({
-      ...optionsFor(h),
+      ...optionsFor(h, { onProgress: collect }),
       heartbeatMs: 5,
-      onProgress: collect,
     });
 
     const lengthAtEnd = progress.length;
@@ -2749,9 +2756,8 @@ describe("runWikiSync progress and invocation contract", () => {
     };
 
     await runWikiSync({
-      ...optionsFor(h),
+      ...optionsFor(h, { onProgress: (message) => progress.push(message) }),
       heartbeatMs: 5,
-      onProgress: (message) => progress.push(message),
     });
 
     expect(progress).toContainEqual(
@@ -2826,8 +2832,7 @@ describe("runWikiSync failure reporting", () => {
 
     await expect(
       runWikiSync({
-        ...optionsFor(h),
-        onProgress: (message) => progress.push(message),
+        ...optionsFor(h, { onProgress: (message) => progress.push(message) }),
       }),
     ).rejects.toThrow("guardrail check 2 (frontmatter)");
 
@@ -2847,8 +2852,7 @@ describe("runWikiSync failure reporting", () => {
     };
 
     await runWikiSync({
-      ...optionsFor(h),
-      onProgress: (message) => progress.push(message),
+      ...optionsFor(h, { onProgress: (message) => progress.push(message) }),
     }).catch(() => {});
 
     expect(progress).not.toContain("wiki-sync: lint — agent finished");
@@ -3033,8 +3037,7 @@ describe("runWikiSync commit contents", () => {
     );
 
     const result = await runWikiSync({
-      ...optionsFor(h),
-      onProgress: (message) => progress.push(message),
+      ...optionsFor(h, { onProgress: (message) => progress.push(message) }),
     });
 
     if (result.commit.status !== "committed") {
@@ -3057,8 +3060,7 @@ describe("runWikiSync commit contents", () => {
     );
 
     await runWikiSync({
-      ...optionsFor(h),
-      onProgress: (message) => progress.push(message),
+      ...optionsFor(h, { onProgress: (message) => progress.push(message) }),
     });
 
     expect(progress).toContain(
@@ -3381,8 +3383,9 @@ describe("runWikiSync environment passthrough", () => {
     };
 
     await runWikiSync({
-      ...optionsFor(h),
-      env: { ...optionsFor(h).env, K_WIKI_TEST_ENV_SENTINEL: "sentinel" },
+      ...optionsFor(h, {
+        env: { ...optionsFor(h).run.env, K_WIKI_TEST_ENV_SENTINEL: "sentinel" },
+      }),
     });
 
     expect(agentEnv?.K_WIKI_TEST_ENV_SENTINEL).toBe("sentinel");
@@ -3397,18 +3400,20 @@ describe("runLintStage heartbeat clock", () => {
 
     await runLintStage({
       settingsPath: h.settingsPath,
-      rawDir: join(h.dataRoot, "raw"),
+      run: runContext({
+        rawDir: join(h.dataRoot, "raw"),
+        env: optionsFor(h).run.env,
+        now: () => new Date(clock),
+        onProgress: (message) => progress.push(message),
+      }),
       promptsDir: h.promptsDir,
-      env: optionsFor(h).env,
       heartbeatMs: 1,
-      now: () => new Date(clock),
       runAgent: async () => {
         clock += 60_000;
         await new Promise((resolve) => setTimeout(resolve, 20));
 
         return { stdout: "lint done", stderr: "" };
       },
-      onProgress: (message) => progress.push(message),
     });
 
     expect(progress).toContainEqual(
