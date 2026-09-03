@@ -3,66 +3,7 @@ import {
   parseBoardIds,
   parseBoardItems,
 } from "../../src/board/triage-decode.ts";
-
-const STATUS_OPTIONS = [
-  { id: "o-backlog", name: "Backlog" },
-  { id: "o-ready", name: "Ready" },
-  { id: "o-progress", name: "In progress" },
-  { id: "o-review", name: "In review" },
-  { id: "o-done", name: "Done" },
-] as const;
-
-const STATUS_FIELD = { id: "F_status", options: STATUS_OPTIONS };
-
-interface IssueSpec {
-  readonly id: string;
-  readonly number: number;
-  readonly state?: "OPEN" | "CLOSED";
-  readonly status?: string | null;
-  readonly labels?: readonly string[];
-  readonly blockers?: readonly { number: number; state: string }[];
-  readonly refs?: readonly {
-    number: number;
-    state: string;
-    pr: boolean;
-  }[];
-  readonly truncated?: "labels" | "blockedBy" | "timelineItems";
-}
-
-/** One board item node in the GraphQL response shape. */
-function issueNode(spec: IssueSpec): Record<string, unknown> {
-  const status =
-    spec.status === undefined || spec.status === null
-      ? null
-      : { name: spec.status, optionId: `o-${spec.status.toLowerCase()}` };
-
-  return {
-    id: spec.id,
-    fieldValueByName: status,
-    content: {
-      __typename: "Issue",
-      number: spec.number,
-      state: spec.state ?? "OPEN",
-      labels: {
-        nodes: (spec.labels ?? []).map((name) => ({ name })),
-        pageInfo: { hasNextPage: spec.truncated === "labels" },
-      },
-      blockedBy: {
-        nodes: (spec.blockers ?? []).map((blocker) => ({
-          number: blocker.number,
-          state: blocker.state,
-        })),
-        pageInfo: { hasNextPage: spec.truncated === "blockedBy" },
-      },
-      timelineItems: {
-        nodes: (spec.refs ?? []).map((ref) => ({
-          source: ref.pr ? { number: ref.number, state: ref.state } : {},
-        })),
-        pageInfo: { hasNextPage: spec.truncated === "timelineItems" },
-      },
-    },
-  };
-}
+import { issueNode, STATUS_FIELD } from "./fake-board.ts";
 
 describe("parseBoardIds", () => {
   it("resolves the project id, Status field id, and the three move-target option ids fresh from the board response", () => {
