@@ -1,0 +1,19 @@
+{
+  "budget": {
+    "filesOver800": 1,
+    "filesOver500": 10,
+    "filesOver350": 20,
+    "maxFileLines": 1170,
+    "crossDomainEdges": 48,
+    "dataToSyncEdges": 0,
+    "parseArgsCopies": 1,
+    "directoryWalkers": 1,
+    "repoRootDerivations": 1,
+    "unquoteDefinitions": 1,
+    "envSignatures": 42,
+    "envSignatureFiles": 17,
+    "dataRootEnvPairs": 27,
+    "dirnameRawDirDerivations": 2
+  },
+  "exclude": {}
+}

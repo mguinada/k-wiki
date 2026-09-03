@@ -12,8 +12,9 @@ import { parseArgs } from "../cli/shell.ts";
  * edges (the `cli` directory is the shared layer and its edges never
  * count), and the named duplication counters. Doc-time baseline
  * values in the epic are informational; this scanner's fresh output
- * is the live instrument, frozen by tests/quality/refactor-metrics
- * baseline budget (the seed of the structure guard).
+ * is the live instrument, held at or below the per-counter budgets
+ * in `.structureguard.json` by the structure gate
+ * (tests/quality/structure.test.ts).
  */
 
 /** Every counter the scanner prints, in output order. */
@@ -29,6 +30,10 @@ export interface StructureMetrics {
   /** Relative imports whose file's domain differs from the target's
    *  (cli endpoints excluded). */
   readonly crossDomainEdges: number;
+  /** Relative imports from the data domain into the sync domain —
+   *  the layering inversion the refactor campaign solved; the
+   *  structure guard pins this at zero. */
+  readonly dataToSyncEdges: number;
   /** Local parseArgs/parseCliArgs definitions. */
   readonly parseArgsCopies: number;
   /** Local walk-named directory-walker definitions. */
@@ -57,15 +62,36 @@ interface ScannedFile {
 interface ImportEdge {
   readonly importer: ScannedFile;
   readonly specifier: string;
+  /** 1-based line of the import statement in the importing file. */
+  readonly line: number;
 }
 
+/** One attributed counter site: the root-relative file, the 1-based
+ *  line of the offending construct where a single line is the
+ *  offender, and the file's line count for the file-size counters. */
+export interface OffenderSite {
+  readonly path: string;
+  readonly line?: number;
+  readonly lines?: number;
+}
+
+/** The attributed sites behind every counter, keyed by counter —
+ *  the structure guard's breach-report input. */
+export type StructureOffenders = Readonly<
+  Record<keyof StructureMetrics, readonly OffenderSite[]>
+>;
+
 /** The human-readable label for each counter, in print order. */
-const METRIC_LABELS: readonly (readonly [keyof StructureMetrics, string])[] = [
+export const METRIC_LABELS: readonly (readonly [
+  keyof StructureMetrics,
+  string,
+])[] = [
   ["filesOver800", "files >800 lines"],
   ["filesOver500", "files >500 lines"],
   ["filesOver350", "files >350 lines"],
   ["maxFileLines", "max file lines"],
   ["crossDomainEdges", "cross-domain edges (excl. cli)"],
+  ["dataToSyncEdges", "data\u2192sync edges"],
   ["parseArgsCopies", "parseArgs copies"],
   ["directoryWalkers", "directory walkers"],
   ["repoRootDerivations", "repoRoot derivations"],
@@ -75,6 +101,10 @@ const METRIC_LABELS: readonly (readonly [keyof StructureMetrics, string])[] = [
   ["dataRootEnvPairs", "(dataRoot, env) pairs"],
   ["dirnameRawDirDerivations", "dirname derivations of rawDir"],
 ];
+
+/** Every counter key, in output order — the budget file's key set. */
+export const counterKeys: readonly (keyof StructureMetrics)[] =
+  METRIC_LABELS.map(([key]) => key);
 
 const IMPORT_PATTERN = /from\s+["']([^"']+)["']/g;
 const SIGNATURE_PATTERN =
@@ -132,6 +162,16 @@ function domainOf(relPath: string): string {
     : relPath.slice(0, separator);
 }
 
+/** The 1-based line of a character index in a text body. */
+function lineOf(text: string, index: number): number {
+  return text.slice(0, index).split("\n").length;
+}
+
+/** The 1-based line of a regex match in its text body. */
+export function matchLine(text: string, match: RegExpMatchArray): number {
+  return lineOf(text, match.index ?? 0);
+}
+
 /** All relative import edges in the scanned files, in scan order. */
 function relativeImports(files: readonly ScannedFile[]): ImportEdge[] {
   const edges: ImportEdge[] = [];
@@ -141,7 +181,11 @@ function relativeImports(files: readonly ScannedFile[]): ImportEdge[] {
       const specifier = match[1] ?? "";
 
       if (specifier.startsWith(".")) {
-        edges.push({ importer: file, specifier });
+        edges.push({
+          importer: file,
+          specifier,
+          line: matchLine(file.text, match),
+        });
       }
     }
   }
@@ -149,21 +193,26 @@ function relativeImports(files: readonly ScannedFile[]): ImportEdge[] {
   return edges;
 }
 
-/** Import edges crossing domain boundaries, `cli`-endpoint ones
- *  excluded (the shared layer everyone may use). */
-function countCrossDomainEdges(
+/** The root-relative import target of an edge, normalized. */
+function importTarget(root: string, edge: ImportEdge): string {
+  return relative(
+    root,
+    resolve(root, dirname(edge.importer.relPath), edge.specifier),
+  )
+    .split(sep)
+    .join("/");
+}
+
+/** Sites of import edges crossing domain boundaries, `cli`-endpoint
+ *  ones excluded (the shared layer everyone may use). */
+function crossDomainSites(
   root: string,
   edges: readonly ImportEdge[],
-): number {
-  let count = 0;
+): OffenderSite[] {
+  const sites: OffenderSite[] = [];
 
   for (const edge of edges) {
-    const target = relative(
-      root,
-      resolve(root, dirname(edge.importer.relPath), edge.specifier),
-    )
-      .split(sep)
-      .join("/");
+    const target = importTarget(root, edge);
     const importerDomain = domainOf(edge.importer.relPath);
     const targetDomain = domainOf(target);
 
@@ -173,25 +222,74 @@ function countCrossDomainEdges(
       targetDomain !== "cli" &&
       importerDomain !== targetDomain
     ) {
-      count += 1;
+      sites.push({ path: edge.importer.relPath, line: edge.line });
     }
   }
 
-  return count;
+  return sites;
 }
 
-/** Total matches of one global regex across all scanned texts. */
-function countMatches(files: readonly ScannedFile[], pattern: RegExp): number {
-  return files.reduce(
-    (sum, file) => sum + [...file.text.matchAll(pattern)].length,
-    0,
-  );
+/** Sites of import edges from the data domain into the sync domain. */
+function dataToSyncSites(
+  root: string,
+  edges: readonly ImportEdge[],
+): OffenderSite[] {
+  const sites: OffenderSite[] = [];
+
+  for (const edge of edges) {
+    const target = importTarget(root, edge);
+
+    if (
+      domainOf(edge.importer.relPath) === "data" &&
+      domainOf(target) === "sync"
+    ) {
+      sites.push({ path: edge.importer.relPath, line: edge.line });
+    }
+  }
+
+  return sites;
 }
 
-/** One scanned signature: its parameter-list text. */
+/** Attributed match sites of one global regex across all files. */
+function matchSites(
+  files: readonly ScannedFile[],
+  pattern: RegExp,
+): OffenderSite[] {
+  const sites: OffenderSite[] = [];
+
+  for (const file of files) {
+    for (const match of file.text.matchAll(pattern)) {
+      sites.push({
+        path: file.relPath,
+        line: matchLine(file.text, match),
+      });
+    }
+  }
+
+  return sites;
+}
+
+/** Every scanned file with its line count. */
+function countedFiles(files: readonly ScannedFile[]): OffenderSite[] {
+  return files.map((file) => ({
+    path: file.relPath,
+    lines: countLines(file.text),
+  }));
+}
+
+/** Files over a size band, with their line counts. */
+function sizeSites(
+  counted: readonly OffenderSite[],
+  band: number,
+): OffenderSite[] {
+  return counted.filter((site) => (site.lines ?? 0) > band);
+}
+
+/** One scanned signature: its parameter-list text and line. */
 interface Signature {
   readonly file: string;
   readonly params: string;
+  readonly line: number;
 }
 
 /** Every function or arrow-const signature in the scanned files. */
@@ -200,62 +298,101 @@ function scanSignatures(files: readonly ScannedFile[]): Signature[] {
 
   for (const file of files) {
     for (const match of file.text.matchAll(SIGNATURE_PATTERN)) {
-      signatures.push({ file: file.relPath, params: match[1] ?? "" });
+      signatures.push({
+        file: file.relPath,
+        params: match[1] ?? "",
+        line: matchLine(file.text, match),
+      });
     }
   }
 
   return signatures;
 }
 
-/** env-parameter signature counts: total and per-file spread. */
-function countEnvSignatures(signatures: readonly Signature[]): {
-  total: number;
-  files: number;
-} {
-  const envSignatures = signatures.filter((signature) =>
-    ENV_PARAM.test(signature.params),
-  );
+/** Signature sites whose parameter list matches a predicate. */
+function signatureSites(
+  signatures: readonly Signature[],
+  matches: (params: string) => boolean,
+): OffenderSite[] {
+  return signatures
+    .filter((signature) => matches(signature.params))
+    .map((signature) => ({ path: signature.file, line: signature.line }));
+}
 
+/** True when a parameter list binds both `dataRoot` and `env`. */
+function isDataRootEnvPair(params: string): boolean {
+  return DATA_ROOT_PARAM.test(params) && ENV_PARAM.test(params);
+}
+
+/** One site per file holding at least one env-binding signature. */
+function envSignatureFileSites(
+  envSites: readonly OffenderSite[],
+): OffenderSite[] {
+  return [...new Map(envSites.map((site) => [site.path, site])).values()];
+}
+
+/** The counters derived from the attributed sites — every count is
+ *  its sites' length; the max is the largest kept file's lines. */
+export function metricsOfOffenders(
+  offenders: StructureOffenders,
+): StructureMetrics {
   return {
-    total: envSignatures.length,
-    files: new Set(envSignatures.map((signature) => signature.file)).size,
+    filesOver800: offenders.filesOver800.length,
+    filesOver500: offenders.filesOver500.length,
+    filesOver350: offenders.filesOver350.length,
+    maxFileLines: offenders.maxFileLines.reduce(
+      (max, site) => Math.max(max, site.lines ?? 0),
+      0,
+    ),
+    crossDomainEdges: offenders.crossDomainEdges.length,
+    dataToSyncEdges: offenders.dataToSyncEdges.length,
+    parseArgsCopies: offenders.parseArgsCopies.length,
+    directoryWalkers: offenders.directoryWalkers.length,
+    repoRootDerivations: offenders.repoRootDerivations.length,
+    unquoteDefinitions: offenders.unquoteDefinitions.length,
+    envSignatures: offenders.envSignatures.length,
+    envSignatureFiles: offenders.envSignatureFiles.length,
+    dataRootEnvPairs: offenders.dataRootEnvPairs.length,
+    dirnameRawDirDerivations: offenders.dirnameRawDirDerivations.length,
   };
 }
 
-/** Signatures carrying both `dataRoot` and `env` parameters. */
-function countDataRootEnvPairs(signatures: readonly Signature[]): number {
-  return signatures.filter(
-    (signature) =>
-      DATA_ROOT_PARAM.test(signature.params) &&
-      ENV_PARAM.test(signature.params),
-  ).length;
+/** Scan `rootInput` recursively and attribute every counter's sites. */
+export async function collectOffenders(
+  rootInput: string,
+): Promise<StructureOffenders> {
+  const root = resolve(rootInput);
+  const files = await listTsFiles(root);
+  const counted = countedFiles(files);
+  const edges = relativeImports(files);
+  const signatures = scanSignatures(files);
+  const envSites = signatureSites(signatures, (params) =>
+    ENV_PARAM.test(params),
+  );
+
+  return {
+    filesOver800: sizeSites(counted, 800),
+    filesOver500: sizeSites(counted, 500),
+    filesOver350: sizeSites(counted, 350),
+    maxFileLines: counted,
+    crossDomainEdges: crossDomainSites(root, edges),
+    dataToSyncEdges: dataToSyncSites(root, edges),
+    parseArgsCopies: matchSites(files, PARSE_ARGS_PATTERN),
+    directoryWalkers: matchSites(files, WALKER_PATTERN),
+    repoRootDerivations: matchSites(files, REPO_ROOT_PATTERN),
+    unquoteDefinitions: matchSites(files, UNQUOTE_PATTERN),
+    envSignatures: envSites,
+    envSignatureFiles: envSignatureFileSites(envSites),
+    dataRootEnvPairs: signatureSites(signatures, isDataRootEnvPair),
+    dirnameRawDirDerivations: matchSites(files, DIRNAME_RAW_DIR_PATTERN),
+  };
 }
 
 /** Scan `rootInput` recursively and compute every counter. */
 export async function collectMetrics(
   rootInput: string,
 ): Promise<StructureMetrics> {
-  const root = resolve(rootInput);
-  const files = await listTsFiles(root);
-  const lineCounts = files.map((file) => countLines(file.text));
-  const signatures = scanSignatures(files);
-  const envSignatures = countEnvSignatures(signatures);
-
-  return {
-    filesOver800: lineCounts.filter((lines) => lines > 800).length,
-    filesOver500: lineCounts.filter((lines) => lines > 500).length,
-    filesOver350: lineCounts.filter((lines) => lines > 350).length,
-    maxFileLines: lineCounts.reduce((max, lines) => Math.max(max, lines), 0),
-    crossDomainEdges: countCrossDomainEdges(root, relativeImports(files)),
-    parseArgsCopies: countMatches(files, PARSE_ARGS_PATTERN),
-    directoryWalkers: countMatches(files, WALKER_PATTERN),
-    repoRootDerivations: countMatches(files, REPO_ROOT_PATTERN),
-    unquoteDefinitions: countMatches(files, UNQUOTE_PATTERN),
-    envSignatures: envSignatures.total,
-    envSignatureFiles: envSignatures.files,
-    dataRootEnvPairs: countDataRootEnvPairs(signatures),
-    dirnameRawDirDerivations: countMatches(files, DIRNAME_RAW_DIR_PATTERN),
-  };
+  return metricsOfOffenders(await collectOffenders(rootInput));
 }
 
 /** The counters as a plain JSON-ready object. */
@@ -275,8 +412,8 @@ const HELP = `Usage: refactor-metrics [--json] [<root>] [-h | --help]
 
 Scan a TypeScript tree recursively and print the src/ refactor
 campaign's structure counters. Every counter measures structural
-debt: lower is better, and the unit suite freezes each counter at
-or below the committed baseline budget.
+debt: lower is better, and the structure gate holds each counter
+at or below its budget in .structureguard.json.
 
 Counters:
 
@@ -289,6 +426,10 @@ Counters:
                   Imports whose importer or target is the cli
                   shared layer never count. Fewer boundary
                   crossings is better.
+  data\u2192sync edges
+                  Relative imports from the data domain into the
+                  sync domain — a layering inversion. Zero is the
+                  goal and the structure budget pins it there.
   parseArgs copies
                   Local parseArgs/parseCliArgs definitions, in
                   declaration or arrow form. Fewer copies is
