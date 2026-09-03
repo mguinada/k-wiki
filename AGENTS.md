@@ -203,7 +203,7 @@ infrastructure, free to use for any unit or e2e work; the snapshot at
   so tree-shape assertions fail the dry run and the nightly mutation
   report dies before it exists (issue #276). Detect the sandbox and
   `ctx.skip(reason)` — see `insideStrykerSandbox()` in
-  `tests/quality/refactor-metrics.test.ts`.
+  `tests/quality/structure.test.ts`.
 
 ### CLI scripts
 
