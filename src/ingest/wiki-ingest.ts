@@ -37,6 +37,7 @@ import {
   wikiPages,
 } from "./manifest-diff.ts";
 import {
+  type ComposeRunPromptInput,
   composeRunPrompt,
   DEFAULT_OPERATOR_NOTE,
   removedContentReader,
@@ -339,8 +340,34 @@ async function promptStep(
     join(inputs.options.promptsDir, mode.promptFile),
   );
 
-  return await composeRunPrompt({
-    mode: mode.mode,
+  return await composeRunPrompt(promptInput(inputs, change, mode, promptText));
+}
+
+/** The prompt input for the run's mode (the C-14 union's builder):
+ *  full carries the prompt text alone, incremental adds the diff and
+ *  the scoped run's operator note, expunge carries the removed-source
+ *  count and the run's coordinates. */
+function promptInput(
+  inputs: RunInputs,
+  change: RunChange,
+  mode: RunMode,
+  promptText: string,
+): ComposeRunPromptInput {
+  if (mode.mode === "full") {
+    return { mode: "full", promptText };
+  }
+
+  if (mode.mode === "incremental") {
+    return {
+      mode: "incremental",
+      promptText,
+      diff: change.diff,
+      note: scopedNote(inputs.options),
+    };
+  }
+
+  return {
+    mode: "expunge",
     removedCount: mode.removedCount,
     promptText,
     promptsDir: inputs.options.promptsDir,
@@ -348,8 +375,7 @@ async function promptStep(
     diff: change.diff,
     env: inputs.run.env,
     onProgress: inputs.run.onProgress,
-    note: scopedNote(inputs.options),
-  });
+  };
 }
 
 /** The agent run's outcome, held for the guardrail step: its stdout,

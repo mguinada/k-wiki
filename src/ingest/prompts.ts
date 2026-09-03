@@ -180,39 +180,52 @@ export function removedContentReader(
     );
 }
 
-/** What composeRunPrompt needs: the resolved run mode with its
- *  prompt text, and the run's coordinates. */
-interface PromptComposition {
-  readonly mode: "full" | "incremental" | "expunge";
-  readonly removedCount: number;
-  readonly promptText: string;
-  readonly promptsDir: string;
-  readonly dataRoot: string;
-  readonly diff: ManifestDiff;
-  readonly env: NodeJS.ProcessEnv;
-  readonly onProgress: (message: string) => void;
-  readonly note: string | undefined;
-}
+/** What composeRunPrompt needs, one variant per run mode (issue
+ *  #258, C-14 — the old flat interface over-declared every field for
+ *  every branch): a full run needs only its prompt text; an
+ *  incremental run also appends the changed-source list and the
+ *  scoped run's operator note; an expunge run composes the removed
+ *  notes' recovered content, the deterministic direct set, and the
+ *  mixed-run incremental prompt, announcing the direct set. */
+export type ComposeRunPromptInput =
+  | {
+      readonly mode: "full";
+      readonly promptText: string;
+    }
+  | {
+      readonly mode: "incremental";
+      readonly promptText: string;
+      readonly diff: ManifestDiff;
+      readonly note: string | undefined;
+    }
+  | {
+      readonly mode: "expunge";
+      readonly removedCount: number;
+      readonly promptText: string;
+      readonly promptsDir: string;
+      readonly dataRoot: string;
+      readonly diff: ManifestDiff;
+      readonly env: NodeJS.ProcessEnv;
+      readonly onProgress: (message: string) => void;
+    };
 
 /** Compose the agent message and, for an expunge run, its
  *  deterministic direct set. */
 export async function composeRunPrompt(
-  run: PromptComposition,
+  run: ComposeRunPromptInput,
 ): Promise<{ composed: string; directSet: readonly string[] | undefined }> {
-  const { mode, removedCount, promptText, promptsDir, dataRoot, diff, env } =
-    run;
+  if (run.mode === "full") {
+    return { composed: run.promptText, directSet: undefined };
+  }
 
-  if (mode !== "expunge") {
+  if (run.mode === "incremental") {
     return {
-      composed: composePrompt(
-        promptText,
-        mode === "incremental" ? diff : undefined,
-        run.note,
-      ),
+      composed: composePrompt(run.promptText, run.diff, run.note),
       directSet: undefined,
     };
   }
 
+  const { removedCount, promptText, promptsDir, dataRoot, diff, env } = run;
   const removedNotes = await collectRemovedNotes(dataRoot, diff, env);
   const directSet = await directSetForRemovals(
     join(dataRoot, "wiki"),
