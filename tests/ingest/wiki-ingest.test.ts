@@ -24,13 +24,13 @@ import {
   type IngestRun,
 } from "../../src/ingest/digest.ts";
 import { diffManifests } from "../../src/ingest/manifest-diff.ts";
+import { warnTrackedIgnored } from "../../src/ingest/snapshot.ts";
 import {
   composeExpungePrompt,
   composePrompt,
   main,
   removedNoteContent,
   runWikiIngest,
-  warnTrackedIgnored,
 } from "../../src/ingest/wiki-ingest.ts";
 import {
   emptyManifest,
@@ -2920,21 +2920,6 @@ describe("runWikiIngest tracked-but-ignored pre-flight (issue #146)", () => {
           ),
       ),
     ).toBe(true);
-  });
-});
-
-describe("warnTrackedIgnored (issue #146)", () => {
-  it("emits no warning and does not throw when git cannot report", async () => {
-    const messages: string[] = [];
-    const notARepo = await mkdtemp(join(tmpdir(), "k-wiki-not-a-repo-"));
-
-    tempDirs.push(notARepo);
-
-    await warnTrackedIgnored(notARepo, process.env, (message) =>
-      messages.push(message),
-    );
-
-    expect(messages).toEqual([]);
   });
 });
 

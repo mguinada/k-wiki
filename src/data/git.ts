@@ -458,3 +458,18 @@ export async function assertCleanTree(
     );
   }
 }
+
+/** A git command's stdout, or undefined when git fails for any reason. */
+export async function tryGit(
+  dataRoot: string,
+  args: readonly string[],
+  env: NodeJS.ProcessEnv,
+): Promise<string | undefined> {
+  try {
+    const { stdout } = await runGit(dataRoot, args, env);
+
+    return stdout;
+  } catch {
+    return undefined;
+  }
+}
