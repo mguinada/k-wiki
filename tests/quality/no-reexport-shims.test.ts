@@ -48,39 +48,48 @@ function isCommentLine(line: string): boolean {
   );
 }
 
-const RE_EXPORT = /^export\s+(?:type\s+)?(?:\{[^}]*\}|\*)\s*from\s/;
+const RE_EXPORT = /\bexport\s+(?:type\s+)?(?:\{[^}]*\}|\*)\s*from\s/;
 
-/** Whether a non-comment line re-exports another module's symbols. */
-function isReExportLine(line: string): boolean {
-  return !isCommentLine(line) && RE_EXPORT.test(line);
+/** Whether a file re-exports another module's symbols. Matched on the
+ *  non-comment lines joined with single spaces — not per line —
+ *  because Biome wraps long re-export lists across lines and a
+ *  per-line scan would miss them (gate review finding R1, run
+ *  01M1K7WN06VC6DH2W9HSRTKK3M). Dropping comment lines first keeps
+ *  quoted and documented forms out; the filter can only over-flag,
+ *  never skip real code lines. */
+function reexportMatch(lines: readonly string[]): string | undefined {
+  const code = lines.filter((line) => !isCommentLine(line)).join(" ");
+
+  return RE_EXPORT.exec(code)?.[0];
 }
 
 describe("re-export shim detector (G3, issue #260)", () => {
-  const regressionForms = [
-    'export { checkCrossWikiLinks } from "../src/wiki/crosslinks.ts";',
-    'export * from "./colors.ts";',
-    'export type { Foo } from "./types.ts";',
-    'export { canAnimate, terminalColors } from "./colors.ts";',
+  const regressionForms: readonly (readonly string[])[] = [
+    ['export { checkCrossWikiLinks } from "../src/wiki/crosslinks.ts";'],
+    ['export * from "./colors.ts";'],
+    ['export type { Foo } from "./types.ts";'],
+    ['export { canAnimate, terminalColors } from "./colors.ts";'],
+    ["export {", "  canAnimate,", "  terminalColors,", '} from "./colors.ts";'],
   ];
 
-  const benignForms = [
-    'import { checkWikiFidelity } from "../src/wiki/fidelity.ts";',
-    "export { stem };",
-    "export function main(): Promise<void> {",
-    'export const script = "bin/check-fidelity.ts";',
-    ' * export { checkCrossWikiLinks } from "../src/wiki/crosslinks.ts";',
-    '// export * from "./colors.ts";',
+  const benignForms: readonly (readonly string[])[] = [
+    ['import { checkWikiFidelity } from "../src/wiki/fidelity.ts";'],
+    ["export { stem };"],
+    ["export function main(): Promise<void> {"],
+    ['export const script = "bin/check-fidelity.ts";'],
+    [' * export { checkCrossWikiLinks } from "../src/wiki/crosslinks.ts";'],
+    ['// export * from "./colors.ts";'],
   ];
 
-  for (const line of regressionForms) {
-    it(`flags the shim form: ${line}`, () => {
-      expect(isReExportLine(line)).toBe(true);
+  for (const lines of regressionForms) {
+    it(`flags the shim form: ${lines.join(" ")}`, () => {
+      expect(reexportMatch(lines)).toBeDefined();
     });
   }
 
-  for (const line of benignForms) {
-    it(`ignores the benign line: ${line}`, () => {
-      expect(isReExportLine(line)).toBe(false);
+  for (const lines of benignForms) {
+    it(`ignores the benign lines: ${lines.join(" ")}`, () => {
+      expect(reexportMatch(lines)).toBeUndefined();
     });
   }
 });
@@ -107,12 +116,11 @@ describe("no re-export shims (G3, issue #260)", () => {
         const lines = (await readFile(join(repoRoot, file), "utf8")).split(
           "\n",
         );
+        const match = reexportMatch(lines);
 
-        lines.forEach((line, index) => {
-          if (isReExportLine(line)) {
-            offenders.push(`${file}:${index + 1}: ${line.trim()}`);
-          }
-        });
+        if (match !== undefined) {
+          offenders.push(`${file}: ${match.trim()}`);
+        }
       }
     }
 
