@@ -44,9 +44,7 @@ describe("runContext", () => {
   it("keeps an explicitly passed clock", () => {
     const fixed = new Date("2026-08-20T18:00:00.000Z");
 
-    expect(runContext({ rawDir: RAW_DIR, now: () => fixed }).now()).toBe(
-      fixed,
-    );
+    expect(runContext({ rawDir: RAW_DIR, now: () => fixed }).now()).toBe(fixed);
   });
 
   it("keeps an explicitly passed progress sink", () => {

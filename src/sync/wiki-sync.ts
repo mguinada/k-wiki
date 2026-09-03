@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import {
   cliFail,
   terminalColors as colors,
@@ -7,6 +7,7 @@ import {
 } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { formatDuration, stderrSink } from "../cli/progress.ts";
+import { type RunContext, runContext } from "../cli/run-context.ts";
 import { pathExists, pluralized, repoRoot } from "../cli/shared.ts";
 import {
   type AgentRunFlags,
@@ -143,22 +144,18 @@ export interface LintOptions {
    *  loads once and threads them (R-1, one settings.yml parse per
    *  run); loaded from `settingsPath` otherwise. */
   readonly settings?: AgentSettings | undefined;
-  /** The raw dir; its parent is the data repo the agent runs in. */
-  readonly rawDir: string;
+  /** The run context: raw dir, data root, wiki dir, environment,
+   *  clock, progress sink — built once at the CLI boundary (issue
+   *  #257). The agent runs in the context's data root. */
+  readonly run: RunContext;
   /** Directory holding lint.md. */
   readonly promptsDir: string;
-  /** Environment for child processes; defaults to process.env. */
-  readonly env?: NodeJS.ProcessEnv;
-  /** Clock for the report path date; defaults to the wall clock. */
-  readonly now?: () => Date;
   /** Agent runner; defaults to the real non-interactive invocation. */
   readonly runAgent?: AgentRunner | undefined;
   /** Kill the agent run after this many milliseconds; default 30 min. */
   readonly timeoutMs?: number | undefined;
   /** Heartbeat interval while the agent runs; default 60 s. */
   readonly heartbeatMs?: number | undefined;
-  /** Progress sink (uncolored messages); default: silent. */
-  readonly onProgress?: (message: string) => void;
   /** Pre-run state captured by the caller (the wiki-sync cycle
    *  captures it once so its verification stage can revert to the
    *  same point); captured here when absent. */
@@ -176,32 +173,31 @@ interface LintAgentRun {
  *  is captured, not thrown: the guardrails must run first, and a
  *  guardrail failure names the agent error as its cause. */
 async function invokeLintAgent(
+  run: RunContext,
+  options: LintOptions,
   settings: AgentSettings,
   args: readonly string[],
-  dataRoot: string,
-  env: NodeJS.ProcessEnv,
-  runAgent: AgentRunner,
-  timeoutMs: number | undefined,
-  heartbeatMs: number | undefined,
-  onProgress: (message: string) => void,
-  now: () => Date,
 ): Promise<LintAgentRun> {
-  const startedAt = now().getTime();
+  const startedAt = run.now().getTime();
   const heartbeat = setInterval(() => {
-    const elapsed = formatDuration(now().getTime() - startedAt);
+    const elapsed = formatDuration(run.now().getTime() - startedAt);
 
-    onProgress(`${LINT_HEARTBEAT_PREFIX} (${elapsed})`);
-  }, heartbeatMs ?? 60_000);
+    run.onProgress(`${LINT_HEARTBEAT_PREFIX} (${elapsed})`);
+  }, options.heartbeatMs ?? 60_000);
 
   let stdout = "";
   let error: unknown;
 
   try {
-    ({ stdout } = await runAgent(settings.command, args, {
-      cwd: dataRoot,
-      env,
-      timeoutMs,
-    }));
+    ({ stdout } = await (options.runAgent ?? spawnAgent)(
+      settings.command,
+      args,
+      {
+        cwd: run.dataRoot,
+        env: run.env,
+        timeoutMs: options.timeoutMs,
+      },
+    ));
   } catch (caught) {
     error = caught;
   } finally {
@@ -209,7 +205,7 @@ async function invokeLintAgent(
   }
 
   if (error === undefined) {
-    onProgress("wiki-sync: lint — agent finished");
+    run.onProgress("wiki-sync: lint — agent finished");
   }
 
   return { stdout, error };
@@ -222,10 +218,8 @@ async function invokeLintAgent(
  * applies to its agent run.
  */
 export async function runLintStage(options: LintOptions): Promise<LintResult> {
-  const env = options.env ?? process.env;
-  const now = options.now ?? (() => new Date());
-  const onProgress = options.onProgress ?? (() => {});
-  const dataRoot = dirname(options.rawDir);
+  const { run } = options;
+  const { env, now, onProgress, dataRoot } = run;
   const settings =
     options.settings ??
     (await loadAgentSettings(options.settingsPath, { onProgress }));
@@ -237,7 +231,6 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
     await readPrompt(join(options.promptsDir, "lint.md"))
   ).replaceAll("outputs/lint-<YYYY-MM-DD>.md", reportPath);
   const args = agentArgs(settings, promptText);
-  const runAgent = options.runAgent ?? spawnAgent;
   const pre = options.pre ?? (await capturePreRunState(dataRoot, env));
 
   onProgress(
@@ -245,15 +238,10 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
   );
 
   const { stdout, error: agentError } = await invokeLintAgent(
+    run,
+    options,
     settings,
     args,
-    dataRoot,
-    env,
-    runAgent,
-    options.timeoutMs,
-    options.heartbeatMs,
-    onProgress,
-    now,
   );
 
   const post = await runGuardrails(dataRoot, env, pre);
@@ -300,13 +288,12 @@ export interface CrosslinksResult {
 }
 
 export interface CrosslinksOptions {
-  /** The raw dir; its parent's wiki/ dir is the audited wiki. */
-  readonly rawDir: string;
+  /** The run context: the audit runs over the context's wiki dir.
+   *  Built once at the CLI boundary (issue #257). */
+  readonly run: RunContext;
   /** Domain wiki dirs from the settings' `secondBrain.domains`;
    *  undefined or absent (the key missing) skips the stage entirely. */
   readonly domains?: readonly string[] | undefined;
-  /** Progress sink (uncolored messages); default: silent. */
-  readonly onProgress?: (message: string) => void;
   /** Home dir for `~` expansion in domains; default: `os.homedir()`. */
   readonly home?: string;
 }
@@ -328,17 +315,14 @@ export async function runCrosslinksStage(
     return undefined;
   }
 
-  const onProgress = options.onProgress ?? (() => {});
+  const { run } = options;
   const domains = options.domains.map((dir) => expandHome(dir, options.home));
 
-  onProgress(
+  run.onProgress(
     `wiki-sync: crosslinks — auditing against ${pluralized(domains.length, "domain wiki")}`,
   );
 
-  const report = await checkCrossWikiLinks(
-    join(dirname(options.rawDir), "wiki"),
-    ...domains,
-  );
+  const report = await checkCrossWikiLinks(run.wikiDir, ...domains);
 
   if (report.problems.length > 0) {
     throw new Error(`crosslink audit failed — ${report.problems.join("; ")}`);
@@ -358,10 +342,9 @@ export interface VerificationResult {
 }
 
 export interface VerificationOptions {
-  /** The raw dir; its parent's wiki/ dir is the checked wiki. */
-  readonly rawDir: string;
-  /** Progress sink (uncolored messages); default: silent. */
-  readonly onProgress?: (message: string) => void;
+  /** The run context: the checks run over the context's wiki dir and
+   *  raw dir. Built once at the CLI boundary (issue #257). */
+  readonly run: RunContext;
 }
 
 /**
@@ -375,18 +358,17 @@ export interface VerificationOptions {
 export async function runVerificationStage(
   options: VerificationOptions,
 ): Promise<VerificationResult> {
-  const onProgress = options.onProgress ?? (() => {});
+  const { run } = options;
 
-  onProgress(
+  run.onProgress(
     "wiki-sync: verification — checking citation fidelity and provenance",
   );
 
-  const wikiDir = join(dirname(options.rawDir), "wiki");
-  const fidelity = await checkWikiFidelity(wikiDir, options.rawDir);
+  const fidelity = await checkWikiFidelity(run.wikiDir, run.rawDir);
 
   failProblems("fidelity", fidelity.problems);
 
-  const provenance = await checkWikiProvenance(wikiDir, options.rawDir);
+  const provenance = await checkWikiProvenance(run.wikiDir, run.rawDir);
 
   failProblems("provenance", provenance.problems);
 
@@ -542,8 +524,10 @@ export interface WikiSyncOptions {
    *  CLI parses once (raw-dir resolution) and threads it (R-1, one
    *  sync.json parse per run); parsed from `configPath` otherwise. */
   readonly config?: SyncConfig | undefined;
-  /** The `raw/` directory; its parent is the data repo. */
-  readonly rawDir: string;
+  /** The run context: raw dir, data root, wiki dir, environment,
+   *  clock, progress sink — built once at the CLI boundary (issue
+   *  #257) and threaded through every stage. */
+  readonly run: RunContext;
   /** Path to the agent settings file (settings.yml). */
   readonly settingsPath: string;
   /** Digest destination (the code repo's outputs/); the manifest
@@ -551,18 +535,12 @@ export interface WikiSyncOptions {
   readonly outputsDir: string;
   /** Directory holding ingest.md, incremental.md, and lint.md. */
   readonly promptsDir: string;
-  /** Environment for child processes; defaults to process.env. */
-  readonly env?: NodeJS.ProcessEnv;
-  /** Clock for digests; defaults to the wall clock. */
-  readonly now?: () => Date;
   /** Agent runner for both agent stages; defaults to the real one. */
   readonly runAgent?: AgentRunner;
   /** Kill either agent run after this many milliseconds; default 30 min. */
   readonly timeoutMs?: number | undefined;
   /** Heartbeat interval while an agent runs; default 60 s. */
   readonly heartbeatMs?: number | undefined;
-  /** Progress sink (uncolored messages); default: silent. */
-  readonly onProgress?: (message: string) => void;
 }
 
 /** Count a sync report's copied and removed notes across every
@@ -681,24 +659,22 @@ export function stageLine(stages: readonly string[], name: string): string {
  *  the driver table's row for the config's kind — same cycle, same
  *  lint → verification → commit flow, whatever the source kind. */
 async function runSyncStage(
-  config: SyncConfig,
   options: WikiSyncOptions,
-  env: NodeJS.ProcessEnv,
-  now: () => Date,
-  onProgress: (message: string) => void,
+  config: SyncConfig,
   stages: readonly string[],
 ): Promise<SyncReport> {
+  const { run } = options;
   const kind = syncKindOf(config, options.configPath);
 
-  onProgress(stageLine(stages, "sync"));
+  run.onProgress(stageLine(stages, "sync"));
 
   return await DRIVERS[kind]({
     configPath: options.configPath,
     config,
-    rawDir: options.rawDir,
-    env,
-    now,
-    onProgress: (message) => onProgress(message.text),
+    rawDir: run.rawDir,
+    env: run.env,
+    now: run.now,
+    onProgress: (message) => run.onProgress(message.text),
   });
 }
 
@@ -711,27 +687,24 @@ async function runLintOrSkip(
   preLint: PreRunState,
   settings: AgentSettings,
 ): Promise<LintResult | undefined> {
-  const onProgress = options.onProgress ?? (() => {});
+  const { run } = options;
 
   if (ingest.status !== "ran") {
-    onProgress(`${stageLine(stages, "lint")} skipped (no ingest ran)`);
+    run.onProgress(`${stageLine(stages, "lint")} skipped (no ingest ran)`);
 
     return undefined;
   }
 
-  onProgress(stageLine(stages, "lint"));
+  run.onProgress(stageLine(stages, "lint"));
 
   return await runLintStage({
     settingsPath: options.settingsPath,
     settings,
-    rawDir: options.rawDir,
+    run,
     promptsDir: options.promptsDir,
-    env: options.env ?? process.env,
-    now: options.now ?? (() => new Date()),
     runAgent: options.runAgent,
     timeoutMs: options.timeoutMs,
     heartbeatMs: options.heartbeatMs,
-    onProgress,
     pre: preLint,
   });
 }
@@ -739,22 +712,17 @@ async function runLintOrSkip(
 /** Stage 4: the configured crosslink audit; skipped outright when
  *  the instance carries no `secondBrain.domains` key. */
 async function runCrosslinksOrSkip(
-  options: WikiSyncOptions,
+  run: RunContext,
   domains: readonly string[] | undefined,
-  onProgress: (message: string) => void,
   stages: readonly string[],
 ): Promise<CrosslinksResult | undefined> {
   if (domains === undefined) {
     return undefined;
   }
 
-  onProgress(stageLine(stages, "crosslinks"));
+  run.onProgress(stageLine(stages, "crosslinks"));
 
-  return await runCrosslinksStage({
-    rawDir: options.rawDir,
-    domains,
-    onProgress,
-  });
+  return await runCrosslinksStage({ run, domains });
 }
 
 /** The verification stage with the cycle's revert semantics: on
@@ -762,27 +730,23 @@ async function runCrosslinksOrSkip(
  *  rejecting. */
 async function runVerificationWithRevert(
   options: WikiSyncOptions,
-  dataRoot: string,
-  env: NodeJS.ProcessEnv,
   preLint: PreRunState,
-  onProgress: (message: string) => void,
   stages: readonly string[],
 ): Promise<VerificationResult> {
-  onProgress(stageLine(stages, "verification"));
+  const { run } = options;
+
+  run.onProgress(stageLine(stages, "verification"));
 
   try {
-    return await runVerificationStage({
-      rawDir: options.rawDir,
-      onProgress,
-    });
+    return await runVerificationStage({ run });
   } catch (error) {
-    onProgress(
+    run.onProgress(
       `wiki-sync: verification failed — reverting lint edits to ${preLint.commit.slice(0, 8)} (ingest edits kept)`,
     );
 
-    const post = await runGuardrails(dataRoot, env, preLint);
+    const post = await runGuardrails(run.dataRoot, run.env, preLint);
 
-    await revertToPreRun(dataRoot, env, preLint, post.entries);
+    await revertToPreRun(run.dataRoot, run.env, preLint, post.entries);
 
     throw error;
   }
@@ -792,23 +756,22 @@ async function runVerificationWithRevert(
  *  mirror vault — every cycle, after the commit; skipped outright
  *  when the config has no publish section. */
 async function runPublishOrSkip(
-  options: WikiSyncOptions,
+  run: RunContext,
   publish: PublishConfig | undefined,
-  onProgress: (message: string) => void,
   stages: readonly string[],
 ): Promise<PublishResult | undefined> {
   if (publish === undefined) {
     return undefined;
   }
 
-  onProgress(stageLine(stages, "publish"));
+  run.onProgress(stageLine(stages, "publish"));
 
   return await runPublishStage({
-    dataRoot: dirname(options.rawDir),
+    dataRoot: run.dataRoot,
     mirror: publish.mirror,
     include: publish.include,
     root: publish.root,
-    onProgress,
+    onProgress: run.onProgress,
   });
 }
 
@@ -837,10 +800,8 @@ async function runPublishOrSkip(
 export async function runWikiSync(
   options: WikiSyncOptions,
 ): Promise<WikiSyncResult> {
-  const env = options.env ?? process.env;
-  const now = options.now ?? (() => new Date());
-  const onProgress = options.onProgress ?? (() => {});
-  const dataRoot = dirname(options.rawDir);
+  const { run } = options;
+  const { env, onProgress, dataRoot } = run;
   const settings = await loadAgentSettings(options.settingsPath, {
     onProgress,
   });
@@ -848,29 +809,19 @@ export async function runWikiSync(
   const config =
     options.config ?? (await loadSyncConfig(options.configPath, homedir()));
   const stages = stageNames({ domains, publish: config.publish });
-  const sync = await runSyncStage(
-    config,
-    options,
-    env,
-    now,
-    onProgress,
-    stages,
-  );
+  const sync = await runSyncStage(options, config, stages);
 
   onProgress(stageLine(stages, "ingest"));
 
   const ingest = await runWikiIngest({
     settingsPath: options.settingsPath,
     settings,
-    rawDir: options.rawDir,
+    run,
     outputsDir: options.outputsDir,
     promptsDir: options.promptsDir,
-    env,
-    now,
     runAgent: options.runAgent,
     timeoutMs: options.timeoutMs,
     heartbeatMs: options.heartbeatMs,
-    onProgress,
   });
 
   // The verification stage's revert target: everything the ingest
@@ -878,18 +829,10 @@ export async function runWikiSync(
   const preLint = await capturePreRunState(dataRoot, env);
 
   const lint = await runLintOrSkip(options, ingest, stages, preLint, settings);
-  const crosslinks = await runCrosslinksOrSkip(
-    options,
-    domains,
-    onProgress,
-    stages,
-  );
+  const crosslinks = await runCrosslinksOrSkip(run, domains, stages);
   const verification = await runVerificationWithRevert(
     options,
-    dataRoot,
-    env,
     preLint,
-    onProgress,
     stages,
   );
 
@@ -909,12 +852,7 @@ export async function runWikiSync(
     crosslinks,
     verification,
     commit: await commitDataRepo(dataRoot, env, formatCommitMessage(summary)),
-    publish: await runPublishOrSkip(
-      options,
-      config.publish,
-      onProgress,
-      stages,
-    ),
+    publish: await runPublishOrSkip(run, config.publish, stages),
   };
 }
 
@@ -1162,16 +1100,19 @@ async function runCycle(
   const config = await loadSyncConfig(configPath, homedir());
   const rawDir = positional[1] ?? resolveRawDir(config.dataRoot, repoRoot);
 
+  // The run context, built once at this CLI boundary from the raw
+  // dir it resolved and the sink it derived (issue #257).
+  const run = runContext({ rawDir, onProgress });
+
   return await runWikiSync({
     configPath,
     config,
-    rawDir,
+    run,
     settingsPath: runFlags.settings ?? join(repoRoot, "settings.yml"),
     outputsDir: runFlags.outputs ?? join(repoRoot, "outputs"),
     promptsDir: join(repoRoot, "prompts"),
     timeoutMs: runFlags.timeoutMs,
     heartbeatMs: animated ? 100 : undefined,
-    onProgress,
   });
 }
 
