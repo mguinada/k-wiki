@@ -26,7 +26,6 @@ import { loadSyncConfig, resolveRawDir } from "../sync/config.ts";
 import { runWikiIngest } from "./wiki-ingest.ts";
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
-/** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
 const HELP = `Usage: wiki-ingest [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [--note <text>] [<raw-dir>]
 
 Run the wiki agent headless over the sources that changed since the
