@@ -6,8 +6,10 @@ import { warnTrackedIgnored } from "../../src/ingest/snapshot.ts";
 
 /**
  * snapshot unit tests (issue #258, moved with the module from
- * wiki-ingest.test.ts): the gitignore guards, the legacy snapshot
- * adoption, and the tracked-but-ignored pre-flight warning.
+ * wiki-ingest.test.ts): the tracked-but-ignored pre-flight warning's
+ * non-repo case. The gitignore guards, the legacy snapshot adoption,
+ * and the run's other snapshot behavior stay covered as
+ * runWikiIngest-level tests in tests/ingest/wiki-ingest.test.ts.
  */
 
 const tempDirs: string[] = [];
