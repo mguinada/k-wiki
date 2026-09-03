@@ -8,10 +8,12 @@
  */
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
+import { type RunContextInput, runContext } from "../../src/cli/run-context.ts";
+import type { AgentRunner } from "../../src/ingest/agent-run.ts";
 import {
   type Manifest,
   serializeManifest,
@@ -145,4 +147,174 @@ export async function makeExpungeWiki(track: Track): Promise<string> {
   }
 
   return wikiRoot;
+}
+
+export const SETTINGS_YML = `# Agent configuration (issue #11).
+command: pi
+model: GLM-5.2 # trailing comment
+reasoning: "high"
+`;
+
+/** A wiki page body with valid §9 frontmatter (guardrail 2 must pass). */
+export function wikiPage(body: string): string {
+  return [
+    "---",
+    'title: "Page"',
+    "type: concept",
+    "created: 2026-08-20",
+    "updated: 2026-08-20",
+    "tags:",
+    "  - llm",
+    "sources:",
+    '  - "[[src]]"',
+    "---",
+    "",
+    body,
+    "",
+  ].join("\n");
+}
+
+/** The guardrail-2 saboteur: writes frontmatter-free pages, reports success. */
+export function frontmatterSaboteur(...pages: string[]): AgentRunner {
+  return async (_command, _args, options) => {
+    for (const page of pages) {
+      await writeFile(join(options.cwd, "wiki", page), "no frontmatter\n");
+    }
+
+    return { stdout: "rogue report", stderr: "" };
+  };
+}
+
+export interface Harness {
+  readonly dataRoot: string;
+  readonly outputsDir: string;
+  /** The snapshot's home since #112: the data repo's outputs/. */
+  readonly snapshotPath: string;
+  /** The pre-#112 snapshot location (the wrapper's outputs dir). */
+  readonly legacySnapshotPath: string;
+  readonly promptsDir: string;
+  readonly settingsPath: string;
+  readonly invocations: {
+    command: string;
+    args: readonly string[];
+    cwd: string;
+  }[];
+  runAgent: AgentRunner;
+}
+
+/** Fixture prompt files plus a recording, wiki-writing fake agent. */
+export async function makeHarness(
+  notes: Record<string, string>,
+  track: Track,
+): Promise<Harness> {
+  const dataRoot = await makeDataRepo(notes, track);
+  // The wrapper's outputs dir is NOT the data repo's (issue #112): a
+  // separate temp dir proves the snapshot follows the data repo while
+  // digests stay with the wrapper.
+  const outputsDir = await mkdtemp(join(tmpdir(), "k-wiki-ingest-outputs-"));
+
+  track(outputsDir);
+
+  const promptsDir = join(dataRoot, "prompts");
+
+  await mkdir(promptsDir, { recursive: true });
+  await writeFile(join(promptsDir, "ingest.md"), "FULL PROMPT");
+  await writeFile(join(promptsDir, "incremental.md"), "INCREMENTAL PROMPT");
+  await writeFile(join(promptsDir, "expunge.md"), "EXPUNGE PROMPT");
+
+  const settingsPath = join(dataRoot, "settings.yml");
+
+  await writeFile(settingsPath, SETTINGS_YML);
+
+  const invocations: Harness["invocations"] = [];
+  const runAgent: AgentRunner = async (command, args, options) => {
+    invocations.push({ command, args, cwd: options.cwd });
+    await mkdir(join(options.cwd, "wiki", "concepts"), { recursive: true });
+    await writeFile(
+      join(options.cwd, "wiki", "concepts", "new.md"),
+      wikiPage("New"),
+      { flag: "wx" },
+    ).catch(() => {});
+    await writeFile(
+      join(options.cwd, "wiki", "index.md"),
+      wikiPage("# Index v2"),
+    );
+    await writeFile(
+      join(options.cwd, "wiki", "A-page.md"),
+      wikiPage("# A page v2"),
+    );
+    await rm(join(options.cwd, "wiki", "gone.md")).catch(() => {});
+
+    return { stdout: "agent final report", stderr: "" };
+  };
+
+  return {
+    dataRoot,
+    outputsDir,
+    snapshotPath: join(dataRoot, "outputs", "last-ingested-manifest.json"),
+    legacySnapshotPath: join(outputsDir, "last-ingested-manifest.json"),
+    promptsDir,
+    settingsPath,
+    invocations,
+    runAgent,
+  };
+}
+
+/** The ingest options for `h`, with optional run-context overrides
+ *  (a recording sink, a controllable clock) folded into the run. */
+export function optionsFor(h: Harness, run: Partial<RunContextInput> = {}) {
+  return {
+    settingsPath: h.settingsPath,
+    run: runContext({
+      rawDir: join(h.dataRoot, "raw"),
+      now: () => new Date("2026-08-20T18:00:00.000Z"),
+      ...run,
+    }),
+    outputsDir: h.outputsDir,
+    promptsDir: h.promptsDir,
+    runAgent: h.runAgent,
+  };
+}
+
+/** The file names currently under `dir`, or [] when it does not exist. */
+export async function runFiles(dir: string): Promise<string[]> {
+  const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+
+  return entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => entry.name)
+    .sort();
+}
+
+/** Undo a test's forced `process.stderr.isTTY`. */
+export function restoreStderrTty(prior: PropertyDescriptor | undefined): void {
+  if (prior === undefined) {
+    delete (process.stderr as { isTTY?: boolean }).isTTY;
+
+    return;
+  }
+
+  Object.defineProperty(process.stderr, "isTTY", prior);
+}
+
+/** Undo a test's NO_COLOR override. */
+export function restoreNoColor(prior: string | undefined): void {
+  if (prior === undefined) {
+    delete process.env.NO_COLOR;
+
+    return;
+  }
+
+  process.env.NO_COLOR = prior;
+}
+
+/** The recorded invocation at `index`; fails loudly when absent. */
+export function invocation(h: Harness, index: number) {
+  const recorded = h.invocations[index];
+
+  if (recorded === undefined) {
+    throw new Error(`agent was not invoked (call ${index})`);
+  }
+
+  return recorded;
 }

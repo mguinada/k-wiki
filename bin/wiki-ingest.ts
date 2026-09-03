@@ -1,4 +1,4 @@
 #!/usr/bin/env node
-import { main } from "../src/ingest/wiki-ingest.ts";
+import { main } from "../src/ingest/wiki-ingest-cli.ts";
 
 await main();

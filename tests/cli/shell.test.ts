@@ -179,10 +179,9 @@ describe("parseArgs", () => {
 
 describe("parseArgs repeatable flags", () => {
   it("collects every occurrence's value in argv order", () => {
-    const parsed = parseArgs(
-      ["--sources", "a/x.md", "--sources", "b/y.md"],
-      { repeat: ["--sources"] },
-    );
+    const parsed = parseArgs(["--sources", "a/x.md", "--sources", "b/y.md"], {
+      repeat: ["--sources"],
+    });
 
     expect(parsed.repeated.get("--sources")).toEqual(["a/x.md", "b/y.md"]);
   });
@@ -215,7 +214,15 @@ describe("parseArgs repeatable flags", () => {
 
   it("collects repeat values beside single value flags and positionals", () => {
     const parsed = parseArgs(
-      ["--settings", "a.yml", "--sources", "a/x.md", "raw", "--sources", "b/y.md"],
+      [
+        "--settings",
+        "a.yml",
+        "--sources",
+        "a/x.md",
+        "raw",
+        "--sources",
+        "b/y.md",
+      ],
       { value: ["--settings"], repeat: ["--sources"] },
     );
 
