@@ -14,8 +14,8 @@
 # only via a verified kill (Killed / Timeout) or — once the
 # equivalent-mutant registry lands — an adjudication record, and
 # entries the run never generated (out of its scope) stay listed. Full
-# dispatched runs file with --absence-kills (absence = death): that is
-# the reconciliation / ledger-rewrite role. Equivalents recorded only
+# dispatched runs from the default branch file with --absence-kills
+# (absence = death): that is the reconciliation / ledger-rewrite role. Equivalents recorded only
 # in PR bodies re-file nightly until the registry exists — known,
 # bounded, and the pressure to build it.
 #
@@ -141,11 +141,15 @@ jobs:
             "repos/${{ github.repository }}/actions/runs/${{ steps.run.outputs.id }}/artifacts" \
             --jq '.artifacts[] | select(.name == "mutation-report") | .id')
           # Scope: a dispatched CI run is the chunked code-wide run —
-          # it covers all of src/, so absence kills. The nightly
-          # windowed run leaves out-of-scope entries listed.
+          # it covers all of src/, so absence kills. But only a dispatch
+          # on the default branch: a feature-branch dispatch covers that
+          # branch's src/, not main's, so absence there is out of scope,
+          # not death. The nightly windowed run leaves out-of-scope
+          # entries listed.
           event=$(gh run view "${{ steps.run.outputs.id }}" --json event --jq .event)
+          head_branch=$(gh run view "${{ steps.run.outputs.id }}" --json headBranch --jq .headBranch)
           scope=""
-          if [ "$event" = "workflow_dispatch" ]; then
+          if [ "$event" = "workflow_dispatch" ] && [ "$head_branch" = "main" ]; then
             scope="--absence-kills"
           fi
           node dev/mutation-report.ts dl/mutation.json \

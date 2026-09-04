@@ -57,15 +57,17 @@ case "${1:-}" in
 esac
 
 # The base resolves once (flag > $MUTATION_BASE > $MUTATION_WINDOW_DAYS
-# window > origin/main — src/quality/mutation-scope.ts owns the rule) and
-# is printed so run logs name what was diffed against. Plain two-endpoint
-# diff (not base...HEAD): it includes uncommitted work, so the local run
-# sees what the agent actually changed; --print-base feeds the same rule to
-# the skip diagnostics below. src/quality/mutation-scope.ts turns that diff
-# into hunk-range --mutate patterns.
+# window > origin/main — src/quality/mutation-scope.ts owns the rule)
+# and is printed so run logs name what was diffed against; the second
+# call takes --base "$base" so the diffed base is exactly the logged
+# one (a window base re-resolved at a later instant could differ).
+# Plain two-endpoint diff (not base...HEAD): it includes uncommitted
+# work, so the local run sees what the agent actually changed.
+# src/quality/mutation-scope.ts turns that diff into hunk-range
+# --mutate patterns.
 base=$(node dev/mutation-scope.ts --print-base)
 echo "Mutation base: $base"
-patterns=$(node dev/mutation-scope.ts)
+patterns=$(node dev/mutation-scope.ts --base "$base")
 
 if [ -z "$patterns" ]; then
   changed=$(git diff --name-only "$base" -- 'src/*.ts'; git ls-files --others --exclude-standard -- 'src/*.ts')

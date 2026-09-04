@@ -251,7 +251,7 @@ describe("mutation-scope CLI", () => {
     const git: GitText = () => "";
 
     try {
-      main([], git);
+      main([], git, {});
 
       expect(log).not.toHaveBeenCalled();
     } finally {
@@ -273,7 +273,7 @@ describe("mutation-scope CLI", () => {
         : "";
 
     try {
-      main([], git);
+      main([], git, {});
 
       expect(log.mock.calls[0]?.[0]).toBe("src/a.ts:12-20");
     } finally {
@@ -482,7 +482,7 @@ describe("mutation-scope --base and --print-base", () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
 
     try {
-      main(["--print-base"], () => "");
+      main(["--print-base"], () => "", {});
 
       expect(log.mock.calls[0]?.[0]).toBe("origin/main");
       expect(log).toHaveBeenCalledTimes(1);
