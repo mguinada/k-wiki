@@ -13,6 +13,7 @@
     "format": "biome format --write .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "audit": "npm audit --omit=dev --audit-level=high && npm audit --audit-level=critical",
     "e2e": "vitest run --config vitest.e2e.config.ts",
     "health": "node bin/check-raw",
     "board-triage": "node dev/board-triage.ts",

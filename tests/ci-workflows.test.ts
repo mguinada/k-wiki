@@ -128,16 +128,17 @@ function parseJob(text: string, jobId: string): WorkflowJob {
   return job;
 }
 
-async function loadMutationJob(): Promise<WorkflowJob> {
+async function loadJob(jobId: string): Promise<WorkflowJob> {
   const workflow = await readFile(
     resolve(repoRoot, ".github/workflows/ci.yml"),
     "utf8",
   );
 
-  return parseJob(workflow, "mutation");
+  return parseJob(workflow, jobId);
 }
 
-const job = await loadMutationJob();
+const job = await loadJob("mutation");
+const gates = await loadJob("typecheck");
 
 describe("ci.yml mutation job (issue #215 guard)", () => {
   it("stays continue-on-error so a failing advisory run never gates a merge", () => {
@@ -154,5 +155,53 @@ describe("ci.yml mutation job (issue #215 guard)", () => {
     );
 
     expect(annotate?.run?.startsWith('echo "::error')).toBe(true);
+  });
+});
+
+describe("ci.yml audit guard (issue #292)", () => {
+  const npmCiIndex = gates.steps.findIndex((step) => step.run === "npm ci");
+
+  it("audits the production tree at high level after npm ci", () => {
+    const auditIndex = gates.steps.findIndex(
+      (step) => step.run === "npm audit --omit=dev --audit-level=high",
+    );
+
+    expect(auditIndex).toBeGreaterThan(npmCiIndex);
+  });
+
+  it("runs the production-tree audit as a blocking step", () => {
+    const blocking = gates.steps.filter(
+      (step) =>
+        step.run === "npm audit --omit=dev --audit-level=high" &&
+        !("continue-on-error" in step),
+    );
+
+    expect(blocking).toHaveLength(1);
+  });
+
+  it("audits the full tree at critical level as a blocking step", () => {
+    const blocking = gates.steps.filter(
+      (step) =>
+        step.run === "npm audit --audit-level=critical" &&
+        !("continue-on-error" in step),
+    );
+
+    expect(blocking).toHaveLength(1);
+  });
+
+  it("runs the advisory full-tree audit with continue-on-error", () => {
+    const advisory = gates.steps.find(
+      (step) => step.run === "npm audit --audit-level=high",
+    );
+
+    expect(advisory?.["continue-on-error"]).toBe("true");
+  });
+
+  it("emits each advisory finding as a warning annotation", () => {
+    const annotate = gates.steps.find((step) =>
+      step.run?.includes("::warning"),
+    );
+
+    expect(annotate?.run).toContain("::warning");
   });
 });
