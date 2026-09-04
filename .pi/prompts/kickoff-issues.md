@@ -30,7 +30,7 @@ With two or more issues and a `subagent` tool available, launch one `delegate` p
 2. `herdr agent start "issue-<N>" --kind pi --pane <pane-id>`
 3. `herdr agent prompt "issue-<N>" "<path-specific opening> You are already in worktree <path> on branch issue-<N>-<slug> from origin/<default-branch> — skip the skill's branch/worktree step. Report twice: herdr agent prompt <host-pane-id> 'issue #<N>: <PR URL>' as soon as the PR opens (the pipeline may still be running), and one final line after your handoff: 'issue #<N>: <outcome>, <PR URL>'; if either report fails, print the same line in your own pane."` — without `--wait`. The path-specific opening:
    - **regular:** `/do-gh-issue #<N>: <url>.`
-   - **rolling:** `Load the mutation-triage skill. Kill the survivors listed in issue #<N> (rolling mutation report, label `mutation`). Do not close the issue; it is a living report. Record equivalent mutants with a justification line in the PR body instead of hunting them.`
+   - **rolling:** `Load the mutation-triage skill. Kill the survivors listed in issue #<N> (rolling mutation report, label `mutation`). Do not close the issue; it is a living report. Record equivalent mutants in the registry instead of hunting them.`
    The worktree clause and the twice-report clause are shared verbatim by both paths.
 
 Confirm pickup only after the last kickoff: `herdr agent wait "issue-<N>" --until working --timeout 60000`; on timeout, read the pane and record — never answer prompts for the user.
