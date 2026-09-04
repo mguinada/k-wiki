@@ -43,5 +43,5 @@ end with:
   contrasting;
 - candidates considered and rejected, with the reason (no explicit
   contrast, one-sided, tension-not-contrast);
-- the check-links result (run `npm run check-links -- <wiki-dir>` from
+- the check-links result (run `bin/check-links <wiki-dir>` from
   the code-repo checkout).
