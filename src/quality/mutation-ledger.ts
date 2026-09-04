@@ -84,6 +84,7 @@ function parseLedgerBlock(body: string): Ledger | undefined {
     if (
       parsed.schema !== 1 ||
       typeof parsed.entries !== "object" ||
+      Array.isArray(parsed.entries) ||
       parsed.entries === null
     ) {
       return undefined;

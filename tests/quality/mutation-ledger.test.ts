@@ -127,6 +127,28 @@ describe("ledgerFromBody", () => {
 
     expect(ledgerFromBody(body)).toEqual(ledger);
   });
+
+  it("falls back to the rendered list when the block carries a wrong shape", () => {
+    const body = [
+      "```",
+      "Survived  src/old.ts:99  Stale",
+      "```",
+      '<!-- k-wiki-mutants-ledger: {"schema":1,"entries":["not","an","object"]} -->',
+    ].join("\n");
+
+    expect(ledgerFromBody(body)).toEqual({
+      entries: [survived("src/old.ts", 99, "Stale")],
+    });
+  });
+
+  it("reads an empty-entries block as an empty ledger", () => {
+    const body = [
+      "No actionable mutants — nothing survived, nothing uncovered.",
+      '<!-- k-wiki-mutants-ledger: {"schema":1,"entries":{}} -->',
+    ].join("\n");
+
+    expect(ledgerFromBody(body)).toEqual({ entries: [] });
+  });
 });
 
 describe("bootstrapEntries", () => {

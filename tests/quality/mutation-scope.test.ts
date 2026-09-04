@@ -464,6 +464,20 @@ describe("mutation-scope --base and --print-base", () => {
     }
   });
 
+  it("exits 1 naming --base when its value is absent", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      main(["--base"], () => "");
+
+      expect(error.mock.calls[0]?.[0]).toContain("--base requires a value");
+      expect(process.exitCode).toBe(1);
+    } finally {
+      error.mockRestore();
+      process.exitCode = undefined;
+    }
+  });
+
   it("prints only the resolved base for --print-base", () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
 
