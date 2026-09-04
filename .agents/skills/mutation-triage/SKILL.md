@@ -40,15 +40,26 @@ of the advisory workflow in AGENTS.md, never a gate.
      side-effect-free calls). Do not chase it. Record it in the
      equivalent-mutant registry, `.mutants-registry.json` at the repo
      root, **in your PR**: run `npm run mutation:survivors -- --ids`
-     for the mutant's identity, then add an entry keyed by that id
-     with `bucket: "equivalent"`, a one-line justification, the PR
-     link, and the date. `bucket: "artifact"` is for measurement
-     artifacts (plausibly killable) — never mix the two. PR review of
-     the registry diff is the human-judgment gate; a receipt-less
-     entry fails the unit suite. This record (or a `// Stryker
-     disable` for a location that should never be mutated at all,
-     with its written PR-body justification) is the only accepted
-     escape valve.
+     for the mutant's identity, then add one entry keyed by that id
+     in exactly this shape:
+
+     ```json
+     "<id from --ids>": {
+       "bucket": "equivalent",
+       "justification": "One line: why no test can ever observe this sabotage.",
+       "pr": "https://github.com/mguinada/k-wiki/pull/<this PR>",
+       "date": "<YYYY-MM-DD, the day you adjudicate>"
+     }
+     ```
+
+     `bucket: "artifact"` is for measurement artifacts (plausibly
+     killable) — the same entry shape, never mix the two buckets. PR
+     review of the registry diff is the human-judgment gate;
+     `tests/quality/mutation-registry.test.ts` enforces the schema —
+     a receipt-less or malformed entry fails `npm test`. This record
+     (or a `// Stryker disable` for a location that should never be
+     mutated at all, with its written PR-body justification) is the
+     only accepted escape valve.
 
 4. **Verify the batch — one run.** Do not re-run after each individual
    fix. Re-run the same command from step 1 once, after the batch.
