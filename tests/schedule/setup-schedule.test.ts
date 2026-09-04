@@ -245,7 +245,7 @@ function arrayOf(value: PlistValue | undefined): readonly PlistValue[] {
 describe("launchdPlist", () => {
   const base = {
     nodePath: "/opt/node/bin/node",
-    scriptPath: "/Users/me/Lab/k-wiki/bin/scheduled-run.ts",
+    scriptPath: "/Users/me/Lab/k-wiki/bin/scheduled-run",
     home: "/Users/me",
     logDir: "/Users/me/Library/Logs/k-wiki",
   } as const;
@@ -260,7 +260,7 @@ describe("launchdPlist", () => {
   it("runs node against the scheduled-run script by absolute path, in order", () => {
     expect(arrayOf(plist.ProgramArguments)).toEqual([
       "/opt/node/bin/node",
-      "/Users/me/Lab/k-wiki/bin/scheduled-run.ts",
+      "/Users/me/Lab/k-wiki/bin/scheduled-run",
     ]);
   });
 
@@ -306,7 +306,7 @@ describe("launchdPlist", () => {
     const weird = parsePlistDict(
       launchdPlist({
         nodePath: "/opt/a<b>&c/node",
-        scriptPath: "/Users/me&Lab/k-wiki/bin/scheduled-run.ts",
+        scriptPath: "/Users/me&Lab/k-wiki/bin/scheduled-run",
         home: "/Users/me<home>",
         logDir: "/Users/me/Library&Logs/k-wiki",
         intervalSeconds: 1800,
@@ -315,7 +315,7 @@ describe("launchdPlist", () => {
 
     expect(arrayOf(weird.ProgramArguments)).toEqual([
       "/opt/a<b>&c/node",
-      "/Users/me&Lab/k-wiki/bin/scheduled-run.ts",
+      "/Users/me&Lab/k-wiki/bin/scheduled-run",
     ]);
     expect(dictOf(weird.EnvironmentVariables).HOME).toBe("/Users/me<home>");
     expect(weird.StandardOutPath).toBe(
@@ -455,7 +455,7 @@ describe("main --print node path pinning", () => {
 
     const stdout = await new Promise<string>((resolve, reject) => {
       const child = spawn(nodeSymlink, [
-        join(repoRoot, "bin", "setup-schedule.ts"),
+        join(repoRoot, "bin", "setup-schedule"),
         "--print",
       ]);
       let out = "";
@@ -796,7 +796,7 @@ describe("setup-schedule main wiring (issue #240 kill batch)", () => {
       logSpy.mockRestore();
     }
 
-    expect(printed.join("\n")).toContain("bin/scheduled-run.ts");
+    expect(printed.join("\n")).toContain("bin/scheduled-run</string>");
 
     await rm(home, { recursive: true, force: true });
   });

@@ -10,7 +10,7 @@ import {
 } from "../../src/fixtures/generate.ts";
 import { repoRoot, runCli } from "./helpers.ts";
 
-const SCHEDULED_RUN_SCRIPT = join(repoRoot, "bin", "scheduled-run.ts");
+const SCHEDULED_RUN_SCRIPT = join(repoRoot, "bin", "scheduled-run");
 
 /**
  * scheduled-run e2e (issue #14): the real unattended wrapper as a

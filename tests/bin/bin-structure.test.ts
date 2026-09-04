@@ -17,7 +17,9 @@ import { describe, expect, it } from "vitest";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-/** Recursively collect repo-relative .ts paths under `root`. */
+/**
+ * Recursively collect repo-relative .ts paths under `root`.
+ */
 async function collectTsFiles(root: string, prefix = ""): Promise<string[]> {
   const entries = await readdir(root, { withFileTypes: true });
   const files: string[] = [];
@@ -28,6 +30,31 @@ async function collectTsFiles(root: string, prefix = ""): Promise<string[]> {
     if (entry.isDirectory()) {
       files.push(...(await collectTsFiles(join(root, entry.name), rel)));
     } else if (entry.isFile() && entry.name.endsWith(".ts")) {
+      files.push(rel);
+    }
+  }
+
+  return files.sort();
+}
+
+/**
+ * Recursively collect every regular file under `root` — the bin/
+ * launcher set since issue #156 dropped the `.ts` extension: a
+ * launcher is any file in `bin/` (shebang, exec bit, referenced).
+ */
+async function collectLauncherFiles(
+  root: string,
+  prefix = "",
+): Promise<string[]> {
+  const entries = await readdir(root, { withFileTypes: true });
+  const files: string[] = [];
+
+  for (const entry of entries) {
+    const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
+
+    if (entry.isDirectory()) {
+      files.push(...(await collectLauncherFiles(join(root, entry.name), rel)));
+    } else if (entry.isFile()) {
       files.push(rel);
     }
   }
@@ -213,7 +240,7 @@ describe("bin/ launcher structure (issue #135)", () => {
 
   it("every main()-exporting module under src/ or scripts/ is imported by some bin/ or dev/ launcher", async () => {
     const launcherFiles = [
-      ...(await collectTsFiles(join(repoRoot, "bin"), "bin")),
+      ...(await collectLauncherFiles(join(repoRoot, "bin"), "bin")),
       ...(await collectTsFiles(join(repoRoot, "dev"), "dev")),
     ];
     const launcherText = await Promise.all(
@@ -246,7 +273,7 @@ describe("bin/ launcher structure (issue #135)", () => {
 
   it("every bin/ and dev/ launcher is committed 100755 with a node shebang and referenced by package.json or dev/mutation-changed.sh", async () => {
     const launcherFiles = [
-      ...(await collectTsFiles(join(repoRoot, "bin"), "bin")),
+      ...(await collectLauncherFiles(join(repoRoot, "bin"), "bin")),
       ...(await collectTsFiles(join(repoRoot, "dev"), "dev")),
     ];
     const pkg = await readPackageJson();
@@ -257,9 +284,7 @@ describe("bin/ launcher structure (issue #135)", () => {
 
     const referenced = new Set<string>([
       ...nodeScriptTargets(pkg),
-      ...[...shell.matchAll(/((?:bin|dev)\/[\w.-]+\.ts)/g)].map(
-        (m) => m[1] ?? "",
-      ),
+      ...[...shell.matchAll(/((?:bin|dev)\/[\w.-]+)/g)].map((m) => m[1] ?? ""),
     ]);
 
     // Under Stryker the test tree is the sandbox (an untracked copy
@@ -314,18 +339,30 @@ describe("bin/ launcher structure (issue #135)", () => {
 describe("launcher two-class rule (issue #253)", () => {
   /**
    * The wiki runtime interface and the development-lifecycle tooling
-   * live in separate launcher classes: `bin/*.ts` launches the wiki
-   * runtime (meaningful outside this repo), `dev/*.ts` launches
+   * live in separate launcher classes: `bin/<name>` (extensionless,
+   * issue #156) launches the wiki runtime (meaningful outside this
+   * repo), `dev/<name>.ts` launches
    * repo-internal development commands whose src domains are
    * quality/, board/, and fixtures/. A launcher in the wrong class
    * blurs the two-context doctrine the split exists to encode.
    */
   const DEV_DOMAIN_IMPORT = /^\.\.\/src\/(?:quality|board|fixtures)\//;
 
+  it("no bin/ launcher carries a .ts extension (issue #156)", async () => {
+    const offenders = (
+      await collectLauncherFiles(join(repoRoot, "bin"), "bin")
+    ).filter((file) => file.endsWith(".ts"));
+
+    expect(offenders).toEqual([]);
+  });
+
   it("no bin/ launcher imports a dev-only src domain (quality/, board/, fixtures/)", async () => {
     const offenders: string[] = [];
 
-    for (const file of await collectTsFiles(join(repoRoot, "bin"), "bin")) {
+    for (const file of await collectLauncherFiles(
+      join(repoRoot, "bin"),
+      "bin",
+    )) {
       const imported = LAUNCHER_IMPORT.exec(
         await readFile(join(repoRoot, file), "utf8"),
       )?.[1];

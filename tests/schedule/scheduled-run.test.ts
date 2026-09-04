@@ -932,7 +932,7 @@ describe("runScheduledCycle with the real wiki-sync spawner", () => {
 
     await mkdir(join(repoRoot, "bin"), { recursive: true });
     await writeFile(
-      join(repoRoot, "bin", "wiki-sync.ts"),
+      join(repoRoot, "bin", "wiki-sync"),
       [
         'console.log("digest-from-stdout");',
         'console.error("progress-from-stderr");',
@@ -961,7 +961,7 @@ describe("runScheduledCycle with the real wiki-sync spawner", () => {
     const { runGitStep } = fakeGit();
 
     await mkdir(join(repoRoot, "bin"), { recursive: true });
-    await writeFile(join(repoRoot, "bin", "wiki-sync.ts"), "process.exit(3);");
+    await writeFile(join(repoRoot, "bin", "wiki-sync"), "process.exit(3);");
 
     const outcome = await runScheduledCycle({
       dataRoot: dir,
@@ -986,7 +986,7 @@ describe("runScheduledCycle with the real wiki-sync spawner", () => {
 
     await mkdir(join(repoRoot, "bin"), { recursive: true });
     await writeFile(
-      join(repoRoot, "bin", "wiki-sync.ts"),
+      join(repoRoot, "bin", "wiki-sync"),
       `process.kill(process.pid, ${JSON.stringify("SIGKILL")});`,
     );
 
@@ -1609,7 +1609,7 @@ describe("runScheduledCycle streamed output hygiene", () => {
 
     await mkdir(join(repoRoot, "bin"), { recursive: true });
     await writeFile(
-      join(repoRoot, "bin", "wiki-sync.ts"),
+      join(repoRoot, "bin", "wiki-sync"),
       [
         'console.log("kept-stdout");',
         "console.log();",
@@ -1640,7 +1640,7 @@ describe("runScheduledCycle streamed output hygiene", () => {
 
     await mkdir(join(repoRoot, "bin"), { recursive: true });
     await writeFile(
-      join(repoRoot, "bin", "wiki-sync.ts"),
+      join(repoRoot, "bin", "wiki-sync"),
       [
         'process.stdout.write("torn-");',
         'setTimeout(() => { process.stdout.write("line\\n"); }, 30);',
@@ -1669,7 +1669,7 @@ describe("runScheduledCycle streamed output hygiene", () => {
 
     await mkdir(join(repoRoot, "bin"), { recursive: true });
     await writeFile(
-      join(repoRoot, "bin", "wiki-sync.ts"),
+      join(repoRoot, "bin", "wiki-sync"),
       [
         'process.stderr.write("torn-err");',
         'setTimeout(() => { process.stderr.write("or\\n"); }, 30);',
@@ -1698,7 +1698,7 @@ describe("runScheduledCycle streamed output hygiene", () => {
 
     await mkdir(join(repoRoot, "bin"), { recursive: true });
     await writeFile(
-      join(repoRoot, "bin", "wiki-sync.ts"),
+      join(repoRoot, "bin", "wiki-sync"),
       [
         "process.stdout.write(Buffer.from([0xc3]));",
         'setTimeout(() => { process.stdout.write(Buffer.concat([Buffer.from([0xa9]), Buffer.from("\\n")])); }, 30);',
@@ -1727,7 +1727,7 @@ describe("runScheduledCycle streamed output hygiene", () => {
 
     await mkdir(join(repoRoot, "bin"), { recursive: true });
     await writeFile(
-      join(repoRoot, "bin", "wiki-sync.ts"),
+      join(repoRoot, "bin", "wiki-sync"),
       'process.stdout.write("first\\nsecond\\n");',
     );
 
@@ -1753,7 +1753,7 @@ describe("runScheduledCycle streamed output hygiene", () => {
 
     await mkdir(join(repoRoot, "bin"), { recursive: true });
     await writeFile(
-      join(repoRoot, "bin", "wiki-sync.ts"),
+      join(repoRoot, "bin", "wiki-sync"),
       'process.stdout.write("tail-without-newline");',
     );
 

@@ -11,7 +11,7 @@ import { parsePageFields } from "../../src/wiki/pages.ts";
 
 const script = join(
   dirname(fileURLToPath(import.meta.url)),
-  "../../bin/backfill-origin.ts",
+  "../../bin/backfill-origin",
 );
 
 const run = promisify(execFile);

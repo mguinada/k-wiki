@@ -9,7 +9,7 @@ import { buildOriginUri, parseOrigin } from "../../scripts/open-origin.ts";
 
 const script = join(
   dirname(fileURLToPath(import.meta.url)),
-  "../../bin/open-origin.ts",
+  "../../bin/open-origin",
 );
 
 const tempDirs: string[] = [];

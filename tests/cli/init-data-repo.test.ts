@@ -351,7 +351,7 @@ describe("data:init bin launcher", () => {
 
   it("seeds the data root named by the default sync.json when imported through its bin launcher", async () => {
     const repo = await stageRepo();
-    const modulePath = join(repo, "bin", "init-data-repo.ts");
+    const modulePath = join(repo, "bin", "init-data-repo");
 
     const { out } = await importWithArgv(modulePath, []);
 
@@ -360,7 +360,7 @@ describe("data:init bin launcher", () => {
 
   it("seeds the data root of the config given as an argument, not the default one", async () => {
     const repo = await stageRepo();
-    const modulePath = join(repo, "bin", "init-data-repo.ts");
+    const modulePath = join(repo, "bin", "init-data-repo");
     const argDataRoot = join(repo, "data-arg");
     const configPath = join(repo, "arg-sync.json");
 
@@ -376,7 +376,7 @@ describe("data:init bin launcher", () => {
 
   it("seeds the second-brain marker when --second-brain is passed", async () => {
     const repo = await stageRepo();
-    const modulePath = join(repo, "bin", "init-data-repo.ts");
+    const modulePath = join(repo, "bin", "init-data-repo");
 
     const { out } = await importWithArgv(modulePath, ["--second-brain"]);
 
@@ -385,7 +385,7 @@ describe("data:init bin launcher", () => {
 
   it("creates the marker file from the --second-brain flag", async () => {
     const repo = await stageRepo();
-    const modulePath = join(repo, "bin", "init-data-repo.ts");
+    const modulePath = join(repo, "bin", "init-data-repo");
 
     await importWithArgv(modulePath, ["--second-brain"]);
 

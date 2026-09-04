@@ -713,7 +713,7 @@ describe("check-raw bin launcher", () => {
 
   it("runs main when imported through its bin launcher, with the default raw dir", async () => {
     const repo = await stageRepo();
-    const launcherPath = join(repo, "bin", "check-raw.ts");
+    const launcherPath = join(repo, "bin", "check-raw");
 
     const { out } = await importWithArgv(launcherPath, launcherPath);
 
@@ -727,7 +727,7 @@ describe("check-raw bin launcher", () => {
   it("checks the staged repository's raw/ directory when run through the bin launcher without arguments", async () => {
     const repo = await stageRepo();
     const rawDir = join(repo, "raw");
-    const launcherPath = join(repo, "bin", "check-raw.ts");
+    const launcherPath = join(repo, "bin", "check-raw");
 
     await projectNote(rawDir, "Documents", "AI/RAG.md", NOTE);
     await writeManifestFile(rawDir, {
