@@ -1,19 +1,41 @@
-# Auto-file actionable mutation survivors into a rolling issue (issue #208).
+# Merge-file actionable mutation survivors into one rolling ledger
+# issue (issues #208, #261).
 #
-# Fires via workflow_run after each completed CI run that actually
-# produced a full mutation report — the nightly schedule arm and manual
-# workflow_dispatch dispatches of CI (nightly full runs are chunk jobs
-# merged by mutation-merge, issue #236). Label-gated PR runs are scoped to
-# changed hunks, so their survivor lists are partial and deliberately
-# excluded: the rolling issue must reflect the whole-src/ picture.
+# Fires via workflow_run after each completed CI run that produced a
+# mutation report — the nightly windowed schedule arm (the primary
+# producer) and manual workflow_dispatch dispatches of CI (the chunked
+# code-wide run). Label-gated PR runs are scoped to changed hunks vs
+# origin/main, so their survivor lists are partial and deliberately
+# excluded from filing.
+#
+# The body is a MERGED LEDGER, never a replace snapshot: the fresh
+# report merges into the prior body's hidden ledger block (a pre-block
+# body bootstraps once by parsing its rendered list), an entry leaves
+# only via a verified kill (Killed / Timeout) or — once the
+# equivalent-mutant registry lands — an adjudication record, and
+# entries the run never generated (out of its scope) stay listed. Full
+# dispatched runs from the default branch file with --absence-kills
+# (absence = death): that is the reconciliation / ledger-rewrite role. Equivalents recorded only
+# in PR bodies re-file nightly until the registry exists — known,
+# bounded, and the pressure to build it.
+#
+# The concurrency group queues (cancel-in-progress: false), so a long
+# dispatch straddling 03:30 UTC cannot race a nightly filing on the
+# issue body (read-modify-write would lose one side); the queued
+# filing merges on top of the completed one.
+#
+# Stale-artifact re-filing is resurrection: a manual dispatch (run-id
+# input) re-files an old run's statuses, so survivors a later run
+# killed re-enter the ledger. Known behavior — the next covering run
+# re-kills them; do not "fix" it by refusing old runs.
 #
 # Downloads the triggering run's mutation-report artifact, renders the
-# actionable mutants (Survived, NoCoverage) with the exact formatting
-# `npm run mutation:survivors` prints (shared module:
-# src/quality/mutation-report.ts over src/quality/mutation-survivors.ts),
-# and creates-or-updates ONE rolling issue labeled `mutation`. An empty
-# list zeroes the body ("no actionable mutants") instead of closing the
-# issue — history stays in one place, and the lane stays visible.
+# merged ledger with the exact formatting `npm run mutation:survivors`
+# prints (shared module: src/quality/mutation-report.ts over
+# src/quality/mutation-ledger.ts), and updates ONE rolling issue
+# labeled `mutation`. An empty ledger zeroes the body ("no actionable
+# mutants") instead of closing the issue — history stays in one place,
+# and the lane stays visible.
 #
 # The board step (2b) keeps the rolling issue on the K-Wiki Kanban with
 # Status = Ready via direct GraphQL calls — GITHUB_TOKEN cannot touch
@@ -48,9 +70,12 @@ concurrency:
 jobs:
   file-survivors:
     name: Update rolling survivor issue
-    # workflow_dispatch verifies the flow manually; workflow_run only
-    # for full mutation runs (nightly schedule, CI dispatch) — never
-    # push or pull_request runs, which skip the mutation job entirely.
+    # workflow_dispatch verifies the flow manually; workflow_run for
+    # the runs that produced a mutation report — the nightly windowed
+    # schedule run (the primary producer) and CI dispatches (the full
+    # chunked run) — never push or pull_request runs: push skips the
+    # mutation jobs entirely, and per-PR labeled runs are partial
+    # lists that never file.
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.event == 'schedule' ||
@@ -92,7 +117,22 @@ jobs:
           github-token: ${{ github.token }}
           name: mutation-report
           path: dl
-      - name: Render the issue body
+      - name: Fetch the rolling issue's prior body
+        # The ledger merge reads the current body before any write; a
+        # missing issue files against an empty prior (fresh ledger).
+        id: prior
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          number=$(gh issue list --state open --limit 500 --json number,title \
+            --jq "first(.[] | select(.title == \"$ROLLING_TITLE\") | .number)")
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+          if [ -n "$number" ]; then
+            gh issue view "$number" --json body --jq .body > prior-body.md
+          else
+            printf '' > prior-body.md
+          fi
+      - name: Render the merged issue body
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ steps.run.outputs.id }}
@@ -100,17 +140,30 @@ jobs:
           artifact_id=$(gh api \
             "repos/${{ github.repository }}/actions/runs/${{ steps.run.outputs.id }}/artifacts" \
             --jq '.artifacts[] | select(.name == "mutation-report") | .id')
+          # Scope: a dispatched CI run is the chunked code-wide run —
+          # it covers all of src/, so absence kills. But only a dispatch
+          # on the default branch: a feature-branch dispatch covers that
+          # branch's src/, not main's, so absence there is out of scope,
+          # not death. The nightly windowed run leaves out-of-scope
+          # entries listed.
+          event=$(gh run view "${{ steps.run.outputs.id }}" --json event --jq .event)
+          head_branch=$(gh run view "${{ steps.run.outputs.id }}" --json headBranch --jq .headBranch)
+          scope=""
+          if [ "$event" = "workflow_dispatch" ] && [ "$head_branch" = "main" ]; then
+            scope="--absence-kills"
+          fi
           node dev/mutation-report.ts dl/mutation.json \
+            --prior-body prior-body.md \
             --run-url "$RUN_URL" \
             --html-url "$RUN_URL/artifacts/$artifact_id" \
+            $scope \
             > body.md
           cat body.md
       - name: Update or create the rolling issue
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          number=$(gh issue list --state open --limit 500 --json number,title \
-            --jq "first(.[] | select(.title == \"$ROLLING_TITLE\") | .number)")
+          number="${{ steps.prior.outputs.number }}"
           if [ -z "$number" ]; then
             gh issue create --title "$ROLLING_TITLE" --label mutation --body-file body.md
           else

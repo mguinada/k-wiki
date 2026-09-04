@@ -22,38 +22,48 @@
 # today; guards future synced content). Both are deterministic and
 # fast — unlike mutation testing.
 #
-# The mutation job is advisory, never a gate (issue #21): it runs only
-# when a PR carries the `mutation` label, nightly on main, or via manual
-# dispatch, and continue-on-error keeps its outcome from blocking merge.
-# PR runs stay one diff-scoped job. Nightly and dispatched FULL runs are
-# chunked (issue #236): the full run outgrew GitHub's 6 h per-job limit
-# (8619 mutants, cancelled at 5 h 58 m before any report existed), so
-# src/quality/mutation-chunk.ts splits the mutate list into size-balanced
-# disjoint chunks, one parallel job each; mutation-merge then stitches the
-# chunk reports into the one mutation.json the mutation-report artifact
-# and the mutants-report workflow consume. The merge refuses a partial
-# picture (--expect the chunk count): a cancelled or failed chunk fails
-# the merge loudly, preserving the issue #208 starvation signal — while
-# fail-fast: false keeps one bad chunk from cancelling its siblings, so
-# the merge can name exactly what is missing.
-# The nightly arm carries the advisory complexity debt report
-# (issue #178): npm run complexity:full prints the whole-src/ per-function
-# debt table and uploads it as an artifact (7-day retention); the table
-# is advisory, though the run also re-executes the changed-mode gate (a
-# clean nightly checkout has nothing changed, so it passes). PR runs are scoped like
-# the optional local run (issue #99): they
-# mutate only the src/ hunks changed vs origin/main, so the checkout
-# needs full history (fetch-depth: 0). It follows the same log-hygiene
-# rule: Stryker mutates and prints repo code under src/ only; the suite
-# reads synthetic fixtures, never vault data.
+# The mutation jobs are advisory, never a gate (issue #21):
+# continue-on-error keeps their outcome from blocking merge. Three
+# shapes now (issue #261):
+# - PR runs: only when a PR carries the `mutation` label — one
+#   diff-scoped job vs origin/main, like the optional local run
+#   (issue #99); the checkout needs full history (fetch-depth: 0).
+# - Nightly (03:30 UTC): the mutation-nightly job is window-scoped —
+#   it mutates only the src/ hunks changed in the trailing 7 days
+#   ($MUTATION_WINDOW_DAYS; src/quality/mutation-scope.ts resolves the
+#   base SHA, oldest-commit fallback). A quiet window (nothing
+#   changed) files a synthetic empty report so the ledger stays
+#   confirmed current. The nightly carries the advisory complexity
+#   debt report (issue #178): npm run complexity:full prints the
+#   whole-src/ per-function debt table and uploads it as an artifact
+#   (7-day retention); the table is advisory, though the run also
+#   re-executes the changed-mode gate (a clean nightly checkout has
+#   nothing changed, so it passes).
+# - Manual dispatch: the chunked code-wide FULL run (issue #236) —
+#   the exceptional audit / ledger-rewrite path, nothing schedules
+#   it. The full run outgrew GitHub's 6 h per-job limit (8619
+#   mutants, cancelled at 5 h 58 m before any report existed), so
+#   src/quality/mutation-chunk.ts splits the mutate list into
+#   size-balanced disjoint chunks, one parallel job each;
+#   mutation-merge then stitches the chunk reports into the one
+#   mutation.json the mutation-report artifact and the mutants-report
+#   workflow consume. The merge refuses a partial picture (--expect
+#   the chunk count): a cancelled or failed chunk fails the merge
+#   loudly, preserving the issue #208 starvation signal — while
+#   fail-fast: false keeps one bad chunk from cancelling its
+#   siblings, so the merge can name exactly what is missing.
+# Every mutation job follows the same log-hygiene rule: Stryker
+# mutates and prints repo code under src/ only; the suite reads
+# synthetic fixtures, never vault data.
 #
-# The full run starts with a dry run of the whole unit suite in
-# Stryker's vitest worker-thread pool; any failing test kills the run
-# before a report exists (issue #215: a suite red on main — #171, merged
-# over its own red checks — and a chdir-incompatible test — #193 — each
-# starved the rolling survivor issue #208 for a night). continue-on-error
-# keeps that failure non-blocking, so the annotation step in the mutation
-# job marks the run page with an error while the job stays advisory-green.
+# The full dispatched run starts with a dry run of the whole unit
+# suite in Stryker's vitest worker-thread pool; any failing test kills
+# the run before a report exists (issue #215: a suite red on main —
+# #171, merged over its own red checks — and a chdir-incompatible
+# test — #193 — each starved the rolling survivor issue #208 for a
+# night). continue-on-error keeps that failure non-blocking, so the
+# annotation steps in the mutation jobs mark the run page with an
+# error while the job stays advisory-green.
 
 name: CI
 
@@ -71,7 +81,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event.action || 'push' }}
+  # Split by event name (issue #261): a 03:30 nightly must not cancel
+  # an owner's hours-long dispatched full run mid-flight (nor a push
+  # cancel the nightly), so schedule, dispatch, push, and pull_request
+  # each get their own group. cancel-in-progress stays on — it exists
+  # for superseded PR runs on the same ref.
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}-${{ github.event.action || 'push' }}
   cancel-in-progress: true
 
 jobs:
@@ -138,9 +153,9 @@ jobs:
   mutation:
     name: Mutation testing (advisory)
     # PRs: only when labeled `mutation`, diff-scoped (issue #99). The
-    # nightly/dispatch FULL runs live in the chunked mutation-chunks +
-    # mutation-merge jobs below (issue #236) — never per push: the full
-    # run is slow and the nightly cadence already covers main.
+    # nightly windowed run lives in mutation-nightly below; dispatched
+    # FULL runs live in the chunked mutation-chunks + mutation-merge
+    # jobs below (issue #236) — never per push.
     if: github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'mutation')
     runs-on: ubuntu-latest
     # Advisory signal, not a gate: a failing run must never block a merge.
@@ -191,12 +206,83 @@ jobs:
             reports/mutation/mutation.json
           retention-days: 7
 
+  mutation-nightly:
+    name: Mutation nightly, windowed (advisory)
+    # Nightly at 03:30 UTC: window-scoped (issue #261) — mutates only
+    # the src/ hunks changed in the trailing 7 days, never the whole
+    # tree. The code-wide chunked run below is manual-dispatch-only
+    # (the exceptional audit / ledger-rewrite path).
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    # Advisory signal, not a gate: a failing run must never block
+    # anything; the missing artifact is the loud signal.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: the window base resolves a main SHA from N
+          # days ago, which a shallow checkout cannot see.
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Complexity debt report (advisory)
+        if: always()
+        run: npm run complexity:full | tee complexity-debt-report.txt
+      - name: Upload complexity debt report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: complexity-debt-report
+          path: complexity-debt-report.txt
+          retention-days: 7
+      - name: Window-scoped mutation run
+        id: mutation
+        env:
+          MUTATION_WINDOW_DAYS: "7"
+        run: npm run mutation:changed
+      - name: Quiet window - synthetic empty report
+        # Zero src/ changes in the window skips Stryker entirely; a
+        # synthetic empty report keeps the filing firing so the ledger
+        # is confirmed current. Only on a successful scoped run — a
+        # failed run must leave the artifact missing (the designed
+        # starvation signal, issue #208).
+        if: steps.mutation.outcome == 'success'
+        run: |
+          if [ ! -f reports/mutation/mutation.json ]; then
+            echo "Quiet window: no src/ changes in the trailing window - synthetic empty report."
+            mkdir -p reports/mutation
+            printf '{"files":{}}' > reports/mutation/mutation.json
+          fi
+      - name: Surface a failed advisory run
+        if: always() && steps.mutation.outcome == 'failure'
+        run: >-
+          echo "::error title=Mutation nightly failed::The advisory
+          windowed mutation run exited nonzero - see this job's log. No
+          mutation-report artifact is filed, so the rolling survivor
+          issue is not updated."
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report
+          # mutation.json rides along so the mutants-report workflow can
+          # merge the rolling survivor issue's ledger from the same run
+          # (issue #208); the HTML report is absent on a quiet window.
+          path: |
+            reports/mutation/mutation.html
+            reports/mutation/mutation.json
+          retention-days: 7
+
   mutation-chunks:
     name: Mutation chunk ${{ matrix.chunk }} of 4 (advisory)
-    # Nightly schedule and manual dispatch: the FULL run, split into
-    # size-balanced disjoint src/ chunks (issue #236) so no single job
-    # approaches GitHub's 6 h per-job limit.
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # Manual dispatch only (issue #261): the code-wide chunked FULL
+    # run is the exceptional audit / ledger-rewrite path — no schedule
+    # arm remains. Size-balanced disjoint src/ chunks (issue #236) so
+    # no single job approaches GitHub's 6 h per-job limit.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     strategy:
       # One failing chunk must not cancel its siblings: each chunk's

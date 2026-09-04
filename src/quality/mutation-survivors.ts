@@ -7,7 +7,7 @@ import { refuseDirectExecution } from "../cli/is-main.ts";
 // survivors would invite misuse as a gate, and mutation testing is
 // advisory by design.
 
-type Mutant = {
+export type Mutant = {
   mutatorName: string;
 
   status: string;
@@ -15,11 +15,21 @@ type Mutant = {
   location: { start: { line: number } };
 };
 
-type Report = { files: Record<string, { mutants: Mutant[] }> };
+export type Report = { files: Record<string, { mutants: Mutant[] }> };
 
 const REPORT_PATH = "reports/mutation/mutation.json";
 
 const ACTIONABLE_STATUSES = new Set(["Survived", "NoCoverage"]);
+
+export type ActionableEntry = {
+  file: string;
+  line: number;
+  status: string;
+  mutator: string;
+};
+
+export const isActionable = (status: string): boolean =>
+  ACTIONABLE_STATUSES.has(status);
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
 const HELP = `Usage: mutation-survivors [-h | --help]
@@ -38,16 +48,11 @@ upgrade drifted its shape.`;
 
 /** Actionable entries — Survived or NoCoverage — as sorted, readable lines. */
 export function actionableLines(report: Report): string[] {
-  const entries: {
-    file: string;
-    line: number;
-    status: string;
-    mutator: string;
-  }[] = [];
+  const entries: ActionableEntry[] = [];
 
   for (const [file, entry] of Object.entries(report.files)) {
     for (const mutant of entry.mutants) {
-      if (ACTIONABLE_STATUSES.has(mutant.status)) {
+      if (isActionable(mutant.status)) {
         entries.push({
           file,
           line: mutant.location.start.line,
@@ -58,11 +63,31 @@ export function actionableLines(report: Report): string[] {
     }
   }
 
-  entries.sort((a, b) =>
-    a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line,
-  );
+  entries.sort(compareEntries);
 
-  return entries.map((e) => `${e.status}  ${e.file}:${e.line}  ${e.mutator}`);
+  return entries.map(formatEntry);
+}
+
+/** File, then line, then mutator — the ledger and the survivors
+ *  printer share one deterministic order. */
+export function compareEntries(
+  a: { file: string; line: number; mutator: string },
+  b: { file: string; line: number; mutator: string },
+): number {
+  if (a.file !== b.file) {
+    return a.file < b.file ? -1 : 1;
+  }
+
+  if (a.line !== b.line) {
+    return a.line - b.line;
+  }
+
+  return a.mutator < b.mutator ? -1 : a.mutator > b.mutator ? 1 : 0;
+}
+
+/** The one rendered-line format: status, file:line, mutator. */
+export function formatEntry(entry: ActionableEntry): string {
+  return `${entry.status}  ${entry.file}:${entry.line}  ${entry.mutator}`;
 }
 
 /** Whether the parsed report root carries a `files` object. */

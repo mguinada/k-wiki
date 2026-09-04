@@ -18,15 +18,16 @@ NoCoverage) from reports/mutation/mutation.json. Re-list the last
 report any time with: npm run mutation:survivors
 
 Default:  Mutate only the changed hunks of the src/*.ts files that
-          differ from origin/main (uncommitted work included), at
-          hunk granularity: one file:start-end range per changed
+          differ from the mutation base (uncommitted work included),
+          at hunk granularity: one file:start-end range per changed
           hunk (src/quality/mutation-scope.ts builds the list). New or
-          untracked files mutate whole; deleted files are skipped;
-          code outside the hunks keeps its nightly full-run check.
-          Runs capped at --concurrency 4 — scoped runs are small and
-          the cap keeps sibling Stryker fleets from starving each
-          other's test timeouts. Exits 0 without running Stryker
-          when no src file changed.
+          untracked files mutate whole; deleted files are skipped.
+          The base is $MUTATION_BASE when set, else the
+          origin/main commit from $MUTATION_WINDOW_DAYS days ago when
+          set, else origin/main. Runs capped at --concurrency 4 —
+          scoped runs are small and the cap keeps sibling Stryker
+          fleets from starving each other's test timeouts. Exits 0
+          without running Stryker when no src file changed.
 
 --full:   Mutate every file matched by stryker.config.json's mutate
           list (src/**/*.ts) — same as `npm run mutation`, at the
@@ -55,18 +56,24 @@ case "${1:-}" in
     ;;
 esac
 
-# origin/main, not local main: survives fresh clones and worktrees where
-# the local branch is checked out elsewhere or missing. Plain two-endpoint
-# diff (not `origin/main...HEAD`): it includes uncommitted work, so the
-# local run sees what the agent actually changed. src/quality/
-# mutation-scope.ts turns that diff into hunk-range --mutate patterns.
-patterns=$(node dev/mutation-scope.ts)
+# The base resolves once (flag > $MUTATION_BASE > $MUTATION_WINDOW_DAYS
+# window > origin/main — src/quality/mutation-scope.ts owns the rule)
+# and is printed so run logs name what was diffed against; the second
+# call takes --base "$base" so the diffed base is exactly the logged
+# one (a window base re-resolved at a later instant could differ).
+# Plain two-endpoint diff (not base...HEAD): it includes uncommitted
+# work, so the local run sees what the agent actually changed.
+# src/quality/mutation-scope.ts turns that diff into hunk-range
+# --mutate patterns.
+base=$(node dev/mutation-scope.ts --print-base)
+echo "Mutation base: $base"
+patterns=$(node dev/mutation-scope.ts --base "$base")
 
 if [ -z "$patterns" ]; then
-  changed=$(git diff --name-only origin/main -- 'src/*.ts'; git ls-files --others --exclude-standard -- 'src/*.ts')
+  changed=$(git diff --name-only "$base" -- 'src/*.ts'; git ls-files --others --exclude-standard -- 'src/*.ts')
 
   if [ -z "$changed" ]; then
-    echo "No src/ changes vs origin/main -- skipping mutation run."
+    echo "No src/ changes vs $base -- skipping mutation run."
   else
     echo "src/ changes carry no new-side lines (deletions only) -- nothing to mutate."
   fi

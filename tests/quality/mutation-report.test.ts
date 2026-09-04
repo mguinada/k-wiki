@@ -6,6 +6,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import {
+  type Ledger,
+  ledgerBlockLine,
+  ledgerFromBody,
+} from "../../src/quality/mutation-ledger.ts";
+import {
   main,
   type ReportMeta,
   renderIssueBody,
@@ -76,7 +81,6 @@ const meta: ReportMeta = {
   htmlUrl:
     "https://github.com/mguinada/k-wiki/actions/runs/123456/artifacts/98765",
 };
-
 const RUN_URL = "https://github.com/mguinada/k-wiki/actions/runs/123456";
 
 const HTML_URL =
@@ -89,8 +93,31 @@ const HEAD = [
 ].join("\n");
 
 describe("renderIssueBody", () => {
-  it("renders the exact survivor body with both links", () => {
-    expect(renderIssueBody(JSON.stringify(report), meta)).toBe(
+  const ledger: Ledger = {
+    entries: [
+      {
+        file: "src/sync/config.ts",
+        line: 7,
+        mutator: "ConditionalExpression",
+        status: "Survived",
+      },
+      {
+        file: "src/sync/config.ts",
+        line: 42,
+        mutator: "StringLiteral",
+        status: "Survived",
+      },
+      {
+        file: "src/sync/scan.ts",
+        line: 3,
+        mutator: "MethodExpression",
+        status: "NoCoverage",
+      },
+    ],
+  };
+
+  it("renders the exact survivor body with both links and the ledger block", () => {
+    expect(renderIssueBody(ledger, meta)).toBe(
       [
         HEAD,
         "",
@@ -105,12 +132,14 @@ describe("renderIssueBody", () => {
         "NoCoverage  src/sync/scan.ts:3  MethodExpression",
         "```",
         "",
+        ledgerBlockLine(ledger),
+        "",
       ].join("\n"),
     );
   });
 
   it("renders the exact survivor body without links", () => {
-    expect(renderIssueBody(JSON.stringify(report))).toBe(
+    expect(renderIssueBody(ledger)).toBe(
       [
         HEAD,
         "Actionable mutants (3) — kill or record as equivalent:",
@@ -121,14 +150,14 @@ describe("renderIssueBody", () => {
         "NoCoverage  src/sync/scan.ts:3  MethodExpression",
         "```",
         "",
+        ledgerBlockLine(ledger),
+        "",
       ].join("\n"),
     );
   });
 
   it("renders the exact clean body with one link only", () => {
-    expect(
-      renderIssueBody(JSON.stringify(cleanReport), { runUrl: RUN_URL }),
-    ).toBe(
+    expect(renderIssueBody({ entries: [] }, { runUrl: RUN_URL })).toBe(
       [
         HEAD,
         "",
@@ -136,18 +165,14 @@ describe("renderIssueBody", () => {
         "",
         "No actionable mutants — nothing survived, nothing uncovered.",
         "",
+        ledgerBlockLine({ entries: [] }),
+        "",
       ].join("\n"),
     );
   });
 
-  it("renders the exact clean body without links", () => {
-    expect(renderIssueBody(JSON.stringify(cleanReport))).toBe(
-      [
-        HEAD,
-        "No actionable mutants — nothing survived, nothing uncovered.",
-        "",
-      ].join("\n"),
-    );
+  it("round-trips a rendered body back into the same ledger", () => {
+    expect(ledgerFromBody(renderIssueBody(ledger))).toEqual(ledger);
   });
 });
 
@@ -267,6 +292,100 @@ describe("mutation-report CLI", () => {
 
     expect(result.code).toBe(1);
     expect(result.err).toContain("unexpected shape");
+  });
+});
+
+describe("mutation-report merge CLI", () => {
+  const priorBody = [
+    HEAD,
+    "",
+    "Actionable mutants (2) — kill or record as equivalent:",
+    "",
+    "```",
+    "Survived  src/old-window.ts:9  OldSurvivor",
+    "Survived  src/sync/config.ts:42  StringLiteral",
+    "```",
+    "",
+  ].join("\n");
+
+  async function writeMergeInputs(
+    dir: string,
+  ): Promise<{ reportPath: string; priorPath: string }> {
+    const reportPath = await writeReport(dir, report);
+    const priorPath = join(dir, "prior-body.md");
+
+    await writeFile(priorPath, priorBody);
+
+    return { reportPath, priorPath };
+  }
+
+  it("merges a prior body: out-of-scope survivor stays listed", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-"));
+
+    tempDirs.push(dir);
+
+    const { reportPath, priorPath } = await writeMergeInputs(dir);
+    const result = await runNode([reportPath, "--prior-body", priorPath]);
+
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("Survived  src/old-window.ts:9  OldSurvivor");
+    expect(result.out).toContain(
+      "Survived  src/sync/config.ts:7  ConditionalExpression",
+    );
+  });
+
+  it("drops out-of-scope survivors with --absence-kills", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-"));
+
+    tempDirs.push(dir);
+
+    const { reportPath, priorPath } = await writeMergeInputs(dir);
+    const result = await runNode([
+      reportPath,
+      "--prior-body",
+      priorPath,
+      "--absence-kills",
+    ]);
+
+    expect(result.code).toBe(0);
+    expect(result.out).not.toContain("OldSurvivor");
+  });
+
+  it("embeds the merged ledger block in the body", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-"));
+
+    tempDirs.push(dir);
+
+    const { reportPath, priorPath } = await writeMergeInputs(dir);
+    const result = await runNode([reportPath, "--prior-body", priorPath]);
+
+    const body = result.out;
+
+    expect(body).toContain("<!-- k-wiki-mutants-ledger: ");
+    expect(ledgerFromBody(body).entries.length).toBe(4);
+  });
+
+  it("exits 1 naming --prior-body when its value is absent", async () => {
+    const result = await runNode(["report.json", "--prior-body"]);
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("--prior-body requires a value");
+  });
+
+  it("exits 1 naming the prior-body path when it is unreadable", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-"));
+
+    tempDirs.push(dir);
+
+    const reportPath = await writeReport(dir, report);
+    const result = await runNode([
+      reportPath,
+      "--prior-body",
+      join(dir, "no-such-body.md"),
+    ]);
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("no-such-body.md");
   });
 });
 
@@ -457,6 +576,8 @@ describe("mutation-report main flag routing in-process", () => {
         "",
         "No actionable mutants — nothing survived, nothing uncovered.",
         "",
+        ledgerBlockLine({ entries: [] }),
+        "",
       ].join("\n"),
     );
   });
@@ -490,6 +611,8 @@ describe("mutation-report main flag routing in-process", () => {
         `- HTML report artifact: ${HTML_URL}`,
         "",
         "No actionable mutants — nothing survived, nothing uncovered.",
+        "",
+        ledgerBlockLine({ entries: [] }),
         "",
       ].join("\n"),
     );
