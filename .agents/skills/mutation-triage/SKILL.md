@@ -37,16 +37,24 @@ of the advisory workflow in AGENTS.md, never a gate.
      over one assertion per mutant.
    - **Equivalent** — the mutant changes the code without changing
      observable behavior (typical: mutated log text, reordered
-     side-effect-free calls). Do not chase it. Record it in the PR body:
-     file:line, mutator, and one sentence of justification. This record
-     is the only accepted escape valve — a `// Stryker disable`
-     comment without a written justification line in the PR body is
-     forbidden.
+     side-effect-free calls). Do not chase it. Record it in the
+     equivalent-mutant registry, `.mutants-registry.json` at the repo
+     root, **in your PR**: run `npm run mutation:survivors -- --ids`
+     for the mutant's identity, then add an entry keyed by that id
+     with `bucket: "equivalent"`, a one-line justification, the PR
+     link, and the date. `bucket: "artifact"` is for measurement
+     artifacts (plausibly killable) — never mix the two. PR review of
+     the registry diff is the human-judgment gate; a receipt-less
+     entry fails the unit suite. This record (or a `// Stryker
+     disable` for a location that should never be mutated at all,
+     with its written PR-body justification) is the only accepted
+     escape valve.
 
 4. **Verify the batch — one run.** Do not re-run after each individual
    fix. Re-run the same command from step 1 once, after the batch.
    Every newly killed mutant must show `Killed`; survivors left must
-   all be the equivalents you recorded. If the run reports
+   all be the equivalents you recorded (the survivors printer filters
+   recorded entries and counts them separately). If the run reports
    still-survived mutants whose killing test was already written,
    strengthen that test and re-run once more — repeat in batched
    rounds until only recorded equivalents remain.

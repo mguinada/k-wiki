@@ -651,7 +651,7 @@ Survived and NoCoverage entries — so one command is the whole check:
 
 ```text
 $ npm run mutation:changed
-Actionable mutants (2) — kill or record as equivalent:
+Untriaged mutants (2) — kill or record as adjudicated:
   Survived  src/sync/config.ts:7  ConditionalExpression
   Survived  src/sync/frontmatter.ts:33  BlockStatement
 ```
@@ -662,7 +662,10 @@ uncovered.`) means the suite holds: nothing to triage.
 A non-empty list is handled by the
 [mutation-triage](.agents/skills/mutation-triage/SKILL.md) skill, which
 loops over each mutant and either kills it with a new or stronger test
-or records it as an equivalent mutant in the PR body.
+or records the adjudication in `.mutants-registry.json`, the
+equivalent-mutant registry at the repo root — a settled mutant is
+filtered from the list and counted separately (untriaged vs
+recorded), never silently excused.
 
 You do **not** run a script first and then invoke the skill — the skill
 re-runs the mutation itself if the report is stale. Two ways in:
