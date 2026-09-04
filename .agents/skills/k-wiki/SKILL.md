@@ -16,10 +16,13 @@ the terminal can follow the same five steps.
 ## Where
 
 The binding file `.k-wiki.json` at the project root names the wiki;
-`k-wiki status` resolves and prints it (checkout, data repo, wiki
-directory). The wiki is plain markdown — readable directly once you
-know the directory. If `status` errors, the project is not bound:
-say so and stop; do not guess wiki paths by hand.
+`k-wiki status` resolves and prints it (checkout, instance, data
+repo, wiki directory). A checkout can host several wiki instances —
+the binding's optional `wiki` key names one (an alias or
+`sync-<name>.json` stem inside the checkout); without it the default
+instance answers. The wiki is plain markdown — readable directly
+once you know the directory. If `status` errors, the project is not
+bound: say so and stop; do not guess wiki paths by hand.
 
 ## When
 

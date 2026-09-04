@@ -39,7 +39,7 @@ const track: (dir: string) => void = (dir) => tempDirs.push(dir);
 
 describe("ingestFlags", () => {
   const SPEC = {
-    value: ["--settings", "--outputs", "--timeout", "--note"],
+    value: ["--settings", "--outputs", "--timeout", "--note", "--wiki"],
     repeat: ["--sources"],
     positionals: {
       max: 1,
@@ -142,6 +142,32 @@ describe("ingestFlags", () => {
 
     expect(error).toBe('unknown option "--nope"');
   });
+
+  it("carries the --wiki name onto the flag set", () => {
+    const { flags, error } = ingestFlags(parseArgs(["--wiki", "meta"], SPEC));
+
+    expect(error).toBeUndefined();
+    expect(flags.wiki).toBe("meta");
+  });
+
+  it("names the missing --wiki value", () => {
+    const { error } = ingestFlags(parseArgs(["--wiki"], SPEC));
+
+    expect(error).toBe("--wiki needs a name value");
+  });
+
+  it("rejects a --wiki name with a path separator", () => {
+    const { error } = ingestFlags(parseArgs(["--wiki", "../x"], SPEC));
+
+    expect(error).toContain("--wiki must be a wiki name");
+  });
+
+  it("keeps an absent --wiki undefined", () => {
+    const { flags, error } = ingestFlags(parseArgs([], SPEC));
+
+    expect(error).toBeUndefined();
+    expect(flags.wiki).toBeUndefined();
+  });
 });
 
 describe("wiki-ingest CLI", () => {
@@ -227,7 +253,7 @@ console.log("stub report");
 
   it("prints the usage line for --help", async () => {
     expect((await runCli(["--help"])).out).toContain(
-      "wiki-ingest [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [--note <text>] [<raw-dir>]",
+      "wiki-ingest [-h | --help] [--wiki <name>] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [--note <text>] [<raw-dir>]",
     );
   });
 

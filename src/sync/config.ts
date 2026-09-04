@@ -57,6 +57,60 @@ export interface SyncConfig {
   readonly publish: PublishConfig | undefined;
   /** Data repo root; `raw/` and `wiki/` contents are versioned there. */
   readonly dataRoot: string | undefined;
+  /** Instance alias registry (issue #306): name → sync config path
+   *  inside the checkout. Pointers, not copies — the target configs
+   *  stay the source of truth. Human-owned: the pipeline never
+   *  writes it. Undefined when the key is absent (today's
+   *  behavior). */
+  readonly instances: Readonly<Record<string, string>> | undefined;
+}
+
+/** Instance names are simple identifiers: letters, digits, `-`,
+ *  `_`, starting alphanumeric (issue #306) — path separators, dots,
+ *  and empty values are rejected at parse. */
+const WIKI_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+
+/** Whether a string is a valid wiki instance name. */
+export function isWikiName(name: string): boolean {
+  return WIKI_NAME_PATTERN.test(name) && !RESERVED_NAMES.has(name);
+}
+
+/** Parse the optional `instances` alias map: every name a valid
+ *  instance name, every target a non-empty string. Target path
+ *  resolution (inside the checkout, existence) happens at name
+ *  resolution time, not at config load. */
+function parseInstances(
+  value: unknown,
+): Readonly<Record<string, string>> | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!isPlainObject(value)) {
+    throw new Error(
+      '"instances" must be an object of instance name → sync config path',
+    );
+  }
+
+  const aliases: Record<string, string> = {};
+
+  for (const [name, target] of Object.entries(value)) {
+    if (!isWikiName(name)) {
+      throw new Error(
+        `instance name ${JSON.stringify(name)} must be letters, digits, "-" and "_"`,
+      );
+    }
+
+    if (!isNonEmptyString(target)) {
+      throw new Error(
+        `instances[${JSON.stringify(name)}] must be a non-empty string naming a sync config path`,
+      );
+    }
+
+    aliases[name] = target;
+  }
+
+  return aliases;
 }
 
 /** Expand a leading `~` or `~/` against home; leave every other path. */
@@ -349,6 +403,7 @@ export async function loadSyncConfig(
       vaults: parseVaults(parsed.vaults, home),
       publish: parsePublish(parsed.publish, home),
       dataRoot: parseDataRoot(parsed.dataRoot, home),
+      instances: parseInstances(parsed.instances),
     };
   } catch (cause) {
     throw new Error(

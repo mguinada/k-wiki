@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { expandHome } from "../sync/config.ts";
+import { expandHome, isWikiName } from "../sync/config.ts";
 import { isPlainObject, statIfExists } from "./shared.ts";
 
 /**
@@ -25,18 +25,23 @@ export interface KWikiBinding {
   readonly checkout: string;
   /** Non-default settings file inside the checkout, when set. */
   readonly settings: string | undefined;
+  /** Wiki instance name inside the checkout (issue #306): resolved
+   *  through the checkout's alias/stem chain; undefined selects the
+   *  default instance. */
+  readonly wiki: string | undefined;
 }
 
 const BINDING_SHAPE =
-  'a single JSON object: { "checkout": "<k-wiki checkout>", "settings": "<optional settings file>" }';
+  'a single JSON object: { "checkout": "<k-wiki checkout>", "wiki": "<optional instance name>", "settings": "<optional settings file>" }';
 
-/** Reject any key beyond checkout and settings (the one-wiki shape). */
+/** Reject any key beyond checkout, wiki, and settings (the one-wiki
+ *  shape). */
 function rejectUnknownKeys(
   parsed: Record<string, unknown>,
   source: string,
 ): void {
   for (const key of Object.keys(parsed)) {
-    if (key !== "checkout" && key !== "settings") {
+    if (key !== "checkout" && key !== "wiki" && key !== "settings") {
       throw new Error(
         `invalid binding at ${source}: unknown key ${JSON.stringify(key)}; expected ${BINDING_SHAPE}`,
       );
@@ -60,6 +65,22 @@ function parseSettingsField(
   }
 
   return undefined;
+}
+
+/** Validate the optional wiki field (issue #306): absent, or a valid
+ *  instance name — a non-empty simple identifier. */
+function parseWikiField(wiki: unknown, source: string): string | undefined {
+  if (wiki === undefined) {
+    return undefined;
+  }
+
+  if (typeof wiki !== "string" || !isWikiName(wiki)) {
+    throw new Error(
+      `invalid binding at ${source}: "wiki" must be a wiki name (letters, digits, "-" and "_"), got ${JSON.stringify(wiki)}`,
+    );
+  }
+
+  return wiki;
 }
 
 /**
@@ -99,6 +120,7 @@ export function parseBinding(
   return {
     checkout: expandHome(checkout, home),
     settings: parseSettingsField(parsed.settings, source),
+    wiki: parseWikiField(parsed.wiki, source),
   };
 }
 
@@ -136,6 +158,9 @@ export interface CheckoutResolution {
   readonly checkout: string;
   /** Binding's non-default settings file, when the binding was used. */
   readonly settings: string | undefined;
+  /** Binding's wiki instance name (issue #306), when the binding was
+   *  used; the flag and env origins never carry one. */
+  readonly wiki: string | undefined;
   readonly origin: CheckoutOrigin;
 }
 
@@ -154,6 +179,7 @@ export async function resolveCheckout(input: {
     return {
       checkout: expandHome(input.flag, input.home),
       settings: undefined,
+      wiki: undefined,
       origin: "flag",
     };
   }
@@ -164,6 +190,7 @@ export async function resolveCheckout(input: {
     return {
       checkout: expandHome(fromEnv, input.home),
       settings: undefined,
+      wiki: undefined,
       origin: "env",
     };
   }
@@ -171,7 +198,12 @@ export async function resolveCheckout(input: {
   const bindingPath = await findBindingFile(input.cwd, input.home);
 
   if (bindingPath === undefined) {
-    return { checkout: input.cwd, settings: undefined, origin: "cwd" };
+    return {
+      checkout: input.cwd,
+      settings: undefined,
+      wiki: undefined,
+      origin: "cwd",
+    };
   }
 
   const binding = parseBinding(
@@ -183,6 +215,7 @@ export async function resolveCheckout(input: {
   return {
     checkout: binding.checkout,
     settings: binding.settings,
+    wiki: binding.wiki,
     origin: "file",
   };
 }

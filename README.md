@@ -228,7 +228,10 @@ no remote — **add none ever**: history, rollback, and audit all work
 without one ([model 7](#7-data-repo-location-and-privacy-posture)).
 Each instance encodes its own privacy posture in its own config and
 data location; the default instance's iCloud vault and optional
-remote never touch this one.
+remote never touch this one. Several instances can also share one
+checkout — a dropped-in `sync-<name>.json` per instance, selected
+with `--wiki <name>` ([§9](#9-the-meta-wiki-a-repository-as-source))
+— trading the physical isolation above for one clone.
 
 ### 3. One vault → several wikis by exclusion key
 
@@ -451,7 +454,12 @@ Hardened during the first full build:
   never be committed. Either leave local edits uncommitted in the
   instance checkout, or keep untracked local files and name them on
   every run: `bin/sync-vault sync.local.json` and
-  `bin/wiki-ingest --settings settings.local.yml <raw-dir>`.
+  `bin/wiki-ingest --settings settings.local.yml <raw-dir>`. A
+  committed sibling config (`sync-<name>.json` +
+  `settings-<name>.yml`) is instead selected the short way —
+  `--wiki <name>` on wiki-query and wiki-ingest — with an optional
+  alias in `sync.json`'s `instances` map giving it any name you like
+  ([§9](#9-the-meta-wiki-a-repository-as-source)).
 
 ### 9. The meta-wiki (a repository as source)
 
@@ -462,6 +470,22 @@ vault. A second pipeline instance with its own data repo
 prescribe; code is truth; pages for mechanisms, not per-file résumés.
 Selection is an allowlist in `sync-meta.json`: anything not listed is
 excluded by construction, so the projection can never ingest itself.
+A checkout hosting several instances selects one by name:
+`--wiki <name>` on the query and ingest doors, resolved through the
+checkout's registry — an alias in `sync.json`'s optional `instances`
+map first (explicit human intent beats convention), then a free stem
+`sync-<name>.json` in the checkout root; every derived path (raw dir,
+outputs dir, settings file) keys off the resolved config file, so
+`--wiki meta` reads `settings-meta.yml`, saves to `outputs-meta/`,
+and files into the meta data repo. The alias map is human-owned —
+created and maintained by editing `sync.json`; the pipeline never
+writes it — and names are optional sugar: stems are free, and the
+default instance needs no flag:
+
+```json
+{ "dataRoot": "…", "vaults": [ … ],
+  "instances": { "eng": "sync-engineering.json", "nbn": "sync-meta.json" } }
+```
 
 ```sh
 bin/init-data-repo --meta sync-meta.json       # once
@@ -478,9 +502,10 @@ The piecewise commands stay the debug path, one stage at a time:
 
 ```sh
 bin/sync-repo sync-meta.json               # project a committed tree
-bin/wiki-ingest --settings settings-meta.yml \
-  ~/Lab/k-wiki-meta-data/raw                       # build the meta-wiki
+bin/wiki-ingest --wiki meta                # build the meta-wiki
 bin/check-raw ~/Lab/k-wiki-meta-data/raw       # coherence + freshness
+bin/wiki-query --wiki meta "<question>"    # ask the meta wiki
+bin/wiki-query --wiki meta --file-last     # file the reviewed answer
 ```
 
 The projection records the source commit it was made from; `health`
@@ -518,7 +543,7 @@ every edit. Queries complete the daily loop:
 | Command | Tool | Purpose |
 |---|---|---|
 | `bin/wiki-sync [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<sync.json>] [<raw-dir>]` | cycle orchestrator | Run the whole cycle — sync (sync-vault for vault sources, sync-repo for repo-sourced configs, [§9](#9-the-meta-wiki-a-repository-as-source)) → ingest → lint → crosslink audit (configured second brains) → verification (check-fidelity + check-provenance) → one data-repo commit → mirror publish (configured `publish` section) — and print the digest (reads `settings.yml`, including its optional `secondBrain.domains` list; [details below](#running-the-full-cycle-wiki-sync)) |
-| `bin/wiki-query [-h \| --help] [--file-last] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>` | query wrapper | Ask the built wiki one question headless: print the answer, save it for review (stage 1, default); `--file-last` files the reviewed answer deterministically (stage 2; reads `settings.yml` in stage 1; [details below](#running-queries-wiki-query)) |
+| `bin/wiki-query [-h \| --help] [--file-last] [--wiki <name>] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>` | query wrapper | Ask the built wiki one question headless: print the answer, save it for review (stage 1, default); `--file-last` files the reviewed answer deterministically (stage 2); `--wiki <name>` selects the instance — aliases then `sync-<name>.json` stems, both stages, derived paths from the resolved config (stage 1 reads the instance's settings; [details below](#running-queries-wiki-query)) |
 | `<checkout>/bin/k-wiki query "<question>"` (also `bin/k-wiki …` inside the checkout) | agent-facing CLI | Ask the wiki bound to the current project from any cwd — zero flags once `.k-wiki.json` binds it; plus four read-only commands: `status` (binding + paths), `list [<type>]` (pages by type), `read <slug>` (one page verbatim), `health` (projection check); answer-only, no filing passthrough ([details below](#querying-from-any-project-k-wiki)) |
 
 ### Occasional operator
@@ -535,7 +560,7 @@ for the rare direct use:
 | `bin/dashboard [-h \| --help] [-o \| --open] [<data-repo>]` | KPI dashboard generator | Regenerate the static KPI dashboard: read the data repo's wiki, manifests, and git history — read-only — and write the self-contained `<data-repo>/dashboard.html` (gitignored; opens offline via `file://`) with coverage, structure, activity, and provenance KPIs in dark and light themes; refreshed by every ingest, `-o` also opens it ([above](#the-pipeline)) |
 | `bin/sync-vault [--dry-run] [<sync.json>] [<raw-dir>]` | sync CLI | Ingest every note not blocked by the vault's exclusion rule into `raw/notes/` (deterministic, no LLM; [details below](#running-the-sync)) |
 | `bin/sync-repo [-h \| --help] [<config>] [<raw-dir>]` | repo sync CLI | Project the allowlisted files of a committed source repository verbatim into `raw/notes/<name>/`, recording the source HEAD commit in the manifest (deterministic, no LLM; the meta-wiki adapter, [§9](#9-the-meta-wiki-a-repository-as-source)) |
-| `bin/wiki-ingest [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [--note <text>] [<raw-dir>]` | ingest wrapper | Run the wiki agent headless over the sources that changed since the last ingest and write the per-run digest (reads `settings.yml`; [details below](#running-the-wiki-agent-wiki-ingest)) |
+| `bin/wiki-ingest [-h \| --help] [--wiki <name>] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [--note <text>] [<raw-dir>]` | ingest wrapper | Run the wiki agent headless over the sources that changed since the last ingest and write the per-run digest (`--wiki <name>` selects the instance — aliases then `sync-<name>.json` stems, derived paths from the resolved config; [details below](#running-the-wiki-agent-wiki-ingest)) |
 
 ### Verification & maintenance (plumbing)
 
@@ -1278,8 +1303,15 @@ omitted flag can never produce wiki writes:
 The old `--no-filing` switch is gone (superseded): answer-only is
 the default, and there is exactly one filing path (`--file-last`).
 Stage 1 switches: `--settings <path>`, `--outputs <dir>`,
-`--raw-dir <dir>`, `--timeout <secs>` (default 1800) — `-h`
-documents them all.
+`--raw-dir <dir>`, `--timeout <secs>` (default 1800) — and
+`--wiki <name>` to run both stages against another instance in the
+same checkout ([§9](#9-the-meta-wiki-a-repository-as-source)):
+resolution goes alias (`sync.json`'s `instances` map) → stem
+(`sync-<name>.json`) → listing error, the derived raw dir, outputs
+dir, and settings follow the resolved config, an explicit flag always
+overrides its derived counterpart, and the filing hint echoes the
+flag so a meta answer cannot be filed into the regular wiki by
+mistake. `-h` documents them all.
 
 ## Querying from any project (`k-wiki`)
 
@@ -1304,15 +1336,20 @@ agent passes or omits.
 Binding file `.k-wiki.json` at the bound project's root:
 
 ```json
-{ "checkout": "~/k-wiki", "settings": "settings-meta.yml" }
+{ "checkout": "~/k-wiki", "wiki": "meta" }
 ```
 
 - `checkout` — a k-wiki checkout whose `sync.json` resolves the data
-  repo; its `prompts/`, `outputs/`, and settings live there too.
-- `settings` — optional non-default settings file inside the
-  checkout (e.g. `settings-meta.yml`, the meta-wiki instance of
-  [§9](#9-the-meta-wiki-a-repository-as-source)); default
-  `settings.yml`.
+  repo; its `prompts/`, outputs, and settings live there too.
+- `wiki` — optional instance name inside that checkout: resolved
+  through the checkout's registry (an alias in `sync.json`'s
+  `instances` map first, then a free stem `sync-<name>.json`), so the
+  binding selects the corpus, the settings file, and the outputs dir
+  together — the answer is saved to that instance's
+  `outputs-<stem>/last-query.md` and `k-wiki status` names the
+  resolved config and data repo. Without the key the default
+  instance answers; an optional `settings` key (a settings file
+  inside the checkout) overrides the derived settings file.
 - One project binds exactly one wiki: the file must be a single
   JSON object; lists and multi-wiki forms are rejected. That 1:1
   limit is the safety property — no ambient path between work and
@@ -1327,9 +1364,11 @@ directory or the filesystem root), then the cwd itself — today's
 behavior of running from inside the checkout, preserved.
 
 There is no filing passthrough: `--file-last` stays the human-run
-`wiki-query` command inside the checkout. The four read-only
+`wiki-query` command inside the checkout (`wiki-query --wiki <name>
+--file-last` when the binding named an instance). The four read-only
 commands open no write path: `status` prints the resolution chain
-(checkout, origin, settings, data repo, wiki dir, `index.md`);
+(checkout, origin, instance, sync config, settings, data repo,
+outputs dir, wiki dir, `index.md`);
 `list` prints one `slug — title` line per page grouped by type
 in the `index.md` order (the navigation pages `index`,
 `log`, `overview` are read by name instead); `read` prints one page

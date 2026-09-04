@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { errorMessage } from "../cli/colors.ts";
 import { checkRaw, printHealthReport } from "../health/check-raw.ts";
 import { runQueryCli } from "../query/query-shell.ts";
-import { loadSyncConfig, resolveRawDir } from "../sync/config.ts";
+import { resolveWikiInstance, type WikiInstance } from "../sync/instance.ts";
 import {
   filteredLines,
   groupedLines,
@@ -66,15 +66,24 @@ bound. One command set — the shared CLI shell, no CLI framework. None of
 them can write to the wiki.
 
 Binding file .k-wiki.json (at the bound project's root):
-  { "checkout": "~/k-wiki", "settings": "settings-meta.yml" }
+  { "checkout": "~/k-wiki", "wiki": "meta", "settings": "settings-meta.yml" }
   checkout — a k-wiki checkout whose sync.json resolves the data
     repo; its prompts/, outputs/, and settings live there too.
-  settings — optional non-default settings file inside the checkout
-    (e.g. settings-meta.yml, the meta wiki's settings file);
-    default settings.yml. Exactly one wiki per binding: the file
-    must be a single JSON object; lists and multi-wiki forms are
+  wiki — optional instance name inside the checkout: resolved
+    through the checkout's registry — an alias in sync.json's
+    instances map first, then a free stem sync-<name>.json in the
+    checkout root — and every derived path follows the resolved
+    config: its dataRoot is the data repo queried, and the saved
+    answer goes to outputs-<stem>/ (outputs/ and settings.yml for
+    the default instance, whose stem is sync.json). An unknown
+    name fails listing every known name. Default: absent — the
+    default instance. Exactly one wiki per binding: the file must
+    be a single JSON object; lists and multi-wiki forms are
     rejected — one project binds exactly one wiki, so no ambient
     path exists between work and personal knowledge.
+  settings — optional non-default settings file inside the checkout
+    (e.g. settings-meta.yml); overrides the instance's derived
+    settings file (settings-<stem>.yml, falling back to settings.yml).
   Gitignore the file in personal projects; commit it in team
     projects.
 
@@ -95,7 +104,8 @@ Commands:
                      during the run reverts the data repo and fails.
                      Filing is not exposed here.
   status             Print the resolved binding: checkout, origin,
-                     settings file, data repo, wiki dir, index.md.
+                     instance name, sync config, settings file, data
+                     repo, outputs dir, wiki dir, index.md.
                      No agent, no side effects.
   list [<type>]      Print one 'slug — title' line per wiki page,
                      grouped by type in index.md order; the navigation
@@ -150,20 +160,37 @@ function fail(message: string): void {
   cliFail("k-wiki", message);
 }
 
-/** Print the resolved binding: origin, checkout, paths (issue #76). */
+/** Print the resolved binding: origin, checkout, instance, paths
+ *  (issue #76; the instance lines landed with issue #306). */
 async function runStatus(
   resolution: CheckoutResolution,
   run: RunContext,
+  instance: WikiInstance,
 ): Promise<void> {
   console.log(
     [
       `checkout:  ${resolution.checkout} (from ${ORIGIN_LABELS[resolution.origin]})`,
-      `settings:  ${join(resolution.checkout, resolution.settings ?? "settings.yml")}`,
+      `instance:  ${instance.name ?? "default"}`,
+      `sync:      ${instance.configPath}`,
+      `settings:  ${bindingSettings(resolution, instance)}`,
       `data repo: ${run.dataRoot}`,
+      `outputs:   ${instance.outputsDir}`,
       `wiki:      ${run.wikiDir}`,
       `index:     ${join(run.wikiDir, "index.md")}`,
     ].join("\n"),
   );
+}
+
+/** The effective settings file: the binding's explicit settings key
+ *  overrides the instance's derived settings — one precedence rule,
+ *  mirroring the human door's flags (issue #306). */
+function bindingSettings(
+  resolution: CheckoutResolution,
+  instance: WikiInstance,
+): string {
+  return resolution.settings === undefined
+    ? instance.settingsPath
+    : join(resolution.checkout, resolution.settings);
 }
 
 /** Print the structured wiki listing, grouped (or filtered) by type. */
@@ -310,20 +337,22 @@ async function resolveCheckoutOrFail(input: {
   }
 }
 
-/** The bound data repo's run context, from the checkout's sync.json:
- *  the boundary builds it once (issue #257) and every k-wiki command
- *  reads its paths from it. */
+/** The bound instance's run context and resolution, from the
+ *  checkout's sync.json through the shared instance resolver: the
+ *  binding's wiki key (issue #306) selects the config — the default
+ *  instance when absent — and every derived path follows it. */
 async function checkoutPaths(
   resolution: CheckoutResolution,
   home: string,
-): Promise<RunContext> {
-  const config = await loadSyncConfig(
-    join(resolution.checkout, "sync.json"),
+): Promise<{ run: RunContext; instance: WikiInstance }> {
+  const instance = await resolveWikiInstance({
+    checkout: resolution.checkout,
+    name: resolution.wiki,
     home,
-  );
-  const rawDir = resolveRawDir(config.dataRoot, resolution.checkout);
+    nameSource: resolution.origin === "file" ? ".k-wiki.json" : undefined,
+  });
 
-  return runContext({ rawDir });
+  return { run: runContext({ rawDir: instance.rawDir }), instance };
 }
 
 /** Run status, list, read, or health; true when one of them ran. */
@@ -332,10 +361,11 @@ async function runReadOnlyCommand(
   rest: readonly string[],
   resolution: CheckoutResolution,
   run: RunContext,
+  instance: WikiInstance,
   failOnStale: boolean,
 ): Promise<boolean> {
   if (command === "status") {
-    await runStatus(resolution, run);
+    await runStatus(resolution, run, instance);
 
     return true;
   }
@@ -362,25 +392,30 @@ async function runReadOnlyCommand(
 }
 
 /** Run the one LLM command: query — the shared query shell (sink,
- *  runWikiQuery mapping, answer + dim hint, failure rendering). */
+ *  runWikiQuery mapping, answer + dim hint, failure rendering). The
+ *  settings and outputs paths follow the resolved instance (issue
+ *  #306); the binding's explicit settings key still wins. */
 async function runQueryCommand(
   resolution: CheckoutResolution,
   run: RunContext,
+  instance: WikiInstance,
   timeoutMs: number | undefined,
   question: string,
 ): Promise<void> {
+  const hint =
+    instance.name === undefined
+      ? "To file this answer (human step): wiki-query --file-last, run inside the checkout"
+      : `To file this answer (human step): wiki-query --wiki ${instance.name} --file-last, run inside the checkout`;
+
   await runQueryCli({
     prefix: "k-wiki",
-    settingsPath: join(
-      resolution.checkout,
-      resolution.settings ?? "settings.yml",
-    ),
+    settingsPath: bindingSettings(resolution, instance),
     rawDir: run.rawDir,
     promptsDir: join(resolution.checkout, "prompts"),
-    outputsDir: join(resolution.checkout, "outputs"),
+    outputsDir: instance.outputsDir,
     question,
     timeoutMs,
-    hint: "To file this answer (human step): wiki-query --file-last, run inside the checkout",
+    hint,
   });
 }
 
@@ -429,12 +464,13 @@ export async function main(cwd: string = process.cwd()): Promise<void> {
   }
 
   try {
-    const run = await checkoutPaths(resolution, home);
+    const { run, instance } = await checkoutPaths(resolution, home);
     const handled = await runReadOnlyCommand(
       cli.positional[0],
       rest,
       resolution,
       run,
+      instance,
       cli.flags.has("--fail-on-stale"),
     );
 
@@ -442,7 +478,13 @@ export async function main(cwd: string = process.cwd()): Promise<void> {
       return;
     }
 
-    await runQueryCommand(resolution, run, runFlags.timeoutMs, rest[0] ?? "");
+    await runQueryCommand(
+      resolution,
+      run,
+      instance,
+      runFlags.timeoutMs,
+      rest[0] ?? "",
+    );
   } catch (error) {
     fail(errorMessage(error));
   }
