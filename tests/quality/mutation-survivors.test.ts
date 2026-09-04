@@ -7,7 +7,8 @@ import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { mutantIdentity } from "../../src/quality/mutation-identity.ts";
 import {
-  actionableLines,
+  actionableEntries,
+  formatEntry,
   main,
   parseReport,
   printSurvivors,
@@ -80,13 +81,15 @@ describe("parseReport", () => {
   });
 });
 
-describe("actionableLines", () => {
+describe("actionableEntries", () => {
   it("lists exactly the survived and no-coverage mutants as file:line entries sorted by file and line", () => {
-    expect(actionableLines(report)).toEqual([
-      "Survived  src/sync/config.ts:7  ConditionalExpression",
-      "Survived  src/sync/config.ts:42  StringLiteral",
-      "NoCoverage  src/sync/scan.ts:3  MethodExpression",
-    ]);
+    expect(actionableEntries(report, () => undefined).map(formatEntry)).toEqual(
+      [
+        "Survived  src/sync/config.ts:7  ConditionalExpression",
+        "Survived  src/sync/config.ts:42  StringLiteral",
+        "NoCoverage  src/sync/scan.ts:3  MethodExpression",
+      ],
+    );
   });
 
   it("orders three actionable mutants of one file by line number", () => {
@@ -114,7 +117,9 @@ describe("actionableLines", () => {
       },
     };
 
-    expect(actionableLines(threeInOneFile)).toEqual([
+    expect(
+      actionableEntries(threeInOneFile, () => undefined).map(formatEntry),
+    ).toEqual([
       "Survived  src/one.ts:7  Regex",
       "Survived  src/one.ts:30  Regex",
       "Survived  src/one.ts:42  StringLiteral",
@@ -516,58 +521,64 @@ describe("printSurvivors", () => {
   });
 });
 
-describe("actionableLines file grouping", () => {
+describe("actionableEntries file grouping", () => {
   it("orders same-file mutants by ascending line", () => {
-    const lines = actionableLines({
-      files: {
-        "src/a.ts": {
-          mutants: [
-            {
-              mutatorName: "Second",
-              status: "Survived",
-              location: { start: { line: 20 } },
-            },
-            {
-              mutatorName: "First",
-              status: "Survived",
-              location: { start: { line: 5 } },
-            },
-          ],
+    const lines = actionableEntries(
+      {
+        files: {
+          "src/a.ts": {
+            mutants: [
+              {
+                mutatorName: "Second",
+                status: "Survived",
+                location: { start: { line: 20 } },
+              },
+              {
+                mutatorName: "First",
+                status: "Survived",
+                location: { start: { line: 5 } },
+              },
+            ],
+          },
         },
       },
-    });
+      () => undefined,
+    );
 
-    expect(lines).toEqual([
+    expect(lines.map(formatEntry)).toEqual([
       "Survived  src/a.ts:5  First",
       "Survived  src/a.ts:20  Second",
     ]);
   });
 
   it("orders files by ascending path regardless of insertion order", () => {
-    const lines = actionableLines({
-      files: {
-        "src/z.ts": {
-          mutants: [
-            {
-              mutatorName: "Zed",
-              status: "Survived",
-              location: { start: { line: 1 } },
-            },
-          ],
-        },
-        "src/a.ts": {
-          mutants: [
-            {
-              mutatorName: "Ay",
-              status: "Survived",
-              location: { start: { line: 1 } },
-            },
-          ],
+    const lines = actionableEntries(
+      {
+        files: {
+          "src/z.ts": {
+            mutants: [
+              {
+                mutatorName: "Zed",
+                status: "Survived",
+                location: { start: { line: 1 } },
+              },
+            ],
+          },
+          "src/a.ts": {
+            mutants: [
+              {
+                mutatorName: "Ay",
+                status: "Survived",
+                location: { start: { line: 1 } },
+              },
+            ],
+          },
         },
       },
-    });
+      () => undefined,
+    );
 
-    expect(lines).toEqual([
+    expect(lines.map(formatEntry)).toEqual([
       "Survived  src/a.ts:1  Ay",
       "Survived  src/z.ts:1  Zed",
     ]);
@@ -763,7 +774,10 @@ describe("printSurvivors with a registry (issue #241)", () => {
           "src/math.ts": {
             mutants: [
               survivor("ArithmeticOperator"),
-              survivor("OptionalChaining"),
+              {
+                ...survivor("OptionalChaining"),
+                location: { start: { line: 2 } },
+              },
             ],
           },
           "src/twin.ts": { mutants: [survivor("ArithmeticOperator")] },
@@ -878,10 +892,26 @@ describe("printSurvivors with a registry (issue #241)", () => {
     try {
       await withRegistryCwd(recordedEquivalent(), () => main(["--ids"]));
       expect(out.join("\n")).toMatch(
-        / {2}[0-9a-f]{16} {2}Survived {2}src\/math\.ts:2 {2}OptionalChaining/,
-      );
-      expect(out.join("\n")).toMatch(
         / {2}[0-9a-f]{16} {2}Survived {2}src\/twin\.ts:2 {2}ArithmeticOperator/,
+      );
+    } finally {
+      process.exitCode = undefined;
+      spy.mockRestore();
+    }
+  });
+
+  it("prints a dash for a mutant whose identity cannot compute under --ids", async () => {
+    const out: string[] = [];
+    const spy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+
+    process.exitCode = undefined;
+
+    try {
+      await withRegistryCwd(recordedEquivalent(), () => main(["--ids"]));
+      expect(out.join("\n")).toMatch(
+        / {2}- {2}Survived {2}src\/math\.ts:2 {2}OptionalChaining/,
       );
     } finally {
       process.exitCode = undefined;

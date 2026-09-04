@@ -76,28 +76,6 @@ when no report exists yet, when it is corrupt (not valid JSON), when
 a Stryker upgrade drifted its shape, or when the registry file is
 present but invalid.`;
 
-/** Actionable entries — Survived or NoCoverage — as sorted, readable lines. */
-export function actionableLines(report: Report): string[] {
-  const entries: ActionableEntry[] = [];
-
-  for (const [file, entry] of Object.entries(report.files)) {
-    for (const mutant of entry.mutants) {
-      if (isActionable(mutant.status)) {
-        entries.push({
-          file,
-          line: mutant.location.start.line,
-          status: mutant.status,
-          mutator: mutant.mutatorName,
-        });
-      }
-    }
-  }
-
-  entries.sort(compareEntries);
-
-  return entries.map(formatEntry);
-}
-
 /** File, then line, then mutator — the ledger and the survivors
  *  printer share one deterministic order. */
 export function compareEntries(

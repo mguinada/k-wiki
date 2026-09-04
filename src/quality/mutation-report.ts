@@ -266,21 +266,21 @@ interface MergeInputs {
   readonly registry: Registry;
 }
 
-/** Load the merge inputs, reporting the first failure as a message
- *  the caller prints and exits 1 on. */
-function loadMergeInputs(options: Options): MergeInputs | string {
+/** Load the merge inputs, throwing the first failure as the
+ *  message the caller prints and exits 1 on. */
+function loadMergeInputs(options: Options): MergeInputs {
   let reportText: string;
 
   try {
     reportText = readFileSync(options.reportPath, "utf8");
   } catch {
-    return `cannot read the report at ${options.reportPath}`;
+    throw new Error(`cannot read the report at ${options.reportPath}`);
   }
 
   const priorBody = readPriorBody(options.priorBodyPath);
 
   if (priorBody === undefined) {
-    return `cannot read the prior body at ${options.priorBodyPath}`;
+    throw new Error(`cannot read the prior body at ${options.priorBodyPath}`);
   }
 
   let registryText: string | undefined;
@@ -294,7 +294,7 @@ function loadMergeInputs(options: Options): MergeInputs | string {
   try {
     return { reportText, priorBody, registry: parseRegistry(registryText) };
   } catch (cause) {
-    return cause instanceof Error ? cause.message : String(cause);
+    throw new Error(cause instanceof Error ? cause.message : String(cause));
   }
 }
 
@@ -316,10 +316,12 @@ export function main(argv: readonly string[] = process.argv.slice(2)): void {
     return;
   }
 
-  const inputs = loadMergeInputs(options);
+  let inputs: MergeInputs;
 
-  if (typeof inputs === "string") {
-    console.error(inputs);
+  try {
+    inputs = loadMergeInputs(options);
+  } catch (cause) {
+    console.error(cause instanceof Error ? cause.message : String(cause));
     process.exitCode = 1;
 
     return;
