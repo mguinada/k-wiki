@@ -5,6 +5,7 @@ import {
   mkdtemp,
   readFile,
   rm,
+  stat,
   symlink,
   writeFile,
 } from "node:fs/promises";
@@ -773,5 +774,87 @@ describe("setup-schedule main: install and uninstall", () => {
     expect(outs.join("\n")).toContain("uninstalled");
 
     await rm(home, { recursive: true, force: true });
+  });
+});
+
+describe("setup-schedule main wiring (issue #240 kill batch)", () => {
+  async function tempHome(): Promise<string> {
+    return await mkdtemp(join(tmpdir(), "k-wiki-setup-wiring-"));
+  }
+
+  it("prints the plist with the repo's scheduled-run script path", async () => {
+    const home = await tempHome();
+    const printed: string[] = [];
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) =>
+        printed.push(parts.join(" ")),
+      );
+
+    try {
+      await main(["--print"], "linux", async () => {}, home);
+    } finally {
+      logSpy.mockRestore();
+    }
+
+    expect(printed.join("\n")).toContain("bin/scheduled-run.ts");
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("prints the plist with the launchd log dir under the given home", async () => {
+    const home = await tempHome();
+    const printed: string[] = [];
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) =>
+        printed.push(parts.join(" ")),
+      );
+
+    try {
+      await main(["--print"], "linux", async () => {}, home);
+    } finally {
+      logSpy.mockRestore();
+    }
+
+    expect(printed.join("\n")).toContain(`${home}/Library/Logs/k-wiki`);
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("prints the usage line for -h as for --help", async () => {
+    const home = await tempHome();
+    const printed: string[] = [];
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) =>
+        printed.push(parts.join(" ")),
+      );
+
+    try {
+      await main(["-h"], "linux", async () => {}, home);
+    } finally {
+      logSpy.mockRestore();
+    }
+
+    expect(printed.join("\n")).toContain("Usage: setup-schedule");
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("writes the installed plist with mode 0644 regardless of umask", async () => {
+    const home = await tempHome();
+    const previousUmask = process.umask(0o000);
+
+    try {
+      await main([], "darwin", async () => {}, home);
+
+      const info = await stat(plistPath(home));
+
+      expect(info.mode & 0o777).toBe(0o644);
+    } finally {
+      process.umask(previousUmask);
+      await rm(home, { recursive: true, force: true });
+    }
   });
 });

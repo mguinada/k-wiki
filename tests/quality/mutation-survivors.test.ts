@@ -87,6 +87,38 @@ describe("actionableLines", () => {
       "NoCoverage  src/sync/scan.ts:3  MethodExpression",
     ]);
   });
+
+  it("orders three actionable mutants of one file by line number", () => {
+    const threeInOneFile = {
+      files: {
+        "src/one.ts": {
+          mutants: [
+            {
+              mutatorName: "StringLiteral",
+              status: "Survived",
+              location: { start: { line: 42 } },
+            },
+            {
+              mutatorName: "Regex",
+              status: "Survived",
+              location: { start: { line: 7 } },
+            },
+            {
+              mutatorName: "Regex",
+              status: "Survived",
+              location: { start: { line: 30 } },
+            },
+          ],
+        },
+      },
+    };
+
+    expect(actionableLines(threeInOneFile)).toEqual([
+      "Survived  src/one.ts:7  Regex",
+      "Survived  src/one.ts:30  Regex",
+      "Survived  src/one.ts:42  StringLiteral",
+    ]);
+  });
 });
 
 const script = join(
@@ -238,6 +270,27 @@ describe("parseReport shape edges", () => {
     ).toThrow(
       "mutation report has an unexpected shape (a file entry lacks its mutants array)",
     );
+  });
+});
+
+describe("printSurvivors (exact header, issue #240 kill batch)", () => {
+  it("prints the exact actionable-mutants header with its count", () => {
+    const calls: string[] = [];
+    const spy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => calls.push(parts.join(" ")));
+
+    process.exitCode = undefined;
+
+    try {
+      printSurvivors(JSON.stringify(report));
+      expect(calls[0]).toBe(
+        "Actionable mutants (3) — kill or record as equivalent:",
+      );
+    } finally {
+      process.exitCode = undefined;
+      spy.mockRestore();
+    }
   });
 });
 

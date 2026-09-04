@@ -110,6 +110,42 @@ describe("buildPatterns", () => {
   });
 });
 
+describe("mergeRanges (issue #240 kill batch)", () => {
+  it("sorts ranges by start before merging", () => {
+    expect(
+      mergeRanges([
+        { start: 10, end: 12 },
+        { start: 1, end: 3 },
+        { start: 20, end: 22 },
+      ]),
+    ).toEqual([
+      { start: 1, end: 3 },
+      { start: 10, end: 12 },
+      { start: 20, end: 22 },
+    ]);
+  });
+});
+
+describe("parseNewRanges (issue #240 kill batch)", () => {
+  it("reads every hunk header of a multi-line diff", () => {
+    expect(parseNewRanges("@@ -1 +2 @@ ctx\nbody\n@@ -5 +6 @@ ctx")).toEqual([
+      { start: 2, end: 2 },
+      { start: 6, end: 6 },
+    ]);
+  });
+});
+
+describe("buildPatterns (issue #240 kill batch)", () => {
+  it("starts the list with the first file's entry, not a stray seed", () => {
+    expect(
+      buildPatterns([
+        { path: "src/new.ts", ranges: null },
+        { path: "src/a.ts", ranges: [{ start: 1, end: 2 }] },
+      ]),
+    ).toBe("src/new.ts,src/a.ts:1-2");
+  });
+});
+
 describe("collectChangedFiles", () => {
   it("keeps a hunk file and drops a deleted file from the changed list", () => {
     const git: GitText = (args) =>

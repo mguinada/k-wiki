@@ -7,6 +7,7 @@ import { sha256 } from "../../src/cli/shared.ts";
 import {
   assertCleanTree,
   gitRepoRoot,
+  isPreExisting,
   parseStatus,
   pathUntouched,
   removedNoteContent,
@@ -136,6 +137,36 @@ describe("gitRepoRoot", () => {
     await expect(
       gitRepoRoot(dir, { ...GIT_ENV, GIT_CEILING_DIRECTORIES: dirname(dir) }),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe("gitRepoRoot (issue #240 kill batch)", () => {
+  it("uses the injected env, not the process env, to find git", async () => {
+    const repo = await makeCodeRepoFixture();
+
+    await expect(
+      gitRepoRoot(join(repo, "wiki"), { ...GIT_ENV, PATH: "" }),
+    ).resolves.toBeUndefined();
+  });
+});
+
+describe("isPreExisting (issue #240 kill batch)", () => {
+  it("holds only for the same code and the same rename origin", () => {
+    expect(
+      isPreExisting(
+        { code: "R ", path: "b.md", origin: "a.md" },
+        { code: "R ", path: "b.md", origin: "a.md" },
+      ),
+    ).toBe(true);
+  });
+
+  it("fails for the same code with a different rename origin", () => {
+    expect(
+      isPreExisting(
+        { code: "R ", path: "b.md", origin: "a.md" },
+        { code: "R ", path: "b.md", origin: "z.md" },
+      ),
+    ).toBe(false);
   });
 });
 
