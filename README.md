@@ -1122,7 +1122,13 @@ upgrades — the resolved binary lives in a versioned Cellar and
 breaks on every `brew upgrade node`), falling back to
 the resolved binary. Register through the stable path once —
 `/opt/homebrew/bin/node bin/setup-schedule` — to move an
-existing install off a versioned Cellar path. The plist
+existing install off a versioned Cellar path. The same rule holds for
+the pinned script path: after pulling a change that renames or moves
+the launcher (as the switch to extensionless launcher names did),
+re-run `npm run setup-schedule` once — until then the installed job
+points at the deleted path and every tick fails into
+`launchd-stderr.log` with `MODULE_NOT_FOUND`, leaving the wiki stale
+with no other alert. The plist
 lands at `~/Library/LaunchAgents/com.kwiki.scheduled-run.plist` and is
 verified with `launchctl print` before the installer reports success.
 After installing, one manual kick proves the whole path:
