@@ -75,6 +75,28 @@ export function isWikiName(name: string): boolean {
   return WIKI_NAME_PATTERN.test(name) && !RESERVED_NAMES.has(name);
 }
 
+/** Top-level keys a sync config may carry (guide §26, issue
+ *  #306's `instances` registry). */
+const SYNC_CONFIG_KEYS = new Set([
+  "vaults",
+  "publish",
+  "dataRoot",
+  "instances",
+]);
+
+/** Reject unknown top-level keys, so a typo such as "instance" for
+ *  "instances" fails config load instead of silently dropping the
+ *  alias registry. */
+function rejectUnknownTopLevelKeys(parsed: Record<string, unknown>): void {
+  for (const key of Object.keys(parsed)) {
+    if (!SYNC_CONFIG_KEYS.has(key)) {
+      throw new Error(
+        `unknown key ${JSON.stringify(key)}; expected one of: vaults, publish, dataRoot, instances`,
+      );
+    }
+  }
+}
+
 /** Parse the optional `instances` alias map: every name a valid
  *  instance name, every target a non-empty string. Target path
  *  resolution (inside the checkout, existence) happens at name
@@ -399,6 +421,8 @@ export async function loadSyncConfig(
   }
 
   try {
+    rejectUnknownTopLevelKeys(parsed);
+
     return {
       vaults: parseVaults(parsed.vaults, home),
       publish: parsePublish(parsed.publish, home),

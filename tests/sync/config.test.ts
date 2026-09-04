@@ -824,3 +824,39 @@ describe("loadSyncConfig instances", () => {
     );
   });
 });
+
+describe("loadSyncConfig unknown keys", () => {
+  it("accepts a config carrying every known top-level key", async () => {
+    const config = await loadSyncConfig(
+      await writeConfig({
+        ...ONE_VAULT,
+        dataRoot: "~/Lab/k-wiki-data",
+        publish: {
+          mirror: "~/Mirror",
+          include: ["wiki/**"],
+        },
+        instances: { eng: "sync-engineering.json" },
+      }),
+      "/home/alice",
+    );
+
+    expect(config.instances).toEqual({ eng: "sync-engineering.json" });
+  });
+
+  it("rejects an unknown top-level key naming the key", async () => {
+    await expect(
+      loadSyncConfig(
+        await writeConfig({ ...ONE_VAULT, instance: "sync-meta.json" }),
+        "/home/alice",
+      ),
+    ).rejects.toThrow(/unknown key "instance"/);
+  });
+
+  it("names the config path in an unknown-key error", async () => {
+    const path = await writeConfig({ ...ONE_VAULT, instance: "sync.json" });
+
+    await expect(loadSyncConfig(path, "/home/alice")).rejects.toThrow(
+      new RegExp(path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    );
+  });
+});
