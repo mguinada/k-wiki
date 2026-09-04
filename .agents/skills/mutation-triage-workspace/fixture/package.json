@@ -4,5 +4,8 @@
   "type": "module",
   "scripts": {
     "mutation:survivors": "node dev/mutation-survivors.ts"
+  },
+  "dependencies": {
+    "picocolors": "^1.1.1"
   }
 }

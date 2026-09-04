@@ -167,8 +167,8 @@ function applyVerdict(
   mutant: Mutant,
 ): void {
   const id = mutantIdentity(file, mutant, readSource);
-  const key =
-    id ?? `${file}:${mutant.location.start.line}|${mutant.mutatorName}`;
+  const legacyKey = `${file}:${mutant.location.start.line}|${mutant.mutatorName}`;
+  const key = id ?? legacyKey;
 
   const entry: LedgerEntry = {
     file,
@@ -180,13 +180,17 @@ function applyVerdict(
 
   generated.add(key);
 
+  if (id !== undefined) {
+    generated.add(legacyKey);
+  }
+
   const tested =
     isActionable(mutant.status) || DEATH_STATUSES.has(mutant.status);
 
   if (tested && id !== undefined) {
     // The migration twin: the legacy file:line entry this span
     // identity replaces — deleted so the mutant never lists twice.
-    merged.delete(`${entry.file}:${entry.line}|${entry.mutator}`);
+    merged.delete(legacyKey);
   }
 
   if (isActionable(mutant.status)) {

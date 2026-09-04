@@ -1,5 +1,8 @@
 // Grades one mutation-triage eval run against its outputs directory.
-// Usage: node grade.ts <run-dir>  (run-dir contains outputs/ and repo/)
+// Usage: node grade.ts <run-dir> [eval-name]
+// (run-dir contains outputs/; repo/ and eval_metadata.json sit in the
+// eval directory beside it. eval-name defaults to eval_metadata.json's
+// eval_name field, else that eval directory's name.)
 //
 // Objective checks only: registry schema and bucket routing via the
 // repo's own modules (the same enforcement CI uses), identity keys
@@ -7,7 +10,7 @@
 // and the summary report's mechanism wording.
 
 import { readFileSync, existsSync, readdirSync } from "node:fs";
-import { join, dirname, resolve } from "node:path";
+import { join, dirname, resolve, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseRegistry } from "../fixture/src/quality/mutation-registry.ts";
 import { mutantIdentity } from "../fixture/src/quality/mutation-identity.ts";
@@ -53,7 +56,16 @@ function loadRegistry(): { entries: Map<string, { bucket: string }> } | string {
 
 /** The expected identity of one mutant, computed from the run's own report+source. */
 function identityOf(file: string, mutator: string): string | undefined {
-  const report = parseReport(readFileSync(join(repo, "reports/mutation/mutation.json"), "utf8"));
+  let report: ReturnType<typeof parseReport>;
+
+  try {
+    report = parseReport(
+      readFileSync(join(repo, "reports/mutation/mutation.json"), "utf8"),
+    );
+  } catch {
+    return undefined;
+  }
+
   const mutant = report.files[file]?.mutants.find((m) => m.mutatorName === mutator);
 
   if (mutant === undefined) {
@@ -192,11 +204,35 @@ function grade(evalName: string): Expectation[] {
   ];
 }
 
-const evalName = runDir.split("/").slice(-3, -2)[0] ?? "";
+function resolveEvalName(): string {
+  const explicit = process.argv[3];
+
+  if (explicit !== undefined && explicit !== "") {
+    return explicit;
+  }
+
+  for (const p of [join(runDir, "eval_metadata.json"), join(runDir, "..", "eval_metadata.json")]) {
+    if (existsSync(p)) {
+      try {
+        const name = (JSON.parse(readFileSync(p, "utf8")) as { eval_name?: string }).eval_name;
+
+        if (name) {
+          return name;
+        }
+      } catch {
+        // unreadable metadata — fall through to the directory name
+      }
+    }
+  }
+
+  return basename(dirname(runDir));
+}
+
+const evalName = resolveEvalName();
 const expectations = grade(evalName);
 const passed = expectations.filter((e) => e.passed).length;
 const grading = {
-  run_id: `${evalName}-${runDir.split("/").slice(-2).join("/")}`,
+  run_id: `${evalName}-${basename(runDir)}`,
   summary: {
     pass_rate: expectations.length === 0 ? 0 : passed / expectations.length,
     passed,
