@@ -34,7 +34,15 @@ export default defineConfig({
     // leaves them behind, and they would double the suite. Keep the e2e
     // suite out of the unit run (npm test) and coverage: it spawns the
     // real CLI and lives in vitest.e2e.config.ts (npm run e2e).
-    exclude: ["**/node_modules/**", ".stryker-tmp/**", "tests/e2e/**"],
+    // The skill-creator eval workspaces hold fixture test files whose
+    // imports resolve inside their fixture repos, not this one —
+    // gitignored, but vitest's discovery does not consult .gitignore.
+    exclude: [
+      "**/node_modules/**",
+      ".stryker-tmp/**",
+      "tests/e2e/**",
+      ".agents/skills/*-workspace/**",
+    ],
     coverage: {
       provider: "v8",
       include: ["src/**"],
