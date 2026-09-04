@@ -104,6 +104,18 @@ describe("spanText", () => {
   });
 });
 
+/** The Stryker sandbox detector (issue #276): the dry run executes
+ *  against an instrumented copy, so the live-report coordinates below
+ *  no longer match the real tree this test reads. */
+function insideStrykerSandbox(): boolean {
+  return (
+    import.meta.url.includes(".stryker-tmp") || "__stryker__" in globalThis
+  );
+}
+
+const skipNote =
+  "Stryker sandbox instruments src/; the live-report span reads the real tree (issue #276)";
+
 describe("mutantIdentity", () => {
   it("keys the same code span identically after its lines moved", () => {
     const moved = ["// moved", "// by", "// three", ADD_SOURCE].join("\n");
@@ -254,7 +266,13 @@ describe("mutantIdentity", () => {
     );
   });
 
-  it("keys a live-report mutant by its exact expression text", () => {
+  it("keys a live-report mutant by its exact expression text", ({ skip }) => {
+    if (insideStrykerSandbox()) {
+      skip(skipNote);
+
+      return;
+    }
+
     // The same convention Stryker writes: `a.path < b.path` on
     // 1-based line 59 of mutation-chunk.ts, columns 35..50, mutated
     // to `a.path <= b.path` — the survived sibling; `>=` is another
