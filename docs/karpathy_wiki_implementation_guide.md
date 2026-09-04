@@ -938,8 +938,12 @@ Use this when asking questions against the wiki. Asking is two-stage
 
 The agent-facing CLI `k-wiki` (issue #76) exposes stage 1 plus four
 read-only commands, from any project: a `.k-wiki.json` binding at
-the bound project's root names the checkout (and, optionally, a
-non-default settings file inside it); checkout resolution is the
+the bound project's root names the checkout and, optionally, a wiki
+instance inside it — the `wiki` key resolves through the checkout's
+registry (an alias in `sync.json`'s `instances` map, then a
+`sync-<name>.json` stem), selecting that instance's corpus, settings
+file, and outputs dir together, with a `settings` key overriding the
+derived settings file; checkout resolution is the
 `--checkout` flag, then the `K_WIKI_CHECKOUT` env var, then the
 nearest binding file walking up from the cwd, then the cwd itself.
 One binding binds exactly one wiki — lists and multi-wiki forms are
@@ -1039,7 +1043,7 @@ Start with autonomous mode. Its safety mechanisms are the post-run guardrails �
 Two rules keep multi-instance setups safe (hardened during the first full build, issue #61; the README's Usage models section has the worked examples):
 
 1. Run every `sync-vault` / `wiki-ingest` from its own checkout root. The ingest snapshot (`<dataRoot>/outputs/last-ingested-manifest.json`) is per-data-repo state kept in the data repo's own `outputs/` (gitignored there), and the wrapper resolves `sync.json`, `settings.yml`, and its own `outputs/` relative to the checkout it runs from. A legacy snapshot in a checkout's `outputs/` is adopted into the data repo on the next run (issue #112). A foreign snapshot is caught mechanically (issue #95): the snapshot is stamped with its data repo root at write time, and a read whose stamp does not match — foreign or unstamped — warns loudly; an unscoped run then falls back to a full run, while a scoped `--sources` run rejects with “run a full ingest first” (issue #151), so a crossed instance costs at most an unintended full re-run, never a silently wrong change set.
-2. Keep instance-specific configuration uncommitted or pass it explicitly (the config positional to `sync-vault`, `--settings <path>` to `wiki-ingest`): `sync.json` and `settings.yml` are tracked files in a publishable repo, and a private instance's vault paths must never be committed.
+2. Keep instance-specific configuration uncommitted or pass it explicitly (the config positional to `sync-vault`, `--settings <path>` to `wiki-ingest`, or `--wiki <name>` for a committed sibling config): `sync.json` and `settings.yml` are tracked files in a publishable repo, and a private instance's vault paths must never be committed.
 
 ---
 
@@ -1446,7 +1450,8 @@ data repo, and config, each free to link into the same domain wikis:
 
 The plumbing is ordinary Scenario B: its own vault, its own data repo,
 its own sync config and settings file, drivable from a single checkout
-by naming every argument (README usage models). The privacy caution of
+by instance name — `--wiki <name>` on the query and ingest doors
+(README usage models). The privacy caution of
 Scenario A applies in full: never merge a second brain's vault into
 a domain instance — un-mixing later requires history rewriting.
 

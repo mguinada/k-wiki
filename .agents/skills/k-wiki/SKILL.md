@@ -57,8 +57,9 @@ browse first.
 
 No writes: the CLI exposes no way to file, edit, or commit wiki
 pages, and none should be attempted by hand. Filing an answer is
-the user's step (`wiki-query --file-last`, run by the human inside
-the checkout). Not a search engine: no fuzzy matching beyond the
+the user's step (`wiki-query --file-last` — `wiki-query --wiki
+<name> --file-last` when the binding named an instance — run by
+the human inside the checkout). Not a search engine: no fuzzy matching beyond the
 commands above, no cross-wiki queries.
 
 ## Install
