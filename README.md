@@ -693,7 +693,7 @@ Runs are incremental — results are reused from
 minutes.
 
 In CI, mutation testing is advisory — never a blocking check — and
-runs in two shapes. A pull request carrying the
+runs in three shapes. A pull request carrying the
 [`mutation`](https://github.com/mguinada/k-wiki/labels) label triggers
 the `mutation` job, which uses the same hunk-scoped command as the
 optional local run (`npm run mutation:changed`, full checkout history)
@@ -715,8 +715,9 @@ rolling issue labeled
 K-Wiki Kanban at Status = Ready. The issue body is a **merged
 ledger**, never a replace snapshot: entries leave only via verified
 kills (or later adjudication), out-of-scope entries stay listed, and
-only a dispatched code-wide run reconciles the whole ledger (there,
-absence means death). The rolling issue is the kill-work queue: spin
+only a dispatched code-wide run from the default branch reconciles
+the whole ledger (there, absence means death). The rolling issue is
+the kill-work queue: spin
 dedicated triage issues from its list when a batch is worth a pass,
 and keep the count tended. The agent rules are in
 [AGENTS.md](AGENTS.md).

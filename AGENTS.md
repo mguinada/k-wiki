@@ -315,8 +315,9 @@ K-Wiki Kanban at Status = Ready. The issue body is a **merged
 ledger**, never a replace snapshot: an entry leaves only via a
 verified kill (Killed / Timeout) or a later adjudication, and
 out-of-scope entries stay listed — a windowed nightly cannot wipe
-what it did not cover; a dispatched full run reconciles the whole
-ledger (absence kills). Equivalents recorded in PR bodies re-file
+what it did not cover; a dispatched full run from the default
+branch reconciles the whole ledger (absence kills). Equivalents
+recorded in PR bodies re-file
 nightly until the equivalent-mutant registry (#241) lands — known,
 bounded, and the pressure to run #241 next. Kill-work batches are
 spun from that issue as normal agent work. Keep the rolling count
