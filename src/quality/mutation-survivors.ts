@@ -122,7 +122,7 @@ function entryHasMutants(entry: unknown): boolean {
 /** Parse and shape-check a Stryker report: every `files` entry
  *  must carry a `mutants` array — a Stryker upgrade that drifts the
  *  shape gets a diagnosable error, not a raw TypeError from deep in
- *  actionableLines. Throws on invalid JSON with the parse cause. */
+ *  actionableEntries. Throws on invalid JSON with the parse cause. */
 export function parseReport(text: string): Report {
   const parsed: unknown = JSON.parse(text);
 

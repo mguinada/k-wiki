@@ -394,6 +394,19 @@ describe("mergeLedger with span identities", () => {
     expect(ledger.entries[0]?.id).toMatch(/^[0-9a-f]{16}$/);
   });
 
+  it("keeps the legacy twin when a readable-source mutant reports CompileError", () => {
+    const legacyPrior: Ledger = {
+      entries: [survived("src/math.ts", 2, "ArithmeticOperator")],
+    };
+
+    expect(
+      mergeLedger(legacyPrior, spanReport("CompileError"), {
+        absenceKills: false,
+        readSource: reader(addSources),
+      }).ledger.entries,
+    ).toEqual([survived("src/math.ts", 2, "ArithmeticOperator")]);
+  });
+
   it("keeps a legacy entry a windowed run never generated", () => {
     const legacyPrior: Ledger = {
       entries: [survived("src/old.ts", 9, "OldSurvivor")],

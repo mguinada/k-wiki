@@ -180,7 +180,10 @@ function applyVerdict(
 
   generated.add(key);
 
-  if (id !== undefined) {
+  const tested =
+    isActionable(mutant.status) || DEATH_STATUSES.has(mutant.status);
+
+  if (tested && id !== undefined) {
     // The migration twin: the legacy file:line entry this span
     // identity replaces — deleted so the mutant never lists twice.
     merged.delete(`${entry.file}:${entry.line}|${entry.mutator}`);
