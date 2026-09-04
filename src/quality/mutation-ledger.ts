@@ -15,9 +15,10 @@
 // / ledger-rewrite role.
 //
 // Entries are keyed by the refactor-resilient span identity (issue
-// #241): sha(mutated span text, mutator, repo-relative path), never
-// file:line. Pre-registry blocks (schema 1) parse to legacy entries
-// without ids; a generated mutant replaces its legacy file:line twin
+// #241): sha(mutated span text, mutator, replacement,
+// repo-relative path), never file:line. Pre-registry blocks
+// (schema 1) parse to legacy entries without ids; a generated
+// mutant replaces its legacy file:line twin
 // on the spot, so in-window entries migrate without duplicates, and
 // the first full run rewrites the whole ledger under span keys.
 

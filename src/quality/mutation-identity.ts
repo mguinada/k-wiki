@@ -4,11 +4,12 @@ import { join } from "node:path";
 import type { Mutant } from "./mutation-survivors.ts";
 
 // Refactor-resilient mutant identity (issue #241): a sha over the
-// mutated span's exact code text, the mutator name, and the file's
-// repo-relative path — never `file:line`, which rots under refactors
-// (line shifts orphan or mispoint entries). One identity serves both
-// consumers: the rolling ledger's merge-body dedup and the
-// equivalent-mutant registry. Formatting churn re-keys (no
+// mutated span's exact code text, the mutator, the replacement
+// text, and the file's repo-relative path — never `file:line`,
+// which rots under refactors (line shifts orphan or mispoint
+// entries). One identity serves both consumers: the rolling
+// ledger's merge-body dedup and the equivalent-mutant registry.
+// Formatting churn re-keys (no
 // whitespace normalization in v1 — half-normalized keys rot worse
 // than honest ones), and a renamed file re-keys too: without the
 // path, two identical code spans in different files would share a
