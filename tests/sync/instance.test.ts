@@ -190,17 +190,6 @@ describe("resolveWikiInstance default", () => {
 
     expect(instance.rawDir).toBe(join(checkout, "default-data", "raw"));
   });
-
-  it("exposes the loaded sync config", async () => {
-    const checkout = await makeCheckout();
-    const instance = await resolveWikiInstance({
-      checkout,
-      name: undefined,
-      home: "/home/alice",
-    });
-
-    expect(instance.config.dataRoot).toBe(join(checkout, "default-data"));
-  });
 });
 
 describe("resolveWikiInstance stems", () => {

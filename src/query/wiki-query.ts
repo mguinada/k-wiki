@@ -21,11 +21,7 @@ import {
   type PreRunState,
   revertToPreRun,
 } from "../ingest/guardrails.ts";
-import {
-  resolveWikiInstance,
-  type WikiInstance,
-  wikiArgError,
-} from "../sync/instance.ts";
+import { resolveWikiInstance, wikiArgError } from "../sync/instance.ts";
 import { citedPages, fileLastQuery, writeQueryArtifact } from "./file-last.ts";
 import { runQueryCli } from "./query-shell.ts";
 
@@ -375,37 +371,23 @@ function fileLastHint(name: string | undefined): string {
   return `To file this answer: wiki-query ${wiki}--file-last`;
 }
 
-/** Resolve this run's instance (issue #306): the --wiki name through
- *  the checkout's alias/stem chain, deriving rawDir, outputs, and
- *  settings from the resolved config; explicit flags override each
+/** Run the stage the arguments selected, in the data repo it
+ *  resolved: stage 1 through the shared query shell, stage 2
+ *  deterministically. The instance (issue #306) resolves through
+ *  the checkout's alias/stem chain; explicit flags override each
  *  derived counterpart — one precedence rule. */
-async function resolveRun(
+async function dispatchStage(
   parsed: ReturnType<typeof parseArgs>,
   runFlags: AgentRunFlags,
-): Promise<
-  WikiInstance & { readonly outputsDir: string; readonly settingsPath: string }
-> {
+): Promise<void> {
   const name = parsed.values.get("--wiki");
   const instance = await resolveWikiInstance({
     checkout: repoRoot,
     name,
     home: homedir(),
   });
-
-  return {
-    ...instance,
-    outputsDir: runFlags.outputs ?? instance.outputsDir,
-    settingsPath: runFlags.settings ?? instance.settingsPath,
-  };
-}
-
-/** Run the stage the arguments selected, in the data repo it resolved:
- *  stage 1 through the shared query shell, stage 2 deterministically. */
-async function dispatchStage(
-  parsed: ReturnType<typeof parseArgs>,
-  runFlags: AgentRunFlags,
-): Promise<void> {
-  const instance = await resolveRun(parsed, runFlags);
+  const outputsDir = runFlags.outputs ?? instance.outputsDir;
+  const settingsPath = runFlags.settings ?? instance.settingsPath;
   const rawDir = parsed.values.get("--raw-dir") ?? instance.rawDir;
 
   // The run context, built once at this CLI boundary (issue #257):
@@ -413,24 +395,20 @@ async function dispatchStage(
   const run = runContext({ rawDir });
 
   if (parsed.flags.has("--file-last")) {
-    await fileLastStage(
-      terminalColors(process.env),
-      run.dataRoot,
-      instance.outputsDir,
-    );
+    await fileLastStage(terminalColors(process.env), run.dataRoot, outputsDir);
 
     return;
   }
 
   await runQueryCli({
     prefix: "wiki-query",
-    settingsPath: instance.settingsPath,
+    settingsPath,
     rawDir: run.rawDir,
     promptsDir: join(repoRoot, "prompts"),
-    outputsDir: instance.outputsDir,
+    outputsDir,
     question: parsed.positional[0] ?? "",
     timeoutMs: runFlags.timeoutMs,
-    hint: fileLastHint(parsed.values.get("--wiki")),
+    hint: fileLastHint(name),
   });
 }
 

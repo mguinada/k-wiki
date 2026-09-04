@@ -39,8 +39,6 @@ export interface WikiInstance {
   /** The raw dir from the resolved config's `dataRoot` — a config
    *  fact, never derived from the name. */
   readonly rawDir: string;
-  /** The parsed sync config at `configPath`. */
-  readonly config: SyncConfig;
 }
 
 /** The stem a sync config's basename derives (issue #306): undefined
@@ -110,15 +108,13 @@ function aliasTargetPath(
   target: string,
   home: string,
 ): string {
+  const root = resolve(checkout);
   const expanded = expandHome(target, home);
   const path = resolve(
     isAbsolute(expanded) ? expanded : join(checkout, expanded),
   );
 
-  if (
-    path !== resolve(checkout) &&
-    !path.startsWith(`${resolve(checkout)}${sep}`)
-  ) {
+  if (path !== root && !path.startsWith(`${root}${sep}`)) {
     throw new Error(
       `alias target ${JSON.stringify(target)} resolves outside the checkout ${checkout}`,
     );
@@ -262,6 +258,5 @@ export async function resolveWikiInstance(
         : join(input.checkout, `outputs-${stem}`),
     settingsPath: await derivedSettings(input.checkout, stem),
     rawDir: resolveRawDir(config.dataRoot, input.checkout),
-    config,
   };
 }
