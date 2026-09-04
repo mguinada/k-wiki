@@ -11,13 +11,16 @@
 # The body is a MERGED LEDGER, never a replace snapshot: the fresh
 # report merges into the prior body's hidden ledger block (a pre-block
 # body bootstraps once by parsing its rendered list), an entry leaves
-# only via a verified kill (Killed / Timeout) or — once the
-# equivalent-mutant registry lands — an adjudication record, and
-# entries the run never generated (out of its scope) stay listed. Full
-# dispatched runs from the default branch file with --absence-kills
-# (absence = death): that is the reconciliation / ledger-rewrite role. Equivalents recorded only
-# in PR bodies re-file nightly until the registry exists — known,
-# bounded, and the pressure to build it.
+# only via a verified kill (Killed / Timeout) or an adjudication record
+# in the equivalent-mutant registry (.mutants-registry.json, issue
+# #241 — recorded entries stay in the block but are filtered from the
+# rendered list and counted separately), and entries the run never
+# generated (out of its scope) stay listed. Full dispatched runs from
+# the default branch file with --absence-kills (absence = death): that
+# is the reconciliation / ledger-rewrite role — it also renders
+# registry prune candidates (entries whose spans the run no longer
+# generates); removal lands as a PR, automation never edits the
+# registry on main.
 #
 # The concurrency group queues (cancel-in-progress: false), so a long
 # dispatch straddling 03:30 UTC cannot race a nightly filing on the

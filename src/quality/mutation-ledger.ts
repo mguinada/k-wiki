@@ -5,13 +5,24 @@
 // and every filing merges the fresh Stryker report into the prior
 // body's ledger. Removal is status-aware, never absence-blind: an
 // entry leaves only via a verified kill (the run covered it and it
-// died) or — once the equivalent-mutant registry (#241) lands — an
-// adjudication record. An entry absent from the report was never
-// generated (out of the run's scope) and stays, so a windowed nightly
-// cannot wipe out-of-window entries. Full-scope dispatch runs pass
-// absenceKills: covering all of src/, absence anywhere means death —
-// that is the reconciliation / ledger-rewrite role.
+// died) or an adjudication record in the equivalent-mutant registry
+// (issue #241 — recorded entries stay in the block, filtered only
+// from the rendered list, so the filter is presentation only). An
+// entry absent from the report was never generated (out of the run's
+// scope) and stays, so a windowed nightly cannot wipe out-of-window
+// entries. Full-scope dispatch runs pass absenceKills: covering all
+// of src/, absence anywhere means death — that is the reconciliation
+// / ledger-rewrite role.
+//
+// Entries are keyed by the refactor-resilient span identity (issue
+// #241): sha(mutated span text, mutator, replacement,
+// repo-relative path), never file:line. Pre-registry blocks
+// (schema 1) parse to legacy entries without ids; a generated
+// mutant replaces its legacy file:line twin
+// on the spot, so in-window entries migrate without duplicates, and
+// the first full run rewrites the whole ledger under span keys.
 
+import { mutantIdentity, type SourceReader } from "./mutation-identity.ts";
 import {
   compareEntries,
   formatEntry,
@@ -26,6 +37,8 @@ export interface LedgerEntry {
   readonly line: number;
   readonly mutator: string;
   readonly status: string;
+  /** The span identity; absent on legacy (pre-registry) entries. */
+  readonly id?: string | undefined;
 }
 
 /** The tracked actionable mutants, sorted deterministically. */
@@ -33,10 +46,11 @@ export interface Ledger {
   readonly entries: readonly LedgerEntry[];
 }
 
-/** The mutant-identity key: file:line + mutator (the stopgap key
- *  until the equivalent-mutant registry fixes mutant identity). */
+/** The mutant-identity key: the span identity when the entry has
+ *  one, else the legacy `file:line|mutator` stopgap — the two never
+ *  collide (span identities are 16 hex characters). */
 export function identity(entry: LedgerEntry): string {
-  return `${entry.file}:${entry.line}|${entry.mutator}`;
+  return entry.id ?? `${entry.file}:${entry.line}|${entry.mutator}`;
 }
 
 /** Verdicts that prove the run covered a mutant and it died. */
@@ -62,7 +76,7 @@ export function ledgerBlockLine(ledger: Ledger): string {
     entries[identity(entry)] = entry;
   }
 
-  const json: LedgerJson = { schema: 1, entries };
+  const json: LedgerJson = { schema: 2, entries };
 
   return `<!-- ${BLOCK_PREFIX}${JSON.stringify(json)} -->`;
 }
@@ -82,7 +96,7 @@ function parseLedgerBlock(body: string): Ledger | undefined {
     const parsed = JSON.parse(match[1] ?? "{}") as LedgerJson;
 
     if (
-      parsed.schema !== 1 ||
+      (parsed.schema !== 1 && parsed.schema !== 2) ||
       typeof parsed.entries !== "object" ||
       Array.isArray(parsed.entries) ||
       parsed.entries === null
@@ -133,25 +147,52 @@ export interface MergeOptions {
   /** A full-scope run covers all of src/: an entry absent from its
    *  report is dead. Windowed runs leave absent entries alone. */
   readonly absenceKills: boolean;
+  /** Reads the report's source files, for span-identity computation. */
+  readonly readSource: SourceReader;
+}
+
+/** The merge's output: the merged ledger, plus the identities the
+ *  fresh report generated — the reconciliation input the registry's
+ *  prune pass consumes (only a full run may prune). */
+export interface MergeResult {
+  readonly ledger: Ledger;
+  readonly generated: ReadonlySet<string>;
 }
 
 /** Apply one fresh-report verdict to the merged ledger. */
 function applyVerdict(
   merged: Map<string, LedgerEntry>,
   generated: Set<string>,
+  readSource: SourceReader,
   file: string,
   mutant: Mutant,
 ): void {
+  const id = mutantIdentity(file, mutant, readSource);
+  const legacyKey = `${file}:${mutant.location.start.line}|${mutant.mutatorName}`;
+  const key = id ?? legacyKey;
+
   const entry: LedgerEntry = {
     file,
     line: mutant.location.start.line,
     mutator: mutant.mutatorName,
     status: mutant.status,
+    ...(id === undefined ? {} : { id }),
   };
 
-  const key = identity(entry);
-
   generated.add(key);
+
+  if (id !== undefined) {
+    generated.add(legacyKey);
+  }
+
+  const tested =
+    isActionable(mutant.status) || DEATH_STATUSES.has(mutant.status);
+
+  if (tested && id !== undefined) {
+    // The migration twin: the legacy file:line entry this span
+    // identity replaces — deleted so the mutant never lists twice.
+    merged.delete(legacyKey);
+  }
 
   if (isActionable(mutant.status)) {
     merged.set(key, entry);
@@ -164,13 +205,14 @@ function applyVerdict(
 }
 
 /** Merge a fresh Stryker report into the prior ledger: upsert the
- *  actionable verdicts, drop the verified kills, and — for
- *  full-scope runs only — drop entries the report never generated. */
+ *  actionable verdicts under their span identities, drop the verified
+ *  kills, and — for full-scope runs only — drop entries the report
+ *  never generated. */
 export function mergeLedger(
   prior: Ledger,
   report: Report,
   options: MergeOptions,
-): Ledger {
+): MergeResult {
   const merged = new Map(
     prior.entries.map((entry) => [identity(entry), entry]),
   );
@@ -179,7 +221,7 @@ export function mergeLedger(
 
   for (const [file, entry] of Object.entries(report.files)) {
     for (const mutant of entry.mutants) {
-      applyVerdict(merged, generated, file, mutant);
+      applyVerdict(merged, generated, options.readSource, file, mutant);
     }
   }
 
@@ -191,5 +233,8 @@ export function mergeLedger(
     }
   }
 
-  return { entries: [...merged.values()].sort(compareEntries) };
+  return {
+    ledger: { entries: [...merged.values()].sort(compareEntries) },
+    generated,
+  };
 }

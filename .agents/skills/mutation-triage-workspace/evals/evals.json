@@ -1,0 +1,26 @@
+{
+  "skill_name": "mutation-triage",
+  "evals": [
+    {
+      "id": 0,
+      "eval_name": "standard-triage-equivalent-and-killable",
+      "prompt": "The CI mutation run just finished in this repo. Two actionable mutants survived in src/log-format.ts (listed in reports/mutation/mutation.json): an ArithmeticOperator survivor on the rounding math and a StringLiteral survivor on a log prefix. Triage both per your skill: kill what a test can kill, record what is equivalent the way the skill prescribes. Stryker itself is not installed in this environment — treat reports/mutation/mutation.json as the fresh, authoritative report; write the killing test(s) but do not try to execute them (no test runner is installed). When you are done, copy every file you created or modified (preserving repo-relative paths) into the outputs directory you were given, and also write a short triage-report.md there summarizing each decision.",
+      "expected_output": "A killing test for formatAmount's rounding is written under tests/; the log-prefix StringLiteral is recorded as an equivalent in .mutants-registry.json keyed by its span identity (bucket equivalent, one-line justification, PR link, date); the killable mutant is NOT recorded in the registry; the summary report names each decision.",
+      "files": ["src/log-format.ts", "reports/mutation/mutation.json"]
+    },
+    {
+      "id": 1,
+      "eval_name": "artifact-vs-equivalent-bucketing",
+      "prompt": "Two actionable mutants survived in src/inventory.ts (see reports/mutation/mutation.json). You already hand-verified the OptionalChaining one: applying that mutation by hand and running the existing test suite directly kills it — Stryker's per-test coverage mapping simply failed to attribute the killing test, so the report wrongly says Survived. The StringLiteral one on the debug log prefix is a plain unobservable log-text change. Triage both per your skill, using what you know: record each the way the skill prescribes, in the right bucket, and do not write tests (the suite already kills the killable one once attribution is fixed). Stryker is not installed; the report is authoritative. Copy every file you created or modified (repo-relative paths) into the outputs directory, plus a short triage-report.md summarizing the decisions.",
+      "expected_output": "The OptionalChaining coverage-attribution case is recorded in .mutants-registry.json with bucket \"artifact\" (kept visible, plausibly killable — never lumped with equivalents); the log-text StringLiteral is recorded with bucket \"equivalent\"; both entries carry the full receipt (justification, PR link, date) and the schema-valid identity key; the summary report explains the bucket distinction.",
+      "files": ["src/inventory.ts", "reports/mutation/mutation.json"]
+    },
+    {
+      "id": 2,
+      "eval_name": "stop-the-nightly-refiling",
+      "prompt": "A mutant from reports/mutation/mutation.json (the StringLiteral survivor in src/log-format.ts) keeps re-appearing in our rolling survivor issue every night, even though its equivalence was already adjudicated and written up in PR #237's body months ago. The count never shrinks and fresh agents keep re-triaging it. Make this stop happening, following your skill — do whatever the skill says is the correct mechanism in this repo for a mutant that has been adjudicated but keeps coming back. Stryker is not installed here; the report is authoritative. Copy every file you created or modified (repo-relative paths) into the outputs directory, plus a short triage-report.md explaining what you did and why it stops the re-filing.",
+      "expected_output": "The mutant is recorded in .mutants-registry.json keyed by its span identity (obtained via the survivors printer's --ids flag per the skill) with bucket \"equivalent\" and the full receipt; the report explains that registry entries are consulted at filing time so recorded mutants are filtered from re-filing — PR-body prose alone no longer stops the nightly re-filing.",
+      "files": ["src/log-format.ts", "reports/mutation/mutation.json"]
+    }
+  ]
+}

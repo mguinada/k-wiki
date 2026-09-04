@@ -12,8 +12,15 @@
 raw/**
 wiki/**
 
-# skill-creator eval workspace (scratch)
+# skill-creator eval workspaces (scratch)
 .agents/skills/do-gh-issue-workspace/
+# mutation-triage eval workspace: run outputs and the git-recoverable
+# snapshot are session-local. The versionable iteration assets stay
+# tracked: evals/ (prompts + assertions), scripts/ (the grader),
+# fixture/ and templates/ (node_modules is ignored by the global
+# pattern above).
+.agents/skills/mutation-triage-workspace/iteration-*/
+.agents/skills/mutation-triage-workspace/skill-snapshot/
 .codegraph/
 node_modules
 coverage/

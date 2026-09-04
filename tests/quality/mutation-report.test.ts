@@ -1,15 +1,21 @@
 import { spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it, vi } from "vitest";
+import { mutantIdentity } from "../../src/quality/mutation-identity.ts";
 import {
   type Ledger,
   ledgerBlockLine,
   ledgerFromBody,
 } from "../../src/quality/mutation-ledger.ts";
+import {
+  parseRegistry,
+  REGISTRY_FILENAME,
+  type Registry,
+} from "../../src/quality/mutation-registry.ts";
 import {
   main,
   type ReportMeta,
@@ -89,8 +95,11 @@ const HTML_URL =
 const HEAD = [
   "Mutation testing: actionable survivors — auto-filed from CI",
   "(issue #208). Advisory signal, never a gate. Kill survivors via",
-  "the mutation-triage skill, or record equivalents in the PR body.",
+  "the mutation-triage skill; adjudicated equivalents and artifacts",
+  "live in .mutants-registry.json.",
 ].join("\n");
+
+const EMPTY_REGISTRY: Registry = { entries: new Map() };
 
 describe("renderIssueBody", () => {
   const ledger: Ledger = {
@@ -117,14 +126,14 @@ describe("renderIssueBody", () => {
   };
 
   it("renders the exact survivor body with both links and the ledger block", () => {
-    expect(renderIssueBody(ledger, meta)).toBe(
+    expect(renderIssueBody(ledger, EMPTY_REGISTRY, meta)).toBe(
       [
         HEAD,
         "",
         `- Source run: ${RUN_URL}`,
         `- HTML report artifact: ${HTML_URL}`,
         "",
-        "Actionable mutants (3) — kill or record as equivalent:",
+        "Untriaged mutants (3) — kill or record as adjudicated:",
         "",
         "```",
         "Survived  src/sync/config.ts:7  ConditionalExpression",
@@ -139,10 +148,10 @@ describe("renderIssueBody", () => {
   });
 
   it("renders the exact survivor body without links", () => {
-    expect(renderIssueBody(ledger)).toBe(
+    expect(renderIssueBody(ledger, EMPTY_REGISTRY)).toBe(
       [
         HEAD,
-        "Actionable mutants (3) — kill or record as equivalent:",
+        "Untriaged mutants (3) — kill or record as adjudicated:",
         "",
         "```",
         "Survived  src/sync/config.ts:7  ConditionalExpression",
@@ -157,7 +166,9 @@ describe("renderIssueBody", () => {
   });
 
   it("renders the exact clean body with one link only", () => {
-    expect(renderIssueBody({ entries: [] }, { runUrl: RUN_URL })).toBe(
+    expect(
+      renderIssueBody({ entries: [] }, EMPTY_REGISTRY, { runUrl: RUN_URL }),
+    ).toBe(
       [
         HEAD,
         "",
@@ -172,7 +183,9 @@ describe("renderIssueBody", () => {
   });
 
   it("round-trips a rendered body back into the same ledger", () => {
-    expect(ledgerFromBody(renderIssueBody(ledger))).toEqual(ledger);
+    expect(ledgerFromBody(renderIssueBody(ledger, EMPTY_REGISTRY))).toEqual(
+      ledger,
+    );
   });
 });
 
@@ -299,7 +312,7 @@ describe("mutation-report merge CLI", () => {
   const priorBody = [
     HEAD,
     "",
-    "Actionable mutants (2) — kill or record as equivalent:",
+    "Untriaged mutants (2) — kill or record as adjudicated:",
     "",
     "```",
     "Survived  src/old-window.ts:9  OldSurvivor",
@@ -673,5 +686,263 @@ describe("mutation-report main flag routing in-process", () => {
     );
 
     process.exitCode = undefined;
+  });
+});
+
+/** The canonical mutated source: `a + b` at 1-based line 2, columns 10..15. */
+const ADD_SOURCE = [
+  "export function add(a: number, b: number): number {",
+  "  return a + b;",
+  "}",
+].join("\n");
+
+/** One identity-computable survivor over ADD_SOURCE: the `a + b`
+ *  span at 1-based line 2, columns 10..15 (report coordinates). */
+const addSurvivor = (mutator: string) => ({
+  mutatorName: mutator,
+  status: "Survived",
+  replacement: "a - b",
+  location: { start: { line: 2, column: 10 }, end: { line: 2, column: 15 } },
+});
+
+const addReader: Record<string, string> = { "src/math.ts": ADD_SOURCE };
+
+const registryWith = (
+  id: string,
+  bucket: "equivalent" | "artifact",
+): Registry =>
+  parseRegistry(
+    JSON.stringify({
+      schema: 1,
+      entries: {
+        [id]: {
+          bucket,
+          justification: "Comparator ties are impossible (distinct paths).",
+          pr: "https://github.com/mguinada/k-wiki/pull/237",
+          date: "2026-08-31",
+        },
+      },
+    }),
+  );
+
+describe("renderIssueBody with a populated registry", () => {
+  const equivalentId = mutantIdentity(
+    "src/math.ts",
+    addSurvivor("ArithmeticOperator"),
+    (file) => addReader[file],
+  ) as string;
+
+  const ledger: Ledger = {
+    entries: [
+      {
+        id: equivalentId,
+        file: "src/math.ts",
+        line: 2,
+        mutator: "ArithmeticOperator",
+        status: "Survived",
+      },
+      {
+        file: "src/math.ts",
+        line: 3,
+        mutator: "StringLiteral",
+        status: "Survived",
+      },
+    ],
+  };
+
+  it("splits the counts: the recorded equivalent leaves the untriaged list, the recorded line carries it", () => {
+    const body = renderIssueBody(
+      ledger,
+      registryWith(equivalentId, "equivalent"),
+    );
+
+    expect(body).toContain(
+      "Untriaged mutants (1) — kill or record as adjudicated:",
+    );
+    expect(body).toContain(
+      "Recorded adjudications (1) — filtered from the list above: 1 equivalent, 0 artifact (.mutants-registry.json).",
+    );
+    expect(body).toContain("Survived  src/math.ts:3  StringLiteral");
+    expect(body).not.toContain("Survived  src/math.ts:2  ArithmeticOperator");
+  });
+
+  it("keeps the recorded entry inside the embedded ledger block — filtering is presentation only", () => {
+    expect(
+      ledgerFromBody(
+        renderIssueBody(ledger, registryWith(equivalentId, "equivalent")),
+      ),
+    ).toEqual(ledger);
+  });
+
+  it("renders an artifact entry in its own section, distinct from equivalents", () => {
+    const body = renderIssueBody(
+      ledger,
+      registryWith(equivalentId, "artifact"),
+    );
+
+    expect(body).toContain(
+      "Artifact mutants (1) — measurement artifacts, plausibly killable, kept visible:",
+    );
+    expect(body).toContain(
+      "- Survived  src/math.ts:2  ArithmeticOperator — Comparator ties are impossible (distinct paths). (https://github.com/mguinada/k-wiki/pull/237)",
+    );
+    expect(body).toContain("1 artifact");
+  });
+
+  it("renders the all-adjudicated line when no untriaged mutant remains", () => {
+    const recorded = ledger.entries[0];
+
+    if (recorded === undefined) {
+      throw new Error("test fixture: ledger must carry the recorded entry");
+    }
+
+    const allRecorded: Ledger = { entries: [recorded] };
+
+    expect(
+      renderIssueBody(allRecorded, registryWith(equivalentId, "equivalent")),
+    ).toContain(
+      "No untriaged mutants — every actionable mutant is adjudicated.",
+    );
+  });
+
+  it("renders prune candidates as their own section", () => {
+    const body = renderIssueBody(
+      { entries: [] },
+      registryWith(equivalentId, "equivalent"),
+      {
+        prune: [
+          {
+            id: equivalentId,
+            record: {
+              bucket: "equivalent",
+              justification: "Comparator ties are impossible (distinct paths).",
+              pr: "https://github.com/mguinada/k-wiki/pull/237",
+              date: "2026-08-31",
+            },
+          },
+        ],
+      },
+    );
+
+    expect(body).toContain(
+      "Registry prune candidates (1) — not generated by this full run; remove from .mutants-registry.json in a PR:",
+    );
+    expect(body).toContain(
+      `- ${equivalentId} recorded 2026-08-31 (https://github.com/mguinada/k-wiki/pull/237)`,
+    );
+  });
+});
+
+describe("mutation-report CLI with a registry on disk", () => {
+  const equivalentId = () =>
+    mutantIdentity(
+      "src/math.ts",
+      addSurvivor("ArithmeticOperator"),
+      (file) => addReader[file],
+    ) as string;
+
+  /** A temp repo: sources (incl. the identical twin span), registry
+   *  recording the first mutant, and a report over all three. */
+  async function writeRegistryRepo(
+    dir: string,
+    registryText: string,
+  ): Promise<string> {
+    await mkdir(join(dir, "src"), { recursive: true });
+    await writeFile(join(dir, "src", "math.ts"), ADD_SOURCE);
+    await writeFile(join(dir, "src", "twin.ts"), ADD_SOURCE);
+    await writeFile(join(dir, REGISTRY_FILENAME), registryText);
+
+    return writeReport(dir, {
+      files: {
+        "src/math.ts": {
+          mutants: [
+            addSurvivor("ArithmeticOperator"),
+            addSurvivor("OptionalChaining"),
+          ],
+        },
+        "src/twin.ts": {
+          mutants: [addSurvivor("ArithmeticOperator")],
+        },
+      },
+    });
+  }
+
+  const populated = () =>
+    JSON.stringify({
+      schema: 1,
+      entries: {
+        [equivalentId()]: {
+          bucket: "equivalent",
+          justification: "Comparator ties are impossible (distinct paths).",
+          pr: "https://github.com/mguinada/k-wiki/pull/237",
+          date: "2026-08-31",
+        },
+      },
+    });
+
+  it("filters the recorded mutant from the filing and keeps its unrecorded sibling listed", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-reg-"));
+
+    tempDirs.push(dir);
+
+    const reportPath = await writeRegistryRepo(dir, populated());
+    const result = await runNode([reportPath], dir);
+
+    expect(result.code).toBe(0);
+    expect(result.out).not.toContain("src/math.ts:2  ArithmeticOperator");
+    expect(result.out).toContain("src/math.ts:2  OptionalChaining");
+    expect(result.out).toContain("Recorded adjudications (1)");
+  });
+
+  it("keeps the identical span in another file listed — the path is part of the identity", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-reg-"));
+
+    tempDirs.push(dir);
+
+    const reportPath = await writeRegistryRepo(dir, populated());
+    const result = await runNode([reportPath], dir);
+
+    expect(result.out).toContain("Survived  src/twin.ts:2  ArithmeticOperator");
+  });
+
+  it("keeps the recorded entry inside the ledger block it files", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-reg-"));
+
+    tempDirs.push(dir);
+
+    const reportPath = await writeRegistryRepo(dir, populated());
+    const result = await runNode([reportPath], dir);
+
+    expect(ledgerFromBody(result.out).entries).toHaveLength(3);
+  });
+
+  it("exits 1 naming the registry when it is present but corrupt", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-reg-"));
+
+    tempDirs.push(dir);
+
+    const reportPath = await writeRegistryRepo(dir, "{not json");
+    const result = await runNode([reportPath], dir);
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain(REGISTRY_FILENAME);
+  });
+
+  it("exits 1 naming the registry when an entry lacks its receipt", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-reg-"));
+
+    tempDirs.push(dir);
+
+    const reportPath = await writeRegistryRepo(
+      dir,
+      JSON.stringify({
+        schema: 1,
+        entries: { [equivalentId()]: { bucket: "equivalent" } },
+      }),
+    );
+    const result = await runNode([reportPath], dir);
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("justification");
   });
 });

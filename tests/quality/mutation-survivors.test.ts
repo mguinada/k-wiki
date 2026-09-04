@@ -5,8 +5,10 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it, vi } from "vitest";
+import { mutantIdentity } from "../../src/quality/mutation-identity.ts";
 import {
-  actionableLines,
+  actionableEntries,
+  formatEntry,
   main,
   parseReport,
   printSurvivors,
@@ -79,13 +81,15 @@ describe("parseReport", () => {
   });
 });
 
-describe("actionableLines", () => {
+describe("actionableEntries", () => {
   it("lists exactly the survived and no-coverage mutants as file:line entries sorted by file and line", () => {
-    expect(actionableLines(report)).toEqual([
-      "Survived  src/sync/config.ts:7  ConditionalExpression",
-      "Survived  src/sync/config.ts:42  StringLiteral",
-      "NoCoverage  src/sync/scan.ts:3  MethodExpression",
-    ]);
+    expect(actionableEntries(report, () => undefined).map(formatEntry)).toEqual(
+      [
+        "Survived  src/sync/config.ts:7  ConditionalExpression",
+        "Survived  src/sync/config.ts:42  StringLiteral",
+        "NoCoverage  src/sync/scan.ts:3  MethodExpression",
+      ],
+    );
   });
 
   it("orders three actionable mutants of one file by line number", () => {
@@ -113,7 +117,9 @@ describe("actionableLines", () => {
       },
     };
 
-    expect(actionableLines(threeInOneFile)).toEqual([
+    expect(
+      actionableEntries(threeInOneFile, () => undefined).map(formatEntry),
+    ).toEqual([
       "Survived  src/one.ts:7  Regex",
       "Survived  src/one.ts:30  Regex",
       "Survived  src/one.ts:42  StringLiteral",
@@ -161,7 +167,7 @@ describe("mutation-survivors CLI", () => {
     const result = await runNode(["--help"]);
 
     expect(`${result.code}|${result.out}`).toMatch(
-      /0\|Usage: mutation-survivors \[-h \| --help\]/,
+      /0\|Usage: mutation-survivors \[--ids\] \[-h \| --help\]/,
     );
   });
 
@@ -274,7 +280,7 @@ describe("parseReport shape edges", () => {
 });
 
 describe("printSurvivors (exact header, issue #240 kill batch)", () => {
-  it("prints the exact actionable-mutants header with its count", () => {
+  it("prints the exact untriaged-mutants header with its count", () => {
     const calls: string[] = [];
     const spy = vi
       .spyOn(console, "log")
@@ -285,7 +291,7 @@ describe("printSurvivors (exact header, issue #240 kill batch)", () => {
     try {
       printSurvivors(JSON.stringify(report));
       expect(calls[0]).toBe(
-        "Actionable mutants (3) — kill or record as equivalent:",
+        "Untriaged mutants (3) — kill or record as adjudicated:",
       );
     } finally {
       process.exitCode = undefined;
@@ -515,58 +521,64 @@ describe("printSurvivors", () => {
   });
 });
 
-describe("actionableLines file grouping", () => {
+describe("actionableEntries file grouping", () => {
   it("orders same-file mutants by ascending line", () => {
-    const lines = actionableLines({
-      files: {
-        "src/a.ts": {
-          mutants: [
-            {
-              mutatorName: "Second",
-              status: "Survived",
-              location: { start: { line: 20 } },
-            },
-            {
-              mutatorName: "First",
-              status: "Survived",
-              location: { start: { line: 5 } },
-            },
-          ],
+    const lines = actionableEntries(
+      {
+        files: {
+          "src/a.ts": {
+            mutants: [
+              {
+                mutatorName: "Second",
+                status: "Survived",
+                location: { start: { line: 20 } },
+              },
+              {
+                mutatorName: "First",
+                status: "Survived",
+                location: { start: { line: 5 } },
+              },
+            ],
+          },
         },
       },
-    });
+      () => undefined,
+    );
 
-    expect(lines).toEqual([
+    expect(lines.map(formatEntry)).toEqual([
       "Survived  src/a.ts:5  First",
       "Survived  src/a.ts:20  Second",
     ]);
   });
 
   it("orders files by ascending path regardless of insertion order", () => {
-    const lines = actionableLines({
-      files: {
-        "src/z.ts": {
-          mutants: [
-            {
-              mutatorName: "Zed",
-              status: "Survived",
-              location: { start: { line: 1 } },
-            },
-          ],
-        },
-        "src/a.ts": {
-          mutants: [
-            {
-              mutatorName: "Ay",
-              status: "Survived",
-              location: { start: { line: 1 } },
-            },
-          ],
+    const lines = actionableEntries(
+      {
+        files: {
+          "src/z.ts": {
+            mutants: [
+              {
+                mutatorName: "Zed",
+                status: "Survived",
+                location: { start: { line: 1 } },
+              },
+            ],
+          },
+          "src/a.ts": {
+            mutants: [
+              {
+                mutatorName: "Ay",
+                status: "Survived",
+                location: { start: { line: 1 } },
+              },
+            ],
+          },
         },
       },
-    });
+      () => undefined,
+    );
 
-    expect(lines).toEqual([
+    expect(lines.map(formatEntry)).toEqual([
       "Survived  src/a.ts:1  Ay",
       "Survived  src/z.ts:1  Zed",
     ]);
@@ -722,6 +734,202 @@ describe("mutation-survivors main in-process", () => {
     } finally {
       process.exitCode = undefined;
       logSpy.mockRestore();
+    }
+  });
+});
+
+describe("printSurvivors with a registry (issue #241)", () => {
+  const ADD_SOURCE = [
+    "export function add(a: number, b: number): number {",
+    "  return a + b;",
+    "}",
+  ].join("\n");
+
+  const survivor = (mutator: string) => ({
+    mutatorName: mutator,
+    status: "Survived",
+    replacement: "a - b",
+    location: { start: { line: 2, column: 10 }, end: { line: 2, column: 15 } },
+  });
+
+  /** A temp repo carrying the report, its sources, and a registry. */
+  const withRegistryCwd = async (
+    registryText: string,
+    run: () => void,
+  ): Promise<void> => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutsurv-reg-"));
+    const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue(dir);
+
+    tempDirs.push(dir);
+
+    await mkdir(join(dir, "reports", "mutation"), { recursive: true });
+    await mkdir(join(dir, "src"), { recursive: true });
+    await writeFile(join(dir, "src", "math.ts"), ADD_SOURCE);
+    await writeFile(join(dir, "src", "twin.ts"), ADD_SOURCE);
+    await writeFile(join(dir, ".mutants-registry.json"), registryText);
+    await writeFile(
+      join(dir, "reports", "mutation", "mutation.json"),
+      JSON.stringify({
+        files: {
+          "src/math.ts": {
+            mutants: [
+              survivor("ArithmeticOperator"),
+              {
+                ...survivor("OptionalChaining"),
+                location: { start: { line: 2 } },
+              },
+            ],
+          },
+          "src/twin.ts": { mutants: [survivor("ArithmeticOperator")] },
+        },
+      }),
+    );
+
+    try {
+      run();
+    } finally {
+      cwdSpy.mockRestore();
+    }
+  };
+
+  const recordedEquivalent = () => {
+    const readSource = (file: string) =>
+      ({ "src/math.ts": ADD_SOURCE, "src/twin.ts": ADD_SOURCE })[file] ??
+      undefined;
+    const id = mutantIdentity(
+      "src/math.ts",
+      survivor("ArithmeticOperator"),
+      readSource,
+    );
+
+    if (id === undefined) {
+      throw new Error("test fixture: identity must compute");
+    }
+
+    return JSON.stringify({
+      schema: 1,
+      entries: {
+        [id]: {
+          bucket: "equivalent",
+          justification: "Comparator ties are impossible (distinct paths).",
+          pr: "https://github.com/mguinada/k-wiki/pull/237",
+          date: "2026-08-31",
+        },
+      },
+    });
+  };
+
+  it("filters the recorded equivalent and prints the recorded-count line", async () => {
+    const out: string[] = [];
+    const spy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+
+    process.exitCode = undefined;
+
+    try {
+      await withRegistryCwd(recordedEquivalent(), () => main([]));
+      expect(out.join("\n")).toContain("Untriaged mutants (2)");
+      expect(out.join("\n")).not.toContain(
+        "  Survived  src/math.ts:2  ArithmeticOperator",
+      );
+      expect(out.join("\n")).toContain(
+        "Recorded adjudications (1) — filtered from the list above: 1 equivalent, 0 artifact",
+      );
+    } finally {
+      process.exitCode = undefined;
+      spy.mockRestore();
+    }
+  });
+
+  it("keeps the identical twin span listed — the path is part of the identity", async () => {
+    const out: string[] = [];
+    const spy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+
+    process.exitCode = undefined;
+
+    try {
+      await withRegistryCwd(recordedEquivalent(), () => main([]));
+      expect(out.join("\n")).toContain(
+        "  Survived  src/twin.ts:2  ArithmeticOperator",
+      );
+    } finally {
+      process.exitCode = undefined;
+      spy.mockRestore();
+    }
+  });
+
+  it("exits 1 naming the registry when it is present but corrupt", async () => {
+    const errors: string[] = [];
+    const spy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) =>
+        errors.push(parts.join(" ")),
+      );
+
+    process.exitCode = undefined;
+
+    try {
+      await withRegistryCwd("{not json", () => main([]));
+      expect(errors.join("\n")).toContain(".mutants-registry.json");
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = undefined;
+      spy.mockRestore();
+    }
+  });
+
+  it("prefixes each untriaged line with its span identity for --ids", async () => {
+    const out: string[] = [];
+    const spy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+
+    process.exitCode = undefined;
+
+    try {
+      await withRegistryCwd(recordedEquivalent(), () => main(["--ids"]));
+      expect(out.join("\n")).toMatch(
+        / {2}[0-9a-f]{16} {2}Survived {2}src\/twin\.ts:2 {2}ArithmeticOperator/,
+      );
+    } finally {
+      process.exitCode = undefined;
+      spy.mockRestore();
+    }
+  });
+
+  it("prints a dash for a mutant whose identity cannot compute under --ids", async () => {
+    const out: string[] = [];
+    const spy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+
+    process.exitCode = undefined;
+
+    try {
+      await withRegistryCwd(recordedEquivalent(), () => main(["--ids"]));
+      expect(out.join("\n")).toMatch(
+        / {2}- {2}Survived {2}src\/math\.ts:2 {2}OptionalChaining/,
+      );
+    } finally {
+      process.exitCode = undefined;
+      spy.mockRestore();
+    }
+  });
+
+  it("documents --ids in the help text", () => {
+    const out: string[] = [];
+    const spy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+
+    try {
+      main(["--help"]);
+      expect(out.join("\n")).toContain("--ids");
+    } finally {
+      spy.mockRestore();
     }
   });
 });

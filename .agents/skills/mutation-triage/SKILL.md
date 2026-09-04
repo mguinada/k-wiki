@@ -1,6 +1,6 @@
 ---
 name: mutation-triage
-description: "Triage StrykerJS mutation-testing survivors: extract surviving and uncovered mutants from reports/mutation/mutation.json, kill each with a new or stronger test, or record it as an equivalent mutant in the PR body, then re-run the scoped mutation to confirm. Use after `npm run mutation:changed` (or `npm run mutation`) reports survived or no-coverage mutants, or when the user says 'triage the survivors', 'triage the full mutation run', 'run mutation across all of src', 'handle the surviving mutants', or asks why tests did not catch a mutant. Do NOT use for running mutation testing itself (the dev-loop run is optional since issue #208; CI auto-files survivors into the rolling issue) or for disabling mutators."
+description: "Triage StrykerJS mutation-testing survivors: extract surviving and uncovered mutants from reports/mutation/mutation.json, kill each with a new or stronger test, or record its adjudication in the equivalent-mutant registry (`.mutants-registry.json`, edited in the PR), then re-run the scoped mutation to confirm. Use after `npm run mutation:changed` (or `npm run mutation`) reports survived or no-coverage mutants, or when the user says 'triage the survivors', 'triage the full mutation run', 'run mutation across all of src', 'handle the surviving mutants', or asks why tests did not catch a mutant. Do NOT use for running mutation testing itself (the dev-loop run is optional since issue #208; CI auto-files survivors into the rolling issue) or for disabling mutators."
 ---
 
 # Mutation Triage
@@ -37,16 +37,35 @@ of the advisory workflow in AGENTS.md, never a gate.
      over one assertion per mutant.
    - **Equivalent** — the mutant changes the code without changing
      observable behavior (typical: mutated log text, reordered
-     side-effect-free calls). Do not chase it. Record it in the PR body:
-     file:line, mutator, and one sentence of justification. This record
-     is the only accepted escape valve — a `// Stryker disable`
-     comment without a written justification line in the PR body is
-     forbidden.
+     side-effect-free calls). Do not chase it. Record it in the
+     equivalent-mutant registry, `.mutants-registry.json` at the repo
+     root, **in your PR**: run `npm run mutation:survivors -- --ids`
+     for the mutant's identity, then add one entry keyed by that id
+     in exactly this shape:
+
+     ```json
+     "<id from --ids>": {
+       "bucket": "equivalent",
+       "justification": "One line: why no test can ever observe this sabotage.",
+       "pr": "https://github.com/mguinada/k-wiki/pull/<this PR>",
+       "date": "<YYYY-MM-DD, the day you adjudicate>"
+     }
+     ```
+
+     `bucket: "artifact"` is for measurement artifacts (plausibly
+     killable) — the same entry shape, never mix the two buckets. PR
+     review of the registry diff is the human-judgment gate;
+     `tests/quality/mutation-registry.test.ts` enforces the schema —
+     a receipt-less or malformed entry fails `npm test`. This record
+     (or a `// Stryker disable` for a location that should never be
+     mutated at all, with its written PR-body justification) is the
+     only accepted escape valve.
 
 4. **Verify the batch — one run.** Do not re-run after each individual
    fix. Re-run the same command from step 1 once, after the batch.
    Every newly killed mutant must show `Killed`; survivors left must
-   all be the equivalents you recorded. If the run reports
+   all be the equivalents you recorded (the survivors printer filters
+   recorded entries and counts them separately). If the run reports
    still-survived mutants whose killing test was already written,
    strengthen that test and re-run once more — repeat in batched
    rounds until only recorded equivalents remain.

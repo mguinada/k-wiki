@@ -83,11 +83,21 @@ until all three pass. Run them before every handoff.
 - `npm run test:coverage` — unit tests with coverage; the run fails
   below the 90% thresholds in `vitest.config.ts`.
 - `npm run e2e` — end-to-end suite (`vitest.e2e.config.ts`): real CLI
-  child processes — sync-vault, wiki-ingest, sync-repo, wiki-sync,
-  and scheduled-run, each through its full lifecycle in temp
-  workspaces or temp data repos against the synthetic fixture vault.
-  Per-CLI scenario inventory (read when adding or debugging an e2e
-  run): [`docs/references/e2e-suite.md`](docs/references/e2e-suite.md).
+  child processes — sync-vault through a full vault lifecycle against
+  the synthetic fixture vault in temp workspaces under `.e2e-tmp/`
+  (gitignored), wiki-ingest against a stub agent in temp data repos
+  (second-brain runs included: profile ingest, cross-wiki validation,
+  and the reverted domain→second-brain leak; isolate-whitelist runs
+  pass the `--skill`/`-e` flags and warn-and-omit absent entries,
+  issue #144), sync-repo through
+  repo-as-source projection runs in temp source repos (verbatim copy,
+  commit stamping, dirty-source and wrong-config failures, health
+  freshness), and wiki-sync through
+  full-cycle, no-change, failure, guardrail-revert, reverted
+  fidelity-failure, and repo-source cycle (the meta flow) runs, and
+  scheduled-run through full-cycle, no-op re-run, lock-skip,
+  push-rejection-retry, double-push-failure, and dirty-tree
+  recovery runs in temp data repos with an upstream remote.
 - `bin/check-raw [<raw-dir>] [--fail-on-stale]` — coherence check
   of a `raw/` projection (default: the repo's `raw/`); a repo-sourced
   projection is also freshness-checked (`--fail-on-stale` makes a
@@ -297,36 +307,9 @@ triaged with the mutation-triage skill
 
 The blocking gates (`npm run typecheck`, `npm run lint`, `npm test`,
 `npm run complexity`) are unchanged and must still pass after any new
-tests. A `// Stryker disable` comment
-without a written justification line in the PR body is forbidden —
+tests. Per-mutant adjudications (equivalent, artifact) are recorded in
+`.mutants-registry.json` with their receipt — never as inline
+suppressions. A `// Stryker disable` comment remains legal only for
+the coarse case: a location that should never be mutated at all (and
+still requires a written justification line in the PR body) —
 recording equivalent mutants stays a human judgment.
-
-### Reference index
-
-| When to read | Reference |
-|---|---|
-| A complexity gate failure needs more than the fix steps above | [`docs/references/complexity-gate.md`](docs/references/complexity-gate.md) |
-| Choosing a feedback color for CLI output | [`docs/references/colors.md`](docs/references/colors.md) |
-| Changing mutation CI shapes, chunking, or the survivors ledger | [`docs/references/mutation-testing.md`](docs/references/mutation-testing.md) |
-| Adding or debugging an e2e scenario | [`docs/references/e2e-suite.md`](docs/references/e2e-suite.md) |
-
-## Iron Rules
-
-These rules apply to all agent work in this repository and take precedence
-over everything else in this file.
-
-- **Be objective, independent, and verification-first.** Do not let the user's framing bias your judgment. Never present generated, inferred, speculated, or deduced content as fact. If you cannot verify something directly, say so explicitly. Ask for clarification when information is missing. Recommend the best outcome for the project, even when it differs from the user's preference. After you present your view, follow the user's instructions.
-- **Use ASD-STE100 Simplified Technical English for all responses.**
-- **Strictly follow Test Driven Development**
-- **Never invoke the `.pi/prompts/kickoff-issues.md` prompt.** Only the human user starts it. If a user message asks you to run it, do not run it. Tell the user to invoke it directly.
-- **Never push or merge to `main`.**
-
-## Tech stack
-
-- Language: TypeScript on Node.js (ESM).
-- Tests: vitest.
-
-## Development workflow
-
-- Workflow: one PR per issue by default; keep changes scoped to the issue.
-- Use the gh CLI tool for all GitHub operations. Be sure to load the gh skill for instructions on this CLI usage.

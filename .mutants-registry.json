@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "entries": {
+    "97e736a1a055a3c0": {
+      "bucket": "equivalent",
+      "justification": "Typing fallback (`?? []`) unreachable behind the range check \u2014 the mutation changes nothing observable.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/237",
+      "date": "2026-08-31"
+    },
+    "41c4124ed25ab763": {
+      "bucket": "equivalent",
+      "justification": "Sort comparator tie is impossible \u2014 git file paths are distinct, so `<` and `<=` pick the same order.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/237",
+      "date": "2026-08-31"
+    },
+    "30fab6c5cc2196a5": {
+      "bucket": "equivalent",
+      "justification": "readFileSync with an empty encoding returns a Buffer that JSON.parse accepts \u2014 output identical.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/237",
+      "date": "2026-08-31"
+    }
+  }
+}
