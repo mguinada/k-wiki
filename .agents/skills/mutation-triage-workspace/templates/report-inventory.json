@@ -1,0 +1,50 @@
+{
+ "files": {
+  "src/inventory.ts": {
+   "mutants": [
+    {
+     "id": "3",
+     "mutatorName": "OptionalChaining",
+     "replacement": "items[0]",
+     "status": "Survived",
+     "static": false,
+     "testsCompleted": 1,
+     "coveredBy": [
+      "t2"
+     ],
+     "location": {
+      "start": {
+       "line": 3,
+       "column": 10
+      },
+      "end": {
+       "line": 3,
+       "column": 20
+      }
+     }
+    },
+    {
+     "id": "4",
+     "mutatorName": "StringLiteral",
+     "replacement": "\"\"",
+     "status": "Survived",
+     "static": false,
+     "testsCompleted": 1,
+     "coveredBy": [
+      "t2"
+     ],
+     "location": {
+      "start": {
+       "line": 8,
+       "column": 17
+      },
+      "end": {
+       "line": 8,
+       "column": 27
+      }
+     }
+    }
+   ]
+  }
+ }
+}

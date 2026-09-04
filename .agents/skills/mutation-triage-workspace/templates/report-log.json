@@ -1,0 +1,50 @@
+{
+ "files": {
+  "src/log-format.ts": {
+   "mutants": [
+    {
+     "id": "1",
+     "mutatorName": "ArithmeticOperator",
+     "replacement": "value / 100",
+     "status": "Survived",
+     "static": false,
+     "testsCompleted": 1,
+     "coveredBy": [
+      "t1"
+     ],
+     "location": {
+      "start": {
+       "line": 3,
+       "column": 30
+      },
+      "end": {
+       "line": 3,
+       "column": 41
+      }
+     }
+    },
+    {
+     "id": "2",
+     "mutatorName": "StringLiteral",
+     "replacement": "\"\"",
+     "status": "Survived",
+     "static": false,
+     "testsCompleted": 1,
+     "coveredBy": [
+      "t1"
+     ],
+     "location": {
+      "start": {
+       "line": 5,
+       "column": 16
+      },
+      "end": {
+       "line": 5,
+       "column": 27
+      }
+     }
+    }
+   ]
+  }
+ }
+}

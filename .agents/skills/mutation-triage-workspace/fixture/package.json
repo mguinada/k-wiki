@@ -1,0 +1,8 @@
+{
+  "name": "fixture-repo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "mutation:survivors": "node dev/mutation-survivors.ts"
+  }
+}
