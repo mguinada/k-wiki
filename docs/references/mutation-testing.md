@@ -32,12 +32,36 @@ merges the actionable mutants into one rolling issue labeled
 `mutation` — "Mutation testing: actionable survivors" — kept on the
 K-Wiki Kanban at Status = Ready. The issue body is a **merged
 ledger**, never a replace snapshot: an entry leaves only via a
-verified kill (Killed / Timeout) or a later adjudication, and
+verified kill (Killed / Timeout) or a recorded adjudication, and
 out-of-scope entries stay listed — a windowed nightly cannot wipe
 what it did not cover; a dispatched full run from the default
-branch reconciles the whole ledger (absence kills). Equivalents
-recorded in PR bodies re-file
-nightly until the equivalent-mutant registry (#241) lands — known,
-bounded, and the pressure to run #241 next. Kill-work batches are
-spun from that issue as normal agent work. Keep the rolling count
-tended: it is a dashboard of debt, not a graveyard.
+branch reconciles the whole ledger (absence kills). Adjudications
+live in the **equivalent-mutant registry** (#241),
+`.mutants-registry.json` at the repo root: a committed JSON file of
+settled mutants keyed by a refactor-resilient identity — sha over
+the mutated span's exact code text, the mutator, the replacement
+sabotage text, and the file's repo-relative path (occurrence
+ordinal included so duplicate identical spans never share a key).
+The filing filters recorded entries from the untriaged list and
+counts them separately (`equivalent` and `artifact` buckets, never
+merged — artifacts stay visible in their own section because they
+are plausibly killable), so recording a mutant moves it between
+counts and the total never shrinks silently. Entries are keyed
+under span identities, not `file:line`: a full dispatch
+reconciliation rewrites the ledger and reports registry prune
+candidates (spans no longer generated); removal lands as a PR.
+Recording an adjudication = the kill-work agent edits
+`.mutants-registry.json` **in its PR** (`npm run mutation:survivors
+-- --ids` prints the identity to record) — PR review is the
+human-judgment gate; every entry carries its receipt (bucket,
+one-line justification, PR link, date) and a receipt-less entry
+fails the unit suite. Kill-work batches are spun from that issue as
+normal agent work. Keep the rolling count tended: it is a dashboard
+of debt, not a graveyard.
+
+Policy boundaries: per-mutant adjudications (equivalent, artifact)
+are recorded in `.mutants-registry.json` with their receipt — never
+as inline suppressions. A `// Stryker disable` comment remains legal
+only for the coarse case — a location that should never be mutated
+at all — and still requires a written justification line in the PR
+body; recording equivalent mutants stays a human judgment.
