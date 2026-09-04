@@ -258,6 +258,7 @@ describe("collectMetrics (whitespace-tolerant idioms, issue #240 kill batch)", (
         "}",
         "",
       ].join("\n"),
+      "rx/dirname.ts": 'const parent = dirname(rawDir + "/wiki");\n',
       "rx/arrow.ts":
         "const parseArgs=async(args: readonly string[]): Promise<void> => {};\n",
       "rx/arrow2.ts": "const walk3=async(dir: string): Promise<void> => {};\n",
@@ -292,7 +293,7 @@ describe("collectMetrics (whitespace-tolerant idioms, issue #240 kill batch)", (
       envSignatures: 4,
       envSignatureFiles: 4,
       dataRootEnvPairs: 0,
-      dirnameRawDirDerivations: 0,
+      dirnameRawDirDerivations: 1,
     });
   });
 });
