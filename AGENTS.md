@@ -269,8 +269,8 @@ CLI help text and `README.md` must not reference internal GitHub
 issues; issue citations belong only in
 `docs/karpathy_wiki_implementation_guide.md` and dev-facing code
 comments. Enforced mechanically by `tests/no-issue-refs.test.ts`,
-which runs `--help` for every `bin/*.ts` and `dev/*.ts` and scans
-`README.md`.
+which runs `--help` for every launcher in `bin/` (extensionless,
+issue #156) and `dev/` and scans `README.md`.
 
 ### CLI colors
 
