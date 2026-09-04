@@ -2,7 +2,7 @@
 
 An LLM-maintained knowledge wiki, derived from a human-owned Obsidian vault.
 
-`k-wiki` implements the [Karpathy-style LLM wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) pattern: a personal Obsidian vault remains the human-owned source of truth. Notes sync into an immutable `raw/` projection unless they opt out with `wiki: false`; an LLM agent then builds and maintains a structured, interlinked wiki under `wiki/`. Both trees are disposable derived data — versioned in a separate data repo placed by `sync.json`'s `dataRoot` (guide §19), auditable by diff, and publishable to all devices as a read-only mirror. This repository holds the pipeline and the directory skeleton only; the contents of `raw/` and `wiki/` are gitignored here.
+`k-wiki` implements the [Karpathy-style LLM wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) pattern: a personal Obsidian vault remains the human-owned source of truth. Notes sync into an immutable `raw/` projection unless they opt out with `wiki: false`; an LLM agent then builds and maintains a structured, interlinked wiki under `wiki/`. Both trees are disposable derived data — versioned in a separate data repo placed by `sync.json`'s `dataRoot`, auditable by diff, and publishable to all devices as a read-only mirror. This repository holds the pipeline and the directory skeleton only; the contents of `raw/` and `wiki/` are gitignored here.
 
 ## Contents
 
@@ -38,7 +38,6 @@ Stage 1 implementation is underway; code lands sequentially through the Stage 1 
 
 | Path | What it is |
 |---|---|
-| `docs/karpathy_wiki_implementation_guide.md` | The implementation guide — spec of record, including the target repository layout (§6) |
 | `AGENTS.md` / `wiki/AGENTS.md` | The two agent contexts |
 
 ## Working in this repo (humans and agents)
@@ -47,8 +46,6 @@ This repository hosts two agent contexts with deliberately different permissions
 
 - **Wiki operations** (ingest, lint, query) follow `wiki/AGENTS.md`.
 - **Pipeline development** (scripts, config, tests) follows the root `AGENTS.md`.
-
-See [Two Agent Contexts](docs/karpathy_wiki_implementation_guide.md#1-two-agent-contexts) in the guide before doing either.
 
 ## The pipeline
 
@@ -131,9 +128,8 @@ instances — is documented in the sections below.
 
 ## Usage models
 
-Every way this wiki can run today, one worked example each. The design
-behind them is [guide §25](docs/karpathy_wiki_implementation_guide.md#25-scaling-to-multiple-vaults-and-multiple-wikis);
-the examples here are the operator-level contract. Modes that arrive
+Every way this wiki can run today, one worked example each; the
+examples here are the operator-level contract. Modes that arrive
 with open issues are [listed separately](#arriving-with-open-issues)
 and documented only when they land.
 
@@ -145,8 +141,7 @@ catches mechanically, and a subject-based name prevents
 it at the human level. The path is operator-owned config
 (`sync.json`'s `dataRoot`); the wiki's identity is that same
 stamp, never the folder name — renaming an
-instance is a safe operator procedure with one budgeted full run
-([guide §19](docs/karpathy_wiki_implementation_guide.md#19-git)).
+instance is a safe operator procedure with one budgeted full run.
 
 The mirror vault follows the same naming family: **`KWiki <Subject>`**,
 TitleCase with spaces — `KWiki` the brand prefix, the subject trailing;
@@ -157,8 +152,7 @@ mirror" depends on the picker making source and mirror unmistakable: a
 mirror never takes a source vault's name, never the bare brand `KWiki`,
 and never differs from a source name by case alone — case-insensitive
 filesystems (the macOS/iOS default) would not show the difference. One
-mirror per instance
-([guide §26](docs/karpathy_wiki_implementation_guide.md#26-devices-and-sync)).
+mirror per instance.
 
 ### 1. One vault → one wiki (baseline)
 
@@ -180,7 +174,7 @@ The command commits the data repo itself, so the next digest covers
 only its own run; the printed digest plus `git log -1` tell the whole
 story ([details](#running-the-full-cycle-wiki-sync)). The separate
 commands — `bin/sync-vault`, `bin/wiki-ingest` — stay
-available for debugging (guide §8).
+available for debugging.
 
 These checks take their directories explicitly: their defaults are
 this repo's skeleton trees, not the data repo at `dataRoot`.
@@ -285,7 +279,7 @@ into its own `raw/notes/<name>/` namespace with its own manifest key:
 
 The `dataRoot` names the wiki's subject — here both vaults together —
 never one of its vaults: several vaults feed one wiki in this model,
-and either vault's name would misname the repo (guide §19).
+and either vault's name would misname the repo.
 
 **Sync is supported today; wiki-contract operation is not.** The e2e
 suite covers a full single-vault lifecycle plus two-vault sync
@@ -297,8 +291,7 @@ this as a supported sync configuration, not a working wiki mode.
 
 ### 5. The second brain
 
-One subject's own vault compiled into its own instance
-([guide §25, Scenario D](docs/karpathy_wiki_implementation_guide.md#scenario-d-the-second-brain)):
+One subject's own vault compiled into its own instance:
 a profile layer the agent reads before every run and every query,
 `project`/`decision`/`attempt` pages under `wiki/second-brain/`, and
 one-way cross-wiki links into domain wikis. The subject can be a
@@ -419,7 +412,7 @@ history, privacy cannot be un-mixed without rewriting that history.
 
 The data repo is a plain git repository — provider-agnostic. Every
 feature works with no remote at all: history, rollback, audit
-(guide §19). A remote is an explicit opt-in, and any git remote
+A remote is an explicit opt-in, and any git remote
 works — a private GitHub repo, a self-hosted one, or a bare repo on
 an external disk as the only remote:
 
@@ -432,7 +425,7 @@ git push -u origin main
 
 The data repo holds personal material: push it only to a private
 remote you explicitly control. It must live in a plain local folder,
-never inside a cloud-synced one (guide §26).
+never inside a cloud-synced one.
 
 ### 8. Operator rules that keep instances safe
 
@@ -466,8 +459,7 @@ k-wiki documenting itself: the source is the k-wiki repository, not a
 vault. A second pipeline instance with its own data repo
 (`k-wiki-meta-data`), its own configs (`sync-meta.json`,
 `settings-meta.yml`), and a different contract — describe, don't
-prescribe; code is truth; pages for mechanisms, not per-file résumés
-([guide §25 Scenario E](docs/karpathy_wiki_implementation_guide.md)).
+prescribe; code is truth; pages for mechanisms, not per-file résumés.
 Selection is an allowlist in `sync-meta.json`: anything not listed is
 excluded by construction, so the projection can never ingest itself.
 
@@ -557,9 +549,9 @@ hides plumbing:
 | `bin/check-raw [<raw-dir>] [--fail-on-stale]` | health CLI | Check the coherence of a `raw/` projection (default: the repo's `raw/`): every `raw/notes/<vault>/` file matches its `manifest.json` sha-256, with no orphans and no missing entries; a repo-sourced projection (sync-repo) is also freshness-checked — a recorded source commit behind the source repo's HEAD warns, and `--fail-on-stale` makes it exit 1; read-only, no vault access; exit 0 = coherent (including healthy-empty), exit 1 = one line per problem |
 | `bin/check-links [<wiki-dir>]` | wikilink checker | Check that every `[[wikilink]]` under `wiki/` (default) resolves to an existing page by file name, and every body-text heading anchor (`[[page#Chapter]]`) to a heading in the target page byte-identical to the anchor (frontmatter `sources` citations stay `check-provenance`'s domain; block references and multi-level anchors' parent segments are skipped), skipping external slashed `[[<vault>/<page>]]` cross-wiki targets; exit 0 = all links resolve, exit 1 = one `file:line -> [[link]]` line per broken link |
 | `bin/check-crosslinks <wiki-dir> <domain-wiki-dir> [<domain-wiki-dir>…]` | cross-wiki link checker | Check the one-way link discipline between a wiki and its domain wikis: every slashed `[[<vault>/<page>]]` link names a vault of a passed domain wiki (validated against its `raw/manifest.json`, case-insensitive) and resolves to an existing page there, and the domain wikis carry no cross-wiki links; exit 0 = discipline holds, exit 1 = one `file:line -> [[link]]` line per problem |
-| `bin/check-provenance [<wiki-dir> [<raw-dir>]]` | dead-provenance checker | Check that every `sources` entry under `wiki/` resolves — a wikilink to an existing `type: source` page, an anchored `[[hub#Chapter]]` entry that lands on a hub heading byte-identical to its anchor, a raw path to an existing `raw/` file that **no hub covers** (a hub-covered path must cite the wikilink, guide §9; default: the repo's `wiki/` and its sibling `raw/`); exit 0 = coherent, exit 1 = one `wiki/<page> -> …` line per problem (an anchor miss reports `wiki/<page>:<line>`); when `type: source` pages lack `origin`, a yellow warning below the ok summary (exit stays 0; printed only when no dead provenance was found) names the exact `backfill-origin` commands to run, dry run first — the deterministic backstop that catches any purge miss |
+| `bin/check-provenance [<wiki-dir> [<raw-dir>]]` | dead-provenance checker | Check that every `sources` entry under `wiki/` resolves — a wikilink to an existing `type: source` page, an anchored `[[hub#Chapter]]` entry that lands on a hub heading byte-identical to its anchor, a raw path to an existing `raw/` file that **no hub covers** (a hub-covered path must cite the wikilink; default: the repo's `wiki/` and its sibling `raw/`); exit 0 = coherent, exit 1 = one `wiki/<page> -> …` line per problem (an anchor miss reports `wiki/<page>:<line>`); when `type: source` pages lack `origin`, a yellow warning below the ok summary (exit stays 0; printed only when no dead provenance was found) names the exact `backfill-origin` commands to run, dry run first — the deterministic backstop that catches any purge miss |
 | `bin/check-fidelity [<wiki-dir> [<raw-dir>]]` | citation-fidelity checker | Check that every machine-checkable token a `type: source` page quotes in its body — tilde paths, dotted config keys (file extensions and hostnames excluded), long and short CLI flags, `npm run` commands — appears in the page's `origin` file under `raw/` (a prefix of a longer name does not count), and every page's `title` kebab-cases to its file name (`index`, `overview`, `log` exempt; default: the repo's `wiki/` and its sibling `raw/`); exit 0 = faithful, exit 1 = one `wiki/<page> -> …` line per problem — catches fabricated tokens deterministically; relational misquotes (right tokens, wrong containment) stay with the lint prompt and diff review; source pages without `origin` skip quote checking and get the same yellow `backfill-origin` warning as check-provenance |
-| `bin/backfill-origin [<wiki-dir> [<raw-dir>]]` | origin backfill | Deterministically write `origin` (guide §14a) on every `type: source` page lacking it whose `sources` cites exactly one existing `raw/` path **and** whose title corroborates that note's name, bumping `updated` (default: the repo's `wiki/` and sibling `raw/`; `--date YYYY-MM-DD` overrides the bump date, `--dry-run` previews every pairing without writing); zero/several-path and title-mismatch pages are reported for judgment, never guessed; refuses a dirty wiki tree, appends an audit entry to `wiki/log.md`, idempotent — `git diff` is the review surface |
+| `bin/backfill-origin [<wiki-dir> [<raw-dir>]]` | origin backfill | Deterministically write `origin` on every `type: source` page lacking it whose `sources` cites exactly one existing `raw/` path **and** whose title corroborates that note's name, bumping `updated` (default: the repo's `wiki/` and sibling `raw/`; `--date YYYY-MM-DD` overrides the bump date, `--dry-run` previews every pairing without writing); zero/several-path and title-mismatch pages are reported for judgment, never guessed; refuses a dirty wiki tree, appends an audit entry to `wiki/log.md`, idempotent — `git diff` is the review surface |
 | `bin/link-sources [-h \| --help] [--write] [--date <YYYY-MM-DD>] [<wiki-dir>]` | sources wikilink migration | Rewrite legacy path-form `sources` entries under `wiki/` (default) to wikilinks of their `type: source` hub pages — anchored (`[[hub#Chapter]]`) for a multi-part hub's sub-source — in all pages whose entry maps to the shared hub index; dry run by default prints every pair without writing, `--write` refuses a tree with uncommitted changes and appends an audit entry to `wiki/log.md`, unmappable entries are reported never guessed, idempotent — `git diff` is the review surface (the guardrails and `check-provenance` enforce the wikilink format on changed pages going forward) |
 | `bin/anchor-citations [-h \| --help] [--write] [--date <YYYY-MM-DD>] [<wiki-dir>]` | chapter-anchor migration | Rewrite aliased hub citations (`[[hub\|Chapter]]`) to the anchored form (`[[hub#Chapter]]`) and generate one hub heading per cited chapter — byte-identical to the anchor — under `wiki/` (default); dry run by default, `--write` refuses a tree with uncommitted changes and appends an audit entry to `wiki/log.md`, aliases that name no chapter are reported never guessed, idempotent |
 | `bin/open-origin [<hub> [--print] [--config <path>] [--vault <name>] [-h \| --help]]` | deep-dive linker | Read a hub page's `origin` under `raw/` and emit an `obsidian://open` URI for its note in the live vault, resolved against `sync.json` vaults (`--vault` overrides the vault, `--config` overrides the sync config, `--print` prints the URI without opening); nothing is stored in wiki data |
@@ -791,7 +783,7 @@ edit the snapshot by hand.
 
 `sync.json` at the repo root is the human-owned placement configuration:
 which vaults to sync, where the data repo lives (`dataRoot`), and where to
-publish the mirror (guide §26). The
+publish the mirror. The
 `publish` section activates the mirror publish step: a `mirror` path
 (the `KWiki Engineering` folder inside the iCloud Obsidian container's
 `Documents` folder — the one iCloud Drive shows as Obsidian; mirrors are
@@ -803,7 +795,7 @@ config) re-bases the selected files' mirror paths by stripping that
 top-level segment, so the wiki tree sits at the mirror vault's root
 instead of under a `wiki/` husk. Sync state —
 hashes and timestamps — lives in `raw/manifest.json`, keyed per vault
-namespace (guide §25). Sync is idempotent: a run with no source changes
+namespace. Sync is idempotent: a run with no source changes
 copies, removes, and writes nothing.
 
 ## Running the sync
@@ -869,7 +861,7 @@ bin/sync-vault   # 1. sync the vault into raw/
 bin/wiki-ingest  # 2. run the agent headless, digest the run
 ```
 
-`wiki-ingest` is the unattended ingest step (guide §18). It
+`wiki-ingest` is the unattended ingest step. It
 reads `raw/manifest.json`, diffs it against the snapshot from the
 previous successful run (`<dataRoot>/outputs/last-ingested-manifest.json`), and
 runs the agent non-interactively **in the data repo root** — `prompts/ingest.md`
@@ -944,7 +936,7 @@ tracked files, so the rule covers nothing and an external writer
 (an open Obsidian) editing the file would trip the immutability
 check; `data:init` seeds the standing rules, so a fresh repo cannot
 hit this. After every agent run three mechanical guardrails check the
-data repo (immutability, frontmatter, wikilinks — guide §1, §7, §9):
+data repo (immutability, frontmatter, wikilinks):
 `wiki/log.md`, the append-only log, is exempt from the frontmatter
 check (it carries none by design); a tripped check auto-reverts the data repo to its pre-run state (the
 pre-run commit plus the uncommitted work that preceded the run),
@@ -990,8 +982,7 @@ without `--note` a static default line states that unchanged content
 does not imply a no-op and asks the agent to re-adjudicate filing
 decisions, so a recovery run never re-applies the no-change
 precedent. `--note` requires `--sources` and never lands on ordinary
-incremental, expunge, or full runs (design: guide
-[§14](docs/karpathy_wiki_implementation_guide.md)).
+incremental, expunge, or full runs.
 
 ### Unverified frontier in the digest
 
@@ -1019,8 +1010,7 @@ and the agent **re-derives** every affected page from its remaining
 sources instead of surgically deleting content. A mixed sync — a
 deletion plus additions or edits — stays one expunge run: the
 incremental prompt is appended below the expunge prompt, so the other
-changed sources are ingested in the same run. Design details: guide
-[§14a](docs/karpathy_wiki_implementation_guide.md).
+changed sources are ingested in the same run.
 
 What you see:
 
@@ -1060,7 +1050,7 @@ missed purge surfaces as a dead link, not as silent contamination.
 bin/wiki-sync   # sync → ingest → lint → crosslinks (configured) → verification → commit → publish (configured)
 ```
 
-`wiki-sync` is the one-command orchestrator (guide §18).
+`wiki-sync` is the one-command orchestrator.
 It chains the proven pieces and adds no capability of its own:
 
 1. **sync** — `sync-vault` in-process: vault → `raw/`. A repo-sourced
@@ -1104,7 +1094,7 @@ It chains the proven pieces and adds no capability of its own:
    `outputs/`, with a message summarizing sources processed, pages
    touched, and the lint report.
 7. **publish** — only for configs whose `sync.json` carries a
-   `publish` section (guide §26): copy the data repo's
+   `publish` section: copy the data repo's
    include-matched files (`["wiki/**"]` in the shipped config)
    into the mirror vault — an iCloud-served disposable
    reading copy that iPhone and iPad open in Obsidian. With
@@ -1208,7 +1198,7 @@ operation needs and nothing else:
    remote — the wrapper fails loud without one.
 
 Every failure other than the push retry waits for the next interval
-by design — no retry/backoff (guide §26). The guardrails and
+by design — no retry/backoff. The guardrails and
 verification have already reverted a broken run, so the wiki stays at
 the last good commit and the log tells the story.
 
@@ -1256,7 +1246,7 @@ bin/wiki-query --file-last                                  # stage 2: files the
 ```
 
 `wiki-query` is the terminal front-end for asking the built wiki a
-question (guide §16). Filing is two-stage, and an
+question. Filing is two-stage, and an
 omitted flag can never produce wiki writes:
 
 - **Stage 1 (default, `<question>`)** composes `prompts/query.md`
@@ -1301,7 +1291,7 @@ k-wiki read retrieval-augmented-generation                 # one page verbatim
 k-wiki health                                               # projection coherence/freshness
 ```
 
-`k-wiki` is the agent-facing CLI (guide §16): a thin
+`k-wiki` is the agent-facing CLI: a thin
 wrapper — one LLM `query` command plus four read-only deterministic
 ones, the shared CLI shell (`src/cli/shell.ts`), no CLI framework —
 that resolves the current
@@ -1341,7 +1331,7 @@ There is no filing passthrough: `--file-last` stays the human-run
 commands open no write path: `status` prints the resolution chain
 (checkout, origin, settings, data repo, wiki dir, `index.md`);
 `list` prints one `slug — title` line per page grouped by type
-in the `index.md` order (guide §11; the navigation pages `index`,
+in the `index.md` order (the navigation pages `index`,
 `log`, `overview` are read by name instead); `read` prints one page
 verbatim by file name with near-match suggestions when absent and
 an ambiguity error on duplicate file names; `health` delegates to the
