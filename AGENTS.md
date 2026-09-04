@@ -98,7 +98,7 @@ until all three pass. Run them before every handoff.
   scheduled-run through full-cycle, no-op re-run, lock-skip,
   push-rejection-retry, double-push-failure, and dirty-tree
   recovery runs in temp data repos with an upstream remote.
-- `npm run health [-- <raw-dir>] [--fail-on-stale]` — coherence check
+- `bin/check-raw [<raw-dir>] [--fail-on-stale]` — coherence check
   of a `raw/` projection (default: the repo's `raw/`); a repo-sourced
   projection is also freshness-checked (`--fail-on-stale` makes a
   stale one exit 1); read-only, no vault access.
@@ -123,7 +123,7 @@ CI (`.github/workflows/ci.yml`) runs the gates on every pull request
 and on every push to `main` — the PR run tests the merge commit
 against `main`, the push run catches a merge that landed despite a
 red PR check; the test job enforces the 90% coverage floor. The `e2e`
-job runs `npm run e2e` and `npm run health` on every PR and `main`
+job runs `npm run e2e` and `bin/check-raw` on every PR and `main`
 push — blocking, like the gates.
 
 ### End-to-end verification run order
@@ -137,7 +137,7 @@ npm test            # gate — always (unit only; e2e is NOT included; includes 
 npm run complexity  # gate — fast targeted re-run of the gate when only it matters
 npm run structure   # gate — fast targeted re-run of the gate when only it matters
 npm run e2e         # when the change touches src/sync/, src/ingest/, src/query/, src/data/, src/dashboard/, src/wiki/, src/cli/, src/schedule/, src/fixtures/, tests/e2e/, or raw/
-npm run health      # same trigger as e2e; also safe to run any time — read-only, no vault access
+bin/check-raw       # same trigger as e2e; also safe to run any time — read-only, no vault access
 ```
 
 - `npm run e2e` takes no arguments. It builds its own fixture vault and
@@ -146,8 +146,8 @@ npm run health      # same trigger as e2e; also safe to run any time — read-on
   uses the repo's real `sync.json` and vault root, and `node
   bin/wiki-ingest` uses the repo's real `settings.yml`,
   `outputs/`, and data repo).
-- `npm run health` defaults to the repo's `raw/`; target another
-  projection with `npm run health -- <raw-dir>`. Exit 0 = coherent
+- `bin/check-raw` defaults to the repo's `raw/`; target another
+  projection with `bin/check-raw <raw-dir>`. Exit 0 = coherent
   (including healthy-empty); exit 1 = one line per problem,
   repo-relative paths only.
 - A failed `e2e` or `health` run is a real failure, not advisory: fix
@@ -332,7 +332,7 @@ new files whole) — `origin/main` by default, overridable via
 integer; the base becomes the `origin/main` commit from N days ago) —
 recommended for small diffs where context-hot triage is cheap; skip
 it freely otherwise. `npm run mutation:changed --
---full` covers all of `src/`; `npm run mutation:survivors` re-lists
+--full` covers all of `src/`; `node dev/mutation-survivors.ts` re-lists
 the last report without re-running. Survivors found either way are
 triaged with the mutation-triage skill
 (`.agents/skills/mutation-triage/SKILL.md`).

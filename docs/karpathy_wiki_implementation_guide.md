@@ -497,13 +497,13 @@ raw path with no source page stays legal (repo-as-source code files);
 anything a hub covers must use the wikilink: the ingest guardrails
 reject a covered path entry on changed pages, and `check-provenance`
 flags it. Legacy path-form entries migrate in one wiki operation with
-`npm run link-sources -- <wiki-dir>` (dry run by default; `--write`
+`bin/link-sources <wiki-dir>` (dry run by default; `--write`
 refuses a dirty tree and logs the audit trail to `wiki/log.md`, the
 same safety envelope as backfill-origin); legacy aliased citations
 (`[[hub|Chapter]]`) migrate to the anchored form — generating the
-hub's chapter headings — with `npm run anchor-citations --
+hub's chapter headings — with `bin/anchor-citations --
 <wiki-dir>`, the same envelope. The reader-side deep dive
-from a hub to the live vault note is `npm run open-origin -- <hub>`:
+from a hub to the live vault note is `bin/open-origin <hub>`:
 it maps `origin` to an `obsidian://open` URI against `sync.json` and
 opens it; nothing is stored in wiki data.
 
@@ -855,7 +855,7 @@ agent with `prompts/expunge.md` plus the removed raw path (content from
 `git show` in the data repo). No dedicated CLI exists for this.
 
 Source pages created before the `origin` field existed get it
-backfilled deterministically where possible: `npm run backfill-origin
+backfilled deterministically where possible: `bin/backfill-origin
 -- <wiki-dir> <raw-dir>` writes `origin` on every `type: source` page
 whose `sources` cites exactly one path that exists under `raw/` and
 whose title corroborates that note's name; it reports every other
@@ -872,18 +872,18 @@ missing `origin` automatically (Sections 13–14).
 
 Frontmatter tracing cannot *prove* the absence of uncited influence.
 Mitigations: phase-1 full-text search, the permanent dead-provenance
-check (`npm run check-provenance`: every `sources` entry resolves —
+check (`bin/check-provenance`: every `sources` entry resolves —
 wikilinks to existing `type: source` pages, anchored `[[hub#Chapter]]`
 citations to hub headings byte-identical to their anchors, raw paths
 both to files under `raw/` and to no hub that covers them — every
 `origin` exists under `raw/`), the quote-fidelity check
-(`npm run check-fidelity`: every machine-checkable token a source
+(`bin/check-fidelity`: every machine-checkable token a source
 page quotes — tilde paths, config keys, CLI flags, `npm run`
 commands — appears in its `origin`, and every page title kebab-cases
 to its file name), the fidelity item in the lint prompt (relational
 misquotes — right tokens, wrong containment — are detected there,
-not deterministically), the body-text anchor lint (`npm run
-check-links`: every `[[wikilink]]` resolves to an existing page, and
+not deterministically), the body-text anchor lint
+(`bin/check-links`: every `[[wikilink]]` resolves to an existing page, and
 a body-text heading anchor `[[page#Chapter]]` lands on a target
 heading byte-identical to the anchor — the same rule
 `check-provenance` applies to `sources` citations, shared through
@@ -980,7 +980,7 @@ never touch `wiki/AGENTS.md`, and save the report to
 ## 18. Recommended Automation
 
 One command performs the whole cycle — implemented as
-`npm run wiki-sync` (issue #13; the README documents the command):
+`bin/wiki-sync` (issue #13; the README documents the command):
 
 ```text
 wiki-sync
@@ -1050,7 +1050,7 @@ Two repositories, two concerns:
 - **Code repo** (`k-wiki`): the pipeline — sync, prompts, tests, skills, this guide. It versions only the `raw/` and `wiki/` directory skeleton; the contents of both trees are gitignored. It holds no personal material, so it can be shared or published as-is.
 - **Data repo** (`k-wiki-engineering-data`, placed by `sync.json`'s `dataRoot`): the contents of `raw/` and `wiki/`, plus `raw/manifest.json`. Ingestion commits land here. The data repo can hold personal notes: push it only to a private remote you explicitly control. Local git — history, rollback, audit — works with no remote at all; the remote is the opt-in.
 
-Seed the data repo once with `npm run data:init`: git init, copy the skeleton from the code repo, first commit. The copy step derives from `git ls-files`, so the skeleton cannot drift. The seed also writes the standing `.gitignore` the data repo must carry — Obsidian UI state (`.obsidian/`, `wiki/.obsidian/`: an open Obsidian writing into the repo is an external writer that guardrail 1 would revert runs over) and the ingest snapshot (issue #112). gitignore does not apply to already-tracked files, so the rules must precede the files; when one does not — a rule added after its files were committed — `wiki-ingest` warns pre-flight, one line per file, with the fix (`git rm --cached <path>`), and proceeds: a signal, not a gate (issue #146). The code repo's `wiki/AGENTS.md` is the canonical contract; the copy shipped into the data repo is derived, exactly like the mirror copy (Section 26). Worked examples of data-repo privacy postures — local only, opt-in remote, bare repo on an external disk — are in the README's Usage models section.
+Seed the data repo once with `bin/init-data-repo`: git init, copy the skeleton from the code repo, first commit. The copy step derives from `git ls-files`, so the skeleton cannot drift. The seed also writes the standing `.gitignore` the data repo must carry — Obsidian UI state (`.obsidian/`, `wiki/.obsidian/`: an open Obsidian writing into the repo is an external writer that guardrail 1 would revert runs over) and the ingest snapshot (issue #112). gitignore does not apply to already-tracked files, so the rules must precede the files; when one does not — a rule added after its files were committed — `wiki-ingest` warns pre-flight, one line per file, with the fix (`git rm --cached <path>`), and proceeds: a signal, not a gate (issue #146). The code repo's `wiki/AGENTS.md` is the canonical contract; the copy shipped into the data repo is derived, exactly like the mirror copy (Section 26). Worked examples of data-repo privacy postures — local only, opt-in remote, bare repo on an external disk — are in the README's Usage models section.
 
 Keep both checkouts in plain local folders — never inside a cloud-synced folder — and share them between Macs through git remotes (Section 26).
 
@@ -1058,13 +1058,13 @@ Keep both checkouts in plain local folders — never inside a cloud-synced folde
 
 Renaming an instance is therefore safe at the data layer, and costs one full run.
 
-**Pause the scheduled pipeline first (Section 18)** — if the launchd job is installed (`~/Library/LaunchAgents/com.kwiki.scheduled-run.plist`), run `npm run setup-schedule -- --uninstall` from the production checkout before step 1. Two hazards otherwise: a tick that fires between steps 1 and 3 resolves the old `dataRoot`, recreates the folder, and re-syncs the full vault into it — exactly the crossed-instance confusion this convention prevents; and the scheduled wrapper runs `wiki-sync` with the default `--timeout 1800`, which would truncate the post-rename full re-ingest and retry it every interval instead of one clean budgeted run. Reinstall (`npm run setup-schedule`) only after step 5's verification and after pulling the `dataRoot` commit into the production checkout — the schedule re-reads `sync.json` every tick but never updates the code checkout.
+**Pause the scheduled pipeline first (Section 18)** — if the launchd job is installed (`~/Library/LaunchAgents/com.kwiki.scheduled-run.plist`), run `bin/setup-schedule --uninstall` from the production checkout before step 1. Two hazards otherwise: a tick that fires between steps 1 and 3 resolves the old `dataRoot`, recreates the folder, and re-syncs the full vault into it — exactly the crossed-instance confusion this convention prevents; and the scheduled wrapper runs `wiki-sync` with the default `--timeout 1800`, which would truncate the post-rename full re-ingest and retry it every interval instead of one clean budgeted run. Reinstall (`bin/setup-schedule`) only after step 5's verification and after pulling the `dataRoot` commit into the production checkout — the schedule re-reads `sync.json` every tick but never updates the code checkout.
 
 1. Rename the local directory (`mv ~/Lab/k-wiki-data ~/Lab/k-wiki-<subject>-data`) — git history, `outputs/`, and the manifest snapshot move with it.
 2. Rename the GitHub upstream (`gh repo rename <new-name> -R <owner>/<old-name>`), then update the local remote explicitly (`git remote set-url origin <new-url>`); GitHub redirects the old URL, but verify push/pull and that the renamed repo's settings survived.
 3. Update `dataRoot` in the code repo's `sync.json` and commit it.
 4. Budget one full re-ingest, run manually with a raised `--timeout`: the snapshot is stamped with the data repo root at write time (issue #95), so the first `wiki-ingest` after the rename reads a foreign-stamped snapshot, warns loudly, and falls back to a full run (~1 min/note; e.g. `--timeout 14400`). Nothing is lost — the fallback is correct by design. Time the rename right after a topology rebuild, when the next run is a full run anyway, and the cost is zero.
-5. Verify: `npm run health -- <dataRoot>/raw` exits 0; the first digest shows the full-run mode; the next incremental run is fast again.
+5. Verify: `bin/check-raw <dataRoot>/raw` exits 0; the first digest shows the full-run mode; the next incremental run is fast again.
 
 Recommended review workflow (in the data repo):
 
