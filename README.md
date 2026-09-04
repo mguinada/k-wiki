@@ -538,10 +538,10 @@ sources directly, so there is no build step — install dependencies with
 | `node <checkout>/bin/k-wiki.ts query "<question>"` (also `npm run k-wiki -- …` inside the checkout) | agent-facing CLI | Ask the wiki bound to the current project from any cwd — zero flags once `.k-wiki.json` binds it; plus four read-only commands: `status` (binding + paths), `list [<type>]` (pages by type), `read <slug>` (one page verbatim), `health` (projection check); answer-only, no filing passthrough ([details below](#querying-from-any-project-k-wiki)) |
 | `npm run data:init -- [--second-brain] [--meta] [<sync.json>]` | data repo seeder | Create and seed the data repo at `sync.json`'s `dataRoot`: git init, copy the `raw/`+`wiki/` skeleton from the code repo, write the standing `.gitignore` (Obsidian UI state, ingest snapshot), first commit; idempotent; `--second-brain` also writes the `.second-brain` identity marker ([§5](#5-the-second-brain)); `--meta` seeds the meta contract (`wiki/AGENTS.meta.md`) as the data repo's `wiki/AGENTS.md` ([§9](#9-the-meta-wiki-a-repository-as-source)) |
 | `npm run board-triage -- [-h \| --help] [--dry-run] [--owner <login>] [--project <n>]` | board triage CLI | Apply the mechanical half of the K-Wiki Kanban triage contract via the `gh` CLI — Backlog → Ready (unblocked, no `research` label), open PR → In progress, closed → Done — Status field values only; lane order is never touched, ids are resolved fresh every run, every move is verified by re-reading the board, and `--dry-run` plans with zero writes (default: `mguinada`'s project 2; [below](#scheduled-board-triage)) |
-| `npm run mutation:changed` | StrykerJS | Optional advisory mutation run scoped to the changed hunks of the `src/` files that differ from `main` (uncommitted included; new files whole) — `src/quality/mutation-scope.ts` builds the `file:start-end` ranges; exits 0 without running when nothing changed, and ends by printing the actionable mutants — recommended for small diffs; the authoritative mutation signal lives in CI |
+| `npm run mutation:changed` | StrykerJS | Optional advisory mutation run scoped to the changed hunks of the `src/` files that differ from the mutation base — `main` by default, any ref via `MUTATION_BASE`, or the `main` commit from N days ago via `MUTATION_WINDOW_DAYS` (uncommitted included; new files whole) — `src/quality/mutation-scope.ts` builds the `file:start-end` ranges; exits 0 without running when nothing changed, and ends by printing the actionable mutants — recommended for small diffs; the authoritative mutation signal lives in CI |
 | `npm run mutation:changed -- --full` | StrykerJS | Advisory mutation run over all of `src/`, not just changed files; same printed summary |
 | `npm run mutation:survivors` | triage helper | Re-list the actionable mutants from the last report — no run, instant |
-| `npm run mutation:report` | report renderer | Render the rolling survivor-issue body from a `mutation.json` report (what the `mutants-report` workflow files) — no run, instant |
+| `npm run mutation:report` | report renderer | Render the rolling survivor-issue body from a `mutation.json` report, merged into the current issue body's ledger (`--prior-body`) — what the `mutants-report` workflow files — no run, instant |
 | `npm run mutation` | StrykerJS | Raw full Stryker run without the printed summary — prefer the three above |
 | `npm run complexity` | complexity gate | Blocking cyclomatic gate over changed code: every `src/` function whose lines a change vs `main` touches (new files whole, deletions skipped) must stay at cyclomatic ≤ 10 (engine: complexity-guard; scoping mirrors `mutation:changed`); runs as part of `npm test` too; failures name file, line, function, score, and the refactor instruction; no inline suppressions — exclusions via `.complexityguard.json` justified in the PR body ([reference](docs/references/complexity-gate.md)) |
 | `npm run complexity:full` | complexity report | Advisory whole-`src/` per-function debt table, worst first — the input for complexity-lowering refactors; the table is advisory, but the same run re-executes the changed-mode gate, so a working tree with a gated violation still fails it |
@@ -565,7 +565,7 @@ Verification has three layers:
 |---|---|---|
 | Gates | `npm run typecheck`, `npm run lint`, `npm test` | blocking — every change, every PR |
 | End-to-end | `npm run e2e`, `npm run health` | blocking — CI's `e2e` job on every PR; required locally when a change touches the sync, ingest, or CLI layers (exact trigger list in [AGENTS.md](AGENTS.md)) |
-| Mutation | CI nightly full run + label-gated PR runs (`mutation:changed` locally when wanted) | advisory — a signal, never a gate ([below](#mutation-testing)) |
+| Mutation | CI nightly windowed run (trailing 7 days) + label-gated PR runs + on-demand code-wide dispatch (`mutation:changed` locally when wanted) | advisory — a signal, never a gate ([below](#mutation-testing)) |
 
 The e2e suites drive the real CLIs — sync-vault against the synthetic
 fixture vault, wiki-ingest and wiki-sync against a stub agent in temp
@@ -698,19 +698,28 @@ runs in two shapes. A pull request carrying the
 the `mutation` job, which uses the same hunk-scoped command as the
 optional local run (`npm run mutation:changed`, full checkout history)
 and uploads its HTML and JSON report as an artifact (7-day retention).
-The nightly `main` and dispatched full runs instead run as four
-parallel `mutation-chunks` jobs — `src/` split into size-balanced
-disjoint chunks, because one full run outgrew GitHub's 6 h per-job
-limit — stitched by the `mutation-merge` job into that same artifact,
-refusing a partial picture when a chunk failed. After each nightly
-run, the
+The nightly `main` run is **window-scoped**: it mutates only the
+`src/` hunks changed in the trailing 7 days (`MUTATION_WINDOW_DAYS`),
+so a quiet week costs minutes, not hours, and a merge stays in scope
+for seven nightly runs. A quiet window (nothing changed) files a
+synthetic empty report instead of failing. The code-wide full run —
+capable of outgrowing GitHub's 6 h per-job limit — is **manual
+dispatch only**: four parallel `mutation-chunks` jobs over
+size-balanced disjoint `src/` chunks, stitched by the `mutation-merge`
+job into that same artifact, refusing a partial picture when a chunk
+failed. After each nightly or dispatched run, the
 [`mutants-report`](.github/workflows/mutants-report.yml) workflow
-downloads that artifact and auto-files the actionable mutants into one
-rolling issue labeled `mutation` — "Mutation testing: actionable
-survivors" — on the K-Wiki Kanban at Status = Ready. The
-rolling issue is the kill-work queue: spin dedicated triage issues from
-its list when a batch is worth a pass, and keep the count tended. The
-agent rules are in [AGENTS.md](AGENTS.md).
+downloads that artifact and merges the actionable mutants into one
+rolling issue labeled
+`mutation` — "Mutation testing: actionable survivors" — on the
+K-Wiki Kanban at Status = Ready. The issue body is a **merged
+ledger**, never a replace snapshot: entries leave only via verified
+kills (or later adjudication), out-of-scope entries stay listed, and
+only a dispatched code-wide run reconciles the whole ledger (there,
+absence means death). The rolling issue is the kill-work queue: spin
+dedicated triage issues from its list when a batch is worth a pass,
+and keep the count tended. The agent rules are in
+[AGENTS.md](AGENTS.md).
 
 The Kanban step authenticates with a dedicated secret — the name is
 declared in the workflow file, the single source of truth: a classic

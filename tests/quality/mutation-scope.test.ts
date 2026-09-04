@@ -8,7 +8,10 @@ import {
   mergeRanges,
   nextIntArg,
   parseNewRanges,
+  parseWindowDays,
+  resolveBase,
   runGitText,
+  windowBase,
 } from "../../src/quality/mutation-scope.ts";
 
 const HUNK_FILE = [
@@ -280,5 +283,197 @@ describe("mutation-scope CLI", () => {
 
   it("runs the real git binary through the production seam", () => {
     expect(runGitText(["--version"])).toMatch(/^git version /);
+  });
+});
+
+describe("parseWindowDays", () => {
+  it("returns the integer for a positive integer string", () => {
+    expect(parseWindowDays("7")).toBe(7);
+  });
+
+  it("rejects zero with the env name in the message", () => {
+    expect(() => parseWindowDays("0")).toThrow(
+      "MUTATION_WINDOW_DAYS must be a positive integer",
+    );
+  });
+
+  it("rejects a non-integer string with the env name in the message", () => {
+    expect(() => parseWindowDays("week")).toThrow(
+      "MUTATION_WINDOW_DAYS must be a positive integer",
+    );
+  });
+});
+
+describe("windowBase", () => {
+  it("resolves the newest origin/main commit before the window", () => {
+    const calls: string[][] = [];
+    const git: GitText = (args) => {
+      calls.push([...args]);
+
+      return "abc123\n";
+    };
+
+    expect(windowBase(git, 7)).toBe("abc123");
+    expect(calls[0]).toEqual([
+      "rev-list",
+      "-1",
+      "--before=7 days ago",
+      "origin/main",
+    ]);
+  });
+
+  it("falls back to the oldest reachable commit when none is older than the window", () => {
+    const git: GitText = (args) =>
+      args.join(" ").includes("--before") ? "" : "new1\nmid2\nold3\n";
+
+    expect(windowBase(git, 7)).toBe("old3");
+  });
+});
+
+describe("resolveBase", () => {
+  const emptyEnv: Record<string, string | undefined> = {};
+  const git: GitText = () => "abc123\n";
+
+  it("prefers the --base flag over every environment source", () => {
+    expect(
+      resolveBase(
+        "feature/sha",
+        { MUTATION_BASE: "env/sha", MUTATION_WINDOW_DAYS: "7" },
+        git,
+      ),
+    ).toBe("feature/sha");
+  });
+
+  it("prefers MUTATION_BASE over the window environment", () => {
+    expect(
+      resolveBase(
+        undefined,
+        { MUTATION_BASE: "env/sha", MUTATION_WINDOW_DAYS: "7" },
+        git,
+      ),
+    ).toBe("env/sha");
+  });
+
+  it("resolves MUTATION_WINDOW_DAYS to the window base sha", () => {
+    expect(resolveBase(undefined, { MUTATION_WINDOW_DAYS: "7" }, git)).toBe(
+      "abc123",
+    );
+  });
+
+  it("defaults to origin/main with no base sources", () => {
+    expect(resolveBase(undefined, emptyEnv, git)).toBe("origin/main");
+  });
+});
+
+describe("base-parameterized scoping", () => {
+  it("diffs against the given base instead of origin/main", () => {
+    const diffs: string[][] = [];
+    const git: GitText = (args) => {
+      if (args[0] === "diff") {
+        diffs.push([...args]);
+
+        return "";
+      }
+
+      return "";
+    };
+
+    collectPatterns(git, "abc123");
+
+    expect(diffs[0]?.slice(0, 4)).toEqual([
+      "diff",
+      "-U0",
+      "--diff-filter=ACMRT",
+      "abc123",
+    ]);
+  });
+
+  it("scopes main's diff to the window base from the environment", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const diffs: string[][] = [];
+    const git: GitText = (args) => {
+      if (args[0] === "diff") {
+        diffs.push([...args]);
+
+        return [
+          "diff --git a/src/a.ts b/src/a.ts",
+          "--- a/src/a.ts",
+          "+++ b/src/a.ts",
+          "@@ -1,1 +12,9 @@",
+          "+x",
+        ].join("\n");
+      }
+
+      return args[0] === "rev-list" ? "abc123\n" : "";
+    };
+
+    try {
+      main([], git, { MUTATION_WINDOW_DAYS: "7" });
+
+      expect(diffs[0]?.[3]).toBe("abc123");
+      expect(log.mock.calls[0]?.[0]).toBe("src/a.ts:12-20");
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("exits 1 naming MUTATION_WINDOW_DAYS when it is not a positive integer", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      main([], () => "", { MUTATION_WINDOW_DAYS: "week" });
+
+      expect(error.mock.calls[0]?.[0]).toContain(
+        "MUTATION_WINDOW_DAYS must be a positive integer",
+      );
+      expect(process.exitCode).toBe(1);
+    } finally {
+      error.mockRestore();
+      process.exitCode = undefined;
+    }
+  });
+});
+
+describe("mutation-scope --base and --print-base", () => {
+  it("scopes the diff to the --base flag value", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const diffs: string[][] = [];
+    const git: GitText = (args) => {
+      if (args[0] === "diff") {
+        diffs.push([...args]);
+
+        return [
+          "diff --git a/src/a.ts b/src/a.ts",
+          "--- a/src/a.ts",
+          "+++ b/src/a.ts",
+          "@@ -1,1 +12,9 @@",
+          "+x",
+        ].join("\n");
+      }
+
+      return "";
+    };
+
+    try {
+      main(["--base", "feature/sha"], git);
+
+      expect(diffs[0]?.[3]).toBe("feature/sha");
+      expect(log.mock.calls[0]?.[0]).toBe("src/a.ts:12-20");
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("prints only the resolved base for --print-base", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      main(["--print-base"], () => "");
+
+      expect(log.mock.calls[0]?.[0]).toBe("origin/main");
+      expect(log).toHaveBeenCalledTimes(1);
+    } finally {
+      log.mockRestore();
+    }
   });
 });

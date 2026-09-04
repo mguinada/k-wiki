@@ -27,17 +27,27 @@ export function runGitText(args: readonly string[]): string {
 export type FileDiff = { path: string; ranges: Range[] | null };
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
-const HELP = `Usage: mutation-scope [-h | --help]
+const HELP = `Usage: mutation-scope [--base <ref>] [--print-base] [-h | --help]
 
 Print the --mutate argument that scopes a Stryker run to the src/*.ts
-lines changed vs origin/main (uncommitted work included): one
+lines changed vs the diff base (uncommitted work included): one
 file:start-end entry per changed hunk, whole-file entries for new or
 untracked files, whole-file fallback for unparseable diffs. Deleted
 files are skipped. Prints nothing when no src/ file changed.
 
-  -h, --help    Print this help and exit; no side effects.
+  --base <ref>     Diff base: the ref the changed hunks are computed
+                   against. Default: $MUTATION_BASE when set, else the
+                   origin/main commit from $MUTATION_WINDOW_DAYS days
+                   ago when set, else origin/main.
 
-Reads git (diff, ls-files) and the repository only; writes nothing.`;
+  --print-base    Print only the resolved diff base — no patterns,
+                   no Stryker run. Lets callers (dev/mutation-changed.sh,
+                   the nightly job) log and reuse the same base.
+
+  -h, --help      Print this help and exit; no side effects.
+
+Reads git (diff, ls-files, rev-list) and the repository only;
+writes nothing.`;
 
 const HUNK_HEADER = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/;
 
@@ -150,6 +160,77 @@ function parseFileDiffs(diffText: string): FileDiff[] {
  *  exactly (issue #255, dedup D-20). */
 export const SRC_PATHSPEC = "src/*.ts";
 
+/** The default diff base: origin/main, so per-PR and local runs keep
+ *  their exact pre-window behavior. */
+export const DEFAULT_BASE = "origin/main";
+
+/** Positive-integer parse of MUTATION_WINDOW_DAYS; throws naming the
+ *  variable so a garbage window fails loud, never silently full. */
+export function parseWindowDays(value: string): number {
+  const days = Number(value);
+
+  if (!Number.isInteger(days) || days < 1) {
+    throw new Error(
+      `MUTATION_WINDOW_DAYS must be a positive integer, got: ${value}`,
+    );
+  }
+
+  return days;
+}
+
+/** The newest origin/main commit at least `days` days old — the
+ *  windowed nightly's diff base. When no commit is that old (young
+ *  or rewritten history), falls back to the oldest reachable commit
+ *  and logs loudly: the run degrades toward full scope instead of
+ *  failing the nightly. */
+export function windowBase(git: GitText, days: number): string {
+  const before = git([
+    "rev-list",
+    "-1",
+    `--before=${days} days ago`,
+    "origin/main",
+  ]).trim();
+
+  if (before !== "") {
+    return before;
+  }
+
+  const oldest = git(["rev-list", "origin/main"]).trim().split("\n").at(-1);
+
+  console.warn(
+    `WARNING: no origin/main commit is older than ${days} days — falling back to the oldest reachable commit (${oldest}); the run degrades toward full scope.`,
+  );
+
+  return oldest ?? "";
+}
+
+/** The diff base, by precedence: --base flag, MUTATION_BASE env,
+ *  the MUTATION_WINDOW_DAYS env's resolved window sha, then the
+ *  origin/main default. */
+export function resolveBase(
+  flagBase: string | undefined,
+  env: Record<string, string | undefined>,
+  git: GitText,
+): string {
+  if (flagBase !== undefined) {
+    return flagBase;
+  }
+
+  const envBase = env.MUTATION_BASE;
+
+  if (envBase !== undefined && envBase !== "") {
+    return envBase;
+  }
+
+  const windowDays = env.MUTATION_WINDOW_DAYS;
+
+  if (windowDays !== undefined && windowDays !== "") {
+    return windowBase(git, parseWindowDays(windowDays));
+  }
+
+  return DEFAULT_BASE;
+}
+
 /** The integer value after argv[i]; throws naming argv[i] when it is
  *  missing or not an integer — the shared int-flag parse of the
  *  mutation tools' --expect/--index/--total (issue #255, dedup
@@ -165,12 +246,15 @@ export function nextIntArg(argv: readonly string[], i: number): number {
 }
 
 /** The changed src/ files — hunk-ranged, whole, or absent when deleted. */
-export function collectChangedFiles(git: GitText): FileDiff[] {
+export function collectChangedFiles(
+  git: GitText,
+  base: string = DEFAULT_BASE,
+): FileDiff[] {
   const diffText = git([
     "diff",
     "-U0",
     "--diff-filter=ACMRT",
-    "origin/main",
+    base,
     "--",
     SRC_PATHSPEC,
   ]);
@@ -193,11 +277,18 @@ export function collectChangedFiles(git: GitText): FileDiff[] {
 }
 
 /** The full --mutate argument, or "" when nothing mutable changed. */
-export function collectPatterns(git: GitText): string {
-  return buildPatterns(collectChangedFiles(git));
+export function collectPatterns(
+  git: GitText,
+  base: string = DEFAULT_BASE,
+): string {
+  return buildPatterns(collectChangedFiles(git, base));
 }
 
-export function main(argv: readonly string[], git: GitText = runGitText) {
+export function main(
+  argv: readonly string[],
+  git: GitText = runGitText,
+  env: Record<string, string | undefined> = process.env,
+): void {
   if (argv.includes("-h") || argv.includes("--help")) {
     console.log(HELP);
 
@@ -205,6 +296,8 @@ export function main(argv: readonly string[], git: GitText = runGitText) {
   }
 
   const parsed = parseArgs(argv, {
+    value: ["--base"],
+    boolean: ["--print-base"],
     positionals: { max: 0, error: (arg) => `unexpected argument: ${arg}` },
   });
 
@@ -215,7 +308,34 @@ export function main(argv: readonly string[], git: GitText = runGitText) {
     return;
   }
 
-  const patterns = collectPatterns(git);
+  if (
+    parsed.values.has("--base") &&
+    parsed.values.get("--base") === undefined
+  ) {
+    console.error("--base requires a value");
+    process.exitCode = 1;
+
+    return;
+  }
+
+  let base: string;
+
+  try {
+    base = resolveBase(parsed.values.get("--base"), env, git);
+  } catch (cause) {
+    console.error(cause instanceof Error ? cause.message : String(cause));
+    process.exitCode = 1;
+
+    return;
+  }
+
+  if (parsed.flags.has("--print-base")) {
+    console.log(base);
+
+    return;
+  }
+
+  const patterns = collectPatterns(git, base);
 
   if (patterns !== "") {
     console.log(patterns);
