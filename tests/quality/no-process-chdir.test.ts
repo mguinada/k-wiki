@@ -28,8 +28,8 @@ async function collectTsFiles(root: string, prefix = ""): Promise<string[]> {
 
     // cli-spawn, data:init, health, and bin-wiring stage transient
     // copies here (`.*-staging`) while this scan may be walking
-    // tests/ in parallel; skipping the staging directories kills the
-    // read-vs-delete race (ENOENT) outright.
+    // tests/ in parallel; skipping the staging directories kills
+    // the read-vs-delete race (ENOENT) outright.
     if (entry.isDirectory() && entry.name.endsWith("-staging")) {
       continue;
     }
