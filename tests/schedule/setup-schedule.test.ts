@@ -840,6 +840,4 @@ describe("setup-schedule main wiring (issue #240 kill batch)", () => {
 
     await rm(home, { recursive: true, force: true });
   });
-
-
 });
