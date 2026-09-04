@@ -9,7 +9,7 @@ import { anchorCitations } from "../../scripts/anchor-citations.ts";
 
 const script = join(
   dirname(fileURLToPath(import.meta.url)),
-  "../../bin/anchor-citations.ts",
+  "../../bin/anchor-citations",
 );
 
 const tempDirs: string[] = [];

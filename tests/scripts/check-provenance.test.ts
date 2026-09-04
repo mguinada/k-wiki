@@ -7,14 +7,14 @@ import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
 import { afterAll, describe, expect, it } from "vitest";
 
-/** CLI tests for bin/check-provenance.ts (scripts/check-provenance.ts):
+/** CLI tests for bin/check-provenance (scripts/check-provenance.ts):
  *  exit codes, colored rendering, warnings, --help. The library core
  *  (checkWikiProvenance) is tested at its mirrored path
  *  tests/wiki/provenance.test.ts (issue #260). */
 
 const script = join(
   dirname(fileURLToPath(import.meta.url)),
-  "../../bin/check-provenance.ts",
+  "../../bin/check-provenance",
 );
 
 const tempDirs: string[] = [];

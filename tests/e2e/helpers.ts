@@ -24,12 +24,12 @@ export const repoRoot = resolve(
   "../..",
 );
 
-export const SYNC_SCRIPT = join(repoRoot, "bin", "sync-vault.ts");
-export const HEALTH_SCRIPT = join(repoRoot, "bin", "check-raw.ts");
-export const INGEST_SCRIPT = join(repoRoot, "bin", "wiki-ingest.ts");
-export const SYNC_CYCLE_SCRIPT = join(repoRoot, "bin", "wiki-sync.ts");
-export const QUERY_SCRIPT = join(repoRoot, "bin", "wiki-query.ts");
-export const K_WIKI_SCRIPT = join(repoRoot, "bin", "k-wiki.ts");
+export const SYNC_SCRIPT = join(repoRoot, "bin", "sync-vault");
+export const HEALTH_SCRIPT = join(repoRoot, "bin", "check-raw");
+export const INGEST_SCRIPT = join(repoRoot, "bin", "wiki-ingest");
+export const SYNC_CYCLE_SCRIPT = join(repoRoot, "bin", "wiki-sync");
+export const QUERY_SCRIPT = join(repoRoot, "bin", "wiki-query");
+export const K_WIKI_SCRIPT = join(repoRoot, "bin", "k-wiki");
 
 /** The fixture vault's notes ingested under `exclude: "wiki:false"`, sorted. */
 export const SELECTED_PATHS = [
@@ -152,4 +152,4 @@ export async function collectFiles(
 
   return files.sort();
 }
-export const SYNC_REPO_SCRIPT = join(repoRoot, "bin", "sync-repo.ts");
+export const SYNC_REPO_SCRIPT = join(repoRoot, "bin", "sync-repo");

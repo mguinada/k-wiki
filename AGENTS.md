@@ -142,9 +142,9 @@ npm run health      # same trigger as e2e; also safe to run any time — read-on
 
 - `npm run e2e` takes no arguments. It builds its own fixture vault and
   temp data repos, and passes explicit arguments to every CLI it runs —
-  never run a CLI bare (without args, `node bin/sync-vault.ts`
+  never run a CLI bare (without args, `node bin/sync-vault`
   uses the repo's real `sync.json` and vault root, and `node
-  bin/wiki-ingest.ts` uses the repo's real `settings.yml`,
+  bin/wiki-ingest` uses the repo's real `settings.yml`,
   `outputs/`, and data repo).
 - `npm run health` defaults to the repo's `raw/`; target another
   projection with `npm run health -- <raw-dir>`. Exit 0 = coherent
@@ -227,13 +227,14 @@ infrastructure, free to use for any unit or e2e work; the snapshot at
 ### CLI scripts
 
 Launchers come in two classes, matching the two agent contexts.
-`bin/<name>.ts` launches the wiki runtime — commands meaningful
+`bin/<name>` (extensionless, issue #156) launches the wiki
+runtime — commands meaningful
 outside this repo (create, operate, consume, observe, audit, migrate
 the wiki). `dev/<name>.ts` launches development-lifecycle commands
 that exist only to build and maintain this repo (`generate`,
 `mutation-*`, `board-triage`, `refactor-metrics`). Every CLI runs through a shebanged
 launcher of its class (`#!/usr/bin/env node`, committed `100755`);
-npm scripts invoke `node bin/<name>.ts` or `node dev/<name>.ts`.
+npm scripts invoke `node bin/<name>` or `node dev/<name>.ts`.
 `src/` and `scripts/` modules are libraries:
 they export `main()` but never invoke it at module scope — no Stryker
 mutant can fire a CLI as an import side effect with live defaults
@@ -268,8 +269,8 @@ CLI help text and `README.md` must not reference internal GitHub
 issues; issue citations belong only in
 `docs/karpathy_wiki_implementation_guide.md` and dev-facing code
 comments. Enforced mechanically by `tests/no-issue-refs.test.ts`,
-which runs `--help` for every `bin/*.ts` and `dev/*.ts` and scans
-`README.md`.
+which runs `--help` for every launcher in `bin/` (extensionless,
+issue #156) and `dev/` and scans `README.md`.
 
 ### CLI colors
 

@@ -17,7 +17,7 @@ import { parseArgs } from "../cli/shell.ts";
  * follow-up issues — they fail loud, and the platform switch keeps
  * them additive. `--print` emits the artifact without installing.
  *
- * The plist runs `node bin/scheduled-run.ts` with absolute paths, an
+ * The plist runs `node bin/scheduled-run` with absolute paths, an
  * explicit HOME, and a minimal PATH — no interactive shell env is
  * assumed; the wrapper builds the rest (see scheduled-run.ts). The
  * trigger is a fixed interval (`StartInterval`, default 30 minutes,
@@ -165,7 +165,7 @@ async function launchctl(args: readonly string[]): Promise<void> {
 const HELP = `Usage: setup-schedule [-h | --help] [--interval <duration>] [--print] [--uninstall]
 
 Register the k-wiki pipeline with the OS scheduler. The
-scheduled command is node bin/scheduled-run.ts — lockfile, git pull
+scheduled command is node bin/scheduled-run — lockfile, git pull
 --rebase, wiki-sync, git push — run unattended on a fixed interval.
 macOS only today: the source vault lives in iCloud, so only macOS can
 run the pipeline; other OSs host read-only clones that need no
@@ -295,7 +295,7 @@ export async function main(
 
   const plist = launchdPlist({
     nodePath: stableNodePath(process.argv0, process.execPath),
-    scriptPath: join(repoRoot, "bin", "scheduled-run.ts"),
+    scriptPath: join(repoRoot, "bin", "scheduled-run"),
     intervalSeconds: parsed.interval,
     home,
     logDir: logDirFor(home),

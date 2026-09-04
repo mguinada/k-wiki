@@ -123,7 +123,7 @@ Errors print red, prefixed "k-wiki:", and exit 1. Progress goes to
 stderr (an animated status line on a terminal, one plain heartbeat
 line per 60 seconds otherwise); NO_COLOR is honored. Human alias,
 optional:
-alias k-wiki='node ~/k-wiki/bin/k-wiki.ts'
+alias k-wiki='node ~/k-wiki/bin/k-wiki'
 
 If you are an AI agent, follow these instructions:
   - Run: k-wiki query "<question>" — zero flags inside a bound

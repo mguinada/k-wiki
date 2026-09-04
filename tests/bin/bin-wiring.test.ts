@@ -8,7 +8,8 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 
 /**
  * Spawn-every-entry wiring (issue #135): the shebanged launchers —
- * `bin/<name>.ts` for the wiki runtime, `dev/<name>.ts` for
+ * `bin/<name>` (extensionless, issue #156) for the wiki runtime,
+ * `dev/<name>.ts` for
  * development-lifecycle commands (issue #253) — are the only entry
  * path, so each one must import the module it claims
  * (wrong-path/wrong-CLI launchers die here), and each library module
@@ -32,7 +33,7 @@ interface Entry {
 
 const ENTRIES: readonly Entry[] = [
   {
-    launcher: "backfill-origin.ts",
+    launcher: "backfill-origin",
     module: "scripts/backfill-origin.ts",
     usage: "Usage: backfill-origin",
   },
@@ -43,32 +44,32 @@ const ENTRIES: readonly Entry[] = [
     dir: "dev",
   },
   {
-    launcher: "check-crosslinks.ts",
+    launcher: "check-crosslinks",
     module: "scripts/check-crosslinks.ts",
     usage: "Usage: check-crosslinks",
   },
   {
-    launcher: "check-fidelity.ts",
+    launcher: "check-fidelity",
     module: "scripts/check-fidelity.ts",
     usage: "Usage: check-fidelity",
   },
   {
-    launcher: "check-links.ts",
+    launcher: "check-links",
     module: "scripts/check-links.ts",
     usage: "Usage: check-links",
   },
   {
-    launcher: "check-provenance.ts",
+    launcher: "check-provenance",
     module: "scripts/check-provenance.ts",
     usage: "Usage: check-provenance",
   },
   {
-    launcher: "check-raw.ts",
+    launcher: "check-raw",
     module: "src/health/check-raw.ts",
     usage: "Usage: check-raw",
   },
   {
-    launcher: "dashboard.ts",
+    launcher: "dashboard",
     module: "src/dashboard/generate.ts",
     usage: "Usage: dashboard",
   },
@@ -79,17 +80,17 @@ const ENTRIES: readonly Entry[] = [
     dir: "dev",
   },
   {
-    launcher: "init-data-repo.ts",
+    launcher: "init-data-repo",
     module: "src/cli/init-data-repo.ts",
     usage: "Usage: init-data-repo",
   },
   {
-    launcher: "k-wiki.ts",
+    launcher: "k-wiki",
     module: "src/cli/k-wiki.ts",
     usage: "Usage: k-wiki",
   },
   {
-    launcher: "link-sources.ts",
+    launcher: "link-sources",
     module: "scripts/link-sources.ts",
     usage: "Usage: link-sources",
   },
@@ -124,7 +125,7 @@ const ENTRIES: readonly Entry[] = [
     dir: "dev",
   },
   {
-    launcher: "open-origin.ts",
+    launcher: "open-origin",
     module: "scripts/open-origin.ts",
     usage: "Usage: open-origin",
   },
@@ -135,27 +136,27 @@ const ENTRIES: readonly Entry[] = [
     dir: "dev",
   },
   {
-    launcher: "sync-repo.ts",
+    launcher: "sync-repo",
     module: "src/sync/sync-repo.ts",
     usage: "Usage: sync-repo",
   },
   {
-    launcher: "sync-vault.ts",
+    launcher: "sync-vault",
     module: "src/sync/sync-vault.ts",
     usage: "Usage: sync-vault",
   },
   {
-    launcher: "wiki-ingest.ts",
+    launcher: "wiki-ingest",
     module: "src/ingest/wiki-ingest-cli.ts",
     usage: "Usage: wiki-ingest",
   },
   {
-    launcher: "wiki-query.ts",
+    launcher: "wiki-query",
     module: "src/query/wiki-query.ts",
     usage: "Usage: wiki-query",
   },
   {
-    launcher: "wiki-sync.ts",
+    launcher: "wiki-sync",
     module: "src/sync/wiki-sync.ts",
     usage: "Usage: wiki-sync",
   },

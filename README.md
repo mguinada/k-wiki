@@ -486,7 +486,7 @@ The piecewise commands stay the debug path, one stage at a time:
 
 ```sh
 npm run sync-repo -- sync-meta.json               # project a committed tree
-node bin/wiki-ingest.ts --settings settings-meta.yml \
+node bin/wiki-ingest --settings settings-meta.yml \
   ~/Lab/k-wiki-meta-data/raw                       # build the meta-wiki
 npm run health -- ~/Lab/k-wiki-meta-data/raw       # coherence + freshness
 ```
@@ -535,7 +535,7 @@ sources directly, so there is no build step — install dependencies with
 | `npm run setup-schedule -- [-h \| --help] [--interval <duration>] [--print] [--uninstall]` | launchd installer | Register the pipeline with launchd: write `~/Library/LaunchAgents/com.kwiki.scheduled-run.plist` — absolute node + script paths, explicit `HOME`, minimal `PATH`, `StartInterval` (`30minutes` default) + `RunAtLoad` — then bootstrap and verify with `launchctl print`; `--interval` re-registers, `--print` emits the plist without installing (any OS), `--uninstall` boots out and removes it ([details below](#scheduling-the-pipeline-launchd)) |
 | `npm run scheduled-run -- [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<config>] [<raw-dir>]` | scheduled cycle wrapper | Run one unattended cycle — the command the launchd job executes: O_EXCL lockfile (PID + timestamp, two-hour stale takeover) at `<dataRoot>/.scheduled-run.lock` → `git pull --rebase` → `wiki-sync` (commit-only) → `git push` (one pull --rebase + retry on rejection, then alert); fails loud without an `origin` remote ([details below](#scheduling-the-pipeline-launchd)) |
 | `npm run wiki-query -- [-h \| --help] [--file-last] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>` | query wrapper | Ask the built wiki one question headless: print the answer, save it for review (stage 1, default); `--file-last` files the reviewed answer deterministically (stage 2; reads `settings.yml` in stage 1; [details below](#running-queries-wiki-query)) |
-| `node <checkout>/bin/k-wiki.ts query "<question>"` (also `npm run k-wiki -- …` inside the checkout) | agent-facing CLI | Ask the wiki bound to the current project from any cwd — zero flags once `.k-wiki.json` binds it; plus four read-only commands: `status` (binding + paths), `list [<type>]` (pages by type), `read <slug>` (one page verbatim), `health` (projection check); answer-only, no filing passthrough ([details below](#querying-from-any-project-k-wiki)) |
+| `node <checkout>/bin/k-wiki query "<question>"` (also `npm run k-wiki -- …` inside the checkout) | agent-facing CLI | Ask the wiki bound to the current project from any cwd — zero flags once `.k-wiki.json` binds it; plus four read-only commands: `status` (binding + paths), `list [<type>]` (pages by type), `read <slug>` (one page verbatim), `health` (projection check); answer-only, no filing passthrough ([details below](#querying-from-any-project-k-wiki)) |
 | `npm run data:init -- [--second-brain] [--meta] [<sync.json>]` | data repo seeder | Create and seed the data repo at `sync.json`'s `dataRoot`: git init, copy the `raw/`+`wiki/` skeleton from the code repo, write the standing `.gitignore` (Obsidian UI state, ingest snapshot), first commit; idempotent; `--second-brain` also writes the `.second-brain` identity marker ([§5](#5-the-second-brain)); `--meta` seeds the meta contract (`wiki/AGENTS.meta.md`) as the data repo's `wiki/AGENTS.md` ([§9](#9-the-meta-wiki-a-repository-as-source)) |
 | `npm run board-triage -- [-h \| --help] [--dry-run] [--owner <login>] [--project <n>]` | board triage CLI | Apply the mechanical half of the K-Wiki Kanban triage contract via the `gh` CLI — Backlog → Ready (unblocked, no `research` label), open PR → In progress, closed → Done — Status field values only; lane order is never touched, ids are resolved fresh every run, every move is verified by re-reading the board, and `--dry-run` plans with zero writes (default: `mguinada`'s project 2; [below](#scheduled-board-triage)) |
 | `npm run mutation:changed` | StrykerJS | Optional advisory mutation run scoped to the changed hunks of the `src/` files that differ from the mutation base — `main` by default, any ref via `MUTATION_BASE`, or the `main` commit from N days ago via `MUTATION_WINDOW_DAYS` (uncommitted included; new files whole) — `src/quality/mutation-scope.ts` builds the `file:start-end` ranges; exits 0 without running when nothing changed, and ends by printing the actionable mutants — recommended for small diffs; the authoritative mutation signal lives in CI |
@@ -1112,7 +1112,7 @@ npm run setup-schedule -- --uninstall         # bootout the job and remove the p
 ```
 
 `setup-schedule` registers the pipeline with launchd:
-the job runs `node bin/scheduled-run.ts` on a fixed interval —
+the job runs `node bin/scheduled-run` on a fixed interval —
 `StartInterval 1800` by default, `RunAtLoad` — from the checkout you
 installed it from, with absolute node + script paths, an explicit
 `HOME`, and a minimal `PATH` (the wrapper builds the rest). The
@@ -1121,8 +1121,14 @@ existing (e.g. `/opt/homebrew/bin/node`, stable across Homebrew
 upgrades — the resolved binary lives in a versioned Cellar and
 breaks on every `brew upgrade node`), falling back to
 the resolved binary. Register through the stable path once —
-`/opt/homebrew/bin/node bin/setup-schedule.ts` — to move an
-existing install off a versioned Cellar path. The plist
+`/opt/homebrew/bin/node bin/setup-schedule` — to move an
+existing install off a versioned Cellar path. The same rule holds for
+the pinned script path: after pulling a change that renames or moves
+the launcher (as the switch to extensionless launcher names did),
+re-run `npm run setup-schedule` once — until then the installed job
+points at the deleted path and every tick fails into
+`launchd-stderr.log` with `MODULE_NOT_FOUND`, leaving the wiki stale
+with no other alert. The plist
 lands at `~/Library/LaunchAgents/com.kwiki.scheduled-run.plist` and is
 verified with `launchctl print` before the installer reports success.
 After installing, one manual kick proves the whole path:
@@ -1298,4 +1304,4 @@ projection (`--fail-on-stale` makes staleness blocking). A wrong
 pairing (a binding whose checkout resolves an unexpected data repo)
 fails loudly via the existing guardrails — no silent cross-wiki
 reads. Humans can add a shell alias:
-`alias k-wiki='node ~/k-wiki/bin/k-wiki.ts'`.
+`alias k-wiki='node ~/k-wiki/bin/k-wiki'`.

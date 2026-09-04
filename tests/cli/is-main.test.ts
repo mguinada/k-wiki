@@ -6,7 +6,8 @@ const originalArgv1 = process.argv[1];
 
 /**
  * Issue #135: src/ and scripts/ modules are libraries; their only
- * entry path is a shebanged launcher — `bin/<name>.ts` for the wiki
+ * entry path is a shebanged launcher — `bin/<name>` (extensionless,
+ * issue #156) for the wiki
  * runtime, `dev/<name>.ts` for development-lifecycle commands
  * (issue #253). Executed directly, a library module must fail loudly
  * — refusal message naming the launcher, exit 1 — and never invoke

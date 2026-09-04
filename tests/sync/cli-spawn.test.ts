@@ -285,7 +285,7 @@ describe("sync-vault CLI", () => {
   it("projects the fixture vault with its default arguments", async () => {
     const dir = await makeTmpRepo();
 
-    const result = await runNode([join(dir, "bin", "sync-vault.ts")]);
+    const result = await runNode([join(dir, "bin", "sync-vault")]);
 
     const note = await noteMarker(join(dir, "raw"), result);
 
@@ -311,7 +311,7 @@ describe("sync-vault CLI", () => {
       }),
     );
 
-    const result = await runNode([join(dir, "bin", "sync-vault.ts")]);
+    const result = await runNode([join(dir, "bin", "sync-vault")]);
 
     const note = await noteMarker(join(dir, "k-wiki-data", "raw"), result);
 
@@ -332,7 +332,7 @@ describe("sync-vault CLI", () => {
 
   it("runs main with the default config and raw paths when imported through its bin launcher", async () => {
     const repo = await stageRepo();
-    const launcherPath = join(repo, "bin", "sync-vault.ts");
+    const launcherPath = join(repo, "bin", "sync-vault");
 
     const { out } = await importWithArgv(launcherPath, launcherPath, []);
 

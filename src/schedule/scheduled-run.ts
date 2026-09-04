@@ -243,7 +243,7 @@ export interface ScheduledRunOptions {
     args: readonly string[],
   ) => Promise<unknown>;
   /** The wiki-sync invocation; defaults to spawning node against the
-   *  repo's bin/wiki-sync.ts. Injected in tests. */
+   *  repo's bin/wiki-sync. Injected in tests. */
   readonly runSync?: (args: readonly string[]) => Promise<void>;
 }
 
@@ -474,7 +474,7 @@ function streamChildLines(source: Readable, log: (line: string) => void): void {
   });
 }
 
-/** Run bin/wiki-sync.ts as a child with the scheduled env, streaming
+/** Run bin/wiki-sync as a child with the scheduled env, streaming
  *  its stdout and stderr into the log. */
 async function spawnWikiSync(
   repoRoot: string,
@@ -487,7 +487,7 @@ async function spawnWikiSync(
   );
   const child = spawn(
     process.execPath,
-    [join(repoRoot, "bin", "wiki-sync.ts"), ...args],
+    [join(repoRoot, "bin", "wiki-sync"), ...args],
     { env, stdio: ["ignore", "pipe", "pipe"] },
   );
 

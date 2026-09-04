@@ -79,7 +79,7 @@ describe("re-export shim detector (G3, issue #260)", () => {
     ['import { checkWikiFidelity } from "../src/wiki/fidelity.ts";'],
     ["export { stem };"],
     ["export function main(): Promise<void> {"],
-    ['export const script = "bin/check-fidelity.ts";'],
+    ['export const script = "bin/check-fidelity";'],
     [' * export { checkCrossWikiLinks } from "../src/wiki/crosslinks.ts";'],
     ['// export * from "./colors.ts";'],
   ];

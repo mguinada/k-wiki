@@ -9,8 +9,9 @@ import { describe, expect, it } from "vitest";
  * user-facing surfaces (issue #202): `--help` output and README.md
  * explain behavior to end users; tracker history belongs in the
  * design record (docs/karpathy_wiki_implementation_guide.md) and
- * dev-facing code comments. Every bin/*.ts and dev/*.ts launcher is
- * executed with --help — which must exit 0 without side effects —
+ * dev-facing code comments. Every bin/ launcher (extensionless
+ * since issue #156) and every dev/*.ts launcher is executed with
+ * --help — which must exit 0 without side effects —
  * and its output plus README.md are matched against the citation
  * pattern. `issues? #` so "issue #11" and "issues #67 and #72" both
  * trip; the text is whitespace-normalized first so a citation broken
@@ -28,13 +29,21 @@ function normalize(text: string): string {
 /** The launcher directories: the runtime bin/ class and the dev/ one. */
 const LAUNCHER_DIRS = ["bin", "dev"] as const;
 
-async function collectLaunchers(dir: string): Promise<string[]> {
+/**
+ * Every file in `bin/` — the launcher set since issue #156 dropped
+ * the `.ts` extension — and the `.ts` files in `dev/` (its `.sh`
+ * scripts are not node-run CLIs).
+ */
+async function collectLaunchers(dir: "bin" | "dev"): Promise<string[]> {
   const entries = await readdir(join(repoRoot, dir), {
     withFileTypes: true,
   });
 
   return entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".ts"))
+    .filter(
+      (entry) =>
+        entry.isFile() && (dir === "bin" || entry.name.endsWith(".ts")),
+    )
     .map((entry) => entry.name)
     .sort();
 }
@@ -57,7 +66,7 @@ describe("user-facing surfaces carry no issue references (issue #202 guard)", ()
     expect(normalize(readme).match(ISSUE_REFERENCE)).toBeNull();
   });
 
-  it("bin/*.ts and dev/*.ts help output contains no issue reference", async () => {
+  it("bin/ and dev/*.ts help output contains no issue reference", async () => {
     const offenders: string[] = [];
 
     for (const dir of LAUNCHER_DIRS) {
