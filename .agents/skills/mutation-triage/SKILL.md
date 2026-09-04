@@ -19,7 +19,7 @@ of the advisory workflow in AGENTS.md, never a gate.
    for that scope, reuse it. Incremental mode makes both fast. Both
    commands print the actionable mutants (Survived and NoCoverage) at
    the end of the run; re-list the last report any time with
-   `npm run mutation:survivors`.
+   `node dev/mutation-survivors.ts`.
 
 2. **Read the actionable list.** It is already printed — one line per
    mutant: status, `file:line`, mutator. For the diff of one mutant
