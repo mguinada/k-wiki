@@ -94,6 +94,18 @@ const ENTRIES: readonly Entry[] = [
     usage: "Usage: link-sources",
   },
   {
+    launcher: "mutation-chunk.ts",
+    module: "src/quality/mutation-chunk.ts",
+    usage: "Usage: mutation-chunk",
+    dir: "dev",
+  },
+  {
+    launcher: "mutation-merge.ts",
+    module: "src/quality/mutation-merge.ts",
+    usage: "Usage: mutation-merge",
+    dir: "dev",
+  },
+  {
     launcher: "mutation-report.ts",
     module: "src/quality/mutation-report.ts",
     usage: "Usage: mutation-report",
@@ -115,6 +127,12 @@ const ENTRIES: readonly Entry[] = [
     launcher: "open-origin.ts",
     module: "scripts/open-origin.ts",
     usage: "Usage: open-origin",
+  },
+  {
+    launcher: "refactor-metrics.ts",
+    module: "src/quality/refactor-metrics.ts",
+    usage: "Usage: refactor-metrics",
+    dir: "dev",
   },
   {
     launcher: "sync-repo.ts",

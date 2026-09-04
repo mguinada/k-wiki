@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   CYCLOMATIC_LIMIT,
   CYCLOMATIC_WARN,
@@ -161,6 +161,141 @@ describe("gateChanged", () => {
     ]);
 
     expect(`${result.filesChecked}|${result.functionsGated}`).toBe("1|1");
+  });
+});
+
+describe("parseEngineReport (exact shape errors, issue #240 kill batch)", () => {
+  const SHAPE_TAIL =
+    " — engine output changed; adjust parseEngineReport in src/quality/complexity.ts";
+
+  it("names the files key when the report carries no files array", () => {
+    expect(() => parseEngineReport('{"files": 5}')).toThrow(
+      `complexity-guard report shape not recognized at files${SHAPE_TAIL}`,
+    );
+  });
+
+  it("names the file entry when its path is not a string", () => {
+    const json = '{"files": [{"path": 5, "functions": []}]}';
+
+    expect(() => parseEngineReport(json)).toThrow(
+      `complexity-guard report shape not recognized at file 5${SHAPE_TAIL}`,
+    );
+  });
+
+  it("names the function when its name is not a string", () => {
+    const json =
+      '{"files": [{"path": "src/a.ts", "functions": [' +
+      '{"name": 7, "start_line": 1, "end_line": 2, "cyclomatic": 3}]}]}';
+
+    expect(() => parseEngineReport(json)).toThrow(
+      `complexity-guard report shape not recognized at function 7 in src/a.ts${SHAPE_TAIL}`,
+    );
+  });
+
+  it("rejects a non-finite line number such as Infinity", () => {
+    const json =
+      '{"files": [{"path": "src/a.ts", "functions": [' +
+      '{"name": "f", "start_line": 1e999, "end_line": 2, "cyclomatic": 3}]}]}';
+
+    expect(() => parseEngineReport(json)).toThrow(
+      `complexity-guard report shape not recognized at function f in src/a.ts${SHAPE_TAIL}`,
+    );
+  });
+
+  it("rejects a cyclomatic score that is a string", () => {
+    const json =
+      '{"files": [{"path": "src/a.ts", "functions": [' +
+      '{"name": "f", "start_line": 1, "end_line": 2, "cyclomatic": "3"}]}]}';
+
+    expect(() => parseEngineReport(json)).toThrow(
+      `complexity-guard report shape not recognized at function f in src/a.ts${SHAPE_TAIL}`,
+    );
+  });
+});
+
+describe("gateChanged (boundaries, issue #240 kill batch)", () => {
+  const BOUNDARY_JSON = `{
+  "files": [
+    {
+      "path": "src/b.ts",
+      "functions": [
+        { "name": "touch", "start_line": 50, "end_line": 60, "cyclomatic": 9 },
+        { "name": "ten", "start_line": 60, "end_line": 60, "cyclomatic": 10 },
+        { "name": "eight", "start_line": 60, "end_line": 60, "cyclomatic": 8 },
+        { "name": "after", "start_line": 61, "end_line": 70, "cyclomatic": 11 }
+      ]
+    }
+  ]
+}`;
+
+  const boundaryReport = parseEngineReport(BOUNDARY_JSON);
+  const boundaryChange: readonly FileDiff[] = [
+    { path: "src/b.ts", ranges: [{ start: 60, end: 60 }] },
+  ];
+
+  it("gates a function whose extent touches the range start and keeps boundary scores out of both tiers", () => {
+    expect(gateChanged(boundaryReport, boundaryChange)).toEqual({
+      violations: [],
+      warnings: [
+        { path: "src/b.ts", line: 50, name: "touch", cyclomatic: 9 },
+        { path: "src/b.ts", line: 60, name: "ten", cyclomatic: 10 },
+      ],
+      filesChecked: 1,
+      functionsGated: 3,
+    });
+  });
+});
+
+describe("renderGateReport (exact text, issue #240 kill batch)", () => {
+  afterEach(() => {
+    delete process.env.NO_COLOR;
+  });
+
+  it("renders the full violating report verbatim without color", () => {
+    process.env.NO_COLOR = "1";
+
+    expect(renderGateReport(gateChanged(REPORT, CHANGED))).toBe(
+      [
+        "complexity gate: 1 violation(s) over cyclomatic 10 — refactor, do not suppress",
+        "src/b.ts:5  overNew  cyclomatic 11 > 10",
+        "  Refactor overNew — Refactor it: extract helpers, use table-driven dispatch, return early, or split generators into named steps. Do not suppress — a genuinely irreducible function gets a .complexityguard.json files.exclude entry justified in the PR body.",
+        "src/b.ts:12  warnTier  cyclomatic 9 — warning tier (over 8, at or under 10)",
+        "src/b.ts:20  atLimit  cyclomatic 10 — warning tier (over 8, at or under 10)",
+        "checked 2 files, 4 functions gated: 1 violation(s), 2 warning(s)",
+      ].join("\n"),
+    );
+  });
+});
+
+describe("renderDebtReport (exact text, issue #240 kill batch)", () => {
+  afterEach(() => {
+    delete process.env.NO_COLOR;
+  });
+
+  it("renders the full debt table verbatim without color", () => {
+    process.env.NO_COLOR = "1";
+
+    const report = parseEngineReport(
+      JSON.stringify({
+        files: [
+          {
+            path: "src/x.ts",
+            functions: [
+              { name: "tiny", start_line: 1, end_line: 2, cyclomatic: 2 },
+              { name: "big", start_line: 3, end_line: 9, cyclomatic: 12 },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(renderDebtReport(report)).toBe(
+      [
+        "complexity debt report (advisory, whole src/): 2 functions, 1 over 10, 1 over 8",
+        "   12  src/x.ts:3  big",
+        "    2  src/x.ts:1  tiny",
+      ].join("\n"),
+    );
   });
 });
 

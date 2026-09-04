@@ -851,6 +851,74 @@ describe("checkRaw freshness (repo-as-source)", () => {
     expect(report.warnings).toEqual([]);
   });
 
+  it("stays unstaled when the manifest is not valid JSON", async () => {
+    const rawDir = await makeRawDir();
+
+    await mkdir(join(rawDir, "notes", "k-wiki"), { recursive: true });
+    await writeFile(join(rawDir, "notes", "k-wiki", "note.md"), NOTE);
+    await writeFile(join(rawDir, "manifest.json"), "{not json");
+
+    const report = await checkRaw(rawDir, { env: GIT_ENV });
+
+    expect(report.stale).toBe(false);
+  });
+
+  it("stays unstaled when the manifest is valid JSON but not an object", async () => {
+    const rawDir = await makeRawDir();
+
+    await mkdir(join(rawDir, "notes", "k-wiki"), { recursive: true });
+    await writeFile(join(rawDir, "notes", "k-wiki", "note.md"), NOTE);
+    await writeFile(join(rawDir, "manifest.json"), "5");
+
+    const report = await checkRaw(rawDir, { env: GIT_ENV });
+
+    expect(report.stale).toBe(false);
+  });
+
+  it("stays unstaled when the manifest's stamp is not a pair of strings", async () => {
+    const rawDir = await makeRawDir();
+
+    await mkdir(join(rawDir, "notes", "k-wiki"), { recursive: true });
+    await writeFile(join(rawDir, "notes", "k-wiki", "note.md"), NOTE);
+    await writeFile(
+      join(rawDir, "manifest.json"),
+      JSON.stringify({
+        vaults: {
+          "k-wiki": {
+            "note.md": {
+              hash: hashOf(NOTE),
+              last_synced: "2026-08-20T00:00:00Z",
+            },
+          },
+        },
+        source_commit: 5,
+        source_root: "/nowhere",
+      }),
+    );
+
+    const report = await checkRaw(rawDir, { env: GIT_ENV });
+
+    expect(report.stale).toBe(false);
+  });
+
+  it("stays unstaled when the recorded commit equals the source HEAD", async () => {
+    const { rawDir } = await makeStaleWorkspace();
+
+    const report = await checkRaw(rawDir, { env: GIT_ENV });
+
+    expect(report.stale).toBe(false);
+  });
+
+  it("stays unstaled when the source repo cannot be read", async () => {
+    const { rawDir } = await makeStaleWorkspace();
+
+    await rm(join(rawDir, "source"), { recursive: true, force: true });
+
+    const report = await checkRaw(rawDir, { env: GIT_ENV });
+
+    expect(report.stale).toBe(false);
+  });
+
   it("stays healthy when the source repo can no longer be read", async () => {
     const { rawDir } = await makeStaleWorkspace();
 

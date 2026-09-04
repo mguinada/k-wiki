@@ -242,6 +242,150 @@ function insideStrykerSandbox(): boolean {
   );
 }
 
+describe("parseStructureBudget (exact problems, issue #240 kill batch)", () => {
+  it("joins multiple unknown counter names with a comma and space", () => {
+    const body = JSON.parse(budgetJson());
+    body.budget.aa = 1;
+    body.budget.bb = 1;
+
+    expect(() => parseStructureBudget(JSON.stringify(body))).toThrow(
+      "unknown counters aa, bb",
+    );
+  });
+
+  it("joins the unknown-counter and missing-counter problems with a semicolon", () => {
+    const body = JSON.parse(budgetJson());
+    body.budget.zz = 1;
+    delete body.budget.filesOver800;
+
+    expect(() => parseStructureBudget(JSON.stringify(body))).toThrow(
+      "structure budget: unknown counters zz; missing counters filesOver800",
+    );
+  });
+
+  it("rejects a counter value of Infinity as not finite", () => {
+    const body = JSON.parse(budgetJson());
+    body.budget.maxFileLines = Number.POSITIVE_INFINITY;
+
+    expect(() => parseStructureBudget(JSON.stringify(body))).toThrow(
+      "counter maxFileLines must be a finite non-negative number",
+    );
+  });
+
+  it("rejects a negative counter value", () => {
+    const body = JSON.parse(budgetJson());
+    body.budget.maxFileLines = -1;
+
+    expect(() => parseStructureBudget(JSON.stringify(body))).toThrow(
+      "counter maxFileLines must be a finite non-negative number",
+    );
+  });
+
+  it("rejects an exclude entry whose paths value is not a list", () => {
+    const body = JSON.parse(budgetJson());
+    body.exclude = { parseArgsCopies: "src/legacy/old.ts" };
+
+    expect(() => parseStructureBudget(JSON.stringify(body))).toThrow(
+      "exclude parseArgsCopies must be a list of paths",
+    );
+  });
+
+  it("rejects an exclude list that carries a non-string entry", () => {
+    const body = JSON.parse(budgetJson());
+    body.exclude = { parseArgsCopies: ["src/a.ts", 5] };
+
+    expect(() => parseStructureBudget(JSON.stringify(body))).toThrow(
+      "exclude parseArgsCopies must be a list of paths",
+    );
+  });
+});
+
+describe("renderBreaches (exact text, issue #240 kill batch)", () => {
+  it("renders every breach header with its counter's own label", async () => {
+    const offenders = await guardOffenders();
+    const fresh = metricsOfOffenders(offenders);
+
+    expect(renderBreaches(breachesOf(zeroBudget(), fresh), offenders)).toBe(
+      [
+        "files >800 lines (filesOver800): fresh 1 > budget 0",
+        "  big.ts (801 lines)",
+        "files >500 lines (filesOver500): fresh 1 > budget 0",
+        "  big.ts (801 lines)",
+        "files >350 lines (filesOver350): fresh 1 > budget 0",
+        "  big.ts (801 lines)",
+        "max file lines (maxFileLines): fresh 801 > budget 0",
+        "  big.ts (801 lines)",
+        "cross-domain edges (excl. cli) (crossDomainEdges): fresh 1 > budget 0",
+        "  data/db.ts:1",
+        "data→sync edges (dataToSyncEdges): fresh 1 > budget 0",
+        "  data/db.ts:1",
+      ].join("\n"),
+    );
+  });
+
+  it("lists only the files at the breached maximum for max file lines", async () => {
+    const offenders = await guardOffenders();
+    const fresh = metricsOfOffenders(offenders);
+
+    expect(
+      renderBreaches(
+        breachesOf(
+          {
+            ...zeroBudget(),
+            filesOver800: 2,
+            filesOver500: 2,
+            filesOver350: 2,
+            crossDomainEdges: 2,
+            dataToSyncEdges: 2,
+            maxFileLines: 800,
+          },
+          fresh,
+        ),
+        offenders,
+      ),
+    ).toBe(
+      [
+        "max file lines (maxFileLines): fresh 801 > budget 800",
+        "  big.ts (801 lines)",
+      ].join("\n"),
+    );
+  });
+
+  it("omits the overflow line when the sites fit under the cap", () => {
+    const offenders: StructureOffenders = {
+      ...emptyOffenders(),
+      parseArgsCopies: [{ path: "src/only.ts", line: 3 }],
+    };
+    const fresh = metricsOfOffenders(offenders);
+
+    expect(renderBreaches(breachesOf(zeroBudget(), fresh), offenders)).toBe(
+      [
+        "parseArgs copies (parseArgsCopies): fresh 1 > budget 0",
+        "  src/only.ts:3",
+      ].join("\n"),
+    );
+  });
+
+  it("caps the site list at ten entries with an exact overflow line", () => {
+    const offenders: StructureOffenders = {
+      ...emptyOffenders(),
+      parseArgsCopies: Array.from({ length: 12 }, (_, i) => ({
+        path: `src/mod${i}.ts`,
+        line: i + 1,
+      })),
+    };
+    const fresh = metricsOfOffenders(offenders);
+
+    expect(renderBreaches(breachesOf(zeroBudget(), fresh), offenders)).toBe(
+      [
+        "parseArgs copies (parseArgsCopies): fresh 12 > budget 0",
+        ...Array.from({ length: 10 }, (_, i) => `  src/mod${i}.ts:${i + 1}`),
+        "  … +2 more",
+      ].join("\n"),
+    );
+  });
+});
+
 describe("structure gate (live src/ tree)", () => {
   it("every counter stays at or below its .structureguard.json budget", async ({
     skip,

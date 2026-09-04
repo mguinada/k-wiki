@@ -307,6 +307,50 @@ describe("releaseLock takeover race", () => {
   });
 });
 
+describe("runScheduledCycle (issue #240 kill batch)", () => {
+  it("treats a whitespace-only porcelain status as a clean tree", async () => {
+    const dir = await tempDir();
+    const { git, runGitStep } = fakeGit();
+
+    git.status = "   \n";
+
+    const outcome = await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      log: () => {},
+    });
+
+    expect(git.calls).toEqual([
+      ["remote", "get-url", "origin"],
+      ["status", "--porcelain", "--untracked-files=no"],
+      ["pull", "--rebase"],
+      ["wiki-sync"],
+      ["push"],
+    ]);
+
+    await rm(dir, { recursive: true, force: true });
+    expect(outcome).toEqual({ status: "ok" });
+  });
+});
+
+describe("acquireLock (issue #240 kill batch)", () => {
+  it("fails loud on a lock path that is a directory instead of wedging silently", async () => {
+    const dir = await tempDir();
+    const lockPath = join(dir, "scheduled-run.lock");
+
+    await mkdir(lockPath);
+
+    await expect(acquireLock(lockPath)).rejects.toMatchObject({
+      code: "ERR_FS_EISDIR",
+    });
+
+    await rm(dir, { recursive: true, force: true });
+  });
+});
+
 describe("lockData", () => {
   it("parses a written lock and rejects garbage", () => {
     const parsed = lockData('{"pid":42,"takenAt":"2026-01-01T00:00:00Z"}');

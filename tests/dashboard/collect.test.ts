@@ -314,6 +314,19 @@ describe("collectData", () => {
   });
 });
 
+describe("collectData (issue #240 kill batch)", () => {
+  it("finds no head commit when the injected env cannot run git", async () => {
+    const { dataRoot } = await makeRichRepo();
+
+    const input = await collectData(dataRoot, {
+      now: () => NOW,
+      env: { ...process.env, PATH: "" },
+    });
+
+    expect(input.head).toBe("");
+  });
+});
+
 describe("collectData page fields", () => {
   async function collectPagesFrom(
     name: string,
@@ -414,8 +427,54 @@ describe("collectData page fields", () => {
 
     expect(input.lastQuery).toBe("2026-08-29T08:00:00.000Z");
   });
+
+  it("keeps a timestamp field mid-line out of the query timestamp", async () => {
+    const { dataRoot } = await makeRichRepo();
+
+    await writeFile(
+      join(dataRoot, "outputs", "last-query.md"),
+      'note: says timestamp: "2020-01-01T00:00:00.000Z" inline\n',
+    );
+
+    const input = await collectData(dataRoot, { now: () => NOW });
+
+    expect(input.lastQuery).toBeNull();
+  });
+
+  it("keeps trailing text after the closing quote out of the query timestamp", async () => {
+    const { dataRoot } = await makeRichRepo();
+
+    await writeFile(
+      join(dataRoot, "outputs", "last-query.md"),
+      'timestamp: "2020-01-01T00:00:00.000Z" trailing\n',
+    );
+
+    const input = await collectData(dataRoot, { now: () => NOW });
+
+    expect(input.lastQuery).toBeNull();
+  });
 });
 
+describe("parseAdditionLog (issue #240 kill batch)", () => {
+  it("keeps .md paths before the first marker and blank lines out of the facts", () => {
+    const additions = parseAdditionLog(
+      "wiki/early.md\n\nA2026-01-01\nwiki/late.md\n",
+    );
+
+    expect(additions).toEqual([{ path: "wiki/late.md", date: "2026-01-01" }]);
+  });
+
+  it("treats a path that merely ends like the marker as a path", () => {
+    const additions = parseAdditionLog(
+      "A2026-01-01\nwiki/a.md\nxxA2026-01-02\nwiki/b.md\n",
+    );
+
+    expect(additions).toEqual([
+      { path: "wiki/a.md", date: "2026-01-01" },
+      { path: "wiki/b.md", date: "2026-01-01" },
+    ]);
+  });
+});
 describe("parseAdditionLog", () => {
   it("treats a path named like the format marker as a path, not a date marker", () => {
     const additions = parseAdditionLog("A2026-02-02\n\nA2025-01-01.md\n");
