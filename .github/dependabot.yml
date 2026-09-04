@@ -1,0 +1,14 @@
+# Dependabot configuration (issue #292): security-driven updates only.
+# The github-actions ecosystem, weekly, keeps actions/checkout,
+# setup-node, and the artifact actions current — a small pinned set,
+# safe bumps, occasional real advisories. npm version updates are
+# deliberately excluded: weekly majors against the vitest/stryker/
+# biome toolchain are config churn with no advisory driver, and the
+# fix loop for vulnerable npm trees is Dependabot alerts + automated
+# security updates (repo Settings → Code security), not this file.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
