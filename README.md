@@ -531,9 +531,9 @@ every edit. Queries complete the daily loop:
 
 ### Occasional operator
 
-The commands the two-command story runs for you, surfaced for the rare
-direct use — first-time setup, an unattended schedule, or debugging
-the cycle as separate steps:
+First-time setup, the unattended schedule, the dashboard, and the
+cycle's separate steps — what daily operation runs for you, surfaced
+for the rare direct use:
 
 | Command | Tool | Purpose |
 |---|---|---|
