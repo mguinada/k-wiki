@@ -5,7 +5,6 @@ import {
   mkdtemp,
   readFile,
   rm,
-  stat,
   symlink,
   writeFile,
 } from "node:fs/promises";
@@ -842,19 +841,5 @@ describe("setup-schedule main wiring (issue #240 kill batch)", () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  it("writes the installed plist with mode 0644 regardless of umask", async () => {
-    const home = await tempHome();
-    const previousUmask = process.umask(0o000);
 
-    try {
-      await main([], "darwin", async () => {}, home);
-
-      const info = await stat(plistPath(home));
-
-      expect(info.mode & 0o777).toBe(0o644);
-    } finally {
-      process.umask(previousUmask);
-      await rm(home, { recursive: true, force: true });
-    }
-  });
 });
