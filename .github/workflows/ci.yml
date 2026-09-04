@@ -15,6 +15,20 @@
 # into logs — the gates emit tool diagnostics only, and the test suite
 # reads synthetic fixtures, never real vault data.
 #
+# The gates job audits dependencies before typecheck (issue #292): a
+# high-or-worse advisory in the production tree, or a critical
+# advisory anywhere (dev toolchain included), blocks the job; a
+# high anywhere is advisory — logged by a continue-on-error step
+# whose findings also surface as ::warning annotations on the run
+# page, never blocking, because dev-tree transitive advisories are
+# frequently wait-for-upstream. The fix loop for those is Dependabot
+# alerts + automated security updates (repo settings) plus the
+# github-actions ecosystem in dependabot.yml — npm version updates
+# are deliberately excluded there. `npm run audit` is the local
+# on-demand form of the two blocking audits; it stays out of the
+# agent quality-gate loop by design (network-bound, advisory-
+# database-dependent — see issue #292's Rationale).
+#
 # The e2e job is blocking like the gates: `npm run e2e` drives the real
 # sync and wiki-ingest CLIs as child processes — against the synthetic
 # fixture vault and a stub agent in temp workspaces — and `npm run
@@ -103,6 +117,27 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Audit production dependencies (blocking, high+)
+        run: npm audit --omit=dev --audit-level=high
+      - name: Audit all dependencies at critical (blocking)
+        run: npm audit --audit-level=critical
+      - name: Audit all dependencies at high (advisory)
+        # Log-only: dev-tree advisories at high are wait-for-upstream
+        # as often as not; the annotations step below surfaces them on
+        # the run page. Never blocks.
+        continue-on-error: true
+        run: npm audit --audit-level=high
+      - name: Annotate advisory audit findings
+        # Re-runs the audit as JSON and emits one ::warning annotation
+        # per finding, so dev-tree advisories are visible on the check
+        # run and run page, not buried in the log above. Never blocks.
+        continue-on-error: true
+        run: >
+          npm audit --audit-level=high --json | jq -r
+          '.vulnerabilities // {} | to_entries[] |
+          "::warning title=npm audit - \(.key)::\(.value.severity) severity,
+          range \(.value.range); via \([.value.via[]? | if type == "object"
+          then .name else . end] | unique | join(", "))"'
       - run: npm run typecheck
 
   lint:
