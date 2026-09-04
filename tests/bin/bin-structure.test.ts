@@ -17,34 +17,11 @@ import { describe, expect, it } from "vitest";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-/**
- * Recursively collect repo-relative .ts paths under `root`.
- */
-async function collectTsFiles(root: string, prefix = ""): Promise<string[]> {
-  const entries = await readdir(root, { withFileTypes: true });
-  const files: string[] = [];
-
-  for (const entry of entries) {
-    const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
-
-    if (entry.isDirectory()) {
-      files.push(...(await collectTsFiles(join(root, entry.name), rel)));
-    } else if (entry.isFile() && entry.name.endsWith(".ts")) {
-      files.push(rel);
-    }
-  }
-
-  return files.sort();
-}
-
-/**
- * Recursively collect every regular file under `root` — the bin/
- * launcher set since issue #156 dropped the `.ts` extension: a
- * launcher is any file in `bin/` (shebang, exec bit, referenced).
- */
-async function collectLauncherFiles(
+/** Recursively collect repo-relative file paths under `root`. */
+async function collectFiles(
   root: string,
   prefix = "",
+  keep: (name: string) => boolean = () => true,
 ): Promise<string[]> {
   const entries = await readdir(root, { withFileTypes: true });
   const files: string[] = [];
@@ -53,13 +30,27 @@ async function collectLauncherFiles(
     const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
 
     if (entry.isDirectory()) {
-      files.push(...(await collectLauncherFiles(join(root, entry.name), rel)));
-    } else if (entry.isFile()) {
+      files.push(...(await collectFiles(join(root, entry.name), rel, keep)));
+    } else if (entry.isFile() && keep(entry.name)) {
       files.push(rel);
     }
   }
 
   return files.sort();
+}
+
+/** `.ts` sources — `src/`, `scripts/`, and the `dev/` launchers. */
+function collectTsFiles(root: string, prefix = ""): Promise<string[]> {
+  return collectFiles(root, prefix, (name) => name.endsWith(".ts"));
+}
+
+/**
+ * Every file — the bin/ launcher set since issue #156 dropped the
+ * `.ts` extension: a launcher is any file in `bin/` (shebang, exec
+ * bit, referenced).
+ */
+function collectLauncherFiles(root: string, prefix = ""): Promise<string[]> {
+  return collectFiles(root, prefix);
 }
 
 /**
