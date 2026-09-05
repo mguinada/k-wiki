@@ -1,3 +1,11 @@
+/**
+ * setup-meta-sync: install the meta wiki's post-merge auto-sync git
+ * hooks (content in meta-sync-hook.ts) into the checkout's shared
+ * hooks dir — `git rev-parse --git-path hooks`, correct for the
+ * canonical checkout and its linked worktrees — baking absolute
+ * paths resolved at install time. Hooks are unversioned
+ * per-machine state by nature: install runs once per machine.
+ */
 import { execFile } from "node:child_process";
 import { chmod, mkdir, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -20,14 +28,6 @@ import {
 import { resolveDataRoot } from "./scheduled-run.ts";
 import { stableNodePath } from "./setup-schedule.ts";
 
-/**
- * setup-meta-sync: install the meta wiki's post-merge auto-sync git
- * hooks (content in meta-sync-hook.ts) into the checkout's shared
- * hooks dir — `git rev-parse --git-path hooks`, correct for the
- * canonical checkout and its linked worktrees — baking absolute
- * paths resolved at install time. Hooks are unversioned
- * per-machine state by nature: install runs once per machine.
- */
 
 /** Help text: every switch and default (AGENTS.md CLI rule). */
 const HELP = `Usage: setup-meta-sync [-h | --help] [--print] [--uninstall]
