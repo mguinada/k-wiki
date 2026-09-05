@@ -950,7 +950,8 @@ One binding binds exactly one wiki — lists and multi-wiki forms are
 rejected — and there is no filing passthrough: stage 2 stays
 human-run inside the checkout. Besides `k-wiki query
 "<question>"` (stage 1 above), the entry provides `status`
-(resolution chain and wiki paths), `list [<type>]` (one `slug —
+(resolution chain, wiki paths, and the data repo's last change
+time), `list [<type>]` (one `slug —
 title` line per page, grouped by type in §11's index order), `read
 <slug>` (one page verbatim by file name), and `health` (the read-only check-raw
 projection check). The README's "Querying from any project"
