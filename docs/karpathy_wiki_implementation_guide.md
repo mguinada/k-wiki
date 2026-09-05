@@ -1504,8 +1504,11 @@ Deltas from the simple path:
    reads the real file, never a summary. The manifest machinery
    (hashes, incremental ingest, expungement) is reused unchanged.
 3. **Commit-SHA grounding.** The projection is made from a committed
-   tree only (a dirty source fails loudly), and the manifest records
-   the source repo's HEAD commit and root beside the per-file hashes.
+   tree (tracked changes always fail loudly; untracked files block
+   only when the allowlist could select them — untracked scratch no
+   pattern can select does not block, issue #312), and the manifest
+   records the source repo's HEAD commit and root beside the per-file
+   hashes.
    The health check compares the recorded commit against the source
    repo's current HEAD: a projection left behind announces itself as a
    stale warning (`--fail-on-stale` makes it blocking).

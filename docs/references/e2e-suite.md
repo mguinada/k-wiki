@@ -12,7 +12,8 @@ e2e run or diagnosing a failing one.
   pass the `--skill`/`-e` flags and warn-and-omit absent entries,
   issue #144).
 - **sync-repo** — repo-as-source projection runs in temp source repos
-  (verbatim copy, commit stamping, dirty-source and wrong-config
+  (verbatim copy, commit stamping, untracked scratch proceeds and
+  untracked-selectable refuses, dirty-source and wrong-config
   failures, health freshness).
 - **wiki-sync** — full-cycle, no-change, failure, guardrail-revert,
   reverted fidelity-failure, repo-source cycle (the meta flow), and
