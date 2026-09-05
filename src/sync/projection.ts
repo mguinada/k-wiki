@@ -210,6 +210,26 @@ export async function pruneNamespaces(
   return prunedNamespaces;
 }
 
+/** The literal leading directory segments of a pattern, before the
+ *  first wildcard segment; the walk never leaves these subtrees. */
+export function literalPrefix(pattern: string): string[] {
+  const prefix: string[] = [];
+
+  for (const segment of pattern.split("/")) {
+    if (segment === "**" || segment.includes("*")) {
+      break;
+    }
+
+    prefix.push(segment);
+  }
+
+  return prefix;
+}
+
+/** Directories never walked at the root of a walk, whatever the
+ *  allowlist says: `.git` and `node_modules`. */
+export const SKIPPED_ROOT_DIRS = new Set([".git", "node_modules"]);
+
 /** Compile one include pattern — the shared pattern language of the
  *  repo adapter's allowlist and the publish stage's include list:
  *  `*` matches within a path segment, `**` matches across segments

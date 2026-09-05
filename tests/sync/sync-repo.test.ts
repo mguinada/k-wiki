@@ -765,6 +765,80 @@ describe("runRepoSync guardrails", () => {
   });
 });
 
+describe("runRepoSync untracked tolerance (issue #312)", () => {
+  it("proceeds over untracked scratch the allowlist cannot select", async () => {
+    const ws = await makeWorkspace();
+
+    await put(ws.sourceRoot, "eli5-report.html", "scratch\n");
+    await put(ws.sourceRoot, "test_suite_analysis/notes.md", "scratch\n");
+
+    const report = await runRepoSync({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+      env: GIT_ENV,
+    });
+
+    expect(repoRowOf(report).selected).toBe(SELECTED.length);
+  });
+
+  it("stamps the HEAD commit over a scratch-tolerated run", async () => {
+    const ws = await makeWorkspace();
+
+    await put(ws.sourceRoot, "eli5-report.html", "scratch\n");
+
+    await runRepoSync({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+      env: GIT_ENV,
+    });
+
+    const manifest = JSON.parse(
+      await readFile(join(ws.rawDir, "manifest.json"), "utf8"),
+    );
+
+    expect(manifest.source_commit).toBe(await head(ws.sourceRoot));
+  });
+
+  it("refuses a selectable untracked file even when the repo hides untracked files", async () => {
+    const ws = await makeWorkspace();
+
+    await runGit(
+      ws.sourceRoot,
+      ["config", "status.showUntrackedFiles", "no"],
+      GIT_ENV,
+    );
+    await put(ws.sourceRoot, "docs/x.md", "untracked\n");
+
+    await expect(
+      runRepoSync({
+        configPath: ws.configPath,
+        rawDir: ws.rawDir,
+        env: GIT_ENV,
+      }),
+    ).rejects.toThrow(/uncommitted changes/);
+  });
+
+  it("keeps the manifest set equal to the projected set over a scratch-tolerated run", async () => {
+    const ws = await makeWorkspace();
+
+    await put(ws.sourceRoot, "eli5-report.html", "scratch\n");
+
+    await runRepoSync({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+      env: GIT_ENV,
+    });
+
+    const manifest = JSON.parse(
+      await readFile(join(ws.rawDir, "manifest.json"), "utf8"),
+    );
+
+    expect(Object.keys(manifest.vaults[NAME]).sort()).toEqual(
+      await collectFiles(join(ws.rawDir, "notes", NAME)),
+    );
+  });
+});
+
 describe("sync-repo CLI help", () => {
   it("prints usage for --help", async () => {
     const { main } = await import("../../src/sync/sync-repo.ts");
