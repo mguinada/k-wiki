@@ -211,7 +211,7 @@ jobs:
         run: npm run complexity:full | tee complexity-debt-report.txt
       - name: Upload complexity debt report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: complexity-debt-report
           path: complexity-debt-report.txt
@@ -231,7 +231,7 @@ jobs:
           no report, so the rolling survivor issue (#208) is not updated."
       - name: Upload mutation report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mutation-report
           # mutation.json rides along so the mutants-report workflow can
@@ -268,7 +268,7 @@ jobs:
         run: npm run complexity:full | tee complexity-debt-report.txt
       - name: Upload complexity debt report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: complexity-debt-report
           path: complexity-debt-report.txt
@@ -300,7 +300,7 @@ jobs:
           issue is not updated."
       - name: Upload mutation report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mutation-report
           # mutation.json rides along so the mutants-report workflow can
@@ -361,7 +361,7 @@ jobs:
         # Only a successful chunk reports; a missing artifact is exactly
         # what the merge's --expect 4 turns into the loud failure.
         if: steps.mutation.outcome == 'success'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mutation-report-chunk-${{ matrix.chunk }}
           path: |
@@ -395,7 +395,7 @@ jobs:
         run: npm run complexity:full | tee complexity-debt-report.txt
       - name: Upload complexity debt report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: complexity-debt-report
           path: complexity-debt-report.txt
@@ -431,7 +431,7 @@ jobs:
           reports/mutation/mutation.html
       - name: Upload mutation report
         if: steps.merge.outcome == 'success'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mutation-report
           path: |
