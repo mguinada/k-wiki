@@ -46,6 +46,7 @@ describe("metaSyncHookScript", () => {
       ),
       script.includes('[ "$toplevel" != "$SRC" ]'),
       script.includes(
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion must stay literal
         'note "$trigger" "skip: fired in ${toplevel:-no git worktree}, not the canonical checkout $SRC"',
       ),
     ]).toEqual([true, true, true]);
@@ -111,6 +112,7 @@ describe("metaSyncHookScript", () => {
         'note "$trigger" "skip: current branch is $branch, not $BRANCH"',
       ),
       script.includes(
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion must stay literal
         'note "$trigger" "skip: fired in ${toplevel:-no git worktree}, not the canonical checkout $SRC"',
       ),
       script.includes(

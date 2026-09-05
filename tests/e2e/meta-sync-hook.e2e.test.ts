@@ -353,9 +353,7 @@ describe("setup-meta-sync e2e", () => {
       skipped: log,
       fired: await fires(space),
     }).toEqual({
-      skipped: expect.stringContaining(
-        "[post-merge] skip: fired in ",
-      ),
+      skipped: expect.stringContaining("[post-merge] skip: fired in "),
       fired: undefined,
     });
   });
