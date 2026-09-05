@@ -20,6 +20,7 @@ import {
   type CheckoutResolution,
   resolveCheckout,
 } from "./k-wiki-binding.ts";
+import { lastChangeLine, lastCommitDate } from "./last-change.ts";
 import { type RunContext, runContext } from "./run-context.ts";
 import { agentRunFlags, parseArgs } from "./shell.ts";
 
@@ -105,7 +106,9 @@ Commands:
                      Filing is not exposed here.
   status             Print the resolved binding: checkout, origin,
                      instance name, sync config, settings file, data
-                     repo, outputs dir, wiki dir, index.md.
+                     repo, outputs dir, wiki dir, index.md, and the
+                     data repo's last change time (never for a fresh,
+                     never-committed data repo).
                      No agent, no side effects.
   list [<type>]      Print one 'slug — title' line per wiki page,
                      grouped by type in index.md order; the navigation
@@ -147,8 +150,8 @@ If you are an AI agent, follow these instructions:
   - You cannot file the answer anywhere; filing is a human step
     (wiki-query --file-last, run by the human inside the checkout).
     Do not attempt wiki writes.
-  - k-wiki status shows which wiki you are bound to and where it
-    lives; run it before querying an unfamiliar project.
+  - k-wiki status shows which wiki you are bound to and how fresh
+    it is (last change); run it before querying an unfamiliar project.
   - k-wiki list [type] and k-wiki read <slug> browse the wiki
     deterministically (no tokens): list prints one 'slug — title'
     line per page grouped by type; read prints one page verbatim.
@@ -161,12 +164,14 @@ function fail(message: string): void {
 }
 
 /** Print the resolved binding: origin, checkout, instance, paths
- *  (issue #76; the instance lines landed with issue #306). */
+ *  (issues #76, #306), plus the last change fact (issue #310). */
 async function runStatus(
   resolution: CheckoutResolution,
   run: RunContext,
   instance: WikiInstance,
 ): Promise<void> {
+  const lastCommit = await lastCommitDate(run);
+
   console.log(
     [
       `checkout:  ${resolution.checkout} (from ${ORIGIN_LABELS[resolution.origin]})`,
@@ -177,6 +182,7 @@ async function runStatus(
       `outputs:   ${instance.outputsDir}`,
       `wiki:      ${run.wikiDir}`,
       `index:     ${join(run.wikiDir, "index.md")}`,
+      lastChangeLine(lastCommit, run.now()),
     ].join("\n"),
   );
 }

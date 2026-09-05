@@ -306,6 +306,9 @@ describe("k-wiki read-only commands e2e", () => {
     expect(result.out).toContain(
       `index:     ${join(setup.dataRoot, "wiki", "index.md")}`,
     );
+    expect(result.out).toMatch(
+      /^last change: \d{4}-\d{2}-\d{2} \d{2}:\d{2} \([^)]+\)$/m,
+    );
   });
 
   it("list prints one slug — title line per page grouped by type", async () => {
@@ -529,6 +532,9 @@ describe("k-wiki wiki key e2e", () => {
     );
     expect(result.out).toContain(
       `settings:  ${join(setup.checkout, "settings-meta.yml")}`,
+    );
+    expect(result.out).toMatch(
+      /^last change: \d{4}-\d{2}-\d{2} \d{2}:\d{2} \([^)]+\)$/m,
     );
   });
 
