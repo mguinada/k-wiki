@@ -92,7 +92,7 @@ jobs:
       # (an ID! literal — gh -f variables arrive as String and are rejected).
       PROJECT_TOKEN: ${{ secrets.KWIKI_MUTANTS_REPORT_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 22

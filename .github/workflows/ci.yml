@@ -111,7 +111,7 @@ jobs:
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'labeled')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -145,7 +145,7 @@ jobs:
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'labeled')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -158,7 +158,7 @@ jobs:
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'labeled')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # Full history: the complexity gate rides this job inside the
           # unit run and diffs the working tree against origin/main,
@@ -176,7 +176,7 @@ jobs:
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'labeled')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -196,7 +196,7 @@ jobs:
     # Advisory signal, not a gate: a failing run must never block a merge.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # Full history: mutation:changed diffs the working tree against
           # origin/main, which a shallow checkout does not contain.
@@ -253,7 +253,7 @@ jobs:
     # anything; the missing artifact is the loud signal.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # Full history: the window base resolves a main SHA from N
           # days ago, which a shallow checkout cannot see.
@@ -330,7 +330,7 @@ jobs:
     # merge; the merge job turns a missing chunk into the loud signal.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # Full history: the chunk's dry run executes the whole unit
           # suite, and the live complexity-gate test diffs against
@@ -380,7 +380,7 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # Full history: npm run complexity:full re-executes the
           # changed-mode gate, which diffs against origin/main.
