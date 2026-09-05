@@ -4,7 +4,10 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, describe, expect, it } from "vitest";
-import { HOOK_NAMES } from "../../src/schedule/meta-sync-hook.ts";
+import {
+  HOOK_NAMES,
+  metaSyncLogPath,
+} from "../../src/schedule/meta-sync-hook.ts";
 import { cleanupWorkspaces, repoRoot, runCli } from "./helpers.ts";
 
 /**
@@ -69,7 +72,7 @@ async function makeWorkspace(): Promise<Workspace> {
     source,
     dataRoot,
     home,
-    logPath: join(home, "Library", "Logs", "kwiki", "meta-sync.log"),
+    logPath: metaSyncLogPath(home, process.platform),
     marker: join(dir, "cycle-fired.txt"),
   };
 
