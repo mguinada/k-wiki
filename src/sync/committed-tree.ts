@@ -66,10 +66,10 @@ function untrackedEntryOf(line: string): UntrackedEntry | null {
   }
 
   const field = line.slice(3);
-  const isDir = field.endsWith("/");
   const quoted = field.startsWith('"');
   const body = quoted ? field.slice(1, -1) : field;
   const decoded = quoted ? decodeCQuoted(body) : body;
+  const isDir = decoded?.endsWith("/") === true;
   const path = decoded === null ? null : isDir ? decoded.slice(0, -1) : decoded;
 
   return { path, isDir, raw: field };
