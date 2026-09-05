@@ -93,17 +93,27 @@ const ESCAPE_BYTES: Readonly<Record<string, number>> = {
  *  and octal byte sequences — into the path git printed, or null
  *  when it is malformed or the bytes are not valid UTF-8. */
 function decodeCQuoted(body: string): string | null {
+  const utf8 = new TextEncoder();
   const bytes: number[] = [];
+  let literal = "";
+
+  const flushLiteral = (): void => {
+    bytes.push(...utf8.encode(literal));
+
+    literal = "";
+  };
 
   for (let index = 0; index < body.length; ) {
     const char = body[index];
 
     if (char !== "\\") {
-      bytes.push(char.charCodeAt(0));
+      literal += char;
       index += 1;
 
       continue;
     }
+
+    flushLiteral();
 
     const decoded = decodeEscapeAt(body, index, bytes);
 
@@ -113,6 +123,8 @@ function decodeCQuoted(body: string): string | null {
 
     index += decoded;
   }
+
+  flushLiteral();
 
   try {
     return new TextDecoder("utf-8", { fatal: true }).decode(

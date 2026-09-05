@@ -162,7 +162,11 @@ async function assertCommittedTree(
   env: NodeJS.ProcessEnv,
   include: readonly string[],
 ): Promise<void> {
-  const { stdout } = await runGit(root, ["status", "--porcelain"], env);
+  const { stdout } = await runGit(
+    root,
+    ["-c", "status.showUntrackedFiles=normal", "status", "--porcelain"],
+    env,
+  );
 
   assertNoBlockingChanges(stdout, root, include);
 }

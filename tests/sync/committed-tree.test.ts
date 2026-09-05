@@ -101,6 +101,15 @@ describe("assertNoBlockingChanges untracked tolerance (issue #312)", () => {
     ).toThrow(/untracked-selectable: docs\/\u00e9\.md/);
   });
 
+  it("decodes raw non-ASCII in a quoted path so an exact-file pattern matches", () => {
+    expect(
+      guard('?? "docs/\u00e9\u00a9\u00aa\\"x.md"\n', [
+        "README.md",
+        'docs/\u00e9\u00a9\u00aa"x.md',
+      ]),
+    ).toThrow(/untracked-selectable: docs\/\u00e9\u00a9\u00aa"x\.md/);
+  });
+
   it("refuses an untracked path whose quoted bytes are not UTF-8", () => {
     expect(guard('?? "docs/\\303.md"\n', ["README.md"])).toThrow(
       /untracked-selectable: "docs\/\\303\.md"/,
