@@ -113,7 +113,13 @@ describe("assertNoBlockingChanges untracked tolerance (issue #312)", () => {
   it("strips the slash of a quoted collapsed dir a pattern descends into", () => {
     expect(
       guard('?? "docs/\\303\\251/"\n', ["README.md", "docs/\u00e9/y.md"]),
-    ).toThrow(/untracked-selectable: docs\/\u00e9/);
+    ).toThrow(/untracked-selectable: docs\/\u00e9$/);
+  });
+
+  it("refuses an untracked path whose octal escape exceeds one byte", () => {
+    expect(guard('?? "docs/\\400x.md"\n', ["README.md"])).toThrow(
+      /untracked-selectable: "docs\/\\400x\.md"/,
+    );
   });
 
   it("refuses an untracked path whose quoted bytes are not UTF-8", () => {

@@ -163,7 +163,15 @@ function decodeEscapeAt(
     return null;
   }
 
-  bytes.push(Number.parseInt(octal[0], 8));
+  const value = Number.parseInt(octal[0], 8);
+
+  // A byte must fit in one octet; git never emits more, and a wider
+  // value would wrap silently in the byte array.
+  if (value > 0o377) {
+    return null;
+  }
+
+  bytes.push(value);
 
   return 1 + octal[0].length;
 }
