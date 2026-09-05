@@ -1,13 +1,5 @@
 import { spawn } from "node:child_process";
-import {
-  link,
-  mkdir,
-  open,
-  readFile,
-  rename,
-  rm,
-  stat,
-} from "node:fs/promises";
+import { mkdir, open, rename, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Readable } from "node:stream";
@@ -17,6 +9,14 @@ import { pathExists, repoRoot } from "../cli/shared.ts";
 import { agentRunFlags, parseSyncRunArgs } from "../cli/shell.ts";
 import { runGit } from "../data/git.ts";
 import { loadSyncConfig } from "../sync/config.ts";
+import {
+  acquireLock,
+  holderDescription,
+  type LockFileData,
+  readLockHolder,
+  releaseLock,
+  runLockPath,
+} from "../sync/run-lock.ts";
 
 /**
  * scheduled-run: the unattended wrapper the scheduler runs on a fixed
@@ -25,8 +25,10 @@ import { loadSyncConfig } from "../sync/config.ts";
  *
  *   lockfile → git pull --rebase → wiki-sync (gates + commit) → git push
  *
- * Overlap guard (issue #14 decision 3): an atomic `O_EXCL` lockfile
- * with PID + timestamp at the data repo root — outside wiki-sync's
+ * Overlap guard (issue #14 decision 3; the lock itself now lives in
+ * `src/sync/run-lock.ts`, shared with manual wiki-sync runs since
+ * issue #313): an atomic `O_EXCL` lockfile with PID + timestamp at
+ * the data repo root — outside wiki-sync's
  * wiki/raw/outputs commit pathspecs, so the sync can never commit or
  * stage it — same-machine overlap is *prevented*; a lock older than
  * LOCK_STALE_MS is taken over (a killed run must never wedge the
@@ -51,146 +53,12 @@ import { loadSyncConfig } from "../sync/config.ts";
  * CLI resolves without an interactive shell env.
  */
 
-/** A lock older than this is stale and taken over (a full cycle —
- *  two agent stages at a 30-min timeout each — stays well inside it). */
-export const LOCK_STALE_MS = 2 * 60 * 60 * 1000;
-
-/** The parsed contents of a lockfile: PID + ISO timestamp. */
-export interface LockFileData {
-  readonly pid: number;
-  readonly takenAt: string;
-}
-
-/** Parse a lockfile's contents; undefined when unreadable or
- *  incomplete (a crash between create and write leaves a partial
- *  file — treated as stale, never trusted). */
-export function lockData(raw: string): LockFileData | undefined {
-  try {
-    const parsed: unknown = JSON.parse(raw);
-
-    if (
-      typeof parsed !== "object" ||
-      parsed === null ||
-      !("pid" in parsed) ||
-      !("takenAt" in parsed) ||
-      typeof parsed.pid !== "number" ||
-      typeof parsed.takenAt !== "string"
-    ) {
-      return undefined;
-    }
-
-    return { pid: parsed.pid, takenAt: parsed.takenAt };
-  } catch {
-    return undefined;
-  }
-}
-
-export interface AcquireLockOptions {
-  /** Clock for staleness; defaults to the wall clock. */
-  readonly now?: () => Date;
-  /** Age past which an existing lock is taken over. */
-  readonly staleMs?: number;
-  /** The PID recorded in the lock; defaults to process.pid. */
-  readonly pid?: number;
-}
-
-/** The outcome of one lock acquisition attempt. */
-export type LockOutcome = "acquired" | "took-over" | "busy";
-
-/**
- * Atomically acquire the run lock: `open(..., "wx")` — the O_EXCL
- * create fails when the file exists, so two concurrent acquirers
- * cannot both win. An existing lock older than the stale timeout (or
- * unreadable) is taken over; a fresh one reports busy.
- */
-export async function acquireLock(
-  lockPath: string,
-  options: AcquireLockOptions = {},
-): Promise<LockOutcome> {
-  const now = options.now ?? (() => new Date());
-  const staleMs = options.staleMs ?? LOCK_STALE_MS;
-  const pid = options.pid ?? process.pid;
-
-  const handle = await open(lockPath, "wx").catch((error: unknown) => {
-    if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
-      throw error;
-    }
-
-    return undefined;
-  });
-
-  if (handle !== undefined) {
-    await handle.writeFile(
-      `${JSON.stringify({ pid, takenAt: now().toISOString() })}\n`,
-    );
-    await handle.close();
-
-    return "acquired";
-  }
-
-  const existing = lockData(await readFile(lockPath, "utf8").catch(() => ""));
-  const fresh =
-    existing !== undefined &&
-    now().getTime() - Date.parse(existing.takenAt) < staleMs;
-
-  if (fresh) {
-    return "busy";
-  }
-
-  await rm(lockPath, { force: true });
-  const reacquired = await acquireLock(lockPath, options);
-
-  return reacquired === "busy" ? "busy" : "took-over";
-}
-
-/** Release the lock only when the recorded pid is this process's,
- *  and delete it by atomic claim (issue #244): the lock is first
- *  renamed to a private path, so the unlink can never hit a
- *  successor's fresh lock — a run outliving LOCK_STALE_MS whose
- *  lock was taken over would otherwise rm by path and delete the
- *  successor's lock in the read-to-delete window, breaking mutual
- *  exclusion exactly in the long-run scenario. A claim that raced
- *  such a takeover is given back; an absent or foreign lock is
- *  never touched. */
-export async function releaseLock(
-  lockPath: string,
-  pid: number = process.pid,
-): Promise<void> {
-  const existing = lockData(await readFile(lockPath, "utf8").catch(() => ""));
-
-  if (existing?.pid !== pid) {
-    return;
-  }
-
-  const claimed = `${lockPath}.releasing.${pid}`;
-
-  await rename(lockPath, claimed).catch(() => undefined);
-
-  const claim = lockData(await readFile(claimed, "utf8").catch(() => ""));
-
-  if (claim?.pid === pid) {
-    await rm(claimed, { force: true });
-
-    return;
-  }
-
-  await restoreClaimedLock(claimed, lockPath);
-}
-
-/** Give a claimed-but-foreign lock back: the hard link lands only
- *  while the lock path is free — an EEXIST means another run
- *  already re-holds the path, and the claim is dropped instead. */
-async function restoreClaimedLock(
-  claimed: string,
-  lockPath: string,
-): Promise<void> {
-  await link(claimed, lockPath).catch(() => undefined);
-  await rm(claimed, { force: true });
-}
-
 /** The PATH a scheduled run gets: node's bin dir first (the wrapper
  *  and any sibling CLIs), then the standard install locations — the
  *  agent CLI resolves with no interactive shell env (issue #14).
+ *  It also carries `KWIKI_RUN_LOCK_HELD=1`: this wrapper already
+ *  holds the run lock across the whole cycle, so the spawned
+ *  wiki-sync child must not re-acquire it (issue #313).
  *  ponytail: unix PATH layout; revisit when a Windows scheduler
  *  backend lands (issue #14 follow-up) — delimiter and dirs differ. */
 export function buildScheduledEnv(
@@ -201,6 +69,7 @@ export function buildScheduledEnv(
 
   return {
     HOME: home,
+    KWIKI_RUN_LOCK_HELD: "1",
     PATH: [
       nodeBin,
       "/opt/homebrew/bin",
@@ -282,7 +151,7 @@ export async function runScheduledCycle(
   if (lock === "busy") {
     return {
       status: "skipped",
-      reason: "another run holds the lock (fresh) — skipping this tick",
+      reason: skipReason(await readLockHolder(options.lockPath)),
     };
   }
 
@@ -306,6 +175,16 @@ export async function runScheduledCycle(
   log(`scheduled-run: ${stamp()} — cycle complete`);
 
   return { status: "ok" };
+}
+
+/** The busy-lock skip reason, naming the holder when the lockfile
+ *  is readable (issue #313 — the manual holder is who the operator
+ *  must know about). */
+function skipReason(holder: LockFileData | undefined): string {
+  const holderLine =
+    holder === undefined ? "" : `, ${holderDescription(holder)}`;
+
+  return `another run holds the lock (fresh${holderLine}) — skipping this tick`;
 }
 
 /** The pre-push stages: verify origin, pull --rebase, wiki-sync. Any
@@ -607,9 +486,13 @@ Behavior, failure mode by failure mode:
   - Overlap (same machine): an O_EXCL lockfile at
     <dataRoot>/.scheduled-run.lock (PID + timestamp) prevents
     concurrent runs; a lock older than two hours is taken over, so a
-    killed run never wedges the schedule. The file lives at the data
-    repo root — outside wiki-sync's wiki/raw/outputs commit
-    pathspecs — so the sync can never commit or stage it.
+    killed run never wedges the schedule. The lock is shared with
+    manual wiki-sync runs: a manual cycle in progress makes this
+    firing skip — naming the holder's PID and start time —
+    while a scheduled cycle in progress makes a manual wiki-sync
+    fail loud instead of colliding at the git layer. The file lives
+    at the data repo root — outside wiki-sync's wiki/raw/outputs
+    commit pathspecs — so the sync can never commit or stage it.
   - Overlap (across machines): not prevented — recovered. The pre-run
     git pull --rebase keeps the run on a fresh base; a push rejection
     gets one pull --rebase + retry; a second failure logs an ALERT
@@ -733,7 +616,7 @@ export async function main(): Promise<void> {
   const outcome = await runScheduledCycle({
     dataRoot,
     repoRoot,
-    lockPath: join(dataRoot, ".scheduled-run.lock"),
+    lockPath: runLockPath(dataRoot),
     args,
     log: runLog.log,
   });

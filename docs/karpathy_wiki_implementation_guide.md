@@ -1022,7 +1022,15 @@ Suggested schedule:
 Start manually until the pipeline is reliable, then schedule it. The
 shipped scheduler is `setup-schedule` + `scheduled-run` (issue #14):
 launchd runs the wrapper on a fixed interval — lockfile, pre-run
-pull --rebase, `wiki-sync`, push. The plist pins the node **invocation
+pull --rebase, `wiki-sync`, push. The run lock is shared protocol,
+not wrapper-private (issue #313): a manual `wiki-sync` acquires the
+same `<dataRoot>/.scheduled-run.lock` for its cycle, so a manual run
+mid-cycle makes the next scheduled firing skip (redundant work;
+launchd re-fires) while a scheduled run mid-cycle makes a manual
+`wiki-sync` fail loud naming the holder's PID and start time — a
+human request is never silently dropped. The wrapper's spawned
+`wiki-sync` child reuses its parent's tenure (KWIKI_RUN_LOCK_HELD)
+and never re-acquires. The plist pins the node **invocation
 path** (`process.argv0`) when it is absolute and existing — stable
 across Homebrew upgrades, unlike the symlink-resolved `execPath`,
 which points into a versioned Cellar — falling back to the resolved

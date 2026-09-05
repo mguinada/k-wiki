@@ -1,5 +1,6 @@
+import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   cliFail,
   terminalColors as colors,
@@ -68,6 +69,13 @@ import type {
 } from "./projection.ts";
 import { toAbsolute } from "./projection.ts";
 import { type PublishResult, runPublishStage } from "./publish.ts";
+import {
+  acquireLock,
+  holderDescription,
+  readLockHolder,
+  releaseLock,
+  runLockPath,
+} from "./run-lock.ts";
 import { runRepoSync } from "./sync-repo.ts";
 import { runVaultSync } from "./sync-vault.ts";
 
@@ -803,13 +811,66 @@ export async function runWikiSync(
   options: WikiSyncOptions,
 ): Promise<WikiSyncResult> {
   const { run } = options;
-  const { env, onProgress, dataRoot } = run;
   const settings = await loadAgentSettings(options.settingsPath, {
-    onProgress,
+    onProgress: run.onProgress,
   });
-  const { secondBrainDomains: domains } = settings;
   const config =
     options.config ?? (await loadSyncConfig(options.configPath, homedir()));
+  const release = await acquireCycleLock(run);
+
+  try {
+    return await runCycleStages(options, settings, config);
+  } finally {
+    await release();
+  }
+}
+
+/** The cycle's run-lock tenure (issue #313): acquire the shared
+ *  `<dataRoot>/.scheduled-run.lock` before the first stage and hold
+ *  it across the whole cycle — success, failure, and guardrail
+ *  revert all release. Skipped only for the scheduled wrapper's
+ *  child (KWIKI_RUN_LOCK_HELD=1: the wrapper holds the tenure around
+ *  its pull → sync → push cycle). A fresh foreign lock fails loud
+ *  naming the holder — a manual request is never silently dropped;
+ *  a stale one (a killed run) is taken over. */
+async function acquireCycleLock(run: RunContext): Promise<() => Promise<void>> {
+  if (run.env.KWIKI_RUN_LOCK_HELD === "1") {
+    return async () => {};
+  }
+
+  const lockPath = runLockPath(run.dataRoot);
+
+  await mkdir(dirname(lockPath), { recursive: true });
+
+  if ((await acquireLock(lockPath, { now: run.now })) === "busy") {
+    throw new Error(await runLockRefusal(lockPath));
+  }
+
+  return () => releaseLock(lockPath);
+}
+
+/** The busy-lock message: the holder's start time and PID — never a
+ *  cryptic git index.lock collision (issue #313). */
+async function runLockRefusal(lockPath: string): Promise<string> {
+  const holder = await readLockHolder(lockPath);
+
+  return holder === undefined
+    ? "another run holds the lock — retry in a few minutes"
+    : `a run has been ${holderDescription(holder)} — retry in a few minutes`;
+}
+
+/** The cycle's stages, in order — everything between the run-lock
+ *  acquire and its release. The settings and config loads happen in
+ *  the caller, before the lock: a bad argument path must fail on its
+ *  own error, never on a lock, and take no lock side effects. */
+async function runCycleStages(
+  options: WikiSyncOptions,
+  settings: AgentSettings,
+  config: SyncConfig,
+): Promise<WikiSyncResult> {
+  const { run } = options;
+  const { env, onProgress, dataRoot } = run;
+  const { secondBrainDomains: domains } = settings;
   const stages = stageNames({ domains, publish: config.publish });
   const sync = await runSyncStage(options, config, stages);
 
@@ -1077,6 +1138,19 @@ reports no changes — the skip keys on the manifest snapshot, which a
 failed run leaves untouched. A failure at any stage stops the chain
 and exits 1; a tripped guardrail has already reverted its agent run,
 and a verification failure has reverted the lint edits.
+
+Run lock: the cycle acquires the shared run lock —
+<dataRoot>/.scheduled-run.lock, the same lock scheduled-run holds —
+before its first stage and releases it on every exit path (success,
+failure, guardrail revert). When another run holds a fresh lock, the
+command fails loud with one line naming the holder's start time and
+PID — “a run has been in progress since HH:MM (PID N) — retry in a
+few minutes” — instead of colliding at the git layer. A lock older
+than two hours (a killed run) is taken over. The lock lives at the
+data repo root, outside the commit pathspecs, so it is never
+committed; one lock per data repo, so independent instances never
+contend. A scheduled wrapper's child run reuses its parent's tenure
+(KWIKI_RUN_LOCK_HELD) and does not re-acquire.
 
 The final digest on stdout — sync summary, lint summary, the crosslink
 audit (configured second brains), the fidelity and provenance results,

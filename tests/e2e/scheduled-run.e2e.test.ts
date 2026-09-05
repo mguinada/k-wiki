@@ -250,7 +250,7 @@ describe("scheduled-run e2e", () => {
     expect(await upstreamHead(repo)).toBe(head);
   });
 
-  it("skips without touching git while a fresh lock exists", async () => {
+  it("skips without touching git while a fresh lock exists, naming the holder", async () => {
     const repo = await makeRepo();
     const first = await runScheduled(repo);
 
@@ -260,13 +260,15 @@ describe("scheduled-run e2e", () => {
 
     await writeFile(
       lockPath(repo),
-      `${JSON.stringify({ pid: 1, takenAt: new Date().toISOString() })}\n`,
+      `${JSON.stringify({ pid: 4242, takenAt: new Date().toISOString() })}\n`,
     );
 
     const result = await runScheduled(repo);
 
     expect(result.code).toBe(0);
-    expect(result.out).toContain("skipped");
+    expect(result.out).toMatch(
+      /skipped — another run holds the lock \(fresh, in progress since \d{2}:\d{2} \(PID 4242\)\)/,
+    );
     expect(await upstreamHead(repo)).toBe(head);
   });
 

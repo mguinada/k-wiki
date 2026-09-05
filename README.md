@@ -595,7 +595,7 @@ kept apart from the runtime surface above:
 | `npm test` | vitest | Run the unit test suite |
 | `npm run test:coverage` | vitest | Run the unit tests and fail below the 90% coverage thresholds — what CI runs |
 | `npm run audit` | npm | On-demand dependency-vulnerability check (the same audits CI's gates job runs before typecheck): the production tree at high or worse and the full tree at critical, both blocking; CI additionally logs a non-blocking advisory full-tree audit whose findings surface as run annotations |
-| `npm run e2e` | vitest | Run the end-to-end suite (`tests/e2e/`): real CLI child processes — sync-vault through a full vault lifecycle (first run, no-op re-run, edit, delete, block flip, multi-vault) against the synthetic fixture vault in temp workspaces under `.e2e-tmp/` (gitignored), wiki-ingest through first-run, incremental, expunge, rename, skip, failure, timeout, scoped `--sources` (operator `--note` and the default note included), tracked-but-ignored warning, and guardrail auto-revert runs against a stub agent in temp data repos, the second brain through profile-layer ingest, cross-wiki link validation, the reverted domain→second-brain leak, and a health-checked second-brain sync, sync-repo through verbatim projection, commit stamping, unchanged re-run, dirty-source and wrong-config failures, and health freshness runs in temp source repos, and wiki-sync through full-cycle, no-change rerun, failure, guardrail-revert, configured crosslink-audit (pass and fail), reverted fidelity-failure, and repo-source cycle (the meta flow) runs, and scheduled-run through full-cycle, no-op re-run, lock-skip, push-rejection retry, double-push-failure alert, and dirty-tree recovery runs in temp data repos with an upstream remote |
+| `npm run e2e` | vitest | Run the end-to-end suite (`tests/e2e/`): real CLI child processes — sync-vault through a full vault lifecycle (first run, no-op re-run, edit, delete, block flip, multi-vault) against the synthetic fixture vault in temp workspaces under `.e2e-tmp/` (gitignored), wiki-ingest through first-run, incremental, expunge, rename, skip, failure, timeout, scoped `--sources` (operator `--note` and the default note included), tracked-but-ignored warning, and guardrail auto-revert runs against a stub agent in temp data repos, the second brain through profile-layer ingest, cross-wiki link validation, the reverted domain→second-brain leak, and a health-checked second-brain sync, sync-repo through verbatim projection, commit stamping, unchanged re-run, dirty-source and wrong-config failures, and health freshness runs in temp source repos, and wiki-sync through full-cycle, no-change rerun, failure, guardrail-revert, configured crosslink-audit (pass and fail), reverted fidelity-failure, repo-source cycle (the meta flow), and run-lock (loud holder refusal, release after cycle, per-instance) runs, and scheduled-run through full-cycle, no-op re-run, lock-skip, push-rejection retry, double-push-failure alert, and dirty-tree recovery runs in temp data repos with an upstream remote |
 | `node dev/generate.ts <dir>` | fixture generator | Write the synthetic Obsidian test vault to `<dir>/Documents` |
 | `npm run board-triage -- [-h \| --help] [--dry-run] [--owner <login>] [--project <n>]` | board triage CLI | Apply the mechanical half of the K-Wiki Kanban triage contract via the `gh` CLI — Backlog → Ready (unblocked, no `research` label), open PR → In progress, closed → Done — Status field values only; lane order is never touched, ids are resolved fresh every run, every move is verified by re-reading the board, and `--dry-run` plans with zero writes (default: `mguinada`'s project 2; [below](#scheduled-board-triage)) |
 | `npm run mutation:changed` | StrykerJS | Optional advisory mutation run scoped to the changed hunks of the `src/` files that differ from the mutation base — `main` by default, any ref via `MUTATION_BASE`, or the `main` commit from N days ago via `MUTATION_WINDOW_DAYS` (uncommitted included; new files whole) — `src/quality/mutation-scope.ts` builds the `file:start-end` ranges; exits 0 without running when nothing changed, and ends by printing the actionable mutants — recommended for small diffs; the authoritative mutation signal lives in CI |
@@ -1143,6 +1143,17 @@ mirror), then the full ingest digest —
 plus `git log -1` in the data repo tell the whole story of the run
 without opening any other file.
 
+Every cycle holds the shared run lock — the same
+`<dataRoot>/.scheduled-run.lock` the scheduled wrapper takes — from
+before its first stage until after its last, released on success,
+failure, and guardrail revert alike. When another run (manual or
+scheduled) holds a fresh lock, `wiki-sync` refuses loud with one
+line naming the holder — `a run has been in progress since HH:MM
+(PID N) — retry in a few minutes` — instead of two cycles colliding
+at the git layer (`index.lock`); a lock older than two hours is a
+dead run's and is taken over. The lock is one per data repo, so
+independent instances never contend.
+
 With no changed sources the agent stages skip (cost scales with
 activity, not the clock), a clean data repo commits nothing, and the
 command exits 0 — a configured crosslink audit and the verification
@@ -1204,10 +1215,16 @@ operation needs and nothing else:
 1. **lockfile** — an atomic `O_EXCL` lockfile (PID + timestamp) at
    `<dataRoot>/.scheduled-run.lock` prevents concurrent runs on the
    same machine; a lock older than two hours is taken over, so a
-   killed run never wedges the schedule. It lives outside
-   `wiki-sync`'s commit pathspecs so the sync can never stage it.
+   killed run never wedges the schedule. The lock is shared with
+   manual `wiki-sync` runs: a manual cycle in progress makes the
+   next scheduled firing skip — its note names the holder's PID and
+   start time — while a scheduled cycle in progress makes a manual
+   `wiki-sync` fail loud with the same holder line instead of
+   colliding at the git layer. The lock lives at the data repo root,
+   one per instance, outside `wiki-sync`'s commit pathspecs so the
+   sync can never stage it.
 2. **`git pull --rebase`** — the run starts on a fresh base; any
-   overlap that slipped through (lock stolen, human ran by hand,
+   overlap that slipped through (lock stolen, raw git run by hand,
    second machine) surfaces as a rejected push, never silently
    diverged history. Skipped when the data repo tree is dirty —
    a failed sync deliberately leaves its edits uncommitted (the
