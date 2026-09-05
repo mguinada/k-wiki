@@ -403,7 +403,7 @@ jobs:
       - name: Download chunk mutation reports
         # Zero matches warn but do not fail; the merge's --expect turns
         # the missing inputs into the loud, named failure.
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: mutation-report-chunk-*
           path: chunks
