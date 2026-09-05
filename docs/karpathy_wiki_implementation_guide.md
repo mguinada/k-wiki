@@ -1180,6 +1180,12 @@ The sync mechanism should not require an LLM.
 
 The LLM decides how source material changes the knowledge structure.
 
+### Simple stays simple
+
+Advanced capabilities are additive and never add a required step,
+flag, or decision to a use case that does not use them (AGENTS.md
+invariants; the base-path-impact line in every feature issue).
+
 ### Preserve provenance
 
 Claims should point back to source files.
