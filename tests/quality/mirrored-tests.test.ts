@@ -2,7 +2,7 @@ import { readdir, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { insideStrykerSandbox } from "./stryker-sandbox.ts";
+import { collectTsFiles, insideStrykerSandbox } from "./src-tree.ts";
 
 /**
  * G2 — the mirrored test tree guard (issue #260): every
@@ -24,24 +24,6 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
  *  justification string fails the integrity expectation below — an
  *  unjustified gap is exactly what this guard exists to reject. */
 const ALLOWLIST: Readonly<Record<string, string>> = {};
-
-/** Recursively collect repo-relative .ts paths under `root`. */
-async function collectTsFiles(root: string, prefix = ""): Promise<string[]> {
-  const entries = await readdir(root, { withFileTypes: true });
-  const files: string[] = [];
-
-  for (const entry of entries) {
-    const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
-
-    if (entry.isDirectory()) {
-      files.push(...(await collectTsFiles(join(root, entry.name), rel)));
-    } else if (entry.isFile() && entry.name.endsWith(".ts")) {
-      files.push(rel);
-    }
-  }
-
-  return files.sort();
-}
 
 /** The mirrored test path of a src module: `src/` → `tests/`, and the
  *  `.ts` suffix becomes `.test.ts`. */

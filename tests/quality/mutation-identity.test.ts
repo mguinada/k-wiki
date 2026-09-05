@@ -10,7 +10,7 @@ import {
   spanText,
 } from "../../src/quality/mutation-identity.ts";
 import type { Mutant } from "../../src/quality/mutation-survivors.ts";
-import { insideStrykerSandbox } from "./stryker-sandbox.ts";
+import { insideStrykerSandbox } from "./src-tree.ts";
 
 // The mutant identity (issue #241): a sha over the mutated span's
 // exact code text, the mutator name, and the file's repo-relative

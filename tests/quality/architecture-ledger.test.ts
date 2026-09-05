@@ -2,7 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { insideStrykerSandbox } from "./stryker-sandbox.ts";
+import { collectTsFiles, insideStrykerSandbox } from "./src-tree.ts";
 
 /**
  * The architecture-ledger guard (issue #316): the bounded-context
@@ -69,24 +69,6 @@ function ledgerDomains(markdown: string): string[] | undefined {
 /** Whether a module opens with a purpose docblock. */
 function hasLeadingDocblock(source: string): boolean {
   return source.startsWith("/**");
-}
-
-/** Recursively collect repo-relative .ts paths under `root`. */
-async function collectTsFiles(root: string, prefix = ""): Promise<string[]> {
-  const entries = await readdir(root, { withFileTypes: true });
-  const files: string[] = [];
-
-  for (const entry of entries) {
-    const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
-
-    if (entry.isDirectory()) {
-      files.push(...(await collectTsFiles(join(root, entry.name), rel)));
-    } else if (entry.isFile() && entry.name.endsWith(".ts")) {
-      files.push(rel);
-    }
-  }
-
-  return files.sort();
 }
 
 describe("ledgerDomains", () => {

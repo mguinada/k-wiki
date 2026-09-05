@@ -15,7 +15,7 @@ import {
   parseStructureBudget,
   renderBreaches,
 } from "../../src/quality/structure.ts";
-import { insideStrykerSandbox } from "./stryker-sandbox.ts";
+import { insideStrykerSandbox } from "./src-tree.ts";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(scriptDir, "..", "..");
