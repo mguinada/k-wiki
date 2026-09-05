@@ -30,9 +30,9 @@ describe("lastChangeLine (issue #310)", () => {
     );
   });
 
-  it("pluralizes minutes", () => {
-    expect(lastChangeLine(new Date(2026, 8, 4, 11, 58), STATUS_NOW)).toBe(
-      "last change: 2026-09-04 11:58 (2 minutes ago)",
+  it("pluralizes whole minutes only (floor, not ceil)", () => {
+    expect(lastChangeLine(new Date(2026, 8, 4, 11, 57, 30), STATUS_NOW)).toBe(
+      "last change: 2026-09-04 11:57 (2 minutes ago)",
     );
   });
 
