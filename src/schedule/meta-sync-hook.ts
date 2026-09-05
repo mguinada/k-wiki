@@ -22,7 +22,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-
 /** The hooks the installer owns: merges and rebase-based pulls. */
 export const HOOK_NAMES = ["post-merge", "post-rewrite"] as const;
 

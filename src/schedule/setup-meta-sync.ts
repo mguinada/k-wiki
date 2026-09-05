@@ -28,7 +28,6 @@ import {
 import { resolveDataRoot } from "./scheduled-run.ts";
 import { stableNodePath } from "./setup-schedule.ts";
 
-
 /** Help text: every switch and default (AGENTS.md CLI rule). */
 const HELP = `Usage: setup-meta-sync [-h | --help] [--print] [--uninstall]
 
