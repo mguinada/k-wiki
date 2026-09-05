@@ -76,6 +76,18 @@ exists without a row, or a row names no domain.
 | `fixtures/` (dev) | the synthetic fixture vault | runtime reach — `dev/` launchers only | `tests/bin/bin-structure.test.ts` |
 | `quality/` (dev) | the refactor-metrics instrument, mutation tooling, the gates | runtime reach — `dev/` launchers only | `tests/bin/bin-structure.test.ts` |
 
+### Simple stays simple
+
+The base path — one vault → one wiki: sync, ask, read, file —
+works with the same few commands and zero required new concepts,
+no matter how many advanced capabilities exist. Advanced features
+(multiple instances, agentic use, scheduling, publishing) are
+additive: invisible until invoked. They never add a required
+step, flag, or decision to a use case that does not use them. A
+change that alters the base path's commands, defaults, or
+concepts is a breaking change to the product and needs explicit,
+written justification.
+
 ## Write Authority
 
 Agents sometimes write to `AGENTS.md` files themselves, so each file declares
@@ -85,6 +97,7 @@ who may write it:
 |---|---|---|
 | `AGENTS.md` (root) | Dev agent, conventions block only | Router and shared invariants are human-only |
 | `AGENTS.md` (Architecture alignment) | Nobody during feature work | Ledger rows are invariants: proposed in a development/review session, landed as a human-approved commit |
+| `AGENTS.md` — Simple stays simple | Human only | The base-path invariant changes only through a human-approved commit; the diff is the review |
 | `wiki/AGENTS.md` | Nobody during wiki operations | Schema changes are deliberate: proposed in a development/review session, landed as a human-approved commit |
 | `wiki/AGENTS.meta.md` | Nobody during wiki operations | Canonical meta contract; same deliberate, human-approved change path as `wiki/AGENTS.md` |
 
