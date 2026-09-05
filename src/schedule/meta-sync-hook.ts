@@ -11,8 +11,11 @@ import { join } from "node:path";
  * rebase-based pulls that rewrite commits.
  *
  * The hook guards before firing — the wiki's source must be the
- * default branch with a clean `git status --porcelain` (dirty and
- * untracked included); anything else log-and-skips, and
+ * canonical checkout on the default branch with a clean
+ * `git status --porcelain` (dirty and untracked included): the
+ * cycle projects the canonical checkout's tree, so a merge in a
+ * linked worktree would silently sync the wrong content;
+ * anything else log-and-skips, and
  * `k-wiki health` keeps flagging the staleness. The fire is
  * detached (`nohup … &`): the merge returns instantly, and the
  * scheduled-run wrapper contributes its own per-dataRoot lockfile,
@@ -73,7 +76,8 @@ export function metaSyncHookScript(config: MetaHookConfig): string {
 
   return `#!/bin/sh
 # k-wiki meta post-merge auto-sync — one detached meta-wiki cycle per
-# merge landing on ${branch} with a clean tree; log-and-skip otherwise.
+# merge landing on ${branch} in the canonical checkout with a clean
+# tree; log-and-skip otherwise.
 # ${HOOK_MARKER}: re-run bin/setup-meta-sync to refresh, --uninstall to remove.
 
 NODE=${shellQuote(nodePath)}
@@ -90,6 +94,13 @@ note() {
 }
 
 trigger=$(basename "$0")
+toplevel=$(git rev-parse --show-toplevel 2>/dev/null || printf '')
+
+if [ "$toplevel" != "$SRC" ]; then
+  note "$trigger" "skip: fired in \${toplevel:-no git worktree}, not the canonical checkout $SRC"
+  exit 0
+fi
+
 branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || printf unknown)
 
 if [ "$branch" != "$BRANCH" ]; then

@@ -14,7 +14,8 @@ import { cleanupWorkspaces, repoRoot, runCli } from "./helpers.ts";
  * installed hook's guard table runs against real git: merges
  * landing on main (fast-forward and merge commits) and
  * `pull --rebase` fire the detached cycle with the baked config;
- * a feature-branch or untracked-laden tree log-and-skips. The
+ * a feature-branch merge, a linked-worktree merge, or an
+ * untracked-laden tree log-and-skips. The
  * lock-skip and two-instance edges are scheduled-run behaviors,
  * covered by its own e2e lane. A temp HOME keeps the fire log
  * inside the workspace — the operator's ~/Library/Logs is never
@@ -310,6 +311,50 @@ describe("setup-meta-sync e2e", () => {
     }).toEqual({
       skipped: expect.stringContaining(
         "[post-merge] skip: current branch is integration, not main",
+      ),
+      fired: undefined,
+    });
+  });
+
+  it("skips, logged, when the merge lands on main in a linked worktree", async () => {
+    const space = await makeWorkspace();
+    const worktree = join(space.dir, "linked-worktree");
+
+    await runInstaller(space);
+
+    // The finding's layout: the canonical checkout sits on a
+    // feature branch while main is merged in a linked worktree —
+    // the shared hooks dir serves that worktree too, and the
+    // unguarded hook would project the canonical checkout's
+    // feature-branch tree into the meta data repo.
+    await git(space, space.source, "checkout", "--quiet", "-b", "feature");
+    await git(
+      space,
+      space.source,
+      "worktree",
+      "add",
+      "--quiet",
+      worktree,
+      "main",
+    );
+    await git(space, worktree, "checkout", "--quiet", "-b", "side");
+    await writeFile(join(worktree, "README.md"), "readme via worktree\n");
+    await git(space, worktree, "commit", "--quiet", "-am", "side");
+    await git(space, worktree, "checkout", "--quiet", "main");
+    await git(space, worktree, "merge", "--quiet", "--no-ff", "side");
+
+    const log = await waitFor(async () => {
+      const text = await readLog(space);
+
+      return text?.includes("skip") === true ? text : undefined;
+    });
+
+    expect({
+      skipped: log,
+      fired: await fires(space),
+    }).toEqual({
+      skipped: expect.stringContaining(
+        "[post-merge] skip: fired in ",
       ),
       fired: undefined,
     });

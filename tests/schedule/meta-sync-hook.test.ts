@@ -37,6 +37,20 @@ describe("metaSyncHookScript", () => {
     ]).toEqual([true, true, true]);
   });
 
+  it("guards that the firing worktree is the canonical checkout", () => {
+    const script = metaSyncHookScript(HOOK_CONFIG);
+
+    expect([
+      script.includes(
+        "toplevel=$(git rev-parse --show-toplevel 2>/dev/null || printf '')",
+      ),
+      script.includes('[ "$toplevel" != "$SRC" ]'),
+      script.includes(
+        'note "$trigger" "skip: fired in ${toplevel:-no git worktree}, not the canonical checkout $SRC"',
+      ),
+    ]).toEqual([true, true, true]);
+  });
+
   it("guards on a fully clean porcelain status", () => {
     expect(metaSyncHookScript(HOOK_CONFIG)).toContain(
       'if [ -n "$(git status --porcelain)" ]; then',
@@ -97,10 +111,13 @@ describe("metaSyncHookScript", () => {
         'note "$trigger" "skip: current branch is $branch, not $BRANCH"',
       ),
       script.includes(
+        'note "$trigger" "skip: fired in ${toplevel:-no git worktree}, not the canonical checkout $SRC"',
+      ),
+      script.includes(
         'note "$trigger" "skip: working tree not clean (dirty or untracked files)"',
       ),
       script.includes('note "$trigger" "merge on $BRANCH, clean tree'),
-    ]).toEqual([true, true, true, true, true]);
+    ]).toEqual([true, true, true, true, true, true]);
   });
 });
 

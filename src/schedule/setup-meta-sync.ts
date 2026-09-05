@@ -57,7 +57,8 @@ identical hook is left alone, an older generation of ours is
 replaced, a foreign hook is refused loud and untouched). The fire
 log is ~/Library/Logs/kwiki/meta-sync.log on macOS,
 ~/.local/state/k-wiki/logs/ elsewhere; the hook skips (logged)
-whenever the tree is not on ${DEFAULT_BRANCH} or not clean, and
+whenever the firing worktree is not the canonical checkout, the
+tree is not on ${DEFAULT_BRANCH}, or the tree is not clean, and
 k-wiki health keeps flagging the staleness until the next real
 fire.
 
