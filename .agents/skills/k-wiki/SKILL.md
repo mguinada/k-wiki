@@ -17,7 +17,7 @@ the terminal can follow the same five steps.
 
 The binding file `.k-wiki.json` at the project root names the wiki;
 `k-wiki status` resolves and prints it (checkout, instance, data
-repo, wiki directory). A checkout can host several wiki instances —
+repo, wiki directory, last change time). A checkout can host several wiki instances —
 the binding's optional `wiki` key names one (an alias or
 `sync-<name>.json` stem inside the checkout); without it the default
 instance answers. The wiki is plain markdown — readable directly
@@ -48,10 +48,12 @@ browse first.
   moved after a page was written; the source under your eyes wins.
 - Cite wiki pages (by path) when their content shapes a decision,
   so the user can check the grounding.
-- Freshness: vault-derived wikis — check the last entries of
-  `wiki/log.md`; repo-derived wikis — `k-wiki health` (records the
-  projected source commit). Old entries mean old knowledge; treat
-  accordingly.
+- Freshness: `k-wiki status` ends with a `last change:` line — the
+  data repo's last commit time (`never` for a fresh, never-committed
+  data repo). For more: vault-derived wikis — check the last entries
+  of `wiki/log.md`; repo-derived wikis — `k-wiki health` (records
+  the projected source commit). Old entries mean old knowledge;
+  treat accordingly.
 
 ## What it is not
 

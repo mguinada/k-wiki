@@ -61,8 +61,10 @@ interface Harness {
   readonly outputsDir: string;
 }
 
-/** A git-tracked data repo with a stub agent, as in wiki-query tests. */
-async function makeDataRepo(): Promise<string> {
+/** A git-tracked data repo with a stub agent, as in wiki-query tests.
+ *  `committed = false` stops after git init — the never-committed
+ *  case of the last change line (issue #310). */
+async function makeDataRepo(committed = true): Promise<string> {
   const dataRoot = await mkdtemp(join(tmpdir(), "k-wiki-cli-data-"));
 
   tempDirs.push(dataRoot);
@@ -97,21 +99,24 @@ async function makeDataRepo(): Promise<string> {
     mode: 0o755,
   });
   await run("git", ["init", "--quiet"], { cwd: dataRoot });
-  await run("git", ["add", "-A"], { cwd: dataRoot });
-  await run(
-    "git",
-    [
-      "-c",
-      "user.email=t@t",
-      "-c",
-      "user.name=t",
-      "commit",
-      "--quiet",
-      "-m",
-      "init",
-    ],
-    { cwd: dataRoot },
-  );
+
+  if (committed) {
+    await run("git", ["add", "-A"], { cwd: dataRoot });
+    await run(
+      "git",
+      [
+        "-c",
+        "user.email=t@t",
+        "-c",
+        "user.name=t",
+        "commit",
+        "--quiet",
+        "-m",
+        "init",
+      ],
+      { cwd: dataRoot },
+    );
+  }
 
   return dataRoot;
 }
@@ -123,8 +128,9 @@ async function makeDataRepo(): Promise<string> {
  */
 async function makeBoundProject(
   binding?: Record<string, string> | string | null,
+  committed = true,
 ): Promise<Harness> {
-  const dataRoot = await makeDataRepo();
+  const dataRoot = await makeDataRepo(committed);
   const checkout = await mkdtemp(join(tmpdir(), "k-wiki-cli-co-"));
 
   tempDirs.push(checkout);
@@ -926,6 +932,22 @@ describe("k-wiki status", () => {
     const { out } = await runKWiki(join(h.project, "nested"), ["status"]);
 
     expect(out).toContain(`index:     ${join(h.dataRoot, "wiki", "index.md")}`);
+  });
+
+  it("prints the data repo's last change time", async () => {
+    const h = await makeBoundProject();
+    const { out } = await runKWiki(join(h.project, "nested"), ["status"]);
+
+    expect(out).toMatch(
+      /^last change: \d{4}-\d{2}-\d{2} \d{2}:\d{2} \([^)]+\)$/m,
+    );
+  });
+
+  it("prints never for a never-committed data repo", async () => {
+    const h = await makeBoundProject(undefined, false);
+    const { out } = await runKWiki(join(h.project, "nested"), ["status"]);
+
+    expect(out).toContain("last change: never (fresh data repo)");
   });
 
   it("leaves the exit code unset after status", async () => {

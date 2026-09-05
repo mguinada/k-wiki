@@ -1317,7 +1317,7 @@ mistake. `-h` documents them all.
 
 ```sh
 k-wiki query "When should I prefer RAG over fine-tuning?"   # any cwd inside a bound project
-k-wiki status                                               # which wiki am I bound to?
+k-wiki status                                               # which wiki am I bound to — and how fresh?
 k-wiki list [concept|entity|source|query|comparison]       # pages by type
 k-wiki read retrieval-augmented-generation                 # one page verbatim
 k-wiki health                                               # projection coherence/freshness
@@ -1368,7 +1368,10 @@ There is no filing passthrough: `--file-last` stays the human-run
 --file-last` when the binding named an instance). The four read-only
 commands open no write path: `status` prints the resolution chain
 (checkout, origin, instance, sync config, settings, data repo,
-outputs dir, wiki dir, `index.md`);
+outputs dir, wiki dir, `index.md`) plus a `last change:` line —
+the data repo's last commit time (`never` for a fresh,
+never-committed data repo). It states the fact; the staleness
+verdict stays with `health`;
 `list` prints one `slug — title` line per page grouped by type
 in the `index.md` order (the navigation pages `index`,
 `log`, `overview` are read by name instead); `read` prints one page
