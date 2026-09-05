@@ -1,5 +1,3 @@
-import { literalPrefix, SKIPPED_ROOT_DIRS } from "./projection.ts";
-
 /**
  * The committed-tree guard (issues #74, #312): SHA grounding
  * requires a source repository whose recorded commit describes the
@@ -12,6 +10,8 @@ import { literalPrefix, SKIPPED_ROOT_DIRS } from "./projection.ts";
  * untracked directories, and the guard is allowed to block more
  * than strictly necessary, never less.
  */
+
+import { literalPrefix, SKIPPED_ROOT_DIRS } from "./projection.ts";
 
 /** Refuse a projection of `root` unless its `git status --porcelain`
  *  output is committed modulo unselectable untracked scratch; names
