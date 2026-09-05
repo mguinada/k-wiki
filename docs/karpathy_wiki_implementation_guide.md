@@ -1535,8 +1535,15 @@ instance (issue #145) — `wiki-sync` reads the repo-typed source in
 verification checks, and the single regeneration commit are
 in-cycle. The piecewise stages (`sync-repo`, `wiki-ingest`,
 `health`) stay the debug path, one stage at a time. The README's
-meta usage model (its §9) has the exact commands; scheduling is a
-later config concern.
+meta usage model (its §9) has the exact commands. Automation is
+event-shaped, not interval-shaped (issue #314): the meta source
+changes only when k-wiki's `main` moves, so `setup-meta-sync`
+installs post-merge and post-rewrite git hooks (once per machine —
+hooks are unversioned git state) that fire one detached
+`scheduled-run` cycle when a merge or rebase-pull lands on `main`
+in the canonical checkout with a clean tree; the README's meta
+post-merge section has the usage, guards, and the version-dependent
+hook-firing gap.
 
 Every regeneration goes through the same git-diff review flow as any
 other wiki (Section 19), and the projection commit SHA lands in the

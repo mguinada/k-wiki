@@ -493,6 +493,10 @@ bin/wiki-sync --settings settings-meta.yml sync-meta.json \
   ~/Lab/k-wiki-meta-data/raw                     # the one-command cycle
 ```
 
+Merges to the checkout's `main` can re-sync the meta wiki
+automatically — per machine, one installer run:
+[`setup-meta-sync`](#the-meta-wiki-post-merge-auto-sync-git-hooks).
+
 The meta instance rides the same cycle as every vault instance:
 `wiki-sync` sees the repo-typed source in
 `sync-meta.json` and runs the sync-repo core in-process at stage 1,
@@ -556,6 +560,7 @@ for the rare direct use:
 |---|---|---|
 | `bin/init-data-repo [--second-brain] [--meta] [<sync.json>]` | data repo seeder | Create and seed the data repo at `sync.json`'s `dataRoot`: git init, copy the `raw/`+`wiki/` skeleton from the code repo, write the standing `.gitignore` (Obsidian UI state, ingest snapshot), first commit; idempotent; `--second-brain` also writes the `.second-brain` identity marker ([§5](#5-the-second-brain)); `--meta` seeds the meta contract (`wiki/AGENTS.meta.md`) as the data repo's `wiki/AGENTS.md` ([§9](#9-the-meta-wiki-a-repository-as-source)) |
 | `bin/setup-schedule [-h \| --help] [--interval <duration>] [--print] [--uninstall]` | launchd installer | Register the pipeline with launchd: write `~/Library/LaunchAgents/com.kwiki.scheduled-run.plist` — absolute node + script paths, explicit `HOME`, minimal `PATH`, `StartInterval` (`30minutes` default) + `RunAtLoad` — then bootstrap and verify with `launchctl print`; `--interval` re-registers, `--print` emits the plist without installing (any OS), `--uninstall` boots out and removes it ([details below](#scheduling-the-pipeline-launchd)) |
+| `bin/setup-meta-sync [-h \| --help] [--print] [--uninstall]` | git-hook installer | Install the meta wiki's post-merge auto-sync git hooks (`post-merge` + `post-rewrite`) into the current checkout's shared hooks dir (`git rev-parse --git-path hooks`), baking absolute paths — canonical checkout, node binary, `settings-meta.yml` + `sync-meta.json`, `<dataRoot>/raw`, and the fire log; a merge or rebase-pull landing on `main` in the canonical checkout with a clean `git status --porcelain` (untracked included) fires one detached `bin/scheduled-run` cycle, anything else log-and-skips; idempotent, refuses to touch a foreign hook; `--print` emits the hook without a git repo, `--uninstall` removes exactly what it wrote ([details below](#the-meta-wiki-post-merge-auto-sync-git-hooks)) |
 | `bin/scheduled-run [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<config>] [<raw-dir>]` | scheduled cycle wrapper | Run one unattended cycle — the command the launchd job executes: O_EXCL lockfile (PID + timestamp, two-hour stale takeover) at `<dataRoot>/.scheduled-run.lock` → `git pull --rebase` → `wiki-sync` (commit-only) → `git push` (one pull --rebase + retry on rejection, then alert); fails loud without an `origin` remote ([details below](#scheduling-the-pipeline-launchd)) |
 | `bin/dashboard [-h \| --help] [-o \| --open] [<data-repo>]` | KPI dashboard generator | Regenerate the static KPI dashboard: read the data repo's wiki, manifests, and git history — read-only — and write the self-contained `<data-repo>/dashboard.html` (gitignored; opens offline via `file://`) with coverage, structure, activity, and provenance KPIs in dark and light themes; refreshed by every ingest, `-o` also opens it ([above](#the-pipeline)) |
 | `bin/sync-vault [--dry-run] [<sync.json>] [<raw-dir>]` | sync CLI | Ingest every note not blocked by the vault's exclusion rule into `raw/notes/` (deterministic, no LLM; [details below](#running-the-sync)) |
@@ -595,7 +600,7 @@ kept apart from the runtime surface above:
 | `npm test` | vitest | Run the unit test suite |
 | `npm run test:coverage` | vitest | Run the unit tests and fail below the 90% coverage thresholds — what CI runs |
 | `npm run audit` | npm | On-demand dependency-vulnerability check (the same audits CI's gates job runs before typecheck): the production tree at high or worse and the full tree at critical, both blocking; CI additionally logs a non-blocking advisory full-tree audit whose findings surface as run annotations |
-| `npm run e2e` | vitest | Run the end-to-end suite (`tests/e2e/`): real CLI child processes — sync-vault through a full vault lifecycle (first run, no-op re-run, edit, delete, block flip, multi-vault) against the synthetic fixture vault in temp workspaces under `.e2e-tmp/` (gitignored), wiki-ingest through first-run, incremental, expunge, rename, skip, failure, timeout, scoped `--sources` (operator `--note` and the default note included), tracked-but-ignored warning, and guardrail auto-revert runs against a stub agent in temp data repos, the second brain through profile-layer ingest, cross-wiki link validation, the reverted domain→second-brain leak, and a health-checked second-brain sync, sync-repo through verbatim projection, commit stamping, unchanged re-run, untracked scratch proceeds and untracked-selectable refuses, dirty-source and wrong-config failures, and health freshness runs in temp source repos, and wiki-sync through full-cycle, no-change rerun, failure, guardrail-revert, configured crosslink-audit (pass and fail), reverted fidelity-failure, repo-source cycle (the meta flow), and run-lock (loud holder refusal, release after cycle, per-instance) runs, and scheduled-run through full-cycle, no-op re-run, lock-skip, push-rejection retry, double-push-failure alert, and dirty-tree recovery runs in temp data repos with an upstream remote |
+| `npm run e2e` | vitest | Run the end-to-end suite (`tests/e2e/`): real CLI child processes — sync-vault through a full vault lifecycle (first run, no-op re-run, edit, delete, block flip, multi-vault) against the synthetic fixture vault in temp workspaces under `.e2e-tmp/` (gitignored), wiki-ingest through first-run, incremental, expunge, rename, skip, failure, timeout, scoped `--sources` (operator `--note` and the default note included), tracked-but-ignored warning, and guardrail auto-revert runs against a stub agent in temp data repos, the second brain through profile-layer ingest, cross-wiki link validation, the reverted domain→second-brain leak, and a health-checked second-brain sync, sync-repo through verbatim projection, commit stamping, unchanged re-run, dirty-source and wrong-config failures, and health freshness runs in temp source repos, and wiki-sync through full-cycle, no-change rerun, failure, guardrail-revert, configured crosslink-audit (pass and fail), reverted fidelity-failure, repo-source cycle (the meta flow), and run-lock (loud holder refusal, release after cycle, per-instance) runs, and scheduled-run through full-cycle, no-op re-run, lock-skip, push-rejection retry, double-push-failure alert, and dirty-tree recovery runs in temp data repos with an upstream remote, and setup-meta-sync through hook install, idempotent re-install, uninstall, merge and rebase-pull fires, and feature-branch, linked-worktree, and dirty-tree guard skips against a temp source repo with a stubbed cycle runner |
 | `node dev/generate.ts <dir>` | fixture generator | Write the synthetic Obsidian test vault to `<dir>/Documents` |
 | `npm run board-triage -- [-h \| --help] [--dry-run] [--owner <login>] [--project <n>]` | board triage CLI | Apply the mechanical half of the K-Wiki Kanban triage contract via the `gh` CLI — Backlog → Ready (unblocked, no `research` label), open PR → In progress, closed → Done — Status field values only; lane order is never touched, ids are resolved fresh every run, every move is verified by re-reading the board, and `--dry-run` plans with zero writes (default: `mguinada`'s project 2; [below](#scheduled-board-triage)) |
 | `npm run mutation:changed` | StrykerJS | Optional advisory mutation run scoped to the changed hunks of the `src/` files that differ from the mutation base — `main` by default, any ref via `MUTATION_BASE`, or the `main` commit from N days ago via `MUTATION_WINDOW_DAYS` (uncommitted included; new files whole) — `src/quality/mutation-scope.ts` builds the `file:start-end` ranges; exits 0 without running when nothing changed, and ends by printing the actionable mutants — recommended for small diffs; the authoritative mutation signal lives in CI |
@@ -1280,6 +1285,65 @@ deferred until then. Linux (systemd timer) and Windows (Task
 Scheduler) backends are follow-up issues: the installer fails loud
 on non-macOS platforms (`--print` still emits the macOS plist
 everywhere), and the platform switch keeps them additive.
+
+### The meta wiki: post-merge auto-sync (git hooks)
+
+```sh
+bin/setup-meta-sync                 # once per machine
+bin/setup-meta-sync --print         # emit the hook, install nothing
+bin/setup-meta-sync --uninstall     # remove exactly what was installed
+```
+
+The meta wiki's source changes only when k-wiki's `main` moves —
+an event — so the engineering wiki's interval schedule is the
+wrong shape here: a timer mostly runs no-op cycles and still misses
+the freshness point. The right trigger is the merge itself.
+`setup-meta-sync` writes two git hooks (`post-merge` for merges,
+`post-rewrite` for rebase-based pulls) into the checkout's shared
+hooks dir — `git rev-parse --git-path hooks`, so the canonical
+checkout and its linked worktrees are all served — with every path
+baked absolute at install time: the node binary (the invocation
+path, stable across Homebrew upgrades), the canonical checkout
+(never the linked worktree the installer may run from), the meta
+configs inside it, `<dataRoot>/raw` from `sync-meta.json`, and the
+fire log.
+
+The hook guards before firing: the fire must land in the
+canonical checkout (a merge on `main` inside a linked worktree
+log-and-skips — the cycle projects the canonical checkout's tree,
+and syncing any other tree would write the wrong content), the
+current branch must be `main`, and `git status --porcelain` fully
+clean — dirty and untracked included. Anything else log-and-skips
+(the reason goes to the log; `k-wiki health` keeps flagging the
+staleness until a real fire).
+A clean merge on `main` fires one detached cycle —
+`nohup bin/scheduled-run --settings settings-meta.yml sync-meta.json
+<dataRoot>/raw &` — so the merge returns instantly while the cycle
+(minutes of real LLM ingest) runs in the background under
+`scheduled-run`'s own per-dataRoot lockfile, pull/push, and
+push-rejection retry. Install is idempotent (an identical hook is
+left alone — only its executable bit is repaired if lost, an older
+generation of ours is replaced, a foreign hook without the
+installer's marker is refused loud and never touched). One log
+line per fire, plus the cycle's own output:
+`~/Library/Logs/kwiki/meta-sync.log` on macOS, the XDG state dir
+elsewhere.
+
+Install runs **once per machine** — hooks live in the git hooks
+(dir from `git rev-parse --git-path hooks`), unversioned — and two
+machines may merge and both fire safely:
+separate data-repo lockfiles, and the data-repo pull/push
+serializes the wiki state. The prerequisite is a **private
+`origin` remote on the meta data repo** (`scheduled-run` fails
+loud without one); both machines then converge on one wiki through
+it. Known gap: which git operations fire which hook is
+git-version-dependent — a fast-forward `git pull` fires
+`post-merge` on current git but may not on older versions, and a
+pure fast-forward `pull --rebase` rewrites nothing and so fires
+`post-rewrite` not at all. On any machine, `k-wiki health` is the
+honest freshness signal; the manual one-command cycle above is
+always available, and a long-interval launchd catch-up job is the
+recorded follow-up if the gap ever bites.
 
 ## Running queries (`wiki-query`)
 

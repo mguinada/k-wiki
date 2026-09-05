@@ -22,3 +22,7 @@ e2e run or diagnosing a failing one.
 - **scheduled-run** — full-cycle, no-op re-run, lock-skip,
   push-rejection-retry, double-push-failure, and dirty-tree recovery
   runs in temp data repos with an upstream remote.
+- **setup-meta-sync** — hook install, idempotent re-install,
+  uninstall, merge and rebase-pull fires, and feature-branch,
+  linked-worktree, and dirty-tree guard skips in a temp source repo
+  with a stubbed cycle runner.
