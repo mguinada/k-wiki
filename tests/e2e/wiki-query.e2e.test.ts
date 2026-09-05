@@ -210,6 +210,77 @@ describe("wiki-query e2e", () => {
     expect(prompt).not.toContain("QUERY:");
   });
 
+  it("stage 1 under --wiki answers and echoes the flag in the filing hint", async () => {
+    const repo = await makeRepo();
+    const result = await stage1(repo, ["--wiki", "meta"]);
+
+    expect(result.code).toBe(0);
+    expect(result.out).toContain(
+      "Prefer RAG when the knowledge base changes often.",
+    );
+    expect(result.err).toContain("wiki-query --wiki meta --file-last");
+
+    const artifact = await readFile(
+      join(repo.outputsDir, "last-query.md"),
+      "utf8",
+    );
+
+    expect(artifact).toContain(
+      'question: "When should I prefer RAG over fine-tuning?"',
+    );
+  });
+
+  it("stage 2 under --wiki files the saved answer into the resolved data repo", async () => {
+    const repo = await makeRepo();
+    await stage1(repo, ["--wiki", "meta"]);
+    const result = await stage2(repo, ["--wiki", "meta"]);
+
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("Filed:");
+
+    const page = await readFile(
+      join(
+        repo.dataRoot,
+        "wiki",
+        "queries",
+        "when-should-i-prefer-rag-over-fine-tuning.md",
+      ),
+      "utf8",
+    );
+
+    expect(page).toContain("Prefer RAG when the knowledge base changes often.");
+  });
+
+  it("exits 1 listing the known names for an unknown --wiki", async () => {
+    const repo = await makeRepo();
+    const result = await stage1(repo, ["--wiki", "nope"]);
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain('unknown wiki name "nope"');
+    expect(result.err).toContain("known names:");
+    expect(result.err).toContain("meta");
+
+    await expect(
+      readFile(join(repo.dataRoot, "stub-prompt.txt")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("rejects a --wiki name with a path separator at parse", async () => {
+    const repo = await makeRepo();
+    const result = await stage1(repo, ["--wiki", "../x"]);
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("--wiki must be a wiki name");
+  });
+
+  it("documents the --wiki switch and the resolution chain in the help", async () => {
+    const result = await runCli(QUERY_SCRIPT, ["--help"]);
+
+    expect(result.out).toContain("--wiki <name>");
+    expect(result.out).toContain("sync-<name>.json");
+    expect(result.out).toContain("instances");
+  });
+
   it("stage 1 reverts and exits 1 when the agent writes under wiki/", async () => {
     const repo = await makeRepo();
 

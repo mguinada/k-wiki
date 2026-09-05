@@ -913,7 +913,7 @@ console.log("Prefer RAG when the knowledge base changes often. See [[retrieval-a
 
   it("prints the usage line for --help", async () => {
     expect((await runCli(["--help"])).out).toContain(
-      "wiki-query [-h | --help] [--file-last] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>",
+      "wiki-query [-h | --help] [--file-last] [--wiki <name>] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>",
     );
   });
 
@@ -1755,6 +1755,123 @@ console.log("An answer.");
     await runFailingQueryOnTty(h);
 
     expect(process.exitCode).toBe(1);
+  });
+
+  it("documents the --wiki switch in the help", async () => {
+    expect((await runCli(["--help"])).out).toContain("--wiki <name>");
+  });
+
+  it("documents the stem convention in the help", async () => {
+    expect((await runCli(["--help"])).out).toContain("sync-<name>.json");
+  });
+
+  it("documents the alias registry key in the help", async () => {
+    expect((await runCli(["--help"])).out).toContain("instances");
+  });
+
+  it("documents the precedence rule in the help", async () => {
+    expect((await runCli(["--help"])).out).toContain("always");
+  });
+
+  it("names the missing --wiki value on stderr", async () => {
+    const h = await makeCliHarness();
+    const { err } = await runCli(queryArgs(h, ["--wiki"]).slice(0, -1));
+
+    expect(err).toContain("--wiki needs a name value");
+  });
+
+  it("exits 1 for a missing --wiki value", async () => {
+    const h = await makeCliHarness();
+
+    await runCli(queryArgs(h, ["--wiki"]).slice(0, -1));
+
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("rejects a --wiki name with a path separator at parse", async () => {
+    const h = await makeCliHarness();
+    const { err } = await runCli(queryArgs(h, ["--wiki", "../x"]));
+
+    expect(err).toContain("--wiki must be a wiki name");
+  });
+
+  it("exits 1 for a --wiki name with a path separator", async () => {
+    const h = await makeCliHarness();
+
+    await runCli(queryArgs(h, ["--wiki", "../x"]));
+
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("names an unknown --wiki name in the failure", async () => {
+    const h = await makeCliHarness();
+    const { err } = await runCli(queryArgs(h, ["--wiki", "nope"]));
+
+    expect(err).toContain('unknown wiki name "nope"');
+  });
+
+  it("lists the known names for an unknown --wiki name", async () => {
+    const h = await makeCliHarness();
+    const { err } = await runCli(queryArgs(h, ["--wiki", "nope"]));
+
+    expect(err).toContain("known names:");
+  });
+
+  it("runs nothing for an unknown --wiki name", async () => {
+    const h = await makeCliHarness();
+
+    await runCli(queryArgs(h, ["--wiki", "nope"]));
+
+    await expect(
+      readFile(join(h.dataRoot, "stub-prompt.txt")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("echoes --wiki in the stage-1 filing hint", async () => {
+    const h = await makeCliHarness();
+    const { err } = await runCli(queryArgs(h, ["--wiki", "meta"]));
+
+    expect(err).toContain("wiki-query --wiki meta --file-last");
+  });
+
+  it("keeps the plain filing hint without --wiki", async () => {
+    const h = await makeCliHarness();
+    const { err } = await runCli(queryArgs(h));
+
+    expect(err).toContain("To file this answer: wiki-query --file-last");
+  });
+
+  it("runs the explicit --settings stub over the --wiki-derived settings", async () => {
+    const h = await makeCliHarness();
+    const { out } = await runCli(queryArgs(h, ["--wiki", "meta"]));
+
+    expect(out).toContain("Prefer RAG when the knowledge base changes often.");
+  });
+
+  it("announces the filing under --wiki with --file-last", async () => {
+    const h = await makeCliHarness();
+    await runCli(queryArgs(h, ["--wiki", "meta"]));
+    const { out } = await runCli(fileLastArgs(h, ["--wiki", "meta"]));
+
+    expect(out).toContain("Filed:");
+  });
+
+  it("writes the filed page into the --wiki-resolved data repo", async () => {
+    const h = await makeCliHarness();
+    await runCli(queryArgs(h, ["--wiki", "meta"]));
+    await runCli(fileLastArgs(h, ["--wiki", "meta"]));
+
+    await expect(
+      readFile(
+        join(
+          h.dataRoot,
+          "wiki",
+          "queries",
+          "when-should-i-prefer-rag-over-fine-tuning.md",
+        ),
+        "utf8",
+      ),
+    ).resolves.toContain("Prefer RAG");
   });
 });
 

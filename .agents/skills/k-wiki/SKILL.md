@@ -16,10 +16,13 @@ the terminal can follow the same five steps.
 ## Where
 
 The binding file `.k-wiki.json` at the project root names the wiki;
-`k-wiki status` resolves and prints it (checkout, data repo, wiki
-directory). The wiki is plain markdown — readable directly once you
-know the directory. If `status` errors, the project is not bound:
-say so and stop; do not guess wiki paths by hand.
+`k-wiki status` resolves and prints it (checkout, instance, data
+repo, wiki directory). A checkout can host several wiki instances —
+the binding's optional `wiki` key names one (an alias or
+`sync-<name>.json` stem inside the checkout); without it the default
+instance answers. The wiki is plain markdown — readable directly
+once you know the directory. If `status` errors, the project is not
+bound: say so and stop; do not guess wiki paths by hand.
 
 ## When
 
@@ -54,8 +57,9 @@ browse first.
 
 No writes: the CLI exposes no way to file, edit, or commit wiki
 pages, and none should be attempted by hand. Filing an answer is
-the user's step (`wiki-query --file-last`, run by the human inside
-the checkout). Not a search engine: no fuzzy matching beyond the
+the user's step (`wiki-query --file-last` — `wiki-query --wiki
+<name> --file-last` when the binding named an instance — run by
+the human inside the checkout). Not a search engine: no fuzzy matching beyond the
 commands above, no cross-wiki queries.
 
 ## Install

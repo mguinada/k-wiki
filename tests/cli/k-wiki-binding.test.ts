@@ -162,6 +162,62 @@ describe("parseBinding", () => {
       ),
     ).toThrow('"settings" must be a non-empty string');
   });
+
+  it("accepts the wiki key as a plain instance name", () => {
+    const binding = parseBinding(
+      '{ "checkout": "/abs/k-wiki", "wiki": "meta" }',
+      "/proj/.k-wiki.json",
+      "/home/u",
+    );
+
+    expect(binding.wiki).toBe("meta");
+  });
+
+  it("makes the wiki key optional", () => {
+    const binding = parseBinding(
+      '{ "checkout": "/abs/k-wiki" }',
+      "/proj/.k-wiki.json",
+      "/home/u",
+    );
+
+    expect(binding.wiki).toBeUndefined();
+  });
+
+  it("rejects an empty wiki value", () => {
+    expect(() =>
+      parseBinding(
+        '{ "checkout": "/a", "wiki": "" }',
+        "/proj/.k-wiki.json",
+        "/home/u",
+      ),
+    ).toThrow('"wiki" must be a wiki name');
+  });
+
+  it("rejects a wiki value with a path separator", () => {
+    expect(() =>
+      parseBinding(
+        '{ "checkout": "/a", "wiki": "../x" }',
+        "/proj/.k-wiki.json",
+        "/home/u",
+      ),
+    ).toThrow('"wiki" must be a wiki name');
+  });
+
+  it("rejects a non-string wiki value", () => {
+    expect(() =>
+      parseBinding(
+        '{ "checkout": "/a", "wiki": 3 }',
+        "/proj/.k-wiki.json",
+        "/home/u",
+      ),
+    ).toThrow('"wiki" must be a wiki name');
+  });
+
+  it("names the wiki key in the expected binding shape", () => {
+    expect(() =>
+      parseBinding('{ "checkouts": ["/a"] }', "/proj/.k-wiki.json", "/home/u"),
+    ).toThrow('"wiki": "<optional instance name>"');
+  });
 });
 
 describe("findBindingFile", () => {
@@ -297,6 +353,7 @@ describe("resolveCheckout", () => {
     ).toEqual({
       checkout: h.checkout,
       settings: "settings-alt.yml",
+      wiki: undefined,
       origin: "file",
     });
   });
@@ -313,7 +370,35 @@ describe("resolveCheckout", () => {
         cwd: dir,
         home: "/nonexistent/home",
       }),
-    ).toEqual({ checkout: dir, settings: undefined, origin: "cwd" });
+    ).toEqual({
+      checkout: dir,
+      settings: undefined,
+      wiki: undefined,
+      origin: "cwd",
+    });
+  });
+
+  it("carries the binding's wiki name through the resolution", async () => {
+    const h = await makeBoundProject();
+
+    await writeFile(
+      join(h.project, BINDING_FILE),
+      JSON.stringify({ checkout: h.checkout, wiki: "meta" }),
+    );
+
+    expect(
+      await resolveCheckout({
+        flag: undefined,
+        env: {},
+        cwd: h.project,
+        home: "/nonexistent/home",
+      }),
+    ).toEqual({
+      checkout: h.checkout,
+      settings: undefined,
+      wiki: "meta",
+      origin: "file",
+    });
   });
 
   it("expands ~ in the flag value", async () => {

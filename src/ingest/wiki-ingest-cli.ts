@@ -22,11 +22,11 @@ import {
 import { runContext } from "../cli/run-context.ts";
 import { repoRoot } from "../cli/shared.ts";
 import { type CliSpec, type ParsedCli, parseArgs } from "../cli/shell.ts";
-import { loadSyncConfig, resolveRawDir } from "../sync/config.ts";
+import { resolveWikiInstance, wikiArgError } from "../sync/instance.ts";
 import { runWikiIngest } from "./wiki-ingest.ts";
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
-const HELP = `Usage: wiki-ingest [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [--note <text>] [<raw-dir>]
+const HELP = `Usage: wiki-ingest [-h | --help] [--wiki <name>] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [--note <text>] [<raw-dir>]
 
 Run the wiki agent headless over the sources that changed since the
 last ingest, then write a per-run digest (guide §18).
@@ -54,8 +54,21 @@ Obsidian) would trip guardrail 1 — as one yellow WARNING per file
 with its fix (git rm --cached <path>); a signal, not a gate.
 
 Switches and arguments:
-  --settings <path>  Agent settings file. Default: the repo's
-                     settings.yml — command, model, provider, and reasoning
+  --wiki <name>      Select the wiki instance to ingest: resolved
+                     through the checkout's registry — an alias in
+                     sync.json's instances map first, then a free stem
+                     sync-<name>.json in the checkout root — with the
+                     raw dir, settings file, and outputs dir derived
+                     from the resolved config (outputs-<stem>/ and
+                     settings-<stem>.yml, falling back to settings.yml;
+                     the raw dir always from the config's dataRoot).
+                     An unknown name exits 1 listing every known
+                     name. Default: absent — the default instance,
+                     exactly today's behavior. An explicit --settings,
+                     --outputs, or <raw-dir> always overrides its
+                     derived counterpart.
+  --settings <path>  Agent settings file. Default: the instance's
+                     derived settings file — command, model, provider, and reasoning
                      level, passed to the agent as --model/--thinking;
                      provider is optional and passed as --provider when set.
                      isolate (true by default, false to opt out) adds the
@@ -73,9 +86,10 @@ Switches and arguments:
                      that is missing warns and is omitted, and the run
                      proceeds. Both keys are ignored with isolate: false.
   --outputs <dir>    Where the run digest (runs/<timestamp>.md) goes.
-                     Default: the repo's outputs/. The manifest snapshot
+                     Default: the instance's derived outputs dir.
+                     The manifest snapshot
                      always lives in the data repo's outputs/ and is not
-                     moved by this switch.
+                     moved by this switch or by --wiki.
   --timeout <secs>   Kill the agent run after this many seconds and
                      fail it; the snapshot stays untouched. Default:
                      1800 (30 minutes).
@@ -115,8 +129,8 @@ Switches and arguments:
                      its treatment fails the page bar).
   -h, --help         Print this help and exit; no side effects.
   <raw-dir>          raw/ directory holding manifest.json. Default:
-                     <dataRoot>/raw from sync.json, otherwise the
-                     repo's own raw/.
+                     <dataRoot>/raw from the resolved instance's sync
+                     config; an explicit positional overrides it.
 
 What it writes:
   - wiki pages, by the agent, in the data repo (never raw/);
@@ -156,10 +170,10 @@ goes to stderr; the digest goes to stdout. Unattended scheduling is
 setup-schedule.`;
 
 /** The wiki-ingest argv spec: the agent-run value flags plus the
- *  text `--note`, the repeatable `--sources`, and at most one
- *  `<raw-dir>` positional. */
+ *  text `--note`, the instance `--wiki` name, the repeatable
+ *  `--sources`, and at most one `<raw-dir>` positional. */
 const INGEST_SPEC = {
-  value: ["--settings", "--outputs", "--timeout", "--note"],
+  value: ["--settings", "--outputs", "--timeout", "--note", "--wiki"],
   repeat: ["--sources"],
   positionals: {
     max: 1,
@@ -171,7 +185,8 @@ const INGEST_SPEC = {
 /** wiki-ingest's CLI flag set, derived once from the parsed argv:
  *  the agent-run flags, the scoped `--sources` list typed after the
  *  presence check (the cast the old main() cast away — the invariant
- *  is now visible to the type system), and the operator note. */
+ *  is now visible to the type system), the operator note, and the
+ *  instance name. */
 export interface IngestCliFlags {
   readonly settings: string | undefined;
   readonly outputs: string | undefined;
@@ -179,6 +194,8 @@ export interface IngestCliFlags {
   readonly rawDir: string | undefined;
   readonly sources: readonly string[];
   readonly note: string | undefined;
+  /** The --wiki instance name (issue #306), when passed. */
+  readonly wiki: string | undefined;
 }
 
 /** The empty flag set an invalid argv derives: nothing runs. */
@@ -190,6 +207,7 @@ function emptyFlags(): IngestCliFlags {
     rawDir: undefined,
     sources: [],
     note: undefined,
+    wiki: undefined,
   };
 }
 
@@ -216,14 +234,16 @@ function noteArgError(
   return undefined;
 }
 
-/** The values without `--note`: the text flag's validator owns it
- *  entirely, so the shared path-flag validation never sees it. */
+/** The values without the text flags: `--note`'s and `--wiki`'s own
+ *  validators own them entirely, so the shared path-flag validation
+ *  never sees them. */
 function pathValues(
   values: ReadonlyMap<string, string | undefined>,
 ): Map<string, string | undefined> {
   const paths = new Map(values);
 
   paths.delete("--note");
+  paths.delete("--wiki");
 
   return paths;
 }
@@ -256,6 +276,12 @@ export function ingestFlags(parsed: ParsedCli): {
     return { flags: emptyFlags(), error: noteError };
   }
 
+  const wikiError = wikiArgError(parsed.values);
+
+  if (wikiError !== undefined) {
+    return { flags: emptyFlags(), error: wikiError };
+  }
+
   const error = flagValueError(pathValues(parsed.values), sourcesRaw);
 
   if (error !== undefined) {
@@ -272,6 +298,7 @@ export function ingestFlags(parsed: ParsedCli): {
       rawDir: parsed.positional[0],
       sources: definedSources(sourcesRaw) ? sourcesRaw : [],
       note: parsed.values.get("--note"),
+      wiki: parsed.values.get("--wiki"),
     },
     error: undefined,
   };
@@ -283,20 +310,26 @@ function fail(message: string): void {
 }
 
 /** Run the ingest with the derived CLI flags and print the outcome;
- *  errors print red and set the exit code. */
+ *  errors print red and set the exit code. The instance (issue
+ *  #306) resolves through the shared chain — the derived rawDir,
+ *  settings, and outputs follow the resolved config, and each
+ *  explicit flag or positional overrides its derived counterpart. */
 async function runCliIngest(parsed: {
   flags: IngestCliFlags;
   heartbeatMs: number | undefined;
   sink: ProgressSink;
 }): Promise<void> {
   try {
-    const config = await loadSyncConfig(join(repoRoot, "sync.json"), homedir());
-    const rawDir =
-      parsed.flags.rawDir ?? resolveRawDir(config.dataRoot, repoRoot);
+    const instance = await resolveWikiInstance({
+      checkout: repoRoot,
+      name: parsed.flags.wiki,
+      home: homedir(),
+    });
+    const rawDir = parsed.flags.rawDir ?? instance.rawDir;
     const result = await runWikiIngest({
-      settingsPath: parsed.flags.settings ?? join(repoRoot, "settings.yml"),
+      settingsPath: parsed.flags.settings ?? instance.settingsPath,
       run: runContext({ rawDir, onProgress: parsed.sink.render }),
-      outputsDir: parsed.flags.outputs ?? join(repoRoot, "outputs"),
+      outputsDir: parsed.flags.outputs ?? instance.outputsDir,
       promptsDir: join(repoRoot, "prompts"),
       sources: parsed.flags.sources,
       note: parsed.flags.note,

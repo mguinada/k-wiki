@@ -733,3 +733,130 @@ describe("resolveRawDir", () => {
     expect(resolveRawDir(undefined, "/code/repo")).toBe("/code/repo/raw");
   });
 });
+
+describe("loadSyncConfig instances", () => {
+  it("leaves instances undefined when the config omits it", async () => {
+    const config = await loadSyncConfig(
+      await writeConfig(ONE_VAULT),
+      "/home/alice",
+    );
+
+    expect(config.instances).toBeUndefined();
+  });
+
+  it("loads the alias map verbatim", async () => {
+    const config = await loadSyncConfig(
+      await writeConfig({
+        ...ONE_VAULT,
+        instances: { eng: "sync-engineering.json", nbn: "sync-meta.json" },
+      }),
+      "/home/alice",
+    );
+
+    expect(config.instances).toEqual({
+      eng: "sync-engineering.json",
+      nbn: "sync-meta.json",
+    });
+  });
+
+  it("accepts an empty alias map", async () => {
+    const config = await loadSyncConfig(
+      await writeConfig({ ...ONE_VAULT, instances: {} }),
+      "/home/alice",
+    );
+
+    expect(config.instances).toEqual({});
+  });
+
+  it("rejects an instances value that is not an object", async () => {
+    await expect(
+      loadSyncConfig(
+        await writeConfig({ ...ONE_VAULT, instances: ["sync-meta.json"] }),
+        "/home/alice",
+      ),
+    ).rejects.toThrow(/"instances" must be an object/);
+  });
+
+  it("rejects an alias target that is not a string", async () => {
+    await expect(
+      loadSyncConfig(
+        await writeConfig({ ...ONE_VAULT, instances: { eng: 3 } }),
+        "/home/alice",
+      ),
+    ).rejects.toThrow(/instances\["eng"\] must be a non-empty string/);
+  });
+
+  it("rejects an alias target that is an empty string", async () => {
+    await expect(
+      loadSyncConfig(
+        await writeConfig({ ...ONE_VAULT, instances: { eng: "" } }),
+        "/home/alice",
+      ),
+    ).rejects.toThrow(/instances\["eng"\] must be a non-empty string/);
+  });
+
+  it("rejects an alias name with a path separator", async () => {
+    await expect(
+      loadSyncConfig(
+        await writeConfig({ ...ONE_VAULT, instances: { "../x": "sync.json" } }),
+        "/home/alice",
+      ),
+    ).rejects.toThrow(/instance name/);
+  });
+
+  it("rejects an alias name that is a reserved object key", async () => {
+    await expect(
+      loadSyncConfig(
+        await writeConfig({
+          ...ONE_VAULT,
+          instances: { constructor: "sync.json" },
+        }),
+        "/home/alice",
+      ),
+    ).rejects.toThrow(/instance name/);
+  });
+
+  it("names the config path in an instances validation error", async () => {
+    const path = await writeConfig({ ...ONE_VAULT, instances: { eng: 3 } });
+
+    await expect(loadSyncConfig(path, "/home/alice")).rejects.toThrow(
+      new RegExp(path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    );
+  });
+});
+
+describe("loadSyncConfig unknown keys", () => {
+  it("accepts a config carrying every known top-level key", async () => {
+    const config = await loadSyncConfig(
+      await writeConfig({
+        ...ONE_VAULT,
+        dataRoot: "~/Lab/k-wiki-data",
+        publish: {
+          mirror: "~/Mirror",
+          include: ["wiki/**"],
+        },
+        instances: { eng: "sync-engineering.json" },
+      }),
+      "/home/alice",
+    );
+
+    expect(config.instances).toEqual({ eng: "sync-engineering.json" });
+  });
+
+  it("rejects an unknown top-level key naming the key", async () => {
+    await expect(
+      loadSyncConfig(
+        await writeConfig({ ...ONE_VAULT, instance: "sync-meta.json" }),
+        "/home/alice",
+      ),
+    ).rejects.toThrow(/unknown key "instance"/);
+  });
+
+  it("names the config path in an unknown-key error", async () => {
+    const path = await writeConfig({ ...ONE_VAULT, instance: "sync.json" });
+
+    await expect(loadSyncConfig(path, "/home/alice")).rejects.toThrow(
+      new RegExp(path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    );
+  });
+});

@@ -382,3 +382,182 @@ describe("k-wiki read-only commands e2e", () => {
     );
   });
 });
+
+/**
+ * The binding's wiki key (issue #306) end to end: a temp checkout
+ * hosting two instances — the default and a meta instance with its
+ * own data repo — plus a registered alias pointing at the meta
+ * config under a non-matching name. The key must select the corpus,
+ * the settings, and the outputs dir; the resolver is the shared one,
+ * so these runs also exercise the alias-beats-convention chain
+ * through a real door.
+ */
+describe("k-wiki wiki key e2e", () => {
+  interface MetaSetup {
+    readonly dataRoot: string;
+    readonly metaDataRoot: string;
+    readonly checkout: string;
+    readonly project: string;
+  }
+
+  async function makeMetaSetup(
+    instances?: Record<string, string>,
+  ): Promise<MetaSetup> {
+    const setup = await makeSetup();
+    const metaDataRoot = await mkdtemp(join(tmpdir(), "k-wiki-e2e-meta-"));
+
+    tempDirs.push(metaDataRoot);
+    await mkdir(join(metaDataRoot, "raw"), { recursive: true });
+    await mkdir(join(metaDataRoot, "wiki"), { recursive: true });
+    await writeFile(join(metaDataRoot, "wiki", "index.md"), "# Index\n");
+    await writeFile(join(metaDataRoot, "wiki", "log.md"), "# Log\n");
+    await writeFile(join(metaDataRoot, "stub-alt.mjs"), ALT_STUB_AGENT, {
+      mode: 0o755,
+    });
+
+    await run("git", ["init", "--quiet"], { cwd: metaDataRoot });
+    await run("git", ["add", "-A"], { cwd: metaDataRoot });
+    await run(
+      "git",
+      [
+        "-c",
+        "user.email=t@t",
+        "-c",
+        "user.name=t",
+        "commit",
+        "--quiet",
+        "-m",
+        "init",
+      ],
+      { cwd: metaDataRoot },
+    );
+
+    await writeFile(
+      join(setup.checkout, "sync-meta.json"),
+      JSON.stringify({ vaults: [], dataRoot: metaDataRoot }),
+    );
+
+    if (instances !== undefined) {
+      await writeFile(
+        join(setup.checkout, "sync.json"),
+        JSON.stringify({
+          vaults: [],
+          dataRoot: setup.dataRoot,
+          instances,
+        }),
+      );
+    }
+
+    return {
+      dataRoot: setup.dataRoot,
+      metaDataRoot,
+      checkout: setup.checkout,
+      project: setup.project,
+    };
+  }
+
+  async function bindWiki(
+    setup: MetaSetup,
+    wiki: string | undefined,
+  ): Promise<void> {
+    const binding: Record<string, string> = { checkout: setup.checkout };
+
+    if (wiki !== undefined) {
+      binding.wiki = wiki;
+    }
+
+    await writeFile(
+      join(setup.project, ".k-wiki.json"),
+      JSON.stringify(binding),
+    );
+  }
+
+  it("queries the named instance's settings and saves to its outputs dir", async () => {
+    const setup = await makeMetaSetup();
+
+    await bindWiki(setup, "meta");
+    const result = await runCli(K_WIKI_SCRIPT, ["query", QUESTION], {
+      cwd: join(setup.project, "nested", "deep"),
+    });
+
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("ALT-AGENT answered.");
+    expect(result.err).toContain("wiki-query --wiki meta --file-last");
+
+    const artifact = await readFile(
+      join(setup.checkout, "outputs-meta", "last-query.md"),
+      "utf8",
+    );
+
+    expect(artifact).toContain(QUESTION);
+
+    await expect(
+      readFile(join(setup.checkout, "outputs", "last-query.md")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("resolves a registered alias to a non-stem-matching name", async () => {
+    const setup = await makeMetaSetup({ nbn: "sync-meta.json" });
+
+    await bindWiki(setup, "nbn");
+    const result = await runCli(K_WIKI_SCRIPT, ["query", QUESTION], {
+      cwd: join(setup.project, "nested", "deep"),
+    });
+
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("ALT-AGENT answered.");
+
+    await readFile(join(setup.checkout, "outputs-meta", "last-query.md"));
+  });
+
+  it("status prints the resolved name, config, data repo, and outputs", async () => {
+    const setup = await makeMetaSetup();
+
+    await bindWiki(setup, "meta");
+    const result = await runCli(K_WIKI_SCRIPT, ["status"], {
+      cwd: join(setup.project, "nested", "deep"),
+    });
+
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("instance:  meta");
+    expect(result.out).toContain(
+      `sync:      ${join(setup.checkout, "sync-meta.json")}`,
+    );
+    expect(result.out).toContain(`data repo: ${setup.metaDataRoot}`);
+    expect(result.out).toContain(
+      `outputs:   ${join(setup.checkout, "outputs-meta")}`,
+    );
+    expect(result.out).toContain(
+      `settings:  ${join(setup.checkout, "settings-meta.yml")}`,
+    );
+  });
+
+  it("resolves the default instance when the key is absent", async () => {
+    const setup = await makeMetaSetup();
+
+    await bindWiki(setup, undefined);
+    const result = await runCli(K_WIKI_SCRIPT, ["query", QUESTION], {
+      cwd: join(setup.project, "nested", "deep"),
+    });
+
+    expect(result.code).toBe(0);
+    expect(result.out).toContain(
+      "Prefer RAG when the knowledge base changes often.",
+    );
+
+    await readFile(join(setup.checkout, "outputs", "last-query.md"));
+  });
+
+  it("exits 1 listing the known names for an unknown key value", async () => {
+    const setup = await makeMetaSetup();
+
+    await bindWiki(setup, "eng");
+    const result = await runCli(K_WIKI_SCRIPT, ["query", QUESTION], {
+      cwd: join(setup.project, "nested", "deep"),
+    });
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain('unknown wiki name "eng" (from .k-wiki.json)');
+    expect(result.err).toContain("known names: meta");
+  });
+});

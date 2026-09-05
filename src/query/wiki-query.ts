@@ -21,7 +21,7 @@ import {
   type PreRunState,
   revertToPreRun,
 } from "../ingest/guardrails.ts";
-import { loadSyncConfig, resolveRawDir } from "../sync/config.ts";
+import { resolveWikiInstance, wikiArgError } from "../sync/instance.ts";
 import { citedPages, fileLastQuery, writeQueryArtifact } from "./file-last.ts";
 import { runQueryCli } from "./query-shell.ts";
 
@@ -223,7 +223,7 @@ export async function runWikiQuery(
 }
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
-const HELP = `Usage: wiki-query [-h | --help] [--file-last] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>
+const HELP = `Usage: wiki-query [-h | --help] [--file-last] [--wiki <name>] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>
 
 Ask the built wiki one question headless (guide §16). Filing is
 two-stage: stage 1 answers and saves; stage 2 files
@@ -252,38 +252,64 @@ Stage 2 (human-only): wiki-query --file-last
   saved timestamp (the answer cites pages that may have moved); the
   warning does not block the filing.
 
+Instances (--wiki, both stages):
+  One checkout can host several wiki instances, one sync config
+  each. --wiki <name> selects one for both stages: the raw dir,
+  outputs dir, and settings file all follow the resolved instance's
+  config, and --file-last files into that instance's data repo.
+  Resolution chain: an alias in the checkout's sync.json instances
+  map first (explicit human intent beats convention), then a free
+  stem — sync-<name>.json in the checkout root. Derivation keys off
+  the resolved config file, never the typed name: sync-<x>.json →
+  outputs-x/ and settings-x.yml (falling back to settings.yml when
+  the sibling is absent); the default config (sync.json) → outputs/
+  and settings.yml. An unknown name exits 1 listing every known
+  name — aliases with their targets, then stems. Names are letters,
+  digits, "-", and "_". No flag: the default instance, exactly
+  today's behavior.
+
 Switches and arguments:
+  --wiki <name>     Select the wiki instance for both stages (see
+                    Instances above). Default: the default instance.
   --file-last       Run stage 2: file the saved answer. Takes no
                     <question>; reads outputs/last-query.md, writes
                     wiki/queries/<slug>.md, wiki/index.md, wiki/log.md.
   --settings <path> Agent settings file, stage 1 only. Default: the
-                    repo's settings.yml — command, model, provider,
-                    and reasoning level, passed to the agent as
+                    instance's settings.yml — or settings-<stem>.yml
+                    under --wiki; an explicit flag overrides the
+                    derived file. command, model, provider, and
+                    reasoning level are passed to the agent as
                     --model/--thinking; provider is optional and
                     passed as --provider when set.
   --outputs <dir>   Directory holding last-query.md. Default: the
-                    repo's outputs/.
+                    instance's outputs/ — or outputs-<stem>/ under
+                    --wiki; an explicit flag overrides the derived dir.
   --raw-dir <dir>   raw/ directory of the data repo to query; its
                     parent is the data repo root the agent runs in
                     (stage 1) and files into (stage 2). Default:
-                    <dataRoot>/raw from sync.json, otherwise the
-                    repo's own raw/.
+                    <dataRoot>/raw from the resolved instance's sync
+                    config; an explicit flag overrides it.
   --timeout <secs>  Kill the agent run after this many seconds and
                     fail it. Default: 1800 (30 minutes). Stage 1 only.
   -h, --help        Print this help and exit; no side effects.
   <question>        The question, quoted (one positional argument,
                     no interactive prompt). Stage 1 only.
 
-What it writes: stage 1 writes outputs/last-query.md and prints the
-answer to stdout (plus a filing hint on stderr); it never writes
-wiki/ — enforced mechanically, with revert. Stage 2 writes the three
-wiki files named above and prints "Filed: <path>"; the drift warning,
-if any, goes to stderr. Errors print red, prefixed "wiki-query:", and
-exit 1. On a terminal (TTY, color enabled) the agent run shows one
-animated status line - braille spinner plus elapsed time - rewritten
-in place; piped, redirected, CI, or NO_COLOR runs get one plain
-heartbeat line per 60 seconds instead. Live progress goes to stderr;
-the answer and the Filed line go to stdout.`;
+Precedence: an explicit --settings, --outputs, or --raw-dir always
+overrides its --wiki-derived counterpart.
+
+What it writes: stage 1 writes outputs/last-query.md (the selected
+instance's outputs dir) and prints the answer to stdout (plus a
+filing hint on stderr, echoing --wiki when one was used); it never
+writes wiki/ — enforced mechanically, with revert. Stage 2 writes
+the three wiki files named above and prints "Filed: <path>"; the
+drift warning, if any, goes to stderr. Errors print red, prefixed
+"wiki-query:", and exit 1. On a terminal (TTY, color enabled) the
+agent run shows one animated status line - braille spinner plus
+elapsed time - rewritten in place; piped, redirected, CI, or
+NO_COLOR runs get one plain heartbeat line per 60 seconds instead.
+Live progress goes to stderr; the answer and the Filed line go to
+stdout.`;
 
 /** Print one CLI usage error red on stderr and set the exit code. */
 function fail(message: string): void {
@@ -336,16 +362,33 @@ async function fileLastStage(
   }
 }
 
-/** Run the stage the arguments selected, in the data repo it resolved:
- *  stage 1 through the shared query shell, stage 2 deterministically. */
+/** The stage-1 filing hint, echoing the --wiki flag when one was
+ *  used (issue #306, edge 3): without it a meta answer would be
+ *  filed into the regular wiki. */
+function fileLastHint(name: string | undefined): string {
+  const wiki = name === undefined ? "" : `--wiki ${name} `;
+
+  return `To file this answer: wiki-query ${wiki}--file-last`;
+}
+
+/** Run the stage the arguments selected, in the data repo it
+ *  resolved: stage 1 through the shared query shell, stage 2
+ *  deterministically. The instance (issue #306) resolves through
+ *  the checkout's alias/stem chain; explicit flags override each
+ *  derived counterpart — one precedence rule. */
 async function dispatchStage(
   parsed: ReturnType<typeof parseArgs>,
   runFlags: AgentRunFlags,
 ): Promise<void> {
-  const outputsDir = runFlags.outputs ?? join(repoRoot, "outputs");
-  const config = await loadSyncConfig(join(repoRoot, "sync.json"), homedir());
-  const rawDir =
-    parsed.values.get("--raw-dir") ?? resolveRawDir(config.dataRoot, repoRoot);
+  const name = parsed.values.get("--wiki");
+  const instance = await resolveWikiInstance({
+    checkout: repoRoot,
+    name,
+    home: homedir(),
+  });
+  const outputsDir = runFlags.outputs ?? instance.outputsDir;
+  const settingsPath = runFlags.settings ?? instance.settingsPath;
+  const rawDir = parsed.values.get("--raw-dir") ?? instance.rawDir;
 
   // The run context, built once at this CLI boundary (issue #257):
   // stage 2 files into its data root, stage 1 queries its raw dir.
@@ -359,17 +402,17 @@ async function dispatchStage(
 
   await runQueryCli({
     prefix: "wiki-query",
-    settingsPath: runFlags.settings ?? join(repoRoot, "settings.yml"),
+    settingsPath,
     rawDir: run.rawDir,
     promptsDir: join(repoRoot, "prompts"),
     outputsDir,
     question: parsed.positional[0] ?? "",
     timeoutMs: runFlags.timeoutMs,
-    hint: "To file this answer: wiki-query --file-last",
+    hint: fileLastHint(name),
   });
 }
 
-/** wiki-query entry point: `wiki-query [-h | --help] [--file-last] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>`. */
+/** wiki-query entry point: `wiki-query [-h | --help] [--file-last] [--wiki <name>] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>`. */
 export async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
@@ -380,7 +423,7 @@ export async function main(): Promise<void> {
   }
 
   const parsed = parseArgs(args, {
-    value: ["--settings", "--outputs", "--raw-dir", "--timeout"],
+    value: ["--settings", "--outputs", "--raw-dir", "--timeout", "--wiki"],
     boolean: ["--file-last"],
   });
 
@@ -391,9 +434,14 @@ export async function main(): Promise<void> {
   }
 
   const fileLast = parsed.flags.has("--file-last");
-  const runFlags = agentRunFlags(parsed.values);
+  const wikiError = wikiArgError(parsed.values);
+  const pathValues = new Map(parsed.values);
+
+  pathValues.delete("--wiki");
+
+  const runFlags = agentRunFlags(pathValues);
   const usageError =
-    runFlags.error ?? questionError(parsed.positional, fileLast);
+    wikiError ?? runFlags.error ?? questionError(parsed.positional, fileLast);
 
   if (usageError !== undefined) {
     fail(usageError);

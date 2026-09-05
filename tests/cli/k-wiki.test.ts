@@ -43,8 +43,14 @@ console.log("Prefer RAG when the knowledge base changes often. See [[retrieval-a
 
 const ALT_STUB_AGENT = `#!/usr/bin/env node
 import { existsSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 if (!existsSync(join(process.cwd(), ".cli-test-repo"))) process.exit(5);
+const index = process.argv.indexOf("--print");
+const prompt = index === -1 ? undefined : process.argv[index + 1];
+if (prompt !== undefined && prompt !== "") {
+  await writeFile(join(process.cwd(), "stub-prompt.txt"), prompt);
+}
 console.log("ALT-AGENT answered.");
 `;
 
@@ -1888,5 +1894,235 @@ describe("k-wiki list custom sections", () => {
         "## untypeds",
       ),
     ).toBe(false);
+  });
+});
+
+/**
+ * The binding's wiki key (issue #306): the agent-door instance
+ * selector. A second instance (sync-meta.json → its own data repo,
+ * settings-meta.yml → the alt stub) rides the same checkout; the
+ * key's resolution chain, derivation, precedence, and miss listing
+ * are the shared resolver's contract — these tests pin the door.
+ */
+interface MetaHarness {
+  readonly dataRoot: string;
+  readonly metaDataRoot: string;
+  readonly checkout: string;
+  readonly project: string;
+}
+
+async function makeMetaHarness(
+  binding: Record<string, string>,
+): Promise<MetaHarness> {
+  const dataRoot = await makeDataRepo();
+  const metaDataRoot = await makeDataRepo();
+  const checkout = await mkdtemp(join(tmpdir(), "k-wiki-cli-co-"));
+
+  tempDirs.push(checkout);
+  await writeFile(
+    join(checkout, "sync.json"),
+    JSON.stringify({ vaults: [], dataRoot }),
+  );
+  await writeFile(
+    join(checkout, "sync-meta.json"),
+    JSON.stringify({ vaults: [], dataRoot: metaDataRoot }),
+  );
+  await writeFile(
+    join(checkout, "settings.yml"),
+    `command: ${join(dataRoot, "stub-agent.mjs")}\nmodel: M\nreasoning: low\n`,
+  );
+  await writeFile(
+    join(checkout, "settings-meta.yml"),
+    `command: ${join(metaDataRoot, "stub-alt.mjs")}\nmodel: META\nreasoning: low\n`,
+  );
+  await mkdir(join(checkout, "prompts"), { recursive: true });
+  await writeFile(join(checkout, "prompts", "query.md"), "QUERY PROMPT");
+
+  const project = await mkdtemp(join(tmpdir(), "k-wiki-cli-proj-"));
+
+  tempDirs.push(project);
+  await mkdir(join(project, "nested"), { recursive: true });
+  await writeFile(
+    join(project, BINDING_FILE),
+    JSON.stringify({ checkout, ...binding }),
+  );
+
+  return { dataRoot, metaDataRoot, checkout, project };
+}
+
+describe("k-wiki binding wiki key", () => {
+  it("queries the named instance's data repo and settings", async () => {
+    const h = await makeMetaHarness({ wiki: "meta" });
+    const { out } = await runKWiki(join(h.project, "nested"), [
+      "query",
+      QUESTION,
+    ]);
+
+    expect(out).toContain("ALT-AGENT answered.");
+  });
+
+  it("saves the artifact under the named instance's outputs dir", async () => {
+    const h = await makeMetaHarness({ wiki: "meta" });
+    await runKWiki(join(h.project, "nested"), ["query", QUESTION]);
+
+    const artifact = await readFile(
+      join(h.checkout, "outputs-meta", "last-query.md"),
+      "utf8",
+    );
+
+    expect(artifact).toContain(QUESTION);
+  });
+
+  it("writes no artifact under the default outputs dir for a named instance", async () => {
+    const h = await makeMetaHarness({ wiki: "meta" });
+    await runKWiki(join(h.project, "nested"), ["query", QUESTION]);
+
+    await expect(
+      readFile(join(h.checkout, "outputs", "last-query.md")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("runs the agent in the named instance's data repo", async () => {
+    const h = await makeMetaHarness({ wiki: "meta" });
+    await runKWiki(join(h.project, "nested"), ["query", QUESTION]);
+
+    const prompt = await readFile(
+      join(h.metaDataRoot, "stub-prompt.txt"),
+      "utf8",
+    );
+
+    expect(prompt).toContain(QUESTION);
+  });
+
+  it("points the filing hint at the named instance's --file-last form", async () => {
+    const h = await makeMetaHarness({ wiki: "meta" });
+    const { err } = await runKWiki(join(h.project, "nested"), [
+      "query",
+      QUESTION,
+    ]);
+
+    expect(err).toContain("wiki-query --wiki meta --file-last");
+  });
+
+  it("resolves the default instance when the key is absent", async () => {
+    const h = await makeMetaHarness({});
+    const { out } = await runKWiki(join(h.project, "nested"), [
+      "query",
+      QUESTION,
+    ]);
+
+    expect(out).toContain("Prefer RAG when the knowledge base changes often.");
+  });
+
+  it("resolves an alias registered in the checkout's sync.json", async () => {
+    const h = await makeMetaHarness({ wiki: "nbn" });
+
+    await writeFile(
+      join(h.checkout, "sync.json"),
+      JSON.stringify({
+        vaults: [],
+        dataRoot: h.dataRoot,
+        instances: { nbn: "sync-meta.json" },
+      }),
+    );
+    const { out } = await runKWiki(join(h.project, "nested"), [
+      "query",
+      QUESTION,
+    ]);
+
+    expect(out).toContain("ALT-AGENT answered.");
+  });
+
+  it("lets the binding's settings key override the derived settings", async () => {
+    const h = await makeMetaHarness({ wiki: "meta", settings: "settings.yml" });
+    const { out } = await runKWiki(join(h.project, "nested"), [
+      "query",
+      QUESTION,
+    ]);
+
+    expect(out).toContain("Prefer RAG when the knowledge base changes often.");
+  });
+
+  it("names the binding source for an unknown wiki name", async () => {
+    const h = await makeMetaHarness({ wiki: "eng" });
+    const { err } = await runKWiki(join(h.project, "nested"), [
+      "query",
+      QUESTION,
+    ]);
+
+    expect(err).toContain('unknown wiki name "eng" (from .k-wiki.json)');
+  });
+
+  it("lists the known names for an unknown wiki name", async () => {
+    const h = await makeMetaHarness({ wiki: "eng" });
+    const { err } = await runKWiki(join(h.project, "nested"), [
+      "query",
+      QUESTION,
+    ]);
+
+    expect(err).toContain("known names: meta");
+  });
+
+  it("exits 1 for an unknown wiki name", async () => {
+    const h = await makeMetaHarness({ wiki: "eng" });
+    await runKWiki(join(h.project, "nested"), ["query", QUESTION]);
+
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("documents the wiki binding key in the help", async () => {
+    const out = (await runKWiki(process.cwd(), ["--help"])).out;
+
+    expect(out).toContain("wiki — optional instance name inside the checkout");
+  });
+});
+
+describe("k-wiki status with a wiki key", () => {
+  it("prints the resolved instance name and sync config path", async () => {
+    const h = await makeMetaHarness({ wiki: "meta" });
+    const { out } = await runKWiki(join(h.project, "nested"), ["status"]);
+
+    expect(out).toContain("instance:  meta");
+    expect(out).toContain(`sync:      ${join(h.checkout, "sync-meta.json")}`);
+  });
+
+  it("prints the derived outputs dir", async () => {
+    const h = await makeMetaHarness({ wiki: "meta" });
+    const { out } = await runKWiki(join(h.project, "nested"), ["status"]);
+
+    expect(out).toContain(`outputs:   ${join(h.checkout, "outputs-meta")}`);
+  });
+
+  it("prints the named instance's data repo", async () => {
+    const h = await makeMetaHarness({ wiki: "meta" });
+    const { out } = await runKWiki(join(h.project, "nested"), ["status"]);
+
+    expect(out).toContain(`data repo: ${h.metaDataRoot}`);
+  });
+
+  it("prints the derived settings file", async () => {
+    const h = await makeMetaHarness({ wiki: "meta" });
+    const { out } = await runKWiki(join(h.project, "nested"), ["status"]);
+
+    expect(out).toContain(
+      `settings:  ${join(h.checkout, "settings-meta.yml")}`,
+    );
+  });
+
+  it("prints default for an instance-less binding", async () => {
+    const h = await makeMetaHarness({});
+    const { out } = await runKWiki(join(h.project, "nested"), ["status"]);
+
+    expect(out).toContain("instance:  default");
+  });
+
+  it("prints the binding settings override over the derived file", async () => {
+    const h = await makeMetaHarness({
+      wiki: "meta",
+      settings: "settings.yml",
+    });
+    const { out } = await runKWiki(join(h.project, "nested"), ["status"]);
+
+    expect(out).toContain(`settings:  ${join(h.checkout, "settings.yml")}`);
   });
 });

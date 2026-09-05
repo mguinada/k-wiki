@@ -9,6 +9,7 @@ import {
   buildWorkspace,
   cleanupWorkspaces,
   INGEST_SCRIPT,
+  repoRoot,
   runCli,
   SYNC_SCRIPT,
 } from "./helpers.ts";
@@ -218,12 +219,13 @@ async function makeRepo(notes: Record<string, string>): Promise<Repo> {
   return { dataRoot, outputsDir, settingsPath };
 }
 
-function ingest(repo: Repo) {
+function ingest(repo: Repo, extra: readonly string[] = []) {
   return runCli(INGEST_SCRIPT, [
     "--settings",
     repo.settingsPath,
     "--outputs",
     repo.outputsDir,
+    ...extra,
     join(repo.dataRoot, "raw"),
   ]);
 }
@@ -386,6 +388,42 @@ describe("wiki-ingest e2e", () => {
     ).split("\n");
 
     expect(argv).not.toContain("--skill");
+  });
+
+  it("ingests under --wiki and keeps the manifest snapshot in the data repo", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag" });
+    const result = await ingest(repo, ["--wiki", "meta"]);
+
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("**Mode:** full");
+
+    const snapshot = await readFile(snapshotAt(repo.dataRoot), "utf8");
+
+    expect(JSON.parse(snapshot).vaults).toBeTruthy();
+
+    await expect(
+      readFile(join(repoRoot, "outputs-meta", "runs"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("exits 1 listing the known names for an unknown --wiki", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag" });
+    const result = await ingest(repo, ["--wiki", "nope"]);
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain('unknown wiki name "nope"');
+    expect(result.err).toContain("known names:");
+
+    await expect(readFile(snapshotAt(repo.dataRoot))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("documents the --wiki switch in the help text", async () => {
+    const result = await runCli(INGEST_SCRIPT, ["--help"]);
+
+    expect(result.out).toContain("--wiki <name>");
+    expect(result.out).toContain("sync-<name>.json");
   });
 
   it("persists the digest and the manifest snapshot", async () => {
