@@ -71,6 +71,12 @@ describe("assertNoBlockingChanges untracked tolerance (issue #312)", () => {
     );
   });
 
+  it("names tracked and untracked-selectable paths in one refusal", () => {
+    expect(guard(" M README.md\n?? docs/x.md\n")).toThrow(
+      /tracked: README\.md; untracked-selectable: docs\/x\.md/,
+    );
+  });
+
   it("strips git's quoting from a selectable untracked path", () => {
     expect(guard('?? "docs/note file.md"\n')).toThrow(
       /untracked-selectable: docs\/note file\.md/,
