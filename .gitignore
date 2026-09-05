@@ -13,6 +13,11 @@ raw/**
 wiki/**
 
 # skill-creator eval workspaces (scratch)
+.agents/skills/verify-k-wiki-workspace/
+# verify-k-wiki run scratch and evidence (verify-k-wiki skill): transient
+# artifacts — every verification run regenerates both, nothing durable
+.verify-tmp/
+.verify-evidence/
 .agents/skills/do-gh-issue-workspace/
 # mutation-triage eval workspace: run outputs and the git-recoverable
 # snapshot are session-local. The versionable iteration assets stay
@@ -72,7 +77,3 @@ outputs-*/
 sync-*.json
 settings-*.yml
 
-# Verification skill scratch and proof artifacts (verify-k-wiki)
-.verify-tmp/
-.verify-evidence/
-.cursor/skills/verify-k-wiki-workspace/
