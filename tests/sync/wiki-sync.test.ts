@@ -700,6 +700,112 @@ describe("runWikiSync", () => {
   });
 });
 
+describe("runWikiSync run lock (issue #313)", () => {
+  /** A fresh foreign lock, as a mid-cycle manual or scheduled holder
+   *  writes it. */
+  async function writeFreshLock(
+    h: Harness,
+    pid = 4242,
+    ageMs = 0,
+  ): Promise<void> {
+    const takenAt = new Date(NOW().getTime() - ageMs).toISOString();
+
+    await writeFile(
+      join(h.dataRoot, ".scheduled-run.lock"),
+      `${JSON.stringify({ pid, takenAt })}\n`,
+    );
+  }
+
+  it("fails loud naming the holder when a fresh run lock exists", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    await writeFreshLock(h);
+
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow(
+      /a run has been in progress since \d{2}:\d{2} \(PID 4242\) — retry in a few minutes/,
+    );
+  });
+
+  it("commits nothing when the run lock is held", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    await writeFreshLock(h);
+    const headBefore = await headOf(h.dataRoot);
+
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow(
+      "retry in a few minutes",
+    );
+
+    expect(await headOf(h.dataRoot)).toBe(headBefore);
+  });
+
+  it("releases the run lock after a successful cycle", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    await runWikiSync(optionsFor(h));
+
+    await expect(
+      readFile(join(h.dataRoot, ".scheduled-run.lock"), "utf8"),
+    ).rejects.toThrow();
+  });
+
+  it("releases the run lock when the cycle fails", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    h.ingestAgent = async () => {
+      throw new Error("agent exploded");
+    };
+
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow("agent exploded");
+
+    await expect(
+      readFile(join(h.dataRoot, ".scheduled-run.lock"), "utf8"),
+    ).rejects.toThrow();
+  });
+
+  it("runs under a wrapper-held lock (KWIKI_RUN_LOCK_HELD) without refusing", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    await writeFreshLock(h);
+
+    await expect(
+      runWikiSync(
+        optionsFor(h, {
+          env: { ...process.env, KWIKI_RUN_LOCK_HELD: "1" },
+        }),
+      ),
+    ).resolves.toBeDefined();
+  });
+
+  it("leaves the wrapper's lock untouched after its child run", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    await writeFreshLock(h, 9999);
+
+    await runWikiSync(
+      optionsFor(h, {
+        env: { ...process.env, KWIKI_RUN_LOCK_HELD: "1" },
+      }),
+    );
+
+    await expect(
+      readFile(join(h.dataRoot, ".scheduled-run.lock"), "utf8"),
+    ).resolves.toContain("9999");
+  });
+
+  it("takes over a stale lock from a killed run and releases it", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    await writeFreshLock(h, 4242, 3 * 60 * 60 * 1000);
+
+    await expect(runWikiSync(optionsFor(h))).resolves.toBeDefined();
+
+    await expect(
+      readFile(join(h.dataRoot, ".scheduled-run.lock"), "utf8"),
+    ).rejects.toThrow();
+  });
+});
+
 describe("runWikiSync ingest pre-flight (issue #146)", () => {
   /** The hazard order of k-wiki-meta-data 72dce82: commit the Obsidian
    *  UI state first, add the ignore rule afterwards — gitignore does

@@ -407,6 +407,47 @@ describe("wiki-sync e2e", () => {
     expect(`${result.code}|${result.out}`).toMatch(/0\|Usage: wiki-sync/);
   });
 
+  it("fails loud naming the holder while a fresh run lock exists", async () => {
+    const repo = await makeRepo();
+
+    await writeFile(
+      join(repo.dataRoot, ".scheduled-run.lock"),
+      `${JSON.stringify({ pid: 4242, takenAt: new Date().toISOString() })}\n`,
+    );
+
+    const result = await runCycle(repo);
+
+    expect(result.code).toBe(1);
+    expect(result.err).toMatch(
+      /a run has been in progress since \d{2}:\d{2} \(PID 4242\) — retry in a few minutes/,
+    );
+    expect(result.err).not.toContain("index.lock");
+  });
+
+  it("releases the run lock after a completed cycle", async () => {
+    const repo = await makeRepo();
+    const result = await runCycle(repo);
+
+    expect(result.code).toBe(0);
+    await expect(
+      readFile(join(repo.dataRoot, ".scheduled-run.lock"), "utf8"),
+    ).rejects.toThrow();
+  });
+
+  it("syncs another instance while a locked instance holds its own lock", async () => {
+    const locked = await makeRepo();
+    const other = await makeRepo();
+
+    await writeFile(
+      join(locked.dataRoot, ".scheduled-run.lock"),
+      `${JSON.stringify({ pid: 4242, takenAt: new Date().toISOString() })}\n`,
+    );
+
+    const result = await runCycle(other);
+
+    expect(result.code).toBe(0);
+  });
+
   it("runs the full cycle into one readable data-repo commit", async () => {
     const repo = await makeRepo();
     const result = await runCycle(repo);

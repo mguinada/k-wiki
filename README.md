@@ -1143,6 +1143,17 @@ mirror), then the full ingest digest —
 plus `git log -1` in the data repo tell the whole story of the run
 without opening any other file.
 
+Every cycle holds the shared run lock — the same
+`<dataRoot>/.scheduled-run.lock` the scheduled wrapper takes — from
+before its first stage until after its last, released on success,
+failure, and guardrail revert alike. When another run (manual or
+scheduled) holds a fresh lock, `wiki-sync` refuses loud with one
+line naming the holder — `a run has been in progress since HH:MM
+(PID N) — retry in a few minutes` — instead of two cycles colliding
+at the git layer (`index.lock`); a lock older than two hours is a
+dead run's and is taken over. The lock is one per data repo, so
+independent instances never contend.
+
 With no changed sources the agent stages skip (cost scales with
 activity, not the clock), a clean data repo commits nothing, and the
 command exits 0 — a configured crosslink audit and the verification
@@ -1204,8 +1215,14 @@ operation needs and nothing else:
 1. **lockfile** — an atomic `O_EXCL` lockfile (PID + timestamp) at
    `<dataRoot>/.scheduled-run.lock` prevents concurrent runs on the
    same machine; a lock older than two hours is taken over, so a
-   killed run never wedges the schedule. It lives outside
-   `wiki-sync`'s commit pathspecs so the sync can never stage it.
+   killed run never wedges the schedule. The lock is shared with
+   manual `wiki-sync` runs: a manual cycle in progress makes the
+   next scheduled firing skip — its note names the holder's PID and
+   start time — while a scheduled cycle in progress makes a manual
+   `wiki-sync` fail loud with the same holder line instead of
+   colliding at the git layer. The lock lives at the data repo root,
+   one per instance, outside `wiki-sync`'s commit pathspecs so the
+   sync can never stage it.
 2. **`git pull --rebase`** — the run starts on a fresh base; any
    overlap that slipped through (lock stolen, human ran by hand,
    second machine) surfaces as a rejected push, never silently
