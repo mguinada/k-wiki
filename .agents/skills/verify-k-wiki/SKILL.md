@@ -103,7 +103,7 @@ bin/sync-vault "$S/sync.json" "$D/raw" >/dev/null 2>&1   # seed the projection
 printf '# Index\n' > "$D/wiki/index.md"
 git -C "$D" add -A && git -C "$D" commit -qm init
 cat > "$D/settings.yml" <<EOF
-command: $PWD/.cursor/skills/verify-k-wiki/helpers/stub-agent.mjs
+command: $PWD/.agents/skills/verify-k-wiki/helpers/stub-agent.mjs
 model: VERIFY-STUB
 reasoning: low
 EOF
