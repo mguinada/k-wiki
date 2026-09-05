@@ -94,7 +94,8 @@ until all three pass. Run them before every handoff.
   commit stamping, dirty-source and wrong-config failures, health
   freshness), and wiki-sync through
   full-cycle, no-change, failure, guardrail-revert, reverted
-  fidelity-failure, and repo-source cycle (the meta flow) runs, and
+  fidelity-failure, repo-source cycle (the meta flow), and run-lock
+  (loud holder refusal, release after cycle, per-instance) runs, and
   scheduled-run through full-cycle, no-op re-run, lock-skip,
   push-rejection-retry, double-push-failure, and dirty-tree
   recovery runs in temp data repos with an upstream remote.

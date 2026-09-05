@@ -15,8 +15,9 @@ e2e run or diagnosing a failing one.
   (verbatim copy, commit stamping, dirty-source and wrong-config
   failures, health freshness).
 - **wiki-sync** — full-cycle, no-change, failure, guardrail-revert,
-  reverted fidelity-failure, and repo-source cycle (the meta flow)
-  runs.
+  reverted fidelity-failure, repo-source cycle (the meta flow), and
+  run-lock (loud holder refusal, release after a completed cycle,
+  independent instance while another holds its lock) runs.
 - **scheduled-run** — full-cycle, no-op re-run, lock-skip,
   push-rejection-retry, double-push-failure, and dirty-tree recovery
   runs in temp data repos with an upstream remote.
