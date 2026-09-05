@@ -184,10 +184,12 @@ async function resolveHookConfigFor(
   }
 }
 
-/** Hooks not owned by this installer, refusing to touch them. */
-async function foreignHooks(
+/** Refuse loud when a hook not owned by this installer stands in
+ *  the way (hooks without the installer's marker are never touched). */
+async function refuseForeign(
   paths: readonly string[],
-): Promise<readonly string[]> {
+  action: string,
+): Promise<boolean> {
   const foreign: string[] = [];
 
   for (const path of paths) {
@@ -197,16 +199,6 @@ async function foreignHooks(
       foreign.push(path);
     }
   }
-
-  return foreign;
-}
-
-/** Refuse loud when an operator hook stands in the way. */
-async function refuseForeign(
-  paths: readonly string[],
-  action: string,
-): Promise<boolean> {
-  const foreign = await foreignHooks(paths);
 
   if (foreign.length === 0) {
     return false;
