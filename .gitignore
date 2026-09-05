@@ -71,3 +71,6 @@ careless `git add .` can never publish them (PR #85 review, Major 2).
 outputs-*/
 sync-*.json
 settings-*.yml
+
+# Per-machine agent binding: checkout path differs per clone (README, k-wiki CLI)
+.k-wiki.json
