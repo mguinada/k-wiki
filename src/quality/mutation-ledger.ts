@@ -1,26 +1,28 @@
-// The rolling survivor issue's merged ledger (issue #261).
-//
-// The issue body IS the ledger: the renderer embeds the full ledger
-// as a hidden HTML-comment JSON block beside the human-readable list,
-// and every filing merges the fresh Stryker report into the prior
-// body's ledger. Removal is status-aware, never absence-blind: an
-// entry leaves only via a verified kill (the run covered it and it
-// died) or an adjudication record in the equivalent-mutant registry
-// (issue #241 — recorded entries stay in the block, filtered only
-// from the rendered list, so the filter is presentation only). An
-// entry absent from the report was never generated (out of the run's
-// scope) and stays, so a windowed nightly cannot wipe out-of-window
-// entries. Full-scope dispatch runs pass absenceKills: covering all
-// of src/, absence anywhere means death — that is the reconciliation
-// / ledger-rewrite role.
-//
-// Entries are keyed by the refactor-resilient span identity (issue
-// #241): sha(mutated span text, mutator, replacement,
-// repo-relative path), never file:line. Pre-registry blocks
-// (schema 1) parse to legacy entries without ids; a generated
-// mutant replaces its legacy file:line twin
-// on the spot, so in-window entries migrate without duplicates, and
-// the first full run rewrites the whole ledger under span keys.
+/**
+ * The rolling survivor issue's merged ledger (issue #261).
+ *
+ * The issue body IS the ledger: the renderer embeds the full ledger
+ * as a hidden HTML-comment JSON block beside the human-readable list,
+ * and every filing merges the fresh Stryker report into the prior
+ * body's ledger. Removal is status-aware, never absence-blind: an
+ * entry leaves only via a verified kill (the run covered it and it
+ * died) or an adjudication record in the equivalent-mutant registry
+ * (issue #241 — recorded entries stay in the block, filtered only
+ * from the rendered list, so the filter is presentation only). An
+ * entry absent from the report was never generated (out of the run's
+ * scope) and stays, so a windowed nightly cannot wipe out-of-window
+ * entries. Full-scope dispatch runs pass absenceKills: covering all
+ * of src/, absence anywhere means death — that is the reconciliation
+ * / ledger-rewrite role.
+ *
+ * Entries are keyed by the refactor-resilient span identity (issue
+ * #241): sha(mutated span text, mutator, replacement,
+ * repo-relative path), never file:line. Pre-registry blocks
+ * (schema 1) parse to legacy entries without ids; a generated
+ * mutant replaces its legacy file:line twin
+ * on the spot, so in-window entries migrate without duplicates, and
+ * the first full run rewrites the whole ledger under span keys.
+ */
 
 import { mutantIdentity, type SourceReader } from "./mutation-identity.ts";
 import {

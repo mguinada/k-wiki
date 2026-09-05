@@ -1,3 +1,10 @@
+/**
+ * data:init CLI shell (RC1 split): argument parsing, help, and the
+ * sync.json config read live here — cli→sync and cli→data are both
+ * legal edges — while the seeding itself is the data/ library's
+ * `seedDataRepo`, which takes the data root explicitly.
+ */
+
 import { join } from "node:path";
 import { seedDataRepo } from "../data/init-data-repo.ts";
 import { loadSyncConfig } from "../sync/config.ts";
@@ -5,13 +12,6 @@ import { cliFail, errorMessage } from "./colors.ts";
 import { refuseDirectExecution } from "./is-main.ts";
 import { repoRoot } from "./shared.ts";
 import { parseArgs } from "./shell.ts";
-
-/**
- * data:init CLI shell (RC1 split): argument parsing, help, and the
- * sync.json config read live here — cli→sync and cli→data are both
- * legal edges — while the seeding itself is the data/ library's
- * `seedDataRepo`, which takes the data root explicitly.
- */
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
 const HELP = `Usage: init-data-repo [-h | --help] [--second-brain] [--meta] [<config>]

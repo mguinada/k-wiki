@@ -1,3 +1,14 @@
+/**
+ * board-triage: the scheduled triage CLI (issue #209). Composes the
+ * split halves (issue #259) — the pure decision rules
+ * (triage-rules.ts), the strict response decoding (triage-decode.ts),
+ * and the gh/GraphQL infrastructure (triage-board.ts) — with the
+ * rendering (stderr colors, the GitHub Actions job summary) and the
+ * argv boundary. Run through dev/board-triage.ts; the mechanical
+ * half of the triage-issues skill, applied to a board's Status field
+ * only.
+ */
+
 import { appendFile } from "node:fs/promises";
 import { cliFail, errorMessage, terminalColors } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
@@ -11,17 +22,6 @@ import {
   type TriageOptions,
 } from "./triage-board.ts";
 import type { TriageReport } from "./triage-rules.ts";
-
-/**
- * board-triage: the scheduled triage CLI (issue #209). Composes the
- * split halves (issue #259) — the pure decision rules
- * (triage-rules.ts), the strict response decoding (triage-decode.ts),
- * and the gh/GraphQL infrastructure (triage-board.ts) — with the
- * rendering (stderr colors, the GitHub Actions job summary) and the
- * argv boundary. Run through dev/board-triage.ts; the mechanical
- * half of the triage-issues skill, applied to a board's Status field
- * only.
- */
 
 /** The report as a GitHub Actions job-summary block. */
 export function stepSummaryMarkdown(report: TriageReport): string {

@@ -1,11 +1,11 @@
-import { rename, writeFile } from "node:fs/promises";
-import { isPlainObject, RESERVED_NAMES } from "../cli/shared.ts";
-
 /**
  * Sync state (guide §8, §25 Scenario A): `raw/manifest.json` records, per
  * vault namespace, the SHA-256 hash and last sync time of every projected
  * note. Configuration lives in `sync.json`; this file is state only.
  */
+
+import { rename, writeFile } from "node:fs/promises";
+import { isPlainObject, RESERVED_NAMES } from "../cli/shared.ts";
 
 export interface ManifestEntry {
   readonly hash: string;

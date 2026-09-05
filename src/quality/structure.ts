@@ -1,12 +1,3 @@
-import { isPlainObject } from "../cli/shared.ts";
-import {
-  counterKeys,
-  METRIC_LABELS,
-  type OffenderSite,
-  type StructureMetrics,
-  type StructureOffenders,
-} from "./refactor-metrics.ts";
-
 /**
  * The structure budget gate: the durable successor of the campaign's
  * baseline freeze. `.structureguard.json` holds one budget per
@@ -18,6 +9,15 @@ import {
  * demands a written justification in the PR body (the
  * `.complexityguard.json` precedent). No inline suppressions.
  */
+
+import { isPlainObject } from "../cli/shared.ts";
+import {
+  counterKeys,
+  METRIC_LABELS,
+  type OffenderSite,
+  type StructureMetrics,
+  type StructureOffenders,
+} from "./refactor-metrics.ts";
 
 /** The parsed `.structureguard.json` body. */
 export interface StructureBudget {

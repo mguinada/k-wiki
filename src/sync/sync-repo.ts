@@ -1,3 +1,17 @@
+/**
+ * sync-repo: the repo-as-source sync adapter (issue #74). Projects the
+ * allowlisted files of a committed source-repository checkout verbatim
+ * into `raw/notes/<name>/` — code is truth, so no wrapping and no
+ * transformation — and grounds the projection in the source repo's HEAD
+ * commit: the manifest records the SHA and the source root beside the
+ * per-file hashes. Selection is an allowlist declared in the config:
+ * anything not listed is excluded by construction (unlisted subtrees
+ * are never even walked), so a stray data-repo checkout inside the
+ * source cannot leak in and the projection can never ingest itself.
+ * Everything downstream (health, ingest, guardrails) is reused
+ * unchanged — topology is decided at the sync layer (guide §2, §25).
+ */
+
 import { mkdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -43,20 +57,6 @@ import {
   type SyncReport,
   toAbsolute,
 } from "./projection.ts";
-
-/**
- * sync-repo: the repo-as-source sync adapter (issue #74). Projects the
- * allowlisted files of a committed source-repository checkout verbatim
- * into `raw/notes/<name>/` — code is truth, so no wrapping and no
- * transformation — and grounds the projection in the source repo's HEAD
- * commit: the manifest records the SHA and the source root beside the
- * per-file hashes. Selection is an allowlist declared in the config:
- * anything not listed is excluded by construction (unlisted subtrees
- * are never even walked), so a stray data-repo checkout inside the
- * source cannot leak in and the projection can never ingest itself.
- * Everything downstream (health, ingest, guardrails) is reused
- * unchanged — topology is decided at the sync layer (guide §2, §25).
- */
 
 /** The literal leading directory segments of a pattern, before the
  *  first wildcard segment; the walk never leaves these subtrees. */

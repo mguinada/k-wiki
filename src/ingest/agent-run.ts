@@ -1,7 +1,3 @@
-import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
-import { pluralized } from "../cli/shared.ts";
-
 /**
  * The agent run primitives: AgentRunner, spawnAgent (non-interactive
  * child run with timeout and output cap), and readPrompt. Shared by
@@ -9,6 +5,11 @@ import { pluralized } from "../cli/shared.ts";
  * wiki-ingest.ts, issue #129); the stderr progress sink lives in
  * cli/progress.ts.
  */
+
+import { spawn } from "node:child_process";
+import { readFile } from "node:fs/promises";
+import { pluralized } from "../cli/shared.ts";
+
 /** How the agent is invoked; injectable for tests. */
 export type AgentRunner = (
   command: string,

@@ -1,3 +1,15 @@
+/**
+ * Citation-fidelity core (issue #125): the deterministic tier of the
+ * fidelity stack. Every machine-checkable token a `type: source` page
+ * quotes — tilde paths, dotted config keys, CLI flags, `npm run`
+ * commands — must appear in the page's `origin` file, and every
+ * non-structural page's `title` must kebab-case to its file name. The
+ * scripts/check-fidelity CLI renders it; the wiki-sync verification
+ * stage (issue #138) runs it every cycle. Relational misquotes (right
+ * tokens, wrong containment) stay with the lint prompt (tier 2) and
+ * §19 review.
+ */
+
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import {
@@ -10,18 +22,6 @@ import {
 } from "./pages.ts";
 import { assertRawDir } from "./provenance.ts";
 import { stem } from "./wiki-links.ts";
-
-/**
- * Citation-fidelity core (issue #125): the deterministic tier of the
- * fidelity stack. Every machine-checkable token a `type: source` page
- * quotes — tilde paths, dotted config keys, CLI flags, `npm run`
- * commands — must appear in the page's `origin` file, and every
- * non-structural page's `title` must kebab-case to its file name. The
- * scripts/check-fidelity CLI renders it; the wiki-sync verification
- * stage (issue #138) runs it every cycle. Relational misquotes (right
- * tokens, wrong containment) stay with the lint prompt (tier 2) and
- * §19 review.
- */
 
 export interface FidelityReport {
   /** One `wiki/<page> -> …` line per fidelity problem. */

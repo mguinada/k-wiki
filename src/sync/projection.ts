@@ -1,3 +1,16 @@
+/**
+ * projection: the shared sync library (issue #250) — the pieces every
+ * source adapter funnels through, kept source-neutral so no adapter
+ * doubles as another's library. Three groups live here: the projection
+ * loop of guide §8 (copy changed files, carry unchanged entries
+ * forward, remove disappeared projections, prune namespaces), the
+ * include pattern language compiled by both the repo adapter's
+ * allowlist and the publish stage (guide §25, §26), and the
+ * report/progress presentation the sync CLIs render. The adapters
+ * themselves — sync-vault for vault sources, sync-repo for repo
+ * sources — stay in their own modules and drive these pieces.
+ */
+
 import type { Stats } from "node:fs";
 import { mkdir, readdir, rm, rmdir, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -11,19 +24,6 @@ import {
 import { pluralized, statIfExists } from "../cli/shared.ts";
 import { loadSyncConfig, type SyncConfig } from "./config.ts";
 import type { Manifest, ManifestEntry, VaultNotes } from "./manifest.ts";
-
-/**
- * projection: the shared sync library (issue #250) — the pieces every
- * source adapter funnels through, kept source-neutral so no adapter
- * doubles as another's library. Three groups live here: the projection
- * loop of guide §8 (copy changed files, carry unchanged entries
- * forward, remove disappeared projections, prune namespaces), the
- * include pattern language compiled by both the repo adapter's
- * allowlist and the publish stage (guide §25, §26), and the
- * report/progress presentation the sync CLIs render. The adapters
- * themselves — sync-vault for vault sources, sync-repo for repo
- * sources — stay in their own modules and drive these pieces.
- */
 
 /** One selected source file: its path relative to the source root,
  *  its bytes, and its content hash. */

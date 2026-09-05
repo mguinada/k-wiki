@@ -1,5 +1,3 @@
-import { dirname, join } from "node:path";
-
 /**
  * The run context (issue #257): the ambient trio — environment,
  * clock, progress sink — plus the three canonical paths every wiki
@@ -10,6 +8,9 @@ import { dirname, join } from "node:path";
  * re-derives the raw dir's parent or re-defaults the trio; leaf helpers
  * keep their explicit `(dataRoot, env)` params.
  */
+
+import { dirname, join } from "node:path";
+
 export interface RunContext {
   /** The data repo root — the raw dir's parent: the agents' cwd and
    *  the commit, guardrail, and publish target. */

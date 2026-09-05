@@ -1,7 +1,3 @@
-import { readFile } from "node:fs/promises";
-import { basename, join, relative, resolve } from "node:path";
-import { assertDirectory, listFiles } from "../cli/shared.ts";
-import { wikilinkBody, wikilinkBodyTarget } from "./wiki-links.ts";
 /**
  * Deterministic wiki-page reading, shared by the expunge seed
  * (wiki-ingest) and the dead-provenance check (scripts/): which pages
@@ -12,6 +8,11 @@ import { wikilinkBody, wikilinkBodyTarget } from "./wiki-links.ts";
  * cannot be read simply contributes nothing to the deterministic
  * layer.
  */
+
+import { readFile } from "node:fs/promises";
+import { basename, join, relative, resolve } from "node:path";
+import { assertDirectory, listFiles } from "../cli/shared.ts";
+import { wikilinkBody, wikilinkBodyTarget } from "./wiki-links.ts";
 
 /** The frontmatter fields the pipeline reads from a wiki page. */
 export interface PageFields {

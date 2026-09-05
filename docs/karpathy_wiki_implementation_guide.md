@@ -45,7 +45,7 @@ This repository hosts two distinct kinds of agent work. They must never share on
 
 ```text
 k-wiki/
-├── AGENTS.md          ← router + shared invariants + dev conventions
+├── AGENTS.md          ← router + shared invariants + architecture ledger + dev conventions
 └── wiki/
     └── AGENTS.md      ← wiki operating contract
 ```
@@ -66,13 +66,7 @@ derived.
 
 ### Write authority over instruction files
 
-Agents sometimes write to `AGENTS.md` files themselves — co-evolving conventions is part of the pattern — so each file declares who may write it:
-
-| File | Written by | Rule |
-|---|---|---|
-| `AGENTS.md` (root) | Dev agent, conventions block only | Router and shared invariants are human-only |
-| `wiki/AGENTS.md` | Nobody during wiki operations | Schema changes are deliberate: proposed in a development/review session, landed as a human-approved commit |
-| `wiki/AGENTS.meta.md` | Nobody during wiki operations | Canonical meta contract; same deliberate, human-approved change path as `wiki/AGENTS.md` |
+Agents sometimes write to `AGENTS.md` files themselves — co-evolving conventions is part of the pattern — so each file declares who may write it. The operative table is the Write Authority table in the root `AGENTS.md`; this guide does not reproduce it.
 
 Two principles govern this:
 

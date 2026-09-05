@@ -15,6 +15,7 @@ import {
   parseStructureBudget,
   renderBreaches,
 } from "../../src/quality/structure.ts";
+import { insideStrykerSandbox } from "./src-tree.ts";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(scriptDir, "..", "..");
@@ -230,17 +231,6 @@ describe("renderBreaches (guard tree)", () => {
     expect(text).not.toContain("src/mod10.ts");
   });
 });
-
-/**
- * True inside Stryker's sandbox, where the instrumented src/ tree
- * carries injected mutant switches that inflate line counts — the
- * live gate must not evaluate that tree (issue #276).
- */
-function insideStrykerSandbox(): boolean {
-  return (
-    import.meta.url.includes(".stryker-tmp") || "__stryker__" in globalThis
-  );
-}
 
 describe("parseStructureBudget (exact problems, issue #240 kill batch)", () => {
   it("joins multiple unknown counter names with a comma and space", () => {

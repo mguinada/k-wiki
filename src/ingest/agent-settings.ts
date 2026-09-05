@@ -1,10 +1,3 @@
-import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { pathExists, pluralized } from "../cli/shared.ts";
-import { expandHome } from "../sync/config.ts";
-import { unquote } from "../wiki/pages.ts";
-
 /**
  * The agent settings (settings.yml): the AgentSettings type, the
  * YAML-subset parser (loadAgentSettings/parseSettings), and the
@@ -12,6 +5,14 @@ import { unquote } from "../wiki/pages.ts";
  * formatAgentInvocation). Shared by wiki-ingest, wiki-sync, and
  * wiki-query (extracted from wiki-ingest.ts, issue #129).
  */
+
+import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { pathExists, pluralized } from "../cli/shared.ts";
+import { expandHome } from "../sync/config.ts";
+import { unquote } from "../wiki/pages.ts";
+
 export interface AgentSettings {
   /** Agent CLI command; run non-interactively in the data repo root. */
   readonly command: string;

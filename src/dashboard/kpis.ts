@@ -1,11 +1,11 @@
-import { buildPageIndex, crossWikiTarget } from "../wiki/wiki-links.ts";
-
 /**
  * Pure KPI computation for the static dashboard (issue #73): every
  * function takes fixture-friendly data and returns plain numbers —
  * no I/O, fully unit-tested. Collection (reading the data repo) lives
  * in collect.ts; the HTML template lives in render.ts.
  */
+
+import { buildPageIndex, crossWikiTarget } from "../wiki/wiki-links.ts";
 
 /** One wiki page as the dashboard sees it. */
 export interface PageSnapshot {

@@ -30,6 +30,52 @@ into one task per context.
 - `raw/` and `wiki/` contents are versioned in the data repo
   (`sync.json` `dataRoot`); this repository versions only their skeleton.
 
+## Architecture alignment
+
+The loadable baseline of the #242 domain boundaries: what the codebase
+holds invariant, and what each `src/` domain owns and must never do.
+Read it before deciding where a change belongs; keep it current when
+ownership moves (context blast radius, under Development Conventions).
+Counter values live in `.structureguard.json` and the guard tests —
+this prose names guards, it never quotes numbers. A row without a
+mechanical guard is honestly marked *review-enforced only*; that set
+is the backlog of future guard candidates.
+
+### Cross-cutting invariants
+
+| Invariant | Why | Enforcing guard |
+|---|---|---|
+| One CLI shell — no hand-rolled argv parsing | every hand-rolled parser drifted from the rest until B1 collapsed them | structure gate (`parseArgsCopies` counter) |
+| `data/` is never imported by `sync/` | git porcelain must not leak into the projection layer | structure gate (`dataToSyncEdges` counter) |
+| One directory walker | a second walker re-implements pruning and noise rules until they disagree | structure gate (`directoryWalkers` counter) |
+| Mirrored unit-test tree | a module moved into `src/` must not silently leave its tests behind | `tests/quality/mirrored-tests.test.ts` |
+| No re-export shims | one canonical import path per symbol | `tests/quality/no-reexport-shims.test.ts` |
+| Launcher class razor — runtime domains launch via `bin/`, dev domains via `dev/` | the wiki runtime and the repo's build tooling are different lifecycles | `tests/bin/bin-structure.test.ts` |
+| Cyclomatic complexity within the gate limit | complexity is a tax every later change pays | complexity gate (`tests/quality/complexity.test.ts`) |
+| Structure budget holds — file sizes, cross-domain edges, duplication counters | the boundaries erode one unreviewed diff at a time | structure gate (`tests/quality/structure.test.ts`) |
+| The ledger stays true — every domain has a row, every `src/` file a purpose header | the baseline rots the moment it drifts from the tree it describes | `tests/quality/architecture-ledger.test.ts` |
+| Instruction files change only as reviewed commits | the contract an agent executes must never move under it | review-enforced only (Write Authority below) |
+
+### Bounded contexts
+
+One row per `src/` domain. The ledger guard fails when a domain
+exists without a row, or a row names no domain.
+
+| Domain | Owns | Never | Guard |
+|---|---|---|---|
+| `cli/` | the shared CLI shell (argv parsing, flags), colors, is-main, run-context, the k-wiki binding surface | domain decisions — renders, never decides | structure gate (`parseArgsCopies`); the razor itself is review-enforced |
+| `dashboard/` | static KPI generation over the data repo's artifacts | re-implementing page walking the shared walkers own | structure gate (`directoryWalkers`) |
+| `data/` | git porcelain for data repos | being imported by `sync/` | structure gate (`dataToSyncEdges`) |
+| `health/` | `raw/` coherence and freshness verdicts | mutating the projection | review-enforced only |
+| `ingest/` | agent runs, settings, manifest diff/snapshot, prompts, guardrails, digest | wiki writes outside the guardrail path; nondeterminism outside prompts | e2e wiki-ingest suite (guardrail-revert runs); review-enforced otherwise |
+| `query/` | the wiki-query shell, two-stage filing (`--file-last`) | the agent-door surface (`cli/` owns `k-wiki`) | review-enforced only |
+| `schedule/` | scheduled-run, the run lock, launchd setup | re-implementing sync mechanics — import, don't copy | e2e scheduled-run suite (lock runs); review-enforced otherwise |
+| `sync/` | vault→raw projection, sync configs, repo sources, cycle orchestration, instance resolution | LLM/agent concerns anywhere in the deterministic layer | review-enforced only |
+| `wiki/` | wikilink/crosslink parsing, page walking, wiki-domain reports | pipeline orchestration | review-enforced only |
+| `board/` (dev) | board-triage decisions and the gh/GraphQL infrastructure | runtime surface — `dev/` launchers only | `tests/bin/bin-structure.test.ts` |
+| `fixtures/` (dev) | the synthetic fixture vault | runtime reach — `dev/` launchers only | `tests/bin/bin-structure.test.ts` |
+| `quality/` (dev) | the refactor-metrics instrument, mutation tooling, the gates | runtime reach — `dev/` launchers only | `tests/bin/bin-structure.test.ts` |
+
 ## Write Authority
 
 Agents sometimes write to `AGENTS.md` files themselves, so each file declares
@@ -38,6 +84,7 @@ who may write it:
 | File | Written by | Rule |
 |---|---|---|
 | `AGENTS.md` (root) | Dev agent, conventions block only | Router and shared invariants are human-only |
+| `AGENTS.md` (Architecture alignment) | Nobody during feature work | Ledger rows are invariants: proposed in a development/review session, landed as a human-approved commit |
 | `wiki/AGENTS.md` | Nobody during wiki operations | Schema changes are deliberate: proposed in a development/review session, landed as a human-approved commit |
 | `wiki/AGENTS.meta.md` | Nobody during wiki operations | Canonical meta contract; same deliberate, human-approved change path as `wiki/AGENTS.md` |
 
@@ -77,8 +124,9 @@ until all three pass. Run them before every handoff.
   script targets it alone. Lowering a budget is a one-line reviewed
   diff; raising one, or adding a per-counter `exclude` entry, demands
   a written justification in the PR body — no inline suppressions.
-  The G2 mirrored-tree (`tests/quality/mirrored-tests.test.ts`) and
-  G3 no-re-export-shim (`tests/quality/no-reexport-shims.test.ts`)
+  The G2 mirrored-tree (`tests/quality/mirrored-tests.test.ts`), G3
+  no-re-export-shim (`tests/quality/no-reexport-shims.test.ts`), and
+  architecture-ledger (`tests/quality/architecture-ledger.test.ts`)
   guards also run as part of `npm test`.
 - `npm run test:coverage` — unit tests with coverage; the run fails
   below the 90% thresholds in `vitest.config.ts`.
@@ -183,6 +231,11 @@ infrastructure, free to use for any unit or e2e work; the snapshot at
 - When code moves or changes, its comments move with it and stay true:
   check every comment in the blast radius and rewrite stale ones in the
   same change.
+
+### Context blast radius
+
+- When a module's ownership changes, its Architecture alignment row
+  changes in the same PR — the ledger guard makes forgetting impossible.
 
 ### wiki-sync stage table
 

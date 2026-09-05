@@ -1,5 +1,3 @@
-import { pluralized } from "../cli/shared.ts";
-
 /**
  * The triage decision rules (issue #209, extracted in issue #259):
  * the contract's mechanical verdict for one board item — closed
@@ -9,6 +7,8 @@ import { pluralized } from "../cli/shared.ts";
  * summary layer over those verdicts. Pure over board facts: no
  * GraphQL, no process, no printing (finding O-5).
  */
+
+import { pluralized } from "../cli/shared.ts";
 
 /** One issue item on the board, with the facts the contract needs. */
 export interface BoardItem {

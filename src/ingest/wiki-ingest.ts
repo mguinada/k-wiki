@@ -1,3 +1,20 @@
+/**
+ * wiki-ingest: the headless wiki agent run (guide §18, issue #11). It
+ * diffs `raw/manifest.json` against the snapshot from the previous
+ * successful run, picks `prompts/ingest.md` (first run),
+ * `prompts/incremental.md` (changed sources appended), or
+ * `prompts/expunge.md` (a synced note was deleted — issue #65: the
+ * removed note's last content from git history and the deterministic
+ * direct set are appended, and a mixed run also gets incremental.md
+ * appended so its non-removed sources are ingested), invokes the agent
+ * CLI non-interactively in
+ * the data repo root, runs the post-run guardrails (issue #12:
+ * immutability, frontmatter, wikilinks — auto-reverting to the
+ * pre-run commit on failure, expunge runs included), and writes a
+ * digest the human can review in under a minute. Scheduling the
+ * cycle unattended is `setup-schedule` (issue #14).
+ */
+
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { errorMessage } from "../cli/colors.ts";
@@ -51,23 +68,6 @@ import {
   warnTrackedIgnored,
   writeSnapshotIfNeeded,
 } from "./snapshot.ts";
-
-/**
- * wiki-ingest: the headless wiki agent run (guide §18, issue #11). It
- * diffs `raw/manifest.json` against the snapshot from the previous
- * successful run, picks `prompts/ingest.md` (first run),
- * `prompts/incremental.md` (changed sources appended), or
- * `prompts/expunge.md` (a synced note was deleted — issue #65: the
- * removed note's last content from git history and the deterministic
- * direct set are appended, and a mixed run also gets incremental.md
- * appended so its non-removed sources are ingested), invokes the agent
- * CLI non-interactively in
- * the data repo root, runs the post-run guardrails (issue #12:
- * immutability, frontmatter, wikilinks — auto-reverting to the
- * pre-run commit on failure, expunge runs included), and writes a
- * digest the human can review in under a minute. Scheduling the
- * cycle unattended is `setup-schedule` (issue #14).
- */
 
 export interface IngestOptions {
   /** Path to the agent settings file (settings.yml). */

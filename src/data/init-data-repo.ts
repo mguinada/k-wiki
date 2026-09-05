@@ -1,3 +1,14 @@
+/**
+ * data:init — seed the data repo at a given `dataRoot` (issue #29).
+ * The code repo versions only the directory skeleton; the contents
+ * of `raw/` and `wiki/` live in, and are versioned by, the data repo.
+ * Seeding copies the skeleton (`git ls-files`, so the copy cannot
+ * drift from what the code repo versions), writes a README, and makes
+ * the initial commit. Idempotent: a seeded data root is left untouched.
+ * The sync.json read lives in the cli shell (RC1 split): this module
+ * is a pure library with no config access.
+ */
+
 import { existsSync } from "node:fs";
 import {
   copyFile,
@@ -9,17 +20,6 @@ import {
 import { dirname, join } from "node:path";
 import { repoRoot } from "../cli/shared.ts";
 import { runGit } from "./git.ts";
-
-/**
- * data:init — seed the data repo at a given `dataRoot` (issue #29).
- * The code repo versions only the directory skeleton; the contents
- * of `raw/` and `wiki/` live in, and are versioned by, the data repo.
- * Seeding copies the skeleton (`git ls-files`, so the copy cannot
- * drift from what the code repo versions), writes a README, and makes
- * the initial commit. Idempotent: a seeded data root is left untouched.
- * The sync.json read lives in the cli shell (RC1 split): this module
- * is a pure library with no config access.
- */
 
 export interface SeedOptions {
   /** Data repo root to seed. */

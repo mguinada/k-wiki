@@ -1,3 +1,15 @@
+/**
+ * Renders the rolling survivor-issue body from a Stryker JSON report
+ * (issue #208): the merged ledger's actionable-mutant list in the
+ * exact format `npm run mutation:survivors` prints, plus links to
+ * the source run and its HTML report artifact, plus the hidden
+ * ledger block the next filing merges on top of (issue #261 — the
+ * body is a merge-body ledger, never a replace-body snapshot), with
+ * registry-recorded adjudications (issue #241) filtered from the
+ * untriaged list and counted separately: recording a mutant moves it
+ * between counts, and the total never shrinks silently.
+ */
+
 import { readFileSync } from "node:fs";
 import { errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
@@ -19,16 +31,6 @@ import {
   splitByRegistry,
 } from "./mutation-registry.ts";
 import { parseReport } from "./mutation-survivors.ts";
-
-// Renders the rolling survivor-issue body from a Stryker JSON report
-// (issue #208): the merged ledger's actionable-mutant list in the
-// exact format `npm run mutation:survivors` prints, plus links to
-// the source run and its HTML report artifact, plus the hidden
-// ledger block the next filing merges on top of (issue #261 — the
-// body is a merge-body ledger, never a replace-body snapshot), with
-// registry-recorded adjudications (issue #241) filtered from the
-// untriaged list and counted separately: recording a mutant moves it
-// between counts, and the total never shrinks silently.
 
 /** Links into the CI run the report came from. */
 export interface ReportMeta {

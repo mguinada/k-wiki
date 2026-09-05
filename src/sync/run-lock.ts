@@ -1,6 +1,3 @@
-import { link, open, readFile, rename, rm } from "node:fs/promises";
-import { join } from "node:path";
-
 /**
  * The run lock (issues #14, #313): one atomic `O_EXCL` lockfile per
  * data repo — `<dataRoot>/.scheduled-run.lock` — held across one
@@ -19,6 +16,9 @@ import { join } from "node:path";
  * the wrapper's env (`buildScheduledEnv`) carries
  * `KWIKI_RUN_LOCK_HELD=1` and the child skips the tenure.
  */
+
+import { link, open, readFile, rename, rm } from "node:fs/promises";
+import { join } from "node:path";
 
 /** A lock older than this is stale and taken over (a full cycle —
  *  two agent stages at a 30-min timeout each — stays well inside it). */

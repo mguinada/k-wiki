@@ -1,3 +1,14 @@
+/**
+ * The board-triage infrastructure (issue #209, extracted in issue
+ * #259): the `gh api graphql` client, the board pagination, the
+ * Status mutations with their verify-and-reconcile protocol, and the
+ * one triage run that composes them. The guardrails hold here by
+ * construction — project, field, and option IDs are resolved fresh
+ * from the board every run; every applied move is verified by
+ * re-reading the board, and a mismatch is reconciled by one retry
+ * (finding O-5).
+ */
+
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { errorMessage } from "../cli/colors.ts";
@@ -24,17 +35,6 @@ import {
   triageSummary,
   type UnverifiedMove,
 } from "./triage-rules.ts";
-
-/**
- * The board-triage infrastructure (issue #209, extracted in issue
- * #259): the `gh api graphql` client, the board pagination, the
- * Status mutations with their verify-and-reconcile protocol, and the
- * one triage run that composes them. The guardrails hold here by
- * construction — project, field, and option IDs are resolved fresh
- * from the board every run; every applied move is verified by
- * re-reading the board, and a mismatch is reconciled by one retry
- * (finding O-5).
- */
 
 /** A GraphQL call over `gh api graphql`; injectable for tests. */
 export type GraphQLFn = (

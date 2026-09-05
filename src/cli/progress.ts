@@ -1,5 +1,3 @@
-import { canAnimate, terminalColors } from "./colors.ts";
-
 /**
  * Terminal progress presentation shared by the long-running CLIs:
  * plain events scroll up, one live status line (spinner frame +
@@ -7,6 +5,8 @@ import { canAnimate, terminalColors } from "./colors.ts";
  * injected sink so tests never need a TTY. Braille frames only;
  * `stderrSink` gates animation on `stderr.isTTY && !NO_COLOR`.
  */
+
+import { canAnimate, terminalColors } from "./colors.ts";
 
 /** Braille spinner frames, in animation order. */
 const SPINNER_FRAMES = [

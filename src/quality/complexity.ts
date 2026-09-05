@@ -1,17 +1,19 @@
+/**
+ * Cyclomatic complexity gate (issue #178): pure library, no main() and
+ * no bin/ launcher by design — the gate runs as the vitest test
+ * tests/quality/complexity.test.ts, so the failing assertion message
+ * doubles as the agent-facing report. All repo-owned semantics live
+ * here (diff scoping via mutation-scope, threshold, rendering); the
+ * engine (complexity-guard) supplies per-function metrics only, so a
+ * broken or abandoned engine can be swapped without changing the npm
+ * scripts, the test, or CI shape.
+ */
+
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { terminalColors as colors } from "../cli/colors.ts";
 import { repoRoot } from "../cli/shared.ts";
 import { type FileDiff, mergeRanges } from "./mutation-scope.ts";
-
-// Cyclomatic complexity gate (issue #178): pure library, no main() and
-// no bin/ launcher by design — the gate runs as the vitest test
-// tests/quality/complexity.test.ts, so the failing assertion message
-// doubles as the agent-facing report. All repo-owned semantics live
-// here (diff scoping via mutation-scope, threshold, rendering); the
-// engine (complexity-guard) supplies per-function metrics only, so a
-// broken or abandoned engine can be swapped without changing the npm
-// scripts, the test, or CI shape.
 
 /** Fail when a gated function's cyclomatic complexity exceeds this. */
 export const CYCLOMATIC_LIMIT = 10;

@@ -1,18 +1,20 @@
+/**
+ * Report stitching for chunked full mutation runs (issue #236): each
+ * CI chunk job mutates a disjoint slice of src/ (src/quality/
+ * mutation-chunk.ts) and reports its own mutation.json; this tool
+ * merges the chunk reports into the one mutation.json the
+ * mutation-report artifact and the mutants-report workflow consume.
+ * A missing chunk is never silently tolerated — CI passes --expect,
+ * so a cancelled chunk fails the merge instead of filing a partial
+ * full-run picture into the rolling survivor issue (#208).
+ */
+
 import { readFileSync, writeFileSync } from "node:fs";
 import { errorMessage } from "../cli/colors.ts";
 import { intFlagError } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { parseArgs } from "../cli/shell.ts";
 import { parseReport } from "./mutation-survivors.ts";
-
-// Report stitching for chunked full mutation runs (issue #236): each
-// CI chunk job mutates a disjoint slice of src/ (src/quality/
-// mutation-chunk.ts) and reports its own mutation.json; this tool
-// merges the chunk reports into the one mutation.json the
-// mutation-report artifact and the mutants-report workflow consume.
-// A missing chunk is never silently tolerated — CI passes --expect,
-// so a cancelled chunk fails the merge instead of filing a partial
-// full-run picture into the rolling survivor issue (#208).
 
 type FileEntry = { mutants: unknown[] };
 

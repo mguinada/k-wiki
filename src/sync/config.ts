@@ -1,14 +1,14 @@
-import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
-import { isPlainObject, RESERVED_NAMES } from "../cli/shared.ts";
-
 /**
  * Loader for `sync.json`, the human-owned sync configuration at the
  * k-wiki root (guide §26): what to sync and where to publish. Sync state
  * lives in `raw/manifest.json` instead — this module reads configuration
  * only.
  */
+
+import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { isPlainObject, RESERVED_NAMES } from "../cli/shared.ts";
 
 /** An exclusion expression; only `<key>:false` is supported. */
 export interface ExcludeExpression {

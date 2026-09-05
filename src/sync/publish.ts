@@ -1,9 +1,3 @@
-import { mkdir, readFile, rm } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
-import { listFiles } from "../cli/shared.ts";
-import { copyFileTolerant } from "./eagain.ts";
-import { compileIncludePattern, pruneEmptyDirs } from "./projection.ts";
-
 /**
  * The publish stage (guide §26, issue #15): copy the data repo's
  * include-matched files into the mirror vault — an
@@ -16,6 +10,12 @@ import { compileIncludePattern, pruneEmptyDirs } from "./projection.ts";
  * over an intact mirror copies and removes nothing — and heuristic-
  * free: everything it does is a byte comparison plus a copy.
  */
+
+import { mkdir, readFile, rm } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import { listFiles } from "../cli/shared.ts";
+import { copyFileTolerant } from "./eagain.ts";
+import { compileIncludePattern, pruneEmptyDirs } from "./projection.ts";
 
 /** What one publish run did to the mirror. */
 export interface PublishResult {

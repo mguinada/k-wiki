@@ -1,3 +1,9 @@
+/**
+ * Wikilink primitives shared by `scripts/check-links.ts` (the lint a
+ * human runs) and the ingest guardrails (issue #12, check 3): extract
+ * every `[[wikilink]]` from markdown and map page names to files.
+ */
+
 import { basename } from "node:path";
 
 /** The page-name stem of a wiki-relative path: the file name without
@@ -5,12 +11,6 @@ import { basename } from "node:path";
 export function stem(file: string): string {
   return basename(file, ".md");
 }
-
-/**
- * Wikilink primitives shared by `scripts/check-links.ts` (the lint a
- * human runs) and the ingest guardrails (issue #12, check 3): extract
- * every `[[wikilink]]` from markdown and map page names to files.
- */
 
 export interface Wikilink {
   /** The page name the link points at: before any alias and anchor. */

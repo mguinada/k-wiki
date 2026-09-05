@@ -1,5 +1,3 @@
-import { pathToFileURL } from "node:url";
-
 /**
  * Direct-execution refusal for library modules (issue #135): `src/`
  * and `scripts/` modules never invoke `main()` at module scope — the
@@ -15,6 +13,9 @@ import { pathToFileURL } from "node:url";
  * prints the refusal naming its launcher and exits 1: the wrong path
  * stays loudly unusable, never silently live.
  */
+
+import { pathToFileURL } from "node:url";
+
 export function refuseDirectExecution(
   moduleUrl: string,
   launcher: string,

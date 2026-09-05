@@ -1,14 +1,3 @@
-import { readFile } from "node:fs/promises";
-import { join, relative, resolve } from "node:path";
-import { readTextIfExists } from "../cli/shared.ts";
-import { parseManifest } from "../sync/manifest.ts";
-import { listWikiPages, pageReportPath } from "./pages.ts";
-import {
-  buildPageIndex,
-  crossWikiTarget,
-  extractWikilinks,
-} from "./wiki-links.ts";
-
 /**
  * The cross-wiki link audit (issue #81): the library core behind
  * `scripts/check-crosslinks.ts` and the wiki-sync cycle stage
@@ -24,6 +13,17 @@ import {
  *  2. the domain wikis themselves must contain no cross-wiki links —
  *     they are link sinks and never point at second-brain material.
  */
+
+import { readFile } from "node:fs/promises";
+import { join, relative, resolve } from "node:path";
+import { readTextIfExists } from "../cli/shared.ts";
+import { parseManifest } from "../sync/manifest.ts";
+import { listWikiPages, pageReportPath } from "./pages.ts";
+import {
+  buildPageIndex,
+  crossWikiTarget,
+  extractWikilinks,
+} from "./wiki-links.ts";
 
 export interface CrossLinkReport {
   /** One `file:line -> [[link]]` line per broken or forbidden link. */

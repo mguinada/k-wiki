@@ -1,3 +1,21 @@
+/**
+ * Dead-provenance core (issue #65): the deterministic backstop that
+ * catches any purge miss — and any sync/wiki drift of any kind. Every
+ * `sources` wikilink on every wiki page must resolve to an existing
+ * `type: source` page, and every `origin` raw path must exist under
+ * `raw/`. A path-form `sources` entry (issue #126) must be backed by a
+ * raw file AND must not be a path a `type: source` hub covers — a
+ * covered path has a clickable wikilink, and citing the raw path
+ * instead is dead-provenance drift. An anchored citation
+ * (`[[hub#Chapter]]`, issue #226) must also land on a heading
+ * byte-identical to the anchor — reported with page and line, the
+ * check that stops anchor drift returning. Coverage follows the
+ * shared hub index (src/wiki/source-hubs.ts), the one rule the
+ * migration and the guardrails also apply. The scripts/check-provenance
+ * CLI renders it; the wiki-sync verification stage (issue #138) runs
+ * it every cycle.
+ */
+
 import { readFile, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { assertDirectory } from "../cli/shared.ts";
@@ -19,24 +37,6 @@ import {
   wikilinkFor,
 } from "./source-hubs.ts";
 import { buildPageIndex, stem } from "./wiki-links.ts";
-
-/**
- * Dead-provenance core (issue #65): the deterministic backstop that
- * catches any purge miss — and any sync/wiki drift of any kind. Every
- * `sources` wikilink on every wiki page must resolve to an existing
- * `type: source` page, and every `origin` raw path must exist under
- * `raw/`. A path-form `sources` entry (issue #126) must be backed by a
- * raw file AND must not be a path a `type: source` hub covers — a
- * covered path has a clickable wikilink, and citing the raw path
- * instead is dead-provenance drift. An anchored citation
- * (`[[hub#Chapter]]`, issue #226) must also land on a heading
- * byte-identical to the anchor — reported with page and line, the
- * check that stops anchor drift returning. Coverage follows the
- * shared hub index (src/wiki/source-hubs.ts), the one rule the
- * migration and the guardrails also apply. The scripts/check-provenance
- * CLI renders it; the wiki-sync verification stage (issue #138) runs
- * it every cycle.
- */
 
 export interface ProvenanceReport {
   /** One `wiki/<page> -> …` line per dead-provenance problem. */

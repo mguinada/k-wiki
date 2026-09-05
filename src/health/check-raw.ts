@@ -1,3 +1,11 @@
+/**
+ * raw/ health check: a read-only, vault-free coherence check of the
+ * committed `raw/` projection. It compares `raw/` with itself only —
+ * every file under `raw/notes/<vault>/` must match its `manifest.json`
+ * hash, with no orphan files and no missing entries. Files outside any
+ * vault namespace (such as `notes/.gitkeep`) are ignored.
+ */
+
 import { readFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { terminalColors as colors, errorMessage } from "../cli/colors.ts";
@@ -15,14 +23,6 @@ import { parseArgs } from "../cli/shell.ts";
 import { runGit } from "../data/git.ts";
 import { parseManifest, type VaultNotes } from "../sync/manifest.ts";
 import { listNamespaceDirs } from "../sync/projection.ts";
-
-/**
- * raw/ health check: a read-only, vault-free coherence check of the
- * committed `raw/` projection. It compares `raw/` with itself only —
- * every file under `raw/notes/<vault>/` must match its `manifest.json`
- * hash, with no orphan files and no missing entries. Files outside any
- * vault namespace (such as `notes/.gitkeep`) are ignored.
- */
 
 export interface HealthReport {
   readonly healthy: boolean;

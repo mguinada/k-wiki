@@ -1,15 +1,3 @@
-import { readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import {
-  isWikilinkEntry,
-  listWikiPages,
-  normalizeRawPath,
-  type PageFields,
-  parsePageFields,
-  wikilinkTarget,
-} from "./pages.ts";
-import { stem, wikilinkBody, wikilinkBodyAnchor } from "./wiki-links.ts";
-
 /**
  * The source-hub coverage index (issue #126): which raw paths a
  * `type: source` page covers, so every consumer of the `sources`
@@ -27,6 +15,18 @@ import { stem, wikilinkBody, wikilinkBodyAnchor } from "./wiki-links.ts";
  * fields by page name, the resolution surface for wikilink `sources`
  * entries.
  */
+
+import { readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import {
+  isWikilinkEntry,
+  listWikiPages,
+  normalizeRawPath,
+  type PageFields,
+  parsePageFields,
+  wikilinkTarget,
+} from "./pages.ts";
+import { stem, wikilinkBody, wikilinkBodyAnchor } from "./wiki-links.ts";
 
 export interface SourceHubIndex {
   /** Every wiki page's fields, by page name (file stem). */

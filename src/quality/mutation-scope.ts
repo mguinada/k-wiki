@@ -1,18 +1,20 @@
+/**
+ * Hunk scoping for the advisory mutation run (issue #99, phase 1a).
+ *
+ * Prints the --mutate argument for `stryker run`: one `file:start-end`
+ * entry per changed hunk of the src/*.ts files that differ from
+ * origin/main (uncommitted work included), or whole-file entries for
+ * new/untracked files and unparseable diffs. Prints nothing — and the
+ * caller skips the run — when nothing under src/ changed.
+ *
+ * Why -U0 and new-side line numbers: with zero context lines each hunk
+ * header names exactly the lines the branch touched, and Stryker's
+ * `file:start-end` mutate syntax addresses the new side of the diff.
+ */
+
 import { execFileSync } from "node:child_process";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { parseArgs } from "../cli/shell.ts";
-
-// Hunk scoping for the advisory mutation run (issue #99, phase 1a).
-//
-// Prints the --mutate argument for `stryker run`: one `file:start-end`
-// entry per changed hunk of the src/*.ts files that differ from
-// origin/main (uncommitted work included), or whole-file entries for
-// new/untracked files and unparseable diffs. Prints nothing — and the
-// caller skips the run — when nothing under src/ changed.
-//
-// Why -U0 and new-side line numbers: with zero context lines each hunk
-// header names exactly the lines the branch touched, and Stryker's
-// `file:start-end` mutate syntax addresses the new side of the diff.
 
 export type Range = { start: number; end: number };
 
