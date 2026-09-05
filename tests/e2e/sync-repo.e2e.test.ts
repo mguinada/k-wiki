@@ -196,6 +196,32 @@ describe("sync-repo e2e", () => {
     await expect(readdir(ws.rawDir)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("tolerates untracked scratch the allowlist cannot select", async () => {
+    const ws = await makeWorkspace();
+
+    await put(ws.sourceRoot, "eli5-report.html", "scratch\n");
+    await put(ws.sourceRoot, "managed_context/notes.md", "scratch\n");
+
+    const result = await runCli(SYNC_REPO_SCRIPT, [ws.configPath, ws.rawDir]);
+
+    expect(result.code).toBe(0);
+    expect(await collectFiles(join(ws.rawDir, "notes", "k-wiki"))).toEqual(
+      SELECTED,
+    );
+  });
+
+  it("refuses an untracked but allowlisted file, naming it", async () => {
+    const ws = await makeWorkspace();
+
+    await put(ws.sourceRoot, "docs/x.md", "untracked\n");
+
+    const result = await runCli(SYNC_REPO_SCRIPT, [ws.configPath, ws.rawDir]);
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("untracked-selectable: docs/x.md");
+    await expect(readdir(ws.rawDir)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("fails loudly on a vault config instead of a repo config", async () => {
     const ws = await makeWorkspace();
     const vaultConfig = join(ws.dir, "sync.json");

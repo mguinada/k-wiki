@@ -26,6 +26,7 @@ import {
   statIfExists,
 } from "../cli/shared.ts";
 import { runGit } from "../data/git.ts";
+import { assertNoBlockingChanges } from "./committed-tree.ts";
 import {
   loadSyncConfig,
   type RepoSourceConfig,
@@ -47,36 +48,18 @@ import {
   type DriverOptions,
   formatReport,
   listNamespaceDirs,
+  literalPrefix,
   type ProjectedNote,
   projectNotes,
   pruneNamespaces,
   type RepoSyncReport,
   reportColors,
   resolveDriverConfig,
+  SKIPPED_ROOT_DIRS,
   type SyncProgress,
   type SyncReport,
   toAbsolute,
 } from "./projection.ts";
-
-/** The literal leading directory segments of a pattern, before the
- *  first wildcard segment; the walk never leaves these subtrees. */
-function literalPrefix(pattern: string): string[] {
-  const prefix: string[] = [];
-
-  for (const segment of pattern.split("/")) {
-    if (segment === "**" || segment.includes("*")) {
-      break;
-    }
-
-    prefix.push(segment);
-  }
-
-  return prefix;
-}
-
-/** Directories never walked at the root of a walk, whatever the
- *  allowlist says: `.git` and `node_modules`. */
-const SKIPPED_ROOT_DIRS = new Set([".git", "node_modules"]);
 
 /** Split the patterns into fully-literal exact files and the
  *  directory roots the walk must cover. */
@@ -171,18 +154,17 @@ async function repoHead(root: string, env: NodeJS.ProcessEnv): Promise<string> {
 }
 
 /** SHA grounding requires a committed tree: the recorded commit must
- *  describe the projected content exactly. */
+ *  describe the projected content exactly. Tracked modifications
+ *  always block; untracked entries block only when the include
+ *  allowlist could select them (issue #312). */
 async function assertCommittedTree(
   root: string,
   env: NodeJS.ProcessEnv,
+  include: readonly string[],
 ): Promise<void> {
   const { stdout } = await runGit(root, ["status", "--porcelain"], env);
 
-  if (stdout.trim() !== "") {
-    throw new Error(
-      `source repo ${root} has uncommitted changes; commit before projecting`,
-    );
-  }
+  assertNoBlockingChanges(stdout, root, include);
 }
 
 /** The single repo source of the config (issue #74: one source repo per
@@ -290,7 +272,7 @@ export async function runRepoSync(options: DriverOptions): Promise<SyncReport> {
 
   await assertSourceDirectory("source", source.name, source.root);
 
-  await assertCommittedTree(source.root, env);
+  await assertCommittedTree(source.root, env, source.include);
 
   const commit = await repoHead(source.root, env);
   const manifestPath = join(options.rawDir, "manifest.json");
@@ -370,10 +352,13 @@ uses for the freshness warning.
                 the repo's own raw/.
 
 What it writes: raw/notes/<name>/ files, raw/manifest.json. The source
-repository is only read. Exits 1 with an error when the source tree is
-dirty (commit first — the recorded SHA must describe the projected
-content), when the config holds no repo source or a vault source, or
-when the source root is not a git repository.`;
+repository is only read. Exits 1 with an error when tracked files are
+modified or staged anywhere in the source, or when an untracked file or
+directory could match the include allowlist (commit, ignore, or move
+it — the recorded SHA must describe the projected content; untracked
+scratch no pattern can select does not block), when the config holds
+no repo source or a vault source, or when the source root is not a git
+repository.`;
 
 /** sync-repo entry point: `sync-repo [-h | --help] [<config>] [<raw-dir>]` (defaults: sync-meta.json). */
 export async function main(): Promise<void> {

@@ -1086,9 +1086,9 @@ What it does, stage by stage:
      (deterministic). Repo-sourced configs (source: "repo", e.g.
      sync-meta.json) run the sync-repo core instead: the allowlisted
      files of the committed source tree are projected verbatim into
-     raw/notes/<name>/, stamped with the source HEAD commit; a dirty
-     source tree fails the cycle (commit first). Mixed vault+repo
-     configs are refused — one instance per config.
+     raw/notes/<name>/, stamped with the source HEAD commit; tracked
+     changes or untracked-selectable files fail the cycle (commit
+     first). Mixed vault+repo configs are refused — one instance per config.
   2. ingest — wiki-ingest: run the wiki agent over the changed
      sources, guardrail-check it (auto-revert on failure), and write
      the digest to the code repo's outputs/runs/ (gitignored).
