@@ -35,7 +35,7 @@ export function assertNoBlockingChanges(
     if (entry === null) {
       tracked.push(line.slice(3));
     } else if (couldBeSelected(include, entry)) {
-      untrackedSelectable.push(entry.path);
+      untrackedSelectable.push(entry.path ?? entry.raw);
     }
   }
 
@@ -47,24 +47,113 @@ export function assertNoBlockingChanges(
 }
 
 /** A normalized `?? ` porcelain entry: its repo-relative path
- *  (quotes stripped) and whether git reported a collapsed
- *  directory. */
+ *  with git's C-style quoting decoded, and whether git reported a
+ *  collapsed directory. `path` is null when the quoted bytes are
+ *  not valid UTF-8 — such an entry still blocks, named by its raw
+ *  porcelain field. */
 interface UntrackedEntry {
-  readonly path: string;
+  readonly path: string | null;
   readonly isDir: boolean;
+  readonly raw: string;
 }
 
-/** The `?? ` porcelain entry — quotes and the collapsed-directory
- *  slash stripped — or null for tracked-change lines. */
+/** The `?? ` porcelain entry — outer quotes, C-style escapes, and
+ *  the collapsed-directory slash decoded — or null for
+ *  tracked-change lines. */
 function untrackedEntryOf(line: string): UntrackedEntry | null {
   if (!line.startsWith("?? ")) {
     return null;
   }
 
-  const raw = line.slice(3).replace(/^"|"$/g, "");
-  const isDir = raw.endsWith("/");
+  const field = line.slice(3);
+  const isDir = field.endsWith("/");
+  const quoted = field.startsWith('"');
+  const body = quoted ? field.slice(1, -1) : field;
+  const decoded = quoted ? decodeCQuoted(body) : body;
+  const path = decoded === null ? null : isDir ? decoded.slice(0, -1) : decoded;
 
-  return { path: isDir ? raw.slice(0, -1) : raw, isDir };
+  return { path, isDir, raw: field };
+}
+
+/** The byte each single-character C-style escape of a quoted
+ *  porcelain path stands for. */
+const ESCAPE_BYTES: Readonly<Record<string, number>> = {
+  '"': 0x22,
+  "\\": 0x5c,
+  a: 0x07,
+  b: 0x08,
+  f: 0x0c,
+  n: 0x0a,
+  r: 0x0d,
+  t: 0x09,
+  v: 0x0b,
+};
+
+/** Decode the body of a quoted porcelain path — backslash escapes
+ *  and octal byte sequences — into the path git printed, or null
+ *  when it is malformed or the bytes are not valid UTF-8. */
+function decodeCQuoted(body: string): string | null {
+  const bytes: number[] = [];
+
+  for (let index = 0; index < body.length; ) {
+    const char = body[index];
+
+    if (char !== "\\") {
+      bytes.push(char.charCodeAt(0));
+      index += 1;
+
+      continue;
+    }
+
+    const decoded = decodeEscapeAt(body, index, bytes);
+
+    if (decoded === null) {
+      return null;
+    }
+
+    index += decoded;
+  }
+
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(
+      Uint8Array.from(bytes),
+    );
+  } catch {
+    return null;
+  }
+}
+
+/** Consume the escape starting at `index` in `body`, push its byte,
+ *  and return how many characters it spans, or null when the
+ *  escape is malformed. */
+function decodeEscapeAt(
+  body: string,
+  index: number,
+  bytes: number[],
+): number | null {
+  const escaped = body[index + 1];
+
+  if (escaped === undefined) {
+    return null;
+  }
+
+  const simple = ESCAPE_BYTES[escaped];
+
+  if (simple !== undefined) {
+    bytes.push(simple);
+
+    return 2;
+  }
+
+  const octal = /^[0-7]{1,3}/.exec(body.slice(index + 1));
+
+  if (octal === null) {
+    return null;
+  }
+
+  bytes.push(Number.parseInt(octal[0], 8));
+
+  return 1 + octal[0].length;
 }
 
 /** Whether an untracked entry could still enter the projection:
@@ -79,6 +168,10 @@ function couldBeSelected(
   include: readonly string[],
   entry: UntrackedEntry,
 ): boolean {
+  if (entry.path === null) {
+    return true;
+  }
+
   const segments = entry.path.split("/");
   const first = segments[0];
   const skippedDir =

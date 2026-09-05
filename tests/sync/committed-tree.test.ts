@@ -83,6 +83,30 @@ describe("assertNoBlockingChanges untracked tolerance (issue #312)", () => {
     );
   });
 
+  it("decodes an escaped quote so an exact-file pattern still matches", () => {
+    expect(guard('?? "docs/a\\"b.md"\n', ["README.md", 'docs/a"b.md'])).toThrow(
+      /untracked-selectable: docs\/a"b\.md/,
+    );
+  });
+
+  it("decodes an escaped backslash so an exact-file pattern still matches", () => {
+    expect(
+      guard('?? "docs/a\\\\b.md"\n', ["README.md", "docs/a\\b.md"]),
+    ).toThrow(/untracked-selectable: docs\/a\\b\.md/);
+  });
+
+  it("decodes octal escapes to UTF-8 so a non-ASCII pattern matches", () => {
+    expect(
+      guard('?? "docs/\\303\\251.md"\n', ["README.md", "docs/\u00e9.md"]),
+    ).toThrow(/untracked-selectable: docs\/\u00e9\.md/);
+  });
+
+  it("refuses an untracked path whose quoted bytes are not UTF-8", () => {
+    expect(guard('?? "docs/\\303.md"\n', ["README.md"])).toThrow(
+      /untracked-selectable: "docs\/\\303\.md"/,
+    );
+  });
+
   it("passes untracked node_modules at the walk root", () => {
     expect(
       guard("?? node_modules/\n", ["README.md", "*.ts"])(),
