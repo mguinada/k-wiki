@@ -1325,14 +1325,16 @@ A clean merge on `main` fires one detached cycle —
 (minutes of real LLM ingest) runs in the background under
 `scheduled-run`'s own per-dataRoot lockfile, pull/push, and
 push-rejection retry. Install is idempotent (an identical hook is
-left alone, an older generation of ours is replaced, a foreign
-hook without the installer's marker is refused loud and never
-touched). One log line per fire, plus the cycle's own output:
+left alone — only its executable bit is repaired if lost, an older
+generation of ours is replaced, a foreign hook without the
+installer's marker is refused loud and never touched). One log
+line per fire, plus the cycle's own output:
 `~/Library/Logs/kwiki/meta-sync.log` on macOS, the XDG state dir
 elsewhere.
 
-Install runs **once per machine** — hooks live in `.git/hooks`,
-unversioned — and two machines may merge and both fire safely:
+Install runs **once per machine** — hooks live in the git hooks
+(dir from `git rev-parse --git-path hooks`), unversioned — and two
+machines may merge and both fire safely:
 separate data-repo lockfiles, and the data-repo pull/push
 serializes the wiki state. The prerequisite is a **private
 `origin` remote on the meta data repo** (`scheduled-run` fails
