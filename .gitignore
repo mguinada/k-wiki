@@ -71,3 +71,8 @@ careless `git add .` can never publish them (PR #85 review, Major 2).
 outputs-*/
 sync-*.json
 settings-*.yml
+
+# Verification skill scratch and proof artifacts (verify-k-wiki)
+.verify-tmp/
+.verify-evidence/
+.cursor/skills/verify-k-wiki-workspace/

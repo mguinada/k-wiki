@@ -1,0 +1,26 @@
+{
+  "skill_name": "verify-k-wiki",
+  "evals": [
+    {
+      "id": 0,
+      "eval_name": "sync-block-flip",
+      "prompt": "A vault note can opt out of the wiki with `wiki: false` frontmatter. Prove that bin/sync-vault actually removes such a note from the raw/ projection when the flip happens: drive the real CLI end to end and leave evidence I can inspect (commands, exit codes, before/after state). Use only throwaway temp state — never the real vault named in this repo's sync.json, never anything under ~/Lab — and clean up after yourself.",
+      "expected_output": "Evidence artifacts showing a real sync-vault run against a temp vault, the flipped note present before and absent after, exit codes, and a coherence check; scratch cleaned; the repo's own raw/ untouched.",
+      "files": []
+    },
+    {
+      "id": 1,
+      "eval_name": "ingest-guardrail-revert",
+      "prompt": "I want proof that k-wiki's ingest guardrails work: if the wiki agent leaves broken state behind (e.g. a page with no frontmatter), the pipeline must catch it and never commit garbage. Simulate a bad agent run against bin/wiki-ingest and prove what actually happens. No real LLM and no real credentials — fake the agent somehow. Throwaway temp state only (never the real vault, nothing under ~/Lab), and clean up after yourself. Leave evidence.",
+      "expected_output": "Evidence showing a stubbed bad agent run through a real wiki-ingest child process, the guardrail response (non-zero exit and/or auto-revert), and the data repo left without garbage committed.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "eval_name": "cycle-one-commit",
+      "prompt": "Show me one full k-wiki pipeline cycle working end to end on a synthetic vault: sync, agent ingest, and the data-repo commit. I want proof that exactly one new commit lands and it covers the change. No real LLM credentials; throwaway temp state only (never the real vault, nothing under ~/Lab); clean up after yourself. Leave evidence.",
+      "expected_output": "Evidence of one bin/wiki-sync cycle with exit 0, a stubbed agent, and a data-repo git log showing exactly one new commit on top of the seed covering raw/ and wiki/.",
+      "files": []
+    }
+  ]
+}
