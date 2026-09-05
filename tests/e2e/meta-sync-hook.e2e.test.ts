@@ -167,6 +167,25 @@ async function waitFor(
   }
 }
 
+/** Land a feature commit on main via a merge (fast-forward by
+ *  default, "--no-ff" for a merge commit) — the post-merge trigger. */
+async function mergeFeatureOnMain(
+  space: Workspace,
+  ...mergeArgs: string[]
+): Promise<void> {
+  await git(space, space.source, "checkout", "--quiet", "-b", "feature");
+  await writeFile(join(space.source, "README.md"), "readme edited\n");
+  await git(space, space.source, "commit", "--quiet", "-am", "feat");
+  await git(space, space.source, "checkout", "--quiet", "main");
+  await git(
+    space,
+    space.source,
+    "merge",
+    "--quiet",
+    ...(mergeArgs.length > 0 ? mergeArgs : ["feature"]),
+  );
+}
+
 /** The recorded cycle invocations, if any fired. */
 async function fires(space: Workspace): Promise<string | undefined> {
   const raw = await readFile(space.marker, "utf8").catch(() => undefined);
@@ -201,11 +220,7 @@ describe("setup-meta-sync e2e", () => {
     const space = await makeWorkspace();
 
     await runInstaller(space);
-    await git(space, space.source, "checkout", "--quiet", "-b", "feature");
-    await writeFile(join(space.source, "README.md"), "readme edited\n");
-    await git(space, space.source, "commit", "--quiet", "-am", "feat");
-    await git(space, space.source, "checkout", "--quiet", "main");
-    await git(space, space.source, "merge", "--quiet", "feature");
+    await mergeFeatureOnMain(space);
 
     const raw = await waitFor(() => fires(space));
     const log = await waitFor(() => readLog(space));
@@ -224,11 +239,7 @@ describe("setup-meta-sync e2e", () => {
     const space = await makeWorkspace();
 
     await runInstaller(space);
-    await git(space, space.source, "checkout", "--quiet", "-b", "feature");
-    await writeFile(join(space.source, "README.md"), "readme edited\n");
-    await git(space, space.source, "commit", "--quiet", "-am", "feat");
-    await git(space, space.source, "checkout", "--quiet", "main");
-    await git(space, space.source, "merge", "--quiet", "feature");
+    await mergeFeatureOnMain(space);
 
     const raw = await waitFor(() => fires(space));
 
@@ -262,11 +273,7 @@ describe("setup-meta-sync e2e", () => {
     const space = await makeWorkspace();
 
     await runInstaller(space);
-    await git(space, space.source, "checkout", "--quiet", "-b", "feature");
-    await writeFile(join(space.source, "README.md"), "readme edited\n");
-    await git(space, space.source, "commit", "--quiet", "-am", "feat");
-    await git(space, space.source, "checkout", "--quiet", "main");
-    await git(space, space.source, "merge", "--quiet", "--no-ff", "feature");
+    await mergeFeatureOnMain(space, "--no-ff", "feature");
 
     const raw = await waitFor(() => fires(space));
 
@@ -312,12 +319,8 @@ describe("setup-meta-sync e2e", () => {
     const space = await makeWorkspace();
 
     await runInstaller(space);
-    await git(space, space.source, "checkout", "--quiet", "-b", "feature");
-    await writeFile(join(space.source, "README.md"), "readme edited\n");
-    await git(space, space.source, "commit", "--quiet", "-am", "feat");
-    await git(space, space.source, "checkout", "--quiet", "main");
     await writeFile(join(space.source, "scratch.txt"), "operator scratch\n");
-    await git(space, space.source, "merge", "--quiet", "feature");
+    await mergeFeatureOnMain(space);
 
     const log = await waitFor(async () => {
       const text = await readLog(space);
