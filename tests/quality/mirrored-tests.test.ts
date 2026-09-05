@@ -1,4 +1,4 @@
-import { readdir, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
