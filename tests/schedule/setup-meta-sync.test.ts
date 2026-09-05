@@ -1,4 +1,5 @@
 import {
+  chmod,
   mkdir,
   mkdtemp,
   readFile,
@@ -213,6 +214,26 @@ describe("main install", () => {
     });
   });
 
+  it("restores the exec bit on an already-current hook", async () => {
+    const { deps, root } = await tempCheckout();
+
+    await runMain([], deps);
+
+    const hookPath = join(root, ".git", "hooks", "post-merge");
+
+    await chmod(hookPath, 0o644);
+
+    const { out } = await runMain([], deps);
+
+    expect({
+      report: out,
+      mode: (await stat(hookPath)).mode & 0o777,
+    }).toEqual({
+      report: expect.stringContaining("already current"),
+      mode: 0o755,
+    });
+  });
+
   it("replaces an older generation of its own hook", async () => {
     const { deps, root } = await tempCheckout();
 
@@ -330,6 +351,28 @@ describe("main uninstall", () => {
     expect({ report: out, allGone: gone.every(Boolean) }).toEqual({
       report: expect.stringContaining("removed post-merge, post-rewrite"),
       allGone: true,
+    });
+  });
+
+  it("uninstalls without a valid meta config", async () => {
+    const { deps, root } = await tempCheckout();
+
+    await runMain([], deps);
+    await rm(join(root, "sync-meta.json"));
+
+    const { out, exitCode } = await runMain(["--uninstall"], deps);
+    const gone = await stat(join(root, ".git", "hooks", "post-merge")).catch(
+      (error: NodeJS.ErrnoException) => error.code,
+    );
+
+    expect({
+      exitCode,
+      report: out,
+      removed: gone === "ENOENT",
+    }).toEqual({
+      exitCode: undefined,
+      report: expect.stringContaining("removed post-merge"),
+      removed: true,
     });
   });
 

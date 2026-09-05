@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, unlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -244,6 +244,7 @@ async function installHooks(
     const existing = await readTextIfExists(path);
 
     if (existing === hook) {
+      await chmod(path, 0o755);
       current.push(basename(path));
 
       continue;
@@ -290,9 +291,10 @@ async function uninstallHooks(hooksDir: string): Promise<void> {
   );
 }
 
-/** setup-meta-sync entry point: resolve the hook config (source
- *  root — canonical checkout, plain cwd for --print — and baked
- *  paths), then print, uninstall, or install. */
+/** setup-meta-sync entry point: --uninstall touches only the
+ *  hooks dir (it must work after the meta config is gone);
+ *  --print and install resolve the hook config (source root —
+ *  canonical checkout, plain cwd for --print — and baked paths). */
 export async function main(
   argv: readonly string[] = process.argv.slice(2),
   deps: MetaSyncDeps = {},
@@ -313,6 +315,20 @@ export async function main(
 
   const cwd = deps.cwd ?? process.cwd();
   const git = deps.git ?? runGitIn;
+
+  if (parsed.uninstall) {
+    const hooksDir = await git(cwd, [
+      "rev-parse",
+      "--path-format=absolute",
+      "--git-path",
+      "hooks",
+    ]);
+
+    await uninstallHooks(hooksDir);
+
+    return;
+  }
+
   const plan = await resolveHookConfigFor(parsed.print, cwd, git, deps);
 
   if ("error" in plan) {
@@ -333,12 +349,6 @@ export async function main(
     "--git-path",
     "hooks",
   ]);
-
-  if (parsed.uninstall) {
-    await uninstallHooks(hooksDir);
-
-    return;
-  }
 
   await installHooks(hooksDir, metaSyncHookScript(plan), plan);
 }

@@ -399,8 +399,8 @@ describe("setup-meta-sync e2e", () => {
       env: gitEnv(space),
     });
 
-    // The clone carries its own hooks: same installer, cwd = clone;
-    // the baked paths still point at the canonical source checkout.
+    // The clone carries its own hooks: the installer runs with
+    // cwd = clone, so SRC bakes to the clone itself.
     await runInstaller(space, [], clone);
     await writeFile(join(clone, "local.txt"), "local\n");
     await git(space, clone, "add", "-A");
