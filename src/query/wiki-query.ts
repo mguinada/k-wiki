@@ -1,3 +1,21 @@
+/**
+ * wiki-query: the terminal front-end for asking questions against the
+ * built wiki (guide §16, issues #67 and #72). Filing is two-stage:
+ *
+ *  Stage 1 (default) — `wiki-query <question>` is always answer-only.
+ *  It composes prompts/query.md with the question, runs the agent CLI
+ *  non-interactively in the data repo root, prints the answer, and
+ *  persists the run to outputs/last-query.md. The guardrail is
+ *  mechanical, not prompt-deep: any change under wiki/ during the
+ *  run — a commit the agent makes included — reverts the data repo
+ *  to its pre-run state and fails the run.
+ *
+ *  Stage 2 (human-only) — `wiki-query --file-last` templates the saved
+ *  answer byte-exactly into wiki/queries/<slug>.md and updates
+ *  index.md and log.md. Deterministic code, zero LLM involvement; see
+ *  src/query/file-last.ts.
+ */
+
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { cliFail, errorMessage, terminalColors } from "../cli/colors.ts";
@@ -24,24 +42,6 @@ import {
 import { resolveWikiInstance, wikiArgError } from "../sync/instance.ts";
 import { citedPages, fileLastQuery, writeQueryArtifact } from "./file-last.ts";
 import { runQueryCli } from "./query-shell.ts";
-
-/**
- * wiki-query: the terminal front-end for asking questions against the
- * built wiki (guide §16, issues #67 and #72). Filing is two-stage:
- *
- *  Stage 1 (default) — `wiki-query <question>` is always answer-only.
- *  It composes prompts/query.md with the question, runs the agent CLI
- *  non-interactively in the data repo root, prints the answer, and
- *  persists the run to outputs/last-query.md. The guardrail is
- *  mechanical, not prompt-deep: any change under wiki/ during the
- *  run — a commit the agent makes included — reverts the data repo
- *  to its pre-run state and fails the run.
- *
- *  Stage 2 (human-only) — `wiki-query --file-last` templates the saved
- *  answer byte-exactly into wiki/queries/<slug>.md and updates
- *  index.md and log.md. Deterministic code, zero LLM involvement; see
- *  src/query/file-last.ts.
- */
 
 /**
  * Compose the agent message: the query prompt, the question, and the

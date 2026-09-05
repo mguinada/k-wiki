@@ -1,3 +1,12 @@
+/**
+ * Printer over the last Stryker JSON report (issue #21 advisory signal).
+ * Exit code is always 0 when a report exists: a non-zero exit on
+ * survivors would invite misuse as a gate, and mutation testing is
+ * advisory by design. Registry-recorded adjudications (issue #241)
+ * are filtered from the printed list and counted on their own line,
+ * so local triage and the CI filing agree on what is settled.
+ */
+
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { errorMessage } from "../cli/colors.ts";
@@ -14,13 +23,6 @@ import {
   type Registry,
   splitByRegistry,
 } from "./mutation-registry.ts";
-
-// Printer over the last Stryker JSON report (issue #21 advisory signal).
-// Exit code is always 0 when a report exists: a non-zero exit on
-// survivors would invite misuse as a gate, and mutation testing is
-// advisory by design. Registry-recorded adjudications (issue #241)
-// are filtered from the printed list and counted on their own line,
-// so local triage and the CI filing agree on what is settled.
 
 export type Mutant = {
   mutatorName: string;

@@ -1,3 +1,14 @@
+/**
+ * wiki-query stage 2 (issue #72): deterministic filing of the saved
+ * stage-1 answer. No LLM is involved — TypeScript reads
+ * `outputs/last-query.md`, templates the answer byte-exactly into
+ * `wiki/queries/<slug>.md`, and appends the `index.md` and `log.md`
+ * entries. Stage 1's answer is the single source; this module only
+ * wraps it. A drift warning fires when the data repo's `raw/` or
+ * `wiki/` moved after the saved timestamp — the answer cites pages
+ * that may have changed.
+ */
+
 import { lstat, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { errorMessage } from "../cli/colors.ts";
@@ -9,17 +20,6 @@ import {
   readPageFields,
 } from "../wiki/pages.ts";
 import { buildPageIndex, extractWikilinks } from "../wiki/wiki-links.ts";
-
-/**
- * wiki-query stage 2 (issue #72): deterministic filing of the saved
- * stage-1 answer. No LLM is involved — TypeScript reads
- * `outputs/last-query.md`, templates the answer byte-exactly into
- * `wiki/queries/<slug>.md`, and appends the `index.md` and `log.md`
- * entries. Stage 1's answer is the single source; this module only
- * wraps it. A drift warning fires when the data repo's `raw/` or
- * `wiki/` moved after the saved timestamp — the answer cites pages
- * that may have changed.
- */
 
 /** What stage 1 persisted to outputs/last-query.md. */
 export interface QueryArtifact {

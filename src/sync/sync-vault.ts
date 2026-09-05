@@ -1,3 +1,16 @@
+/**
+ * sync-vault: the vault-source adapter (guide §8) — the deterministic,
+ * LLM-free projection driver for vault sources. For every vault in
+ * `sync.json`, it scans markdown files, ingests every note not blocked
+ * by the vault's exclusion rule (`wiki: false` in its frontmatter),
+ * hashes them, copies new or changed notes, removes projections whose
+ * source disappeared or was blocked, prunes namespaces that left the
+ * config, and records state in `raw/manifest.json` — all through the
+ * shared projection loop of `projection.ts`. The run is idempotent: a
+ * second run with no source changes copies, removes, and writes
+ * nothing.
+ */
+
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -43,19 +56,6 @@ import {
   type VaultSyncReport,
 } from "./projection.ts";
 import { scanVault } from "./scan.ts";
-
-/**
- * sync-vault: the vault-source adapter (guide §8) — the deterministic,
- * LLM-free projection driver for vault sources. For every vault in
- * `sync.json`, it scans markdown files, ingests every note not blocked
- * by the vault's exclusion rule (`wiki: false` in its frontmatter),
- * hashes them, copies new or changed notes, removes projections whose
- * source disappeared or was blocked, prunes namespaces that left the
- * config, and records state in `raw/manifest.json` — all through the
- * shared projection loop of `projection.ts`. The run is idempotent: a
- * second run with no source changes copies, removes, and writes
- * nothing.
- */
 
 /** Heartbeat interval for the read loop: one line per files read. */
 export const PROGRESS_EVERY = 500;

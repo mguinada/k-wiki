@@ -1,5 +1,3 @@
-import { listFiles } from "../cli/shared.ts";
-
 /**
  * Vault walker: collects every markdown file below the vault root as a
  * POSIX-style relative path, pruning vault noise (guide §26 operating
@@ -7,6 +5,8 @@ import { listFiles } from "../cli/shared.ts";
  * candidate set. The walk itself is the shared `listFiles` walker
  * (issue #255); only the vault's skip sets live here.
  */
+
+import { listFiles } from "../cli/shared.ts";
 
 const SKIPPED_DIRECTORIES = new Set([".obsidian", ".trash"]);
 const SKIPPED_FILES = new Set([".DS_Store"]);

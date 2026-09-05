@@ -1,11 +1,11 @@
-import { createColors } from "picocolors";
-
 /**
  * The shared CLI presentation kit (docs/references/colors.md): one
  * NO_COLOR policy point and one usage-error rule for every CLI.
  * Colors apply at the render boundary — the stderr sink or a
  * colorize* helper — never at the call site.
  */
+
+import { createColors } from "picocolors";
 
 /** Colors honoring NO_COLOR, like every CLI in this repo: colors on
  *  by default (piped included); NO_COLOR present and non-empty yields

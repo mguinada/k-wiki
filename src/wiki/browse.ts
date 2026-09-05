@@ -1,7 +1,3 @@
-import { readFile } from "node:fs/promises";
-import { basename, join } from "node:path";
-import { listWikiPages, readPageFields } from "./pages.ts";
-
 /**
  * Wiki-browsing domain logic (guide §11), extracted from the k-wiki
  * CLI (issue #259, finding O-4): which pages list, how they group
@@ -10,6 +6,10 @@ import { listWikiPages, readPageFields } from "./pages.ts";
  * `pages.ts` into the listing and lookup shapes the CLIs render.
  * Pure over the wiki tree: no printing, no exit codes.
  */
+
+import { readFile } from "node:fs/promises";
+import { basename, join } from "node:path";
+import { listWikiPages, readPageFields } from "./pages.ts";
 
 /** The wiki page types (guide §9), listed in index.md order (guide §11). */
 export const PAGE_TYPES = [

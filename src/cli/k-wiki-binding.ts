@@ -1,8 +1,3 @@
-import { readFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
-import { expandHome, isWikiName } from "../sync/config.ts";
-import { isPlainObject, statIfExists } from "./shared.ts";
-
 /**
  * The k-wiki binding file and checkout resolution (issue #76,
  * extracted in issue #259): the per-project `.k-wiki.json` schema —
@@ -12,6 +7,11 @@ import { isPlainObject, statIfExists } from "./shared.ts";
  * walking up from the cwd, then the cwd itself. CLI-side by design:
  * paths and process input, no wiki domain logic.
  */
+
+import { readFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import { expandHome, isWikiName } from "../sync/config.ts";
+import { isPlainObject, statIfExists } from "./shared.ts";
 
 /** The per-project binding file name, at the bound project's root. */
 export const BINDING_FILE = ".k-wiki.json";

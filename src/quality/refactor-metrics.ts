@@ -1,10 +1,3 @@
-import { readdir, readFile } from "node:fs/promises";
-import { dirname, join, relative, resolve, sep } from "node:path";
-import { errorMessage } from "../cli/colors.ts";
-import { refuseDirectExecution } from "../cli/is-main.ts";
-import { repoRoot } from "../cli/shared.ts";
-import { parseArgs } from "../cli/shell.ts";
-
 /**
  * The src/ refactor campaign's measuring instrument: a zero-dependency
  * regex scan over a TypeScript tree that prints the structure
@@ -16,6 +9,13 @@ import { parseArgs } from "../cli/shell.ts";
  * in `.structureguard.json` by the structure gate
  * (tests/quality/structure.test.ts).
  */
+
+import { readdir, readFile } from "node:fs/promises";
+import { dirname, join, relative, resolve, sep } from "node:path";
+import { errorMessage } from "../cli/colors.ts";
+import { refuseDirectExecution } from "../cli/is-main.ts";
+import { repoRoot } from "../cli/shared.ts";
+import { parseArgs } from "../cli/shell.ts";
 
 /** Every counter the scanner prints, in output order. */
 export interface StructureMetrics {

@@ -1,34 +1,3 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
-import { sha256 } from "../cli/shared.ts";
-import {
-  hashMatches,
-  headCommit,
-  isPreExisting,
-  pathUntouched,
-  porcelainStatus,
-  renameOriginsOf,
-  runGit,
-  type StatusEntry,
-  statusIndex,
-} from "../data/git.ts";
-import {
-  isWikilinkEntry,
-  listWikiPages,
-  parsePageFields,
-  wikilinkTarget,
-} from "../wiki/pages.ts";
-import {
-  loadSourceHubIndex,
-  type SourceHubIndex,
-  wikilinkFor,
-} from "../wiki/source-hubs.ts";
-import {
-  buildPageIndex,
-  crossWikiTarget,
-  extractWikilinks,
-} from "../wiki/wiki-links.ts";
-
 /**
  * Post-run guardrails (guide §1, §7, §9; issue #12): three mechanical
  * checks after every headless agent run, with automatic revert to the
@@ -59,6 +28,37 @@ import {
  *     (issue #94), never by the agent-writable profile — and in every
  *     other wiki they are unresolvable and trip the check.
  */
+
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
+import { sha256 } from "../cli/shared.ts";
+import {
+  hashMatches,
+  headCommit,
+  isPreExisting,
+  pathUntouched,
+  porcelainStatus,
+  renameOriginsOf,
+  runGit,
+  type StatusEntry,
+  statusIndex,
+} from "../data/git.ts";
+import {
+  isWikilinkEntry,
+  listWikiPages,
+  parsePageFields,
+  wikilinkTarget,
+} from "../wiki/pages.ts";
+import {
+  loadSourceHubIndex,
+  type SourceHubIndex,
+  wikilinkFor,
+} from "../wiki/source-hubs.ts";
+import {
+  buildPageIndex,
+  crossWikiTarget,
+  extractWikilinks,
+} from "../wiki/wiki-links.ts";
 
 /** Paths only these guardrails may see changed after a run. */
 const ALLOWED_PREFIXES = ["wiki/", "outputs/"] as const;

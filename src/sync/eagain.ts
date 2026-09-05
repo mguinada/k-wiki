@@ -1,6 +1,3 @@
-import { execFile } from "node:child_process";
-import { copyFile, readFile, rm } from "node:fs/promises";
-
 /**
  * EAGAIN tolerance for iCloud dataless files (issue #216). With
  * Optimize Mac Storage, macOS evicts file bodies and serves only
@@ -14,6 +11,9 @@ import { copyFile, readFile, rm } from "node:fs/promises";
  * process is refused outright (access control, guide §26 rule 10),
  * so no retry here can materialize a file for the schedule.
  */
+
+import { execFile } from "node:child_process";
+import { copyFile, readFile, rm } from "node:fs/promises";
 
 /** The pause between EAGAIN retries inside the budget (issue #216: ~1–2 s). */
 export const EAGAIN_RETRY_DELAY_MS = 1500;

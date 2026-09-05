@@ -1,14 +1,3 @@
-import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
-import { mkdir, unlink, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { dirname, isAbsolute, join } from "node:path";
-import { promisify } from "node:util";
-import { cliFail, errorMessage } from "../cli/colors.ts";
-import { refuseDirectExecution } from "../cli/is-main.ts";
-import { repoRoot } from "../cli/shared.ts";
-import { parseArgs } from "../cli/shell.ts";
-
 /**
  * setup-schedule: register the scheduled pipeline with the OS
  * scheduler (issue #14). One CLI, per-OS backends: darwin writes a
@@ -26,6 +15,17 @@ import { parseArgs } from "../cli/shell.ts";
  * first-run-after-boot deterministic. Re-running with a new
  * `--interval` replaces the registration.
  */
+
+import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
+import { mkdir, unlink, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { dirname, isAbsolute, join } from "node:path";
+import { promisify } from "node:util";
+import { cliFail, errorMessage } from "../cli/colors.ts";
+import { refuseDirectExecution } from "../cli/is-main.ts";
+import { repoRoot } from "../cli/shared.ts";
+import { parseArgs } from "../cli/shell.ts";
 
 /** The fixed launchd label (reverse-domain; rename = reinstall). */
 export const LAUNCHD_LABEL = "com.kwiki.scheduled-run";

@@ -1,23 +1,3 @@
-import { spawn } from "node:child_process";
-import { mkdir, open, rename, stat } from "node:fs/promises";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
-import type { Readable } from "node:stream";
-import { cliFail, errorMessage } from "../cli/colors.ts";
-import { refuseDirectExecution } from "../cli/is-main.ts";
-import { pathExists, repoRoot } from "../cli/shared.ts";
-import { agentRunFlags, parseSyncRunArgs } from "../cli/shell.ts";
-import { runGit } from "../data/git.ts";
-import { loadSyncConfig } from "../sync/config.ts";
-import {
-  acquireLock,
-  holderDescription,
-  type LockFileData,
-  readLockHolder,
-  releaseLock,
-  runLockPath,
-} from "../sync/run-lock.ts";
-
 /**
  * scheduled-run: the unattended wrapper the scheduler runs on a fixed
  * interval (issue #14, guide §18). One portable Node file — identical
@@ -52,6 +32,26 @@ import {
  * node bin dir and the standard CLI install locations so the agent
  * CLI resolves without an interactive shell env.
  */
+
+import { spawn } from "node:child_process";
+import { mkdir, open, rename, stat } from "node:fs/promises";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+import type { Readable } from "node:stream";
+import { cliFail, errorMessage } from "../cli/colors.ts";
+import { refuseDirectExecution } from "../cli/is-main.ts";
+import { pathExists, repoRoot } from "../cli/shared.ts";
+import { agentRunFlags, parseSyncRunArgs } from "../cli/shell.ts";
+import { runGit } from "../data/git.ts";
+import { loadSyncConfig } from "../sync/config.ts";
+import {
+  acquireLock,
+  holderDescription,
+  type LockFileData,
+  readLockHolder,
+  releaseLock,
+  runLockPath,
+} from "../sync/run-lock.ts";
 
 /** The PATH a scheduled run gets: node's bin dir first (the wrapper
  *  and any sibling CLIs), then the standard install locations — the

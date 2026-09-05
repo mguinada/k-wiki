@@ -1,3 +1,11 @@
+/**
+ * Git porcelain for the data repo: runGit (repository discovery
+ * confined to the target directory via GIT_CEILING_DIRECTORIES),
+ * porcelain-status parsing, commit and hash comparison, and the
+ * removed-note content lookup — the git surface the ingest and sync
+ * layers call.
+ */
+
 import { execFile } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { readFile } from "node:fs/promises";

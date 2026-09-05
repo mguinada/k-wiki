@@ -1,18 +1,20 @@
-// The committed equivalent-mutant registry (issue #241): the
-// machine-readable memory of settled adjudications. The file lives
-// at the repo root, is edited only in PRs (PR review is the
-// human-judgment gate the policy requires — no automation ever
-// writes it to main), and every entry carries its receipt: bucket,
-// one-line justification, PR link, and date. A receipt-less entry
-// fails the unit suite (tests/quality/mutation-registry.test.ts
-// validates the committed file against this schema).
-//
-// Two buckets, never merged: `equivalent` (the sabotage changes
-// nothing a test could observe) and `artifact` (a measurement
-// artifact — plausibly killable, kept visible in its own report
-// section so it stays revisitable). Both are filtered from
-// re-filing; excusing is visible, never rewarded — the report
-// renders untriaged and recorded counts separately.
+/**
+ * The committed equivalent-mutant registry (issue #241): the
+ * machine-readable memory of settled adjudications. The file lives
+ * at the repo root, is edited only in PRs (PR review is the
+ * human-judgment gate the policy requires — no automation ever
+ * writes it to main), and every entry carries its receipt: bucket,
+ * one-line justification, PR link, and date. A receipt-less entry
+ * fails the unit suite (tests/quality/mutation-registry.test.ts
+ * validates the committed file against this schema).
+ *
+ * Two buckets, never merged: `equivalent` (the sabotage changes
+ * nothing a test could observe) and `artifact` (a measurement
+ * artifact — plausibly killable, kept visible in its own report
+ * section so it stays revisitable). Both are filtered from
+ * re-filing; excusing is visible, never rewarded — the report
+ * renders untriaged and recorded counts separately.
+ */
 
 /** The committed registry file's name, at the repo root. */
 export const REGISTRY_FILENAME = ".mutants-registry.json";

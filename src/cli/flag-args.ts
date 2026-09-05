@@ -1,3 +1,11 @@
+/**
+ * Shared flag-argument helpers: the byte-identical usage-error and
+ * value-reading rules every CLI applies to the common flags —
+ * timeout, date, int flags, and the value-flag bundle — so no CLI
+ * drifts from the shell's contract. Pure validators; the shell
+ * (cli/shell.ts) owns argv scanning.
+ */
+
 /** Usage error for an invalid `--timeout` value, undefined when it
  *  is valid. `undefined` counts as invalid: the caller must only
  *  invoke this for a `--timeout` that was actually passed (keep the

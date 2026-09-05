@@ -1,14 +1,3 @@
-import { readdir } from "node:fs/promises";
-import { basename, isAbsolute, join, resolve, sep } from "node:path";
-import { statIfExists } from "../cli/shared.ts";
-import {
-  expandHome,
-  isWikiName,
-  loadSyncConfig,
-  resolveRawDir,
-  type SyncConfig,
-} from "./config.ts";
-
 /**
  * The shared wiki-instance resolver (issue #306): one chain for both
  * doors — the `--wiki <name>` flag (wiki-query, wiki-ingest) and the
@@ -20,6 +9,17 @@ import {
  * file — never the typed name — so an alias to `sync-engineering.json`
  * derives `outputs-engineering/`, not `outputs-eng/`.
  */
+
+import { readdir } from "node:fs/promises";
+import { basename, isAbsolute, join, resolve, sep } from "node:path";
+import { statIfExists } from "../cli/shared.ts";
+import {
+  expandHome,
+  isWikiName,
+  loadSyncConfig,
+  resolveRawDir,
+  type SyncConfig,
+} from "./config.ts";
 
 /** One resolved instance: which config a name (or the default)
  *  resolved to, plus the paths derived from it. */

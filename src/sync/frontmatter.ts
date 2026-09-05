@@ -1,11 +1,11 @@
-import type { ExcludeExpression } from "./config.ts";
-
 /**
  * Selection rule for one note (issue #32): a note is blocked only when
  * its opening frontmatter block contains a top-level `<key>: false`
  * line. Everything else — including notes without frontmatter — is
  * selected; flag-like lines in the note body never block.
  */
+
+import type { ExcludeExpression } from "./config.ts";
 
 /** The text between the opening and closing `---` lines, if complete. */
 function frontmatterBlock(content: string): string | undefined {

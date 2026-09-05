@@ -1,5 +1,3 @@
-import { flagValueError } from "./flag-args.ts";
-
 /**
  * The shared CLI shell (issue #254): one argv parser every CLI
  * consumes, replacing the ~10 hand-rolled parsers it collapsed. The
@@ -10,6 +8,8 @@ import { flagValueError } from "./flag-args.ts";
  * unknown-arg policy is one policy, not one per CLI (finding D-11).
  * Help stays with each CLI's main: the shell parses, never prints.
  */
+
+import { flagValueError } from "./flag-args.ts";
 
 /** What one CLI accepts: its value flags, boolean flags, repeatable
  *  value flags, and the positional count rule with its overflow

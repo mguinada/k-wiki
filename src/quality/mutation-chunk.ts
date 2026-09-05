@@ -1,18 +1,20 @@
+/**
+ * Chunked full mutation runs (issue #236): the nightly Stryker run
+ * outgrew GitHub's 6 h per-job limit (8619 mutants, cancelled at
+ * 5 h 58 m before any report existed), so CI splits `mutate` across
+ * parallel chunk jobs. This tool prints the --mutate argument for one
+ * chunk: the src/*.ts files balanced over N chunks by file size
+ * (largest-first greedy), so no chunk inherits the whole runtime.
+ * src/quality/mutation-merge.ts stitches the chunk reports back
+ * together.
+ */
+
 import { statSync } from "node:fs";
 import { errorMessage } from "../cli/colors.ts";
 import { intFlagError } from "../cli/flag-args.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { parseArgs } from "../cli/shell.ts";
 import { type GitText, runGitText, SRC_PATHSPEC } from "./mutation-scope.ts";
-
-// Chunked full mutation runs (issue #236): the nightly Stryker run
-// outgrew GitHub's 6 h per-job limit (8619 mutants, cancelled at
-// 5 h 58 m before any report existed), so CI splits `mutate` across
-// parallel chunk jobs. This tool prints the --mutate argument for one
-// chunk: the src/*.ts files balanced over N chunks by file size
-// (largest-first greedy), so no chunk inherits the whole runtime.
-// src/quality/mutation-merge.ts stitches the chunk reports back
-// together.
 
 /** One mutable src/ file with the size that balances chunks. */
 export type SrcFile = { path: string; size: number };

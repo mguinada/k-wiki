@@ -1,3 +1,49 @@
+/**
+ * wiki-sync: the one-command orchestrator (guide §18, issue #13). It
+ * chains the proven pieces — sync (sync-vault for vault sources,
+ * sync-repo for repo sources, issue #145) → wiki-ingest → headless
+ * lint (§17, prompts/lint.md) → crosslink audit (issue #96,
+ * configured second brains only) → verification (issue #138) →
+ * data-repo commit — and prints one digest: the run's ingest digest,
+ * the lint summary, the audit result, the fidelity and provenance
+ * results, and the commit hash. Nothing here is new capability;
+ * every stage stays independently runnable (guide §8).
+ *
+ * The lint stage is the headless sibling of the manual lint run: the
+ * same prompt file, invoked through the same agent settings, with the
+ * same post-run guardrails and auto-revert as the ingest stage. Its
+ * report lands in the DATA repo's outputs/ (the #61 convention:
+ * quality history travels with the content), so the cycle's single
+ * commit carries it.
+ *
+ * The crosslink stage (issue #96) enforces the wiki/AGENTS.md contract
+ * that the cross-wiki audit runs after every run: an instance whose
+ * settings carry `secondBrain.domains: [<wiki dirs>]` gets the
+ * check-crosslinks core (src/wiki/crosslinks.ts) run over its wiki
+ * against
+ * every listed domain wiki, after lint and before the commit. A
+ * failed audit fails the cycle like lint does; instances without the
+ * key skip the stage, so the default instance is unchanged.
+ *
+ * The verification stage (issue #138) runs the deterministic
+ * check-fidelity (issue #125) and check-provenance (issue #65) cores
+ * over the data repo's wiki/ and raw/ every cycle, after lint and the
+ * crosslink audit. One problem line per finding fails the cycle
+ * before the commit: the lint edits are reverted (the ingest edits
+ * stay, uncommitted, as the fix surface), mirroring the lint stage's
+ * own failure semantics.
+ *
+ * The publish stage (guide §26, issue #15) copies the data repo's
+ * include-matched files into the configured mirror vault — verbatim,
+ * or re-based to vault root when `publish.root` is configured (issue
+ * #203) — the iCloud-served reading copy for iPhone and iPad. It runs after
+ * the commit, every cycle, so a mirror the transport mangled is
+ * healed by the next run; deletions included, the device-side
+ * `.obsidian/` state preserved, byte-identical files never rewritten
+ * (idempotent). A publish failure fails the cycle after the commit
+ * has landed; the next run retries the copy.
+ */
+
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -78,52 +124,6 @@ import {
 } from "./run-lock.ts";
 import { runRepoSync } from "./sync-repo.ts";
 import { runVaultSync } from "./sync-vault.ts";
-
-/**
- * wiki-sync: the one-command orchestrator (guide §18, issue #13). It
- * chains the proven pieces — sync (sync-vault for vault sources,
- * sync-repo for repo sources, issue #145) → wiki-ingest → headless
- * lint (§17, prompts/lint.md) → crosslink audit (issue #96,
- * configured second brains only) → verification (issue #138) →
- * data-repo commit — and prints one digest: the run's ingest digest,
- * the lint summary, the audit result, the fidelity and provenance
- * results, and the commit hash. Nothing here is new capability;
- * every stage stays independently runnable (guide §8).
- *
- * The lint stage is the headless sibling of the manual lint run: the
- * same prompt file, invoked through the same agent settings, with the
- * same post-run guardrails and auto-revert as the ingest stage. Its
- * report lands in the DATA repo's outputs/ (the #61 convention:
- * quality history travels with the content), so the cycle's single
- * commit carries it.
- *
- * The crosslink stage (issue #96) enforces the wiki/AGENTS.md contract
- * that the cross-wiki audit runs after every run: an instance whose
- * settings carry `secondBrain.domains: [<wiki dirs>]` gets the
- * check-crosslinks core (src/wiki/crosslinks.ts) run over its wiki
- * against
- * every listed domain wiki, after lint and before the commit. A
- * failed audit fails the cycle like lint does; instances without the
- * key skip the stage, so the default instance is unchanged.
- *
- * The verification stage (issue #138) runs the deterministic
- * check-fidelity (issue #125) and check-provenance (issue #65) cores
- * over the data repo's wiki/ and raw/ every cycle, after lint and the
- * crosslink audit. One problem line per finding fails the cycle
- * before the commit: the lint edits are reverted (the ingest edits
- * stay, uncommitted, as the fix surface), mirroring the lint stage's
- * own failure semantics.
- *
- * The publish stage (guide §26, issue #15) copies the data repo's
- * include-matched files into the configured mirror vault — verbatim,
- * or re-based to vault root when `publish.root` is configured (issue
- * #203) — the iCloud-served reading copy for iPhone and iPad. It runs after
- * the commit, every cycle, so a mirror the transport mangled is
- * healed by the next run; deletions included, the device-side
- * `.obsidian/` state preserved, byte-identical files never rewritten
- * (idempotent). A publish failure fails the cycle after the commit
- * has landed; the next run retries the copy.
- */
 
 /** Liveness line while the lint agent runs (one animated line on a TTY). */
 export const LINT_HEARTBEAT_PREFIX = "wiki-sync: lint agent still running";

@@ -1,3 +1,15 @@
+/**
+ * k-wiki: the agent-facing query entry point (guide §16, issue #76).
+ * `k-wiki query "<question>"` asks the wiki bound to the current
+ * project from any cwd — zero flags when a `.k-wiki.json` binding
+ * exists — and delegates to the answer-only `runWikiQuery`. There is
+ * no filing passthrough: filing stays the human-run
+ * `wiki-query --file-last` inside the checkout (issue #72's two-stage
+ * design). One command, the shared CLI shell, no framework (§27).
+ * The binding-file schema and checkout resolution live in
+ * k-wiki-binding.ts; the browsing domain logic in src/wiki/browse.ts.
+ */
+
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { errorMessage } from "../cli/colors.ts";
@@ -23,18 +35,6 @@ import {
 import { lastChangeLine, lastCommitDate } from "./last-change.ts";
 import { type RunContext, runContext } from "./run-context.ts";
 import { agentRunFlags, parseArgs } from "./shell.ts";
-
-/**
- * k-wiki: the agent-facing query entry point (guide §16, issue #76).
- * `k-wiki query "<question>"` asks the wiki bound to the current
- * project from any cwd — zero flags when a `.k-wiki.json` binding
- * exists — and delegates to the answer-only `runWikiQuery`. There is
- * no filing passthrough: filing stays the human-run
- * `wiki-query --file-last` inside the checkout (issue #72's two-stage
- * design). One command, the shared CLI shell, no framework (§27).
- * The binding-file schema and checkout resolution live in
- * k-wiki-binding.ts; the browsing domain logic in src/wiki/browse.ts.
- */
 
 /** Human phrase for each checkout resolution origin. */
 const ORIGIN_LABELS = {

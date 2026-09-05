@@ -1,9 +1,3 @@
-import { createHash } from "node:crypto";
-import type { Dirent, Stats } from "node:fs";
-import { readdir, readFile, stat } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-
 /**
  * Shared runtime helpers: generic primitives with no domain of their
  * own, imported across module boundaries. They live in the cli
@@ -12,6 +6,12 @@ import { fileURLToPath } from "node:url";
  * campaign's helper home (epic #242); the fs micro-helper
  * consolidation lands here too.
  */
+
+import { createHash } from "node:crypto";
+import type { Dirent, Stats } from "node:fs";
+import { readdir, readFile, stat } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 /** This repository's root, derived from this module's own location.
  *  Every src/ module sits exactly two levels below it (src/<area>/),

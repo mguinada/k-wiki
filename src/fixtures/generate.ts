@@ -1,9 +1,3 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { cliFail } from "../cli/colors.ts";
-import { refuseDirectExecution } from "../cli/is-main.ts";
-import { parseArgs } from "../cli/shell.ts";
-
 /**
  * Synthetic Obsidian vault fixture generator.
  *
@@ -13,6 +7,12 @@ import { parseArgs } from "../cli/shell.ts";
  * is written to `<target-dir>/Documents/` so path handling mirrors the real
  * vault's shape. A checked-in copy lives at tests/fixtures/Documents.
  */
+
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { cliFail } from "../cli/colors.ts";
+import { refuseDirectExecution } from "../cli/is-main.ts";
+import { parseArgs } from "../cli/shell.ts";
 
 /** Realistic vault name so path handling in tests stays honest. */
 export const VAULT_NAME = "Documents";

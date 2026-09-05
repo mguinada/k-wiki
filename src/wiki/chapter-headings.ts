@@ -1,6 +1,3 @@
-import { bodyAfterFrontmatter } from "./pages.ts";
-import { unfencedLines } from "./wiki-links.ts";
-
 /**
  * Chapter headings (issue #226): a hub citation anchors to a real
  * target only when the hub body carries a heading whose text is
@@ -11,6 +8,9 @@ import { unfencedLines } from "./wiki-links.ts";
  * citation list, so it is regenerable and stays in step when
  * chapters are added or renamed.
  */
+
+import { bodyAfterFrontmatter } from "./pages.ts";
+import { unfencedLines } from "./wiki-links.ts";
 
 const ATX_HEADING = /^ {0,3}(#{1,6})\s+(.+?)\s*$/;
 

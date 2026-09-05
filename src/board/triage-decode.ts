@@ -1,6 +1,3 @@
-import { isPlainObject } from "../cli/shared.ts";
-import type { BoardItem } from "./triage-rules.ts";
-
 /**
  * Board-response decoding (issue #209, extracted in issue #259):
  * turn one raw GraphQL page — the project envelope with its Status
@@ -11,6 +8,9 @@ import type { BoardItem } from "./triage-rules.ts";
  * open blocker or a live PR reference would misclassify the item
  * (finding O-5).
  */
+
+import { isPlainObject } from "../cli/shared.ts";
+import type { BoardItem } from "./triage-rules.ts";
 
 /** Board ids resolved fresh this run — never hardcoded. */
 export interface BoardIds {

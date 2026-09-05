@@ -2,6 +2,7 @@ import { readdir, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { insideStrykerSandbox } from "./stryker-sandbox.ts";
 
 /**
  * G2 — the mirrored test tree guard (issue #260): every
@@ -46,14 +47,6 @@ async function collectTsFiles(root: string, prefix = ""): Promise<string[]> {
  *  `.ts` suffix becomes `.test.ts`. */
 function mirroredTestPath(module: string): string {
   return `tests/${module.slice("src/".length, -".ts".length)}.test.ts`;
-}
-
-/** The Stryker sandbox detector (issue #276): the dry run executes
- *  against an instrumented copy, not the real tree this guard reads. */
-function insideStrykerSandbox(): boolean {
-  return (
-    import.meta.url.includes(".stryker-tmp") || "__stryker__" in globalThis
-  );
 }
 
 const skipNote =

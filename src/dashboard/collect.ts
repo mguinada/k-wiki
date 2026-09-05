@@ -1,3 +1,11 @@
+/**
+ * Dashboard collection (issue #73): the thin I/O layer that reads the
+ * data repo's existing artifacts — wiki pages and wikilinks, the raw
+ * manifest, the ingest snapshot, git history, last-query.md — and
+ * returns the pure DashboardInput the KPI functions compute from.
+ * Reads only; the generator's single write is dashboard.html.
+ */
+
 import type { Dirent } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { basename, join } from "node:path";
@@ -16,14 +24,6 @@ import type {
   DashboardInput,
   PageSnapshot,
 } from "./kpis.ts";
-
-/**
- * Dashboard collection (issue #73): the thin I/O layer that reads the
- * data repo's existing artifacts — wiki pages and wikilinks, the raw
- * manifest, the ingest snapshot, git history, last-query.md — and
- * returns the pure DashboardInput the KPI functions compute from.
- * Reads only; the generator's single write is dashboard.html.
- */
 
 /** Every wiki page as a PageSnapshot; empty when wiki/ is missing. */
 async function collectPages(wikiRoot: string): Promise<PageSnapshot[]> {

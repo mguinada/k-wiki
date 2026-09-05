@@ -1,3 +1,11 @@
+/**
+ * Prompt composition for one ingest run: the agent message for each
+ * mode — full, incremental with its changed-source list and operator
+ * note, expunge with recovered removed-note content and the
+ * deterministic direct set. Text assembly only; the run loop lives
+ * in wiki-ingest.ts.
+ */
+
 import { join } from "node:path";
 import { pluralized } from "../cli/shared.ts";
 import { removedNoteContent } from "../data/git.ts";

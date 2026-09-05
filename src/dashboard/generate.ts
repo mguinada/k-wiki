@@ -1,3 +1,11 @@
+/**
+ * dashboard (issue #73): a read-only KPI view over the data repo —
+ * one self-contained HTML file, regenerated after every successful
+ * ingest run and on demand (`npm run dashboard [-- <data-repo>]`).
+ * Fully derived: no persisted state anywhere; the only write is the
+ * output file itself.
+ */
+
 import { execFile as execFileCb } from "node:child_process";
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -15,14 +23,6 @@ import { loadSyncConfig, resolveRawDir } from "../sync/config.ts";
 import { collectData } from "./collect.ts";
 import { computeKpis } from "./kpis.ts";
 import { renderDashboard } from "./render.ts";
-
-/**
- * dashboard (issue #73): a read-only KPI view over the data repo —
- * one self-contained HTML file, regenerated after every successful
- * ingest run and on demand (`npm run dashboard [-- <data-repo>]`).
- * Fully derived: no persisted state anywhere; the only write is the
- * output file itself.
- */
 
 const OUTPUT_NAME = "dashboard.html";
 

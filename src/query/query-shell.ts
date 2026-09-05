@@ -1,8 +1,3 @@
-import { errorMessage, terminalColors } from "../cli/colors.ts";
-import { stderrSink } from "../cli/progress.ts";
-import { runContext } from "../cli/run-context.ts";
-import { QUERY_HEARTBEAT_PREFIX, runWikiQuery } from "./wiki-query.ts";
-
 /**
  * The shared query CLI shell (finding D-8): one runner owns what
  * k-wiki's runQueryCommand and wiki-query's answerStage used to
@@ -12,6 +7,12 @@ import { QUERY_HEARTBEAT_PREFIX, runWikiQuery } from "./wiki-query.ts";
  * surface: a fix here reaches both CLIs together. Only the prefix
  * and the hint text differ between the two.
  */
+
+import { errorMessage, terminalColors } from "../cli/colors.ts";
+import { stderrSink } from "../cli/progress.ts";
+import { runContext } from "../cli/run-context.ts";
+import { QUERY_HEARTBEAT_PREFIX, runWikiQuery } from "./wiki-query.ts";
+
 export interface QueryCliOptions {
   /** The calling CLI's name, prefixed to failure lines. */
   readonly prefix: string;

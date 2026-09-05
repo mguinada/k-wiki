@@ -1,5 +1,3 @@
-import type { DashboardKpis, KpiBar, WeekPoint } from "./kpis.ts";
-
 /**
  * The dashboard template (issue #73): one self-contained HTML page —
  * inline CSS, inline SVG bars, one toggle script — that opens offline
@@ -7,6 +5,8 @@ import type { DashboardKpis, KpiBar, WeekPoint } from "./kpis.ts";
  * grayscale palette with #FF5E35 as the single accent. The chrome
  * stays quiet; the KPIs are the content.
  */
+
+import type { DashboardKpis, KpiBar, WeekPoint } from "./kpis.ts";
 
 /** The reference palette (grayscale ramp) plus the accent. */
 const PALETTE = {

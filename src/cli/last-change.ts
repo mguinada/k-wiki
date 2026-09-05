@@ -1,6 +1,3 @@
-import { runGit } from "../data/git.ts";
-import type { RunContext } from "./run-context.ts";
-
 /**
  * The status `last change` fact line (issue #310): how fresh is the
  * wiki about to be read, from the one universal, honest ground truth
@@ -9,6 +6,9 @@ import type { RunContext } from "./run-context.ts";
  * check. One git read, nothing else (the issue's scope stop line:
  * no page counts, no coverage, no lint state here).
  */
+
+import { runGit } from "../data/git.ts";
+import type { RunContext } from "./run-context.ts";
 
 /** The relative-age ladder, coarsest unit first: a month is 30 days,
  *  a year 365 — display heuristics, not calendar arithmetic. The

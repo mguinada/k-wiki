@@ -10,6 +10,7 @@ import {
   spanText,
 } from "../../src/quality/mutation-identity.ts";
 import type { Mutant } from "../../src/quality/mutation-survivors.ts";
+import { insideStrykerSandbox } from "./stryker-sandbox.ts";
 
 // The mutant identity (issue #241): a sha over the mutated span's
 // exact code text, the mutator name, and the file's repo-relative
@@ -103,15 +104,6 @@ describe("spanText", () => {
     ).toBeUndefined();
   });
 });
-
-/** The Stryker sandbox detector (issue #276): the dry run executes
- *  against an instrumented copy, so the live-report coordinates below
- *  no longer match the real tree this test reads. */
-function insideStrykerSandbox(): boolean {
-  return (
-    import.meta.url.includes(".stryker-tmp") || "__stryker__" in globalThis
-  );
-}
 
 const skipNote =
   "Stryker sandbox instruments src/; the live-report span reads the real tree (issue #276)";
@@ -274,7 +266,7 @@ describe("mutantIdentity", () => {
     }
 
     // The same convention Stryker writes: `a.path < b.path` on
-    // 1-based line 59 of mutation-chunk.ts, columns 35..50, mutated
+    // 1-based line 61 of mutation-chunk.ts, columns 35..50, mutated
     // to `a.path <= b.path` — the survived sibling; `>=` is another
     // mutant with another identity.
     const real = {
@@ -282,8 +274,8 @@ describe("mutantIdentity", () => {
       mutatorName: "EqualityOperator",
       replacement: "a.path <= b.path",
       location: {
-        start: { line: 59, column: 35 },
-        end: { line: 59, column: 50 },
+        start: { line: 61, column: 35 },
+        end: { line: 61, column: 50 },
       },
     } as const;
     const chunk = readFileSync(
