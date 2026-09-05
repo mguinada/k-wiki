@@ -30,12 +30,12 @@ export function assertNoBlockingChanges(
       continue;
     }
 
-    const path = untrackedEntryOf(line);
+    const entry = untrackedEntryOf(line);
 
-    if (path === null) {
+    if (entry === null) {
       tracked.push(line.slice(3));
-    } else if (couldBeSelected(include, path)) {
-      untrackedSelectable.push(path);
+    } else if (couldBeSelected(include, entry)) {
+      untrackedSelectable.push(entry.path);
     }
   }
 
@@ -46,36 +46,53 @@ export function assertNoBlockingChanges(
   }
 }
 
-/** The normalized path of a `?? ` porcelain line (quotes and the
- *  collapsed-directory slash stripped), or null for tracked-change
- *  lines. */
-function untrackedEntryOf(line: string): string | null {
+/** A normalized `?? ` porcelain entry: its repo-relative path
+ *  (quotes stripped) and whether git reported a collapsed
+ *  directory. */
+interface UntrackedEntry {
+  readonly path: string;
+  readonly isDir: boolean;
+}
+
+/** The `?? ` porcelain entry — quotes and the collapsed-directory
+ *  slash stripped — or null for tracked-change lines. */
+function untrackedEntryOf(line: string): UntrackedEntry | null {
   if (!line.startsWith("?? ")) {
     return null;
   }
 
-  const path = line.slice(3).replace(/^"|"$/g, "");
+  const raw = line.slice(3).replace(/^"|"$/g, "");
+  const isDir = raw.endsWith("/");
 
-  return path.endsWith("/") ? path.slice(0, -1) : path;
+  return { path: isDir ? raw.slice(0, -1) : raw, isDir };
 }
 
 /** Whether an untracked entry could still enter the projection:
  *  ignorable only when no include pattern could possibly match it.
  *  Conservative by design — patterns are over-approximated by their
  *  literal leading segments, a pattern rooted at a wildcard (`**`,
- *  `*.md`) can reach any entry, and `.git`/`node_modules` — skipped
- *  at every walk root — are never selectable. */
-function couldBeSelected(include: readonly string[], entry: string): boolean {
-  const segments = entry.split("/");
+ *  `*.md`) can reach any entry, and a `.git`/`node_modules`
+ *  directory is skipped only by a whole-root walk — a pattern whose
+ *  literal prefix is empty — while patterns rooted at or under it
+ *  (exact files, walk roots) still select. */
+function couldBeSelected(
+  include: readonly string[],
+  entry: UntrackedEntry,
+): boolean {
+  const segments = entry.path.split("/");
   const first = segments[0];
+  const skippedDir =
+    entry.isDir && first !== undefined && SKIPPED_ROOT_DIRS.has(first);
 
-  if (first !== undefined && SKIPPED_ROOT_DIRS.has(first)) {
-    return false;
-  }
+  return include.some((pattern) => {
+    const prefix = literalPrefix(pattern);
 
-  return include.some((pattern) =>
-    literalSegmentsOverlap(literalPrefix(pattern), segments),
-  );
+    if (skippedDir && prefix.length === 0) {
+      return false;
+    }
+
+    return literalSegmentsOverlap(prefix, segments);
+  });
 }
 
 /** Whether a pattern's literal leading segments and an untracked

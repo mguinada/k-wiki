@@ -89,6 +89,24 @@ describe("assertNoBlockingChanges untracked tolerance (issue #312)", () => {
     ).toBeUndefined();
   });
 
+  it("refuses an untracked skipped-root dir an exact-file pattern names", () => {
+    expect(
+      guard("?? node_modules/\n", ["README.md", "node_modules/pkg/README.md"]),
+    ).toThrow(/untracked-selectable: node_modules/);
+  });
+
+  it("refuses an untracked skipped-root dir a walk-root pattern covers", () => {
+    expect(
+      guard("?? node_modules/\n", ["README.md", "node_modules/**/*.md"]),
+    ).toThrow(/untracked-selectable: node_modules/);
+  });
+
+  it("refuses an untracked file named node_modules a wildcard selects", () => {
+    expect(guard("?? node_modules\n", ["**"])).toThrow(
+      /untracked-selectable: node_modules/,
+    );
+  });
+
   it("caps the blocking paths listed in the failure message", () => {
     const porcelain = Array.from(
       { length: 7 },
