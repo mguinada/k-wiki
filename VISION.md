@@ -55,6 +55,14 @@ Deferred ideas carry explicit reconsideration triggers; passing a trigger is per
 Mutation testing stays advisory: runtime and machine variance make it a signal, never a gate.
 Behavior, tests, help text, and documentation land in the same change.
 
+## Simple stays simple
+
+The base path - one vault, one wiki: sync, ask, read, file - works with the same few commands and zero required new concepts, no matter how many advanced capabilities exist.
+Advanced features (multiple instances, agentic use, scheduling, publishing) are additive: invisible until invoked.
+They never add a required step, flag, or decision to a use case that does not use them.
+A change that alters the base path's commands, defaults, or concepts is a breaking change to the product and needs explicit, written justification.
+AGENTS.md's shared invariants carry this as the must; this vision carries the why.
+
 ## Scope
 
 k-wiki is not a note-taking app and does not replace Obsidian.
