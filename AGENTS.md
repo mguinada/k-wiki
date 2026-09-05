@@ -149,9 +149,9 @@ until all three pass. Run them before every handoff.
   push-rejection-retry, double-push-failure, and dirty-tree
   recovery runs in temp data repos with an upstream remote, and
   setup-meta-sync through hook install, idempotent re-install,
-  uninstall, merge and rebase-pull fires, and feature-branch and
-  dirty-tree guard skips against a temp source repo with a stubbed
-  cycle runner.
+  uninstall, merge and rebase-pull fires, and feature-branch,
+  linked-worktree, and dirty-tree guard skips against a temp source
+  repo with a stubbed cycle runner.
 - `bin/check-raw [<raw-dir>] [--fail-on-stale]` — coherence check
   of a `raw/` projection (default: the repo's `raw/`); a repo-sourced
   projection is also freshness-checked (`--fail-on-stale` makes a
