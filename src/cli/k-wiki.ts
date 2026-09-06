@@ -164,7 +164,8 @@ function fail(message: string): void {
 }
 
 /** Print the resolved binding: origin, checkout, instance, paths
- *  (issues #76, #306), plus the last change fact (issue #310). */
+ *  (issues #76, #306), plus the last change fact (issue #310).
+ *  Labels pad to 13 chars (issue #321): `last change:` is 12 itself. */
 async function runStatus(
   resolution: CheckoutResolution,
   run: RunContext,
@@ -174,22 +175,21 @@ async function runStatus(
 
   console.log(
     [
-      `checkout:  ${resolution.checkout} (from ${ORIGIN_LABELS[resolution.origin]})`,
-      `instance:  ${instance.name ?? "default"}`,
-      `sync:      ${instance.configPath}`,
-      `settings:  ${bindingSettings(resolution, instance)}`,
-      `data repo: ${run.dataRoot}`,
-      `outputs:   ${instance.outputsDir}`,
-      `wiki:      ${run.wikiDir}`,
-      `index:     ${join(run.wikiDir, "index.md")}`,
+      `checkout:    ${resolution.checkout} (from ${ORIGIN_LABELS[resolution.origin]})`,
+      `instance:    ${instance.name ?? "default"}`,
+      `sync:        ${instance.configPath}`,
+      `settings:    ${bindingSettings(resolution, instance)}`,
+      `data repo:   ${run.dataRoot}`,
+      `outputs:     ${instance.outputsDir}`,
+      `wiki:        ${run.wikiDir}`,
+      `index:       ${join(run.wikiDir, "index.md")}`,
       lastChangeLine(lastCommit, run.now()),
     ].join("\n"),
   );
 }
 
 /** The effective settings file: the binding's explicit settings key
- *  overrides the instance's derived settings — one precedence rule,
- *  mirroring the human door's flags (issue #306). */
+ *  overrides the instance's derived one — one rule (issue #306). */
 function bindingSettings(
   resolution: CheckoutResolution,
   instance: WikiInstance,
@@ -199,7 +199,7 @@ function bindingSettings(
     : join(resolution.checkout, resolution.settings);
 }
 
-/** Print the structured wiki listing, grouped (or filtered) by type. */
+/** The structured wiki listing, grouped (or filtered) by type. */
 async function runList(
   wikiDir: string,
   typeFilter: string | undefined,
