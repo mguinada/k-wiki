@@ -1504,7 +1504,11 @@ Deltas from the simple path:
    walked — so new directories, stray data-repo checkouts inside the
    source, and any future wiki tree can never leak in. This is the
    structural self-ingestion recursion guard: the projection cannot
-   contain a projection.
+   contain a projection. Selection also draws only from the repo's
+   tracked files (`git ls-files`, issue #324): a gitignored file
+   matching the allowlist is skipped — `git status` never reports an
+   ignored file, so it would otherwise enter the projection behind a
+   recorded commit that does not describe it.
 2. **Verbatim, namespaced copy.** Files enter `raw/notes/<name>/`
    byte-for-byte, subpaths preserved — code is truth, so the agent
    reads the real file, never a summary. The manifest machinery
