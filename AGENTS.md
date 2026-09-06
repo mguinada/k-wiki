@@ -287,11 +287,14 @@ Launchers come in two classes, matching the two agent contexts.
 `bin/<name>` (extensionless, issue #156) launches the wiki
 runtime — commands meaningful
 outside this repo (create, operate, consume, observe, audit, migrate
-the wiki). `dev/<name>.ts` launches development-lifecycle commands
+the wiki); the Verification & maintenance plumbing tier nests under
+`bin/libexec/<name>` (issue #335 — still `bin/`-class runtime,
+callable, out of the top-level spotlight). `dev/<name>.ts` launches development-lifecycle commands
 that exist only to build and maintain this repo (`generate`,
 `mutation-*`, `board-triage`, `refactor-metrics`). Every CLI runs through a shebanged
 launcher of its class (`#!/usr/bin/env node`, committed `100755`);
-npm scripts invoke `node bin/<name>` or `node dev/<name>.ts`.
+npm scripts invoke `node bin/<name>`, `node bin/libexec/<name>`, or
+`node dev/<name>.ts`.
 `src/` and `scripts/` modules are libraries:
 they export `main()` but never invoke it at module scope — no Stryker
 mutant can fire a CLI as an import side effect with live defaults
