@@ -468,3 +468,72 @@ describe("mergeLedger with span identities", () => {
     expect([...second.generated]).toEqual(["src/math.ts:2|ArithmeticOperator"]);
   });
 });
+
+describe("ledger ordering and block precedence (issue #240 kill batch)", () => {
+  it("renders ledger lines in the survivors-printer order", () => {
+    const lines = ledgerLines({
+      entries: [
+        survived("src/zeta.ts", 3, "Regex"),
+        survived("src/alpha.ts", 9, "StringLiteral"),
+      ],
+    });
+
+    expect(lines[0]).toBe("Survived  src/alpha.ts:9  StringLiteral");
+  });
+
+  it("bootstraps the rendered list when the embedded block is invalid", () => {
+    const ledger = ledgerFromBody(
+      [
+        "<!-- k-wiki-mutants-ledger: " +
+          JSON.stringify({ schema: 3, entries: {} }) +
+          " -->",
+        "",
+        "Survived  src/bootstrap.ts:7  OptionalChaining",
+      ].join("\n"),
+    );
+
+    expect(ledger.entries[0]?.file).toBe("src/bootstrap.ts");
+  });
+
+  it("bootstraps the rendered list when the block's entries value is not an object", () => {
+    const ledger = ledgerFromBody(
+      [
+        "<!-- k-wiki-mutants-ledger: " +
+          JSON.stringify({ schema: 2, entries: 42 }) +
+          " -->",
+        "",
+        "Survived  src/bootstrap.ts:7  OptionalChaining",
+      ].join("\n"),
+    );
+
+    expect(ledger.entries[0]?.file).toBe("src/bootstrap.ts");
+  });
+
+  it("ignores a rendered survivor line with leading junk", () => {
+    expect(
+      bootstrapEntries("prefix Survived  src/a.ts:5  MethodExpression"),
+    ).toEqual([]);
+  });
+
+  it("ignores a rendered survivor line with trailing junk", () => {
+    expect(
+      bootstrapEntries("Survived  src/a.ts:5  MethodExpression trailing"),
+    ).toEqual([]);
+  });
+
+  it("returns merged entries in the survivors-printer order", () => {
+    const prior: Ledger = {
+      entries: [
+        survived("src/zeta.ts", 3, "Regex"),
+        survived("src/alpha.ts", 9, "StringLiteral"),
+      ],
+    };
+
+    expect(
+      mergeLedger(prior, report({}), {
+        absenceKills: false,
+        readSource: () => undefined,
+      }).ledger.entries[0]?.file,
+    ).toBe("src/alpha.ts");
+  });
+});

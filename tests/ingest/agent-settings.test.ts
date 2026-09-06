@@ -288,6 +288,27 @@ describe("parseSettings", () => {
     ).toThrow('expected `key: value`, got "broken"');
   });
 
+  it("strips a trailing comment after an apostrophe preceded only by spaces", () => {
+    expect(() =>
+      parseSettings("command: pi\nmodel: m\nreasoning: h\nm 'x # y'\n", "s"),
+    ).toThrow('expected `key: value`, got "m \'x"');
+  });
+
+  it("keeps a hash inside a value quoted from the line start", () => {
+    expect(() =>
+      parseSettings("command: pi\nmodel: m\nreasoning: h\n'a # b': v\n", "s"),
+    ).toThrow("unknown setting \"'a # b'\"");
+  });
+
+  it("keeps a hash glued to an unquoted value in the value", () => {
+    const settings = parseSettings(
+      "command: pi#frag\nmodel: m\nreasoning: h\n",
+      "s",
+    );
+
+    expect(settings.command).toBe("pi#frag");
+  });
+
   it("names the settings file in every error", () => {
     expect(() => parseSettings("command: pi\n", "my-settings.yml")).toThrow(
       "my-settings.yml",
@@ -785,6 +806,46 @@ describe("loadAgentSettings whitelist resolution (issue #144)", () => {
 
     return { settingsPath, piInstallRoot };
   }
+
+  it("resolves an empty npm: spec to an omitted extension with a warning", async () => {
+    const root = await mkdtemp(join(tmpdir(), "k-wiki-whitelist-"));
+
+    whitelistDirs.push(root);
+
+    const piInstallRoot = join(root, "pi-root");
+    const settingsPath = join(root, "settings.yml");
+
+    await mkdir(piInstallRoot, { recursive: true });
+    await writeFile(
+      settingsPath,
+      "command: pi\nmodel: m\nreasoning: h\nisolate.extensions: npm:\n",
+    );
+
+    const resolved = await loadAgentSettings(settingsPath, { piInstallRoot });
+
+    expect(resolved.isolateExtensions).toEqual([]);
+  });
+
+  it("finds a scoped npm spec under the bare package name", async () => {
+    const root = await mkdtemp(join(tmpdir(), "k-wiki-whitelist-"));
+
+    whitelistDirs.push(root);
+
+    const piInstallRoot = join(root, "pi-root");
+    const settingsPath = join(root, "settings.yml");
+
+    await mkdir(join(piInstallRoot, "npm", "node_modules", "@scope", "pkg"), {
+      recursive: true,
+    });
+    await writeFile(
+      settingsPath,
+      "command: pi\nmodel: m\nreasoning: h\nisolate.extensions: npm:@scope/pkg\n",
+    );
+
+    const resolved = await loadAgentSettings(settingsPath, { piInstallRoot });
+
+    expect(resolved.isolateExtensions).toEqual(["npm:@scope/pkg"]);
+  });
 
   it("resolves skill entries against the settings file's directory", async () => {
     const { settingsPath, piInstallRoot } = await makeWhitelistFixture({

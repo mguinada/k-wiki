@@ -272,6 +272,50 @@ describe("readFileTolerant", () => {
     });
     expect(readFile).toHaveBeenCalledTimes(1);
   });
+
+  it("stops retrying when the next delay would not fit the budget", async () => {
+    const dir = await makeTempDir();
+    const path = join(dir, "note.md");
+
+    await writeFile(path, "cat materializes me\n");
+    vi.mocked(readFile).mockImplementation(
+      rejectReadFor(eagainError("read"), path),
+    );
+    const realNow = Date.now;
+    let ticks = 0;
+    const now = vi
+      .spyOn(Date, "now")
+      .mockImplementation(() => realNow() + ticks++);
+
+    try {
+      await readFileTolerant(path, 10, 5);
+    } finally {
+      now.mockRestore();
+    }
+
+    expect(readFile).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries once more when the next delay exactly fits the budget", async () => {
+    const dir = await makeTempDir();
+    const path = join(dir, "note.md");
+
+    await writeFile(path, "materialized\n");
+    vi.mocked(readFile).mockImplementationOnce(
+      rejectReadFor(eagainError("read"), path),
+    );
+    const realNow = Date.now;
+    const frozen = realNow();
+    const now = vi.spyOn(Date, "now").mockImplementation(() => frozen);
+
+    try {
+      await readFileTolerant(path, 10, 10);
+    } finally {
+      now.mockRestore();
+    }
+
+    expect(execFile).not.toHaveBeenCalled();
+  });
 });
 
 describe("copyFileTolerant", () => {
@@ -354,6 +398,66 @@ describe("copyFileTolerant", () => {
       code: "ENOENT",
     });
     expect(copyFile).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops copy retries when the next delay would not fit the budget", async () => {
+    const dir = await makeTempDir();
+    const source = join(dir, "a.md");
+    const target = join(dir, "b.md");
+
+    await writeFile(source, "src\n");
+    vi.mocked(copyFile).mockImplementation(async () =>
+      Promise.reject(eagainError("copyfile")),
+    );
+    const realNow = Date.now;
+    let ticks = 0;
+    const now = vi
+      .spyOn(Date, "now")
+      .mockImplementation(() => realNow() + ticks++);
+
+    try {
+      await expect(
+        copyFileTolerant(source, target, 10, 5),
+      ).rejects.toMatchObject({
+        errno: -11,
+      });
+    } finally {
+      now.mockRestore();
+    }
+
+    expect(copyFile).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries the copy once more when the next delay exactly fits the budget", async () => {
+    const dir = await makeTempDir();
+    const source = join(dir, "a.md");
+    const target = join(dir, "b.md");
+
+    await writeFile(source, "src\n");
+    vi.mocked(copyFile).mockImplementationOnce(async (from, to) =>
+      to === target
+        ? Promise.reject(eagainError("copyfile"))
+        : actualFs.copyFile(from, to),
+    );
+    const realNow = Date.now;
+    const frozen = realNow();
+    const now = vi.spyOn(Date, "now").mockImplementation(() => frozen);
+    const timer = vi.spyOn(globalThis, "setTimeout").mockImplementation(((
+      callback: () => void,
+    ) => {
+      callback();
+
+      return {} as NodeJS.Timeout;
+    }) as unknown as typeof setTimeout);
+
+    try {
+      await copyFileTolerant(source, target, 10, 10);
+    } finally {
+      now.mockRestore();
+      timer.mockRestore();
+    }
+
+    expect(copyFile).toHaveBeenCalledTimes(2);
   });
 });
 

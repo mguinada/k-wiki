@@ -535,3 +535,75 @@ describe("CLI (dev/refactor-metrics.ts)", () => {
     expect(missing).toEqual([]);
   });
 });
+
+describe("collectOffenders (domain rules, issue #240 kill batch)", () => {
+  /** A tree of the named files; returns the scan root. */
+  async function treeOf(files: Record<string, string>): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), "k-wiki-rm-domains-"));
+
+    tempDirs.push(root);
+
+    for (const [file, content] of Object.entries(files)) {
+      await mkdir(join(root, dirname(file)), { recursive: true });
+      await writeFile(join(root, file), content);
+    }
+
+    return root;
+  }
+
+  it("excludes a sync importer of a data module from data→sync sites", async () => {
+    const root = await treeOf({
+      "sync/s.ts": 'import { q } from "../data/q.ts";\n',
+      "data/q.ts": "export const q = 1;\n",
+    });
+    const offenders = await collectOffenders(root);
+
+    expect(offenders.dataToSyncEdges).toEqual([]);
+  });
+
+  it("keeps an import inside one nested domain out of cross-domain sites", async () => {
+    const root = await treeOf({
+      "a/b.ts": 'import { b2 } from "./b2.ts";\n',
+      "a/b2.ts": "export const b2 = 1;\n",
+    });
+    const offenders = await collectOffenders(root);
+
+    expect(offenders.crossDomainEdges).toEqual([]);
+  });
+
+  it("counts a cross-domain import between two root files", async () => {
+    const root = await treeOf({
+      "a.ts": 'import { b } from "./b.ts";\n',
+      "b.ts": "export const b = 1;\n",
+    });
+    const offenders = await collectOffenders(root);
+
+    expect(offenders.crossDomainEdges).toEqual([{ path: "a.ts", line: 1 }]);
+  });
+
+  it("ignores a bare package import from a root file", async () => {
+    const root = await treeOf({
+      "a.ts": 'import { pad } from "left-pad";\nexport const pad = 1;\n',
+    });
+    const offenders = await collectOffenders(root);
+
+    expect(offenders.crossDomainEdges).toEqual([]);
+  });
+});
+
+describe("main -h (issue #240 kill batch)", () => {
+  it("prints the usage line for -h", async () => {
+    const out: string[] = [];
+    const spy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+
+    try {
+      await main(["-h"]);
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(out[0]).toContain("Usage: refactor-metrics [--json] [<root>]");
+  });
+});

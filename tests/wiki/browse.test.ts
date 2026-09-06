@@ -161,6 +161,17 @@ describe("groupedLines", () => {
     ).toEqual(["## concepts", "## wikignomes"]);
   });
 
+  it("sorts the unknown type sections alphabetically", () => {
+    const wiki = [
+      { path: "z.md", slug: "zed", type: "zeta", title: "Zed" },
+      { path: "a.md", slug: "ay", type: "alpha", title: "Ay" },
+    ];
+
+    expect(
+      groupedLines(groupPages(wiki)).filter((l) => l.startsWith("##")),
+    ).toEqual(["## alphas", "## zetas"]);
+  });
+
   it("keeps the untyped section last without pluralizing it", () => {
     const wiki = [
       { path: "p.md", slug: "plain", type: undefined, title: undefined },

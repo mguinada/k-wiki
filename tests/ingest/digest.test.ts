@@ -1,10 +1,13 @@
-import { rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { AgentSettings } from "../../src/ingest/agent-settings.ts";
 import {
   directSetForRemovals,
   formatDigest,
   type IngestRun,
+  writeFailureDigest,
 } from "../../src/ingest/digest.ts";
 import { diffManifests } from "../../src/ingest/manifest-diff.ts";
 import { emptyManifest } from "../../src/sync/manifest.ts";
@@ -698,5 +701,49 @@ describe("formatDigest structure", () => {
 
   it("ends with a newline", () => {
     expect(formatDigest(digestRun()).endsWith("\n")).toBe(true);
+  });
+});
+
+describe("formatDigest mode gating (issue #240 kill batch)", () => {
+  it("omits the Changed sources section for a full-mode run", () => {
+    const digest = formatDigest(
+      digestRun({ mode: "full", promptFile: "prompts/ingest.md" }),
+    );
+
+    expect(digest).not.toContain("## Changed sources");
+  });
+});
+
+describe("writeFailureDigest (issue #240 kill batch)", () => {
+  it("writes empty page buckets for a reverted run", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-faildig-"));
+
+    tempDirs.push(dir);
+    const digestPath = join(dir, "digest.md");
+    const settings: AgentSettings = {
+      command: "pi",
+      model: "m",
+      reasoning: "high",
+    };
+    const run = {
+      startedAt: new Date("2026-08-20T17:30:00.000Z"),
+      mode: "incremental" as const,
+      promptFile: "prompts/incremental.md",
+      settings,
+      diff: diffManifests(emptyManifest(), emptyManifest()),
+      agentOutput: "AGENT REPORT",
+      failure: {
+        check: 1 as const,
+        name: "immutability" as const,
+        problems: ["p"],
+      },
+      explicitDiff: undefined,
+    };
+
+    await writeFailureDigest(digestPath, run);
+
+    const digest = await readFile(digestPath, "utf8");
+
+    expect(digest).not.toContain("Stryker was here");
   });
 });

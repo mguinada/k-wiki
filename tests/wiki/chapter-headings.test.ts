@@ -34,6 +34,12 @@ describe("extractHeadings", () => {
     expect(extractHeadings("##  Two\n")).toEqual(["Two"]);
   });
 
+  it("keeps a heading whose text is the mutation sentinel", () => {
+    expect(extractHeadings("## Stryker was here!\n")).toEqual([
+      "Stryker was here!",
+    ]);
+  });
+
   it("does not read a hash inside a prose line as a heading", () => {
     expect(extractHeadings("see # Tags mid-line\n")).toEqual([]);
   });

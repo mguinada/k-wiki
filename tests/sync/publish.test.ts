@@ -4,6 +4,7 @@ import {
   readFile,
   rm,
   stat,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -79,6 +80,22 @@ describe("runPublishStage", () => {
     await expect(
       readFile(join(tree.mirror, "README.md"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("skips non-regular files inside the matched tree", async () => {
+    const tree = await makeTree();
+
+    await symlink(
+      join(tree.dataRoot, "wiki", "index.md"),
+      join(tree.dataRoot, "wiki", "alias.md"),
+    );
+
+    const result = await runPublishStage(optionsFor(tree));
+
+    await expect(
+      readFile(join(tree.mirror, "wiki", "alias.md"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    expect(result.copied).toBe(2);
   });
 
   it("creates the mirror when it does not exist", async () => {

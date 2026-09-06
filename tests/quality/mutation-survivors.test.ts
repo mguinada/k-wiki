@@ -8,6 +8,7 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 import { mutantIdentity } from "../../src/quality/mutation-identity.ts";
 import {
   actionableEntries,
+  compareEntries,
   formatEntry,
   main,
   parseReport,
@@ -276,6 +277,224 @@ describe("parseReport shape edges", () => {
     ).toThrow(
       "mutation report has an unexpected shape (a file entry lacks its mutants array)",
     );
+  });
+});
+
+describe("compareEntries (issue #240 kill batch)", () => {
+  it("orders same-line survivors of one file by mutator name", () => {
+    expect(
+      compareEntries(
+        { file: "src/a.ts", line: 7, mutator: "Zeta" },
+        { file: "src/a.ts", line: 7, mutator: "Alpha" },
+      ),
+    ).toBe(1);
+  });
+
+  it("sorts the mutator ascending within one line", () => {
+    expect(
+      compareEntries(
+        { file: "src/a.ts", line: 7, mutator: "Alpha" },
+        { file: "src/a.ts", line: 7, mutator: "Zeta" },
+      ),
+    ).toBe(-1);
+  });
+
+  it("orders same-file survivors by line number before mutator name", () => {
+    expect(
+      compareEntries(
+        { file: "src/a.ts", line: 5, mutator: "Alpha" },
+        { file: "src/a.ts", line: 2, mutator: "Zeta" },
+      ),
+    ).toBe(3);
+  });
+});
+
+describe("printSurvivors split counts (issue #240 kill batch)", () => {
+  const SPLIT_SOURCE = [
+    "export function add(a: number, b: number): number {",
+    "  return a + b;",
+    "}",
+    "export function sub(a: number, b: number): number {",
+    "  return a - b;",
+    "}",
+    'export const pair = ["a", "b"];',
+  ].join("\n");
+
+  const survivorAt = (line: number, column: number) => ({
+    mutatorName: "ArithmeticOperator",
+    status: "Survived",
+    replacement: "",
+    location: { start: { line, column }, end: { line, column: column + 5 } },
+  });
+
+  const literalAt = (column: number) => ({
+    mutatorName: "StringLiteral",
+    status: "Survived",
+    replacement: '"Stryker was here"',
+    location: {
+      start: { line: 7, column },
+      end: { line: 7, column: column + 3 },
+    },
+  });
+
+  /** A temp repo with the source, a report of the given survivors,
+   *  and a registry recording the named survivor ids. */
+  const withSplitRepo = async (
+    survivors: ReturnType<typeof survivorAt>[],
+    recorded: Record<string, "equivalent" | "artifact">,
+  ): Promise<string> => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutsurv-split-"));
+
+    tempDirs.push(dir);
+
+    await mkdir(join(dir, "src"), { recursive: true });
+    await writeFile(join(dir, "src", "split.ts"), SPLIT_SOURCE);
+
+    const readSource = (file: string) =>
+      file === "src/split.ts" ? SPLIT_SOURCE : undefined;
+    const ids = survivors.map((mutant) =>
+      mutantIdentity("src/split.ts", mutant, readSource),
+    );
+
+    if (ids.some((id) => id === undefined)) {
+      throw new Error("test fixture: every identity must compute");
+    }
+
+    if (Object.keys(recorded).length > 0) {
+      await writeFile(
+        join(dir, ".mutants-registry.json"),
+        JSON.stringify({
+          schema: 1,
+          entries: Object.fromEntries(
+            Object.entries(recorded).map(([index, bucket]) => [
+              ids[Number(index)],
+              {
+                bucket,
+                justification: "Split-count kill fixture.",
+                pr: "https://github.com/mguinada/k-wiki/pull/240",
+                date: "2026-09-06",
+              },
+            ]),
+          ),
+        }),
+      );
+    }
+
+    return dir;
+  };
+
+  const printInto = async (
+    dir: string,
+    survivors: ReturnType<typeof survivorAt>[],
+  ): Promise<string> => {
+    const out: string[] = [];
+    const spy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+
+    process.exitCode = undefined;
+
+    try {
+      printSurvivors(
+        JSON.stringify({ files: { "src/split.ts": { mutants: survivors } } }),
+        dir,
+      );
+    } finally {
+      process.exitCode = undefined;
+      spy.mockRestore();
+    }
+
+    return out.join("\n");
+  };
+
+  it("prints the no-untriaged line when the only survivor is recorded", async () => {
+    const survivors = [survivorAt(2, 10)];
+    const dir = await withSplitRepo(survivors, { "0": "equivalent" });
+
+    expect(await printInto(dir, survivors)).toContain(
+      "No untriaged mutants — every actionable mutant is adjudicated.",
+    );
+  });
+
+  it("keeps the actionable total whole beside one recorded equivalent", async () => {
+    const survivors = [survivorAt(2, 10), survivorAt(5, 10)];
+    const dir = await withSplitRepo(survivors, { "0": "equivalent" });
+
+    expect(await printInto(dir, survivors)).toContain("Untriaged mutants (1)");
+  });
+
+  it("keeps the actionable total whole beside one recorded artifact", async () => {
+    const survivors = [survivorAt(2, 10), survivorAt(5, 10)];
+    const dir = await withSplitRepo(survivors, { "0": "artifact" });
+
+    expect(await printInto(dir, survivors)).toContain("Untriaged mutants (1)");
+  });
+
+  it("sums equivalents and artifacts into the recorded count", async () => {
+    const survivors = [survivorAt(2, 10), survivorAt(5, 10), literalAt(17)];
+    const dir = await withSplitRepo(survivors, {
+      "0": "equivalent",
+      "1": "artifact",
+      "2": "artifact",
+    });
+
+    expect(await printInto(dir, survivors)).toContain(
+      "Recorded adjudications (3)",
+    );
+  });
+
+  it("prints no recorded-adjudications line without a registry", async () => {
+    const survivors = [survivorAt(2, 10)];
+    const dir = await withSplitRepo(survivors, {});
+
+    expect(await printInto(dir, survivors)).not.toContain(
+      "Recorded adjudications",
+    );
+  });
+
+  it("keeps report order for two survivors of one line and mutator", () => {
+    const survivors = [literalAt(22), literalAt(17)];
+    const readSource = (file: string) =>
+      file === "src/split.ts" ? SPLIT_SOURCE : undefined;
+    const lead = survivors[0];
+
+    if (lead === undefined) {
+      throw new Error("test fixture: the survivor must exist");
+    }
+
+    const first = mutantIdentity("src/split.ts", lead, readSource);
+
+    if (first === undefined) {
+      throw new Error("test fixture: identity must compute");
+    }
+
+    expect(
+      actionableEntries(
+        { files: { "src/split.ts": { mutants: survivors } } },
+        readSource,
+      )[0]?.id,
+    ).toBe(first);
+  });
+});
+
+describe("main argument handling (issue #240 kill batch)", () => {
+  it("reports an unexpected argument on stderr and exits 1", () => {
+    const errors: string[] = [];
+    const spy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) =>
+        errors.push(parts.join(" ")),
+      );
+
+    process.exitCode = undefined;
+
+    try {
+      main(["bogus"]);
+      expect(errors.join("\n")).toContain("unexpected argument: bogus");
+    } finally {
+      process.exitCode = undefined;
+      spy.mockRestore();
+    }
   });
 });
 

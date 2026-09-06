@@ -327,6 +327,10 @@ describe("parseWindowDays", () => {
     expect(parseWindowDays("7")).toBe(7);
   });
 
+  it("accepts a one-day window", () => {
+    expect(parseWindowDays("1")).toBe(1);
+  });
+
   it("rejects zero with the env name in the message", () => {
     expect(() => parseWindowDays("0")).toThrow(
       "MUTATION_WINDOW_DAYS must be a positive integer",
@@ -364,6 +368,54 @@ describe("windowBase", () => {
 
     expect(windowBase(git, 7)).toBe("old3");
   });
+
+  it("returns the before-window sha without consulting the full history", () => {
+    const calls: string[][] = [];
+    const git: GitText = (args) => {
+      calls.push([...args]);
+
+      return args.join(" ").includes("--before") ? "win1\n" : "tip1\nold1\n";
+    };
+
+    expect(windowBase(git, 7)).toBe("win1");
+    expect(calls).toEqual([
+      ["rev-list", "-1", "--before=7 days ago", "origin/main"],
+    ]);
+  });
+
+  it("warns while degrading toward full scope on the fallback", () => {
+    const warnings: string[] = [];
+    const warn = vi
+      .spyOn(console, "warn")
+      .mockImplementation((...parts: unknown[]) =>
+        warnings.push(parts.join(" ")),
+      );
+    const git: GitText = (args) =>
+      args.join(" ").includes("--before") ? "" : "tip1\nold1\n";
+
+    try {
+      windowBase(git, 7);
+    } finally {
+      warn.mockRestore();
+    }
+
+    expect(warnings[0]).toContain(
+      "falling back to the oldest reachable commit",
+    );
+  });
+
+  it("asks the full rev-list for the fallback commit", () => {
+    const calls: string[][] = [];
+    const git: GitText = (args) => {
+      calls.push([...args]);
+
+      return args.join(" ").includes("--before") ? "" : "tip1\nold1\n";
+    };
+
+    windowBase(git, 7);
+
+    expect(calls[1]).toEqual(["rev-list", "origin/main"]);
+  });
 });
 
 describe("resolveBase", () => {
@@ -393,6 +445,18 @@ describe("resolveBase", () => {
   it("resolves MUTATION_WINDOW_DAYS to the window base sha", () => {
     expect(resolveBase(undefined, { MUTATION_WINDOW_DAYS: "7" }, git)).toBe(
       "abc123",
+    );
+  });
+
+  it("skips an empty MUTATION_BASE value", () => {
+    expect(resolveBase(undefined, { MUTATION_BASE: "" }, git)).toBe(
+      "origin/main",
+    );
+  });
+
+  it("skips an empty MUTATION_WINDOW_DAYS value", () => {
+    expect(resolveBase(undefined, { MUTATION_WINDOW_DAYS: "" }, git)).toBe(
+      "origin/main",
     );
   });
 

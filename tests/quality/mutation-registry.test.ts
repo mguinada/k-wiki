@@ -127,6 +127,57 @@ describe("parseRegistry", () => {
       ),
     ).toThrow(/date/);
   });
+
+  it("rejects a justification receipt that is not a string", () => {
+    expect(() =>
+      parseRegistry(
+        registryText({
+          "0123456789abcdef": { ...entry("equivalent"), justification: 42 },
+        }),
+      ),
+    ).toThrow(/justification/);
+  });
+
+  it("rejects a pr receipt that is not a string", () => {
+    expect(() =>
+      parseRegistry(
+        registryText({
+          "0123456789abcdef": { ...entry("equivalent"), pr: 42 },
+        }),
+      ),
+    ).toThrow(/PR/i);
+  });
+
+  it("rejects a date receipt that is not a string", () => {
+    expect(() =>
+      parseRegistry(
+        registryText({
+          "0123456789abcdef": {
+            ...entry("equivalent"),
+            date: ["2026-01-01"],
+          },
+        }),
+      ),
+    ).toThrow(/date/);
+  });
+
+  it("rejects an entry that is not an object", () => {
+    expect(() =>
+      parseRegistry(registryText({ "0123456789abcdef": 42 })),
+    ).toThrow(/unexpected shape/);
+  });
+
+  it("rejects an entry that is null", () => {
+    expect(() =>
+      parseRegistry(registryText({ "0123456789abcdef": null })),
+    ).toThrow(/unexpected shape/);
+  });
+
+  it("rejects a registry whose entries value is null", () => {
+    expect(() =>
+      parseRegistry(JSON.stringify({ schema: 1, entries: null })),
+    ).toThrow(/unexpected shape/);
+  });
 });
 
 describe("splitByRegistry", () => {
