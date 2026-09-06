@@ -10,16 +10,21 @@ e2e run or diagnosing a failing one.
   (second-brain runs included: profile ingest, cross-wiki validation,
   and the reverted domain→second-brain leak; isolate-whitelist runs
   pass the `--skill`/`-e` flags and warn-and-omit absent entries,
-  issue #144).
+  issue #144; sandbox-hygiene runs included: the TTL reaper deletes
+  an expired `wiki/sandbox/` note on the next run while a live one
+  survives, and a sandbox-less repo stays byte-identical on the skip
+  path, issue #338).
 - **sync-repo** — repo-as-source projection runs in temp source repos
   (verbatim copy, commit stamping, untracked scratch proceeds and
   untracked-selectable refuses, gitignored allowlisted files skipped
   and `.git/info/exclude` scratch workflows kept, dirty-source and
   wrong-config failures, health freshness).
 - **wiki-sync** — full-cycle, no-change, failure, guardrail-revert,
-  reverted fidelity-failure, repo-source cycle (the meta flow), and
+  reverted fidelity-failure, repo-source cycle (the meta flow),
   run-lock (loud holder refusal, release after a completed cycle,
-  independent instance while another holds its lock) runs.
+  independent instance while another holds its lock), and
+  publish-denylist (a sandbox page never reaches the mirror, issue
+  #338) runs.
 - **scheduled-run** — full-cycle, no-op re-run, lock-skip,
   push-rejection-retry, double-push-failure, and dirty-tree recovery
   runs in temp data repos with an upstream remote.
