@@ -1,5 +1,9 @@
 {
   "dataRoot": "~/Lab/k-wiki-engineering-data",
+  "instances": {
+    "eng": "sync.json",
+    "meta": "sync-meta.json"
+  },
   "vaults": [
     {
       "name": "Engineering",
