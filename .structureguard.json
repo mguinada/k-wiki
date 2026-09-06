@@ -10,7 +10,7 @@
     "directoryWalkers": 1,
     "repoRootDerivations": 1,
     "unquoteDefinitions": 1,
-    "envSignatures": 44,
+    "envSignatures": 45,
     "envSignatureFiles": 18,
     "dataRootEnvPairs": 27,
     "dirnameRawDirDerivations": 2

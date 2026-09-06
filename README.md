@@ -470,6 +470,8 @@ vault. A second pipeline instance with its own data repo
 prescribe; code is truth; pages for mechanisms, not per-file résumés.
 Selection is an allowlist in `sync-meta.json`: anything not listed is
 excluded by construction, so the projection can never ingest itself.
+Only tracked files are selected — a gitignored file matching the
+allowlist is skipped, since the recorded commit does not describe it.
 A checkout hosting several instances selects one by name:
 `--wiki <name>` on the query and ingest doors, resolved through the
 checkout's registry — an alias in `sync.json`'s optional `instances`
@@ -1088,9 +1090,11 @@ It chains the proven pieces and adds no capability of its own:
    `sync-meta.json`) runs the `sync-repo` core in-process instead:
    the allowlisted files of the committed source tree project
    verbatim into `raw/notes/<name>/`, stamped with the source HEAD
-   commit; tracked changes or untracked-selectable files fail the
-   cycle (untracked scratch no pattern can select does not block),
-   and mixed vault+repo configs are refused — one instance per config.
+   commit; only tracked files are selected (gitignored allowlisted
+   files are skipped), tracked changes or untracked-selectable files
+   fail the cycle (untracked scratch no pattern can select does not
+   block), and mixed vault+repo configs are refused — one instance
+   per config.
 2. **ingest** — `wiki-ingest` in-process: the agent over changed
    sources, the post-run guardrails, the digest in the code repo's
    `outputs/runs/` (gitignored, per-checkout).
