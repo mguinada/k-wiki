@@ -318,6 +318,30 @@ describe("runSandboxRun", () => {
     ).toBe("uncommitted earlier work\n");
   });
 
+  it("refuses before any write when wiki/log.md is already dirty", async () => {
+    const dataRoot = await makeRepo();
+    await writeFile(
+      join(dataRoot, "wiki", "log.md"),
+      "## stale audit entry\n",
+    );
+
+    let invoked = false;
+    const agent: AgentRunner = async () => {
+      invoked = true;
+
+      return { stdout: "", stderr: "" };
+    };
+
+    await expect(sandboxRun(dataRoot, { runAgent: agent })).rejects.toThrow(
+      /wiki\/log\.md is already dirty.*must not absorb/s,
+    );
+
+    expect(invoked).toBe(false);
+    expect(await readFile(join(dataRoot, "wiki", "log.md"), "utf8")).toBe(
+      "## stale audit entry\n",
+    );
+  });
+
   it("refuses a colliding slug without overwriting", async () => {
     const dataRoot = await makeRepo();
     await mkdir(join(dataRoot, "wiki", "sandbox"), { recursive: true });
@@ -440,6 +464,45 @@ describe("runSandboxRun", () => {
     expect(await readFile(join(dataRoot, "wiki", "index.md"), "utf8")).toBe(
       "dirty before run\n",
     );
+  });
+
+  it("leaves a fully clean tree when the agent staged a new out-of-sandbox file", async () => {
+    const dataRoot = await makeRepo();
+    const agent: AgentRunner = async (_c, _a, options) => {
+      await writeFile(join(options.cwd, "wiki", "rogue.md"), "rogue\n");
+      await run("git", ["add", "--", "wiki/rogue.md"], {
+        cwd: options.cwd,
+      });
+
+      return { stdout: "", stderr: "" };
+    };
+
+    await expect(sandboxRun(dataRoot, { runAgent: agent })).rejects.toThrow(
+      /accept-gate failed/,
+    );
+
+    expect(await statusOf(dataRoot)).toBe("");
+    await expect(readFile(join(dataRoot, "wiki", "rogue.md"))).rejects.toThrow();
+  });
+
+  it("restores a staged pre-run untracked path to its pre-run bytes and untracked status", async () => {
+    const dataRoot = await makeRepo();
+    await writeFile(join(dataRoot, "scratch.md"), "untracked before run\n");
+    const agent: AgentRunner = async (_c, _a, options) => {
+      await run("git", ["add", "--", "scratch.md"], { cwd: options.cwd });
+      await writeFile(join(options.cwd, "scratch.md"), "mangled by run\n");
+
+      return { stdout: "", stderr: "" };
+    };
+
+    await expect(sandboxRun(dataRoot, { runAgent: agent })).rejects.toThrow(
+      /accept-gate failed/,
+    );
+
+    expect(await readFile(join(dataRoot, "scratch.md"), "utf8")).toBe(
+      "untracked before run\n",
+    );
+    expect(await statusOf(dataRoot)).toBe("?? scratch.md\n");
   });
 
   it("reverts the run's writes when the epilogue itself fails", async () => {

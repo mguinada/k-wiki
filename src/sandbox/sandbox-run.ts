@@ -116,6 +116,15 @@ function dirtySandboxPaths(status: readonly StatusEntry[]): string[] {
   return [...paths].sort();
 }
 
+/** True when the audit log carries pre-run uncommitted changes
+ *  (target or rename origin): the run's audit append and its atomic
+ *  commit must not absorb them. */
+function logMdDirty(status: readonly StatusEntry[]): boolean {
+  return status.some(
+    (entry) => entry.path === "wiki/log.md" || entry.origin === "wiki/log.md",
+  );
+}
+
 /** Everything the prepare step validated: the plan the remaining
  *  steps share. */
 interface SandboxPlan {
@@ -138,8 +147,8 @@ function refuseWrongRepo(options: SandboxRunOptions): void {
 }
 
 /** The prepare step: validate the slug, guard the repo, capture the
- *  pre-run state, and refuse dirty sandbox targets (edge 1) and
- *  colliding slugs (edge 3) before any write. */
+ *  pre-run state, and refuse dirty sandbox targets (edge 1), a dirty
+ *  audit log, and colliding slugs (edge 3) before any write. */
 async function prepareStep(options: SandboxRunOptions): Promise<SandboxPlan> {
   const error = slugError(options.slug);
 
@@ -156,6 +165,12 @@ async function prepareStep(options: SandboxRunOptions): Promise<SandboxPlan> {
   if (dirty.length > 0) {
     throw new Error(
       `sandbox run refused — the sandbox namespace is already dirty (commit or revert these paths first; the path-scoped revert must not destroy changes that predate the run): ${dirty.join(", ")}`,
+    );
+  }
+
+  if (logMdDirty(pre.status)) {
+    throw new Error(
+      "sandbox run refused — wiki/log.md is already dirty (commit or revert it first; the audit append and the sandbox commit must not absorb edits that predate the run)",
     );
   }
 
@@ -199,11 +214,13 @@ async function agentStep(plan: SandboxPlan): Promise<AgentOutcome> {
   return { error };
 }
 
-/** Restore one path to its pre-run state: a pre-run dirty path
- *  (captured bytes — null means absent) gets its bytes back, a
- *  tracked-clean path is checked out from the pre-run commit (which
- *  resurrects a run's deletion), and anything else was untracked
- *  before the run, so the run created it and it goes away. */
+/** Restore one path to its pre-run state: any index entry the run
+ *  staged for the path is dropped first (a staged addition must not
+ *  survive as a phantom entry), then a pre-run dirty path (captured
+ *  bytes — null means absent) gets its bytes back, a tracked-clean
+ *  path is checked out from the pre-run commit (which resurrects a
+ *  run's deletion), and anything else was untracked before the run,
+ *  so the run created it and it goes away. */
 async function revertOnePath(
   dataRoot: string,
   env: NodeJS.ProcessEnv,
@@ -211,6 +228,8 @@ async function revertOnePath(
   path: string,
 ): Promise<void> {
   const target = join(dataRoot, path);
+
+  await runGit(dataRoot, ["reset", "--quiet", "--", path], env);
 
   if (pre.contents.has(path)) {
     const content = pre.contents.get(path) ?? null;
