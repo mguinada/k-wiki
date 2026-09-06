@@ -1,7 +1,8 @@
 /**
  * The sandbox TTL reaper (issue #338, decision 6 of #289): the
- * deterministic hygiene epilogue of every wiki-ingest run — delete
- * each `wiki/sandbox/` page whose `expires:` stamp is strictly past
+ * deterministic hygiene epilogue of every completed wiki-ingest
+ * run — delete each `wiki/sandbox/` page whose `expires:` stamp is
+ * strictly past
  * (edge 1: a note goes when today is *after* its expiry date;
  * expiring today survives until tomorrow). Deletion is working-tree
  * deletion only: wiki-ingest never commits, so the next wiki-sync

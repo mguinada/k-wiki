@@ -1745,9 +1745,11 @@ Known residual risk: a mid-window commit that absorbs the agent's
 ### The TTL reaper and the hygiene exclusions (issue #338)
 
 The reaper is the deterministic hygiene half of the sandbox: every
-  `wiki-ingest` run ends with a sweep (decision 6 — wiki-ingest is
-  the most frequent runner, so the scheduled cycle inherits the
-  sweep for free) that deletes each `wiki/sandbox/` page whose
+  completed `wiki-ingest` run — success or no-change skip — ends
+  with a sweep (decision 6 — wiki-ingest is the most frequent
+  runner, so the scheduled cycle inherits the sweep for free; a
+  failed run aborts before hygiene, and the next run sweeps) that
+  deletes each `wiki/sandbox/` page whose
   `expires:` stamp is **strictly past** — a note goes when today is
   *after* its expiry date; a note expiring today survives until
   tomorrow. Deletion is idempotent (reaping an already-reaped note

@@ -13,9 +13,10 @@
  * pre-run commit on failure, expunge runs included), and writes a
  * digest the human can review in under a minute. The run's last step
  * is the sandbox TTL reaper (issue #338, decision 6 of #289): expired
- * `wiki/sandbox/` notes are deleted on every path — skip runs
- * included — and a repo without a sandbox namespace runs
- * byte-identically to before. Scheduling the cycle unattended is
+ * `wiki/sandbox/` notes are deleted at the end of every completed
+ * run — skip runs included, a failed run defers hygiene to the next
+ * run — and a repo without a sandbox namespace runs byte-identically
+ * to before. Scheduling the cycle unattended is
  * `setup-schedule` (issue #14).
  */
 
