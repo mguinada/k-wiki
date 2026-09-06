@@ -8,7 +8,8 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 
 /**
  * Spawn-every-entry wiring (issue #135): the shebanged launchers —
- * `bin/<name>` (extensionless, issue #156) for the wiki runtime,
+ * `bin/<name>` (extensionless, issue #156; the plumbing tier nests
+ * under `bin/libexec/`, issue #335) for the wiki runtime,
  * `dev/<name>.ts` for
  * development-lifecycle commands (issue #253) — are the only entry
  * path, so each one must import the module it claims
@@ -27,13 +28,14 @@ interface Entry {
   readonly launcher: string;
   readonly module: string;
   readonly usage: string;
-  /** The launcher's class: runtime `bin/` (default) or dev `dev/`. */
-  readonly dir?: "bin" | "dev";
+  /** The launcher's class: runtime `bin/` (default), its `bin/libexec/` plumbing tier (issue #335), or dev `dev/`. */
+  readonly dir?: "bin" | "bin/libexec" | "dev";
 }
 
 const ENTRIES: readonly Entry[] = [
   {
     launcher: "backfill-origin",
+    dir: "bin/libexec",
     module: "scripts/backfill-origin.ts",
     usage: "Usage: backfill-origin",
   },
@@ -45,26 +47,31 @@ const ENTRIES: readonly Entry[] = [
   },
   {
     launcher: "check-crosslinks",
+    dir: "bin/libexec",
     module: "scripts/check-crosslinks.ts",
     usage: "Usage: check-crosslinks",
   },
   {
     launcher: "check-fidelity",
+    dir: "bin/libexec",
     module: "scripts/check-fidelity.ts",
     usage: "Usage: check-fidelity",
   },
   {
     launcher: "check-links",
+    dir: "bin/libexec",
     module: "scripts/check-links.ts",
     usage: "Usage: check-links",
   },
   {
     launcher: "check-provenance",
+    dir: "bin/libexec",
     module: "scripts/check-provenance.ts",
     usage: "Usage: check-provenance",
   },
   {
     launcher: "check-raw",
+    dir: "bin/libexec",
     module: "src/health/check-raw.ts",
     usage: "Usage: check-raw",
   },
@@ -91,6 +98,7 @@ const ENTRIES: readonly Entry[] = [
   },
   {
     launcher: "link-sources",
+    dir: "bin/libexec",
     module: "scripts/link-sources.ts",
     usage: "Usage: link-sources",
   },
@@ -126,6 +134,7 @@ const ENTRIES: readonly Entry[] = [
   },
   {
     launcher: "open-origin",
+    dir: "bin/libexec",
     module: "scripts/open-origin.ts",
     usage: "Usage: open-origin",
   },

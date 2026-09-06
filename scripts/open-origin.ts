@@ -193,4 +193,4 @@ export async function main(): Promise<void> {
 }
 
 /* v8 ignore next: covered only under direct `node scripts/open-origin.ts` runs */
-refuseDirectExecution(import.meta.url, "open-origin");
+refuseDirectExecution(import.meta.url, "open-origin", "bin/libexec");

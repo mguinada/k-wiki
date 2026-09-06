@@ -491,13 +491,13 @@ raw path with no source page stays legal (repo-as-source code files);
 anything a hub covers must use the wikilink: the ingest guardrails
 reject a covered path entry on changed pages, and `check-provenance`
 flags it. Legacy path-form entries migrate in one wiki operation with
-`bin/link-sources <wiki-dir>` (dry run by default; `--write`
+`bin/libexec/link-sources <wiki-dir>` (dry run by default; `--write`
 refuses a dirty tree and logs the audit trail to `wiki/log.md`, the
 same safety envelope as backfill-origin); legacy aliased citations
 (`[[hub|Chapter]]`) migrate to the anchored form — generating the
-hub's chapter headings — with `bin/anchor-citations --
+hub's chapter headings — with `bin/libexec/anchor-citations --
 <wiki-dir>`, the same envelope. The reader-side deep dive
-from a hub to the live vault note is `bin/open-origin <hub>`:
+from a hub to the live vault note is `bin/libexec/open-origin <hub>`:
 it maps `origin` to an `obsidian://open` URI against `sync.json` and
 opens it; nothing is stored in wiki data.
 
@@ -849,7 +849,7 @@ agent with `prompts/expunge.md` plus the removed raw path (content from
 `git show` in the data repo). No dedicated CLI exists for this.
 
 Source pages created before the `origin` field existed get it
-backfilled deterministically where possible: `bin/backfill-origin
+backfilled deterministically where possible: `bin/libexec/backfill-origin
 -- <wiki-dir> <raw-dir>` writes `origin` on every `type: source` page
 whose `sources` cites exactly one path that exists under `raw/` and
 whose title corroborates that note's name; it reports every other
@@ -866,18 +866,18 @@ missing `origin` automatically (Sections 13–14).
 
 Frontmatter tracing cannot *prove* the absence of uncited influence.
 Mitigations: phase-1 full-text search, the permanent dead-provenance
-check (`bin/check-provenance`: every `sources` entry resolves —
+check (`bin/libexec/check-provenance`: every `sources` entry resolves —
 wikilinks to existing `type: source` pages, anchored `[[hub#Chapter]]`
 citations to hub headings byte-identical to their anchors, raw paths
 both to files under `raw/` and to no hub that covers them — every
 `origin` exists under `raw/`), the quote-fidelity check
-(`bin/check-fidelity`: every machine-checkable token a source
+(`bin/libexec/check-fidelity`: every machine-checkable token a source
 page quotes — tilde paths, config keys, CLI flags, `npm run`
 commands — appears in its `origin`, and every page title kebab-cases
 to its file name), the fidelity item in the lint prompt (relational
 misquotes — right tokens, wrong containment — are detected there,
 not deterministically), the body-text anchor lint
-(`bin/check-links`: every `[[wikilink]]` resolves to an existing page, and
+(`bin/libexec/check-links`: every `[[wikilink]]` resolves to an existing page, and
 a body-text heading anchor `[[page#Chapter]]` lands on a target
 heading byte-identical to the anchor — the same rule
 `check-provenance` applies to `sources` citations, shared through
@@ -1071,7 +1071,7 @@ Renaming an instance is therefore safe at the data layer, and costs one full run
 2. Rename the GitHub upstream (`gh repo rename <new-name> -R <owner>/<old-name>`), then update the local remote explicitly (`git remote set-url origin <new-url>`); GitHub redirects the old URL, but verify push/pull and that the renamed repo's settings survived.
 3. Update `dataRoot` in the code repo's `sync.json` and commit it.
 4. Budget one full re-ingest, run manually with a raised `--timeout`: the snapshot is stamped with the data repo root at write time (issue #95), so the first `wiki-ingest` after the rename reads a foreign-stamped snapshot, warns loudly, and falls back to a full run (~1 min/note; e.g. `--timeout 14400`). Nothing is lost — the fallback is correct by design. Time the rename right after a topology rebuild, when the next run is a full run anyway, and the cost is zero.
-5. Verify: `bin/check-raw <dataRoot>/raw` exits 0; the first digest shows the full-run mode; the next incremental run is fast again.
+5. Verify: `bin/libexec/check-raw <dataRoot>/raw` exits 0; the first digest shows the full-run mode; the next incremental run is fast again.
 
 Recommended review workflow (in the data repo):
 

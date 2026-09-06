@@ -137,4 +137,4 @@ export function main(): Promise<void> {
 }
 
 /* v8 ignore next: covered only under direct `node scripts/check-provenance.ts` runs */
-refuseDirectExecution(import.meta.url, "check-provenance");
+refuseDirectExecution(import.meta.url, "check-provenance", "bin/libexec");

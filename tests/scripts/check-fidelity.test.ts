@@ -7,14 +7,14 @@ import { fileURLToPath } from "node:url";
 import { createColors } from "picocolors";
 import { afterAll, describe, expect, it } from "vitest";
 
-/** CLI tests for bin/check-fidelity (scripts/check-fidelity.ts):
+/** CLI tests for bin/libexec/check-fidelity (scripts/check-fidelity.ts):
  *  exit codes, colored rendering, warnings, --help. The library core
  *  (checkWikiFidelity, extractArtifacts) is tested at its mirrored
  *  path tests/wiki/fidelity.test.ts (issue #260). */
 
 const script = join(
   dirname(fileURLToPath(import.meta.url)),
-  "../../bin/check-fidelity",
+  "../../bin/libexec/check-fidelity",
 );
 
 const tempDirs: string[] = [];

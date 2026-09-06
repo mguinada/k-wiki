@@ -391,4 +391,4 @@ export async function main(): Promise<void> {
 }
 
 /* v8 ignore next: covered only under direct `node scripts/backfill-origin.ts` runs */
-refuseDirectExecution(import.meta.url, "backfill-origin");
+refuseDirectExecution(import.meta.url, "backfill-origin", "bin/libexec");
