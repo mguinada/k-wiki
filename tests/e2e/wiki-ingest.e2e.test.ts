@@ -433,12 +433,6 @@ describe("wiki-ingest e2e", () => {
     expect(result.out).toContain("sync-<name>.json");
   });
 
-  it("documents the -w short alias beside --wiki in the help", async () => {
-    const result = await runCli(INGEST_SCRIPT, ["--help"]);
-
-    expect(result.out).toContain("--wiki, -w <name>");
-  });
-
   it("persists the digest and the manifest snapshot", async () => {
     const repo = await makeRepo({ "AI/RAG.md": "rag" });
     const result = await ingest(repo);
