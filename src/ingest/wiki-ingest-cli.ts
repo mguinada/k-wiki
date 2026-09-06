@@ -54,9 +54,7 @@ Obsidian) would trip guardrail 1 — as one yellow WARNING per file
 with its fix (git rm --cached <path>); a signal, not a gate.
 
 Switches and arguments:
-  --wiki, -w <name>  Select the wiki instance to ingest; -w is the
-                     documented short alias of --wiki. The instance
-                     is resolved
+  --wiki, -w <name>  Select the wiki instance to ingest: resolved
                      through the checkout's registry — an alias in
                      sync.json's instances map first, then a free stem
                      sync-<name>.json in the checkout root — with the
@@ -68,7 +66,8 @@ Switches and arguments:
                      name. Default: absent — the default instance,
                      exactly today's behavior. An explicit --settings,
                      --outputs, or <raw-dir> always overrides its
-                     derived counterpart.
+                     derived counterpart. -w is the documented short
+                     alias of --wiki.
   --settings <path>  Agent settings file. Default: the instance's
                      derived settings file — command, model, provider, and reasoning
                      level, passed to the agent as --model/--thinking;
