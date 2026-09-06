@@ -27,6 +27,12 @@ import { SANDBOX_DIR } from "./stamps.ts";
 /** A plain date-level stamp, the wiki's `YYYY-MM-DD` convention. */
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
+/** The sweep's walk options: only plain files (a stray non-regular
+ *  `.md` entry — a symlink the agent door can write — must not turn
+ *  hygiene into a run failure; publish.ts's walk-then-read made the
+ *  same choice), and only Markdown. */
+const SWEEP_OPTIONS = { extension: ".md", regularFilesOnly: true } as const;
+
 /** What one sweep did: the repo-relative sandbox pages it deleted. */
 export interface ReapResult {
   readonly reaped: readonly string[];
@@ -85,7 +91,7 @@ export async function reapExpiredSandboxNotes(
   const today = run.now().toISOString().slice(0, 10);
   const reaped: string[] = [];
 
-  for (const rel of await listFiles(sandboxDir, "", { extension: ".md" })) {
+  for (const rel of await listFiles(sandboxDir, "", SWEEP_OPTIONS)) {
     const text = await readFile(join(sandboxDir, rel), "utf8");
 
     if (isExpired(readExpiresStamp(text), today)) {

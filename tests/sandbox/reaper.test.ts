@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -192,6 +192,21 @@ describe("reapExpiredSandboxNotes", () => {
 
     expect(result.reaped).toEqual([]);
     expect(messages).toEqual([]);
+  });
+
+  it("skips a non-regular .md entry instead of failing the sweep", async () => {
+    const { run } = await makeRepo({ "past-note.md": page("2026-08-19") });
+
+    // The agent door can write anything under wiki/sandbox/** — a
+    // stray symlink must not turn hygiene into a run failure.
+    await symlink(
+      join(run.dataRoot, "wiki", "sandbox", "past-note.md"),
+      join(run.dataRoot, "wiki", "sandbox", "stray-link.md"),
+    );
+
+    const result = await reapExpiredSandboxNotes(run);
+
+    expect(result.reaped).toEqual(["wiki/sandbox/past-note.md"]);
   });
 
   it("reports one progress line naming the reaped pages", async () => {
