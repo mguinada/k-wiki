@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -440,5 +440,45 @@ describe("runSandboxRun", () => {
     expect(await readFile(join(dataRoot, "wiki", "index.md"), "utf8")).toBe(
       "dirty before run\n",
     );
+  });
+
+  it("reverts the run's writes when the epilogue itself fails", async () => {
+    const dataRoot = await makeRepo();
+    const agent = async () => {
+      const note = join(dataRoot, "wiki", "sandbox", "note-slug.md");
+
+      await mkdir(dirname(note), { recursive: true });
+      await writeFile(note, "sandbox note\n");
+      // The stamp step's write into this note will fail (EACCES for
+      // a non-root runner) — the epilogue must revert everything.
+      await chmod(note, 0o444);
+
+      return { stdout: "", stderr: "" };
+    };
+
+    const failure = await sandboxRun(dataRoot, { runAgent: agent }).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    if (failure === undefined) {
+      throw new Error("expected the epilogue to fail");
+    }
+
+    expect(failure.message).toMatch(/epilogue failed/);
+
+    const { stdout: status } = await run(
+      "git",
+      ["status", "--porcelain", "-uall"],
+      { cwd: dataRoot },
+    );
+
+    expect(status).toBe("");
+
+    const { stdout: subjects } = await run("git", ["log", "--format=%s"], {
+      cwd: dataRoot,
+    });
+
+    expect(subjects.trim().split("\n")).toEqual(["init"]);
   });
 });

@@ -170,10 +170,9 @@ async function prepareStep(options: SandboxRunOptions): Promise<SandboxPlan> {
   return { options, pre };
 }
 
-/** The agent step's held outcome: the run's stdout, or the failure
- *  that must wait for the accept-gate before it escapes. */
+/** The agent step's held outcome: the failure that must wait for
+ *  the accept-gate before it escapes. */
 interface AgentOutcome {
-  readonly stdout: string;
   readonly error: unknown;
 }
 
@@ -185,20 +184,19 @@ async function agentStep(plan: SandboxPlan): Promise<AgentOutcome> {
 
   run.onProgress(`sandbox: invoking agent: ${formatAgentInvocation(settings)}`);
 
-  let stdout = "";
   let error: unknown;
 
   try {
-    ({ stdout } = await (plan.options.runAgent ?? spawnAgent)(
+    await (plan.options.runAgent ?? spawnAgent)(
       settings.command,
       agentArgs(settings, plan.options.prompt),
       { cwd: run.dataRoot, env: run.env, timeoutMs: plan.options.timeoutMs },
-    ));
+    );
   } catch (caught) {
     error = caught;
   }
 
-  return { stdout, error };
+  return { error };
 }
 
 /** Restore one path to its pre-run state: a pre-run dirty path
@@ -250,7 +248,7 @@ async function revertOnePath(
  * wiki-sync commit that landed mid-window survives untouched, and
  * pre-existing dirty work outside the revert set is preserved.
  */
-export async function revertChangedPaths(
+async function revertChangedPaths(
   dataRoot: string,
   env: NodeJS.ProcessEnv,
   pre: PreRunState,
