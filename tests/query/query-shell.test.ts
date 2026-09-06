@@ -4,7 +4,26 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+
 import { runQueryCli } from "../../src/query/query-shell.ts";
+
+vi.mock("../../src/cli/progress.ts", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../src/cli/progress.ts")>();
+
+  return {
+    ...actual,
+    stderrSink: (...args: Parameters<typeof actual.stderrSink>) => {
+      const built = actual.stderrSink(...args);
+
+      sinkEnd = vi.fn(built.sink.end.bind(built.sink));
+
+      return { ...built, sink: { ...built.sink, end: sinkEnd } };
+    },
+  };
+});
+
+let sinkEnd: ReturnType<typeof vi.fn>;
 
 /**
  * The shared query CLI shell (finding D-8): one runner owns the sink
@@ -206,5 +225,33 @@ describe("runQueryCli", () => {
     await runShell(h);
 
     expect(process.exitCode).toBeUndefined();
+  });
+});
+
+describe("runQueryCli sink lifecycle (issue #240 kill batch)", () => {
+  it("ends the progress sink after a successful run", async () => {
+    const h = await makeHarness(STUB_AGENT);
+
+    sinkEnd = vi.fn();
+
+    await runShell(h);
+
+    expect(sinkEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it("ends the progress sink after a failed run", async () => {
+    const h = await makeHarness(FAILING_AGENT);
+
+    sinkEnd = vi.fn();
+
+    process.exitCode = undefined;
+
+    try {
+      await runShell(h, { prefix: "wiki-query" });
+    } finally {
+      process.exitCode = undefined;
+    }
+
+    expect(sinkEnd).toHaveBeenCalledTimes(1);
   });
 });

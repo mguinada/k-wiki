@@ -1,4 +1,4 @@
-import { rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { porcelainStatus, runGit } from "../../src/data/git.ts";
@@ -7,6 +7,7 @@ import {
   diffManifests,
   explicitSourceDiff,
   pairBodyIdenticalRenames,
+  readUnverifiedFrontier,
   wikiPages,
 } from "../../src/ingest/manifest-diff.ts";
 import type { Manifest, VaultNotes } from "../../src/sync/manifest.ts";
@@ -838,5 +839,89 @@ describe("pairBodyIdenticalRenames multibyte bodies", () => {
     );
 
     expect(diff.vaults[0]?.renamed).toEqual([{ from: "old.md", to: "new.md" }]);
+  });
+});
+
+describe("explicitSourceDiff ordering and emptiness (issue #240 kill batch)", () => {
+  const manifest = manifestWith("Zeta", { "z.md": entry("z") });
+
+  it("lists the vaults sorted by name regardless of source order", () => {
+    const twoVaults: Manifest = {
+      vaults: {
+        Zeta: { "z.md": entry("z") },
+        Alpha: { "a.md": entry("a") },
+      },
+    };
+
+    const diff = explicitSourceDiff(twoVaults, ["Zeta/z.md", "Alpha/a.md"]);
+
+    expect(diff.vaults[0]?.vault).toBe("Alpha");
+  });
+
+  it("reports a non-empty diff as not empty", () => {
+    expect(explicitSourceDiff(manifest, ["Zeta/z.md"]).empty).toBe(false);
+  });
+});
+
+describe("wikiPages bucket order (issue #240 kill batch)", () => {
+  it("sorts the created bucket", async () => {
+    const dataRoot = await makeDataRepo({}, track);
+
+    const pages = await wikiPages(dataRoot, [
+      { code: "A", path: "wiki/b.md", origin: undefined },
+      { code: "A", path: "wiki/a.md", origin: undefined },
+    ]);
+
+    expect(pages.created).toEqual(["wiki/a.md", "wiki/b.md"]);
+  });
+
+  it("sorts the updated bucket", async () => {
+    const dataRoot = await makeDataRepo({}, track);
+
+    const pages = await wikiPages(dataRoot, [
+      { code: "M", path: "wiki/b.md", origin: undefined },
+      { code: "M", path: "wiki/a.md", origin: undefined },
+    ]);
+
+    expect(pages.updated).toEqual(["wiki/a.md", "wiki/b.md"]);
+  });
+
+  it("keeps the deleted bucket free of junk entries", async () => {
+    const dataRoot = await makeDataRepo({}, track);
+
+    const pages = await wikiPages(dataRoot, [
+      { code: "D", path: "wiki/gone.md", origin: undefined },
+    ]);
+
+    expect(pages.deleted).toEqual(["wiki/gone.md"]);
+  });
+});
+
+describe("readUnverifiedFrontier sources-count rule (issue #240 kill batch)", () => {
+  it("excludes a page whose frontmatter cites two sources", async () => {
+    const dataRoot = await makeDataRepo({}, track);
+
+    await mkdir(join(dataRoot, "wiki"), { recursive: true });
+    await writeFile(
+      join(dataRoot, "wiki", "two.md"),
+      [
+        "---",
+        "sources:",
+        '  - "[[a]]"',
+        '  - "[[b]]"',
+        "---",
+        "# Two",
+        "",
+      ].join("\n"),
+    );
+
+    const frontier = await readUnverifiedFrontier(dataRoot, {
+      created: ["wiki/two.md"],
+      updated: [],
+      deleted: [],
+      unavailable: undefined,
+    });
+
+    expect(frontier).toEqual([]);
   });
 });

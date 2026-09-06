@@ -1043,3 +1043,29 @@ console.log("stub report");
     }).toEqual({ errHasRender: true, rawHasRender: false });
   });
 });
+
+describe("main usage-error path in-process (issue #240 kill batch)", () => {
+  it("fails red on stderr for an unknown option without running the ingest", async () => {
+    const errors: string[] = [];
+    const spy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) =>
+        errors.push(parts.join(" ")),
+      );
+    const argv = vi
+      .spyOn(process, "argv", "get")
+      .mockReturnValue(["node", "wiki-ingest", "--bogus"]);
+
+    process.exitCode = undefined;
+
+    try {
+      await main();
+    } finally {
+      argv.mockRestore();
+      spy.mockRestore();
+      process.exitCode = undefined;
+    }
+
+    expect(errors[0]).toContain("unknown option");
+  });
+});

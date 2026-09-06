@@ -548,6 +548,25 @@ describe("runBoardTriage mid-failure reporting (issue #245)", () => {
       "board unreadable — triage aborted; applied moves: #101 Backlog → Ready — verified; #103 In progress → Done — verified",
     );
   });
+
+  it("keeps the underlying failure as the thrown error's cause", async () => {
+    const graphql = throwingBoard(
+      mixedBoard(),
+      "I9",
+      { failFirst: ["I1"] },
+      [3],
+    );
+
+    let cause: unknown;
+
+    try {
+      await runBoardTriage(graphql, OPTIONS);
+    } catch (error) {
+      cause = (error as Error).cause;
+    }
+
+    expect(cause).toBeInstanceOf(Error);
+  });
 });
 
 describe("ghGraphQL", () => {

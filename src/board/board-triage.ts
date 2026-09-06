@@ -31,7 +31,7 @@ export function stepSummaryMarkdown(report: TriageReport): string {
   return `${[heading, "", ...items, "", report.summary].join("\n")}\n`;
 }
 
-async function writeStepSummary(
+export async function writeStepSummary(
   report: TriageReport,
   env: NodeJS.ProcessEnv,
 ): Promise<void> {

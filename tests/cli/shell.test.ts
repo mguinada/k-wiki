@@ -175,6 +175,36 @@ describe("parseArgs", () => {
 
     expect(parsed.error).toBe("got 3");
   });
+
+  it("skips a hole in the -- tail without recording an argument", () => {
+    const parsed = parseArgs(["--", "a", undefined, "b"]);
+
+    expect(parsed.positional).toEqual(["a", "b"]);
+  });
+
+  it("rejects a known flag suffixed with one character as an unknown option", () => {
+    const parsed = parseArgs(["--settingsx"], { value: ["--settings"] });
+
+    expect(parsed.error).toBe('unknown option "--settingsx"');
+  });
+
+  it("keeps an inline = form of a one-dash flag as its value", () => {
+    const parsed = parseArgs(["-n=5"], { value: ["-n"] });
+
+    expect(parsed.values.get("-n")).toBe("5");
+  });
+
+  it("keeps a non-dash value flag's = form a positional", () => {
+    const parsed = parseArgs(["x=5"], { value: ["x"] });
+
+    expect(parsed.positional).toEqual(["x=5"]);
+  });
+
+  it("keeps a bare word positional under an empty spec", () => {
+    const parsed = parseArgs(["Stryker was here"]);
+
+    expect(parsed.positional).toEqual(["Stryker was here"]);
+  });
 });
 
 describe("parseArgs repeatable flags", () => {

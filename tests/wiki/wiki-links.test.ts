@@ -54,6 +54,12 @@ describe("unfencedLines fence rules", () => {
 
     expect(lines).toEqual(["after"]);
   });
+
+  it("closes a fence whose marker carries trailing spaces", () => {
+    const lines = unfenced("```\nfenced\n```   \nafter");
+
+    expect(lines).toEqual(["after"]);
+  });
 });
 
 describe("buildPageIndex", () => {

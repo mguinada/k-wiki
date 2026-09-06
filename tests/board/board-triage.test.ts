@@ -2,7 +2,11 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
-import { main, stepSummaryMarkdown } from "../../src/board/board-triage.ts";
+import {
+  main,
+  stepSummaryMarkdown,
+  writeStepSummary,
+} from "../../src/board/board-triage.ts";
 import type { GraphQLFn } from "../../src/board/triage-board.ts";
 import { boardPage, fakeBoard, issueNode } from "./fake-board.ts";
 
@@ -383,5 +387,22 @@ describe("main", () => {
     });
 
     expect(out.some((line) => line.includes("#7 Backlog → Ready"))).toBe(true);
+  });
+});
+
+describe("step-summary target (issue #240 kill batch)", () => {
+  it("skips the summary write when the env names no target", async () => {
+    await expect(
+      writeStepSummary(
+        {
+          lines: [],
+          summary: "board-triage: nothing to do",
+          moves: 0,
+          ok: true,
+          dryRun: false,
+        },
+        {},
+      ),
+    ).resolves.toBeUndefined();
   });
 });
