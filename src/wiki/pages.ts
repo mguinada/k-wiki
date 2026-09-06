@@ -225,6 +225,10 @@ export function parsePageFields(text: string): PageFields {
  *  meta contract template that lives in the code repo's skeleton). */
 export const CONTRACT_FILES = new Set(["AGENTS.md", "AGENTS.meta.md"]);
 
+/** The sandbox root (issue #338): never walked — sandbox notes are
+ *  disposable agent scratch, not reviewed wiki content. */
+const SKIP_ROOT_DIRS = new Set([SANDBOX_ROOT]);
+
 /**
  * List every wiki page under `dir`: markdown files, excluding the
  * operating contracts (AGENTS.md and its meta template) and the
@@ -236,7 +240,7 @@ export const CONTRACT_FILES = new Set(["AGENTS.md", "AGENTS.meta.md"]);
 export async function listWikiPages(dir: string): Promise<string[]> {
   await assertDirectory("wiki directory", dir);
 
-  return (await listFiles(dir, "", { skipRootDirs: new Set([SANDBOX_ROOT]) }))
+  return (await listFiles(dir, "", { skipRootDirs: SKIP_ROOT_DIRS }))
     .filter(
       (file) => file.endsWith(".md") && !CONTRACT_FILES.has(basename(file)),
     )
