@@ -489,10 +489,9 @@ describe("ledger ordering and block precedence (issue #240 kill batch)", () => {
       ],
     };
     const block = JSON.parse(
-      ledgerBlockLine(ledger).replace(
-        /^<!-- k-wiki-mutants-ledger: /,
-        "",
-      ).replace(/ -->$/, ""),
+      ledgerBlockLine(ledger)
+        .replace(/^<!-- k-wiki-mutants-ledger: /, "")
+        .replace(/ -->$/, ""),
     );
 
     expect(Object.keys(block.entries)[0]).toBe("src/alpha.ts:9|StringLiteral");

@@ -1049,7 +1049,9 @@ describe("main usage-error path in-process (issue #240 kill batch)", () => {
     const errors: string[] = [];
     const spy = vi
       .spyOn(console, "error")
-      .mockImplementation((...parts: unknown[]) => errors.push(parts.join(" ")));
+      .mockImplementation((...parts: unknown[]) =>
+        errors.push(parts.join(" ")),
+      );
     const argv = vi
       .spyOn(process, "argv", "get")
       .mockReturnValue(["node", "wiki-ingest", "--bogus"]);

@@ -8,7 +8,8 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { runQueryCli } from "../../src/query/query-shell.ts";
 
 vi.mock("../../src/cli/progress.ts", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../src/cli/progress.ts")>();
+  const actual =
+    await importOriginal<typeof import("../../src/cli/progress.ts")>();
 
   return {
     ...actual,
