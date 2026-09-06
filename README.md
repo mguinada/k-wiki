@@ -486,8 +486,13 @@ default instance needs no flag:
 
 ```json
 { "dataRoot": "…", "vaults": [ … ],
-  "instances": { "eng": "sync-engineering.json", "nbn": "sync-meta.json" } }
+  "instances": { "eng": "sync.json", "meta": "sync-meta.json" } }
 ```
+
+The `eng` alias names the root `sync.json` — the default instance
+— so every derived path stays the default's (`outputs/`,
+`settings.yml`); `meta` is explicit sugar over the free
+`sync-meta.json` stem. This checkout's real registry, verbatim.
 
 ```sh
 bin/init-data-repo --meta sync-meta.json       # once
