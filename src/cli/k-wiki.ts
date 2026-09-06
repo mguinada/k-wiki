@@ -60,7 +60,7 @@ const HELP = `Usage: k-wiki [-h | --help] | k-wiki <command> [<args>]
        k-wiki read <slug>
        k-wiki health [--fail-on-stale]
 
-The agent-facing entry point (guide §16): one LLM command
+The agent-facing entry point: one LLM command
 (query) and four read-only deterministic ones (status, list, read,
 health), usable from any cwd with zero flags once the project is
 bound. One command set — the shared CLI shell, no CLI framework. None of

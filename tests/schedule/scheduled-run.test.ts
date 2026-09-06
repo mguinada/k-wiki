@@ -941,7 +941,7 @@ describe("scheduled-run main: help", () => {
   it("documents the no-retry recovery rule in the help text", async () => {
     const { out } = await runMain(["--help"]);
 
-    expect(out).toContain("no retry/backoff, guide §26");
+    expect(out).toContain("no retry/backoff by design");
   });
 
   it("documents the log override in the help text", async () => {

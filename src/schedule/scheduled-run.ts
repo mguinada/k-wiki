@@ -505,7 +505,7 @@ Behavior, failure mode by failure mode:
   - wiki-sync failure: the guardrails and verification have already
     reverted the run — the wiki stays at the last good commit, the
     error and digest land in the log, exit 1. The next interval is
-    the recovery (no retry/backoff, guide §26).
+    the recovery (no retry/backoff by design).
   - Dirty tree: a failed or killed sync leaves its edits uncommitted
     on purpose (the fix surface). The next tick skips its pre-run
     pull — a rebase refuses a dirty tree — so that recovery stays

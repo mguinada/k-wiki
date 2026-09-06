@@ -1038,7 +1038,7 @@ export function formatFinalDigest(result: WikiSyncResult): string {
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
 const HELP = `Usage: wiki-sync [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<config>] [<raw-dir>]
 
-Run the whole cycle in one command (guide §18):
+Run the whole cycle in one command:
 sync (sync-vault for vault sources, sync-repo for repo sources) →
 wiki-ingest → headless lint (prompts/lint.md) →
 crosslink audit (configured second brains) → verification
@@ -1114,7 +1114,7 @@ What it does, stage by stage:
      commit with a message summarizing sources processed and pages
      touched.
   7. publish — only for configs whose sync.json carries a publish
-     section (guide §26): copy the data repo's
+     section: copy the data repo's
      include-matched files (["wiki/**"] in the shipped config) into the
      mirror vault — an iCloud-served disposable reading copy for
      iPhone and iPad. With publish.root set ("wiki" in the shipped
