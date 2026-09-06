@@ -1669,6 +1669,78 @@ Never run two transports on the same mirror vault. Publishing two independent mi
 
 ---
 
+## 26a. The Agent Sandbox (issue #336)
+
+The sandbox is the agent-write half of the two-door authority split
+(epic #289): human writes enter through the reviewed wiki surface,
+agent writes land in an in-tree `wiki/sandbox/` namespace inside the
+resolved instance's data repo, and the **accept-gate is the
+isolation** — there is no ungated write path. The foundation landed
+as a reusable library primitive (`src/sandbox/`): the `propose` verb
+that drives it (family 6, issue #340), the TTL reaper (family 4,
+issue #338), the citation wall (family 5, issue #339), and promotion
+(family 7, issue #341) all build on it.
+
+One sandboxed run executes as one process with one outcome (decision
+13): write (the agent phase) → accept-gate → stamp → atomic commit.
+
+- **Namespace.** `wiki/sandbox/<slug>.md` in the resolved instance's
+  data repo. The slug is the note's identity (lowercase kebab-case);
+  a second run proposing the same slug refuses — no overwrite, no
+  silent suffixing.
+- **Accept-gate.** The post-run diff must touch only `wiki/sandbox/**`.
+  Any other path — `wiki/index.md`, `raw/`, anything — fails the run
+  loudly, and the gate restores **exactly the paths the run touched**
+  (decision 3): never a whole-repo reset, so a wiki-sync commit that
+  lands mid-window survives untouched. Only the run's own commit
+  locks the git index, and only for milliseconds.
+- **Stamps.** After the gate passes, the epilogue writes the
+  frontmatter stamps itself — `via: agent` and `expires: <date>` —
+  into every sandbox page the run wrote. The caller cannot forge
+  them: caller-supplied `via:`/`expires:` lines are overwritten
+  wherever they sit (stamp authority). `expires` is date-level
+  (`YYYY-MM-DD`, the wiki convention) with a 7-day floor enforced at
+  stamp time (decision 8) — same-day reaping would kill active notes,
+  and deletion itself belongs to the reaper (family 4).
+- **Atomic commit.** `sandbox: <slug>` — one commit per run covering
+  the run's sandbox pages and its `wiki/log.md` audit entry (the
+  contract's `## [YYYY-MM-DD] sandbox | <slug>` header). A run that
+  writes nothing commits nothing and leaves no empty commit (edge
+  2). A failure at any step — refusal, gate trip, agent death,
+  epilogue error — leaves the tree at its pre-run state.
+
+Two refusals guard the window before any write: a run whose sandbox
+  target paths are already dirty is refused (the path-scoped revert
+  must never destroy changes that predate the run), and a run whose
+  instance resolution and run context name different data repos is
+  refused as a wrong-repo accept-gate (decision 10: the instance
+  resolves through the shared `--wiki` chain of issue #306, never an
+  ambient cwd default — the #124 cross-instance leak must not return
+  as a wrong-repo commit).
+
+**Where the sandbox page schema is documented (the issue #336
+  decision):** the `via:`/`expires:` keys are documented here — in
+  landed docs, the design of record — and in the `src/sandbox/`
+  module's purpose headers, **not** in `wiki/AGENTS.md`. The wiki
+  contract governs the reviewed wiki surface the wiki agent
+  operates on; the stamps are a pipeline-mechanical surface written
+  by deterministic code and read by the reaper and the citation
+  wall's standing lint (which will carry their operational rules when
+  they land). A sandbox page carries no `sources` requirement yet —
+  it is provisional agent output, not reviewed wiki content; the
+  promotion flow (family 7) is where a page earns its way into the
+  reviewed surface.
+
+Known residual risk: a mid-window commit that absorbs the agent's
+  own uncommitted write (a wiki-sync cycle committing `wiki/` while
+  the agent runs) makes the gate's status comparison blind to that
+  write — the window is minutes-long and the collision requires both
+  a violating agent write and a simultaneous cycle commit over the
+  same path. Decision 3's lock scope (only the sandbox commit itself
+  locks) accepts this; the reaper's TTL sweep is the backstop.
+
+---
+
 ## 27. Future Options
 
 Ideas deliberately **not pursued now**. Each has a clear trigger for reconsideration:

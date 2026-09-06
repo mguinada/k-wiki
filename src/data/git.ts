@@ -363,6 +363,31 @@ async function vanishedPreRunPaths(
   return changed;
 }
 
+/** The post-run status entries plus every path under `under` whose
+ *  git state differs from the pre-run snapshot — the shared
+ *  comparison of `statusSince` and `changedPaths` (issue #336). */
+async function changedPathsUnder(
+  dataRoot: string,
+  entries: readonly StatusEntry[],
+  pre: GitBaseline,
+  under: (path: string) => boolean,
+): Promise<string[]> {
+  const before = statusIndex(pre.status);
+  const preRunOrigins = renameOriginsOf(pre.status);
+
+  return [
+    ...(await changedRenameOrigins(
+      dataRoot,
+      entries,
+      preRunOrigins,
+      pre.hashes,
+      under,
+    )),
+    ...(await changedStatusPaths(dataRoot, entries, before, pre.hashes, under)),
+    ...(await vanishedPreRunPaths(dataRoot, pre.hashes, under)),
+  ];
+}
+
 /**
  * Post-run comparison under one path prefix (issue #72, wiki-query
  * stage 1): the full post-run status entries, every path under
@@ -390,26 +415,36 @@ export async function statusSince(
   readonly headMoved: boolean;
 }> {
   const entries = await porcelainStatus(dataRoot, env);
-  const before = statusIndex(pre.status);
-  const preRunOrigins = renameOriginsOf(pre.status);
-  const under = (path: string): boolean => path.startsWith(`${prefix}/`);
-  const changed = [
-    ...(await changedRenameOrigins(
-      dataRoot,
-      entries,
-      preRunOrigins,
-      pre.hashes,
-      under,
-    )),
-    ...(await changedStatusPaths(dataRoot, entries, before, pre.hashes, under)),
-    ...(await vanishedPreRunPaths(dataRoot, pre.hashes, under)),
-  ];
+  const changed = await changedPathsUnder(dataRoot, entries, pre, (path) =>
+    path.startsWith(`${prefix}/`),
+  );
 
   return {
     entries,
     changed: [...new Set(changed)].sort(),
     headMoved: (await headCommit(dataRoot, env)) !== pre.commit,
   };
+}
+
+/**
+ * Every path in the whole tree whose post-run git state differs from
+ * the pre-run baseline — `statusSince` without the prefix filter
+ * (issue #336): the sandbox accept-gate scans every path, because
+ * any write outside `wiki/sandbox/**` is the violation it exists to
+ * catch. HEAD movement is not reported here: a mid-window commit by
+ * another run is legitimate (the sandbox revert is path-scoped, so
+ * such commits survive).
+ */
+export async function changedPaths(
+  dataRoot: string,
+  env: NodeJS.ProcessEnv,
+  pre: GitBaseline,
+): Promise<readonly string[]> {
+  const entries = await porcelainStatus(dataRoot, env);
+
+  return [
+    ...new Set(await changedPathsUnder(dataRoot, entries, pre, () => true)),
+  ].sort();
 }
 
 /** The repository root containing `dir`, or undefined outside any

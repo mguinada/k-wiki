@@ -6,6 +6,7 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 import { sha256 } from "../../src/cli/shared.ts";
 import {
   assertCleanTree,
+  changedPaths,
   gitRepoRoot,
   isPreExisting,
   parseStatus,
@@ -800,5 +801,55 @@ describe("removedNoteContent", () => {
         hashOf("never committed"),
       ),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe("changedPaths (issue #336)", () => {
+  it("reports no change for an untouched tree", async () => {
+    const dataRoot = await makeRepo();
+    const pre = await capturePreRunState(dataRoot, GIT_ENV);
+
+    expect(await changedPaths(dataRoot, GIT_ENV, pre)).toEqual([]);
+  });
+
+  it("reports changed paths anywhere in the tree, not only under a prefix", async () => {
+    const dataRoot = await makeRepo();
+    const pre = await capturePreRunState(dataRoot, GIT_ENV);
+
+    await mkdir(join(dataRoot, "wiki", "sandbox"), { recursive: true });
+    await writeFile(join(dataRoot, "wiki", "sandbox", "n.md"), "N\n");
+    await writeFile(join(dataRoot, "raw", "notes", "new.md"), "# new\n");
+    await writeFile(join(dataRoot, "wiki", "index.md"), "# Index v2\n");
+
+    expect(await changedPaths(dataRoot, GIT_ENV, pre)).toEqual([
+      "raw/notes/new.md",
+      "wiki/index.md",
+      "wiki/sandbox/n.md",
+    ]);
+  });
+
+  it("ignores pre-existing dirty paths the run did not re-edit", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(join(dataRoot, "wiki", "index.md"), "# dirty\n");
+
+    const pre = await capturePreRunState(dataRoot, GIT_ENV);
+
+    expect(await changedPaths(dataRoot, GIT_ENV, pre)).toEqual([]);
+  });
+
+  it("reports a pre-run untracked page the run deleted", async () => {
+    const dataRoot = await makeRepo();
+
+    await mkdir(join(dataRoot, "wiki", "queries"), { recursive: true });
+    await writeFile(join(dataRoot, "wiki", "queries", "q.md"), "Q\n");
+
+    const pre = await capturePreRunState(dataRoot, GIT_ENV);
+
+    await rm(join(dataRoot, "wiki", "queries", "q.md"));
+
+    expect(await changedPaths(dataRoot, GIT_ENV, pre)).toEqual([
+      "wiki/queries/q.md",
+    ]);
   });
 });

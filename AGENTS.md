@@ -69,6 +69,7 @@ exists without a row, or a row names no domain.
 | `health/` | `raw/` coherence and freshness verdicts | mutating the projection | review-enforced only |
 | `ingest/` | agent runs, settings, manifest diff/snapshot, prompts, guardrails, digest | wiki writes outside the guardrail path; nondeterminism outside prompts | e2e wiki-ingest suite (guardrail-revert runs); review-enforced otherwise |
 | `query/` | the wiki-query shell, two-stage filing (`--file-last`) | the agent-door surface (`cli/` owns `k-wiki`) | review-enforced only |
+| `sandbox/` | the agent-write sandbox: `wiki/sandbox/` namespace, accept-gate (path-scoped revert of out-of-namespace writes), `via:`/`expires:` stamps, `sandbox: <slug>` atomic commits, `log.md` audit | ungated agent writes; whole-repo resets (a mid-window wiki-sync commit must survive a gate revert); accepting caller-supplied stamps | e2e sandbox suite (gate-revert runs); review-enforced otherwise |
 | `schedule/` | scheduled-run, the run lock, launchd setup | re-implementing sync mechanics — import, don't copy | e2e scheduled-run suite (lock runs); review-enforced otherwise |
 | `sync/` | vault→raw projection, sync configs, repo sources, cycle orchestration, instance resolution | LLM/agent concerns anywhere in the deterministic layer | review-enforced only |
 | `wiki/` | wikilink/crosslink parsing, page walking, wiki-domain reports | pipeline orchestration | review-enforced only |
@@ -325,7 +326,7 @@ outside this repo?
 
 | Class | src domains | Launchers |
 | --- | --- | --- |
-| Runtime (9 domains) | `cli/`, `dashboard/`, `data/`, `health/`, `ingest/`, `query/`, `schedule/`, `sync/`, `wiki/` | `bin/` |
+| Runtime (10 domains) | `cli/`, `dashboard/`, `data/`, `health/`, `ingest/`, `query/`, `sandbox/`, `schedule/`, `sync/`, `wiki/` | `bin/` |
 | Dev-only (3 domains) | `board/`, `fixtures/`, `quality/` | `dev/` |
 
 Every script meant to run on the terminal — every `main()` entry point
