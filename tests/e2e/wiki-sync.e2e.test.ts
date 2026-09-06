@@ -747,4 +747,56 @@ describe("wiki-sync e2e", () => {
       "Index v2",
     );
   });
+
+  it("never publishes a sandbox page to the mirror (issue #338)", async () => {
+    const repo = await makeRepo();
+    const mirror = await mkdtemp(join(tmpdir(), "k-wiki-mirror-e2e-"));
+
+    tempDirs.push(mirror);
+
+    await writeFile(
+      repo.configPath,
+      JSON.stringify({
+        vaults: [
+          { name: VAULT_NAME, root: repo.vaultRoot, exclude: "wiki:false" },
+        ],
+        publish: { mirror, include: ["wiki/**"], root: "wiki" },
+      }),
+    );
+
+    // A committed live sandbox page (far-future expiry — the publish
+    // denylist must hold on its own, reaper aside).
+    await mkdir(join(repo.dataRoot, "wiki", "sandbox"), { recursive: true });
+    await writeFile(
+      join(repo.dataRoot, "wiki", "sandbox", "proposal.md"),
+      "---\nvia: agent\nexpires: 2099-01-01\n---\n\nProposal.\n",
+    );
+    await run("git", ["add", "-A", "--", "wiki/sandbox"], {
+      cwd: repo.dataRoot,
+    });
+    await run(
+      "git",
+      [
+        "-c",
+        "user.email=t@t",
+        "-c",
+        "user.name=t",
+        "commit",
+        "--quiet",
+        "-m",
+        "seed sandbox",
+      ],
+      { cwd: repo.dataRoot },
+    );
+
+    const result = await runCycle(repo);
+
+    expect(result.code).toBe(0);
+    await expect(
+      readFile(join(mirror, "sandbox", "proposal.md"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(join(mirror, "index.md"), "utf8")).resolves.toContain(
+      "Index v2",
+    );
+  });
 });

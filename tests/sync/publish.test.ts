@@ -82,6 +82,52 @@ describe("runPublishStage", () => {
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("never publishes sandbox pages, even when the include pattern matches (issue #338)", async () => {
+    const tree = await makeTree();
+
+    await mkdir(join(tree.dataRoot, "wiki", "sandbox"), {
+      recursive: true,
+    });
+    await writeFile(
+      join(tree.dataRoot, "wiki", "sandbox", "proposal.md"),
+      "sandbox note\n",
+    );
+
+    const result = await runPublishStage(optionsFor(tree));
+
+    await expect(
+      readFile(join(tree.mirror, "wiki", "sandbox", "proposal.md"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    expect(result.copied).toBe(2);
+  });
+
+  it("removes a sandbox page a previous run mirrored (issue #338)", async () => {
+    const tree = await makeTree();
+
+    // A mirror that predates the denylist still holds the sandbox
+    // page — which also exists in the source, so only the denylist
+    // can keep it out of the selected set.
+    await mkdir(join(tree.dataRoot, "wiki", "sandbox"), {
+      recursive: true,
+    });
+    await writeFile(
+      join(tree.dataRoot, "wiki", "sandbox", "stale.md"),
+      "sandbox note\n",
+    );
+    await mkdir(join(tree.mirror, "wiki", "sandbox"), { recursive: true });
+    await writeFile(
+      join(tree.mirror, "wiki", "sandbox", "stale.md"),
+      "sandbox note\n",
+    );
+
+    const result = await runPublishStage(optionsFor(tree));
+
+    await expect(
+      readFile(join(tree.mirror, "wiki", "sandbox", "stale.md"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    expect(result.removed).toBe(1);
+  });
+
   it("skips non-regular files inside the matched tree", async () => {
     const tree = await makeTree();
 

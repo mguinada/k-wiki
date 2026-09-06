@@ -11,8 +11,12 @@
  * the data repo root, runs the post-run guardrails (issue #12:
  * immutability, frontmatter, wikilinks — auto-reverting to the
  * pre-run commit on failure, expunge runs included), and writes a
- * digest the human can review in under a minute. Scheduling the
- * cycle unattended is `setup-schedule` (issue #14).
+ * digest the human can review in under a minute. The run's last step
+ * is the sandbox TTL reaper (issue #338, decision 6 of #289): expired
+ * `wiki/sandbox/` notes are deleted on every path — skip runs
+ * included — and a repo without a sandbox namespace runs
+ * byte-identically to before. Scheduling the cycle unattended is
+ * `setup-schedule` (issue #14).
  */
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -23,6 +27,7 @@ import { startHeartbeat } from "../cli/progress.ts";
 import type { RunContext } from "../cli/run-context.ts";
 import { readTextIfExists } from "../cli/shared.ts";
 import { writeDashboard } from "../dashboard/generate.ts";
+import { reapExpiredSandboxNotes } from "../sandbox/reaper.ts";
 import {
   emptyManifest,
   type Manifest,
@@ -591,7 +596,12 @@ export async function runWikiIngest(
   const change = await diffStep(inputs, previous);
 
   if (change === undefined) {
-    return noChangesSkip(inputs.run);
+    const skipped = noChangesSkip(inputs.run);
+
+    // Hygiene runs on every path (decision 6): a skip still reaps.
+    await reapExpiredSandboxNotes(inputs.run);
+
+    return skipped;
   }
 
   const mode = modeStep(change);
@@ -608,6 +618,10 @@ export async function runWikiIngest(
   );
 
   await dashboardStep(inputs.run);
+
+  // The reaper epilogue (decision 6, issue #338): expired sandbox
+  // notes go last, after the run's own results are complete.
+  await reapExpiredSandboxNotes(inputs.run);
 
   return result;
 }

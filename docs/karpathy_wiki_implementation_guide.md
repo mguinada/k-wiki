@@ -1742,6 +1742,45 @@ Known residual risk: a mid-window commit that absorbs the agent's
   same path. Decision 3's lock scope (only the sandbox commit itself
   locks) accepts this; the reaper's TTL sweep is the backstop.
 
+### The TTL reaper and the hygiene exclusions (issue #338)
+
+The reaper is the deterministic hygiene half of the sandbox: every
+  `wiki-ingest` run ends with a sweep (decision 6 — wiki-ingest is
+  the most frequent runner, so the scheduled cycle inherits the
+  sweep for free) that deletes each `wiki/sandbox/` page whose
+  `expires:` stamp is **strictly past** — a note goes when today is
+  *after* its expiry date; a note expiring today survives until
+  tomorrow. Deletion is idempotent (reaping an already-reaped note
+  is a no-op, not an error) and conservative: a stamp that is
+  absent, empty, or not a plain `YYYY-MM-DD` date never deletes —
+  the reaper acts only on what `expires:` clearly says is gone. The
+  sweep is working-tree deletion only: wiki-ingest never commits,
+  so the next cycle's commit stage versions the removals like any
+  other wiki diff, and git history is the audit (the `log.md`
+  audit-entry convention belongs to sandbox *runs*, not hygiene).
+  The reaper does not coordinate with live runs (decision 3's
+  no-global-lock stance): a note may expire while an agent is still
+  iterating on it — the 7-day stamp floor makes the window
+  practically unreachable, and a reaped-and-recreated note is just
+  a new note. A repo with no sandbox namespace runs byte-identically
+  to before: the sweep is a silent no-op, never a required step
+  (the base path gains nothing — no flag, no concept).
+
+Two exclusions keep sandbox notes out of every derived surface:
+
+- **Walker exclusion.** The one wiki walker (`listWikiPages` in
+  `src/wiki/pages.ts`) never descends into the sandbox root, so
+  listings (`listablePages`, the typed `PAGE_TYPES` sections), the
+  source-hub coverage index, the dashboard's page collection, the
+  `--file-last` index, and every checker walk a tree that simply
+  has no sandbox pages in it. Pinned by the quality guard
+  `tests/quality/sandbox-exclusion.test.ts`.
+- **Publish denylist.** `NEVER_PUBLISHED` in `src/sync/publish.ts`
+  excludes the sandbox root before the include patterns are even
+  consulted — a sandbox page never reaches any mirror device, and a
+  sandbox page an older run mirrored is removed from the mirror on
+  the next publish.
+
 ---
 
 ## 27. Future Options

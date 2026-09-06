@@ -392,6 +392,20 @@ describe("listWikiPages", () => {
     ]);
   });
 
+  it("excludes the sandbox root from every listing (issue #338)", async () => {
+    const root = await mkdtemp(join(tmpdir(), "k-wiki-pages-"));
+
+    tempDirs.push(root);
+
+    await mkdir(join(root, "concepts"), { recursive: true });
+    await mkdir(join(root, "sandbox", "drafts"), { recursive: true });
+    await writeFile(join(root, "concepts", "a.md"), "a");
+    await writeFile(join(root, "sandbox", "proposal.md"), "sandbox");
+    await writeFile(join(root, "sandbox", "drafts", "nested.md"), "sandbox");
+
+    expect(await listWikiPages(root)).toEqual(["concepts/a.md"]);
+  });
+
   it("returns an empty list for an empty wiki directory", async () => {
     const root = await mkdtemp(join(tmpdir(), "k-wiki-pages-"));
 

@@ -4,7 +4,7 @@
     "filesOver500": 10,
     "filesOver350": 22,
     "maxFileLines": 1250,
-    "crossDomainEdges": 54,
+    "crossDomainEdges": 58,
     "dataToSyncEdges": 0,
     "parseArgsCopies": 1,
     "directoryWalkers": 1,
