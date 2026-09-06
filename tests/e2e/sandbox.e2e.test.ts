@@ -97,6 +97,10 @@ async function makeRepo(): Promise<string> {
     mode: 0o755,
   });
   await run("git", ["init", "--quiet", "-b", "main"], { cwd: dataRoot });
+  // Repo-local identity: the primitive's own commit must not lean
+  // on a global git identity — the CI runner has none.
+  await run("git", ["config", "user.email", "t@t"], { cwd: dataRoot });
+  await run("git", ["config", "user.name", "t"], { cwd: dataRoot });
   await run("git", ["add", "-A"], { cwd: dataRoot });
   await run(
     "git",

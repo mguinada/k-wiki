@@ -58,6 +58,10 @@ async function makeRepo(): Promise<string> {
   await mkdir(join(dataRoot, "raw"), { recursive: true });
   await writeFile(join(dataRoot, "wiki", "index.md"), "# Index\n");
   await run("git", ["init", "--quiet", "-b", "main"], { cwd: dataRoot });
+  // Repo-local identity: the primitive's own commits (and these seed
+  // commits) must not lean on a global git identity — CI has none.
+  await run("git", ["config", "user.email", "t@t"], { cwd: dataRoot });
+  await run("git", ["config", "user.name", "t"], { cwd: dataRoot });
   await gitCommitAll(dataRoot, "init");
 
   return dataRoot;
