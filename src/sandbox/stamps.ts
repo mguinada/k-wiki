@@ -13,8 +13,13 @@
  * wall's standing lint (issue #339) read.
  */
 
+/** The sandbox namespace's directory name inside the wiki tree:
+ *  the root every walker excludes (issue #338) and the reaper
+ *  sweeps. */
+export const SANDBOX_ROOT = "sandbox";
+
 /** The sandbox namespace inside the data repo's wiki tree. */
-export const SANDBOX_DIR = "wiki/sandbox";
+export const SANDBOX_DIR = `wiki/${SANDBOX_ROOT}`;
 
 /** The TTL floor (decision 8): a sandbox note expires at least this
  *  many whole days after its run — same-day reaping kills active

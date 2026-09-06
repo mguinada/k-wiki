@@ -3,7 +3,9 @@
  * (wiki-ingest) and the dead-provenance check (scripts/): which pages
  * exist, and the frontmatter fields the pipeline treats as
  * machine-readable provenance — `type`, `updated`, `status`,
- * `origin`, and `sources`.
+ * `origin`, and `sources`. The one wiki walker (issue #338): the
+ * sandbox root never lists, so listings, coverage, dashboards, and
+ * checkers never count a sandbox page.
  * Agent-written frontmatter is tolerant input: a page whose fields
  * cannot be read simply contributes nothing to the deterministic
  * layer.
@@ -12,6 +14,7 @@
 import { readFile } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
 import { assertDirectory, listFiles } from "../cli/shared.ts";
+import { SANDBOX_ROOT } from "../sandbox/stamps.ts";
 import { wikilinkBody, wikilinkBodyTarget } from "./wiki-links.ts";
 
 /** The frontmatter fields the pipeline reads from a wiki page. */
@@ -222,16 +225,22 @@ export function parsePageFields(text: string): PageFields {
  *  meta contract template that lives in the code repo's skeleton). */
 export const CONTRACT_FILES = new Set(["AGENTS.md", "AGENTS.meta.md"]);
 
+/** The sandbox root (issue #338): never walked — sandbox notes are
+ *  disposable agent scratch, not reviewed wiki content. */
+const SKIP_ROOT_DIRS = new Set([SANDBOX_ROOT]);
+
 /**
  * List every wiki page under `dir`: markdown files, excluding the
- * operating contracts (AGENTS.md and its meta template), sorted,
- * POSIX-style relative paths. Throws naming the directory when it
- * does not exist.
+ * operating contracts (AGENTS.md and its meta template) and the
+ * sandbox root (issue #338 — sandbox notes are disposable agent
+ * scratch; they never list, count, or resolve), sorted, POSIX-style
+ * relative paths. Throws naming the directory when it does not
+ * exist.
  */
 export async function listWikiPages(dir: string): Promise<string[]> {
   await assertDirectory("wiki directory", dir);
 
-  return (await listFiles(dir))
+  return (await listFiles(dir, "", { skipRootDirs: SKIP_ROOT_DIRS }))
     .filter(
       (file) => file.endsWith(".md") && !CONTRACT_FILES.has(basename(file)),
     )

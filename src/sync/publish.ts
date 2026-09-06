@@ -8,12 +8,16 @@
  * included, drifted bytes rewritten, the mirror's own `.obsidian/`
  * device state never touched. The stage is idempotent — a second run
  * over an intact mirror copies and removes nothing — and heuristic-
- * free: everything it does is a byte comparison plus a copy.
+ * free: everything it does is a byte comparison plus a copy. One
+ * denylist applies before the include patterns (issue #338): the
+ * sandbox namespace is never published, and a sandbox page an older
+ * run mirrored is removed on the next run.
  */
 
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { listFiles } from "../cli/shared.ts";
+import { SANDBOX_DIR } from "../sandbox/stamps.ts";
 import { copyFileTolerant } from "./eagain.ts";
 import { compileIncludePattern, pruneEmptyDirs } from "./projection.ts";
 
@@ -48,6 +52,17 @@ const SKIP_DIRS = new Set([".git", ".obsidian", ".trash", "node_modules"]);
 
 /** Files never published and never treated as mirror content. */
 const SKIP_FILES = new Set([".DS_Store"]);
+
+/** Source roots never published to any mirror (issue #338): the
+ *  sandbox is disposable agent scratch with a TTL — without this
+ *  entry every sandbox note would reach every mirror device (and
+ *  linger there after the reaper deletes it). */
+const NEVER_PUBLISHED = [SANDBOX_DIR];
+
+/** True when a source path sits under a never-published root. */
+function isNeverPublished(relPath: string): boolean {
+  return NEVER_PUBLISHED.some((root) => relPath.startsWith(`${root}/`));
+}
 
 /** Collect every publishable file under `root` as
  *  `<relative path> -> <absolute path>`. Both roots exist by the
@@ -154,6 +169,7 @@ export async function runPublishStage(
 
   const selected = new Map(
     [...all]
+      .filter(([relPath]) => !isNeverPublished(relPath))
       .filter(([relPath]) => matchers.some((matcher) => matcher.test(relPath)))
       .map(([relPath, absPath]) => [rebase(relPath, options.root), absPath]),
   );

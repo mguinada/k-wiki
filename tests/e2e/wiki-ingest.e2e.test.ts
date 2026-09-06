@@ -8,6 +8,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import {
   buildWorkspace,
   cleanupWorkspaces,
+  collectFiles,
   INGEST_SCRIPT,
   repoRoot,
   runCli,
@@ -521,6 +522,68 @@ describe("wiki-ingest e2e", () => {
     await expect(
       readFile(join(repo.dataRoot, "outputs", "stub-prompt.txt"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("reaps expired sandbox notes on the next run and keeps live ones (issue #338)", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag" });
+
+    // A committed sandbox namespace: one expired long ago, one live
+    // far into the future — the reaper must take exactly the first.
+    await mkdir(join(repo.dataRoot, "wiki", "sandbox"), { recursive: true });
+    await writeFile(
+      join(repo.dataRoot, "wiki", "sandbox", "gone.md"),
+      "---\nvia: agent\nexpires: 2000-01-01\n---\n\nExpired.\n",
+    );
+    await writeFile(
+      join(repo.dataRoot, "wiki", "sandbox", "live.md"),
+      "---\nvia: agent\nexpires: 2099-01-01\n---\n\nLive.\n",
+    );
+    await run("git", ["add", "-A", "--", "wiki/sandbox"], {
+      cwd: repo.dataRoot,
+    });
+    await run(
+      "git",
+      [
+        "-c",
+        "user.email=t@t",
+        "-c",
+        "user.name=t",
+        "commit",
+        "--quiet",
+        "-m",
+        "seed sandbox",
+      ],
+      { cwd: repo.dataRoot },
+    );
+
+    const result = await ingest(repo);
+
+    expect(result.code).toBe(0);
+    expect(result.err).toContain(
+      "sandbox: reaper — deleted 1 expired note: wiki/sandbox/gone.md",
+    );
+    await expect(
+      readFile(join(repo.dataRoot, "wiki", "sandbox", "gone.md"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(
+      readFile(join(repo.dataRoot, "wiki", "sandbox", "live.md"), "utf8"),
+    ).resolves.toContain("Live.");
+  });
+
+  it("leaves a sandbox-less repo byte-identical on the skip path (issue #338)", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag" });
+
+    await ingest(repo);
+    await rm(join(repo.dataRoot, "outputs", "stub-prompt.txt"));
+    const before = await collectFiles(repo.dataRoot);
+
+    const result = await ingest(repo);
+
+    expect(result.out).toBe(
+      "wiki-ingest: no changed sources since the last ingest; nothing to do\n",
+    );
+    expect(result.err).not.toContain("sandbox");
+    expect(await collectFiles(repo.dataRoot)).toEqual(before);
   });
 
   it("exits 1 and keeps the snapshot when the agent fails", async () => {
