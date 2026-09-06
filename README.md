@@ -230,7 +230,9 @@ Each instance encodes its own privacy posture in its own config and
 data location; the default instance's iCloud vault and optional
 remote never touch this one. Several instances can also share one
 checkout — a dropped-in `sync-<name>.json` per instance, selected
-with `--wiki <name>` ([§9](#9-the-meta-wiki-a-repository-as-source))
+with `--wiki <name>` (short alias `-w`; both `wiki-query` and
+`wiki-ingest` accept it)
+([§9](#9-the-meta-wiki-a-repository-as-source))
 — trading the physical isolation above for one clone.
 
 ### 3. One vault → several wikis by exclusion key

@@ -4,7 +4,11 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { parseArgs } from "../../src/cli/shell.ts";
-import { ingestFlags, main } from "../../src/ingest/wiki-ingest-cli.ts";
+import {
+  INGEST_SPEC,
+  ingestFlags,
+  main,
+} from "../../src/ingest/wiki-ingest-cli.ts";
 import { serializeManifest } from "../../src/sync/manifest.ts";
 import {
   entry,
@@ -38,15 +42,7 @@ afterEach(() => {
 const track: (dir: string) => void = (dir) => tempDirs.push(dir);
 
 describe("ingestFlags", () => {
-  const SPEC = {
-    value: ["--settings", "--outputs", "--timeout", "--note", "--wiki"],
-    repeat: ["--sources"],
-    positionals: {
-      max: 1,
-      error: (_arg: string, count: number) =>
-        `expected at most one <raw-dir> argument, got ${count}`,
-    },
-  } as const;
+  const SPEC = INGEST_SPEC;
 
   it("maps every flag and the positional onto the typed flag set", () => {
     const parsed = parseArgs(
@@ -168,6 +164,32 @@ describe("ingestFlags", () => {
     expect(error).toBeUndefined();
     expect(flags.wiki).toBeUndefined();
   });
+
+  it("carries the -w short alias onto the flag set as --wiki", () => {
+    const { flags } = ingestFlags(parseArgs(["-w", "meta"], SPEC));
+
+    expect(flags.wiki).toBe("meta");
+  });
+
+  it("lets a later --wiki win over an earlier -w occurrence", () => {
+    const { flags } = ingestFlags(
+      parseArgs(["-w", "eng", "--wiki", "meta"], SPEC),
+    );
+
+    expect(flags.wiki).toBe("meta");
+  });
+
+  it("names the missing value for -w exactly as for --wiki", () => {
+    const { error } = ingestFlags(parseArgs(["-w"], SPEC));
+
+    expect(error).toBe("--wiki needs a name value");
+  });
+
+  it("rejects a bundled short token as an unknown option", () => {
+    const { error } = ingestFlags(parseArgs(["-hw"], SPEC));
+
+    expect(error).toBe('unknown option "-hw"');
+  });
 });
 
 describe("wiki-ingest CLI", () => {
@@ -253,7 +275,7 @@ console.log("stub report");
 
   it("prints the usage line for --help", async () => {
     expect((await runCli(["--help"])).out).toContain(
-      "wiki-ingest [-h | --help] [--wiki <name>] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [--note <text>] [<raw-dir>]",
+      "wiki-ingest [-h | --help] [--wiki, -w <name>] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [--note <text>] [<raw-dir>]",
     );
   });
 

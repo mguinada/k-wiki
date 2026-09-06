@@ -6,7 +6,10 @@
  * options are rejected with the flag named, positionals collect under
  * a per-CLI count rule — so the
  * unknown-arg policy is one policy, not one per CLI (finding D-11).
- * Help stays with each CLI's main: the shell parses, never prints.
+ * Documented short aliases (`-w` for `--wiki`, issue #334) resolve
+ * here too — whole tokens, before any flag logic — so a short
+ * option shares the long form's one code path byte-identically;
+ * help stays with each CLI's main: the shell parses, never prints.
  */
 
 import { flagValueError } from "./flag-args.ts";
@@ -33,6 +36,16 @@ export interface CliSpec {
     readonly max: number;
     readonly error: (arg: string, count: number) => string;
   };
+  /** Documented short aliases (issue #334), short token → long
+   *  form: `-w` resolves exactly as `--wiki` — one code path, so a
+   *  repeated occurrence follows the long form's last-wins rule and
+   *  a valueless alias at argv end stays present with an undefined
+   *  value, byte-identical to the long form. Resolution matches the
+   *  whole token: bundled shorts (`-hw`) and inline `=` forms
+   *  (`-w=meta`) are unknown-option errors — one alias per token,
+   *  inline stays long-only. The long form stays canonical in help
+   *  and docs; usage errors name the token the user typed. */
+  readonly alias?: ReadonlyMap<string, string>;
 }
 
 /** One parsed command line: flag values, boolean flags, repeatable
@@ -171,11 +184,23 @@ function consumeFlag(
   return 1;
 }
 
+/** The token as the spec's flag logic sees it: the long form its
+ *  documented alias names when one matches the whole token, else
+ *  the token itself (issue #334). */
+function canonicalToken(
+  alias: ReadonlyMap<string, string> | undefined,
+  arg: string,
+): string {
+  return alias?.get(arg) ?? arg;
+}
+
 /** Split argv per the spec: value flags, boolean flags, positionals.
  *  The first usage error — an unknown option, or a positional beyond
  *  the maximum — stops the parse and is the result's `error`. A bare
  *  `--` ends option parsing; every token after it is a positional,
- *  dashes included. An absent array entry reads as no argument. */
+ *  dashes included. An absent array entry reads as no argument. A
+ *  documented alias resolves to its long form before any flag
+ *  logic, so both forms share one code path. */
 export function parseArgs(
   args: readonly (string | undefined)[],
   spec: CliSpec = {},
@@ -195,8 +220,10 @@ export function parseArgs(
       continue;
     }
 
+    const token = canonicalToken(spec.alias, arg);
+
     const consumed = consumeFlag(
-      arg,
+      token,
       args,
       index,
       valueFlags,

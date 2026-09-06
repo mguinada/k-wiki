@@ -251,6 +251,21 @@ describe("wiki-query e2e", () => {
     expect(page).toContain("Prefer RAG when the knowledge base changes often.");
   });
 
+  it("stage 1 under -w answers with the canonical --wiki filing hint", async () => {
+    const repo = await makeRepo();
+    const result = await stage1(repo, ["-w", "meta"]);
+
+    expect(result.err).toContain("wiki-query --wiki meta --file-last");
+  });
+
+  it("stage 2 under -w files the saved answer into the resolved data repo", async () => {
+    const repo = await makeRepo();
+    await stage1(repo, ["-w", "meta"]);
+    const result = await stage2(repo, ["-w", "meta"]);
+
+    expect(result.code).toBe(0);
+  });
+
   it("exits 1 listing the known names for an unknown --wiki", async () => {
     const repo = await makeRepo();
     const result = await stage1(repo, ["--wiki", "nope"]);
@@ -279,6 +294,12 @@ describe("wiki-query e2e", () => {
     expect(result.out).toContain("--wiki <name>");
     expect(result.out).toContain("sync-<name>.json");
     expect(result.out).toContain("instances");
+  });
+
+  it("documents the -w short alias beside --wiki in the help", async () => {
+    const result = await runCli(QUERY_SCRIPT, ["--help"]);
+
+    expect(result.out).toContain("--wiki, -w <name>");
   });
 
   it("stage 1 reverts and exits 1 when the agent writes under wiki/", async () => {

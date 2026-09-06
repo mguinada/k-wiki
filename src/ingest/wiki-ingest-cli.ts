@@ -26,7 +26,7 @@ import { resolveWikiInstance, wikiArgError } from "../sync/instance.ts";
 import { runWikiIngest } from "./wiki-ingest.ts";
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
-const HELP = `Usage: wiki-ingest [-h | --help] [--wiki <name>] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [--note <text>] [<raw-dir>]
+const HELP = `Usage: wiki-ingest [-h | --help] [--wiki, -w <name>] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [--note <text>] [<raw-dir>]
 
 Run the wiki agent headless over the sources that changed since the
 last ingest, then write a per-run digest.
@@ -54,7 +54,9 @@ Obsidian) would trip guardrail 1 — as one yellow WARNING per file
 with its fix (git rm --cached <path>); a signal, not a gate.
 
 Switches and arguments:
-  --wiki <name>      Select the wiki instance to ingest: resolved
+  --wiki, -w <name>  Select the wiki instance to ingest; -w is the
+                     documented short alias of --wiki. The instance
+                     is resolved
                      through the checkout's registry — an alias in
                      sync.json's instances map first, then a free stem
                      sync-<name>.json in the checkout root — with the
@@ -169,11 +171,12 @@ goes to stderr; the digest goes to stdout. Unattended scheduling is
 setup-schedule.`;
 
 /** The wiki-ingest argv spec: the agent-run value flags plus the
- *  text `--note`, the instance `--wiki` name, the repeatable
- *  `--sources`, and at most one `<raw-dir>` positional. */
-const INGEST_SPEC = {
+ *  text `--note`, the instance `--wiki` name (short alias -w), the
+ *  repeatable `--sources`, and at most one `<raw-dir>` positional. */
+export const INGEST_SPEC = {
   value: ["--settings", "--outputs", "--timeout", "--note", "--wiki"],
   repeat: ["--sources"],
+  alias: new Map([["-w", "--wiki"]]),
   positionals: {
     max: 1,
     error: (_arg: string, count: number) =>
@@ -352,7 +355,7 @@ async function runCliIngest(parsed: {
   }
 }
 
-/** wiki-ingest entry point: `wiki-ingest [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [--note <text>] [<raw-dir>]`. */
+/** wiki-ingest entry point: `wiki-ingest [-h | --help] [--wiki, -w <name>] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [--note <text>] [<raw-dir>]`. */
 export async function main(): Promise<void> {
   const args = process.argv.slice(2);
 

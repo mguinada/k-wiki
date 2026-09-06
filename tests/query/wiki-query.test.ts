@@ -913,7 +913,7 @@ console.log("Prefer RAG when the knowledge base changes often. See [[retrieval-a
 
   it("prints the usage line for --help", async () => {
     expect((await runCli(["--help"])).out).toContain(
-      "wiki-query [-h | --help] [--file-last] [--wiki <name>] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>",
+      "wiki-query [-h | --help] [--file-last] [--wiki, -w <name>] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>",
     );
   });
 
@@ -1852,6 +1852,28 @@ console.log("An answer.");
     const h = await makeCliHarness();
     await runCli(queryArgs(h, ["--wiki", "meta"]));
     const { out } = await runCli(fileLastArgs(h, ["--wiki", "meta"]));
+
+    expect(out).toContain("Filed:");
+  });
+
+  it("echoes the canonical --wiki in the stage-1 filing hint under -w", async () => {
+    const h = await makeCliHarness();
+    const { err } = await runCli(queryArgs(h, ["-w", "meta"]));
+
+    expect(err).toContain("wiki-query --wiki meta --file-last");
+  });
+
+  it("answers through the -w short alias like --wiki", async () => {
+    const h = await makeCliHarness();
+    const { out } = await runCli(queryArgs(h, ["-w", "meta"]));
+
+    expect(out).toContain("Prefer RAG when the knowledge base changes often.");
+  });
+
+  it("files the saved answer through -w in stage 2", async () => {
+    const h = await makeCliHarness();
+    await runCli(queryArgs(h, ["-w", "meta"]));
+    const { out } = await runCli(fileLastArgs(h, ["-w", "meta"]));
 
     expect(out).toContain("Filed:");
   });

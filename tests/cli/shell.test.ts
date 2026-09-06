@@ -268,6 +268,68 @@ describe("parseArgs repeatable flags", () => {
   });
 });
 
+describe("parseArgs documented aliases (issue #334)", () => {
+  /** The `-w` ≡ `--wiki` spec shape both instance CLIs use. */
+  const spec = () => ({
+    value: ["--wiki"],
+    alias: new Map([["-w", "--wiki"]]),
+  });
+
+  it("resolves a short alias to its long form's value", () => {
+    const parsed = parseArgs(["-w", "meta"], spec());
+
+    expect(parsed.values.get("--wiki")).toBe("meta");
+  });
+
+  it("never records the short token itself as a flag", () => {
+    const parsed = parseArgs(["-w", "meta"], spec());
+
+    expect(parsed.values.has("-w")).toBe(false);
+  });
+
+  it("lets a later long form win over an earlier alias occurrence", () => {
+    const parsed = parseArgs(["-w", "eng", "--wiki", "meta"], spec());
+
+    expect(parsed.values.get("--wiki")).toBe("meta");
+  });
+
+  it("lets a later alias win over an earlier long form", () => {
+    const parsed = parseArgs(["--wiki", "eng", "-w", "meta"], spec());
+
+    expect(parsed.values.get("--wiki")).toBe("meta");
+  });
+
+  it("keeps a valueless alias at argv end present with an undefined value", () => {
+    const parsed = parseArgs(["-w"], spec());
+
+    expect(parsed.values.get("--wiki")).toBeUndefined();
+  });
+
+  it("rejects a bundled short token as an unknown option", () => {
+    const parsed = parseArgs(["-hw"], spec());
+
+    expect(parsed.error).toBe('unknown option "-hw"');
+  });
+
+  it("rejects an inline = value on a short alias as an unknown option", () => {
+    const parsed = parseArgs(["-w=meta"], spec());
+
+    expect(parsed.error).toBe('unknown option "-w=meta"');
+  });
+
+  it("keeps an alias token after -- a positional", () => {
+    const parsed = parseArgs(["--", "-w"], spec());
+
+    expect(parsed.positional).toEqual(["-w"]);
+  });
+
+  it("reports no error for an alias beside a positional", () => {
+    const parsed = parseArgs(["-w", "meta", "question?"], spec());
+
+    expect(parsed.error).toBeUndefined();
+  });
+});
+
 describe("agentRunFlags", () => {
   it("maps the settings flag's value", () => {
     const flags = agentRunFlags(new Map([["--settings", "a.yml"]]));
