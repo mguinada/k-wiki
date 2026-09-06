@@ -13,8 +13,9 @@ e2e run or diagnosing a failing one.
   issue #144).
 - **sync-repo** — repo-as-source projection runs in temp source repos
   (verbatim copy, commit stamping, untracked scratch proceeds and
-  untracked-selectable refuses, dirty-source and wrong-config
-  failures, health freshness).
+  untracked-selectable refuses, gitignored allowlisted files skipped
+  and `.git/info/exclude` scratch workflows kept, dirty-source and
+  wrong-config failures, health freshness).
 - **wiki-sync** — full-cycle, no-change, failure, guardrail-revert,
   reverted fidelity-failure, repo-source cycle (the meta flow), and
   run-lock (loud holder refusal, release after a completed cycle,

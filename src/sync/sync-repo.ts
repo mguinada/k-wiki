@@ -4,12 +4,16 @@
  * into `raw/notes/<name>/` — code is truth, so no wrapping and no
  * transformation — and grounds the projection in the source repo's HEAD
  * commit: the manifest records the SHA and the source root beside the
- * per-file hashes. Selection is an allowlist declared in the config:
- * anything not listed is excluded by construction (unlisted subtrees
- * are never even walked), so a stray data-repo checkout inside the
- * source cannot leak in and the projection can never ingest itself.
- * Everything downstream (health, ingest, guardrails) is reused
- * unchanged — topology is decided at the sync layer (guide §2, §25).
+ * per-file hashes. Selection is an allowlist over the repo's tracked
+ * files: anything not listed is excluded by construction (unlisted
+ * subtrees are never even walked), so a stray data-repo checkout inside
+ * the source cannot leak in and the projection can never ingest itself;
+ * and a gitignored file matching the allowlist is skipped too (issue
+ * #324) — `git status` never reports an ignored file, so without the
+ * tracked-file filter it would enter the projection behind a recorded
+ * commit that does not describe it. Everything downstream (health,
+ * ingest, guardrails) is reused unchanged — topology is decided at the
+ * sync layer (guide §2, §25).
  */
 
 import { mkdir, readFile } from "node:fs/promises";
@@ -87,55 +91,83 @@ function classifyPatterns(patterns: readonly string[]): {
 /**
  * Select the files of a source repo that match the allowlist. Only the
  * literal directory prefixes of the patterns are walked (excluded by
- * construction); fully literal patterns are checked as exact files.
- * Candidates are counted by path — overlapping walk roots (src/** plus
+ * construction); fully literal patterns are checked as exact files;
+ * and only tracked files are selected (issue #324) — the walk still
+ * counts unversioned entries as examined, but an unversioned file is
+ * not ground truth, so it never enters the projection: the recorded
+ * commit does not describe it. Candidates are counted by path — overlapping walk roots (src/** plus
  * src/x/**) and an exact file a walk root also covers each count once,
  * keeping the "N of M examined" report honest (issue #246 C-7).
  */
 export async function selectRepoFiles(
   root: string,
   patterns: readonly string[],
+  tracked: ReadonlySet<string>,
 ): Promise<{ candidates: number; selected: readonly string[] }> {
   const matchers = patterns.map(compileIncludePattern);
   const matches = (relPath: string) => matchers.some((m) => m.test(relPath));
   const { exactFiles, walkRoots } = classifyPatterns(patterns);
 
   const examined = new Set<string>(exactFiles);
-  const selected = new Set<string>();
-
-  for (const relPath of exactFiles) {
-    if ((await statIfExists(toAbsolute(root, relPath)))?.isFile() === true) {
-      selected.add(relPath);
-    }
-  }
+  const selected = await selectTrackedExactFiles(root, exactFiles, tracked);
 
   for (const walkRoot of walkRoots) {
-    let files: string[];
-
-    try {
-      files = await listFiles(
-        walkRoot === "" ? root : join(root, walkRoot),
-        walkRoot,
-        { skipRootDirs: SKIPPED_ROOT_DIRS, regularFilesOnly: true },
-      );
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-        throw error;
-      }
-
-      files = [];
-    }
-
-    for (const relPath of files) {
+    for (const relPath of await listWalkRootFiles(root, walkRoot)) {
       examined.add(relPath);
 
-      if (matches(relPath)) {
+      if (matches(relPath) && tracked.has(relPath)) {
         selected.add(relPath);
       }
     }
   }
 
   return { candidates: examined.size, selected: [...selected].sort() };
+}
+
+/** The tracked exact-file patterns that exist as regular files on
+ *  disk — an untracked or vanished entry is never selected. */
+async function selectTrackedExactFiles(
+  root: string,
+  exactFiles: ReadonlySet<string>,
+  tracked: ReadonlySet<string>,
+): Promise<Set<string>> {
+  const selected = new Set<string>();
+
+  for (const relPath of exactFiles) {
+    if (
+      tracked.has(relPath) &&
+      (await statIfExists(toAbsolute(root, relPath)))?.isFile() === true
+    ) {
+      selected.add(relPath);
+    }
+  }
+
+  return selected;
+}
+
+/** The files of one allowlist walk root, as the walker reports them;
+ *  an absent walk root contributes none — its absence is tolerance,
+ *  not an error (ENOENT only; anything else rethrows). */
+async function listWalkRootFiles(
+  root: string,
+  walkRoot: string,
+): Promise<string[]> {
+  try {
+    return await listFiles(
+      walkRoot === "" ? root : join(root, walkRoot),
+      walkRoot,
+      {
+        skipRootDirs: SKIPPED_ROOT_DIRS,
+        regularFilesOnly: true,
+      },
+    );
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw error;
+    }
+
+    return [];
+  }
 }
 
 /** The source repo's HEAD commit SHA. */
@@ -151,6 +183,20 @@ async function repoHead(root: string, env: NodeJS.ProcessEnv): Promise<string> {
       cause,
     });
   }
+}
+
+/** The repo's tracked files — the versioned set selection draws from
+ *  (issue #324): `git status` never reports an ignored file, so an
+ *  ignored-but-allowlisted entry would otherwise be projected behind a
+ *  recorded commit that does not describe it. `-z` keeps paths raw,
+ *  never C-quoted. */
+async function trackedFiles(
+  root: string,
+  env: NodeJS.ProcessEnv,
+): Promise<ReadonlySet<string>> {
+  const { stdout } = await runGit(root, ["ls-files", "-z"], env);
+
+  return new Set(stdout.split("\0").filter((path) => path !== ""));
 }
 
 /** SHA grounding requires a committed tree: the recorded commit must
@@ -214,6 +260,7 @@ async function projectRepo(
   now: () => Date,
   previous: VaultNotes,
   commit: string,
+  tracked: ReadonlySet<string>,
   onProgress: (message: SyncProgress) => void,
 ): Promise<{
   notes: VaultNotes;
@@ -222,6 +269,7 @@ async function projectRepo(
   const { candidates, selected } = await selectRepoFiles(
     source.root,
     source.include,
+    tracked,
   );
 
   onProgress({
@@ -279,6 +327,7 @@ export async function runRepoSync(options: DriverOptions): Promise<SyncReport> {
   await assertCommittedTree(source.root, env, source.include);
 
   const commit = await repoHead(source.root, env);
+  const tracked = await trackedFiles(source.root, env);
   const manifestPath = join(options.rawDir, "manifest.json");
   const previousText = await readTextIfExists(manifestPath);
   const manifest: Manifest =
@@ -307,6 +356,7 @@ export async function runRepoSync(options: DriverOptions): Promise<SyncReport> {
     now,
     manifest.vaults[source.name] ?? {},
     commit,
+    tracked,
     onProgress,
   );
 
@@ -344,9 +394,11 @@ Project the allowlisted files of a committed source repository into
 raw/notes/<name>/ verbatim, grounding the projection in the source
 repo's HEAD commit. The config's single repo source names
 the namespace, the checkout root, and the include allowlist; anything
-not listed is excluded by construction. The manifest records the per-
-file hashes plus the source commit and root, which the health check
-uses for the freshness warning.
+not listed is excluded by construction. Only tracked files are
+selected: a gitignored file matching the allowlist is skipped, since
+the recorded commit does not describe it. The manifest records the
+per-file hashes plus the source commit and root, which the health
+check uses for the freshness warning.
 
   -h, --help    Print this help and exit; no side effects.
   <config>      Path to the repo-source sync config.

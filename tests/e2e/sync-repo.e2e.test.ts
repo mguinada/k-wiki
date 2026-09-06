@@ -222,6 +222,39 @@ describe("sync-repo e2e", () => {
     await expect(readdir(ws.rawDir)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("does not project a gitignored file matching the allowlist", async () => {
+    const ws = await makeWorkspace();
+
+    await put(ws.sourceRoot, "docs/scratch.md", "ignored\n");
+    await put(ws.sourceRoot, ".gitignore", "docs/scratch.md\n");
+    await git(ws.sourceRoot, "add", "-A");
+    await git(ws.sourceRoot, "commit", "--quiet", "-m", "ignore scratch");
+
+    const result = await runCli(SYNC_REPO_SCRIPT, [ws.configPath, ws.rawDir]);
+
+    expect(result.code).toBe(0);
+    expect(await collectFiles(join(ws.rawDir, "notes", "k-wiki"))).toEqual(
+      SELECTED,
+    );
+  });
+
+  it("keeps the .git/info/exclude scratch workflow working", async () => {
+    const ws = await makeWorkspace();
+
+    await writeFile(
+      join(ws.sourceRoot, ".git", "info", "exclude"),
+      "docs/scratch.md\n",
+    );
+    await put(ws.sourceRoot, "docs/scratch.md", "scratch\n");
+
+    const result = await runCli(SYNC_REPO_SCRIPT, [ws.configPath, ws.rawDir]);
+
+    expect(result.code).toBe(0);
+    expect(await collectFiles(join(ws.rawDir, "notes", "k-wiki"))).toEqual(
+      SELECTED,
+    );
+  });
+
   it("fails loudly on a vault config instead of a repo config", async () => {
     const ws = await makeWorkspace();
     const vaultConfig = join(ws.dir, "sync.json");

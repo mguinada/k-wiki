@@ -120,6 +120,14 @@ async function commitAll(root: string): Promise<void> {
   await runGit(root, ["commit", "--quiet", "-m", "fixture"], GIT_ENV);
 }
 
+/** The repo's tracked files — the set selectRepoFiles draws from
+ *  (issue #324); a gitignored path is never in it. */
+async function trackedSet(root: string): Promise<Set<string>> {
+  const { stdout } = await runGit(root, ["ls-files", "-z"], GIT_ENV);
+
+  return new Set(stdout.split("\0").filter((path) => path !== ""));
+}
+
 async function writeConfig(
   dir: string,
   entry: Record<string, unknown>,
@@ -981,10 +989,11 @@ describe("selectRepoFiles walker gaps", () => {
     await runGit(root, ["add", "-A"], GIT_ENV);
     await runGit(root, ["commit", "--quiet", "-m", "more"], GIT_ENV);
 
-    const { candidates, selected } = await selectRepoFiles(root, [
-      "src/**",
-      "src/pkg/**",
-    ]);
+    const { candidates, selected } = await selectRepoFiles(
+      root,
+      ["src/**", "src/pkg/**"],
+      await trackedSet(root),
+    );
 
     expect(candidates).toBe(selected.length);
   });
@@ -998,10 +1007,11 @@ describe("selectRepoFiles walker gaps", () => {
     await runGit(root, ["add", "-A"], GIT_ENV);
     await runGit(root, ["commit", "--quiet", "-m", "more"], GIT_ENV);
 
-    const { candidates, selected } = await selectRepoFiles(root, [
-      "src/pkg/one.ts",
-      "src/**",
-    ]);
+    const { candidates, selected } = await selectRepoFiles(
+      root,
+      ["src/pkg/one.ts", "src/**"],
+      await trackedSet(root),
+    );
 
     expect(candidates).toBe(selected.length);
   });
@@ -1015,7 +1025,11 @@ describe("selectRepoFiles walker gaps", () => {
     await runGit(root, ["add", "-A"], GIT_ENV);
     await runGit(root, ["commit", "--quiet", "-m", "more"], GIT_ENV);
 
-    const { selected } = await selectRepoFiles(root, ["src/*/one.ts"]);
+    const { selected } = await selectRepoFiles(
+      root,
+      ["src/*/one.ts"],
+      await trackedSet(root),
+    );
 
     expect(selected).toEqual(["src/pkg/one.ts"]);
   });
@@ -1024,10 +1038,11 @@ describe("selectRepoFiles walker gaps", () => {
     const dir = await makeTempDir();
     const root = await makeSourceRepo(dir);
 
-    const { selected } = await selectRepoFiles(root, [
-      "README.md",
-      "ABSENT.md",
-    ]);
+    const { selected } = await selectRepoFiles(
+      root,
+      ["README.md", "ABSENT.md"],
+      await trackedSet(root),
+    );
 
     expect(selected).toEqual(["README.md"]);
   });
@@ -1036,10 +1051,11 @@ describe("selectRepoFiles walker gaps", () => {
     const dir = await makeTempDir();
     const root = await makeSourceRepo(dir);
 
-    const { candidates } = await selectRepoFiles(root, [
-      "README.md",
-      "absent-dir/**",
-    ]);
+    const { candidates } = await selectRepoFiles(
+      root,
+      ["README.md", "absent-dir/**"],
+      await trackedSet(root),
+    );
 
     expect(candidates).toBe(1);
   });
@@ -1048,10 +1064,11 @@ describe("selectRepoFiles walker gaps", () => {
     const dir = await makeTempDir();
     const root = await makeSourceRepo(dir);
 
-    const { selected } = await selectRepoFiles(root, [
-      "README.md",
-      "absent-dir/**",
-    ]);
+    const { selected } = await selectRepoFiles(
+      root,
+      ["README.md", "absent-dir/**"],
+      await trackedSet(root),
+    );
 
     expect(selected).toEqual(["README.md"]);
   });
@@ -1063,8 +1080,14 @@ describe("selectRepoFiles walker gaps", () => {
     await put(root, "node_modules/x/hidden.md", "hidden\n");
     await put(root, ".git/HEAD.md", "hidden\n");
     await put(root, "loose.md", "loose\n");
+    await runGit(root, ["add", "-A"], GIT_ENV);
+    await runGit(root, ["commit", "--quiet", "-m", "loose"], GIT_ENV);
 
-    const { selected } = await selectRepoFiles(root, ["**/*.md"]);
+    const { selected } = await selectRepoFiles(
+      root,
+      ["**/*.md"],
+      await trackedSet(root),
+    );
 
     for (const [path, present] of [
       ["README.md", true],
@@ -1375,13 +1398,67 @@ describe("repoRowOf", () => {
   });
 });
 
+describe("selectRepoFiles gitignored files (issue #324)", () => {
+  it("does not select a gitignored file matching the allowlist", async () => {
+    const dir = await makeTempDir();
+    const root = await makeSourceRepo(dir);
+
+    await put(root, "docs/ignored.md", "ignored\n");
+    await put(root, ".gitignore", "docs/ignored.md\n");
+    await runGit(root, ["add", "-A"], GIT_ENV);
+    await runGit(root, ["commit", "--quiet", "-m", "ignore"], GIT_ENV);
+
+    const { selected } = await selectRepoFiles(
+      root,
+      ["docs/*.md"],
+      await trackedSet(root),
+    );
+
+    expect(selected).toEqual(["docs/guide.md"]);
+  });
+
+  it("does not select a file ignored via .git/info/exclude", async () => {
+    const dir = await makeTempDir();
+    const root = await makeSourceRepo(dir);
+
+    await writeFile(join(root, ".git", "info", "exclude"), "docs/scratch.md\n");
+    await put(root, "docs/scratch.md", "scratch\n");
+
+    const { selected } = await selectRepoFiles(
+      root,
+      ["docs/*.md"],
+      await trackedSet(root),
+    );
+
+    expect(selected).toEqual(["docs/guide.md"]);
+  });
+
+  it("counts the ignored file as examined while not selecting it", async () => {
+    const dir = await makeTempDir();
+    const root = await makeSourceRepo(dir);
+
+    await put(root, "docs/ignored.md", "ignored\n");
+    await put(root, ".gitignore", "docs/ignored.md\n");
+    await runGit(root, ["add", "-A"], GIT_ENV);
+    await runGit(root, ["commit", "--quiet", "-m", "ignore"], GIT_ENV);
+
+    const { candidates } = await selectRepoFiles(
+      root,
+      ["docs/*.md"],
+      await trackedSet(root),
+    );
+
+    expect(candidates).toBe(3);
+  });
+});
+
 describe("selectRepoFiles error paths", () => {
   it("rethrows a walk error that is not a missing directory", async () => {
     const dir = await makeTempDir();
     const root = await makeSourceRepo(dir);
 
     await expect(
-      selectRepoFiles(root, ["docs/guide.md/**/*.md"]),
+      selectRepoFiles(root, ["docs/guide.md/**/*.md"], await trackedSet(root)),
     ).rejects.toMatchObject({ code: "ENOTDIR" });
   });
 });
