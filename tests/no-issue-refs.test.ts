@@ -16,10 +16,19 @@ import { describe, expect, it } from "vitest";
  * pattern. `issues? #` so "issue #11" and "issues #67 and #72" both
  * trip; the text is whitespace-normalized first so a citation broken
  * across lines ("(issue\n  #95)") cannot slip through.
+ *
+ * The same guard enforces help self-sufficiency against doc
+ * references (issue #311): a `(guide §16)` citation tells the reader
+ * where the answer lives instead of answering, so every launcher's
+ * --help must not match `guide §`, a `§<digit>` section mark, a
+ * README mention, or a `docs/` path either. Only --help output is
+ * matched for doc references — README referencing docs is fine
+ * (README is docs).
  */
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ISSUE_REFERENCE = /issues? #\d+/i;
+const DOC_REFERENCE = /guide\s*§|§\d|README|docs\//i;
 
 /** Collapse all whitespace so line-wrapped citations still match. */
 function normalize(text: string): string {
@@ -77,6 +86,24 @@ describe("user-facing surfaces carry no issue references (issue #202 guard)", ()
 
         if (citation !== null) {
           offenders.push(`${dir}/${launcher}: ${citation[0]}`);
+        }
+      }
+    }
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("bin/ and dev/*.ts help output contains no doc reference", async () => {
+    const offenders: string[] = [];
+
+    for (const dir of LAUNCHER_DIRS) {
+      for (const launcher of await collectLaunchers(dir)) {
+        const reference = normalize(runHelp(dir, launcher)).match(
+          DOC_REFERENCE,
+        );
+
+        if (reference !== null) {
+          offenders.push(`${dir}/${launcher}: ${reference[0]}`);
         }
       }
     }

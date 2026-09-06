@@ -29,7 +29,7 @@ import { runWikiIngest } from "./wiki-ingest.ts";
 const HELP = `Usage: wiki-ingest [-h | --help] [--wiki <name>] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [--note <text>] [<raw-dir>]
 
 Run the wiki agent headless over the sources that changed since the
-last ingest, then write a per-run digest (guide §18).
+last ingest, then write a per-run digest.
 
 Flow: read the raw manifest, diff it against the snapshot from the
 previous successful run (<dataRoot>/outputs/last-ingested-manifest.json
@@ -144,8 +144,7 @@ What it writes:
     the data repo when the data repo has none;
   - outputs/runs/<timestamp>.md — the digest, also printed to stdout.
 
-After every agent run three guardrails check the data repo (guide
-§1, §7, §9): (1) immutability — only wiki/ (never the
+After every agent run three guardrails check the data repo: (1) immutability — only wiki/ (never the
 wiki/AGENTS.md contract), outputs/, and raw/manifest.json may change,
 and HEAD may not move; (2) frontmatter — every changed wiki page
 parses with the required fields (wiki/log.md, the append-only log,
