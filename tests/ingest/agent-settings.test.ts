@@ -847,6 +847,27 @@ describe("loadAgentSettings whitelist resolution (issue #144)", () => {
     expect(resolved.isolateExtensions).toEqual(["npm:@scope/pkg"]);
   });
 
+  it("strips a version suffix from a scoped npm spec", async () => {
+    const root = await mkdtemp(join(tmpdir(), "k-wiki-whitelist-"));
+
+    whitelistDirs.push(root);
+
+    const piInstallRoot = join(root, "pi-root");
+    const settingsPath = join(root, "settings.yml");
+
+    await mkdir(join(piInstallRoot, "npm", "node_modules", "@scope", "pkg"), {
+      recursive: true,
+    });
+    await writeFile(
+      settingsPath,
+      "command: pi\nmodel: m\nreasoning: h\nisolate.extensions: npm:@scope/pkg@1.0.0\n",
+    );
+
+    const resolved = await loadAgentSettings(settingsPath, { piInstallRoot });
+
+    expect(resolved.isolateExtensions).toEqual(["npm:@scope/pkg@1.0.0"]);
+  });
+
   it("resolves skill entries against the settings file's directory", async () => {
     const { settingsPath, piInstallRoot } = await makeWhitelistFixture({
       presentSkills: ["obsidian-markdown"],

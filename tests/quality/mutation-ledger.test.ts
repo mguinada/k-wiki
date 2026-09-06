@@ -481,6 +481,23 @@ describe("ledger ordering and block precedence (issue #240 kill batch)", () => {
     expect(lines[0]).toBe("Survived  src/alpha.ts:9  StringLiteral");
   });
 
+  it("embeds the ledger block's keys in the survivors-printer order", () => {
+    const ledger = {
+      entries: [
+        survived("src/zeta.ts", 3, "Regex"),
+        survived("src/alpha.ts", 9, "StringLiteral"),
+      ],
+    };
+    const block = JSON.parse(
+      ledgerBlockLine(ledger).replace(
+        /^<!-- k-wiki-mutants-ledger: /,
+        "",
+      ).replace(/ -->$/, ""),
+    );
+
+    expect(Object.keys(block.entries)[0]).toBe("src/alpha.ts:9|StringLiteral");
+  });
+
   it("bootstraps the rendered list when the embedded block is invalid", () => {
     const ledger = ledgerFromBody(
       [

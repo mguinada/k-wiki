@@ -299,6 +299,15 @@ describe("compareEntries (issue #240 kill batch)", () => {
     ).toBe(-1);
   });
 
+  it("treats two identical survivors of one line as equal", () => {
+    expect(
+      compareEntries(
+        { file: "src/a.ts", line: 7, mutator: "Alpha" },
+        { file: "src/a.ts", line: 7, mutator: "Alpha" },
+      ),
+    ).toBe(0);
+  });
+
   it("orders same-file survivors by line number before mutator name", () => {
     expect(
       compareEntries(

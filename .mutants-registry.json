@@ -18,6 +18,630 @@
       "justification": "readFileSync with an empty encoding returns a Buffer that JSON.parse accepts \u2014 output identical.",
       "pr": "https://github.com/mguinada/k-wiki/pull/237",
       "date": "2026-08-31"
+    },
+    "0588ea5cf06ffae0": {
+      "bucket": "equivalent",
+      "justification": "execFile encoding \"\" is Node's alias for \"buffer\" \u2014 stdout stays a Buffer, output identical.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "b0506c595d473ab4": {
+      "bucket": "equivalent",
+      "justification": "skipSlash is written before its first read on every path \u2014 the initializer is dead.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "60eafac14341045b": {
+      "bucket": "equivalent",
+      "justification": "Empty catch returns undefined instead of false; the only consumer truthiness-tests the result.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "b9d4c30ba24eaaf7": {
+      "bucket": "equivalent",
+      "justification": "split never yields an empty array \u2014 the guarded index is always defined.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "fa53d72796887409": {
+      "bucket": "equivalent",
+      "justification": "split never yields an empty array \u2014 the guarded index is always defined.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "7484a3fb19e4a6fb": {
+      "bucket": "equivalent",
+      "justification": "split never yields undefined \u2014 the ?? \"\" fallback is unreachable (typing fallback only).",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "67d87fd962d9e255": {
+      "bucket": "equivalent",
+      "justification": "split never yields an empty array \u2014 the guarded index is always defined.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "b4aec8c5549184d9": {
+      "bucket": "equivalent",
+      "justification": "split never yields undefined \u2014 the ?? \"\" fallback is unreachable (typing fallback only).",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "864c4b22a3215a77": {
+      "bucket": "equivalent",
+      "justification": "the match regex guarantees group 1 \u2014 the ?? \"\" fallback is unreachable.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "0ef3c2068c9ad20a": {
+      "bucket": "equivalent",
+      "justification": "ATX_HEADING captures at least one character \u2014 the empty-string comparison is always true.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "3d6c6fe2d3da1371": {
+      "bucket": "equivalent",
+      "justification": "falling through reaches the identical second early return \u2014 same text, same empty buckets.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "e26325a92b75c6ef": {
+      "bucket": "equivalent",
+      "justification": "with nothing missing the fall-through returns the same unchanged text and empty buckets.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "10e8f6f0c5ce4a25": {
+      "bucket": "equivalent",
+      "justification": "the join separator lands on its own non-heading line \u2014 extractHeadings ignores it.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "92aa11470d31d1ff": {
+      "bucket": "equivalent",
+      "justification": "sourced entries require a closed fence and sit inside it \u2014 the search bound cannot change the first match.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "a57ff86aaa5566db": {
+      "bucket": "equivalent",
+      "justification": "sourced entries require a closed fence and sit inside it \u2014 the search bound cannot change the first match.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "bdfb1ca13773db1e": {
+      "bucket": "equivalent",
+      "justification": "both branches search from the top \u2014 the first occurrence of the entry is the frontmatter one either way.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "29fe791aa2e4bb97": {
+      "bucket": "equivalent",
+      "justification": "closing === 1 means an empty frontmatter, which carries no sourced entries \u2014 the branch is unreachable.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "78528ae375325b79": {
+      "bucket": "equivalent",
+      "justification": "the extra iteration reads the closing fence line, which never contains the entry text.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "cac702888c8a51f0": {
+      "bucket": "equivalent",
+      "justification": "the loop bound keeps i inside the lines array \u2014 the ?? fallback is unreachable.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "9bdad80a7ffbdf95": {
+      "bucket": "equivalent",
+      "justification": "the texts map was populated for every listed file \u2014 the lookup cannot miss.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "374d2afbb4ca83a7": {
+      "bucket": "equivalent",
+      "justification": "index.has(target) was checked just above \u2014 the map lookup cannot miss.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "3e5dc73cb0854f7f": {
+      "bucket": "equivalent",
+      "justification": "index.has(target) was checked just above \u2014 the map lookup cannot miss.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "4b9c9598c681133e": {
+      "bucket": "equivalent",
+      "justification": "the line-based parser writes every entry verbatim inside the fence \u2014 entryLine always finds it.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "e362ecf934f4030f": {
+      "bucket": "equivalent",
+      "justification": "the extra iteration reads an undefined entry, which the hole guard skips.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "e2d8b46416a4004c": {
+      "bucket": "equivalent",
+      "justification": "the extra iteration reads an undefined entry, which the hole guard skips.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "431b9e53fc533b37": {
+      "bucket": "equivalent",
+      "justification": "the escape lookahead guarantees i is inside the string \u2014 the fallback is unreachable.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "0bbed3ea054e0af2": {
+      "bucket": "equivalent",
+      "justification": "the extra iteration reads an undefined character, which both comparisons reject.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "9e5a56995598bf44": {
+      "bucket": "equivalent",
+      "justification": "the empty catch falls through to the same implicit undefined.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "eea50b0ebd531e85": {
+      "bucket": "equivalent",
+      "justification": "without the guard the follow-up git call fails inside tryGit \u2014 same undefined result.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "cacc49f16ae8e8bb": {
+      "bucket": "equivalent",
+      "justification": "without the guard the follow-up git call fails inside tryGit \u2014 same undefined result.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "bf6c057d07d46d41": {
+      "bucket": "equivalent",
+      "justification": "without the guard the follow-up git call fails inside tryGit \u2014 same undefined result.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "cc7f3e14eaa50c1d": {
+      "bucket": "equivalent",
+      "justification": "without the guard the follow-up git call fails inside tryGit \u2014 same undefined result.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "eaec74273a9b84bb": {
+      "bucket": "equivalent",
+      "justification": "either way the follow-up git call fails inside tryGit \u2014 same undefined result.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "56f2d9da25e30141": {
+      "bucket": "equivalent",
+      "justification": "a non-empty sha never equals the sentinel; the empty case degrades to the same undefined.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "72b6d710d61492d3": {
+      "bucket": "equivalent",
+      "justification": "a blank sha line yields a failing git show the loop skips \u2014 same survivors visited, same result.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "6daf303ab40c0733": {
+      "bucket": "equivalent",
+      "justification": "a blank sha line yields a failing git show the loop skips \u2014 same result.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "b2b355f9d25d158c": {
+      "bucket": "equivalent",
+      "justification": "a non-empty sha never equals the sentinel; the blank case degrades the same way.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "a24402f4be9484a8": {
+      "bucket": "equivalent",
+      "justification": "Buffer.from with the empty encoding is the utf8 alias \u2014 identical bytes.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "c50d25e19977c8c3": {
+      "bucket": "equivalent",
+      "justification": "the extra iteration reads an undefined character, which every comparison rejects.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "470f9e5310d1c11b": {
+      "bucket": "equivalent",
+      "justification": "at index 0 the preceding-character slice is empty and fails the whitespace test either way.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "2fbfcff76a011e1d": {
+      "bucket": "equivalent",
+      "justification": "at index 0 the preceding-character slice is empty and fails the whitespace test either way.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "338609d1d7e556cb": {
+      "bucket": "equivalent",
+      "justification": "the else branch already handles every non-skip, non-list kind \u2014 the label is decorative.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "cfc99386b0bc4291": {
+      "bucket": "equivalent",
+      "justification": "required keys are validated present and non-empty \u2014 the ?? fallback is unreachable.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "38a351c95d08a958": {
+      "bucket": "equivalent",
+      "justification": "required keys are validated present and non-empty \u2014 the ?? fallback is unreachable.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "d58bac052a30b568": {
+      "bucket": "equivalent",
+      "justification": "required keys are validated present and non-empty \u2014 the ?? fallback is unreachable.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "5d31c5e00caf7040": {
+      "bucket": "equivalent",
+      "justification": "agentArgs never calls whitelistFlags with isolate: false \u2014 the guard branch is dead code.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "c6f369c5f419b20c": {
+      "bucket": "equivalent",
+      "justification": "agentArgs never calls whitelistFlags with isolate: false \u2014 the guard branch is dead code.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "487db4a774179852": {
+      "bucket": "equivalent",
+      "justification": "agentArgs never calls whitelistFlags with isolate: false \u2014 the guard branch is dead code.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "efbe61408e13dc92": {
+      "bucket": "equivalent",
+      "justification": "agentArgs never calls whitelistFlags with isolate: false \u2014 the dead branch is unreachable.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "aafcfd06078a3688": {
+      "bucket": "equivalent",
+      "justification": "the anchored greedy pattern yields the same capture without the anchor \u2014 see the sibling variants.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "65187512ee06a092": {
+      "bucket": "equivalent",
+      "justification": "the greedy capture already consumes to end of line \u2014 removing $ does not change the capture.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "fb432101b366b2b0": {
+      "bucket": "equivalent",
+      "justification": "the first segment already consumes slashes, so the loosened group never changes the capture.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "27be9ab9094a5b93": {
+      "bucket": "equivalent",
+      "justification": "the first segment already consumes slashes, so the loosened group never changes the capture.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "420143b8a023a50b": {
+      "bucket": "equivalent",
+      "justification": "reached only when the files differ, where < and <= agree.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "405365001749c173": {
+      "bucket": "equivalent",
+      "justification": "readFileSync with the empty encoding returns a Buffer that JSON.parse accepts identically.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "049d7ef64b144327": {
+      "bucket": "equivalent",
+      "justification": "the empty catch falls through to the same implicit undefined.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "36370178978d4770": {
+      "bucket": "equivalent",
+      "justification": "spreading { id: undefined } prints the same dash and never matches a registry key.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "ff6b2a9d8ce48c78": {
+      "bucket": "equivalent",
+      "justification": "readFileSync with the empty encoding returns a Buffer that JSON.parse accepts identically.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "17f4eb6c8088e91b": {
+      "bucket": "equivalent",
+      "justification": "main always passes the --ids flag state explicitly \u2014 the default is never used.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "b88caeb6f834244c": {
+      "bucket": "equivalent",
+      "justification": "the empty catch falls through to the same implicit undefined.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "89fb64ea55f66602": {
+      "bucket": "equivalent",
+      "justification": "Stryker locations stay inside the file \u2014 the out-of-range guard is unreachable.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "5a64215242cdabdb": {
+      "bucket": "equivalent",
+      "justification": "a location with columns always carries its line \u2014 the guard is unreachable.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "0a1a6cf3d63f8408": {
+      "bucket": "equivalent",
+      "justification": "startOffset only fails when spanText already failed \u2014 the guard is unreachable.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "31ac6cda3743e0d0": {
+      "bucket": "equivalent",
+      "justification": "the bucket set membership still rejects every non-string \u2014 the typeof guard is redundant.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "c53d19be2b11116b": {
+      "bucket": "equivalent",
+      "justification": "looking up an undefined key yields undefined \u2014 the entry stays untriaged either way.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "cb87a4df966a0989": {
+      "bucket": "equivalent",
+      "justification": "the try/catch converts the null-dereference into the same undefined.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "42d03ea16499c783": {
+      "bucket": "equivalent",
+      "justification": "the try/catch converts the null-dereference into the same undefined.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "5d68a94631fdbeca": {
+      "bucket": "equivalent",
+      "justification": "Object.values(null) throws inside the try, which returns the same undefined.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "c82c6a8bc40e6f41": {
+      "bucket": "equivalent",
+      "justification": "the bootstrap regex guarantees all four groups \u2014 the fallback is unreachable.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "debf6dfe1ba66c49": {
+      "bucket": "equivalent",
+      "justification": "the bootstrap regex guarantees all four groups \u2014 the fallback is unreachable.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "93549af777833f4d": {
+      "bucket": "equivalent",
+      "justification": "the bootstrap regex guarantees all four groups \u2014 the fallback is unreachable.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "d7505eb9da40d601": {
+      "bucket": "equivalent",
+      "justification": "spreading { id: undefined } keys the entry by the same stopgap fallback.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "13ec8aa58f21ed8f": {
+      "bucket": "equivalent",
+      "justification": "the legacy key is already added as the mutant's own key \u2014 the extra add is a duplicate.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "69016c6b006bc3bb": {
+      "bucket": "equivalent",
+      "justification": "without an identity the mutant's own key is the legacy key \u2014 the delete happens either way.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "8865478a1a15edac": {
+      "bucket": "equivalent",
+      "justification": "split(\"\\n\").at(-1) never yields undefined \u2014 the fallback is unreachable.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "c53add93af0344bc": {
+      "bucket": "equivalent",
+      "justification": "Number(undefined) is NaN and fails the integer check \u2014 the error is the same.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "add1bf65be3017d5": {
+      "bucket": "equivalent",
+      "justification": "every counter key has a label \u2014 find never returns null here.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "8078cf328a141321": {
+      "bucket": "equivalent",
+      "justification": "readdir enumeration order is not deterministically controllable in a test \u2014 the comparator is unobservable.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "edd5afed245dbe03": {
+      "bucket": "equivalent",
+      "justification": "readdir enumeration order is not deterministically controllable in a test \u2014 the comparator is unobservable.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "8d295a53cba6529f": {
+      "bucket": "equivalent",
+      "justification": "no reachable comparison flips an equality \u2014 the branch change is unobservable in the counters.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "564f43590f7c22d8": {
+      "bucket": "equivalent",
+      "justification": "the first and last .ts suffix coincide for every scanned file name \u2014 the replacement is identical.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "762da8c3f5c2b2b7": {
+      "bucket": "equivalent",
+      "justification": "the import pattern guarantees group 1 \u2014 the fallback is unreachable.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "79e4f4bbe92bdeb4": {
+      "bucket": "equivalent",
+      "justification": "the signature pattern guarantees group 1 \u2014 the fallback is unreachable.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "403d1904bdf382ab": {
+      "bucket": "equivalent",
+      "justification": "the junk path is not a .md file and carries no fields \u2014 it contributes nothing to the seed.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "b405acb48ba67e0a": {
+      "bucket": "equivalent",
+      "justification": "originPages.has(undefined) is false \u2014 a missing citation is not a cite either way.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "91cce5661f08453d": {
+      "bucket": "equivalent",
+      "justification": "writeFile with the empty encoding writes the same utf8 bytes.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "4e52812b4abce125": {
+      "bucket": "equivalent",
+      "justification": "readFileSync with the empty encoding returns a Buffer that JSON.parse accepts identically.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "a4a404cc0008eeb3": {
+      "bucket": "equivalent",
+      "justification": "Buffer.from with the empty encoding is the utf8 alias \u2014 identical bytes.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "10cb8ea18a9bf639": {
+      "bucket": "equivalent",
+      "justification": "two distinct same-length vault prefixes cannot both match one source \u2014 the tie is impossible.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "6a72723846b2eb60": {
+      "bucket": "equivalent",
+      "justification": "vault names are distinct \u2014 the branch order agrees with the comparison on every input.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "4ef6d0d3be9089a7": {
+      "bucket": "equivalent",
+      "justification": "vault names are distinct \u2014 comparator ties are impossible.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "db684835328187d9": {
+      "bucket": "equivalent",
+      "justification": "vault names are distinct \u2014 comparator ties are impossible.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "9d134d48586dffff": {
+      "bucket": "equivalent",
+      "justification": "writeFile with the empty encoding writes the same utf8 bytes.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "840d79acaa88523e": {
+      "bucket": "equivalent",
+      "justification": "the junk entry is not a record and every pipeline stage filters it out.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "2f7f22a490d1c6ea": {
+      "bucket": "equivalent",
+      "justification": "the junk entry is not a record and every pipeline stage filters it out.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "2dd5af63c454ca38": {
+      "bucket": "equivalent",
+      "justification": "the junk entry is not a record and every pipeline stage filters it out.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "0e7241442e4a4af8": {
+      "bucket": "equivalent",
+      "justification": "the OPEN-state filter already dropped every undefined entry.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "3fc9631129c1f009": {
+      "bucket": "equivalent",
+      "justification": "the junk entry is not a record and every pipeline stage filters it out.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "bff87c4e89e3eba5": {
+      "bucket": "equivalent",
+      "justification": "the junk entry is not a record and every pipeline stage filters it out.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "cee0be46bfea2a78": {
+      "bucket": "equivalent",
+      "justification": "Number.isFinite is strict \u2014 a non-number still fails the second check.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "b81d03ca5e0c982c": {
+      "bucket": "equivalent",
+      "justification": "re-assigning the equal timestamp stores the same value \u2014 newest tracking is unchanged.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "62976560834dfe04": {
+      "bucket": "equivalent",
+      "justification": "readFileSync with the empty encoding returns a Buffer that JSON.parse accepts identically.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "c5c933485512167b": {
+      "bucket": "equivalent",
+      "justification": "the leading @ is captured inside group 1 and the ?? spec fallback returns the same name for @-free specs \u2014 the anchor never changes the resolved dir.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
+    },
+    "f7dc9a1d842402da": {
+      "bucket": "equivalent",
+      "justification": "the catch block falls through to the same implicit undefined.",
+      "pr": "https://github.com/mguinada/k-wiki/pull/328",
+      "date": "2026-09-06"
     }
   }
 }
