@@ -223,7 +223,7 @@ export async function runWikiQuery(
 }
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
-const HELP = `Usage: wiki-query [-h | --help] [--file-last] [--wiki <name>] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>
+const HELP = `Usage: wiki-query [-h | --help] [--file-last] [--wiki, -w <name>] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>
 
 Ask the built wiki one question headless. Filing is
 two-stage: stage 1 answers and saves; stage 2 files
@@ -254,7 +254,8 @@ Stage 2 (human-only): wiki-query --file-last
 
 Instances (--wiki, both stages):
   One checkout can host several wiki instances, one sync config
-  each. --wiki <name> selects one for both stages: the raw dir,
+  each. --wiki <name> — short alias -w — selects one for both
+  stages: the raw dir,
   outputs dir, and settings file all follow the resolved instance's
   config, and --file-last files into that instance's data repo.
   Resolution chain: an alias in the checkout's sync.json instances
@@ -269,8 +270,9 @@ Instances (--wiki, both stages):
   today's behavior.
 
 Switches and arguments:
-  --wiki <name>     Select the wiki instance for both stages (see
-                    Instances above). Default: the default instance.
+  --wiki, -w <name> Select the wiki instance for both stages (see
+                    Instances above); -w is the documented short
+                    alias of --wiki. Default: the default instance.
   --file-last       Run stage 2: file the saved answer. Takes no
                     <question>; reads outputs/last-query.md, writes
                     wiki/queries/<slug>.md, wiki/index.md, wiki/log.md.
@@ -412,7 +414,7 @@ async function dispatchStage(
   });
 }
 
-/** wiki-query entry point: `wiki-query [-h | --help] [--file-last] [--wiki <name>] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>`. */
+/** wiki-query entry point: `wiki-query [-h | --help] [--file-last] [--wiki, -w <name>] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>`. */
 export async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
@@ -425,6 +427,7 @@ export async function main(): Promise<void> {
   const parsed = parseArgs(args, {
     value: ["--settings", "--outputs", "--raw-dir", "--timeout", "--wiki"],
     boolean: ["--file-last"],
+    alias: new Map([["-w", "--wiki"]]),
   });
 
   if (parsed.error !== undefined) {

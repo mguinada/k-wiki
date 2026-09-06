@@ -406,6 +406,13 @@ describe("wiki-ingest e2e", () => {
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("ingests under the -w short alias like --wiki", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag" });
+    const result = await ingest(repo, ["-w", "meta"]);
+
+    expect(result.out).toContain("**Mode:** full");
+  });
+
   it("exits 1 listing the known names for an unknown --wiki", async () => {
     const repo = await makeRepo({ "AI/RAG.md": "rag" });
     const result = await ingest(repo, ["--wiki", "nope"]);
@@ -422,7 +429,7 @@ describe("wiki-ingest e2e", () => {
   it("documents the --wiki switch in the help text", async () => {
     const result = await runCli(INGEST_SCRIPT, ["--help"]);
 
-    expect(result.out).toContain("--wiki <name>");
+    expect(result.out).toContain("--wiki, -w <name>");
     expect(result.out).toContain("sync-<name>.json");
   });
 
