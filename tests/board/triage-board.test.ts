@@ -550,9 +550,12 @@ describe("runBoardTriage mid-failure reporting (issue #245)", () => {
   });
 
   it("keeps the underlying failure as the thrown error's cause", async () => {
-    const graphql = throwingBoard(mixedBoard(), "I9", { failFirst: ["I1"] }, [
-      3,
-    ]);
+    const graphql = throwingBoard(
+      mixedBoard(),
+      "I9",
+      { failFirst: ["I1"] },
+      [3],
+    );
 
     let cause: unknown;
 

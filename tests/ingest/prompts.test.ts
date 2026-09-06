@@ -1,9 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, describe, expect, it } from "vitest";
 import { diffManifests } from "../../src/ingest/manifest-diff.ts";
 import {
   composeExpungePrompt,
   composePrompt,
   composeRunPrompt,
+  removedContentReader,
 } from "../../src/ingest/prompts.ts";
 import { entry, manifestWith } from "./harness.ts";
 
@@ -11,6 +15,14 @@ import { entry, manifestWith } from "./harness.ts";
  * prompts unit tests (issue #258, moved with the module from
  * wiki-ingest.test.ts): the agent message composition per mode.
  */
+
+const tempDirs: string[] = [];
+
+afterAll(async () => {
+  await Promise.all(
+    tempDirs.map((dir) => rm(dir, { recursive: true, force: true })),
+  );
+});
 
 describe("composePrompt", () => {
   const diff = diffManifests(
@@ -316,5 +328,17 @@ describe("composeRunPrompt", () => {
     expect(progress).toEqual([
       "wiki-ingest: expunge — 1 removed source; direct set: wiki/index.md, wiki/overview.md",
     ]);
+  });
+});
+
+describe("removedContentReader (issue #240 kill batch)", () => {
+  it("resolves undefined content without a previous manifest", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-prompts-"));
+
+    tempDirs.push(dir);
+
+    const reader = removedContentReader(dir, process.env, undefined);
+
+    await expect(reader("Engineering", "a.md")).resolves.toBeUndefined();
   });
 });
