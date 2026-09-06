@@ -947,7 +947,9 @@ describe("k-wiki status", () => {
     const h = await makeBoundProject();
     const { out } = await runKWiki(join(h.project, "nested"), ["status"]);
 
-    expect(out).toContain(`index:       ${join(h.dataRoot, "wiki", "index.md")}`);
+    expect(out).toContain(
+      `index:       ${join(h.dataRoot, "wiki", "index.md")}`,
+    );
   });
 
   it("prints the data repo's last change time", async () => {
