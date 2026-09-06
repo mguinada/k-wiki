@@ -342,7 +342,7 @@ describe("launcher two-class rule (issue #253)", () => {
    * quality/, board/, and fixtures/. A launcher in the wrong class
    * blurs the two-context doctrine the split exists to encode.
    */
-  const DEV_DOMAIN_IMPORT = /^\.\.\/src\/(?:quality|board|fixtures)\//;
+  const DEV_DOMAIN_IMPORT = /^(?:\.\.\/)+src\/(?:quality|board|fixtures)\//;
 
   it("no bin/ launcher carries a .ts extension (issue #156)", async () => {
     const offenders = (
