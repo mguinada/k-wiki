@@ -419,4 +419,4 @@ export async function main(): Promise<void> {
 }
 
 /* v8 ignore next: covered only under direct `node src/health/check-raw.ts` runs */
-refuseDirectExecution(import.meta.url, "check-raw");
+refuseDirectExecution(import.meta.url, "check-raw", "bin/libexec");

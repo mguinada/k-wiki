@@ -150,7 +150,7 @@ until all three pass. Run them before every handoff.
   inventory lives in
   [`docs/references/e2e-suite.md`](docs/references/e2e-suite.md) —
   read it when adding an e2e run or diagnosing a failing one.
-- `bin/check-raw [<raw-dir>] [--fail-on-stale]` — coherence check
+- `bin/libexec/check-raw [<raw-dir>] [--fail-on-stale]` — coherence check
   of a `raw/` projection (default: the repo's `raw/`); a repo-sourced
   projection is also freshness-checked (`--fail-on-stale` makes a
   stale one exit 1); read-only, no vault access.
@@ -175,7 +175,7 @@ CI (`.github/workflows/ci.yml`) runs the gates on every pull request
 and on every push to `main` — the PR run tests the merge commit
 against `main`, the push run catches a merge that landed despite a
 red PR check; the test job enforces the 90% coverage floor. The `e2e`
-job runs `npm run e2e` and `bin/check-raw` on every PR and `main`
+job runs `npm run e2e` and `bin/libexec/check-raw` on every PR and `main`
 push — blocking, like the gates.
 
 ### End-to-end verification run order
@@ -189,7 +189,7 @@ npm test            # gate — always (unit only; e2e is NOT included; includes 
 npm run complexity  # gate — fast targeted re-run of the gate when only it matters
 npm run structure   # gate — fast targeted re-run of the gate when only it matters
 npm run e2e         # when the change touches src/sync/, src/ingest/, src/query/, src/data/, src/dashboard/, src/wiki/, src/cli/, src/sandbox/, src/schedule/, src/fixtures/, tests/e2e/, or raw/
-bin/check-raw       # same trigger as e2e; also safe to run any time — read-only, no vault access
+bin/libexec/check-raw       # same trigger as e2e; also safe to run any time — read-only, no vault access
 ```
 
 - `npm run e2e` takes no arguments. It builds its own fixture vault and
@@ -198,8 +198,8 @@ bin/check-raw       # same trigger as e2e; also safe to run any time — read-on
   uses the repo's real `sync.json` and vault root, and `node
   bin/wiki-ingest` uses the repo's real `settings.yml`,
   `outputs/`, and data repo).
-- `bin/check-raw` defaults to the repo's `raw/`; target another
-  projection with `bin/check-raw <raw-dir>`. Exit 0 = coherent
+- `bin/libexec/check-raw` defaults to the repo's `raw/`; target another
+  projection with `bin/libexec/check-raw <raw-dir>`. Exit 0 = coherent
   (including healthy-empty); exit 1 = one line per problem,
   repo-relative paths only.
 - A failed `e2e` or `health` run is a real failure, not advisory: fix
@@ -287,11 +287,14 @@ Launchers come in two classes, matching the two agent contexts.
 `bin/<name>` (extensionless, issue #156) launches the wiki
 runtime — commands meaningful
 outside this repo (create, operate, consume, observe, audit, migrate
-the wiki). `dev/<name>.ts` launches development-lifecycle commands
+the wiki); the Verification & maintenance plumbing tier nests under
+`bin/libexec/<name>` (issue #335 — still `bin/`-class runtime,
+callable, out of the top-level spotlight). `dev/<name>.ts` launches development-lifecycle commands
 that exist only to build and maintain this repo (`generate`,
 `mutation-*`, `board-triage`, `refactor-metrics`). Every CLI runs through a shebanged
 launcher of its class (`#!/usr/bin/env node`, committed `100755`);
-npm scripts invoke `node bin/<name>` or `node dev/<name>.ts`.
+npm scripts invoke `node bin/<name>`, `node bin/libexec/<name>`, or
+`node dev/<name>.ts`.
 `src/` and `scripts/` modules are libraries:
 they export `main()` but never invoke it at module scope — no Stryker
 mutant can fire a CLI as an import side effect with live defaults

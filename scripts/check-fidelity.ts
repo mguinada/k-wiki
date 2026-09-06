@@ -54,4 +54,4 @@ export function main(): Promise<void> {
 }
 
 /* v8 ignore next: covered only under direct `node scripts/check-fidelity.ts` runs */
-refuseDirectExecution(import.meta.url, "check-fidelity");
+refuseDirectExecution(import.meta.url, "check-fidelity", "bin/libexec");

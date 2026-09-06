@@ -183,4 +183,4 @@ export async function main(): Promise<void> {
 }
 
 /* v8 ignore next: covered only under direct `node scripts/check-links.ts` runs */
-refuseDirectExecution(import.meta.url, "check-links");
+refuseDirectExecution(import.meta.url, "check-links", "bin/libexec");

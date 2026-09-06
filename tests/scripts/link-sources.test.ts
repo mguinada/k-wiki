@@ -10,7 +10,7 @@ import { linkSources } from "../../scripts/link-sources.ts";
 
 const script = join(
   dirname(fileURLToPath(import.meta.url)),
-  "../../bin/link-sources",
+  "../../bin/libexec/link-sources",
 );
 
 const run = promisify(execFile);

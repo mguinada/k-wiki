@@ -39,22 +39,59 @@ function normalize(text: string): string {
 const LAUNCHER_DIRS = ["bin", "dev"] as const;
 
 /**
- * Every file in `bin/` — the launcher set since issue #156 dropped
- * the `.ts` extension — and the `.ts` files in `dev/` (its `.sh`
- * scripts are not node-run CLIs).
+ * Every file under `bin/` — the launcher set since issue #156 dropped
+ * the `.ts` extension, `bin/libexec/` included since its descent
+ * (issue #335) — and the `.ts` files in `dev/` (its `.sh` scripts are
+ * not node-run CLIs). Collected recursively so a nested launcher
+ * directory is never silently skipped.
  */
 async function collectLaunchers(dir: "bin" | "dev"): Promise<string[]> {
   const entries = await readdir(join(repoRoot, dir), {
     withFileTypes: true,
   });
+  const files: string[] = [];
 
-  return entries
-    .filter(
-      (entry) =>
-        entry.isFile() && (dir === "bin" || entry.name.endsWith(".ts")),
-    )
-    .map((entry) => entry.name)
-    .sort();
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      files.push(
+        ...(await collectLaunchersIn(
+          join(repoRoot, dir, entry.name),
+          `${entry.name}/`,
+        )),
+      );
+    } else if (
+      entry.isFile() &&
+      (dir === "bin" || entry.name.endsWith(".ts"))
+    ) {
+      files.push(entry.name);
+    }
+  }
+
+  return files.sort();
+}
+
+/** Recursive tail of the `bin/` collection: subdirectory files only. */
+async function collectLaunchersIn(
+  root: string,
+  prefix: string,
+): Promise<string[]> {
+  const entries = await readdir(root, { withFileTypes: true });
+  const files: string[] = [];
+
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      files.push(
+        ...(await collectLaunchersIn(
+          join(root, entry.name),
+          `${prefix}${entry.name}/`,
+        )),
+      );
+    } else if (entry.isFile()) {
+      files.push(`${prefix}${entry.name}`);
+    }
+  }
+
+  return files;
 }
 
 function runHelp(dir: string, launcher: string): string {

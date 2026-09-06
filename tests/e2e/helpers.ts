@@ -25,7 +25,7 @@ export const repoRoot = resolve(
 );
 
 export const SYNC_SCRIPT = join(repoRoot, "bin", "sync-vault");
-export const HEALTH_SCRIPT = join(repoRoot, "bin", "check-raw");
+export const HEALTH_SCRIPT = join(repoRoot, "bin", "libexec", "check-raw");
 export const INGEST_SCRIPT = join(repoRoot, "bin", "wiki-ingest");
 export const SYNC_CYCLE_SCRIPT = join(repoRoot, "bin", "wiki-sync");
 export const QUERY_SCRIPT = join(repoRoot, "bin", "wiki-query");

@@ -46,8 +46,9 @@ function collectTsFiles(root: string, prefix = ""): Promise<string[]> {
 
 /**
  * Every file — the bin/ launcher set since issue #156 dropped the
- * `.ts` extension: a launcher is any file in `bin/` (shebang, exec
- * bit, referenced).
+ * `.ts` extension: a launcher is any file under `bin/`, the nested
+ * `bin/libexec/` plumbing tier included since its descent (issue #335)
+ * (shebang, exec bit, referenced).
  */
 function collectLauncherFiles(root: string, prefix = ""): Promise<string[]> {
   return collectFiles(root, prefix);
@@ -247,8 +248,12 @@ describe("bin/ launcher structure (issue #135)", () => {
           continue;
         }
 
-        const imported = launcherText.some((launcher) =>
-          launcher.includes(`"../${file}"`),
+        // A launcher imports its main module by relative path:
+        // `../` from `bin/`, `../../` from the nested `bin/libexec/`.
+        const imported = launcherText.some(
+          (launcher) =>
+            launcher.includes(`"../${file}"`) ||
+            launcher.includes(`"../../${file}"`),
         );
 
         if (!imported) {
@@ -337,7 +342,7 @@ describe("launcher two-class rule (issue #253)", () => {
    * quality/, board/, and fixtures/. A launcher in the wrong class
    * blurs the two-context doctrine the split exists to encode.
    */
-  const DEV_DOMAIN_IMPORT = /^\.\.\/src\/(?:quality|board|fixtures)\//;
+  const DEV_DOMAIN_IMPORT = /^(?:\.\.\/)+src\/(?:quality|board|fixtures)\//;
 
   it("no bin/ launcher carries a .ts extension (issue #156)", async () => {
     const offenders = (

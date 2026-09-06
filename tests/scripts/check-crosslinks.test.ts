@@ -6,14 +6,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 
-/** CLI tests for bin/check-crosslinks (scripts/check-crosslinks.ts):
+/** CLI tests for bin/libexec/check-crosslinks (scripts/check-crosslinks.ts):
  *  exit codes, colored rendering, --help. The library core
  *  (checkCrossWikiLinks) is tested at its mirrored path
  *  tests/wiki/crosslinks.test.ts (issue #260). */
 
 const script = join(
   dirname(fileURLToPath(import.meta.url)),
-  "../../bin/check-crosslinks",
+  "../../bin/libexec/check-crosslinks",
 );
 
 const tempDirs: string[] = [];

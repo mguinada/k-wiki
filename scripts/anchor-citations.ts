@@ -410,4 +410,4 @@ export async function main(): Promise<void> {
 }
 
 /* v8 ignore next: covered only under direct `node scripts/anchor-citations.ts` runs */
-refuseDirectExecution(import.meta.url, "anchor-citations");
+refuseDirectExecution(import.meta.url, "anchor-citations", "bin/libexec");
