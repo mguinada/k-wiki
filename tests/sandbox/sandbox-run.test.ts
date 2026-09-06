@@ -1,5 +1,12 @@
 import { execFile } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -320,10 +327,7 @@ describe("runSandboxRun", () => {
 
   it("refuses before any write when wiki/log.md is already dirty", async () => {
     const dataRoot = await makeRepo();
-    await writeFile(
-      join(dataRoot, "wiki", "log.md"),
-      "## stale audit entry\n",
-    );
+    await writeFile(join(dataRoot, "wiki", "log.md"), "## stale audit entry\n");
 
     let invoked = false;
     const agent: AgentRunner = async () => {
@@ -482,7 +486,9 @@ describe("runSandboxRun", () => {
     );
 
     expect(await statusOf(dataRoot)).toBe("");
-    await expect(readFile(join(dataRoot, "wiki", "rogue.md"))).rejects.toThrow();
+    await expect(
+      readFile(join(dataRoot, "wiki", "rogue.md")),
+    ).rejects.toThrow();
   });
 
   it("restores a staged pre-run untracked path to its pre-run bytes and untracked status", async () => {
