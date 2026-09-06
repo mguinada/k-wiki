@@ -145,32 +145,11 @@ until all three pass. Run them before every handoff.
 - `npm run test:coverage` — unit tests with coverage; the run fails
   below the 90% thresholds in `vitest.config.ts`.
 - `npm run e2e` — end-to-end suite (`vitest.e2e.config.ts`): real CLI
-  child processes — sync-vault through a full vault lifecycle against
-  the synthetic fixture vault in temp workspaces under `.e2e-tmp/`
-  (gitignored), wiki-ingest against a stub agent in temp data repos
-  (second-brain runs included: profile ingest, cross-wiki validation,
-  and the reverted domain→second-brain leak; isolate-whitelist runs
-  pass the `--skill`/`-e` flags and warn-and-omit absent entries,
-  issue #144), sync-repo through
-  repo-as-source projection runs in temp source repos (verbatim copy,
-  commit stamping, untracked scratch proceeds and untracked-selectable
-  refuses, gitignored allowlisted files skipped and
-  `.git/info/exclude` scratch workflows kept, dirty-source and
-  wrong-config failures, health freshness), and wiki-sync through
-  full-cycle, no-change, failure, guardrail-revert, reverted
-  fidelity-failure, repo-source cycle (the meta flow), and run-lock
-  (loud holder refusal, release after cycle, per-instance) runs, and
-  scheduled-run through full-cycle, no-op re-run, lock-skip,
-  push-rejection-retry, double-push-failure, and dirty-tree
-  recovery runs in temp data repos with an upstream remote, and
-  setup-meta-sync through hook install, idempotent re-install,
-  uninstall, merge and rebase-pull fires, and feature-branch,
-  linked-worktree, and dirty-tree guard skips against a temp source
-  repo with a stubbed cycle runner, and sandbox (the run primitive in
-  process, not a launcher — family 6 wraps it later) with a real stub
-  agent over real git temp data repos: sandbox-only atomic stamped
-  commit, path-scoped gate revert with mid-window commits surviving,
-  wrong-repo refusal, empty run.
+  child processes through full lifecycles in temp workspaces and temp
+  data repos under `.e2e-tmp/` (gitignored). The per-CLI scenario
+  inventory lives in
+  [`docs/references/e2e-suite.md`](docs/references/e2e-suite.md) —
+  read it when adding an e2e run or diagnosing a failing one.
 - `bin/check-raw [<raw-dir>] [--fail-on-stale]` — coherence check
   of a `raw/` projection (default: the repo's `raw/`); a repo-sourced
   projection is also freshness-checked (`--fail-on-stale` makes a
