@@ -892,11 +892,27 @@ console.log("An answer.");
 });
 
 describe("k-wiki status", () => {
+  it("starts all nine status values in the same column", async () => {
+    const h = await makeBoundProject();
+    const { out } = await runKWiki(join(h.project, "nested"), ["status"]);
+
+    const lines = out.split("\n").filter((line) => /^[a-z ]+:/.test(line));
+    expect(lines).toHaveLength(9);
+
+    const starts = lines.map((line) => {
+      const match = /^([a-z ]+:\s+)/.exec(line);
+
+      return match?.[1]?.length ?? -1;
+    });
+
+    expect(new Set(starts)).toEqual(new Set([13]));
+  });
+
   it("prints the resolved checkout in the status output", async () => {
     const h = await makeBoundProject();
     const { out } = await runKWiki(join(h.project, "nested"), ["status"]);
 
-    expect(out).toContain(`checkout:  ${h.checkout}`);
+    expect(out).toContain(`checkout:    ${h.checkout}`);
   });
 
   it("names the binding file origin in the status output", async () => {
@@ -910,28 +926,30 @@ describe("k-wiki status", () => {
     const h = await makeBoundProject();
     const { out } = await runKWiki(join(h.project, "nested"), ["status"]);
 
-    expect(out).toContain(`settings:  ${join(h.checkout, "settings.yml")}`);
+    expect(out).toContain(`settings:    ${join(h.checkout, "settings.yml")}`);
   });
 
   it("prints the data repo path in the status output", async () => {
     const h = await makeBoundProject();
     const { out } = await runKWiki(join(h.project, "nested"), ["status"]);
 
-    expect(out).toContain(`data repo: ${h.dataRoot}`);
+    expect(out).toContain(`data repo:   ${h.dataRoot}`);
   });
 
   it("prints the wiki path in the status output", async () => {
     const h = await makeBoundProject();
     const { out } = await runKWiki(join(h.project, "nested"), ["status"]);
 
-    expect(out).toContain(`wiki:      ${join(h.dataRoot, "wiki")}`);
+    expect(out).toContain(`wiki:        ${join(h.dataRoot, "wiki")}`);
   });
 
   it("prints the index path in the status output", async () => {
     const h = await makeBoundProject();
     const { out } = await runKWiki(join(h.project, "nested"), ["status"]);
 
-    expect(out).toContain(`index:     ${join(h.dataRoot, "wiki", "index.md")}`);
+    expect(out).toContain(
+      `index:       ${join(h.dataRoot, "wiki", "index.md")}`,
+    );
   });
 
   it("prints the data repo's last change time", async () => {
@@ -2104,22 +2122,22 @@ describe("k-wiki status with a wiki key", () => {
     const h = await makeMetaHarness({ wiki: "meta" });
     const { out } = await runKWiki(join(h.project, "nested"), ["status"]);
 
-    expect(out).toContain("instance:  meta");
-    expect(out).toContain(`sync:      ${join(h.checkout, "sync-meta.json")}`);
+    expect(out).toContain("instance:    meta");
+    expect(out).toContain(`sync:        ${join(h.checkout, "sync-meta.json")}`);
   });
 
   it("prints the derived outputs dir", async () => {
     const h = await makeMetaHarness({ wiki: "meta" });
     const { out } = await runKWiki(join(h.project, "nested"), ["status"]);
 
-    expect(out).toContain(`outputs:   ${join(h.checkout, "outputs-meta")}`);
+    expect(out).toContain(`outputs:     ${join(h.checkout, "outputs-meta")}`);
   });
 
   it("prints the named instance's data repo", async () => {
     const h = await makeMetaHarness({ wiki: "meta" });
     const { out } = await runKWiki(join(h.project, "nested"), ["status"]);
 
-    expect(out).toContain(`data repo: ${h.metaDataRoot}`);
+    expect(out).toContain(`data repo:   ${h.metaDataRoot}`);
   });
 
   it("prints the derived settings file", async () => {
@@ -2127,7 +2145,7 @@ describe("k-wiki status with a wiki key", () => {
     const { out } = await runKWiki(join(h.project, "nested"), ["status"]);
 
     expect(out).toContain(
-      `settings:  ${join(h.checkout, "settings-meta.yml")}`,
+      `settings:    ${join(h.checkout, "settings-meta.yml")}`,
     );
   });
 
@@ -2135,7 +2153,7 @@ describe("k-wiki status with a wiki key", () => {
     const h = await makeMetaHarness({});
     const { out } = await runKWiki(join(h.project, "nested"), ["status"]);
 
-    expect(out).toContain("instance:  default");
+    expect(out).toContain("instance:    default");
   });
 
   it("prints the binding settings override over the derived file", async () => {
@@ -2145,6 +2163,6 @@ describe("k-wiki status with a wiki key", () => {
     });
     const { out } = await runKWiki(join(h.project, "nested"), ["status"]);
 
-    expect(out).toContain(`settings:  ${join(h.checkout, "settings.yml")}`);
+    expect(out).toContain(`settings:    ${join(h.checkout, "settings.yml")}`);
   });
 });

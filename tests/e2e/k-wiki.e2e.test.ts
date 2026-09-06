@@ -300,11 +300,11 @@ describe("k-wiki read-only commands e2e", () => {
     });
 
     expect(result.code).toBe(0);
-    expect(result.out).toContain(`checkout:  ${setup.checkout}`);
+    expect(result.out).toContain(`checkout:    ${setup.checkout}`);
     expect(result.out).toContain("from .k-wiki.json");
-    expect(result.out).toContain(`data repo: ${setup.dataRoot}`);
+    expect(result.out).toContain(`data repo:   ${setup.dataRoot}`);
     expect(result.out).toContain(
-      `index:     ${join(setup.dataRoot, "wiki", "index.md")}`,
+      `index:       ${join(setup.dataRoot, "wiki", "index.md")}`,
     );
     expect(result.out).toMatch(
       /^last change: \d{4}-\d{2}-\d{2} \d{2}:\d{2} \([^)]+\)$/m,
@@ -522,16 +522,16 @@ describe("k-wiki wiki key e2e", () => {
     });
 
     expect(result.code).toBe(0);
-    expect(result.out).toContain("instance:  meta");
+    expect(result.out).toContain("instance:    meta");
     expect(result.out).toContain(
-      `sync:      ${join(setup.checkout, "sync-meta.json")}`,
+      `sync:        ${join(setup.checkout, "sync-meta.json")}`,
     );
-    expect(result.out).toContain(`data repo: ${setup.metaDataRoot}`);
+    expect(result.out).toContain(`data repo:   ${setup.metaDataRoot}`);
     expect(result.out).toContain(
-      `outputs:   ${join(setup.checkout, "outputs-meta")}`,
+      `outputs:     ${join(setup.checkout, "outputs-meta")}`,
     );
     expect(result.out).toContain(
-      `settings:  ${join(setup.checkout, "settings-meta.yml")}`,
+      `settings:    ${join(setup.checkout, "settings-meta.yml")}`,
     );
     expect(result.out).toMatch(
       /^last change: \d{4}-\d{2}-\d{2} \d{2}:\d{2} \([^)]+\)$/m,
