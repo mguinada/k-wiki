@@ -166,7 +166,11 @@ until all three pass. Run them before every handoff.
   setup-meta-sync through hook install, idempotent re-install,
   uninstall, merge and rebase-pull fires, and feature-branch,
   linked-worktree, and dirty-tree guard skips against a temp source
-  repo with a stubbed cycle runner.
+  repo with a stubbed cycle runner, and sandbox (the run primitive in
+  process, not a launcher — family 6 wraps it later) with a real stub
+  agent over real git temp data repos: sandbox-only atomic stamped
+  commit, path-scoped gate revert with mid-window commits surviving,
+  wrong-repo refusal, empty run.
 - `bin/check-raw [<raw-dir>] [--fail-on-stale]` — coherence check
   of a `raw/` projection (default: the repo's `raw/`); a repo-sourced
   projection is also freshness-checked (`--fail-on-stale` makes a
@@ -205,7 +209,7 @@ npm run lint        # gate — always
 npm test            # gate — always (unit only; e2e is NOT included; includes the complexity gate)
 npm run complexity  # gate — fast targeted re-run of the gate when only it matters
 npm run structure   # gate — fast targeted re-run of the gate when only it matters
-npm run e2e         # when the change touches src/sync/, src/ingest/, src/query/, src/data/, src/dashboard/, src/wiki/, src/cli/, src/schedule/, src/fixtures/, tests/e2e/, or raw/
+npm run e2e         # when the change touches src/sync/, src/ingest/, src/query/, src/data/, src/dashboard/, src/wiki/, src/cli/, src/sandbox/, src/schedule/, src/fixtures/, tests/e2e/, or raw/
 bin/check-raw       # same trigger as e2e; also safe to run any time — read-only, no vault access
 ```
 

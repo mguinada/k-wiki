@@ -1709,9 +1709,12 @@ One sandboxed run executes as one process with one outcome (decision
   2). A failure at any step — refusal, gate trip, agent death,
   epilogue error — leaves the tree at its pre-run state.
 
-Two refusals guard the window before any write: a run whose sandbox
+Three refusals guard the window before any write: a run whose sandbox
   target paths are already dirty is refused (the path-scoped revert
-  must never destroy changes that predate the run), and a run whose
+  must never destroy changes that predate the run), a run whose
+  `wiki/log.md` already carries uncommitted edits is refused (the
+  audit append and the atomic commit must not absorb edits that
+  predate the run), and a run whose
   instance resolution and run context name different data repos is
   refused as a wrong-repo accept-gate (decision 10: the instance
   resolves through the shared `--wiki` chain of issue #306, never an
