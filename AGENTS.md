@@ -69,6 +69,7 @@ exists without a row, or a row names no domain.
 | `health/` | `raw/` coherence and freshness verdicts | mutating the projection | review-enforced only |
 | `ingest/` | agent runs, settings, manifest diff/snapshot, prompts, guardrails, digest | wiki writes outside the guardrail path; nondeterminism outside prompts | e2e wiki-ingest suite (guardrail-revert runs); review-enforced otherwise |
 | `query/` | the wiki-query shell, two-stage filing (`--file-last`) | the agent-door surface (`cli/` owns `k-wiki`) | review-enforced only |
+| `sandbox/` | the agent-write sandbox: `wiki/sandbox/` namespace, accept-gate (path-scoped revert of out-of-namespace writes), `via:`/`expires:` stamps, `sandbox: <slug>` atomic commits, `log.md` audit | ungated agent writes; whole-repo resets (a mid-window wiki-sync commit must survive a gate revert); accepting caller-supplied stamps | e2e sandbox suite (gate-revert runs); review-enforced otherwise |
 | `schedule/` | scheduled-run, the run lock, launchd setup | re-implementing sync mechanics — import, don't copy | e2e scheduled-run suite (lock runs); review-enforced otherwise |
 | `sync/` | vault→raw projection, sync configs, repo sources, cycle orchestration, instance resolution | LLM/agent concerns anywhere in the deterministic layer | review-enforced only |
 | `wiki/` | wikilink/crosslink parsing, page walking, wiki-domain reports | pipeline orchestration | review-enforced only |
@@ -144,28 +145,11 @@ until all three pass. Run them before every handoff.
 - `npm run test:coverage` — unit tests with coverage; the run fails
   below the 90% thresholds in `vitest.config.ts`.
 - `npm run e2e` — end-to-end suite (`vitest.e2e.config.ts`): real CLI
-  child processes — sync-vault through a full vault lifecycle against
-  the synthetic fixture vault in temp workspaces under `.e2e-tmp/`
-  (gitignored), wiki-ingest against a stub agent in temp data repos
-  (second-brain runs included: profile ingest, cross-wiki validation,
-  and the reverted domain→second-brain leak; isolate-whitelist runs
-  pass the `--skill`/`-e` flags and warn-and-omit absent entries,
-  issue #144), sync-repo through
-  repo-as-source projection runs in temp source repos (verbatim copy,
-  commit stamping, untracked scratch proceeds and untracked-selectable
-  refuses, gitignored allowlisted files skipped and
-  `.git/info/exclude` scratch workflows kept, dirty-source and
-  wrong-config failures, health freshness), and wiki-sync through
-  full-cycle, no-change, failure, guardrail-revert, reverted
-  fidelity-failure, repo-source cycle (the meta flow), and run-lock
-  (loud holder refusal, release after cycle, per-instance) runs, and
-  scheduled-run through full-cycle, no-op re-run, lock-skip,
-  push-rejection-retry, double-push-failure, and dirty-tree
-  recovery runs in temp data repos with an upstream remote, and
-  setup-meta-sync through hook install, idempotent re-install,
-  uninstall, merge and rebase-pull fires, and feature-branch,
-  linked-worktree, and dirty-tree guard skips against a temp source
-  repo with a stubbed cycle runner.
+  child processes through full lifecycles in temp workspaces and temp
+  data repos under `.e2e-tmp/` (gitignored). The per-CLI scenario
+  inventory lives in
+  [`docs/references/e2e-suite.md`](docs/references/e2e-suite.md) —
+  read it when adding an e2e run or diagnosing a failing one.
 - `bin/check-raw [<raw-dir>] [--fail-on-stale]` — coherence check
   of a `raw/` projection (default: the repo's `raw/`); a repo-sourced
   projection is also freshness-checked (`--fail-on-stale` makes a
@@ -204,7 +188,7 @@ npm run lint        # gate — always
 npm test            # gate — always (unit only; e2e is NOT included; includes the complexity gate)
 npm run complexity  # gate — fast targeted re-run of the gate when only it matters
 npm run structure   # gate — fast targeted re-run of the gate when only it matters
-npm run e2e         # when the change touches src/sync/, src/ingest/, src/query/, src/data/, src/dashboard/, src/wiki/, src/cli/, src/schedule/, src/fixtures/, tests/e2e/, or raw/
+npm run e2e         # when the change touches src/sync/, src/ingest/, src/query/, src/data/, src/dashboard/, src/wiki/, src/cli/, src/sandbox/, src/schedule/, src/fixtures/, tests/e2e/, or raw/
 bin/check-raw       # same trigger as e2e; also safe to run any time — read-only, no vault access
 ```
 
@@ -325,7 +309,7 @@ outside this repo?
 
 | Class | src domains | Launchers |
 | --- | --- | --- |
-| Runtime (9 domains) | `cli/`, `dashboard/`, `data/`, `health/`, `ingest/`, `query/`, `schedule/`, `sync/`, `wiki/` | `bin/` |
+| Runtime (10 domains) | `cli/`, `dashboard/`, `data/`, `health/`, `ingest/`, `query/`, `sandbox/`, `schedule/`, `sync/`, `wiki/` | `bin/` |
 | Dev-only (3 domains) | `board/`, `fixtures/`, `quality/` | `dev/` |
 
 Every script meant to run on the terminal — every `main()` entry point

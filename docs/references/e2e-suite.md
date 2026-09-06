@@ -27,3 +27,13 @@ e2e run or diagnosing a failing one.
   uninstall, merge and rebase-pull fires, and feature-branch,
   linked-worktree, and dirty-tree guard skips in a temp source repo
   with a stubbed cycle runner.
+- **sandbox** — not a launcher run: the suite drives the `runSandboxRun`
+  library primitive (issue #336; the `propose` verb that will wrap it
+  is family 6) in-process, with a real stub agent child process over
+  a real git temp data repo. Four flows: a sandbox-only run lands one
+  atomic `sandbox: <slug>` commit with `via:`/`expires:` stamps and
+  the `wiki/log.md` audit entry; a main-tree-touching run is
+  path-scoped-reverted and fails loudly while a mid-window wiki-sync
+  commit and pre-existing dirty work survive; a wrong-repo run
+  (instance and run context naming different data repos) is refused
+  before the agent runs; an empty run commits nothing.
