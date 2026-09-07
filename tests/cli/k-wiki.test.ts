@@ -295,6 +295,23 @@ describe("k-wiki CLI", () => {
     expect(process.exitCode).toBeUndefined();
   });
 
+  it("answers propose -h with the verb's own help over a malformed binding", async () => {
+    const h = await makeBoundProject('[{ "checkout": "/a" }]');
+    const { out } = await runKWiki(join(h.project, "nested"), [
+      "propose",
+      "-h",
+    ]);
+
+    expect(out).toContain("Usage: k-wiki propose");
+  });
+
+  it("leaves the exit code unset for propose -h over a malformed binding", async () => {
+    const h = await makeBoundProject('[{ "checkout": "/a" }]');
+    await runKWiki(join(h.project, "nested"), ["propose", "-h"]);
+
+    expect(process.exitCode).toBeUndefined();
+  });
+
   it("names the unknown verb in the error", async () => {
     const { err } = await runKWiki(process.cwd(), ["no-such-verb", "q"]);
 

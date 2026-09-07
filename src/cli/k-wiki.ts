@@ -256,6 +256,16 @@ async function runInvocation(
   input: { readonly cwd: string; readonly home: string },
 ): Promise<void> {
   const { verb } = invocation;
+
+  if (
+    verb.klass === "write-note" &&
+    (invocation.tail.includes("-h") || invocation.tail.includes("--help"))
+  ) {
+    await verb.main?.(invocation.verbArgs);
+
+    return;
+  }
+
   const flag =
     verb.klass !== "operator"
       ? lastFlagValueFrom(invocation.tail, CHECKOUT_TOKENS, "--checkout=")

@@ -20,7 +20,7 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { bindingSettings, nameSourceFor } from "../cli/agent-verbs.ts";
+import { bindingSettings, resolveAgentInstance } from "../cli/agent-verbs.ts";
 import { cliFail, errorMessage } from "../cli/colors.ts";
 import { resolveCheckout } from "../cli/k-wiki-binding.ts";
 import { stderrSink } from "../cli/progress.ts";
@@ -28,7 +28,7 @@ import { runContext } from "../cli/run-context.ts";
 import { agentRunFlags, type ParsedCli, parseArgs } from "../cli/shell.ts";
 import { readPrompt } from "../ingest/agent-run.ts";
 import { loadAgentSettings } from "../ingest/agent-settings.ts";
-import { resolveWikiInstance, wikiArgError } from "../sync/instance.ts";
+import { wikiArgError } from "../sync/instance.ts";
 import { isPageType, PAGE_TYPES } from "../wiki/browse.ts";
 import { runSandboxRun, slugError } from "./sandbox-run.ts";
 
@@ -235,16 +235,14 @@ async function resolveInstance(input: ProposeInput, home: string) {
     cwd: process.cwd(),
     home,
   });
-  const wikiFlag = input.values.get("--wiki");
 
   return {
     resolution,
-    instance: await resolveWikiInstance({
-      checkout: resolution.checkout,
-      name: wikiFlag ?? resolution.wiki,
+    instance: await resolveAgentInstance(
+      resolution,
       home,
-      nameSource: nameSourceFor(resolution, wikiFlag),
-    }),
+      input.values.get("--wiki"),
+    ),
   };
 }
 

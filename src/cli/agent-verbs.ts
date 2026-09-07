@@ -222,20 +222,32 @@ export function nameSourceFor(
   return resolution.origin === "file" ? ".k-wiki.json" : undefined;
 }
 
-/** The instance's run context: the -w/--wiki flag (decision 12)
- *  or the binding's wiki key (issue #306) selects the config —
- *  the default when neither — and every derived path follows it. */
-async function instancePaths(
+/** Resolve the wiki instance a door verb runs on: the -w/--wiki
+ *  flag (decision 12) or the binding's wiki key (issue #306)
+ *  selects the config — the default when neither. Exported for the
+ *  write verbs — propose resolves its instance through the same
+ *  chain (issue #340). */
+export async function resolveAgentInstance(
   resolution: CheckoutResolution,
   home: string,
   wikiFlag: string | undefined,
-): Promise<{ run: RunContext; instance: WikiInstance }> {
-  const instance = await resolveWikiInstance({
+): Promise<WikiInstance> {
+  return await resolveWikiInstance({
     checkout: resolution.checkout,
     name: wikiFlag ?? resolution.wiki,
     home,
     nameSource: nameSourceFor(resolution, wikiFlag),
   });
+}
+
+/** The instance's run context — every derived path follows the
+ *  resolved instance. */
+async function instancePaths(
+  resolution: CheckoutResolution,
+  home: string,
+  wikiFlag: string | undefined,
+): Promise<{ run: RunContext; instance: WikiInstance }> {
+  const instance = await resolveAgentInstance(resolution, home, wikiFlag);
 
   return { run: runContext({ rawDir: instance.rawDir }), instance };
 }
