@@ -29,7 +29,7 @@ import { agentRunFlags, type ParsedCli, parseArgs } from "../cli/shell.ts";
 import { readPrompt } from "../ingest/agent-run.ts";
 import { loadAgentSettings } from "../ingest/agent-settings.ts";
 import { resolveWikiInstance, wikiArgError } from "../sync/instance.ts";
-import { PAGE_TYPES } from "../wiki/browse.ts";
+import { isPageType, PAGE_TYPES } from "../wiki/browse.ts";
 import { runSandboxRun, slugError } from "./sandbox-run.ts";
 
 /** Help for `k-wiki propose -h`: the verb's own contract, per the
@@ -171,7 +171,7 @@ function noteMetaError(
 
   const type = values.get("--type") ?? "query";
 
-  if (!(PAGE_TYPES as readonly string[]).includes(type)) {
+  if (!isPageType(type)) {
     return `unknown type ${JSON.stringify(type)}; valid types: ${PAGE_TYPES.join("|")}`;
   }
 

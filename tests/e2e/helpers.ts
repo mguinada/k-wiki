@@ -93,11 +93,8 @@ export function runCli(
     child.on("error", reject);
     child.on("close", (code) => resolve({ code, out, err }));
 
-    if (options.input !== undefined) {
-      child.stdin.end(options.input);
-    } else {
-      child.stdin.end();
-    }
+    // EOF for CLIs that read stdin; a harmless no-op for the rest.
+    child.stdin.end(options.input);
   });
 }
 
