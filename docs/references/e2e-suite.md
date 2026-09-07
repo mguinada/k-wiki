@@ -45,7 +45,12 @@ e2e run or diagnosing a failing one.
   handoff to `wiki-query` and `wiki-ingest`), operator-verb
   refusal on the agent door (both escapes named) and dispatch by
   import on the human door, the door/instance dim stderr lines,
-  and the tiered bare help.
+  in-context verb help (issue #348) — every read verb's
+  `-h`/`--help` renders the verb's own scoped help with the
+  leading `-h <verb>` form reordering to the same output, and the
+  operator verbs' dispatcher help stays byte-identical to their
+  standalone launchers across the whole table — and the tiered
+  bare help.
 - **sandbox** — not a launcher run: the suite drives the `runSandboxRun`
   library primitive (issue #336) in-process, with a real stub agent child process over
   a real git temp data repo. Four flows: a sandbox-only run lands one

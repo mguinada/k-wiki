@@ -7,9 +7,10 @@ description: Consult the user's k-wiki knowledge wiki from any project through t
 
 The project may be bound to a knowledge wiki (an LLM-maintained,
 cited distillation of the user's sources). Consult it instead of
-re-deriving knowledge. The `k-wiki` CLI is the interface; its
-`--help` is the contract of record — for flags, defaults, the
-binding format, or resolution order, run `k-wiki --help` and trust
+re-deriving knowledge. The `k-wiki` CLI is the interface; its help
+is the contract of record — `k-wiki --help` for the front door
+(resolution, binding format, the verb table), `k-wiki <verb>
+--help` for one verb's switches, defaults, and exits — and trust
 it over this page. Written for agents first, but a human holding
 the terminal can follow the same five steps.
 
