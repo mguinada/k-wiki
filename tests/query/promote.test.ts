@@ -210,6 +210,31 @@ describe("templatePromotedPage", () => {
     expect(page).toBe(PROMOTED_TEXT);
   });
 
+  it("templates a minimal note that carries only stamps and a type", () => {
+    const note = [
+      "---",
+      "type: entity",
+      "via: agent",
+      "expires: 2026-08-27",
+      "---",
+      "Body.",
+      "",
+    ].join("\n");
+
+    expect(templatePromotedPage(note, ["rag-notes"], "2026-08-20")).toBe(
+      [
+        "---",
+        "type: entity",
+        "updated: 2026-08-20",
+        "sources:",
+        '  - "[[rag-notes]]"',
+        "---",
+        "Body.",
+        "",
+      ].join("\n"),
+    );
+  });
+
   it("renders multiple approved sources in the given order", () => {
     const page = templatePromotedPage(
       NOTE_TEXT,
@@ -428,6 +453,35 @@ describe("promoteSandboxNote", () => {
     });
 
     await expect(promote(dataRoot)).rejects.toThrow(/type/);
+  });
+
+  it("rolls back every artifact when the commit itself fails", async () => {
+    const dataRoot = await makeRepo();
+
+    // An empty user name makes git refuse the commit deterministically.
+    await run("git", ["config", "user.name", ""], { cwd: dataRoot });
+
+    const failure = await promote(dataRoot).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    expect(failure?.message).toContain("rolled back");
+
+    expect(
+      await readFile(join(dataRoot, "wiki", "sandbox", "attention-notes.md"), "utf8"),
+    ).toBe(NOTE_TEXT);
+    expect(await readFile(join(dataRoot, "wiki", "index.md"), "utf8")).toBe(
+      INDEX_TEXT,
+    );
+
+    const { stdout: status } = await run(
+      "git",
+      ["status", "--porcelain", "-uall"],
+      { cwd: dataRoot },
+    );
+
+    expect(status).toBe("");
   });
 
   it("refuses an invalid slug", async () => {
