@@ -3,9 +3,10 @@
  * chains the proven pieces — sync (sync-vault for vault sources,
  * sync-repo for repo sources, issue #145) → wiki-ingest → headless
  * lint (§17, prompts/lint.md) → crosslink audit (issue #96,
- * configured second brains only) → verification (issue #138) →
- * data-repo commit — and prints one digest: the run's ingest digest,
- * the lint summary, the audit result, the fidelity and provenance
+ * configured second brains only) → citation wall (issue #339) →
+ * verification (issue #138) → data-repo commit — and prints one
+ * digest: the run's ingest digest, the lint summary, the audit
+ * result, the citation-wall result, the fidelity and provenance
  * results, and the commit hash. Nothing here is new capability;
  * every stage stays independently runnable (guide §8).
  *
@@ -27,8 +28,8 @@
  *
  * The verification stage (issue #138) runs the deterministic
  * check-fidelity (issue #125) and check-provenance (issue #65) cores
- * over the data repo's wiki/ and raw/ every cycle, after lint and the
- * crosslink audit. One problem line per finding fails the cycle
+ * over the data repo's wiki/ and raw/ every cycle, after lint, the
+ * crosslink audit, and the citation wall. One problem line per finding fails the cycle
  * before the commit: the lint edits are reverted (the ingest edits
  * stay, uncommitted, as the fix surface), mirroring the lint stage's
  * own failure semantics.
@@ -377,8 +378,8 @@ export interface VerificationOptions {
 /**
  * The verification stage (issue #138): run the deterministic
  * check-fidelity (issue #125) and check-provenance (issue #65) cores
- * over the data repo's wiki/ and raw/ — every cycle, after lint and
- * the crosslink audit, whatever the ingest stage did. One problem
+ * over the data repo's wiki/ and raw/ — every cycle, after lint, the
+ * crosslink audit, and the citation wall, whatever the ingest stage did. One problem
  * line per finding throws (fidelity first, provenance second),
  * stopping the cycle before the commit; the caller owns the revert.
  */

@@ -161,7 +161,7 @@ cycle above. Run the cycle with one command, then review and run the
 standing checks:
 
 ```sh
-bin/wiki-sync   # sync → ingest → lint → crosslinks (configured) → verification → commit → publish (configured)
+bin/wiki-sync   # sync → ingest → lint → crosslinks (configured) → citation wall → verification → commit → publish (configured)
 # review: the printed digest, git log -1 in the data repo
 bin/libexec/check-links ~/Lab/k-wiki-engineering-data/wiki   # every [[wikilink]] resolves
 bin/libexec/check-provenance ~/Lab/k-wiki-engineering-data/wiki  # every sources entry and origin is alive
@@ -557,7 +557,7 @@ every edit. Queries complete the daily loop:
 
 | Command | Tool | Purpose |
 |---|---|---|
-| `bin/wiki-sync [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<sync.json>] [<raw-dir>]` | cycle orchestrator | Run the whole cycle — sync (sync-vault for vault sources, sync-repo for repo-sourced configs, [§9](#9-the-meta-wiki-a-repository-as-source)) → ingest → lint → crosslink audit (configured second brains) → verification (check-fidelity + check-provenance) → one data-repo commit → mirror publish (configured `publish` section) — and print the digest (reads `settings.yml`, including its optional `secondBrain.domains` list; [details below](#running-the-full-cycle-wiki-sync)) |
+| `bin/wiki-sync [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<sync.json>] [<raw-dir>]` | cycle orchestrator | Run the whole cycle — sync (sync-vault for vault sources, sync-repo for repo-sourced configs, [§9](#9-the-meta-wiki-a-repository-as-source)) → ingest → lint → crosslink audit (configured second brains) → citation wall (sandbox one-way audit) → verification (check-fidelity + check-provenance) → one data-repo commit → mirror publish (configured `publish` section) — and print the digest (reads `settings.yml`, including its optional `secondBrain.domains` list; [details below](#running-the-full-cycle-wiki-sync)) |
 | `bin/wiki-query [-h \| --help] [--file-last] [--wiki, -w <name>] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>` | query wrapper | Ask the built wiki one question headless: print the answer, save it for review (stage 1, default); `--file-last` files the reviewed answer deterministically (stage 2); `--wiki <name>` selects the instance — aliases then `sync-<name>.json` stems, both stages, derived paths from the resolved config (stage 1 reads the instance's settings; [details below](#running-queries-wiki-query)) |
 | `<checkout>/bin/k-wiki query "<question>"` (also `bin/k-wiki …` inside the checkout) | agent-facing CLI | Ask the wiki bound to the current project from any cwd — zero flags once `.k-wiki.json` binds it; plus four read-only commands: `status` (binding + paths), `list [<type>]` (pages by type), `read <slug>` (one page verbatim), `health` (projection check); answer-only, no filing passthrough ([details below](#querying-from-any-project-k-wiki)) |
 
@@ -1089,7 +1089,7 @@ missed purge surfaces as a dead link, not as silent contamination.
 ## Running the full cycle (`wiki-sync`)
 
 ```sh
-bin/wiki-sync   # sync → ingest → lint → crosslinks (configured) → verification → commit → publish (configured)
+bin/wiki-sync   # sync → ingest → lint → crosslinks (configured) → citation wall → verification → commit → publish (configured)
 ```
 
 `wiki-sync` is the one-command orchestrator.
@@ -1126,19 +1126,32 @@ It chains the proven pieces and adds no capability of its own:
    the wiki/AGENTS.md "after every run" contract is enforced, not
    prose. Instances without the key skip the stage; the default
    instance is unchanged.
-5. **verification** — every cycle, configured or not:
+5. **citations** — every cycle, configured or not: the one-way
+   sandbox audit (`bin/libexec/check-citations`' core) runs over
+   the data repo's working tree after the crosslink audit and before
+   verification. Main pages must never link, embed, or cite sandbox
+   pages; sandbox pages must never carry `sources` edges,
+   sandbox-peer links, or cross-wiki links; the `via: agent` stamp
+   lives only inside `wiki/sandbox/`. One violation line fails the
+   cycle before the commit — after path-scoped-reverting every
+   offending page to its last committed state (never a whole-repo
+   reset), so a rogue edge never rides the cycle's commit. A wiki
+   without a sandbox namespace runs the stage as a near-no-op (only
+   the stamp-placement rule can trip); the base path gains no flag,
+   no concept, no required step.
+6. **verification** — every cycle, configured or not:
    the deterministic `check-fidelity` and
    `check-provenance` cores run over the data repo's
-   `wiki/` and `raw/`, after lint and the crosslink audit. One
-   problem line per finding fails the cycle before the commit: the
-   lint edits are reverted (the ingest edits stay, uncommitted, as
-   the fix surface), mirroring the lint stage's failure semantics.
+   `wiki/` and `raw/`, after lint, the crosslink audit, and the
+   citation wall. One problem line per finding fails the cycle
+   before the commit: the lint edits are reverted (the ingest edits
+   stay, uncommitted, as the fix surface), mirroring the lint stage's failure semantics.
    The misquote and dead-citation classes are produced by ingest;
    the cycle is where their detection is guaranteed to run.
-6. **commit** — one data-repo commit staging `wiki/`, `raw/`, and
+7. **commit** — one data-repo commit staging `wiki/`, `raw/`, and
    `outputs/`, with a message summarizing sources processed, pages
    touched, and the lint report.
-7. **publish** — only for configs whose `sync.json` carries a
+8. **publish** — only for configs whose `sync.json` carries a
    `publish` section: copy the data repo's
    include-matched files (`["wiki/**"]` in the shipped config)
    into the mirror vault — an iCloud-served disposable
@@ -1157,9 +1170,9 @@ It chains the proven pieces and adds no capability of its own:
    retries the copy.
 
 The final digest on stdout — sync summary, lint summary, the
-crosslink audit result (configured instances), the fidelity and
-provenance results, the commit hash, the publish summary (configured
-mirror), then the full ingest digest —
+crosslink audit result (configured instances), the citation-wall
+result, the fidelity and provenance results, the commit hash, the
+publish summary (configured mirror), then the full ingest digest —
 plus `git log -1` in the data repo tell the whole story of the run
 without opening any other file.
 

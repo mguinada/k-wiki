@@ -994,16 +994,21 @@ wiki-sync
    │
    ├── 4. Run lint
    │
-   ├── 5. Run the deterministic verification checks
+   ├── 5. Run the citation-wall standing lint (issue #339) —
+   │      every cycle; a violation fails the cycle before the
+   │      commit after path-scoped-reverting the offending pages
+   │      to their last committed state
+   │
+   ├── 6. Run the deterministic verification checks
    │      (check-fidelity, check-provenance) — every cycle,
    │      configured or not; a failed check fails the cycle
    │      before the commit (issue #138)
    │
-   ├── 6. Git diff
+   ├── 7. Git diff
    │
-   ├── 7. Commit changes
+   ├── 8. Commit changes
    │
-   └── 8. Publish the mirror vault (Section 26) — configured
+   └── 9. Publish the mirror vault (Section 26) — configured
           instances only
 ```
 
