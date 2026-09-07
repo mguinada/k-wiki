@@ -36,6 +36,11 @@ const HELP_FLAGS = new Set(["-h", "--help"]);
 const WIKI_FLAGS = new Set(["-w", "--wiki"]);
 const CHECKOUT_TOKENS = new Set(["--checkout"]);
 
+/** True when a verb's own argv asks for help (-h or --help). */
+function asksHelp(tail: readonly string[]): boolean {
+  return tail.includes("-h") || tail.includes("--help");
+}
+
 /** Print one usage error red on stderr and set the exit code. */
 function fail(message: string): void {
   console.error(terminalColors().red(`k-wiki: ${message}`));
@@ -215,10 +220,7 @@ function resolveInvocation(argv: readonly string[]): Invocation | undefined {
 
   const tail = rest.slice(1);
 
-  if (
-    verb.klass === "read" &&
-    (tail.includes("-h") || tail.includes("--help"))
-  ) {
+  if (verb.klass === "read" && asksHelp(tail)) {
     console.log(HELP);
 
     return undefined;
@@ -257,10 +259,7 @@ async function runInvocation(
 ): Promise<void> {
   const { verb } = invocation;
 
-  if (
-    verb.klass === "write-note" &&
-    (invocation.tail.includes("-h") || invocation.tail.includes("--help"))
-  ) {
+  if (verb.klass === "write-note" && asksHelp(invocation.tail)) {
     await verb.main?.(invocation.verbArgs);
 
     return;
