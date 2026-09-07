@@ -1729,6 +1729,35 @@ describe("runWikiSync citation wall stage (issue #339)", () => {
     await expect(headOf(h.dataRoot)).resolves.toBe(head);
   });
 
+  it("removes an untracked offending page the cycle's agents created", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    await seedSandboxNote(h);
+
+    // A second-brain instance: a slashed [[sandbox/…]] link from an
+    // agent-written page escapes the ingest guardrails' resolution
+    // check (external in a second brain) and must die at the wall.
+    await writeFile(join(h.dataRoot, ".second-brain"), "");
+    h.ingestAgent = async (_command, _args, options) => {
+      await writeFile(
+        join(options.cwd, "wiki", "rogue.md"),
+        wikiPage("Leak: [[sandbox/proposal]].", "Rogue"),
+        { flag: "wx" },
+      );
+
+      return { stdout: "agent final report", stderr: "" };
+    };
+
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow(
+      /citation wall failed[\s\S]*wiki\/rogue\.md:\d+ -> \[\[sandbox\/proposal\]\]/,
+    );
+
+    // The page never existed in history, so the revert removes it.
+    await expect(
+      readFile(join(h.dataRoot, "wiki", "rogue.md"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("numbers the citation wall stage in the cycle progress", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
     const progress: string[] = [];

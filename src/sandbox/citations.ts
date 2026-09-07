@@ -4,10 +4,11 @@
  * must never depend on sandbox notes — the TTL reaper would break
  * main→sandbox links, and `sources` edges into the sandbox would
  * give unsourced agent notes provenance they did not earn. This
- * module is the pure audit both enforcement surfaces share: the
- * `bin/libexec/check-citations` checker and the wiki-sync cycle's
- * standing lint (which additionally path-scoped-reverts the
- * offending pages). Forbidden edges, all first-class:
+ * module is the audit behind both enforcement surfaces — the
+ * `bin/libexec/check-citations` checker and `runCitationWallStage`,
+ * the wiki-sync cycle's standing lint, which additionally
+ * path-scoped-reverts the offending pages. Forbidden edges, all
+ * first-class:
  *
  *  - main→sandbox body links and `![[…]]` embeds (embeds are links);
  *  - sandbox→sandbox body links — a promoted note citing a
@@ -24,7 +25,10 @@
  * Link *resolution* is never judged here: a sandbox link to a
  * renamed-away main page is check-links' business (targets must
  * resolve, same as main-page links); this core judges direction and
- * placement only.
+ * placement only. The standing-lint driver lives beside the audit
+ * (`runCitationWallStage`): the wiki-sync cycle calls it as its
+ * citations stage, and it path-scoped-reverts the offending pages
+ * through the sandbox-run primitive.
  */
 
 import { readFile } from "node:fs/promises";
