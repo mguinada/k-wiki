@@ -380,9 +380,9 @@ export function printHealthReport(
 }
 
 /** check-raw entry point: `check-raw [-h | --help] [--fail-on-stale] [<raw-dir>]` (default: repo raw/). */
-export async function main(): Promise<void> {
-  const args = process.argv.slice(2);
-
+export async function main(
+  args: readonly string[] = process.argv.slice(2),
+): Promise<void> {
   if (args.includes("-h") || args.includes("--help")) {
     console.log(HELP);
 

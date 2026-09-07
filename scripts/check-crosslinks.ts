@@ -39,9 +39,9 @@ business; this tool only audits cross-wiki links. NO_COLOR disables
 color.`;
 
 /** check-crosslinks entry point: `check-crosslinks [-h | --help] <wiki-dir> <domain-wiki-dir> [<domain-wiki-dir>...]`. */
-export async function main(): Promise<void> {
-  const args = process.argv.slice(2);
-
+export async function main(
+  args: readonly string[] = process.argv.slice(2),
+): Promise<void> {
   if (args.includes("-h") || args.includes("--help")) {
     console.log(HELP);
 

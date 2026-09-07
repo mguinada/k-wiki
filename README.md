@@ -4,6 +4,10 @@ An LLM-maintained knowledge wiki, derived from a human-owned Obsidian vault.
 
 `k-wiki` implements the [Karpathy-style LLM wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) pattern: a personal Obsidian vault remains the human-owned source of truth. Notes sync into an immutable `raw/` projection unless they opt out with `wiki: false`; an LLM agent then builds and maintains a structured, interlinked wiki under `wiki/`. Both trees are disposable derived data — versioned in a separate data repo placed by `sync.json`'s `dataRoot`, auditable by diff, and publishable to all devices as a read-only mirror. This repository holds the pipeline and the directory skeleton only; the contents of `raw/` and `wiki/` are gitignored here.
 
+`bin/k-wiki` is the one front door for every wiki operation — the
+[pipeline](#the-pipeline), the [queries](#running-queries-wiki-query),
+and the [checks](#tooling) below are all verbs of it.
+
 ## Contents
 
 - [Core invariant](#core-invariant)
@@ -49,7 +53,7 @@ This repository hosts two agent contexts with deliberately different permissions
 
 ## The pipeline
 
-One cycle, vault to reviewed wiki — each step a repo command:
+One cycle, vault to reviewed wiki — each step a verb of `bin/k-wiki`, the one front door for every wiki operation:
 
 ```text
 Obsidian vault            sync-vault                wiki-ingest               review & commit
@@ -59,10 +63,10 @@ Obsidian vault            sync-vault                wiki-ingest               re
                                             contract wiki/AGENTS.md)
 ```
 
-1. **Sync** — `bin/sync-vault`: project every vault note not
+1. **Sync** — `bin/k-wiki sync-vault`: project every vault note not
    blocked by `wiki: false` into `raw/` and update `raw/manifest.json`
    ([details](#running-the-sync)).
-2. **Ingest** — `bin/wiki-ingest`: diff the manifest against the
+2. **Ingest** — `bin/k-wiki wiki-ingest`: diff the manifest against the
    last successful ingest, run the agent over the changed sources, and
    write the digest ([details](#running-the-wiki-agent-wiki-ingest)).
 3. **Review** — read the digest (`outputs/runs/<timestamp>.md`, also on
@@ -72,14 +76,21 @@ Obsidian vault            sync-vault                wiki-ingest               re
 
 `raw/` and `wiki/` contents live in the data repo at `sync.json`'s
 `dataRoot`; this repo holds the pipeline and the skeleton only.
-`bin/wiki-sync` chains steps 1–4 into one command
-([details](#running-the-full-cycle-wiki-sync)); the separate commands
-stay available for debugging, and `wiki-ingest` already runs the
-post-run guardrails — checks and auto-revert — after every agent run.
-Unattended scheduling is [`setup-schedule`](#scheduling-the-pipeline-launchd).
+`bin/k-wiki wiki-sync` chains steps 1–4 into one command
+([details](#running-the-full-cycle-wiki-sync)) — the base path's
+sync step; the separate verbs stay available for debugging, and
+`wiki-ingest` already runs the post-run guardrails — checks and
+auto-revert — after every agent run. Every verb except the read
+verbs — k-wiki's own, front-door only — is also its
+standalone launcher (`bin/<verb>`, `bin/libexec/<verb>` for the
+maintenance tier): plumbing stays standalone by design, not for
+backward compatibility — it is the invocation path for e2e, npm
+scripts, and CI, and the escape hatch when the front door does not
+fit. Unattended scheduling is
+[`setup-schedule`](#scheduling-the-pipeline-launchd).
 
 After every successful ingest the pipeline also regenerates the
-static KPI dashboard: `bin/dashboard [<data-repo>]`
+static KPI dashboard: `bin/k-wiki dashboard [<data-repo>]`
 reads the data repo's wiki, manifests, and git history — read-only —
 and writes a self-contained `<data-repo>/dashboard.html` (gitignored;
 opens offline via `file://`) with coverage, structure, activity, and
@@ -101,8 +112,8 @@ wiki ([model 1](#1-one-vault--one-wiki-baseline)). Prerequisites:
 ```sh
 git clone git@github.com:mguinada/k-wiki.git && cd k-wiki && npm install
 # edit sync.json: set vaults[].root to your vault, dataRoot to your data repo location
-bin/init-data-repo
-bin/wiki-sync
+bin/k-wiki init-data-repo
+bin/k-wiki wiki-sync
 ```
 
 `data:init` seeds the data repo at `dataRoot` — git init, skeleton,
@@ -116,15 +127,27 @@ Two pointers to know before the first run:
 - **A first full ingest takes hours** — about one minute per note at
   the measured rate, and the 1800 s timeout default fits only
   incremental runs. Give the first run an explicit budget:
-  `bin/wiki-sync --timeout 14400`
+  `bin/k-wiki wiki-sync --timeout 14400`
   ([timeout budgeting](#running-the-wiki-agent-wiki-ingest)).
 - **Review every run** — read the digest printed on stdout (also saved
   to `outputs/runs/<timestamp>.md`), then what it committed in the data
   repo (`git log -1`)
   ([the cycle](#running-the-full-cycle-wiki-sync)).
 
-Everything after the first cycle — checks, failure semantics, further
-instances — is documented in the sections below.
+The base path's remaining steps, after the first cycle — ask the
+wiki, browse it, file an answer (all from the checkout):
+
+```sh
+bin/k-wiki query "When should I prefer RAG over fine-tuning?"   # ask
+bin/k-wiki list && bin/k-wiki read when-to-prefer-rag            # browse
+bin/k-wiki wiki-query --file-last                                # file the reviewed answer
+```
+
+`query` prints the answer (stdout) and saves the run for review;
+`--file-last` is the human step that files the reviewed answer into
+the wiki ([details](#running-queries-wiki-query)). Everything else —
+checks, failure semantics, further instances — is documented in the
+sections below.
 
 ## Usage models
 
@@ -161,19 +184,19 @@ cycle above. Run the cycle with one command, then review and run the
 standing checks:
 
 ```sh
-bin/wiki-sync   # sync → ingest → lint → crosslinks (configured) → citation wall → verification → commit → publish (configured)
+bin/k-wiki wiki-sync   # sync → ingest → lint → crosslinks (configured) → citation wall → verification → commit → publish (configured)
 # review: the printed digest, git log -1 in the data repo
-bin/libexec/check-links ~/Lab/k-wiki-engineering-data/wiki   # every [[wikilink]] resolves
-bin/libexec/check-provenance ~/Lab/k-wiki-engineering-data/wiki  # every sources entry and origin is alive
-bin/libexec/check-fidelity ~/Lab/k-wiki-engineering-data/wiki ~/Lab/k-wiki-engineering-data/raw  # quoted tokens trace to origins; titles match file names
-bin/libexec/check-raw ~/Lab/k-wiki-engineering-data/raw         # raw/ matches its manifest
-bin/dashboard ~/Lab/k-wiki-engineering-data          # regenerate the KPI dashboard (also refreshed by every ingest); add -o to open it
+bin/k-wiki check-links ~/Lab/k-wiki-engineering-data/wiki   # every [[wikilink]] resolves
+bin/k-wiki check-provenance ~/Lab/k-wiki-engineering-data/wiki  # every sources entry and origin is alive
+bin/k-wiki check-fidelity ~/Lab/k-wiki-engineering-data/wiki ~/Lab/k-wiki-engineering-data/raw  # quoted tokens trace to origins; titles match file names
+bin/k-wiki check-raw ~/Lab/k-wiki-engineering-data/raw         # raw/ matches its manifest
+bin/k-wiki dashboard ~/Lab/k-wiki-engineering-data          # regenerate the KPI dashboard (also refreshed by every ingest); add -o to open it
 ```
 
 The command commits the data repo itself, so the next digest covers
 only its own run; the printed digest plus `git log -1` tell the whole
 story ([details](#running-the-full-cycle-wiki-sync)). The separate
-commands — `bin/sync-vault`, `bin/wiki-ingest` — stay
+commands — `bin/k-wiki sync-vault`, `bin/k-wiki wiki-ingest` — stay
 available for debugging.
 
 These checks take their directories explicitly: their defaults are
@@ -218,9 +241,9 @@ reasoning: high
 Seed once, then run the same cycle as model 1:
 
 ```sh
-bin/init-data-repo sync.local.json
-bin/sync-vault sync.local.json
-bin/wiki-ingest --settings settings.local.yml ~/Lab/k-wiki-private-data/raw
+bin/k-wiki init-data-repo sync.local.json
+bin/k-wiki sync-vault sync.local.json
+bin/k-wiki wiki-ingest --settings settings.local.yml ~/Lab/k-wiki-private-data/raw
 ```
 
 The data repo is seeded by `data:init` as a local git repository with
@@ -343,8 +366,8 @@ stay separate (the manifest snapshot lives in each data repo's own
 `outputs/`, so it never crosses instances):
 
 ```sh
-bin/init-data-repo --second-brain sync-second-brain.json
-bin/wiki-sync --settings settings-second-brain.yml --outputs outputs-second-brain sync-second-brain.json
+bin/k-wiki init-data-repo --second-brain sync-second-brain.json
+bin/k-wiki wiki-sync --settings settings-second-brain.yml --outputs outputs-second-brain sync-second-brain.json
 ```
 
 `data:init --second-brain` writes `.second-brain` at the data root —
@@ -383,11 +406,11 @@ failure fails the cycle before the commit. The manual commands (one
 `<domain-wiki-dir>` per linked domain wiki):
 
 ```sh
-bin/libexec/check-links ~/Lab/k-wiki-second-brain-data/wiki
-bin/libexec/check-provenance ~/Lab/k-wiki-second-brain-data/wiki ~/Lab/k-wiki-second-brain-data/raw
-bin/libexec/check-fidelity ~/Lab/k-wiki-second-brain-data/wiki ~/Lab/k-wiki-second-brain-data/raw
-bin/libexec/check-crosslinks ~/Lab/k-wiki-second-brain-data/wiki ~/Lab/k-wiki-engineering-data/wiki
-bin/libexec/check-raw ~/Lab/k-wiki-second-brain-data/raw
+bin/k-wiki check-links ~/Lab/k-wiki-second-brain-data/wiki
+bin/k-wiki check-provenance ~/Lab/k-wiki-second-brain-data/wiki ~/Lab/k-wiki-second-brain-data/raw
+bin/k-wiki check-fidelity ~/Lab/k-wiki-second-brain-data/wiki ~/Lab/k-wiki-second-brain-data/raw
+bin/k-wiki check-crosslinks ~/Lab/k-wiki-second-brain-data/wiki ~/Lab/k-wiki-engineering-data/wiki
+bin/k-wiki check-raw ~/Lab/k-wiki-second-brain-data/raw
 ```
 
 The default instance audits its own side of the discipline the same
@@ -395,7 +418,7 @@ way — self-referenced, it asserts the default instance (a domain
 wiki) contains no cross-wiki links:
 
 ```sh
-bin/libexec/check-crosslinks ~/Lab/k-wiki-engineering-data/wiki ~/Lab/k-wiki-engineering-data/wiki
+bin/k-wiki check-crosslinks ~/Lab/k-wiki-engineering-data/wiki ~/Lab/k-wiki-engineering-data/wiki
 ```
 
 ### 6. Topology changes by rebuild
@@ -455,8 +478,8 @@ Hardened during the first full build:
   public repo; a private instance's vault paths and model choice must
   never be committed. Either leave local edits uncommitted in the
   instance checkout, or keep untracked local files and name them on
-  every run: `bin/sync-vault sync.local.json` and
-  `bin/wiki-ingest --settings settings.local.yml <raw-dir>`. A
+  every run: `bin/k-wiki sync-vault sync.local.json` and
+  `bin/k-wiki wiki-ingest --settings settings.local.yml <raw-dir>`. A
   committed sibling config (`sync-<name>.json` +
   `settings-<name>.yml`) is instead selected the short way —
   `--wiki <name>` on wiki-query and wiki-ingest — with an optional
@@ -497,8 +520,8 @@ The `eng` alias names the root `sync.json` — the default instance
 `sync-meta.json` stem. This checkout's real registry, verbatim.
 
 ```sh
-bin/init-data-repo --meta sync-meta.json       # once
-bin/wiki-sync --settings settings-meta.yml sync-meta.json \
+bin/k-wiki init-data-repo --meta sync-meta.json       # once
+bin/k-wiki wiki-sync --settings settings-meta.yml sync-meta.json \
   ~/Lab/k-wiki-meta-data/raw                     # the one-command cycle
 ```
 
@@ -514,11 +537,11 @@ regeneration commit run in-cycle — no operator discipline needed.
 The piecewise commands stay the debug path, one stage at a time:
 
 ```sh
-bin/sync-repo sync-meta.json               # project a committed tree
-bin/wiki-ingest --wiki meta                # build the meta-wiki
-bin/libexec/check-raw ~/Lab/k-wiki-meta-data/raw       # coherence + freshness
-bin/wiki-query --wiki meta "<question>"    # ask the meta wiki
-bin/wiki-query --wiki meta --file-last     # file the reviewed answer
+bin/k-wiki sync-repo sync-meta.json               # project a committed tree
+bin/k-wiki wiki-ingest --wiki meta                # build the meta-wiki
+bin/k-wiki check-raw ~/Lab/k-wiki-meta-data/raw       # coherence + freshness
+bin/k-wiki wiki-query --wiki meta "<question>"    # ask the meta wiki
+bin/k-wiki wiki-query --wiki meta --file-last     # file the reviewed answer
 ```
 
 The projection records the source commit it was made from; `health`
@@ -540,26 +563,34 @@ The pipeline is TypeScript on Node.js (ESM). Node ≥ 22.18 runs the `.ts`
 sources directly, so there is no build step — install dependencies with
 `npm install` and run the commands below.
 
-The runtime commands below are tiered the way git classifies its
-subcommands: a small porcelain front door for daily use, an operator
-tier for setup and rare paths, and plumbing — mostly guardrail- or
-agent-invoked — that stays fully visible because the guardrails depend
-on it. Nothing is hidden or deleted; the tiers curate the front door
-only. The plumbing tier lives under `bin/libexec/` — git's libexec
-model: every launcher stays fully callable, out of the top-level
-spotlight. Development tooling keeps its own table at the end.
+The runtime commands below are verbs of `bin/k-wiki` — the one
+front door — tiered the way git classifies its subcommands: a small
+porcelain front door for daily use, an operator tier for setup and
+rare paths, and plumbing — mostly guardrail- or agent-invoked —
+that stays fully visible because the guardrails depend on it.
+Nothing is hidden or deleted; the tiers curate the front door
+only. `bin/k-wiki` with no arguments prints the same tiered table.
+Which verbs answer depends on the door: inside the checkout (the
+cwd is the checkout) every verb is available — the human door; from
+a bound project (`.k-wiki.json`, `--checkout`, or `K_WIKI_CHECKOUT`)
+only the read verbs — the agent door, which refuses operator verbs
+with both escapes named and prints its resolved door and instance
+as dim stderr lines before every run. The plumbing verbs' standalone
+launchers live under `bin/libexec/` — git's libexec model: every
+launcher stays fully callable, out of the top-level spotlight.
+Development tooling keeps its own table at the end.
 
 ### Daily (porcelain)
 
-Daily use is two commands: `bin/init-data-repo` once to create the
-data repo ([Quick start](#quick-start)), then `bin/wiki-sync` after
+Daily use is two commands: `bin/k-wiki init-data-repo` once to create the
+data repo ([Quick start](#quick-start)), then `bin/k-wiki wiki-sync` after
 every edit. Queries complete the daily loop:
 
 | Command | Tool | Purpose |
 |---|---|---|
-| `bin/wiki-sync [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<sync.json>] [<raw-dir>]` | cycle orchestrator | Run the whole cycle — sync (sync-vault for vault sources, sync-repo for repo-sourced configs, [§9](#9-the-meta-wiki-a-repository-as-source)) → ingest → lint → crosslink audit (configured second brains) → citation wall (sandbox one-way audit) → verification (check-fidelity + check-provenance) → one data-repo commit → mirror publish (configured `publish` section) — and print the digest (reads `settings.yml`, including its optional `secondBrain.domains` list; [details below](#running-the-full-cycle-wiki-sync)) |
-| `bin/wiki-query [-h \| --help] [--file-last] [--wiki, -w <name>] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>` | query wrapper | Ask the built wiki one question headless: print the answer, save it for review (stage 1, default); `--file-last` files the reviewed answer deterministically (stage 2); `--wiki <name>` selects the instance — aliases then `sync-<name>.json` stems, both stages, derived paths from the resolved config (stage 1 reads the instance's settings; [details below](#running-queries-wiki-query)) |
-| `<checkout>/bin/k-wiki query "<question>"` (also `bin/k-wiki …` inside the checkout) | agent-facing CLI | Ask the wiki bound to the current project from any cwd — zero flags once `.k-wiki.json` binds it; plus four read-only commands: `status` (binding + paths), `list [<type>]` (pages by type), `read <slug>` (one page verbatim), `health` (projection check); answer-only, no filing passthrough ([details below](#querying-from-any-project-k-wiki)) |
+| `bin/k-wiki wiki-sync [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<sync.json>] [<raw-dir>]` | cycle orchestrator | Run the whole cycle — sync (sync-vault for vault sources, sync-repo for repo-sourced configs, [§9](#9-the-meta-wiki-a-repository-as-source)) → ingest → lint → crosslink audit (configured second brains) → citation wall (sandbox one-way audit) → verification (check-fidelity + check-provenance) → one data-repo commit → mirror publish (configured `publish` section) — and print the digest (reads `settings.yml`, including its optional `secondBrain.domains` list; [details below](#running-the-full-cycle-wiki-sync)) |
+| `bin/k-wiki wiki-query [-h \| --help] [--file-last] [--wiki, -w <name>] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>` | query wrapper | Ask the built wiki one question headless: print the answer, save it for review (stage 1, default); `--file-last` files the reviewed answer deterministically (stage 2); `--wiki <name>` selects the instance — aliases then `sync-<name>.json` stems, both stages, derived paths from the resolved config (stage 1 reads the instance's settings; [details below](#running-queries-wiki-query)) |
+| `bin/k-wiki <read verb>` — `query "<question>"`, `status`, `list [<type>]`, `read <slug>`, `health` | read verbs (both doors) | Ask the wiki bound to the current project from any cwd — zero flags once `.k-wiki.json` binds it; `status` (binding + paths), `list` (pages by type), `read` (one page verbatim), `health` (projection check); `-w <name>` selects the instance (aliases then `sync-<name>.json` stems) and overrides the binding's `wiki` key — `k-wiki query -w meta` and `k-wiki -w meta query` are the same command; answer-only, no filing passthrough ([details below](#querying-from-any-project-k-wiki)) |
 
 ### Occasional operator
 
@@ -569,14 +600,14 @@ for the rare direct use:
 
 | Command | Tool | Purpose |
 |---|---|---|
-| `bin/init-data-repo [--second-brain] [--meta] [<sync.json>]` | data repo seeder | Create and seed the data repo at `sync.json`'s `dataRoot`: git init, copy the `raw/`+`wiki/` skeleton from the code repo, write the standing `.gitignore` (Obsidian UI state, ingest snapshot), first commit; idempotent; `--second-brain` also writes the `.second-brain` identity marker ([§5](#5-the-second-brain)); `--meta` seeds the meta contract (`wiki/AGENTS.meta.md`) as the data repo's `wiki/AGENTS.md` ([§9](#9-the-meta-wiki-a-repository-as-source)) |
-| `bin/setup-schedule [-h \| --help] [--interval <duration>] [--print] [--uninstall]` | launchd installer | Register the pipeline with launchd: write `~/Library/LaunchAgents/com.kwiki.scheduled-run.plist` — absolute node + script paths, explicit `HOME`, minimal `PATH`, `StartInterval` (`30minutes` default) + `RunAtLoad` — then bootstrap and verify with `launchctl print`; `--interval` re-registers, `--print` emits the plist without installing (any OS), `--uninstall` boots out and removes it ([details below](#scheduling-the-pipeline-launchd)) |
-| `bin/setup-meta-sync [-h \| --help] [--print] [--uninstall]` | git-hook installer | Install the meta wiki's post-merge auto-sync git hooks (`post-merge` + `post-rewrite`) into the current checkout's shared hooks dir (`git rev-parse --git-path hooks`), baking absolute paths — canonical checkout, node binary, `settings-meta.yml` + `sync-meta.json`, `<dataRoot>/raw`, and the fire log; a merge or rebase-pull landing on `main` in the canonical checkout with a clean `git status --porcelain` (untracked included) fires one detached `bin/scheduled-run` cycle, anything else log-and-skips; idempotent, refuses to touch a foreign hook; `--print` emits the hook without a git repo, `--uninstall` removes exactly what it wrote ([details below](#the-meta-wiki-post-merge-auto-sync-git-hooks)) |
-| `bin/scheduled-run [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<config>] [<raw-dir>]` | scheduled cycle wrapper | Run one unattended cycle — the command the launchd job executes: O_EXCL lockfile (PID + timestamp, two-hour stale takeover) at `<dataRoot>/.scheduled-run.lock` → `git pull --rebase` → `wiki-sync` (commit-only) → `git push` (one pull --rebase + retry on rejection, then alert); fails loud without an `origin` remote ([details below](#scheduling-the-pipeline-launchd)) |
-| `bin/dashboard [-h \| --help] [-o \| --open] [<data-repo>]` | KPI dashboard generator | Regenerate the static KPI dashboard: read the data repo's wiki, manifests, and git history — read-only — and write the self-contained `<data-repo>/dashboard.html` (gitignored; opens offline via `file://`) with coverage, structure, activity, and provenance KPIs in dark and light themes; refreshed by every ingest, `-o` also opens it ([above](#the-pipeline)) |
-| `bin/sync-vault [--dry-run] [<sync.json>] [<raw-dir>]` | sync CLI | Ingest every note not blocked by the vault's exclusion rule into `raw/notes/` (deterministic, no LLM; [details below](#running-the-sync)) |
-| `bin/sync-repo [-h \| --help] [<config>] [<raw-dir>]` | repo sync CLI | Project the allowlisted files of a committed source repository verbatim into `raw/notes/<name>/`, recording the source HEAD commit in the manifest (deterministic, no LLM; the meta-wiki adapter, [§9](#9-the-meta-wiki-a-repository-as-source)) |
-| `bin/wiki-ingest [-h \| --help] [--wiki, -w <name>] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [--note <text>] [<raw-dir>]` | ingest wrapper | Run the wiki agent headless over the sources that changed since the last ingest and write the per-run digest (`--wiki <name>` selects the instance — aliases then `sync-<name>.json` stems, derived paths from the resolved config; [details below](#running-the-wiki-agent-wiki-ingest)) |
+| `bin/k-wiki init-data-repo [--second-brain] [--meta] [<sync.json>]` | data repo seeder | Create and seed the data repo at `sync.json`'s `dataRoot`: git init, copy the `raw/`+`wiki/` skeleton from the code repo, write the standing `.gitignore` (Obsidian UI state, ingest snapshot), first commit; idempotent; `--second-brain` also writes the `.second-brain` identity marker ([§5](#5-the-second-brain)); `--meta` seeds the meta contract (`wiki/AGENTS.meta.md`) as the data repo's `wiki/AGENTS.md` ([§9](#9-the-meta-wiki-a-repository-as-source)) |
+| `bin/k-wiki setup-schedule [-h \| --help] [--interval <duration>] [--print] [--uninstall]` | launchd installer | Register the pipeline with launchd: write `~/Library/LaunchAgents/com.kwiki.scheduled-run.plist` — absolute node + script paths, explicit `HOME`, minimal `PATH`, `StartInterval` (`30minutes` default) + `RunAtLoad` — then bootstrap and verify with `launchctl print`; `--interval` re-registers, `--print` emits the plist without installing (any OS), `--uninstall` boots out and removes it ([details below](#scheduling-the-pipeline-launchd)) |
+| `bin/k-wiki setup-meta-sync [-h \| --help] [--print] [--uninstall]` | git-hook installer | Install the meta wiki's post-merge auto-sync git hooks (`post-merge` + `post-rewrite`) into the current checkout's shared hooks dir (`git rev-parse --git-path hooks`), baking absolute paths — canonical checkout, node binary, `settings-meta.yml` + `sync-meta.json`, `<dataRoot>/raw`, and the fire log; a merge or rebase-pull landing on `main` in the canonical checkout with a clean `git status --porcelain` (untracked included) fires one detached `bin/scheduled-run` cycle, anything else log-and-skips; idempotent, refuses to touch a foreign hook; `--print` emits the hook without a git repo, `--uninstall` removes exactly what it wrote ([details below](#the-meta-wiki-post-merge-auto-sync-git-hooks)) |
+| `bin/k-wiki scheduled-run [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<config>] [<raw-dir>]` | scheduled cycle wrapper | Run one unattended cycle — the command the launchd job executes: O_EXCL lockfile (PID + timestamp, two-hour stale takeover) at `<dataRoot>/.scheduled-run.lock` → `git pull --rebase` → `wiki-sync` (commit-only) → `git push` (one pull --rebase + retry on rejection, then alert); fails loud without an `origin` remote ([details below](#scheduling-the-pipeline-launchd)) |
+| `bin/k-wiki dashboard [-h \| --help] [-o \| --open] [<data-repo>]` | KPI dashboard generator | Regenerate the static KPI dashboard: read the data repo's wiki, manifests, and git history — read-only — and write the self-contained `<data-repo>/dashboard.html` (gitignored; opens offline via `file://`) with coverage, structure, activity, and provenance KPIs in dark and light themes; refreshed by every ingest, `-o` also opens it ([above](#the-pipeline)) |
+| `bin/k-wiki sync-vault [--dry-run] [<sync.json>] [<raw-dir>]` | sync CLI | Ingest every note not blocked by the vault's exclusion rule into `raw/notes/` (deterministic, no LLM; [details below](#running-the-sync)) |
+| `bin/k-wiki sync-repo [-h \| --help] [<config>] [<raw-dir>]` | repo sync CLI | Project the allowlisted files of a committed source repository verbatim into `raw/notes/<name>/`, recording the source HEAD commit in the manifest (deterministic, no LLM; the meta-wiki adapter, [§9](#9-the-meta-wiki-a-repository-as-source)) |
+| `bin/k-wiki wiki-ingest [-h \| --help] [--wiki, -w <name>] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [--note <text>] [<raw-dir>]` | ingest wrapper | Run the wiki agent headless over the sources that changed since the last ingest and write the per-run digest (`--wiki <name>` selects the instance — aliases then `sync-<name>.json` stems, derived paths from the resolved config; [details below](#running-the-wiki-agent-wiki-ingest)) |
 
 ### Verification & maintenance (plumbing)
 
@@ -587,16 +618,16 @@ purpose; curation never hides plumbing:
 
 | Command | Tool | Purpose |
 |---|---|---|
-| `bin/libexec/check-raw [<raw-dir>] [--fail-on-stale]` | health CLI | Check the coherence of a `raw/` projection (default: the repo's `raw/`): every `raw/notes/<vault>/` file matches its `manifest.json` sha-256, with no orphans and no missing entries; a repo-sourced projection (sync-repo) is also freshness-checked — a recorded source commit behind the source repo's HEAD warns, and `--fail-on-stale` makes it exit 1; read-only, no vault access; exit 0 = coherent (including healthy-empty), exit 1 = one line per problem |
-| `bin/libexec/check-links [<wiki-dir>]` | wikilink checker | Check that every `[[wikilink]]` under `wiki/` (default) resolves to an existing page by file name, and every body-text heading anchor (`[[page#Chapter]]`) to a heading in the target page byte-identical to the anchor (frontmatter `sources` citations stay `check-provenance`'s domain; block references and multi-level anchors' parent segments are skipped), skipping external slashed `[[<vault>/<page>]]` cross-wiki targets; the sandbox namespace is scanned too — links *from* sandbox pages are validated exactly like main-page links, and links *into* the sandbox resolve silently (direction violations are `check-citations`' business); exit 0 = all links resolve, exit 1 = one `file:line -> [[link]]` line per broken link |
-| `bin/libexec/check-crosslinks <wiki-dir> <domain-wiki-dir> [<domain-wiki-dir>…]` | cross-wiki link checker | Check the one-way link discipline between a wiki and its domain wikis: every slashed `[[<vault>/<page>]]` link names a vault of a passed domain wiki (validated against its `raw/manifest.json`, case-insensitive) and resolves to an existing page there, the domain wikis carry no cross-wiki links, and the sandbox namespace carries none either (a slashed link from sandbox notes is a cross-instance leak); exit 0 = discipline holds, exit 1 = one `file:line -> [[link]]` line per problem |
-| `bin/libexec/check-citations [<wiki-dir>]` | one-way citation wall checker | Check the one-way wall between the wiki and its `wiki/sandbox/` namespace (default: the repo's `wiki/`): main pages never link or embed sandbox pages (embeds count as links), sandbox pages never link sandbox peers, `sources` entries never touch a sandbox page in either direction, sandbox pages never use slashed cross-wiki links, and the `via: agent` stamp lives only inside the sandbox; link resolution itself stays `check-links`' business; exit 0 = wall holds, exit 1 = one `wiki/<path>[:<line>] -> <evidence>` line per violation |
-| `bin/libexec/check-provenance [<wiki-dir> [<raw-dir>]]` | dead-provenance checker | Check that every `sources` entry under `wiki/` resolves — a wikilink to an existing `type: source` page, an anchored `[[hub#Chapter]]` entry that lands on a hub heading byte-identical to its anchor, a raw path to an existing `raw/` file that **no hub covers** (a hub-covered path must cite the wikilink; default: the repo's `wiki/` and its sibling `raw/`); exit 0 = coherent, exit 1 = one `wiki/<page> -> …` line per problem (an anchor miss reports `wiki/<page>:<line>`); when `type: source` pages lack `origin`, a yellow warning below the ok summary (exit stays 0; printed only when no dead provenance was found) names the exact `backfill-origin` commands to run, dry run first — the deterministic backstop that catches any purge miss |
-| `bin/libexec/check-fidelity [<wiki-dir> [<raw-dir>]]` | citation-fidelity checker | Check that every machine-checkable token a `type: source` page quotes in its body — tilde paths, dotted config keys (file extensions and hostnames excluded), long and short CLI flags, `npm run` commands — appears in the page's `origin` file under `raw/` (a prefix of a longer name does not count), and every page's `title` kebab-cases to its file name (`index`, `overview`, `log` exempt; default: the repo's `wiki/` and its sibling `raw/`); exit 0 = faithful, exit 1 = one `wiki/<page> -> …` line per problem — catches fabricated tokens deterministically; relational misquotes (right tokens, wrong containment) stay with the lint prompt and diff review; source pages without `origin` skip quote checking and get the same yellow `backfill-origin` warning as check-provenance |
-| `bin/libexec/backfill-origin [<wiki-dir> [<raw-dir>]]` | origin backfill | Deterministically write `origin` on every `type: source` page lacking it whose `sources` cites exactly one existing `raw/` path **and** whose title corroborates that note's name, bumping `updated` (default: the repo's `wiki/` and sibling `raw/`; `--date YYYY-MM-DD` overrides the bump date, `--dry-run` previews every pairing without writing); zero/several-path and title-mismatch pages are reported for judgment, never guessed; refuses a dirty wiki tree, appends an audit entry to `wiki/log.md`, idempotent — `git diff` is the review surface |
-| `bin/libexec/link-sources [-h \| --help] [--write] [--date <YYYY-MM-DD>] [<wiki-dir>]` | sources wikilink migration | Rewrite legacy path-form `sources` entries under `wiki/` (default) to wikilinks of their `type: source` hub pages — anchored (`[[hub#Chapter]]`) for a multi-part hub's sub-source — in all pages whose entry maps to the shared hub index; dry run by default prints every pair without writing, `--write` refuses a tree with uncommitted changes and appends an audit entry to `wiki/log.md`, unmappable entries are reported never guessed, idempotent — `git diff` is the review surface (the guardrails and `check-provenance` enforce the wikilink format on changed pages going forward) |
-| `bin/libexec/anchor-citations [-h \| --help] [--write] [--date <YYYY-MM-DD>] [<wiki-dir>]` | chapter-anchor migration | Rewrite aliased hub citations (`[[hub\|Chapter]]`) to the anchored form (`[[hub#Chapter]]`) and generate one hub heading per cited chapter — byte-identical to the anchor — under `wiki/` (default); dry run by default, `--write` refuses a tree with uncommitted changes and appends an audit entry to `wiki/log.md`, aliases that name no chapter are reported never guessed, idempotent |
-| `bin/libexec/open-origin [<hub> [--print] [--config <path>] [--vault <name>] [-h \| --help]]` | deep-dive linker | Read a hub page's `origin` under `raw/` and emit an `obsidian://open` URI for its note in the live vault, resolved against `sync.json` vaults (`--vault` overrides the vault, `--config` overrides the sync config, `--print` prints the URI without opening); nothing is stored in wiki data |
+| `bin/k-wiki check-raw [<raw-dir>] [--fail-on-stale]` | health CLI | Check the coherence of a `raw/` projection (default: the repo's `raw/`): every `raw/notes/<vault>/` file matches its `manifest.json` sha-256, with no orphans and no missing entries; a repo-sourced projection (sync-repo) is also freshness-checked — a recorded source commit behind the source repo's HEAD warns, and `--fail-on-stale` makes it exit 1; read-only, no vault access; exit 0 = coherent (including healthy-empty), exit 1 = one line per problem |
+| `bin/k-wiki check-links [<wiki-dir>]` | wikilink checker | Check that every `[[wikilink]]` under `wiki/` (default) resolves to an existing page by file name, and every body-text heading anchor (`[[page#Chapter]]`) to a heading in the target page byte-identical to the anchor (frontmatter `sources` citations stay `check-provenance`'s domain; block references and multi-level anchors' parent segments are skipped), skipping external slashed `[[<vault>/<page>]]` cross-wiki targets; the sandbox namespace is scanned too — links *from* sandbox pages are validated exactly like main-page links, and links *into* the sandbox resolve silently (direction violations are `check-citations`' business); exit 0 = all links resolve, exit 1 = one `file:line -> [[link]]` line per broken link |
+| `bin/k-wiki check-crosslinks <wiki-dir> <domain-wiki-dir> [<domain-wiki-dir>…]` | cross-wiki link checker | Check the one-way link discipline between a wiki and its domain wikis: every slashed `[[<vault>/<page>]]` link names a vault of a passed domain wiki (validated against its `raw/manifest.json`, case-insensitive) and resolves to an existing page there, the domain wikis carry no cross-wiki links, and the sandbox namespace carries none either (a slashed link from sandbox notes is a cross-instance leak); exit 0 = discipline holds, exit 1 = one `file:line -> [[link]]` line per problem |
+| `bin/k-wiki check-citations [<wiki-dir>]` | one-way citation wall checker | Check the one-way wall between the wiki and its `wiki/sandbox/` namespace (default: the repo's `wiki/`): main pages never link or embed sandbox pages (embeds count as links), sandbox pages never link sandbox peers, `sources` entries never touch a sandbox page in either direction, sandbox pages never use slashed cross-wiki links, and the `via: agent` stamp lives only inside the sandbox; link resolution itself stays `check-links`' business; exit 0 = wall holds, exit 1 = one `wiki/<path>[:<line>] -> <evidence>` line per violation |
+| `bin/k-wiki check-provenance [<wiki-dir> [<raw-dir>]]` | dead-provenance checker | Check that every `sources` entry under `wiki/` resolves — a wikilink to an existing `type: source` page, an anchored `[[hub#Chapter]]` entry that lands on a hub heading byte-identical to its anchor, a raw path to an existing `raw/` file that **no hub covers** (a hub-covered path must cite the wikilink; default: the repo's `wiki/` and its sibling `raw/`); exit 0 = coherent, exit 1 = one `wiki/<page> -> …` line per problem (an anchor miss reports `wiki/<page>:<line>`); when `type: source` pages lack `origin`, a yellow warning below the ok summary (exit stays 0; printed only when no dead provenance was found) names the exact `backfill-origin` commands to run, dry run first — the deterministic backstop that catches any purge miss |
+| `bin/k-wiki check-fidelity [<wiki-dir> [<raw-dir>]]` | citation-fidelity checker | Check that every machine-checkable token a `type: source` page quotes in its body — tilde paths, dotted config keys (file extensions and hostnames excluded), long and short CLI flags, `npm run` commands — appears in the page's `origin` file under `raw/` (a prefix of a longer name does not count), and every page's `title` kebab-cases to its file name (`index`, `overview`, `log` exempt; default: the repo's `wiki/` and its sibling `raw/`); exit 0 = faithful, exit 1 = one `wiki/<page> -> …` line per problem — catches fabricated tokens deterministically; relational misquotes (right tokens, wrong containment) stay with the lint prompt and diff review; source pages without `origin` skip quote checking and get the same yellow `backfill-origin` warning as check-provenance |
+| `bin/k-wiki backfill-origin [<wiki-dir> [<raw-dir>]]` | origin backfill | Deterministically write `origin` on every `type: source` page lacking it whose `sources` cites exactly one existing `raw/` path **and** whose title corroborates that note's name, bumping `updated` (default: the repo's `wiki/` and sibling `raw/`; `--date YYYY-MM-DD` overrides the bump date, `--dry-run` previews every pairing without writing); zero/several-path and title-mismatch pages are reported for judgment, never guessed; refuses a dirty wiki tree, appends an audit entry to `wiki/log.md`, idempotent — `git diff` is the review surface |
+| `bin/k-wiki link-sources [-h \| --help] [--write] [--date <YYYY-MM-DD>] [<wiki-dir>]` | sources wikilink migration | Rewrite legacy path-form `sources` entries under `wiki/` (default) to wikilinks of their `type: source` hub pages — anchored (`[[hub#Chapter]]`) for a multi-part hub's sub-source — in all pages whose entry maps to the shared hub index; dry run by default prints every pair without writing, `--write` refuses a tree with uncommitted changes and appends an audit entry to `wiki/log.md`, unmappable entries are reported never guessed, idempotent — `git diff` is the review surface (the guardrails and `check-provenance` enforce the wikilink format on changed pages going forward) |
+| `bin/k-wiki anchor-citations [-h \| --help] [--write] [--date <YYYY-MM-DD>] [<wiki-dir>]` | chapter-anchor migration | Rewrite aliased hub citations (`[[hub\|Chapter]]`) to the anchored form (`[[hub#Chapter]]`) and generate one hub heading per cited chapter — byte-identical to the anchor — under `wiki/` (default); dry run by default, `--write` refuses a tree with uncommitted changes and appends an audit entry to `wiki/log.md`, aliases that name no chapter are reported never guessed, idempotent |
+| `bin/k-wiki open-origin [<hub> [--print] [--config <path>] [--vault <name>] [-h \| --help]]` | deep-dive linker | Read a hub page's `origin` under `raw/` and emit an `obsidian://open` URI for its note in the live vault, resolved against `sync.json` vaults (`--vault` overrides the vault, `--config` overrides the sync config, `--print` prints the URI without opening); nothing is stored in wiki data |
 
 ### Development tooling
 
@@ -641,7 +672,7 @@ Verification has three layers:
 | Layer | Commands | Status |
 |---|---|---|
 | Gates | `npm run typecheck`, `npm run lint`, `npm test` | blocking — every change, every PR |
-| End-to-end | `npm run e2e`, `bin/libexec/check-raw` | blocking — CI's `e2e` job on every PR; required locally when a change touches the sync, ingest, or CLI layers (exact trigger list in [AGENTS.md](AGENTS.md)) |
+| End-to-end | `npm run e2e`, `bin/k-wiki check-raw` | blocking — CI's `e2e` job on every PR; required locally when a change touches the sync, ingest, or CLI layers (exact trigger list in [AGENTS.md](AGENTS.md)) |
 | Mutation | CI nightly windowed run (trailing 7 days) + label-gated PR runs + on-demand code-wide dispatch (`mutation:changed` locally when wanted) | advisory — a signal, never a gate ([below](#mutation-testing)) |
 
 The e2e suites drive the real CLIs — sync-vault against the synthetic
@@ -655,7 +686,7 @@ runtime grows with the suite.
 ### Renaming or removing a vault
 
 Sync prunes what the config no longer names: edit the vault's `name` (or
-delete its entry) in `sync.json`, then re-run `bin/sync-vault` — the
+delete its entry) in `sync.json`, then re-run `bin/k-wiki sync-vault` — the
 old `raw/notes/<name>/` tree and its `manifest.json` section are deleted
 automatically, and the removal shows in the report as
 `- <name>/ (stale namespace, not configured)`.
@@ -669,7 +700,7 @@ Two safety properties hold:
   brings the previous projection back.
 
 The prune is a batch of manifest removals, so the next
-`bin/wiki-ingest` routes it to
+`bin/k-wiki wiki-ingest` routes it to
 [expungement](#when-a-note-is-deleted-expungement) and re-derives the
 affected wiki pages; that is wiki maintenance under `wiki/AGENTS.md`,
 not part of the sync run.
@@ -843,16 +874,16 @@ copies, removes, and writes nothing.
 ## Running the sync
 
 ```sh
-bin/sync-vault [--dry-run] [<sync.json>] [<raw-dir>]
+bin/k-wiki sync-vault [--dry-run] [<sync.json>] [<raw-dir>]
 ```
 
 Examples:
 
 ```sh
-bin/sync-vault --dry-run          # defaults: repo sync.json, dataRoot raw dir
-bin/sync-vault --dry-run my.json  # custom config, default raw dir
-bin/sync-vault                        # real sync, all defaults
-bin/sync-vault my.json /tmp/raw    # custom config and raw dir
+bin/k-wiki sync-vault --dry-run          # defaults: repo sync.json, dataRoot raw dir
+bin/k-wiki sync-vault --dry-run my.json  # custom config, default raw dir
+bin/k-wiki sync-vault                        # real sync, all defaults
+bin/k-wiki sync-vault my.json /tmp/raw    # custom config and raw dir
 ```
 
 Arguments:
@@ -891,16 +922,16 @@ with `exclude`.
 The failure direction under opt-out is a **leak, not a loss**: a private
 note nobody blocked lands in `raw/` and git history. Review first:
 
-1. `bin/sync-vault --dry-run` — read the would-ingest list.
+1. `bin/k-wiki sync-vault --dry-run` — read the would-ingest list.
 2. Add `wiki: false` to any note that must stay private.
 3. Re-run the dry run until the list is clean.
-4. Run `bin/sync-vault` for real; check `bin/libexec/check-raw` after.
+4. Run `bin/k-wiki sync-vault` for real; check `bin/k-wiki check-raw` after.
 
 ## Running the wiki agent (`wiki-ingest`)
 
 ```sh
-bin/sync-vault   # 1. sync the vault into raw/
-bin/wiki-ingest  # 2. run the agent headless, digest the run
+bin/k-wiki sync-vault   # 1. sync the vault into raw/
+bin/k-wiki wiki-ingest  # 2. run the agent headless, digest the run
 ```
 
 `wiki-ingest` is the unattended ingest step. It
@@ -992,14 +1023,14 @@ incremental runs measured at 1–2 minutes (about one minute per note,
 including page updates). A first full ingest is much larger (136
 uningested notes at the time of the first measured full run); at the measured rate
 that is hours, so give it an explicit budget, for example
-`bin/wiki-ingest --timeout 14400`, and watch the spinner's
+`bin/k-wiki wiki-ingest --timeout 14400`, and watch the spinner's
 elapsed clock. A timed-out run fails cleanly and retries the same
 sources on the next run.
 
 ### Scoped re-ingest (`--sources`)
 
 ```sh
-bin/wiki-ingest --sources Engineering/AI/RAG.md   # repeatable
+bin/k-wiki wiki-ingest --sources Engineering/AI/RAG.md   # repeatable
 ```
 
 `--sources <vault/path>` re-ingests exactly the listed
@@ -1082,14 +1113,14 @@ in the same sync is a **move**, not a deletion: the
 run treats it as a change/retitle (`→ vault/old → vault/new`) and never
 routes to expunge. A rename *with* body edits still routes to expunge.
 
-Afterwards, `bin/libexec/check-provenance <wiki-dir>` is the permanent
+Afterwards, `bin/k-wiki check-provenance <wiki-dir>` is the permanent
 backstop: every `sources` entry and every `origin` must resolve, so a
 missed purge surfaces as a dead link, not as silent contamination.
 
 ## Running the full cycle (`wiki-sync`)
 
 ```sh
-bin/wiki-sync   # sync → ingest → lint → crosslinks (configured) → citation wall → verification → commit → publish (configured)
+bin/k-wiki wiki-sync   # sync → ingest → lint → crosslinks (configured) → citation wall → verification → commit → publish (configured)
 ```
 
 `wiki-sync` is the one-command orchestrator.
@@ -1210,10 +1241,10 @@ all. Unattended scheduling is `setup-schedule` —
 ## Scheduling the pipeline (launchd)
 
 ```sh
-bin/setup-schedule                        # install: every 30 minutes
-bin/setup-schedule --interval 15minutes  # re-register with a new interval
-bin/setup-schedule --print             # emit the plist, install nothing
-bin/setup-schedule --uninstall         # bootout the job and remove the plist
+bin/k-wiki setup-schedule                        # install: every 30 minutes
+bin/k-wiki setup-schedule --interval 15minutes  # re-register with a new interval
+bin/k-wiki setup-schedule --print             # emit the plist, install nothing
+bin/k-wiki setup-schedule --uninstall         # bootout the job and remove the plist
 ```
 
 `setup-schedule` registers the pipeline with launchd:
@@ -1226,11 +1257,11 @@ existing (e.g. `/opt/homebrew/bin/node`, stable across Homebrew
 upgrades — the resolved binary lives in a versioned Cellar and
 breaks on every `brew upgrade node`), falling back to
 the resolved binary. Register through the stable path once —
-`/opt/homebrew/bin/node bin/setup-schedule` — to move an
+`/opt/homebrew/bin/node bin/k-wiki setup-schedule` — to move an
 existing install off a versioned Cellar path. The same rule holds for
 the pinned script path: after pulling a change that renames or moves
 the launcher (as the switch to extensionless launcher names did),
-re-run `bin/setup-schedule` once — until then the installed job
+re-run `bin/k-wiki setup-schedule` once — until then the installed job
 points at the deleted path and every tick fails into
 `launchd-stderr.log` with `MODULE_NOT_FOUND`, leaving the wiki stale
 with no other alert. The plist
@@ -1316,9 +1347,9 @@ everywhere), and the platform switch keeps them additive.
 ### The meta wiki: post-merge auto-sync (git hooks)
 
 ```sh
-bin/setup-meta-sync                 # once per machine
-bin/setup-meta-sync --print         # emit the hook, install nothing
-bin/setup-meta-sync --uninstall     # remove exactly what was installed
+bin/k-wiki setup-meta-sync                 # once per machine
+bin/k-wiki setup-meta-sync --print         # emit the hook, install nothing
+bin/k-wiki setup-meta-sync --uninstall     # remove exactly what was installed
 ```
 
 The meta wiki's source changes only when k-wiki's `main` moves —
@@ -1375,8 +1406,8 @@ recorded follow-up if the gap ever bites.
 ## Running queries (`wiki-query`)
 
 ```sh
-bin/wiki-query "When should I prefer RAG over fine-tuning?"   # stage 1: answers, saves for review
-bin/wiki-query --file-last                                  # stage 2: files the reviewed answer
+bin/k-wiki wiki-query "When should I prefer RAG over fine-tuning?"   # stage 1: answers, saves for review
+bin/k-wiki wiki-query --file-last                                  # stage 2: files the reviewed answer
 ```
 
 `wiki-query` is the terminal front-end for asking the built wiki a
@@ -1432,15 +1463,30 @@ k-wiki read retrieval-augmented-generation                 # one page verbatim
 k-wiki health                                               # projection coherence/freshness
 ```
 
-`k-wiki` is the agent-facing CLI: a thin
-wrapper — one LLM `query` command plus four read-only deterministic
-ones, the shared CLI shell (`src/cli/shell.ts`), no CLI framework —
-that resolves the current
-project's wiki and
-delegates to the answer-only stage-1 query above. The
-query is answer-only by construction, so exposing it to agents is
-safe: this entry can never write to `wiki/`, whatever flags an
-agent passes or omits.
+`k-wiki` is the universal front door — the same one executable that
+serves the operator tiers above — and which verbs answer depends on
+the door, decided by checkout resolution:
+
+- **Agent door** — the resolution chain resolves a binding (the
+  `--checkout` flag, `K_WIKI_CHECKOUT`, or a `.k-wiki.json` found
+  walking up): the five read verbs above, and nothing else. Every
+  operator verb is refused with both escapes named (`cd` into the
+  checkout, or the standalone launcher). The query is answer-only
+  by construction, so exposing it to agents is safe: this door can
+  never write to `wiki/`, whatever flags an agent passes or omits.
+- **Human door** — the chain falls back to the cwd being the
+  checkout (run from inside it): the full verb table, and a
+  flag-less run resolves the checkout's root `sync.json` — the
+  default instance, structural, never configured.
+
+Every run first prints two dim stderr lines — the resolved door and
+instance — so wrong-door and wrong-corpus calls are visible in the
+transcript. `-w <name>` (or `--wiki <name>`) selects the instance
+on any verb that takes it — aliases first, then `sync-<name>.json`
+stems — and overrides the binding's `wiki` key; the verb-first
+spelling is canonical (`k-wiki query -w meta` ≡ `k-wiki -w meta
+query` — a leading `-w`/`-h` is reordered after the verb; a
+verb-specific flag before the verb is a usage error).
 
 Binding file `.k-wiki.json` at the bound project's root:
 
@@ -1469,13 +1515,18 @@ Binding file `.k-wiki.json` at the bound project's root:
 Checkout resolution order (first hit wins): the `--checkout <path>`
 flag, the `K_WIKI_CHECKOUT` environment variable, the nearest
 `.k-wiki.json` walking up from the cwd (stopping at the home
-directory or the filesystem root), then the cwd itself — today's
-behavior of running from inside the checkout, preserved.
+directory or the filesystem root), then the cwd itself — the human
+door. Bindings belong to consumer projects: the checkout root stays
+unbound by design (flag-less must mean the same thing in the same
+place), and agents working inside the k-wiki checkout itself
+compose `--checkout <its checkout> -w <its wiki>` from the
+checkout's `.agents/.k-wiki.json` — the k-wiki skill carries that
+mandate.
 
 There is no filing passthrough: `--file-last` stays the human-run
-`wiki-query` command inside the checkout (`wiki-query --wiki <name>
+`wiki-query` verb inside the checkout (`wiki-query --wiki <name>
 --file-last` when the binding named an instance). The four read-only
-commands open no write path: `status` prints the resolution chain
+verbs open no write path: `status` prints the resolution chain
 (checkout, origin, instance, sync config, settings, data repo,
 outputs dir, wiki dir, `index.md`) plus a `last change:` line —
 the data repo's last commit time (`never` for a fresh,

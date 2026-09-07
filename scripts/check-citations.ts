@@ -38,9 +38,9 @@ is ok — only the stamp-placement rule can trip there). NO_COLOR
 disables color.`;
 
 /** check-citations entry point: `check-citations [-h | --help] [<wiki-dir>]` (default: repo wiki/). */
-export async function main(): Promise<void> {
-  const args = process.argv.slice(2);
-
+export async function main(
+  args: readonly string[] = process.argv.slice(2),
+): Promise<void> {
   if (args.includes("-h") || args.includes("--help")) {
     console.log(HELP);
 

@@ -283,44 +283,42 @@ describe("k-wiki CLI", () => {
     expect(process.exitCode).toBeUndefined();
   });
 
-  it("names the missing-command error", async () => {
-    const { err } = await runKWiki(process.cwd(), []);
+  it("prints the tiered help when no verb is given", async () => {
+    const { out } = await runKWiki(process.cwd(), []);
 
-    expect(err).toContain("a command is required");
+    expect(out).toContain("Daily (porcelain):");
   });
 
-  it("exits 1 when no command is given", async () => {
+  it("leaves the exit code unset when no verb is given", async () => {
     await runKWiki(process.cwd(), []);
 
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("names the unknown verb in the error", async () => {
+    const { err } = await runKWiki(process.cwd(), ["no-such-verb", "q"]);
+
+    expect(err).toContain('unknown verb "no-such-verb"');
+  });
+
+  it("exits 1 for an unknown verb", async () => {
+    await runKWiki(process.cwd(), ["no-such-verb", "q"]);
+
     expect(process.exitCode).toBe(1);
   });
 
-  it("names the unknown command in the error", async () => {
-    const { err } = await runKWiki(process.cwd(), ["ingest", "q"]);
-
-    expect(err).toContain('unknown command "ingest"');
-  });
-
-  it("exits 1 for an unknown command", async () => {
-    await runKWiki(process.cwd(), ["ingest", "q"]);
-
-    expect(process.exitCode).toBe(1);
-  });
-
-  it("separates the unknown-command menu with commas", async () => {
-    const { err } = await runKWiki(process.cwd(), ["ingest", "q"]);
+  it("separates the unknown-verb menu with commas", async () => {
+    const { err } = await runKWiki(process.cwd(), ["no-such-verb", "q"]);
 
     expect(err).toContain(
-      "the commands are: query, status, list, read, health",
+      "the daily verbs are: query, status, list, read, health, wiki-sync, wiki-query",
     );
   });
 
-  it("prints the command menu joined by pipes when no command is given", async () => {
-    const { err } = await runKWiki(process.cwd(), []);
+  it("points the unknown-verb error at the tiered help", async () => {
+    const { err } = await runKWiki(process.cwd(), ["no-such-verb", "q"]);
 
-    expect(err).toContain(
-      "k-wiki query | k-wiki status | k-wiki list | k-wiki read | k-wiki health",
-    );
+    expect(err).toContain("k-wiki --help lists every tier");
   });
 
   it("names the missing-question error", async () => {
@@ -913,6 +911,20 @@ describe("k-wiki status", () => {
     const { out } = await runKWiki(join(h.project, "nested"), ["status"]);
 
     expect(out).toContain(`checkout:    ${h.checkout}`);
+  });
+
+  it("resolves the last --checkout when the flag repeats", async () => {
+    const h = await makeBoundProject();
+    const other = await makeBoundProject();
+    const { out } = await runKWiki(join(h.project, "nested"), [
+      "status",
+      "--checkout",
+      h.checkout,
+      "--checkout",
+      other.checkout,
+    ]);
+
+    expect(out).toContain(`checkout:    ${other.checkout}`);
   });
 
   it("names the binding file origin in the status output", async () => {
@@ -1790,19 +1802,19 @@ describe("k-wiki help with the read-only commands", () => {
   it("documents the health command in the AI-agent block", async () => {
     const out = (await runKWiki(process.cwd(), ["--help"])).out;
 
-    expect(out).toContain("k-wiki health checks the projection");
+    expect(out).toContain("k-wiki health checks the");
   });
 
-  it("names the valid types in the list command entry", async () => {
+  it("names the valid types in the list verb entry", async () => {
     const out = (await runKWiki(process.cwd(), ["--help"])).out;
 
     expect(out).toContain("concept|entity|source|query|comparison");
   });
 
-  it("names the unknown command in the menu error", async () => {
-    const { err } = await runKWiki(process.cwd(), ["ingest", "q"]);
+  it("names the unknown verb in the menu error", async () => {
+    const { err } = await runKWiki(process.cwd(), ["no-such-verb", "q"]);
 
-    expect(err).toContain('unknown command "ingest"');
+    expect(err).toContain('unknown verb "no-such-verb"');
   });
 
   it("lists query in the unknown-command menu", async () => {
@@ -1961,7 +1973,11 @@ async function makeMetaHarness(
   tempDirs.push(checkout);
   await writeFile(
     join(checkout, "sync.json"),
-    JSON.stringify({ vaults: [], dataRoot }),
+    JSON.stringify({
+      vaults: [],
+      dataRoot,
+      instances: { eng: "sync.json", meta: "sync-meta.json" },
+    }),
   );
   await writeFile(
     join(checkout, "sync-meta.json"),
@@ -2084,27 +2100,28 @@ describe("k-wiki binding wiki key", () => {
   });
 
   it("names the binding source for an unknown wiki name", async () => {
-    const h = await makeMetaHarness({ wiki: "eng" });
+    const h = await makeMetaHarness({ wiki: "nope" });
     const { err } = await runKWiki(join(h.project, "nested"), [
       "query",
       QUESTION,
     ]);
 
-    expect(err).toContain('unknown wiki name "eng" (from .k-wiki.json)');
+    expect(err).toContain('unknown wiki name "nope" (from .k-wiki.json)');
   });
 
   it("lists the known names for an unknown wiki name", async () => {
-    const h = await makeMetaHarness({ wiki: "eng" });
+    const h = await makeMetaHarness({ wiki: "nope" });
     const { err } = await runKWiki(join(h.project, "nested"), [
       "query",
       QUESTION,
     ]);
 
-    expect(err).toContain("known names: meta");
+    expect(err).toContain("eng → sync.json");
+    expect(err).toContain("meta → sync-meta.json");
   });
 
   it("exits 1 for an unknown wiki name", async () => {
-    const h = await makeMetaHarness({ wiki: "eng" });
+    const h = await makeMetaHarness({ wiki: "nope" });
     await runKWiki(join(h.project, "nested"), ["query", QUESTION]);
 
     expect(process.exitCode).toBe(1);
@@ -2164,5 +2181,223 @@ describe("k-wiki status with a wiki key", () => {
     const { out } = await runKWiki(join(h.project, "nested"), ["status"]);
 
     expect(out).toContain(`settings:    ${join(h.checkout, "settings.yml")}`);
+  });
+});
+
+describe("k-wiki leading global flags", () => {
+  it("treats k-wiki -w meta status as k-wiki status -w meta", async () => {
+    const h = await makeMetaHarness({ wiki: undefined as unknown as string });
+    const leading = await runKWiki(join(h.project, "nested"), [
+      "-w",
+      "meta",
+      "status",
+    ]);
+    const verbFirst = await runKWiki(join(h.project, "nested"), [
+      "status",
+      "-w",
+      "meta",
+    ]);
+
+    expect(leading.out).toEqual(verbFirst.out);
+    expect(leading.out).toContain("instance:    meta");
+  });
+
+  it("accepts the inline --wiki=meta leading form", async () => {
+    const h = await makeMetaHarness({});
+    const { out } = await runKWiki(join(h.project, "nested"), [
+      "--wiki=meta",
+      "status",
+    ]);
+
+    expect(out).toContain("instance:    meta");
+  });
+
+  it("prints the front-door help for a leading -h with a verb", async () => {
+    const { out } = await runKWiki(process.cwd(), ["-h", "wiki-sync"]);
+
+    expect(out).toContain("Usage: k-wiki");
+  });
+
+  it("prints the front-door help for a read verb's own -h", async () => {
+    const out = (await runKWiki(process.cwd(), ["query", "--help"])).out;
+
+    expect(out).toContain("Usage: k-wiki");
+  });
+
+  it("prints the front-door help when a global flag has no verb", async () => {
+    const { out } = await runKWiki(process.cwd(), ["-w", "meta"]);
+
+    expect(out).toContain("Daily (porcelain):");
+  });
+
+  it("rejects a verb-specific flag before the verb", async () => {
+    const { err } = await runKWiki(process.cwd(), ["--dry-run", "sync-vault"]);
+
+    expect(err).toContain("before the verb");
+    expect(err).toContain("only -w/--wiki and -h/--help may lead");
+  });
+
+  it("exits 1 for a verb-specific flag before the verb", async () => {
+    await runKWiki(process.cwd(), ["--dry-run", "sync-vault"]);
+
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("rejects --checkout before the verb", async () => {
+    const { err } = await runKWiki(process.cwd(), [
+      "--checkout",
+      "/tmp",
+      "query",
+    ]);
+
+    expect(err).toContain("before the verb");
+  });
+});
+
+describe("k-wiki doors", () => {
+  it("refuses an operator verb on the agent door", async () => {
+    const h = await makeMetaHarness({});
+    const { err } = await runKWiki(join(h.project, "nested"), ["wiki-sync"]);
+
+    expect(err).toContain("not available on the agent door");
+  });
+
+  it("names the cd escape in the operator refusal", async () => {
+    const h = await makeMetaHarness({});
+    const { err } = await runKWiki(join(h.project, "nested"), ["wiki-sync"]);
+
+    expect(err).toContain(`cd ${h.checkout}`);
+  });
+
+  it("names the standalone launcher escape in the refusal", async () => {
+    const h = await makeMetaHarness({});
+    const { err } = await runKWiki(join(h.project, "nested"), ["wiki-sync"]);
+
+    expect(err).toContain("bin/wiki-sync");
+  });
+
+  it("names the libexec launcher path for a plumbing verb refusal", async () => {
+    const h = await makeMetaHarness({});
+    const { err } = await runKWiki(join(h.project, "nested"), ["check-links"]);
+
+    expect(err).toContain("bin/libexec/check-links");
+  });
+
+  it("exits 1 for an operator verb on the agent door", async () => {
+    const h = await makeMetaHarness({});
+    await runKWiki(join(h.project, "nested"), ["wiki-sync"]);
+
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("dispatches an operator verb on the human door", async () => {
+    const h = await makeMetaHarness({});
+    const { out } = await runKWiki(h.checkout, ["wiki-sync", "--help"]);
+
+    expect(out).toContain("Usage: wiki-sync");
+  });
+
+  it("dispatches a plumbing verb on the human door", async () => {
+    const h = await makeMetaHarness({});
+    const { out } = await runKWiki(h.checkout, ["check-raw", "--help"]);
+
+    expect(out).toContain("Usage: check-raw");
+  });
+
+  it("prints the human door line from inside the checkout", async () => {
+    const h = await makeMetaHarness({});
+    const { err } = await runKWiki(h.checkout, ["status"]);
+
+    expect(err).toContain("door: human (from the cwd itself)");
+  });
+
+  it("prints the agent door line from a bound project", async () => {
+    const h = await makeMetaHarness({ wiki: "meta" });
+    const { err } = await runKWiki(join(h.project, "nested"), ["status"]);
+
+    expect(err).toContain("door: agent (from .k-wiki.json)");
+    expect(err).toContain("instance: meta");
+  });
+
+  it("prints the agent door line for the env var origin", async () => {
+    const h = await makeMetaHarness({});
+    const previous = process.env[CHECKOUT_ENV];
+
+    process.env[CHECKOUT_ENV] = h.checkout;
+
+    try {
+      const { err } = await runKWiki(join(h.project, "nested"), ["status"]);
+
+      expect(err).toContain("door: agent (from the K_WIKI_CHECKOUT");
+    } finally {
+      if (previous === undefined) {
+        process.env[CHECKOUT_ENV] = undefined as unknown as string;
+        delete process.env[CHECKOUT_ENV];
+      } else {
+        process.env[CHECKOUT_ENV] = previous;
+      }
+    }
+  });
+
+  it("prints the instance the leading -w selected", async () => {
+    const h = await makeMetaHarness({});
+    const { err } = await runKWiki(join(h.project, "nested"), [
+      "-w",
+      "meta",
+      "status",
+    ]);
+
+    expect(err).toContain("instance: meta");
+  });
+
+  it("prints the instance a post-verb -w selected", async () => {
+    const h = await makeMetaHarness({});
+    const { err } = await runKWiki(join(h.project, "nested"), [
+      "status",
+      "-w",
+      "meta",
+    ]);
+
+    expect(err).toContain("instance: meta");
+  });
+
+  it("prints the last -w when the flag repeats across positions", async () => {
+    const h = await makeMetaHarness({});
+    const { err } = await runKWiki(join(h.project, "nested"), [
+      "-w",
+      "default",
+      "status",
+      "-w",
+      "meta",
+    ]);
+
+    expect(err).toContain("instance: meta");
+  });
+
+  it("prints default for a flag-less human-door run", async () => {
+    const h = await makeMetaHarness({});
+    const { err } = await runKWiki(h.checkout, ["status"]);
+
+    expect(err).toContain("instance: default");
+  });
+});
+
+describe("k-wiki -w precedence over the binding key", () => {
+  it("lets -w beat a binding's meta key back to the default instance", async () => {
+    const h = await makeMetaHarness({ wiki: "meta" });
+    const { out } = await runKWiki(join(h.project, "nested"), [
+      "status",
+      "--wiki",
+      "eng",
+    ]);
+
+    expect(out).toContain("instance:    eng");
+  });
+
+  it("keeps the binding's meta key without the flag", async () => {
+    const h = await makeMetaHarness({ wiki: "meta" });
+    const { out } = await runKWiki(join(h.project, "nested"), ["status"]);
+
+    expect(out).toContain("instance:    meta");
   });
 });

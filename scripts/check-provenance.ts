@@ -78,8 +78,9 @@ export async function runChecker<
   readonly check: (wikiDir: string, rawDir: string) => Promise<T>;
   readonly summarize: (report: T) => string;
   readonly warnCount: (report: T) => number;
+  readonly argv?: readonly string[];
 }): Promise<void> {
-  const args = process.argv.slice(2);
+  const args = options.argv ?? process.argv.slice(2);
 
   if (args.includes("-h") || args.includes("--help")) {
     console.log(options.help);
@@ -126,13 +127,16 @@ export async function runChecker<
 }
 
 /** check-provenance entry point: `check-provenance [-h | --help] [<wiki-dir> [<raw-dir>]]` (defaults: repo wiki/, sibling raw/). */
-export function main(): Promise<void> {
+export function main(
+  args: readonly string[] = process.argv.slice(2),
+): Promise<void> {
   return runChecker({
     name: "check-provenance",
     help: HELP,
     check: checkWikiProvenance,
     summarize: summarizeProvenance,
     warnCount: (report) => report.missingOrigins,
+    argv: args,
   });
 }
 

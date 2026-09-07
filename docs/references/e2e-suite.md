@@ -35,6 +35,17 @@ e2e run or diagnosing a failing one.
   uninstall, merge and rebase-pull fires, and feature-branch,
   linked-worktree, and dirty-tree guard skips in a temp source repo
   with a stubbed cycle runner.
+- **k-wiki** — the front door (issue #337) in temp checkouts, temp
+  data repos, and bound temp projects: read verbs on both doors
+  (agent door via `.k-wiki.json`, human door from the checkout
+  cwd), the guardrail revert for a rogue agent, binding-key and
+  alias instance resolution, the leading-global reordering
+  (`k-wiki -w meta <verb>` ≡ `k-wiki <verb> -w meta` for every
+  verb that takes it — the read verbs plus the verbatim-argv
+  handoff to `wiki-query` and `wiki-ingest`), operator-verb
+  refusal on the agent door (both escapes named) and dispatch by
+  import on the human door, the door/instance dim stderr lines,
+  and the tiered bare help.
 - **sandbox** — not a launcher run: the suite drives the `runSandboxRun`
   library primitive (issue #336; the `propose` verb that will wrap it
   is family 6) in-process, with a real stub agent child process over

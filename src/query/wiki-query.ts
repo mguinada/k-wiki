@@ -370,7 +370,7 @@ async function fileLastStage(
 function fileLastHint(name: string | undefined): string {
   const wiki = name === undefined ? "" : `--wiki ${name} `;
 
-  return `To file this answer: wiki-query ${wiki}--file-last`;
+  return `To file this answer: k-wiki wiki-query ${wiki}--file-last`;
 }
 
 /** Run the stage the arguments selected, in the data repo it
@@ -415,9 +415,9 @@ async function dispatchStage(
 }
 
 /** wiki-query entry point: `wiki-query [-h | --help] [--file-last] [--wiki, -w <name>] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>`. */
-export async function main(): Promise<void> {
-  const args = process.argv.slice(2);
-
+export async function main(
+  args: readonly string[] = process.argv.slice(2),
+): Promise<void> {
   if (args.includes("-h") || args.includes("--help")) {
     console.log(HELP);
 

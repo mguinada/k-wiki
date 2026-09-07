@@ -338,9 +338,9 @@ status line - a braille spinner plus the sentence - rewritten in
 place; piped, redirected, CI, or NO_COLOR runs get plain appended
 lines instead (read heartbeat every 500 files by default).`;
 
-export async function main(): Promise<void> {
-  const args = process.argv.slice(2);
-
+export async function main(
+  args: readonly string[] = process.argv.slice(2),
+): Promise<void> {
   if (args.includes("-h") || args.includes("--help")) {
     console.log(HELP);
 

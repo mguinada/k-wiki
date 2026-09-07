@@ -43,13 +43,16 @@ dry run first — a signal, not a gate; the exit code stays 0. NO_COLOR
 disables color.`;
 
 /** check-fidelity entry point: `check-fidelity [-h | --help] [<wiki-dir> [<raw-dir>]]` (defaults: repo wiki/, sibling raw/). */
-export function main(): Promise<void> {
+export function main(
+  args: readonly string[] = process.argv.slice(2),
+): Promise<void> {
   return runChecker({
     name: "check-fidelity",
     help: HELP,
     check: checkWikiFidelity,
     summarize: summarizeFidelity,
     warnCount: (report) => report.skipped,
+    argv: args,
   });
 }
 

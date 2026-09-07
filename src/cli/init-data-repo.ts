@@ -40,9 +40,9 @@ Idempotent — an already-seeded data repo is left untouched.
                   Default: the repo's own sync.json.`;
 
 /** data:init entry point: `init-data-repo [-h | --help] [--second-brain] [--meta] [<config>]`. */
-export async function main(): Promise<void> {
-  const args = process.argv.slice(2);
-
+export async function main(
+  args: readonly string[] = process.argv.slice(2),
+): Promise<void> {
   if (args.includes("-h") || args.includes("--help")) {
     console.log(HELP);
 
