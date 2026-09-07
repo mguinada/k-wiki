@@ -330,6 +330,14 @@ describe("indexEntryFor and appendIndexEntry", () => {
       "# Wiki Index\n\n## Queries\n\n- [[q]] — q?\n",
     );
   });
+
+  it("inserts under the named section for a non-query page type", () => {
+    const index = "# Wiki Index\n\n## Concepts\n\n## Queries\n";
+
+    expect(appendIndexEntry(index, "- [[c]] — C.", "Concepts")).toBe(
+      "# Wiki Index\n\n## Concepts\n- [[c]] — C.\n\n## Queries\n",
+    );
+  });
 });
 
 describe("logEntry", () => {

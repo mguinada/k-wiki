@@ -25,6 +25,7 @@ import { main as openOrigin } from "../../scripts/open-origin.ts";
 import { main as dashboard } from "../dashboard/generate.ts";
 import { main as checkRawCli } from "../health/check-raw.ts";
 import { main as wikiIngest } from "../ingest/wiki-ingest-cli.ts";
+import { main as wikiPromote } from "../query/wiki-promote.ts";
 import { main as wikiQuery } from "../query/wiki-query.ts";
 import { runProposeVerb as propose } from "../sandbox/propose.ts";
 import { main as scheduledRun } from "../schedule/scheduled-run.ts";
@@ -288,6 +289,17 @@ export const VERBS: readonly VerbSpec[] = [
     wiki: false,
     lines: ["emit an obsidian://open URI for a hub's origin"],
     main: openOrigin,
+  },
+  {
+    name: "wiki-promote",
+    klass: "operator",
+    tier: "libexec",
+    wiki: true,
+    lines: [
+      "walk a sandbox note into the main wiki — one",
+      "unit, one commit, human-approved sources",
+    ],
+    main: wikiPromote,
   },
 ];
 
