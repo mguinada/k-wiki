@@ -58,9 +58,11 @@ Lookup: `k-wiki list [type]` for the page catalog, `k-wiki read
 across pages or a recurring question: `k-wiki query "<question>"` —
 runs an LLM, can take minutes; the answer is stdout, stderr is
 progress. A page that already answers makes the query unnecessary:
-browse first. Every run prints its resolved door and instance as
-dim stderr lines — read them; a wrong-corpus call is visible there
-before you trust the answer.
+browse first. To hand a candidate answer over for human review:
+`k-wiki propose <slug> <file>` (the note body from the file, or
+stdin) — the one agent write path. Every run prints its resolved
+door and instance as dim stderr lines — read them; a wrong-corpus
+call is visible there before you trust the answer.
 
 ## Trust rules
 

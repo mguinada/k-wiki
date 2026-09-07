@@ -311,7 +311,7 @@ describe("k-wiki CLI", () => {
     const { err } = await runKWiki(process.cwd(), ["no-such-verb", "q"]);
 
     expect(err).toContain(
-      "the daily verbs are: query, status, list, read, health, wiki-sync, wiki-query",
+      "the daily verbs are: query, status, list, read, health, propose, wiki-sync, wiki-query",
     );
   });
 

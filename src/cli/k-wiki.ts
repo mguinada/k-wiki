@@ -257,7 +257,7 @@ async function runInvocation(
 ): Promise<void> {
   const { verb } = invocation;
   const flag =
-    verb.klass === "read"
+    verb.klass !== "operator"
       ? lastFlagValueFrom(invocation.tail, CHECKOUT_TOKENS, "--checkout=")
       : undefined;
   const resolution = await resolveCheckoutOrFail({

@@ -75,8 +75,10 @@ async function runStatus(
 }
 
 /** The effective settings file: the binding's settings key
- *  overrides the derived one (issue #306). */
-function bindingSettings(
+ *  overrides the derived one (issue #306). Exported for the
+ *  write verbs — propose resolves its agent settings through the
+ *  same rule (issue #340). */
+export function bindingSettings(
   resolution: CheckoutResolution,
   instance: WikiInstance,
 ): string {
@@ -206,8 +208,10 @@ export function agentVerbUsageError(
   return undefined;
 }
 
-/** Where the instance name came from, for miss errors. */
-function nameSourceFor(
+/** Where the instance name came from, for miss errors. Exported
+ *  for the write verbs — propose quotes the same source in its
+ *  resolution errors (issue #340). */
+export function nameSourceFor(
   resolution: CheckoutResolution,
   wikiFlag: string | undefined,
 ): string | undefined {

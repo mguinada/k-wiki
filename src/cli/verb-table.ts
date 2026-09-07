@@ -26,6 +26,7 @@ import { main as dashboard } from "../dashboard/generate.ts";
 import { main as checkRawCli } from "../health/check-raw.ts";
 import { main as wikiIngest } from "../ingest/wiki-ingest-cli.ts";
 import { main as wikiQuery } from "../query/wiki-query.ts";
+import { runProposeVerb as propose } from "../sandbox/propose.ts";
 import { main as scheduledRun } from "../schedule/scheduled-run.ts";
 import { main as setupMetaSync } from "../schedule/setup-meta-sync.ts";
 import { main as setupSchedule } from "../schedule/setup-schedule.ts";
@@ -59,8 +60,9 @@ export interface VerbSpec {
   /** The gate a write-note verb is wired to (decision 11): the
    *  agent-door write path. Undefined for every other class. */
   readonly gate?: "sandbox";
-  /** The launcher-shimmed main (operator verbs); read verbs run
-   *  through runAgentVerbs and carry none. */
+  /** The dispatch main (operator and write-note verbs — the
+   *  write-note main is the gate's caller); read verbs run through
+   *  runAgentVerbs and carry none. */
   readonly main?: (args: readonly string[]) => Promise<void>;
 }
 
@@ -108,6 +110,18 @@ export const VERBS: readonly VerbSpec[] = [
     tier: "porcelain",
     wiki: true,
     lines: ["projection coherence + freshness check (read-only)"],
+  },
+  {
+    name: "propose",
+    klass: "write-note",
+    tier: "porcelain",
+    wiki: true,
+    gate: "sandbox",
+    lines: [
+      "file one candidate note under wiki/sandbox/ — the gated",
+      "agent write; a human promotes it later",
+    ],
+    main: propose,
   },
   {
     name: "wiki-sync",
@@ -387,10 +401,12 @@ export const HELP = [
   "",
   "Verb-specific flags come after the verb only — a verb flag",
   "before the verb is a usage error; no flag changes meaning by",
-  "position. Read-verb switches (after the verb):",
-  "  --checkout <path>    k-wiki checkout for this run (read verbs).",
+  "position. Read-verb and propose switches (after the verb):",
+  "  --checkout <path>    k-wiki checkout for this run (read and",
+  "                       propose verbs).",
   "  --timeout <secs>     Kill the agent run after this many seconds",
-  "                       and fail it (query only). Default: 1800.",
+  "                       and fail it (query and propose). Default:",
+  "                       1800.",
   "  --fail-on-stale      Make a stale projection fail health (exit 1).",
   "",
   "Binding file .k-wiki.json (at the bound project's root):",

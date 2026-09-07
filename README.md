@@ -573,7 +573,8 @@ only. `bin/k-wiki` with no arguments prints the same tiered table.
 Which verbs answer depends on the door: inside the checkout (the
 cwd is the checkout) every verb is available — the human door; from
 a bound project (`.k-wiki.json`, `--checkout`, or `K_WIKI_CHECKOUT`)
-only the read verbs — the agent door, which refuses operator verbs
+only the read verbs plus `propose` (the gated agent write) — the
+agent door, which refuses operator verbs
 with both escapes named and prints its resolved door and instance
 as dim stderr lines before every run. The plumbing verbs' standalone
 launchers live under `bin/libexec/` — git's libexec model: every
@@ -591,6 +592,7 @@ every edit. Queries complete the daily loop:
 | `bin/k-wiki wiki-sync [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<sync.json>] [<raw-dir>]` | cycle orchestrator | Run the whole cycle — sync (sync-vault for vault sources, sync-repo for repo-sourced configs, [§9](#9-the-meta-wiki-a-repository-as-source)) → ingest → lint → crosslink audit (configured second brains) → citation wall (sandbox one-way audit) → verification (check-fidelity + check-provenance) → one data-repo commit → mirror publish (configured `publish` section) — and print the digest (reads `settings.yml`, including its optional `secondBrain.domains` list; [details below](#running-the-full-cycle-wiki-sync)) |
 | `bin/k-wiki wiki-query [-h \| --help] [--file-last] [--wiki, -w <name>] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>` | query wrapper | Ask the built wiki one question headless: print the answer, save it for review (stage 1, default); `--file-last` files the reviewed answer deterministically (stage 2); `--wiki <name>` selects the instance — aliases then `sync-<name>.json` stems, both stages, derived paths from the resolved config (stage 1 reads the instance's settings; [details below](#running-queries-wiki-query)) |
 | `bin/k-wiki <read verb>` — `query "<question>"`, `status`, `list [<type>]`, `read <slug>`, `health` | read verbs (both doors) | Ask the wiki bound to the current project from any cwd — zero flags once `.k-wiki.json` binds it; `status` (binding + paths), `list` (pages by type), `read` (one page verbatim), `health` (projection check); `-w <name>` selects the instance (aliases then `sync-<name>.json` stems) and overrides the binding's `wiki` key — `k-wiki query -w meta` and `k-wiki -w meta query` are the same command; answer-only, no filing passthrough ([details below](#querying-from-any-project-k-wiki)) |
+| `bin/k-wiki propose [-h \| --help] [-w, --wiki <name>] [--checkout <path>] [--timeout <secs>] [--title <text>] [--type <type>] <slug> [<file>]` | agent write verb (both doors) | File one candidate note for the wiki: the body from `<file>` (or stdin), wrapped in the deterministic template, landed under `wiki/sandbox/` of the resolved instance as one gated run — accept-gate (only sandbox deltas survive; anything else reverts the run and fails it), `via: agent` + `expires:` stamps, one atomic `sandbox: <slug>` commit with a `wiki/log.md` audit entry; `-w <name>` overrides the binding's `wiki` key; a human reviews and promotes the note (filing reviewed pages stays `--file-last`) |
 
 ### Occasional operator
 
@@ -1461,6 +1463,7 @@ k-wiki status                                               # which wiki am I bo
 k-wiki list [concept|entity|source|query|comparison]       # pages by type
 k-wiki read retrieval-augmented-generation                 # one page verbatim
 k-wiki health                                               # projection coherence/freshness
+k-wiki propose my-candidate note.md                        # hand one candidate note to the human (sandboxed)
 ```
 
 `k-wiki` is the universal front door — the same one executable that
@@ -1469,11 +1472,17 @@ the door, decided by checkout resolution:
 
 - **Agent door** — the resolution chain resolves a binding (the
   `--checkout` flag, `K_WIKI_CHECKOUT`, or a `.k-wiki.json` found
-  walking up): the five read verbs above, and nothing else. Every
+  walking up): the five read verbs above plus `propose`, the one
+  agent write verb. Every
   operator verb is refused with both escapes named (`cd` into the
   checkout, or the standalone launcher). The query is answer-only
-  by construction, so exposing it to agents is safe: this door can
-  never write to `wiki/`, whatever flags an agent passes or omits.
+  by construction, so exposing it to agents is safe; the write
+  path is redirected, not exposed raw: a `propose` write is a
+  sandbox write — it can only land under `wiki/sandbox/` of the
+  bound instance, gated, stamped, and committed atomically, and a
+  run touching anything else reverts itself and fails. This door
+  can never write the reviewed wiki, whatever flags an agent
+  passes or omits.
 - **Human door** — the chain falls back to the cwd being the
   checkout (run from inside it): the full verb table, and a
   flag-less run resolves the checkout's root `sync.json` — the
@@ -1525,7 +1534,16 @@ mandate.
 
 There is no filing passthrough: `--file-last` stays the human-run
 `wiki-query` verb inside the checkout (`wiki-query --wiki <name>
---file-last` when the binding named an instance). The four read-only
+--file-last` when the binding named an instance). The one agent
+write path is `k-wiki propose <slug> [<file>]` — redirected filing:
+the note body (file or stdin) lands under `wiki/sandbox/` as one
+gated run (`via: agent` and `expires:` stamps, one atomic
+`sandbox: <slug>` commit, a `wiki/log.md` audit entry; any
+main-tree delta reverts the run and fails it), where a human
+reviews and promotes it. The sandbox is honest about what it is:
+structural friction + deterministic detection + undo + audit —
+never a security boundary against a shell-capable agent on the
+same machine. The read-only
 verbs open no write path: `status` prints the resolution chain
 (checkout, origin, instance, sync config, settings, data repo,
 outputs dir, wiki dir, `index.md`) plus a `last change:` line —
