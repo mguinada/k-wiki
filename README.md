@@ -80,7 +80,8 @@ Obsidian vault            sync-vault                wiki-ingest               re
 ([details](#running-the-full-cycle-wiki-sync)) — the base path's
 sync step; the separate verbs stay available for debugging, and
 `wiki-ingest` already runs the post-run guardrails — checks and
-auto-revert — after every agent run. Every verb is also its
+auto-revert — after every agent run. Every verb except the read
+verbs — k-wiki's own, front-door only — is also its
 standalone launcher (`bin/<verb>`, `bin/libexec/<verb>` for the
 maintenance tier): plumbing stays standalone by design, not for
 backward compatibility — it is the invocation path for e2e, npm
