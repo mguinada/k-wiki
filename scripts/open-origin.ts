@@ -88,9 +88,9 @@ a missing config or wiki directory is an error — never guessed;
 exit 1 with the cause. NO_COLOR disables color.`;
 
 /** open-origin entry point: `open-origin [-h | --help] [--print] [--config <path>] [--vault <name>] <hub>`. */
-export async function main(): Promise<void> {
-  const args = process.argv.slice(2);
-
+export async function main(
+  args: readonly string[] = process.argv.slice(2),
+): Promise<void> {
   if (args.includes("-h") || args.includes("--help")) {
     console.log(HELP);
 

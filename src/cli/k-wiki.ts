@@ -1,341 +1,246 @@
 /**
- * k-wiki: the agent-facing query entry point (guide §16, issue #76).
- * `k-wiki query "<question>"` asks the wiki bound to the current
- * project from any cwd — zero flags when a `.k-wiki.json` binding
- * exists — and delegates to the answer-only `runWikiQuery`. There is
- * no filing passthrough: filing stays the human-run
- * `wiki-query --file-last` inside the checkout (issue #72's two-stage
- * design). One command, the shared CLI shell, no framework (§27).
- * The binding-file schema and checkout resolution live in
- * k-wiki-binding.ts; the browsing domain logic in src/wiki/browse.ts.
+ * k-wiki: the universal front door (issue #337, the #289 dispatcher).
+ * One executable serves two doors over one library — the verb table
+ * (verb-table.ts) dispatches by import to the same main()s the
+ * `bin/` and `bin/libexec/` launchers shim, never a spawned process.
+ * The door is the resolution context, not the entry name (decision
+ * 1): a checkout resolved by the `--checkout` flag, the
+ * `K_WIKI_CHECKOUT` env var, or a `.k-wiki.json` binding is the
+ * agent door (read verbs only; operator verbs refused loudly with
+ * both escapes named); the cwd itself is the human door (full
+ * table, structural default instance). Flag position is verb-first
+ * canonical: leading global flags (`-w`/`--wiki`, `-h`/`--help`)
+ * only may lead the verb and are reordered after it — a
+ * reordering, not a second parser (git's `-C <path> log` model); a
+ * verb-specific flag before the verb is a usage error. Every run
+ * prints its resolved door and instance as dim stderr lines
+ * (decision 16) so wrong-door and wrong-corpus calls stay visible
+ * in the transcript. The read verbs live in agent-verbs.ts; the
+ * binding-file schema and checkout resolution in
+ * k-wiki-binding.ts.
  */
 
 import { homedir } from "node:os";
-import { join } from "node:path";
-import { errorMessage } from "../cli/colors.ts";
-import { checkRaw, printHealthReport } from "../health/check-raw.ts";
-import { runQueryCli } from "../query/query-shell.ts";
-import { resolveWikiInstance, type WikiInstance } from "../sync/instance.ts";
-import {
-  filteredLines,
-  groupedLines,
-  groupPages,
-  isPageType,
-  listablePages,
-  lookupPage,
-  PAGE_TYPES,
-} from "../wiki/browse.ts";
-import { cliFail } from "./colors.ts";
+import { ORIGIN_LABELS, runAgentVerbs } from "./agent-verbs.ts";
+import { errorMessage, terminalColors } from "./colors.ts";
 import { refuseDirectExecution } from "./is-main.ts";
 import {
-  CHECKOUT_ENV,
+  type CheckoutOrigin,
   type CheckoutResolution,
   resolveCheckout,
 } from "./k-wiki-binding.ts";
-import { lastChangeLine, lastCommitDate } from "./last-change.ts";
-import { type RunContext, runContext } from "./run-context.ts";
-import { agentRunFlags, parseArgs } from "./shell.ts";
+import { HELP, PORCELAIN_VERBS, VERBS, type VerbSpec } from "./verb-table.ts";
 
-/** Human phrase for each checkout resolution origin. */
-const ORIGIN_LABELS = {
-  flag: "the --checkout flag",
-  env: `the ${CHECKOUT_ENV} environment variable`,
-  file: ".k-wiki.json",
-  cwd: "the cwd itself",
-} as const;
+/** The leading global flag tokens (the reordering set). */
+const HELP_FLAGS = new Set(["-h", "--help"]);
+const WIKI_FLAGS = new Set(["-w", "--wiki"]);
+const CHECKOUT_TOKENS = new Set(["--checkout"]);
 
-/** The k-wiki command vocabulary (drift-guarded against the
- *  k-wiki skill by tests/cli/k-wiki-skill.test.ts). */
-export const COMMANDS = ["query", "status", "list", "read", "health"] as const;
-
-/** COMMANDS widened to strings for membership checks on runtime
- *  input (cast the receiver, never the argument). */
-const COMMAND_NAMES = COMMANDS as readonly string[];
-
-/** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
-const HELP = `Usage: k-wiki [-h | --help] | k-wiki <command> [<args>]
-       k-wiki query [--checkout <path>] [--timeout <secs>] <question>
-       k-wiki status
-       k-wiki list [<type>]
-       k-wiki read <slug>
-       k-wiki health [--fail-on-stale]
-
-The agent-facing entry point: one LLM command
-(query) and four read-only deterministic ones (status, list, read,
-health), usable from any cwd with zero flags once the project is
-bound. One command set — the shared CLI shell, no CLI framework. None of
-them can write to the wiki.
-
-Binding file .k-wiki.json (at the bound project's root):
-  { "checkout": "~/k-wiki", "wiki": "meta", "settings": "settings-meta.yml" }
-  checkout — a k-wiki checkout whose sync.json resolves the data
-    repo; its prompts/, outputs/, and settings live there too.
-  wiki — optional instance name inside the checkout: resolved
-    through the checkout's registry — an alias in sync.json's
-    instances map first, then a free stem sync-<name>.json in the
-    checkout root — and every derived path follows the resolved
-    config: its dataRoot is the data repo queried, and the saved
-    answer goes to outputs-<stem>/ (outputs/ and settings.yml for
-    the default instance, whose stem is sync.json). An unknown
-    name fails listing every known name. Default: absent — the
-    default instance. Exactly one wiki per binding: the file must
-    be a single JSON object; lists and multi-wiki forms are
-    rejected — one project binds exactly one wiki, so no ambient
-    path exists between work and personal knowledge.
-  settings — optional non-default settings file inside the checkout
-    (e.g. settings-meta.yml); overrides the instance's derived
-    settings file (settings-<stem>.yml, falling back to settings.yml).
-  Gitignore the file in personal projects; commit it in team
-    projects.
-
-Checkout resolution order (first hit wins, every command):
-  1. --checkout <path>   this run's checkout (a ~ path is expanded)
-  2. K_WIKI_CHECKOUT     environment variable naming a checkout
-  3. .k-wiki.json        nearest binding found walking up from the
-                         cwd, stopping at the home directory or the
-                         filesystem root
-  4. the cwd itself      today's behavior preserved: run from inside
-                         the k-wiki checkout
-
-Commands:
-  query <question>   Ask the bound wiki one question (the only LLM
-                     command). Prints the answer, saves the run to
-                     <checkout>/outputs/last-query.md; answer-only
-                     by construction: any change under wiki/
-                     during the run reverts the data repo and fails.
-                     Filing is not exposed here.
-  status             Print the resolved binding: checkout, origin,
-                     instance name, sync config, settings file, data
-                     repo, outputs dir, wiki dir, index.md, and the
-                     data repo's last change time (never for a fresh,
-                     never-committed data repo).
-                     No agent, no side effects.
-  list [<type>]      Print one 'slug — title' line per wiki page,
-                     grouped by type in index.md order; the navigation
-                     pages (index, log, overview) are not listed —
-                     read them by name. Optional filter, one of
-                     concept|entity|source|query|comparison.
-  read <slug>        Print one page verbatim, resolved by file name
-                     across the wiki tree (concepts/, sources/, …).
-                     Absent slugs fail with near matches; file names
-                     must stay unique (ambiguous names fail).
-  health             Check the bound projection's coherence and
-                     freshness (delegates to check-raw, read-only).
-                     --fail-on-stale makes a stale projection exit 1.
-
-Switches:
-  --checkout <path>   k-wiki checkout for this run (all commands).
-  --timeout <secs>    Kill the agent run after this many seconds and
-                      fail it (query only). Default: 1800 (30 min).
-  --fail-on-stale     Make a stale projection fail health (exit 1).
-  -h, --help          Print this help and exit; no side effects.
-
-What it writes: query writes <checkout>/outputs/last-query.md and
-prints the answer; status, list, read, and health write nothing.
-Errors print red, prefixed "k-wiki:", and exit 1. Progress goes to
-stderr (an animated status line on a terminal, one plain heartbeat
-line per 60 seconds otherwise); NO_COLOR is honored. Human alias,
-optional:
-alias k-wiki='node ~/k-wiki/bin/k-wiki'
-
-If you are an AI agent, follow these instructions:
-  - Run: k-wiki query "<question>" — zero flags inside a bound
-    project.
-  - The answer is stdout, nothing else. Progress goes to stderr;
-    ignore it.
-  - Exit 0 always carries an answer. If the wiki cannot answer, the
-    answer says so and suggests sources — report that, do not retry.
-  - Exit 1 means the run failed and nothing was saved; the error on
-    stderr names the cause. Retry only if the cause is transient.
-  - You cannot file the answer anywhere; filing is a human step
-    (wiki-query --file-last, run by the human inside the checkout).
-    Do not attempt wiki writes.
-  - k-wiki status shows which wiki you are bound to and how fresh
-    it is (last change); run it before querying an unfamiliar project.
-  - k-wiki list [type] and k-wiki read <slug> browse the wiki
-    deterministically (no tokens): list prints one 'slug — title'
-    line per page grouped by type; read prints one page verbatim.
-  - k-wiki health checks the projection's coherence and freshness;
-    check it before trusting answers from a repo-sourced projection.`;
-
-/** Print one CLI usage error red on stderr and set the exit code. */
+/** Print one usage error red on stderr and set the exit code. */
 function fail(message: string): void {
-  cliFail("k-wiki", message);
+  console.error(terminalColors().red(`k-wiki: ${message}`));
+
+  process.exitCode = 1;
 }
 
-/** Print the resolved binding: origin, checkout, instance, paths
- *  (issues #76, #306), plus the last change fact (issue #310).
- *  Labels pad to 13 chars (issue #321): `last change:` is 12 itself. */
-async function runStatus(
-  resolution: CheckoutResolution,
-  run: RunContext,
-  instance: WikiInstance,
-): Promise<void> {
-  const lastCommit = await lastCommitDate(run);
+/** Split the leading global flags (-h/--help, -w/--wiki with its
+ *  value, --wiki=<name>) off the head of argv — the reordering set
+ *  for the verb-first canonical form. The lead array's length is
+ *  the token count consumed. */
+function splitLeadingGlobals(argv: readonly string[]): {
+  readonly lead: string[];
+  readonly helpAsked: boolean;
+} {
+  const lead: string[] = [];
+  let helpAsked = false;
+  let index = 0;
 
-  console.log(
-    [
-      `checkout:    ${resolution.checkout} (from ${ORIGIN_LABELS[resolution.origin]})`,
-      `instance:    ${instance.name ?? "default"}`,
-      `sync:        ${instance.configPath}`,
-      `settings:    ${bindingSettings(resolution, instance)}`,
-      `data repo:   ${run.dataRoot}`,
-      `outputs:     ${instance.outputsDir}`,
-      `wiki:        ${run.wikiDir}`,
-      `index:       ${join(run.wikiDir, "index.md")}`,
-      lastChangeLine(lastCommit, run.now()),
-    ].join("\n"),
-  );
+  while (index < argv.length) {
+    const token = argv[index] ?? "";
+
+    if (HELP_FLAGS.has(token)) {
+      lead.push(token);
+      helpAsked = true;
+      index += 1;
+    } else if (WIKI_FLAGS.has(token)) {
+      lead.push(token);
+
+      const value = argv[index + 1];
+
+      if (value !== undefined) {
+        lead.push(value);
+      }
+
+      index += 2;
+    } else if (token.startsWith("--wiki=")) {
+      lead.push(token);
+      index += 1;
+    } else {
+      break;
+    }
+  }
+
+  return { lead, helpAsked };
 }
 
-/** The effective settings file: the binding's explicit settings key
- *  overrides the instance's derived one — one rule (issue #306). */
-function bindingSettings(
+/** The first value of one flag among a verb's args: the two-token
+ *  form (`--checkout <path>`, `-w <name>`) or the inline long form
+ *  (`--flag=value`). Scans left to right, stops at a bare `--`,
+ *  matches whole tokens only — a positional containing the flag
+ *  text never matches. Undefined when absent. */
+function flagValueFrom(
+  args: readonly string[],
+  tokens: ReadonlySet<string>,
+  inlinePrefix: string,
+): string | undefined {
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index] ?? "";
+
+    if (arg === "--") {
+      return undefined;
+    }
+
+    if (tokens.has(arg)) {
+      return args[index + 1];
+    }
+
+    if (arg.startsWith(inlinePrefix)) {
+      return arg.slice(inlinePrefix.length);
+    }
+  }
+
+  return undefined;
+}
+
+/** The door an invocation runs on: the resolution chain resolving a
+ *  binding (flag, env, file) is the agent door; the cwd fallback is
+ *  the human door (decision 1). */
+export function doorFor(origin: CheckoutOrigin): "human" | "agent" {
+  return origin === "cwd" ? "human" : "agent";
+}
+
+/** The wiki instance name the dispatcher resolved for the dim line
+ *  (decision 16): the explicit -w/--wiki flag — leading or, for a
+ *  verb that takes it, in verb position — beats the binding's wiki
+ *  key; absent both, the structural default. */
+function resolvedInstanceName(
+  verb: VerbSpec,
+  leadWiki: string | undefined,
+  verbArgs: readonly string[],
   resolution: CheckoutResolution,
-  instance: WikiInstance,
 ): string {
-  return resolution.settings === undefined
-    ? instance.settingsPath
-    : join(resolution.checkout, resolution.settings);
+  const fromVerb = verb.wiki
+    ? flagValueFrom(verbArgs, WIKI_FLAGS, "--wiki=")
+    : undefined;
+
+  return leadWiki ?? fromVerb ?? resolution.wiki ?? "default";
 }
 
-/** The structured wiki listing, grouped (or filtered) by type. */
-async function runList(
-  wikiDir: string,
-  typeFilter: string | undefined,
-): Promise<void> {
-  if (typeFilter !== undefined && !isPageType(typeFilter)) {
-    fail(
-      `unknown type ${JSON.stringify(typeFilter)}; valid types: ${PAGE_TYPES.join("|")}`,
-    );
+/** Print the resolved door and instance as dim stderr lines — the
+ *  transcript's wrong-door and wrong-corpus evidence. */
+function printDoorLines(
+  verb: VerbSpec,
+  resolution: CheckoutResolution,
+  leadWiki: string | undefined,
+  verbArgs: readonly string[],
+): void {
+  const dim = terminalColors().dim;
 
-    return;
-  }
-
-  const pages = await listablePages(wikiDir);
-
-  if (typeFilter !== undefined) {
-    console.log(filteredLines(pages, typeFilter).join("\n"));
-
-    return;
-  }
-
-  console.log(groupedLines(groupPages(pages)).join("\n"));
-}
-
-/** Print one wiki page verbatim, resolved by file name. */
-async function runRead(wikiDir: string, slug: string): Promise<void> {
-  const lookup = await lookupPage(wikiDir, slug);
-
-  if (lookup.kind === "page") {
-    process.stdout.write(lookup.content);
-
-    return;
-  }
-
-  if (lookup.kind === "ambiguous") {
-    fail(
-      `ambiguous page name ${JSON.stringify(slug)}: ${lookup.matches.join(", ")}`,
-    );
-
-    return;
-  }
-
-  fail(
-    lookup.nearMatches.length === 0
-      ? `no page named ${JSON.stringify(slug)}`
-      : `no page named ${JSON.stringify(slug)}; near matches: ${lookup.nearMatches.join(", ")}`,
+  console.error(
+    dim(
+      `door: ${doorFor(resolution.origin)} (from ${ORIGIN_LABELS[resolution.origin]})`,
+    ),
+  );
+  console.error(
+    dim(
+      `instance: ${resolvedInstanceName(verb, leadWiki, verbArgs, resolution)}`,
+    ),
   );
 }
 
-/** Check the bound projection (delegates to check-raw, read-only). */
-async function runHealth(rawDir: string, failOnStale: boolean): Promise<void> {
-  printHealthReport(await checkRaw(rawDir), "k-wiki", failOnStale);
+/** The loud absence (decision 15): an operator verb on the agent
+ *  door is not forwarded — the error names the door and both
+ *  escapes (cd into the checkout; the standalone launcher). */
+function operatorRefusal(verb: VerbSpec, checkout: string): string {
+  const launcher =
+    verb.tier === "libexec" ? `bin/libexec/${verb.name}` : `bin/${verb.name}`;
+
+  return `the verb ${verb.name} is an operator verb and is not available on the agent door (a binding resolved this run) — run it from inside the checkout (cd ${checkout}), or use the standalone launcher: ${launcher}`;
 }
 
-/** Usage error for k-wiki read's argument count, undefined when valid. */
-function readArityError(rest: readonly string[]): string | undefined {
-  if (rest.length === 0) {
-    return "a <slug> is required: k-wiki read <slug>";
-  }
-
-  if (rest.length > 1) {
-    return "k-wiki read takes exactly one <slug> argument";
-  }
-
-  return undefined;
+/** The verb spec for a name, undefined when unknown. */
+function verbSpec(name: string): VerbSpec | undefined {
+  return VERBS.find((verb) => verb.name === name);
 }
 
-/** Usage error for a command's argument count, undefined when valid. */
-function arityErrorFor(
-  command: string,
-  rest: readonly string[],
-): string | undefined {
-  if ((command === "status" || command === "health") && rest.length > 0) {
-    return `k-wiki ${command} takes no arguments (got ${JSON.stringify(rest[0])})`;
-  }
-
-  if (command === "list" && rest.length > 1) {
-    return "k-wiki list takes at most one <type> argument";
-  }
-
-  if (command === "read") {
-    return readArityError(rest);
-  }
-
-  return undefined;
+/** One resolved invocation: the verb, the argv it runs with (the
+ *  verb replaced by the reordered leading globals), the argv that
+ *  followed the verb, and the leading -w value. */
+interface Invocation {
+  readonly verb: VerbSpec;
+  readonly verbArgs: readonly string[];
+  readonly tail: readonly string[];
+  readonly leadWiki: string | undefined;
 }
 
-/** Usage error for k-wiki query's question, undefined when valid. */
-function queryUsageError(rest: readonly string[]): string | undefined {
-  const question = rest[0] ?? "";
+/** Resolve the front-door argv into the invocation to run; a help
+ *  or usage outcome prints and returns undefined. */
+function resolveInvocation(argv: readonly string[]): Invocation | undefined {
+  const { lead, helpAsked } = splitLeadingGlobals(argv);
+  const rest = argv.slice(lead.length);
+  const verbName = rest[0];
 
-  if (question.trim() === "") {
-    return 'a question is required: k-wiki query "<question>"';
+  if (helpAsked || verbName === undefined) {
+    console.log(HELP);
+
+    return undefined;
   }
 
-  if (rest.length > 1) {
-    return `expected exactly one <question> argument, got ${rest.length}`;
+  if (verbName.startsWith("-")) {
+    fail(
+      `unexpected ${JSON.stringify(verbName)} before the verb — verb flags come after the verb; only -w/--wiki and -h/--help may lead`,
+    );
+
+    return undefined;
   }
 
-  return undefined;
-}
+  const verb = verbSpec(verbName);
 
-/** Usage error for the command and its arguments, undefined when valid. */
-function commandUsageError(
-  command: string | undefined,
-  rest: readonly string[],
-): string | undefined {
-  if (command === undefined) {
-    return `a command is required: ${COMMANDS.map((c) => `k-wiki ${c}`).join(" | ")}`;
+  if (verb === undefined) {
+    fail(
+      `unknown verb ${JSON.stringify(verbName)}; the daily verbs are: ${PORCELAIN_VERBS.join(", ")} — k-wiki --help lists every tier`,
+    );
+
+    return undefined;
   }
 
-  if (!COMMAND_NAMES.includes(command)) {
-    return `unknown command ${JSON.stringify(command)}; the commands are: ${COMMANDS.join(", ")}`;
+  const tail = rest.slice(1);
+
+  if (
+    verb.klass === "read" &&
+    (tail.includes("-h") || tail.includes("--help"))
+  ) {
+    console.log(HELP);
+
+    return undefined;
   }
 
-  const arityError = arityErrorFor(command, rest);
-
-  if (arityError !== undefined) {
-    return arityError;
-  }
-
-  if (command === "query") {
-    return queryUsageError(rest);
-  }
-
-  return undefined;
+  return {
+    verb,
+    verbArgs: [...lead, ...tail],
+    tail,
+    leadWiki: flagValueFrom(lead, WIKI_FLAGS, "--wiki="),
+  };
 }
 
 /** Resolve the checkout; undefined (already failed) when it throws. */
 async function resolveCheckoutOrFail(input: {
   readonly flag: string | undefined;
-  readonly env: NodeJS.ProcessEnv;
   readonly cwd: string;
   readonly home: string;
 }): Promise<CheckoutResolution | undefined> {
   try {
-    return await resolveCheckout(input);
+    return await resolveCheckout({ ...input, env: process.env });
   } catch (error) {
     fail(errorMessage(error));
 
@@ -343,157 +248,68 @@ async function resolveCheckoutOrFail(input: {
   }
 }
 
-/** The bound instance's run context and resolution, from the
- *  checkout's sync.json through the shared instance resolver: the
- *  binding's wiki key (issue #306) selects the config — the default
- *  instance when absent — and every derived path follows it. */
-async function checkoutPaths(
-  resolution: CheckoutResolution,
-  home: string,
-): Promise<{ run: RunContext; instance: WikiInstance }> {
-  const instance = await resolveWikiInstance({
-    checkout: resolution.checkout,
-    name: resolution.wiki,
-    home,
-    nameSource: resolution.origin === "file" ? ".k-wiki.json" : undefined,
-  });
-
-  return { run: runContext({ rawDir: instance.rawDir }), instance };
-}
-
-/** Run status, list, read, or health; true when one of them ran. */
-async function runReadOnlyCommand(
-  command: string | undefined,
-  rest: readonly string[],
-  resolution: CheckoutResolution,
-  run: RunContext,
-  instance: WikiInstance,
-  failOnStale: boolean,
-): Promise<boolean> {
-  if (command === "status") {
-    await runStatus(resolution, run, instance);
-
-    return true;
-  }
-
-  if (command === "list") {
-    await runList(run.wikiDir, rest[0]);
-
-    return true;
-  }
-
-  if (command === "read") {
-    await runRead(run.wikiDir, rest[0] ?? "");
-
-    return true;
-  }
-
-  if (command === "health") {
-    await runHealth(run.rawDir, failOnStale);
-
-    return true;
-  }
-
-  return false;
-}
-
-/** Run the one LLM command: query — the shared query shell (sink,
- *  runWikiQuery mapping, answer + dim hint, failure rendering). The
- *  settings and outputs paths follow the resolved instance (issue
- *  #306); the binding's explicit settings key still wins. */
-async function runQueryCommand(
-  resolution: CheckoutResolution,
-  run: RunContext,
-  instance: WikiInstance,
-  timeoutMs: number | undefined,
-  question: string,
+/** Run the resolved invocation: classify the door, refuse operator
+ *  verbs on the agent door, print the dim door lines, and dispatch
+ *  — read verbs through the agent-verb runner, operator verbs
+ *  through their launcher-shimmed main with the remaining argv
+ *  verbatim. */
+async function runInvocation(
+  invocation: Invocation,
+  input: { readonly cwd: string; readonly home: string },
 ): Promise<void> {
-  const hint =
-    instance.name === undefined
-      ? "To file this answer (human step): wiki-query --file-last, run inside the checkout"
-      : `To file this answer (human step): wiki-query --wiki ${instance.name} --file-last, run inside the checkout`;
-
-  await runQueryCli({
-    prefix: "k-wiki",
-    settingsPath: bindingSettings(resolution, instance),
-    rawDir: run.rawDir,
-    promptsDir: join(resolution.checkout, "prompts"),
-    outputsDir: instance.outputsDir,
-    question,
-    timeoutMs,
-    hint,
-  });
-}
-
-/** k-wiki entry point: `k-wiki [-h | --help] | k-wiki <command> [<args>]` — query, status, list, read, health. */
-export async function main(cwd: string = process.cwd()): Promise<void> {
-  const args = process.argv.slice(2);
-
-  if (args.includes("-h") || args.includes("--help")) {
-    console.log(HELP);
-
-    return;
-  }
-
-  const cli = parseArgs(args, {
-    value: ["--checkout", "--timeout"],
-    boolean: ["--fail-on-stale"],
-  });
-
-  if (cli.error !== undefined) {
-    fail(cli.error);
-
-    return;
-  }
-
-  const rest = cli.positional.slice(1);
-  const runFlags = agentRunFlags(cli.values);
-  const usageError =
-    runFlags.error ?? commandUsageError(cli.positional[0], rest);
-
-  if (usageError !== undefined) {
-    fail(usageError);
-
-    return;
-  }
-
-  const home = homedir();
+  const { verb } = invocation;
+  const flag =
+    verb.klass === "read"
+      ? flagValueFrom(invocation.tail, CHECKOUT_TOKENS, "--checkout=")
+      : undefined;
   const resolution = await resolveCheckoutOrFail({
-    flag: cli.values.get("--checkout"),
-    env: process.env,
-    cwd,
-    home,
+    flag,
+    cwd: input.cwd,
+    home: input.home,
   });
 
   if (resolution === undefined) {
     return;
   }
 
-  try {
-    const { run, instance } = await checkoutPaths(resolution, home);
-    const handled = await runReadOnlyCommand(
-      cli.positional[0],
-      rest,
-      resolution,
-      run,
-      instance,
-      cli.flags.has("--fail-on-stale"),
-    );
+  if (doorFor(resolution.origin) === "agent" && verb.klass === "operator") {
+    fail(operatorRefusal(verb, resolution.checkout));
 
-    if (handled) {
-      return;
-    }
-
-    await runQueryCommand(
-      resolution,
-      run,
-      instance,
-      runFlags.timeoutMs,
-      rest[0] ?? "",
-    );
-  } catch (error) {
-    fail(errorMessage(error));
+    return;
   }
+
+  printDoorLines(verb, resolution, invocation.leadWiki, invocation.tail);
+
+  if (verb.klass === "read") {
+    await runAgentVerbs(verb.name, invocation.verbArgs, {
+      resolution,
+      home: input.home,
+    });
+
+    return;
+  }
+
+  await verb.main?.(invocation.verbArgs);
+}
+
+/** The dispatch loop: reorder leading globals, resolve the verb,
+ *  classify the door, print the dim door lines, and run it. */
+export async function dispatch(
+  argv: readonly string[],
+  input: { readonly cwd: string; readonly home: string },
+): Promise<void> {
+  const invocation = resolveInvocation(argv);
+
+  if (invocation === undefined) {
+    return;
+  }
+
+  await runInvocation(invocation, input);
+}
+
+/** k-wiki entry point: `k-wiki [-h | --help] | k-wiki <verb> [<args>]` — the universal front door over both doors' verb tables. */
+export async function main(cwd: string = process.cwd()): Promise<void> {
+  await dispatch(process.argv.slice(2), { cwd, home: homedir() });
 }
 
 /* v8 ignore next: covered only under direct `node src/cli/k-wiki.ts` runs */

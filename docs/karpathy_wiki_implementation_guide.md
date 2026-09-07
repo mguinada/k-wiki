@@ -940,6 +940,12 @@ file, and outputs dir together, with a `settings` key overriding the
 derived settings file; checkout resolution is the
 `--checkout` flag, then the `K_WIKI_CHECKOUT` env var, then the
 nearest binding file walking up from the cwd, then the cwd itself.
+Since the dispatcher (issue #337) `k-wiki` is the universal front
+door over both doors: the binding chain classifies the agent door
+(read verbs only; operator verbs refused loudly with both escapes
+named; every run prints its resolved door and instance as dim
+stderr lines), and the cwd fallback is the human door with the full
+verb table — the read verbs above behave identically on both.
 One binding binds exactly one wiki — lists and multi-wiki forms are
 rejected — and there is no filing passthrough: stage 2 stays
 human-run inside the checkout. Besides `k-wiki query
@@ -1800,7 +1806,7 @@ Ideas deliberately **not pursued now**. Each has a clear trigger for reconsidera
 | Marp | Slide decks generated from wiki pages | Presentations are needed from wiki material |
 | LLM Wiki v2 extensions | Supersession tracking, retention decay, typed relationships, consolidation tiers | The wiki exceeds ~200 pages |
 | CLI interaction layer (`oclif` / `@inquirer/prompts` / `Ink`) | Framework plumbing, one-shot prompts, or a full TUI for interactive use | Interactive ingest mode is built, or the `k-wiki` command set (issue #76: query, status, list, read, health) outgrows the shared CLI shell (`src/cli/shell.ts`); until then it covers all flags |
-| Operator dispatcher (`k-wiki sync \| ingest \| …`, or a second entry name) | A single entry point for every operator verb — one command vocabulary and tiered help over the same command library the launchers shim — and the prerequisite for any `npx`-style distribution | ① `k-wiki` gets a distribution story (`npx k-wiki …`), ② a second real operator adopts the pipeline, or ③ the command set outgrows the shared CLI shell (`src/cli/shell.ts`, the oclif trigger above); Section 16's read-only contract blocks squeezing operator verbs into `k-wiki` itself — a second name or a contract change belongs to that reconsideration; full design of record in issue #289 (dispatcher shape, `bin/libexec` descent, agent sandbox), which updates this row when it builds |
+| Operator dispatcher (`k-wiki sync \| ingest \| …`, or a second entry name) | **Built 2026-09-07 (issue #337, family 2 of the #289 epic)**: `k-wiki` is the universal front door — one verb table, flat grammar 1:1 with launcher basenames, dispatched by import (never spawn), tiers porcelain-first in bare help, two doors (resolution context: binding → agent door with the read whitelist and loud operator absence; cwd → human door with the full table), mandatory verb classes (read / write-note / operator) with drift guards, global `-w`/`-h` with verb-first-canonical reordering, and door/instance dim lines. The parked-again part is only the trigger tail: `npx`-style distribution stays future work | As built it needs nothing further; the row keeps a trigger only for a distribution story (`npx k-wiki …`) or a second real operator adopting the pipeline. Remaining #289 families: one-way citation wall, agent write verbs (`propose`), human-door `promote`. The oclif row above stays parked on its own trigger |
 
 Several options pair with agent skills from [kepano/obsidian-skills](https://github.com/kepano/obsidian-skills). Install a skill when its trigger fires, not before — a skill's cost is context and attention. `obsidian-markdown` and `obsidian-bases` are installed at implementation time (Section 23); `defuddle` and `json-canvas` are installed when their rows above are triggered.
 

@@ -137,7 +137,7 @@ async function runShell(
       promptsDir: h.promptsDir,
       outputsDir: h.outputsDir,
       question: "When should I prefer RAG?",
-      hint: extra.hint ?? "To file this answer: wiki-query --file-last",
+      hint: extra.hint ?? "To file this answer: k-wiki wiki-query --file-last",
     });
   } finally {
     logSpy.mockRestore();

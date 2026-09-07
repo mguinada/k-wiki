@@ -1838,7 +1838,7 @@ console.log("An answer.");
     const h = await makeCliHarness();
     const { err } = await runCli(queryArgs(h));
 
-    expect(err).toContain("To file this answer: wiki-query --file-last");
+    expect(err).toContain("To file this answer: k-wiki wiki-query --file-last");
   });
 
   it("runs the explicit --settings stub over the --wiki-derived settings", async () => {
@@ -2007,7 +2007,7 @@ describe("wiki-query CLI stderr surface", () => {
     expect(
       err
         .join("\n")
-        .endsWith("\n\nTo file this answer: wiki-query --file-last"),
+        .endsWith("\n\nTo file this answer: k-wiki wiki-query --file-last"),
     ).toBe(true);
   });
 });

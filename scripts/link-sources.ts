@@ -249,9 +249,9 @@ never touched, so a re-run writes nothing. Exit 0 after a run
 missing wiki directory, or a dirty tree. NO_COLOR disables color.`;
 
 /** link-sources entry point: `link-sources [-h | --help] [--write] [--date <YYYY-MM-DD>] [<wiki-dir>]`. */
-export async function main(): Promise<void> {
-  const args = process.argv.slice(2);
-
+export async function main(
+  args: readonly string[] = process.argv.slice(2),
+): Promise<void> {
   if (args.includes("-h") || args.includes("--help")) {
     console.log(HELP);
 

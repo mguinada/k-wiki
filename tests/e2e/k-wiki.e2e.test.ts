@@ -395,86 +395,83 @@ describe("k-wiki read-only commands e2e", () => {
  * so these runs also exercise the alias-beats-convention chain
  * through a real door.
  */
+interface MetaSetup {
+  readonly dataRoot: string;
+  readonly metaDataRoot: string;
+  readonly checkout: string;
+  readonly project: string;
+}
+
+async function makeMetaSetup(
+  instances?: Record<string, string>,
+): Promise<MetaSetup> {
+  const setup = await makeSetup();
+  const metaDataRoot = await mkdtemp(join(tmpdir(), "k-wiki-e2e-meta-"));
+
+  tempDirs.push(metaDataRoot);
+  await mkdir(join(metaDataRoot, "raw"), { recursive: true });
+  await mkdir(join(metaDataRoot, "wiki"), { recursive: true });
+  await writeFile(join(metaDataRoot, "wiki", "index.md"), "# Index\n");
+  await writeFile(join(metaDataRoot, "wiki", "log.md"), "# Log\n");
+  await writeFile(join(metaDataRoot, "stub-alt.mjs"), ALT_STUB_AGENT, {
+    mode: 0o755,
+  });
+
+  await run("git", ["init", "--quiet"], { cwd: metaDataRoot });
+  await run("git", ["add", "-A"], { cwd: metaDataRoot });
+  await run(
+    "git",
+    [
+      "-c",
+      "user.email=t@t",
+      "-c",
+      "user.name=t",
+      "commit",
+      "--quiet",
+      "-m",
+      "init",
+    ],
+    { cwd: metaDataRoot },
+  );
+
+  await writeFile(
+    join(setup.checkout, "sync-meta.json"),
+    JSON.stringify({ vaults: [], dataRoot: metaDataRoot }),
+  );
+
+  if (instances !== undefined) {
+    await writeFile(
+      join(setup.checkout, "sync.json"),
+      JSON.stringify({
+        vaults: [],
+        dataRoot: setup.dataRoot,
+        instances,
+      }),
+    );
+  }
+
+  return {
+    dataRoot: setup.dataRoot,
+    metaDataRoot,
+    checkout: setup.checkout,
+    project: setup.project,
+  };
+}
+
+async function bindWiki(
+  setup: MetaSetup,
+  wiki: string | undefined,
+): Promise<void> {
+  const binding: Record<string, string> = { checkout: setup.checkout };
+
+  if (wiki !== undefined) {
+    binding.wiki = wiki;
+  }
+
+  await writeFile(join(setup.project, ".k-wiki.json"), JSON.stringify(binding));
+}
+
 describe("k-wiki wiki key e2e", () => {
-  interface MetaSetup {
-    readonly dataRoot: string;
-    readonly metaDataRoot: string;
-    readonly checkout: string;
-    readonly project: string;
-  }
-
-  async function makeMetaSetup(
-    instances?: Record<string, string>,
-  ): Promise<MetaSetup> {
-    const setup = await makeSetup();
-    const metaDataRoot = await mkdtemp(join(tmpdir(), "k-wiki-e2e-meta-"));
-
-    tempDirs.push(metaDataRoot);
-    await mkdir(join(metaDataRoot, "raw"), { recursive: true });
-    await mkdir(join(metaDataRoot, "wiki"), { recursive: true });
-    await writeFile(join(metaDataRoot, "wiki", "index.md"), "# Index\n");
-    await writeFile(join(metaDataRoot, "wiki", "log.md"), "# Log\n");
-    await writeFile(join(metaDataRoot, "stub-alt.mjs"), ALT_STUB_AGENT, {
-      mode: 0o755,
-    });
-
-    await run("git", ["init", "--quiet"], { cwd: metaDataRoot });
-    await run("git", ["add", "-A"], { cwd: metaDataRoot });
-    await run(
-      "git",
-      [
-        "-c",
-        "user.email=t@t",
-        "-c",
-        "user.name=t",
-        "commit",
-        "--quiet",
-        "-m",
-        "init",
-      ],
-      { cwd: metaDataRoot },
-    );
-
-    await writeFile(
-      join(setup.checkout, "sync-meta.json"),
-      JSON.stringify({ vaults: [], dataRoot: metaDataRoot }),
-    );
-
-    if (instances !== undefined) {
-      await writeFile(
-        join(setup.checkout, "sync.json"),
-        JSON.stringify({
-          vaults: [],
-          dataRoot: setup.dataRoot,
-          instances,
-        }),
-      );
-    }
-
-    return {
-      dataRoot: setup.dataRoot,
-      metaDataRoot,
-      checkout: setup.checkout,
-      project: setup.project,
-    };
-  }
-
-  async function bindWiki(
-    setup: MetaSetup,
-    wiki: string | undefined,
-  ): Promise<void> {
-    const binding: Record<string, string> = { checkout: setup.checkout };
-
-    if (wiki !== undefined) {
-      binding.wiki = wiki;
-    }
-
-    await writeFile(
-      join(setup.project, ".k-wiki.json"),
-      JSON.stringify(binding),
-    );
-  }
-
   it("queries the named instance's settings and saves to its outputs dir", async () => {
     const setup = await makeMetaSetup();
 
@@ -565,5 +562,269 @@ describe("k-wiki wiki key e2e", () => {
     expect(result.code).toBe(1);
     expect(result.err).toContain('unknown wiki name "eng" (from .k-wiki.json)');
     expect(result.err).toContain("known names: meta");
+  });
+});
+
+/**
+ * The dispatcher (issue #337) end to end: bare-help tiers, the
+ * leading-global reordering (-w/-h before the verb, verb-first
+ * canonical), both doors' behavior — the human door inside the
+ * checkout dispatches operator verbs, the agent door from a bound
+ * project refuses them loudly — the door/instance dim lines, and
+ * both spellings of -w on every verb that takes it (query, status,
+ * list, read, health through the dispatcher's own resolution;
+ * wiki-query and wiki-ingest through the verbatim argv handoff to
+ * their mains).
+ */
+describe("k-wiki dispatcher e2e", () => {
+  it("prints the tiered verb table for a bare run, exit 0", async () => {
+    const result = await runCli(K_WIKI_SCRIPT, []);
+
+    expect(result.code).toBe(0);
+    expect(result.out.indexOf("Daily (porcelain):")).toBeLessThan(
+      result.out.indexOf("Occasional operator:"),
+    );
+    expect(result.out.indexOf("Occasional operator:")).toBeLessThan(
+      result.out.indexOf("Maintenance (plumbing"),
+    );
+  });
+
+  it("rejects a verb-specific flag before the verb", async () => {
+    const result = await runCli(K_WIKI_SCRIPT, ["--dry-run", "sync-vault"]);
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("before the verb");
+    expect(result.err).toContain("only -w/--wiki and -h/--help may lead");
+  });
+
+  it("accepts a leading -h and prints the front-door help", async () => {
+    const result = await runCli(K_WIKI_SCRIPT, ["-h", "wiki-sync"]);
+
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("Usage: k-wiki");
+    expect(result.out).toContain("Daily (porcelain):");
+  });
+
+  it("prints the human door line inside the checkout", async () => {
+    const setup = await makeSetup();
+    const result = await runCli(K_WIKI_SCRIPT, ["status"], {
+      cwd: setup.checkout,
+    });
+
+    expect(result.code).toBe(0);
+    expect(result.err).toContain("door: human (from the cwd itself)");
+    expect(result.err).toContain("instance: default");
+    expect(result.out).toContain("(from the cwd itself)");
+  });
+
+  it("prints the agent door line from a bound project", async () => {
+    const setup = await makeSetup();
+
+    await bind(setup);
+
+    const result = await runCli(K_WIKI_SCRIPT, ["status"], {
+      cwd: setup.project,
+    });
+
+    expect(result.code).toBe(0);
+    expect(result.err).toContain("door: agent (from .k-wiki.json)");
+  });
+
+  it("refuses an operator verb on the agent door, naming both escapes", async () => {
+    const setup = await makeSetup();
+
+    await bind(setup);
+
+    const result = await runCli(K_WIKI_SCRIPT, ["wiki-sync"], {
+      cwd: setup.project,
+    });
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("not available on the agent door");
+    expect(result.err).toContain(`cd ${setup.checkout}`);
+    expect(result.err).toContain("bin/wiki-sync");
+  });
+
+  it("refuses a plumbing verb on the agent door with the libexec path", async () => {
+    const setup = await makeSetup();
+
+    await bind(setup);
+
+    const result = await runCli(K_WIKI_SCRIPT, ["check-links"], {
+      cwd: setup.project,
+    });
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("bin/libexec/check-links");
+  });
+
+  it("dispatches a plumbing verb on the human door by import", async () => {
+    const setup = await makeSetup();
+    const result = await runCli(
+      K_WIKI_SCRIPT,
+      ["check-raw", join(setup.dataRoot, "raw")],
+      { cwd: setup.checkout },
+    );
+
+    expect(result.code).toBe(0);
+    expect(result.out.trim()).toBe(
+      "healthy: empty projection (no manifest entries, no projected notes)",
+    );
+  });
+
+  it("answers a verb's own --help through the dispatcher", async () => {
+    const result = await runCli(K_WIKI_SCRIPT, ["wiki-sync", "--help"]);
+
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("Usage: wiki-sync");
+  });
+
+  it("runs every read verb on both doors", async () => {
+    const setup = await makeSetup();
+
+    await bind(setup);
+
+    for (const cwd of [setup.checkout, setup.project]) {
+      const status = await runCli(K_WIKI_SCRIPT, ["status"], { cwd });
+      const list = await runCli(K_WIKI_SCRIPT, ["list"], { cwd });
+      const read = await runCli(K_WIKI_SCRIPT, ["read", "rag"], { cwd });
+      const health = await runCli(K_WIKI_SCRIPT, ["health"], { cwd });
+
+      expect(status.code).toBe(0);
+      expect(list.code).toBe(0);
+      expect(read.code).toBe(0);
+      expect(health.code).toBe(0);
+      expect(list.out).toContain("rag — Retrieval-Augmented Generation");
+      expect(read.out).toContain("RAG body.");
+    }
+  });
+
+  it("treats k-wiki -w meta <verb> as k-wiki <verb> -w meta for status", async () => {
+    const setup = await makeMetaSetup();
+
+    await bindWiki(setup, undefined);
+
+    const leading = await runCli(K_WIKI_SCRIPT, ["-w", "meta", "status"], {
+      cwd: setup.project,
+    });
+    const verbFirst = await runCli(K_WIKI_SCRIPT, ["status", "-w", "meta"], {
+      cwd: setup.project,
+    });
+
+    expect(leading.code).toBe(0);
+    expect(leading.out).toEqual(verbFirst.out);
+    expect(leading.out).toContain("instance:    meta");
+    expect(leading.err).toEqual(verbFirst.err);
+  });
+
+  it("spells -w meta identically before or after every read verb", async () => {
+    const setup = await makeMetaSetup();
+
+    await mkdir(join(setup.metaDataRoot, "wiki", "concepts"), {
+      recursive: true,
+    });
+    await writeFile(
+      join(setup.metaDataRoot, "wiki", "concepts", "rag.md"),
+      "---\ntype: concept\ntitle: Retrieval-Augmented Generation\n---\nRAG body.\n",
+    );
+    await writeFile(
+      join(setup.project, ".k-wiki.json"),
+      JSON.stringify({
+        checkout: setup.checkout,
+      }),
+    );
+
+    for (const verbArgs of [["list"], ["read", "rag"], ["health"]]) {
+      const leading = await runCli(K_WIKI_SCRIPT, ["-w", "meta", ...verbArgs], {
+        cwd: setup.project,
+      });
+      const verbFirst = await runCli(
+        K_WIKI_SCRIPT,
+        [...verbArgs, "-w", "meta"],
+        { cwd: setup.project },
+      );
+
+      expect(leading.code).toBe(0);
+      expect(leading.out).toEqual(verbFirst.out);
+      expect(leading.err).toContain("instance: meta");
+    }
+
+    const queryLead = await runCli(
+      K_WIKI_SCRIPT,
+      ["-w", "meta", "query", QUESTION],
+      { cwd: setup.project },
+    );
+    const queryVerbFirst = await runCli(
+      K_WIKI_SCRIPT,
+      ["query", "-w", "meta", QUESTION],
+      { cwd: setup.project },
+    );
+
+    expect(queryLead.code).toBe(0);
+    expect(queryLead.out).toEqual(queryVerbFirst.out);
+    expect(queryLead.out).toContain("ALT-AGENT answered.");
+  });
+
+  it("hands wiki-query its argv verbatim in both spellings", async () => {
+    const setup = await makeSetup();
+    const outputs = await mkdtemp(join(tmpdir(), "k-wiki-e2e-qo-"));
+
+    tempDirs.push(outputs);
+    const flags = [
+      "--settings",
+      join(setup.checkout, "settings-meta.yml"),
+      "--outputs",
+      outputs,
+      "--raw-dir",
+      join(setup.dataRoot, "raw"),
+    ];
+    const leading = await runCli(
+      K_WIKI_SCRIPT,
+      ["-w", "meta", "wiki-query", ...flags, QUESTION],
+      { cwd: setup.checkout },
+    );
+    const verbFirst = await runCli(
+      K_WIKI_SCRIPT,
+      ["wiki-query", "-w", "meta", ...flags, QUESTION],
+      { cwd: setup.checkout },
+    );
+
+    expect(leading.code).toBe(0);
+    expect(leading.out).toEqual(verbFirst.out);
+    expect(leading.out).toContain("ALT-AGENT answered.");
+  });
+
+  it("hands wiki-ingest its argv verbatim in both spellings", async () => {
+    const setup = await makeSetup();
+    const outputs = await mkdtemp(join(tmpdir(), "k-wiki-e2e-io-"));
+
+    await writeFile(
+      join(setup.dataRoot, "raw", "manifest.json"),
+      `${JSON.stringify({ vaults: {} }, null, 2)}\n`,
+    );
+
+    tempDirs.push(outputs);
+    const flags = [
+      "--settings",
+      join(setup.checkout, "settings-meta.yml"),
+      "--outputs",
+      outputs,
+      "--timeout",
+      "60",
+    ];
+    const leading = await runCli(
+      K_WIKI_SCRIPT,
+      ["-w", "meta", "wiki-ingest", ...flags, join(setup.dataRoot, "raw")],
+      { cwd: setup.checkout },
+    );
+    const verbFirst = await runCli(
+      K_WIKI_SCRIPT,
+      ["wiki-ingest", "-w", "meta", ...flags, join(setup.dataRoot, "raw")],
+      { cwd: setup.checkout },
+    );
+
+    expect(leading.code).toBe(0);
+    expect(leading.out).toEqual(verbFirst.out);
+    expect(`${leading.out}${leading.err}`).toContain("nothing to do");
   });
 });

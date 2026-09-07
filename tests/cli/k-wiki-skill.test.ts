@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { COMMANDS } from "../../src/cli/k-wiki.ts";
+import { AGENT_COMMANDS } from "../../src/cli/verb-table.ts";
 
 /**
  * The k-wiki skill (issue #77, renamed with the CLI it documents):
@@ -41,7 +41,9 @@ describe("k-wiki skill (issue #77)", () => {
     );
 
     const unknown = referenced.filter(
-      (word) => !COMMANDS.includes(word as never),
+      (word) =>
+        word !== undefined &&
+        !(AGENT_COMMANDS as readonly string[]).includes(word),
     );
 
     expect(unknown).toEqual([]);
