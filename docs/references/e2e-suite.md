@@ -22,9 +22,12 @@ e2e run or diagnosing a failing one.
 - **wiki-sync** — full-cycle, no-change, failure, guardrail-revert,
   reverted fidelity-failure, repo-source cycle (the meta flow),
   run-lock (loud holder refusal, release after a completed cycle,
-  independent instance while another holds its lock), and
+  independent instance while another holds its lock),
   publish-denylist (a sandbox page never reaches the mirror, issue
-  #338) runs.
+  #338), and citation-wall (a rogue main→sandbox edge fails the
+  standing lint, is path-scoped-reverted to its last committed
+  state, leaves the cycle's commit untouched, and the next cycle
+  passes, issue #339) runs.
 - **scheduled-run** — full-cycle, no-op re-run, lock-skip,
   push-rejection-retry, double-push-failure, and dirty-tree recovery
   runs in temp data repos with an upstream remote.

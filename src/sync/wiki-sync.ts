@@ -3,9 +3,10 @@
  * chains the proven pieces — sync (sync-vault for vault sources,
  * sync-repo for repo sources, issue #145) → wiki-ingest → headless
  * lint (§17, prompts/lint.md) → crosslink audit (issue #96,
- * configured second brains only) → verification (issue #138) →
- * data-repo commit — and prints one digest: the run's ingest digest,
- * the lint summary, the audit result, the fidelity and provenance
+ * configured second brains only) → citation wall (issue #339) →
+ * verification (issue #138) → data-repo commit — and prints one
+ * digest: the run's ingest digest, the lint summary, the audit
+ * result, the citation-wall result, the fidelity and provenance
  * results, and the commit hash. Nothing here is new capability;
  * every stage stays independently runnable (guide §8).
  *
@@ -27,11 +28,24 @@
  *
  * The verification stage (issue #138) runs the deterministic
  * check-fidelity (issue #125) and check-provenance (issue #65) cores
- * over the data repo's wiki/ and raw/ every cycle, after lint and the
- * crosslink audit. One problem line per finding fails the cycle
+ * over the data repo's wiki/ and raw/ every cycle, after lint, the
+ * crosslink audit, and the citation wall. One problem line per finding fails the cycle
  * before the commit: the lint edits are reverted (the ingest edits
  * stay, uncommitted, as the fix surface), mirroring the lint stage's
  * own failure semantics.
+ *
+ * The citation wall stage (issue #339) runs the one-way sandbox
+ * audit (src/sandbox/citations.ts) over the working tree every
+ * cycle, after the crosslink audit and before verification: main
+ * pages must never link, embed, or cite sandbox pages, sandbox
+ * pages must never carry `sources` edges or cross-wiki links, and
+ * the `via: agent` stamp lives only inside wiki/sandbox/. A
+ * violation fails the cycle after path-scoped-reverting every
+ * offending page to its last committed state (family 3's primitive
+ * shape — never a whole-repo reset), so a rogue edge never
+ * compounds into the cycle's commit. The wall judges direction and
+ * placement only; link resolution stays check-links' business, and
+ * the sandbox namespace still never lists anywhere else.
  *
  * The publish stage (guide §26, issue #15) copies the data repo's
  * include-matched files into the configured mirror vault — verbatim,
@@ -89,6 +103,10 @@ import {
   wikiPages,
 } from "../ingest/manifest-diff.ts";
 import { type IngestResult, runWikiIngest } from "../ingest/wiki-ingest.ts";
+import {
+  type CitationWallStageResult,
+  runCitationWallStage,
+} from "../sandbox/citations.ts";
 import { checkCrossWikiLinks } from "../wiki/crosslinks.ts";
 import {
   checkWikiFidelity,
@@ -360,8 +378,8 @@ export interface VerificationOptions {
 /**
  * The verification stage (issue #138): run the deterministic
  * check-fidelity (issue #125) and check-provenance (issue #65) cores
- * over the data repo's wiki/ and raw/ — every cycle, after lint and
- * the crosslink audit, whatever the ingest stage did. One problem
+ * over the data repo's wiki/ and raw/ — every cycle, after lint, the
+ * crosslink audit, and the citation wall, whatever the ingest stage did. One problem
  * line per finding throws (fidelity first, provenance second),
  * stopping the cycle before the commit; the caller owns the revert.
  */
@@ -520,6 +538,8 @@ export interface WikiSyncResult {
   readonly lint: LintResult | undefined;
   /** Undefined when the instance has no `secondBrain.domains` key. */
   readonly crosslinks: CrosslinksResult | undefined;
+  /** The one-way sandbox wall audit; it runs every cycle. */
+  readonly citations: CitationWallStageResult;
   /** The fidelity + provenance reports; the checks run every cycle. */
   readonly verification: VerificationResult;
   readonly commit: CommitResult;
@@ -651,7 +671,7 @@ export function stageNames(options: {
     names.push("crosslinks");
   }
 
-  names.push("verification", "commit");
+  names.push("citations", "verification", "commit");
 
   if (options.publish !== undefined) {
     names.push("publish");
@@ -893,6 +913,11 @@ async function runCycleStages(
 
   const lint = await runLintOrSkip(options, ingest, stages, preLint, settings);
   const crosslinks = await runCrosslinksOrSkip(run, domains, stages);
+
+  onProgress(stageLine(stages, "citations"));
+
+  const citations = await runCitationWallStage({ run });
+
   const verification = await runVerificationWithRevert(
     options,
     preLint,
@@ -913,6 +938,7 @@ async function runCycleStages(
     ingest,
     lint,
     crosslinks,
+    citations,
     verification,
     commit: await commitDataRepo(dataRoot, env, formatCommitMessage(summary)),
     publish: await runPublishOrSkip(run, config.publish, stages),
@@ -946,6 +972,19 @@ function crosslinksLine(crosslinks: CrosslinksResult): string {
   return `${pluralized(crosslinks.external, "cross-wiki link")} against ${pluralized(crosslinks.domainPages, "domain page")}`;
 }
 
+/** The digest's citation-wall sentence: what the wall scanned and
+ *  that it holds — the sandbox count names the namespace only when
+ *  one exists. */
+function citationsLine(citations: CitationWallStageResult): string {
+  const pages = pluralized(citations.pages, "page");
+  const sandbox =
+    citations.sandboxPages > 0
+      ? ` (${pluralized(citations.sandboxPages, "sandbox note")})`
+      : "";
+
+  return `the one-way wall holds over ${pages}${sandbox}`;
+}
+
 /** The one-line digest of a no-op cycle — nothing to commit after
  *  a skipped ingest, and publish (when configured) copied and removed
  *  nothing; undefined whenever the cycle did real work. */
@@ -974,7 +1013,8 @@ function nothingToDoLine(result: WikiSyncResult): string | undefined {
  * digest.
  */
 export function formatFinalDigest(result: WikiSyncResult): string {
-  const { commit, crosslinks, ingest, lint, sync, verification } = result;
+  const { citations, commit, crosslinks, ingest, lint, sync, verification } =
+    result;
   const nothing = nothingToDoLine(result);
 
   if (nothing !== undefined) {
@@ -1004,6 +1044,8 @@ export function formatFinalDigest(result: WikiSyncResult): string {
   if (crosslinks !== undefined) {
     lines.push(`- **Crosslinks:** ok — ${crosslinksLine(crosslinks)}`);
   }
+
+  lines.push(`- **Citations:** ok — ${citationsLine(citations)}`);
 
   lines.push(
     `- **Fidelity:** ok — ${summarizeFidelity(verification.fidelity)}`,
@@ -1041,11 +1083,12 @@ const HELP = `Usage: wiki-sync [-h | --help] [--settings <path>] [--outputs <dir
 Run the whole cycle in one command:
 sync (sync-vault for vault sources, sync-repo for repo sources) →
 wiki-ingest → headless lint (prompts/lint.md) →
-crosslink audit (configured second brains) → verification
-(check-fidelity + check-provenance) → one data-repo
-commit → mirror publish (configs with a publish
-section). Every stage stays independently runnable for debugging;
-this command only chains them.
+crosslink audit (configured second brains) → citation wall
+(one-way sandbox check — rogue edges are path-scoped-reverted,
+never committed) → verification (check-fidelity +
+check-provenance) → one data-repo commit → mirror publish
+(configs with a publish section). Every stage stays independently
+runnable for debugging; this command only chains them.
 
   --settings <path>  Agent settings file (command, model, provider,
                      reasoning) for both agent stages — ingest and

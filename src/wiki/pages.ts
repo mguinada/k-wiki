@@ -13,7 +13,7 @@
 
 import { readFile } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
-import { assertDirectory, listFiles } from "../cli/shared.ts";
+import { assertDirectory, listFiles, statIfExists } from "../cli/shared.ts";
 import { SANDBOX_ROOT } from "../sandbox/stamps.ts";
 import { wikilinkBody, wikilinkBodyTarget } from "./wiki-links.ts";
 
@@ -244,6 +244,28 @@ export async function listWikiPages(dir: string): Promise<string[]> {
     .filter(
       (file) => file.endsWith(".md") && !CONTRACT_FILES.has(basename(file)),
     )
+    .sort();
+}
+
+/**
+ * List the sandbox namespace's own pages (issue #339): wiki-relative
+ * `sandbox/…` markdown paths, sorted; an empty list when the
+ * namespace is absent. The citation-wall surfaces (check-citations,
+ * check-links' sandbox scope, check-crosslinks' sandbox rule) are
+ * the callers — every listing walker keeps excluding the root
+ * (issue #338), so the wall reads the namespace through this door
+ * instead.
+ */
+export async function listSandboxPages(dir: string): Promise<string[]> {
+  const sandboxDir = join(resolve(dir), SANDBOX_ROOT);
+
+  if ((await statIfExists(sandboxDir)) === undefined) {
+    return [];
+  }
+
+  return (await listFiles(sandboxDir, "", { extension: ".md" }))
+    .map((file) => `${SANDBOX_ROOT}/${file}`)
+    .filter((file) => !CONTRACT_FILES.has(basename(file)))
     .sort();
 }
 

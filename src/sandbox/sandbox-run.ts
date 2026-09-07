@@ -26,7 +26,14 @@ import { dirname, join, resolve } from "node:path";
 import { errorMessage } from "../cli/colors.ts";
 import type { RunContext } from "../cli/run-context.ts";
 import { statIfExists } from "../cli/shared.ts";
-import { changedPaths, runGit, type StatusEntry, tryGit } from "../data/git.ts";
+import {
+  changedPaths,
+  headCommit,
+  porcelainStatus,
+  runGit,
+  type StatusEntry,
+  tryGit,
+} from "../data/git.ts";
 import { type AgentRunner, spawnAgent } from "../ingest/agent-run.ts";
 import {
   type AgentSettings,
@@ -217,19 +224,16 @@ async function agentStep(plan: SandboxPlan): Promise<AgentOutcome> {
 /** Restore one path to its pre-run state: any index entry the run
  *  staged for the path is dropped first (a staged addition must not
  *  survive as a phantom entry), then a pre-run dirty path (captured
- *  bytes — null means absent) gets its bytes back, a tracked-clean
- *  path is checked out from the pre-run commit (which resurrects a
- *  run's deletion), and anything else was untracked before the run,
- *  so the run created it and it goes away. */
+ *  bytes — null means absent) gets its bytes back, and anything
+ *  else is restored to its state at the pre-run commit. */
 async function revertOnePath(
-  dataRoot: string,
-  env: NodeJS.ProcessEnv,
+  run: RunContext,
   pre: PreRunState,
   path: string,
 ): Promise<void> {
-  const target = join(dataRoot, path);
+  const target = join(run.dataRoot, path);
 
-  await runGit(dataRoot, ["reset", "--quiet", "--", path], env);
+  await unstagePath(run, path);
 
   if (pre.contents.has(path)) {
     const content = pre.contents.get(path) ?? null;
@@ -246,19 +250,89 @@ async function revertOnePath(
     return;
   }
 
+  await checkoutFrom(run, pre.commit, path);
+}
+
+/**
+ * The citation wall's rogue-edge revert (issue #339): restore the
+ * offending paths to their LAST COMMITTED state — path-scoped,
+ * never a whole-repo reset. Unlike revertPathsToPreRun, the target
+ * is HEAD, not a captured pre-run state: a rogue edge that
+ * predates the cycle is present in the pre-run bytes too, so only
+ * the last committed state is guaranteed clean of it. A mid-window
+ * commit is safe: HEAD at call time is simply the newest committed
+ * state. Untracked offenders never existed in history and are
+ * removed outright. An offender that is a rename's target also
+ * restores its rename origin from HEAD — git pairs a rename only
+ * once the target carries an index entry, so an intent-to-add one
+ * is staged for the pairing, and the origin's deletion belongs to
+ * the offender's last committed state.
+ */
+export async function revertPathsToLastCommit(
+  run: RunContext,
+  paths: readonly string[],
+): Promise<void> {
+  const head = await headCommit(run.dataRoot, run.env);
+
+  await runGit(run.dataRoot, ["add", "-N", "--", ...paths], run.env);
+
+  const targets = new Set(paths);
+  const origins = statusRenameOrigins(
+    await porcelainStatus(run.dataRoot, run.env),
+    targets,
+  );
+
+  for (const path of [...paths, ...origins]) {
+    await unstagePath(run, path);
+    await checkoutFrom(run, head, path);
+  }
+}
+
+/** The rename-origin paths of status entries whose target sits in
+ *  the revert set: restoring a renamed offender means restoring the
+ *  pair, target and origin. */
+function statusRenameOrigins(
+  status: readonly StatusEntry[],
+  targets: ReadonlySet<string>,
+): string[] {
+  return [
+    ...new Set(
+      status.flatMap((entry) =>
+        entry.origin !== undefined && targets.has(entry.path)
+          ? [entry.origin]
+          : [],
+      ),
+    ),
+  ];
+}
+
+/** Drop any index entry staged for the path — a staged addition
+ *  must not survive as a phantom entry after the revert. */
+async function unstagePath(run: RunContext, path: string): Promise<void> {
+  await runGit(run.dataRoot, ["reset", "--quiet", "--", path], run.env);
+}
+
+/** Restore one path to its state at `commit`: a path tracked at
+ *  `commit` is checked out from it, anything else was created after
+ *  and goes away. The caller owns unstaging. */
+async function checkoutFrom(
+  run: RunContext,
+  commit: string,
+  path: string,
+): Promise<void> {
   const tracked = await tryGit(
-    dataRoot,
-    ["cat-file", "-e", `${pre.commit}:${path}`],
-    env,
+    run.dataRoot,
+    ["cat-file", "-e", `${commit}:${path}`],
+    run.env,
   );
 
   if (tracked !== undefined) {
-    await runGit(dataRoot, ["checkout", pre.commit, "--", path], env);
+    await runGit(run.dataRoot, ["checkout", commit, "--", path], run.env);
 
     return;
   }
 
-  await rm(target, { force: true });
+  await rm(join(run.dataRoot, path), { force: true });
 }
 
 /**
@@ -267,14 +341,13 @@ async function revertOnePath(
  * wiki-sync commit that landed mid-window survives untouched, and
  * pre-existing dirty work outside the revert set is preserved.
  */
-async function revertChangedPaths(
-  dataRoot: string,
-  env: NodeJS.ProcessEnv,
+async function revertPathsToPreRun(
+  run: RunContext,
   pre: PreRunState,
   paths: readonly string[],
 ): Promise<void> {
   for (const path of paths) {
-    await revertOnePath(dataRoot, env, pre, path);
+    await revertOnePath(run, pre, path);
   }
 }
 
@@ -296,7 +369,7 @@ async function gateStep(
       `sandbox: accept-gate failed — ${violations.length} path(s) outside ${SANDBOX_DIR}/; reverting ${changed.length} changed path(s)`,
     );
 
-    await revertChangedPaths(dataRoot, env, plan.pre, changed);
+    await revertPathsToPreRun(plan.options.run, plan.pre, changed);
 
     throw new Error(
       `sandbox accept-gate failed — the run touched paths outside ${SANDBOX_DIR}/: ${violations.join(", ")}; reverted ${changed.length} changed path(s) to their pre-run state (no whole-repo reset)`,
@@ -306,7 +379,7 @@ async function gateStep(
 
   if (agent.error !== undefined) {
     if (changed.length > 0) {
-      await revertChangedPaths(dataRoot, env, plan.pre, changed);
+      await revertPathsToPreRun(plan.options.run, plan.pre, changed);
     }
 
     throw new Error(
@@ -404,7 +477,7 @@ async function revertAfterEpilogue(
     ["reset", "--quiet", "--", SANDBOX_DIR, "wiki/log.md"],
     env,
   );
-  await revertChangedPaths(dataRoot, env, plan.pre, [
+  await revertPathsToPreRun(plan.options.run, plan.pre, [
     ...changed,
     "wiki/log.md",
   ]);
