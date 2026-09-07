@@ -390,7 +390,7 @@ wiki-ingest
     raw/ → wiki/
 
 wiki-sync
-    sync → ingest → lint → verification → git commit → publish (Section 26)
+    sync → ingest → lint → citation wall → verification → git commit → publish (Section 26)
 ```
 
 This separation is important.
@@ -1000,16 +1000,21 @@ wiki-sync
    │
    ├── 4. Run lint
    │
-   ├── 5. Run the deterministic verification checks
+   ├── 5. Run the citation-wall standing lint (issue #339) —
+   │      every cycle; a violation fails the cycle before the
+   │      commit after path-scoped-reverting the offending pages
+   │      to their last committed state
+   │
+   ├── 6. Run the deterministic verification checks
    │      (check-fidelity, check-provenance) — every cycle,
    │      configured or not; a failed check fails the cycle
    │      before the commit (issue #138)
    │
-   ├── 6. Git diff
+   ├── 7. Git diff
    │
-   ├── 7. Commit changes
+   ├── 8. Commit changes
    │
-   └── 8. Publish the mirror vault (Section 26) — configured
+   └── 9. Publish the mirror vault (Section 26) — configured
           instances only
 ```
 
@@ -1631,7 +1636,7 @@ All placement knowledge lives in one human-owned file at the `k-wiki` root:
 Append one step to `wiki-sync`:
 
 ```text
-sync → ingest → lint → verification → git commit → publish (mirror vault, wiki contents at vault root)
+sync → ingest → lint → citation wall → verification → git commit → publish (mirror vault, wiki contents at vault root)
 ```
 
 The mirror is derived data, like the wiki itself: if the transport ever mangles it, re-copying heals it. Devices only read the mirror; edits belong upstream in the source vault. The publish step ships `wiki/AGENTS.md` along with the pages — harmless, and it doubles as human-readable documentation of the wiki's rules on every device.
@@ -1684,8 +1689,9 @@ resolved instance's data repo, and the **accept-gate is the
 isolation** — there is no ungated write path. The foundation landed
 as a reusable library primitive (`src/sandbox/`): the `propose` verb
 that drives it (family 6, issue #340), the TTL reaper (family 4,
-issue #338), the citation wall (family 5, issue #339), and promotion
-(family 7, issue #341) all build on it.
+issue #338), and promotion
+(family 7, issue #341) all build on it; the citation wall (family
+5, issue #339) is built and documented in its own subsection below.
 
 One sandboxed run executes as one process with one outcome (decision
 13): write (the agent phase) → accept-gate → stamp → atomic commit.
@@ -1734,8 +1740,9 @@ Three refusals guard the window before any write: a run whose sandbox
   contract governs the reviewed wiki surface the wiki agent
   operates on; the stamps are a pipeline-mechanical surface written
   by deterministic code and read by the reaper and the citation
-  wall's standing lint (which will carry their operational rules when
-  they land). A sandbox page carries no `sources` requirement yet —
+  wall's standing lint (whose operational rules — including the
+  `via: agent` placement rule — are carried in the citation-wall
+  subsection below). A sandbox page carries no `sources` requirement yet —
   it is provisional agent output, not reviewed wiki content; the
   promotion flow (family 7) is where a page earns its way into the
   reviewed surface.
@@ -1788,6 +1795,72 @@ Two exclusions keep sandbox notes out of every derived surface:
   consulted — a sandbox page never reaches any mirror device, and a
   sandbox page an older run mirrored is removed from the mirror on
   the next publish.
+
+### The one-way citation wall (issue #339)
+
+Family 5 of the epic: the wall's rule is that sandbox notes may
+*read* the main wiki, but the main wiki must never *depend* on
+sandbox notes — the reaper would break main→sandbox links, and
+citation laundering would give unsourced agent notes provenance
+they did not earn. Decision 4's exact edges, all first-class and
+mechanically enforced:
+
+- **Sandbox→main body wikilinks are allowed** (reading is safe;
+  notes may point at what they discuss). Embeds (`![[…]]`) count
+  as links for every direction rule.
+- **Main→sandbox body links are forbidden**, stem form
+  (`[[proposal]]`) and slashed form (`[[sandbox/proposal]]`).
+- **Sandbox→sandbox body links are forbidden**: a promoted note
+  citing a still-sandbox sibling would become a main→sandbox
+  violation at promotion, and sandbox-to-sandbox citation is the
+  laundering path around the wall — a sandbox note discusses *main*
+  wiki content; its peers are not citable until they earn
+  promotion.
+- **`sources` edges touching a sandbox page are forbidden in either
+  direction**: no page's `sources` names a sandbox page, and a
+  sandbox page carries no wikilink `sources` entries at all.
+- **Cross-wiki `[[<vault>/<page>]]` links from sandbox pages are
+  forbidden**: sandbox notes are agent scratch inside one instance,
+  and a slashed link from them is a cross-instance leak.
+- **The `via: agent` stamp lives only under `wiki/sandbox/`**: a
+  main page carrying it is a forged or misplaced stamp.
+
+Enforcement is one audit core (`src/sandbox/citations.ts`) behind
+four surfaces, deliberately redundant:
+
+1. **`bin/libexec/check-citations`** (born libexec, decision 2's
+   1:1 verb rule): the manual checker — body-link direction and
+   `sources` edges both ways, plus the cross-wiki and stamp rules;
+   one problem line per violation, exit 1.
+2. **`check-links` scope rule:** links *from* sandbox pages are
+   validated exactly like main-page links (targets must resolve — a
+   renamed main page breaks a sandbox note's link like any other),
+   and links *into* the sandbox resolve silently; direction
+   violations are never check-links' business.
+3. **`check-crosslinks` extension:** no slashed cross-wiki links
+   from sandbox pages, forbidden outright, validity aside.
+4. **The standing lint (wiki-sync cycle):** the audit runs every
+   cycle after the crosslink stage and before verification. A
+   violation fails the cycle and **path-scoped-reverts every
+   offending page to its last committed state** (family 3's
+   primitive shape — never a whole-repo reset), so a rogue edge
+   never rides the cycle's commit: nothing compounds without the
+   operator's commit, and sandbox→main flows only through
+   promotion. The e2e rogue-merge revert run pins this.
+
+A repo without a sandbox namespace runs the wall as a near-no-op
+(only the stamp-placement rule can trip) — the base path gains
+nothing: no flag, no concept, no required step.
+
+**Honest limits (threat-model correction, verified in
+`src/sync/wiki-sync.ts`):** `wiki-sync` treats uncommitted diffs
+as the fix surface — it does not refuse a dirty tree at start. An
+unstamped rogue edit to a main page **therefore** flows into the
+next cycle's commit; the standing lint catches only citation-edge
+and stamp-placement violations. Plain rogue edits remain
+diff-review-only — the same exposure as any manual edit today. The
+"auto-revert" claim covers accept-gate runs and lint-caught edges,
+**not** arbitrary rogue writes.
 
 ---
 

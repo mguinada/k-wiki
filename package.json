@@ -20,6 +20,7 @@
     "dashboard": "node bin/dashboard",
     "check-links": "node bin/libexec/check-links",
     "check-crosslinks": "node bin/libexec/check-crosslinks",
+    "check-citations": "node bin/libexec/check-citations",
     "check-provenance": "node bin/libexec/check-provenance",
     "check-fidelity": "node bin/libexec/check-fidelity",
     "backfill-origin": "node bin/libexec/backfill-origin",

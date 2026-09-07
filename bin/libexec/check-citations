@@ -1,0 +1,4 @@
+#!/usr/bin/env node
+import { main } from "../../scripts/check-citations.ts";
+
+await main();

@@ -184,7 +184,7 @@ cycle above. Run the cycle with one command, then review and run the
 standing checks:
 
 ```sh
-bin/k-wiki wiki-sync   # sync → ingest → lint → crosslinks (configured) → verification → commit → publish (configured)
+bin/k-wiki wiki-sync   # sync → ingest → lint → crosslinks (configured) → citation wall → verification → commit → publish (configured)
 # review: the printed digest, git log -1 in the data repo
 bin/k-wiki check-links ~/Lab/k-wiki-engineering-data/wiki   # every [[wikilink]] resolves
 bin/k-wiki check-provenance ~/Lab/k-wiki-engineering-data/wiki  # every sources entry and origin is alive
@@ -588,7 +588,7 @@ every edit. Queries complete the daily loop:
 
 | Command | Tool | Purpose |
 |---|---|---|
-| `bin/k-wiki wiki-sync [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<sync.json>] [<raw-dir>]` | cycle orchestrator | Run the whole cycle — sync (sync-vault for vault sources, sync-repo for repo-sourced configs, [§9](#9-the-meta-wiki-a-repository-as-source)) → ingest → lint → crosslink audit (configured second brains) → verification (check-fidelity + check-provenance) → one data-repo commit → mirror publish (configured `publish` section) — and print the digest (reads `settings.yml`, including its optional `secondBrain.domains` list; [details below](#running-the-full-cycle-wiki-sync)) |
+| `bin/k-wiki wiki-sync [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<sync.json>] [<raw-dir>]` | cycle orchestrator | Run the whole cycle — sync (sync-vault for vault sources, sync-repo for repo-sourced configs, [§9](#9-the-meta-wiki-a-repository-as-source)) → ingest → lint → crosslink audit (configured second brains) → citation wall (sandbox one-way audit) → verification (check-fidelity + check-provenance) → one data-repo commit → mirror publish (configured `publish` section) — and print the digest (reads `settings.yml`, including its optional `secondBrain.domains` list; [details below](#running-the-full-cycle-wiki-sync)) |
 | `bin/k-wiki wiki-query [-h \| --help] [--file-last] [--wiki, -w <name>] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>` | query wrapper | Ask the built wiki one question headless: print the answer, save it for review (stage 1, default); `--file-last` files the reviewed answer deterministically (stage 2); `--wiki <name>` selects the instance — aliases then `sync-<name>.json` stems, both stages, derived paths from the resolved config (stage 1 reads the instance's settings; [details below](#running-queries-wiki-query)) |
 | `bin/k-wiki <read verb>` — `query "<question>"`, `status`, `list [<type>]`, `read <slug>`, `health` | read verbs (both doors) | Ask the wiki bound to the current project from any cwd — zero flags once `.k-wiki.json` binds it; `status` (binding + paths), `list` (pages by type), `read` (one page verbatim), `health` (projection check); `-w <name>` selects the instance (aliases then `sync-<name>.json` stems) and overrides the binding's `wiki` key — `k-wiki query -w meta` and `k-wiki -w meta query` are the same command; answer-only, no filing passthrough ([details below](#querying-from-any-project-k-wiki)) |
 
@@ -619,8 +619,9 @@ purpose; curation never hides plumbing:
 | Command | Tool | Purpose |
 |---|---|---|
 | `bin/k-wiki check-raw [<raw-dir>] [--fail-on-stale]` | health CLI | Check the coherence of a `raw/` projection (default: the repo's `raw/`): every `raw/notes/<vault>/` file matches its `manifest.json` sha-256, with no orphans and no missing entries; a repo-sourced projection (sync-repo) is also freshness-checked — a recorded source commit behind the source repo's HEAD warns, and `--fail-on-stale` makes it exit 1; read-only, no vault access; exit 0 = coherent (including healthy-empty), exit 1 = one line per problem |
-| `bin/k-wiki check-links [<wiki-dir>]` | wikilink checker | Check that every `[[wikilink]]` under `wiki/` (default) resolves to an existing page by file name, and every body-text heading anchor (`[[page#Chapter]]`) to a heading in the target page byte-identical to the anchor (frontmatter `sources` citations stay `check-provenance`'s domain; block references and multi-level anchors' parent segments are skipped), skipping external slashed `[[<vault>/<page>]]` cross-wiki targets; exit 0 = all links resolve, exit 1 = one `file:line -> [[link]]` line per broken link |
-| `bin/k-wiki check-crosslinks <wiki-dir> <domain-wiki-dir> [<domain-wiki-dir>…]` | cross-wiki link checker | Check the one-way link discipline between a wiki and its domain wikis: every slashed `[[<vault>/<page>]]` link names a vault of a passed domain wiki (validated against its `raw/manifest.json`, case-insensitive) and resolves to an existing page there, and the domain wikis carry no cross-wiki links; exit 0 = discipline holds, exit 1 = one `file:line -> [[link]]` line per problem |
+| `bin/k-wiki check-links [<wiki-dir>]` | wikilink checker | Check that every `[[wikilink]]` under `wiki/` (default) resolves to an existing page by file name, and every body-text heading anchor (`[[page#Chapter]]`) to a heading in the target page byte-identical to the anchor (frontmatter `sources` citations stay `check-provenance`'s domain; block references and multi-level anchors' parent segments are skipped), skipping external slashed `[[<vault>/<page>]]` cross-wiki targets; the sandbox namespace is scanned too — links *from* sandbox pages are validated exactly like main-page links, and links *into* the sandbox resolve silently (direction violations are `check-citations`' business); exit 0 = all links resolve, exit 1 = one `file:line -> [[link]]` line per broken link |
+| `bin/k-wiki check-crosslinks <wiki-dir> <domain-wiki-dir> [<domain-wiki-dir>…]` | cross-wiki link checker | Check the one-way link discipline between a wiki and its domain wikis: every slashed `[[<vault>/<page>]]` link names a vault of a passed domain wiki (validated against its `raw/manifest.json`, case-insensitive) and resolves to an existing page there, the domain wikis carry no cross-wiki links, and the sandbox namespace carries none either (a slashed link from sandbox notes is a cross-instance leak); exit 0 = discipline holds, exit 1 = one `file:line -> [[link]]` line per problem |
+| `bin/k-wiki check-citations [<wiki-dir>]` | one-way citation wall checker | Check the one-way wall between the wiki and its `wiki/sandbox/` namespace (default: the repo's `wiki/`): main pages never link or embed sandbox pages (embeds count as links), sandbox pages never link sandbox peers, `sources` entries never touch a sandbox page in either direction, sandbox pages never use slashed cross-wiki links, and the `via: agent` stamp lives only inside the sandbox; link resolution itself stays `check-links`' business; exit 0 = wall holds, exit 1 = one `wiki/<path>[:<line>] -> <evidence>` line per violation |
 | `bin/k-wiki check-provenance [<wiki-dir> [<raw-dir>]]` | dead-provenance checker | Check that every `sources` entry under `wiki/` resolves — a wikilink to an existing `type: source` page, an anchored `[[hub#Chapter]]` entry that lands on a hub heading byte-identical to its anchor, a raw path to an existing `raw/` file that **no hub covers** (a hub-covered path must cite the wikilink; default: the repo's `wiki/` and its sibling `raw/`); exit 0 = coherent, exit 1 = one `wiki/<page> -> …` line per problem (an anchor miss reports `wiki/<page>:<line>`); when `type: source` pages lack `origin`, a yellow warning below the ok summary (exit stays 0; printed only when no dead provenance was found) names the exact `backfill-origin` commands to run, dry run first — the deterministic backstop that catches any purge miss |
 | `bin/k-wiki check-fidelity [<wiki-dir> [<raw-dir>]]` | citation-fidelity checker | Check that every machine-checkable token a `type: source` page quotes in its body — tilde paths, dotted config keys (file extensions and hostnames excluded), long and short CLI flags, `npm run` commands — appears in the page's `origin` file under `raw/` (a prefix of a longer name does not count), and every page's `title` kebab-cases to its file name (`index`, `overview`, `log` exempt; default: the repo's `wiki/` and its sibling `raw/`); exit 0 = faithful, exit 1 = one `wiki/<page> -> …` line per problem — catches fabricated tokens deterministically; relational misquotes (right tokens, wrong containment) stay with the lint prompt and diff review; source pages without `origin` skip quote checking and get the same yellow `backfill-origin` warning as check-provenance |
 | `bin/k-wiki backfill-origin [<wiki-dir> [<raw-dir>]]` | origin backfill | Deterministically write `origin` on every `type: source` page lacking it whose `sources` cites exactly one existing `raw/` path **and** whose title corroborates that note's name, bumping `updated` (default: the repo's `wiki/` and sibling `raw/`; `--date YYYY-MM-DD` overrides the bump date, `--dry-run` previews every pairing without writing); zero/several-path and title-mismatch pages are reported for judgment, never guessed; refuses a dirty wiki tree, appends an audit entry to `wiki/log.md`, idempotent — `git diff` is the review surface |
@@ -1119,7 +1120,7 @@ missed purge surfaces as a dead link, not as silent contamination.
 ## Running the full cycle (`wiki-sync`)
 
 ```sh
-bin/k-wiki wiki-sync   # sync → ingest → lint → crosslinks (configured) → verification → commit → publish (configured)
+bin/k-wiki wiki-sync   # sync → ingest → lint → crosslinks (configured) → citation wall → verification → commit → publish (configured)
 ```
 
 `wiki-sync` is the one-command orchestrator.
@@ -1156,19 +1157,32 @@ It chains the proven pieces and adds no capability of its own:
    the wiki/AGENTS.md "after every run" contract is enforced, not
    prose. Instances without the key skip the stage; the default
    instance is unchanged.
-5. **verification** — every cycle, configured or not:
+5. **citations** — every cycle, configured or not: the one-way
+   sandbox audit (`bin/libexec/check-citations`' core) runs over
+   the data repo's working tree after the crosslink audit and before
+   verification. Main pages must never link, embed, or cite sandbox
+   pages; sandbox pages must never carry `sources` edges,
+   sandbox-peer links, or cross-wiki links; the `via: agent` stamp
+   lives only inside `wiki/sandbox/`. One violation line fails the
+   cycle before the commit — after path-scoped-reverting every
+   offending page to its last committed state (never a whole-repo
+   reset), so a rogue edge never rides the cycle's commit. A wiki
+   without a sandbox namespace runs the stage as a near-no-op (only
+   the stamp-placement rule can trip); the base path gains no flag,
+   no concept, no required step.
+6. **verification** — every cycle, configured or not:
    the deterministic `check-fidelity` and
    `check-provenance` cores run over the data repo's
-   `wiki/` and `raw/`, after lint and the crosslink audit. One
-   problem line per finding fails the cycle before the commit: the
-   lint edits are reverted (the ingest edits stay, uncommitted, as
-   the fix surface), mirroring the lint stage's failure semantics.
+   `wiki/` and `raw/`, after lint, the crosslink audit, and the
+   citation wall. One problem line per finding fails the cycle
+   before the commit: the lint edits are reverted (the ingest edits
+   stay, uncommitted, as the fix surface), mirroring the lint stage's failure semantics.
    The misquote and dead-citation classes are produced by ingest;
    the cycle is where their detection is guaranteed to run.
-6. **commit** — one data-repo commit staging `wiki/`, `raw/`, and
+7. **commit** — one data-repo commit staging `wiki/`, `raw/`, and
    `outputs/`, with a message summarizing sources processed, pages
    touched, and the lint report.
-7. **publish** — only for configs whose `sync.json` carries a
+8. **publish** — only for configs whose `sync.json` carries a
    `publish` section: copy the data repo's
    include-matched files (`["wiki/**"]` in the shipped config)
    into the mirror vault — an iCloud-served disposable
@@ -1187,9 +1201,9 @@ It chains the proven pieces and adds no capability of its own:
    retries the copy.
 
 The final digest on stdout — sync summary, lint summary, the
-crosslink audit result (configured instances), the fidelity and
-provenance results, the commit hash, the publish summary (configured
-mirror), then the full ingest digest —
+crosslink audit result (configured instances), the citation-wall
+result, the fidelity and provenance results, the commit hash, the
+publish summary (configured mirror), then the full ingest digest —
 plus `git log -1` in the data repo tell the whole story of the run
 without opening any other file.
 

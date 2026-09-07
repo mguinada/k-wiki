@@ -11,14 +11,18 @@
  *     wiki — second-brain notes may reference domain knowledge, and
  *     the reference must be alive;
  *  2. the domain wikis themselves must contain no cross-wiki links —
- *     they are link sinks and never point at second-brain material.
+ *     they are link sinks and never point at second-brain material;
+ *  3. the audited wiki's sandbox namespace contains no cross-wiki
+ *     links at all (issue #339) — sandbox notes are agent scratch
+ *     inside one instance, and a slashed link from them is a
+ *     cross-instance leak, forbidden outright, validity aside.
  */
 
 import { readFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { readTextIfExists } from "../cli/shared.ts";
 import { parseManifest } from "../sync/manifest.ts";
-import { listWikiPages, pageReportPath } from "./pages.ts";
+import { listSandboxPages, listWikiPages, pageReportPath } from "./pages.ts";
 import {
   buildPageIndex,
   crossWikiTarget,
@@ -139,6 +143,30 @@ async function auditDomainLinks(
   return problems;
 }
 
+/** Audit the audited wiki's sandbox namespace (issue #339): sandbox
+ *  notes are agent scratch inside one instance — a slashed
+ *  `[[<vault>/<page>]]` link from them is a cross-instance leak, so
+ *  every one is forbidden outright, validity aside. Plain internal
+ *  links from sandbox pages are the citation wall's business, not
+ *  this audit's. */
+async function auditSandboxLinks(wikiDir: string): Promise<string[]> {
+  const problems: string[] = [];
+
+  for (const file of await listSandboxPages(wikiDir)) {
+    const text = await readFile(join(wikiDir, file), "utf8");
+
+    for (const link of extractWikilinks(text)) {
+      if (crossWikiTarget(link.target) !== undefined) {
+        problems.push(
+          `${pageReportPath(wikiDir, file)}:${link.line} -> ${link.raw} (sandbox pages must not use cross-wiki links)`,
+        );
+      }
+    }
+  }
+
+  return problems;
+}
+
 /**
  * Audit the cross-wiki discipline of `wikiDirInput` against one or
  * more domain wikis, reporting problems with paths relative to each
@@ -151,6 +179,7 @@ export async function checkCrossWikiLinks(
 ): Promise<CrossLinkReport> {
   const wikiDir = resolve(wikiDirInput);
   const files = await listWikiPages(wikiDirInput);
+  const sandboxFiles = await listSandboxPages(wikiDirInput);
   const domains = [];
 
   for (const dirInput of domainDirInputs) {
@@ -159,11 +188,12 @@ export async function checkCrossWikiLinks(
 
   const audited = await auditWikiLinks(wikiDir, files, domains);
   const domainProblems = await auditDomainLinks(domains);
+  const sandboxProblems = await auditSandboxLinks(wikiDir);
 
   return {
-    problems: [...audited.problems, ...domainProblems],
+    problems: [...audited.problems, ...domainProblems, ...sandboxProblems],
     external: audited.external,
-    auditedPages: files.length,
+    auditedPages: files.length + sandboxFiles.length,
     domainPages: domains.reduce(
       (total, domain) => total + domain.files.length,
       0,

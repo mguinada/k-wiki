@@ -640,7 +640,7 @@ describe("wiki-sync e2e", () => {
     expect(result.code).toBe(0);
     expect(result.out).toContain("# wiki-sync cycle digest");
     expect(result.out).toContain("2 sources copied, 0 sources removed");
-    expect(result.err).toContain("wiki-sync: stage 1/5 — sync");
+    expect(result.err).toContain("wiki-sync: stage 1/6 — sync");
 
     await expect(
       readFile(
@@ -798,5 +798,68 @@ describe("wiki-sync e2e", () => {
     await expect(readFile(join(mirror, "index.md"), "utf8")).resolves.toContain(
       "Index v2",
     );
+  });
+
+  it("reverts a rogue main→sandbox edge at the citation wall, with no commit (issue #339)", async () => {
+    const repo = await makeRepo();
+
+    // A first full cycle gives the wiki a committed main page to
+    // attack, and a committed stamped sandbox note to point at.
+    await runCycle(repo);
+    await mkdir(join(repo.dataRoot, "wiki", "sandbox"), { recursive: true });
+    await writeFile(
+      join(repo.dataRoot, "wiki", "sandbox", "proposal.md"),
+      "---\nvia: agent\nexpires: 2099-01-01\n---\n\nProposal.\n",
+    );
+    await run("git", ["add", "-A", "--", "wiki/sandbox"], {
+      cwd: repo.dataRoot,
+    });
+    await run(
+      "git",
+      [
+        "-c",
+        "user.email=t@t",
+        "-c",
+        "user.name=t",
+        "commit",
+        "--quiet",
+        "-m",
+        "seed sandbox",
+      ],
+      { cwd: repo.dataRoot },
+    );
+
+    const { stdout: head } = await run("git", ["rev-parse", "HEAD"], {
+      cwd: repo.dataRoot,
+    });
+    const pagePath = join(repo.dataRoot, "wiki", "concepts", "stub.md");
+    const committed = await readFile(pagePath, "utf8");
+
+    // The rogue edit: an unstamped hand-edit wiring a main page into
+    // the sandbox — the compounding the wall exists to stop.
+    await writeFile(pagePath, `${committed}\nSee [[proposal]].\n`);
+
+    const result = await runCycle(repo);
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("citation wall failed");
+    expect(result.err).toMatch(
+      /wiki\/concepts\/stub\.md:\d+ -> \[\[proposal\]\] \(main pages must not link or embed sandbox pages\)/,
+    );
+
+    // The offending page is restored to its last committed state and
+    // nothing committed the rogue edge.
+    await expect(readFile(pagePath, "utf8")).resolves.toBe(committed);
+
+    const { stdout: headAfter } = await run("git", ["rev-parse", "HEAD"], {
+      cwd: repo.dataRoot,
+    });
+
+    expect(headAfter).toBe(head);
+
+    // The revert sticks: the next cycle is clean and passes.
+    const rerun = await runCycle(repo);
+
+    expect(rerun.code).toBe(0);
   });
 });

@@ -15,6 +15,7 @@
 
 import { main as anchorCitations } from "../../scripts/anchor-citations.ts";
 import { main as backfillOrigin } from "../../scripts/backfill-origin.ts";
+import { main as checkCitations } from "../../scripts/check-citations.ts";
 import { main as checkCrosslinks } from "../../scripts/check-crosslinks.ts";
 import { main as checkFidelity } from "../../scripts/check-fidelity.ts";
 import { main as checkLinks } from "../../scripts/check-links.ts";
@@ -214,6 +215,17 @@ export const VERBS: readonly VerbSpec[] = [
     wiki: false,
     lines: ["one-way cross-wiki link discipline"],
     main: checkCrosslinks,
+  },
+  {
+    name: "check-citations",
+    klass: "operator",
+    tier: "libexec",
+    wiki: false,
+    lines: [
+      "one-way wall between the wiki and its wiki/sandbox/",
+      "namespace: links, embeds, sources, stamps",
+    ],
+    main: checkCitations,
   },
   {
     name: "check-provenance",

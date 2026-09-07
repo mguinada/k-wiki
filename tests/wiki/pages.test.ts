@@ -6,6 +6,7 @@ import {
   bodyAfterFrontmatter,
   isWikilinkEntry,
   kebab,
+  listSandboxPages,
   listWikiPages,
   normalizeRawPath,
   parsePageFields,
@@ -448,6 +449,37 @@ describe("listWikiPages", () => {
   });
 });
 
+describe("listSandboxPages", () => {
+  it("lists the sandbox namespace's pages as sandbox/-relative paths, sorted", async () => {
+    const root = await mkdtemp(join(tmpdir(), "k-wiki-pages-"));
+
+    tempDirs.push(root);
+
+    await mkdir(join(root, "concepts"), { recursive: true });
+    await mkdir(join(root, "sandbox", "drafts"), { recursive: true });
+    await writeFile(join(root, "concepts", "a.md"), "a");
+    await writeFile(join(root, "sandbox", "proposal.md"), "sandbox");
+    await writeFile(join(root, "sandbox", "drafts", "nested.md"), "sandbox");
+    await writeFile(join(root, "sandbox", "AGENTS.md"), "contract");
+    await writeFile(join(root, "sandbox", "notes.txt"), "not markdown");
+
+    expect(await listSandboxPages(root)).toEqual([
+      "sandbox/drafts/nested.md",
+      "sandbox/proposal.md",
+    ]);
+  });
+
+  it("returns an empty list when the sandbox namespace is absent", async () => {
+    const root = await mkdtemp(join(tmpdir(), "k-wiki-pages-"));
+
+    tempDirs.push(root);
+
+    await mkdir(join(root, "concepts"), { recursive: true });
+    await writeFile(join(root, "concepts", "a.md"), "a");
+
+    expect(await listSandboxPages(root)).toEqual([]);
+  });
+});
 describe("readPageFields", () => {
   it("returns empty fields for a missing file", async () => {
     await expect(readPageFields("/no/such/page.md")).resolves.toEqual({
