@@ -6,7 +6,8 @@
  * The door is the resolution context, not the entry name (decision
  * 1): a checkout resolved by the `--checkout` flag, the
  * `K_WIKI_CHECKOUT` env var, or a `.k-wiki.json` binding is the
- * agent door (read verbs only; operator verbs refused loudly with
+ * agent door (the read verbs plus `propose`, the gated write;
+ * operator verbs refused loudly with
  * both escapes named); the cwd itself is the human door (full
  * table, structural default instance). Flag position is verb-first
  * canonical: leading global flags (`-w`/`--wiki`, `-h`/`--help`)

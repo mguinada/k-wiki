@@ -1,10 +1,10 @@
 /**
  * The k-wiki verb table (issue #337): the full human-door command
  * vocabulary — one row per verb, 1:1 with the `bin/` and
- * `bin/libexec/` launcher basenames (the read verbs are k-wiki's
- * own) — with the mandatory class per verb (decision 11): `read`
- * (both doors), `write-note` (agent-door gated writes; none yet —
- * the first, `propose`, lands with the sandbox family), and
+ * `bin/libexec/` launcher basenames (the read verbs and `propose`
+ * are k-wiki's own) — with the mandatory class per verb (decision
+ * 11): `read` (both doors), `write-note` (agent-door gated
+ * writes — `propose`, the sandbox write, issue #340), and
  * `operator` (human door only; redirection is incoherent for
  * pipeline verbs). The tiers are the #287 grouping the bare help
  * prints, porcelain first. The bare help itself is assembled from
