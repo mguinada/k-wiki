@@ -967,6 +967,20 @@ which is what agent-facing use requires.
 
 Filed answers are how questions compound into knowledge: the next time the question arises, the wiki already contains the answer.
 
+### Promotion — walking a sandbox note into the main wiki (issue #341)
+
+The sandbox's only exit is the human's deliberate act: `bin/libexec/wiki-promote <slug> --sources "<source page>" [--sources …]` (verb: `k-wiki wiki-promote`, born libexec — off-PATH is deliberate friction on the authority act; it is a human-door verb, absent on the agent door). Deterministic code, no agent, zero tokens — the `--file-last` shape verbatim, applied to a sandbox note:
+
+- **The template is deterministic.** The note's body lands byte-exact as `wiki/<type-directory>/<slug>.md`; its sandbox stamps (`via:`, `expires:`) and any agent-written `sources` are dropped; the human-approved `sources` and the promotion date are written in. The note earns provenance only from the vault projection, never from sandbox lineage.
+
+- **The human supplies and approves `sources`, never auto-derived.** Every `--sources` entry must re-derive from the `raw/` projection — it names an existing `type: source` page whose `origin` exists under `raw/` — or the promotion is refused. Bracketed (`[[hub]]`) and anchored (`[[hub#Chapter]]`) forms are accepted; the anchor's hub is what traces.
+
+- **One unit, one commit.** Page + `index.md` entry (under the type's section) + `log.md` audit entry + the sandbox copy's deletion land as one `promote: <slug>` commit; a failure anywhere rolls all of it back and nothing is promoted. A dirty data repo is refused before anything starts.
+
+- **Refusals, all loud:** a dirty tree; no note for the slug (already promoted, reaped, or never proposed); an expired note (dead by definition — re-derive it as a new proposal); a type that is not a wiki page type; a slug colliding with an existing main page (renaming is the human's explicit act — re-propose under the new slug, then promote); untraceable sources; and a promoted page that would violate the one-way citation wall (a body link to a sandbox peer) — the wall audit runs over the working tree before the commit, so promotion can never land what the next cycle's standing lint would revert.
+
+Run lifecycle, completed: `agent-run → accept-gate → stamp → reaper → promote` — writes only in the sandbox, promotion only here.
+
 ---
 
 ## 17. Lint Prompt
@@ -1690,7 +1704,8 @@ isolation** — there is no ungated write path. The foundation landed
 as a reusable library primitive (`src/sandbox/`): the `propose` verb
 that drives it (family 6, issue #340), the TTL reaper (family 4,
 issue #338), and promotion
-(family 7, issue #341) all build on it; the citation wall (family
+(family 7, issue #341 — landed, see §16's promotion subsection) all
+build on it; the citation wall (family
 5, issue #339) is built and documented in its own subsection below.
 
 One sandboxed run executes as one process with one outcome (decision
@@ -1744,8 +1759,8 @@ Three refusals guard the window before any write: a run whose sandbox
   `via: agent` placement rule — are carried in the citation-wall
   subsection below). A sandbox page carries no `sources` requirement yet —
   it is provisional agent output, not reviewed wiki content; the
-  promotion flow (family 7) is where a page earns its way into the
-  reviewed surface.
+  promotion flow (family 7, issue #341; §16's promotion subsection)
+  is where a page earns its way into the reviewed surface.
 
 Known residual risk: a mid-window commit that absorbs the agent's
   own uncommitted write (a wiki-sync cycle committing `wiki/` while

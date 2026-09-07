@@ -6,7 +6,10 @@
  * entries. Stage 1's answer is the single source; this module only
  * wraps it. A drift warning fires when the data repo's `raw/` or
  * `wiki/` moved after the saved timestamp — the answer cites pages
- * that may have changed.
+ * that may have changed. The one-unit write-with-rollback machinery
+ * (pre-state capture, restore, rm-if-created) and the index-entry
+ * insertion are the shared filing shape wiki-promote copies verbatim
+ * (issue #341, decision 7).
  */
 
 import { lstat, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
@@ -296,13 +299,19 @@ export function indexEntryFor(slug: string, question: string): string {
 }
 
 /**
- * Insert the entry directly under the `## Queries` heading; append a
- * `## Queries` section when the index has none — a missing index is
- * created with its heading, like the log. Both deterministic.
+ * Insert the entry directly under the section's `## <name>` heading
+ * (default `Queries`); append the section when the index has none —
+ * a missing index is created with its heading, like the log. Both
+ * deterministic. wiki-promote passes the promoted page's type
+ * section; the query filing keeps the default.
  */
-export function appendIndexEntry(indexText: string, entry: string): string {
+export function appendIndexEntry(
+  indexText: string,
+  entry: string,
+  section = "Queries",
+): string {
   const lines = indexText.split("\n");
-  const heading = lines.indexOf("## Queries");
+  const heading = lines.indexOf(`## ${section}`);
 
   if (heading !== -1) {
     lines.splice(heading + 1, 0, entry);
@@ -316,7 +325,7 @@ export function appendIndexEntry(indexText: string, entry: string): string {
 
   const prefix = indexText.endsWith("\n") ? indexText : `${indexText}\n`;
 
-  return `${prefix}\n## Queries\n\n${entry}\n`;
+  return `${prefix}\n## ${section}\n\n${entry}\n`;
 }
 
 /** The log.md entry heading (guide §12 format). */
@@ -324,16 +333,17 @@ export function logEntry(question: string, date: string): string {
   return `## [${date}] query | ${oneLine(question)}`;
 }
 
-/** One filing target's pre-run state: its bytes when a readable
- *  file existed, `absent` when no directory entry existed, and
- *  `unreadable` when an entry existed but its bytes could not be
- *  read — never deleted, since its content was never captured. */
-type TargetPreState =
+/** One wiki file's pre-run state: its bytes when readable, `absent`
+ *  when no entry exists, `unreadable` when an entry exists but its
+ *  bytes cannot be read. Shared with wiki-promote's rollback. */
+export type TargetPreState =
   | { readonly kind: "bytes"; readonly text: string }
   | { readonly kind: "absent" }
   | { readonly kind: "unreadable" };
 
-interface FilingTarget {
+/** One rollback target: its path and captured pre-run state.
+ *  Shared with wiki-promote. */
+export interface FilingTarget {
   readonly path: string;
   readonly state: TargetPreState;
 }
@@ -348,10 +358,9 @@ interface FilingPreState {
   readonly log: FilingTarget;
 }
 
-/** A wiki file's pre-run state: its bytes when readable, `absent`
- *  when no entry exists, `unreadable` when an entry exists but its
- *  bytes cannot be read. */
-async function readPreState(path: string): Promise<TargetPreState> {
+/** The pre-run state of one wiki file, captured for a rollback
+ *  (issue #245's one-unit shape; shared with wiki-promote). */
+export async function readPreState(path: string): Promise<TargetPreState> {
   try {
     return { kind: "bytes", text: await readFile(path, "utf8") };
   } catch {
@@ -361,16 +370,16 @@ async function readPreState(path: string): Promise<TargetPreState> {
   }
 }
 
-/** The filing's input for a target: its captured bytes, or the
- *  empty string when none were readable. */
-function textOrEmpty(state: TargetPreState): string {
+/** The captured bytes of a target, or the empty string when none
+ *  were readable. Shared with wiki-promote. */
+export function textOrEmpty(state: TargetPreState): string {
   return state.kind === "bytes" ? state.text : "";
 }
 
-/** Delete the regular file a failed filing created; any other entry
- *  (a directory, a symlink) is left untouched, and so is a path that
- *  stayed absent. */
-async function rmIfCreated(path: string): Promise<void> {
+/** Delete the regular file a failed unit write created; any other
+ *  entry (a directory, a symlink) is left untouched, and so is a
+ *  path that stayed absent. Shared with wiki-promote. */
+export async function rmIfCreated(path: string): Promise<void> {
   const info = await lstat(path).catch(() => undefined);
 
   if (info?.isFile() === true) {
@@ -378,11 +387,11 @@ async function rmIfCreated(path: string): Promise<void> {
   }
 }
 
-/** Restore one filing target after a failed write: rewrite the
- *  captured bytes, delete the regular file the failed filing created
- *  when nothing existed before, and leave an unreadable entry
- *  untouched. */
-async function restoreTarget(target: FilingTarget): Promise<void> {
+/** Restore one target after a failed write: rewrite the captured
+ *  bytes, delete the regular file the failed write created when
+ *  nothing existed before, and leave an unreadable entry untouched.
+ *  Shared with wiki-promote. */
+export async function restoreTarget(target: FilingTarget): Promise<void> {
   if (target.state.kind === "bytes") {
     await writeFile(target.path, target.state.text, "utf8");
 

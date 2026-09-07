@@ -1,0 +1,4 @@
+#!/usr/bin/env node
+import { main } from "../../src/query/wiki-promote.ts";
+
+await main();
