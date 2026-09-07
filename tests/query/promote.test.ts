@@ -469,7 +469,10 @@ describe("promoteSandboxNote", () => {
     expect(failure?.message).toContain("rolled back");
 
     expect(
-      await readFile(join(dataRoot, "wiki", "sandbox", "attention-notes.md"), "utf8"),
+      await readFile(
+        join(dataRoot, "wiki", "sandbox", "attention-notes.md"),
+        "utf8",
+      ),
     ).toBe(NOTE_TEXT);
     expect(await readFile(join(dataRoot, "wiki", "index.md"), "utf8")).toBe(
       INDEX_TEXT,
