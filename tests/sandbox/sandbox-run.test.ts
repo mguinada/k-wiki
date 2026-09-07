@@ -12,7 +12,11 @@ import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, describe, expect, it } from "vitest";
 import type { AgentRunner } from "../../src/ingest/agent-run.ts";
-import { runSandboxRun, revertPathsToLastCommit, slugError } from "../../src/sandbox/sandbox-run.ts";
+import {
+  revertPathsToLastCommit,
+  runSandboxRun,
+  slugError,
+} from "../../src/sandbox/sandbox-run.ts";
 import type { WikiInstance } from "../../src/sync/instance.ts";
 
 const run = promisify(execFile);
@@ -599,11 +603,9 @@ describe("revertPathsToLastCommit", () => {
   it("restores the rename origin of a staged rename (git mv) to its committed state", async () => {
     const dataRoot = await makeRenamedRepo();
 
-    await run(
-      "git",
-      ["mv", "wiki/concepts/old.md", "wiki/concepts/new.md"],
-      { cwd: dataRoot },
-    );
+    await run("git", ["mv", "wiki/concepts/old.md", "wiki/concepts/new.md"], {
+      cwd: dataRoot,
+    });
 
     await revertPathsToLastCommit(runContextAt(dataRoot), [
       "wiki/concepts/new.md",
