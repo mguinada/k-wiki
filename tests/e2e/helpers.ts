@@ -58,7 +58,12 @@ export interface CliResult {
 export function runCli(
   script: string,
   args: readonly string[],
-  options: { color?: boolean; env?: NodeJS.ProcessEnv; cwd?: string } = {},
+  options: {
+    color?: boolean;
+    env?: NodeJS.ProcessEnv;
+    cwd?: string;
+    input?: string;
+  } = {},
 ): Promise<CliResult> {
   const realScript = realpathSync(script);
   const env: NodeJS.ProcessEnv = { ...process.env, NO_COLOR: "1" };
@@ -71,7 +76,7 @@ export function runCli(
 
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [realScript, ...args], {
-      stdio: "pipe",
+      stdio: ["pipe", "pipe", "pipe"],
       env,
       cwd: options.cwd,
     });
@@ -87,6 +92,9 @@ export function runCli(
     });
     child.on("error", reject);
     child.on("close", (code) => resolve({ code, out, err }));
+
+    // EOF for CLIs that read stdin; a harmless no-op for the rest.
+    child.stdin.end(options.input);
   });
 }
 

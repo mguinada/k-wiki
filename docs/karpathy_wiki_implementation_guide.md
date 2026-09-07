@@ -942,10 +942,11 @@ derived settings file; checkout resolution is the
 nearest binding file walking up from the cwd, then the cwd itself.
 Since the dispatcher (issue #337) `k-wiki` is the universal front
 door over both doors: the binding chain classifies the agent door
-(read verbs only; operator verbs refused loudly with both escapes
-named; every run prints its resolved door and instance as dim
-stderr lines), and the cwd fallback is the human door with the full
-verb table — the read verbs above behave identically on both.
+(the read verbs plus `propose`, the gated agent write; operator
+verbs refused loudly with both escapes named; every run prints its
+resolved door and instance as dim stderr lines), and the cwd
+fallback is the human door with the full verb table — the read
+verbs above behave identically on both.
 One binding binds exactly one wiki — lists and multi-wiki forms are
 rejected — and there is no filing passthrough: stage 2 stays
 human-run inside the checkout. Besides `k-wiki query
@@ -957,13 +958,48 @@ title` line per page, grouped by type in §11's index order), `read
 projection check). The README's "Querying from any project"
 section carries the full contract.
 
+**Redirected filing (issue #340): `k-wiki propose <slug> [<file>]`
+is the v1 agent write verb.** The agent door's whitelist is the
+read verbs plus exactly this one write verb; a write through it
+*is* a sandbox write — redirect-not-reject, no flag to misuse. The
+note body comes from the file argument (or stdin), is wrapped in a
+deterministic template (`title` — from `--title` or the slug —
+and `type` — from `--type`, default `query` — frontmatter), and
+lands as one gated run through the §26a primitive: write, accept-
+gate (only `wiki/sandbox/**` deltas survive; any main-tree delta
+reverts the run and fails it loudly), stamp (`via: agent`,
+`expires:`), and one atomic `sandbox: <slug>` commit with the
+`wiki/log.md` audit entry. The instance resolves through the verb's
+own chain — the `-w`/`--wiki` flag beats the binding's `wiki` key,
+never an ambient cwd default — so a wrong-repo accept-gate is a
+refusal, not a cross-instance write. The candidate is provisional:
+a human reviews and promotes it (family 7); filing reviewed pages
+stays `--file-last`, human-run. `promote` itself is absent, not
+denied, on the agent door — it simply is not forwarded there; and
+an operator verb from a bound project is absent loudly: the usage
+error names the door and both escapes (`cd` into the checkout, or
+the standalone `bin/` launcher).
+
+Honest threat model, verbatim: **structural friction +
+deterministic detection + undo + audit — never a security boundary
+against a shell-capable agent on the same machine.** Two
+corollaries the wording already implies, stated plainly: wiki-sync
+does not refuse a dirty tree at start, and auto-revert covers
+accept-gate runs and lint-caught edges, not arbitrary rogue writes.
+The sandbox's write rules live in `prompts/propose.md` (the writing
+agent's contract) and here in the landed docs — not in
+`wiki/AGENTS.md`, whose scope is the reviewed wiki surface (the
+#336 landed-docs decision).
+
 Full text: `prompts/query.md`.
 
 Intent: find the relevant pages via `index.md`, synthesize an answer
 citing them with wikilinks, and say so when the wiki cannot answer —
 never inventing facts beyond what `wiki/` and `raw/` support. The
-agent never files: an omitted flag can never produce wiki writes,
-which is what agent-facing use requires.
+agent never writes the reviewed wiki: an omitted flag can never
+produce wiki writes — the one write verb (`propose`) files into the
+sandbox (§26a), never the reviewed surface, which is what
+agent-facing use requires.
 
 Filed answers are how questions compound into knowledge: the next time the question arises, the wiki already contains the answer.
 
@@ -1701,8 +1737,9 @@ The sandbox is the agent-write half of the two-door authority split
 agent writes land in an in-tree `wiki/sandbox/` namespace inside the
 resolved instance's data repo, and the **accept-gate is the
 isolation** — there is no ungated write path. The foundation landed
-as a reusable library primitive (`src/sandbox/`): the `propose` verb
-that drives it (family 6, issue #340), the TTL reaper (family 4,
+as a reusable library primitive (`src/sandbox/`): the `propose`
+verb that drives it is built (family 6, issue #340 — the gate's
+caller in `src/sandbox/propose.ts`), the TTL reaper (family 4,
 issue #338), and promotion
 (family 7, issue #341 — landed, see §16's promotion subsection) all
 build on it; the citation wall (family
@@ -1894,7 +1931,7 @@ Ideas deliberately **not pursued now**. Each has a clear trigger for reconsidera
 | Marp | Slide decks generated from wiki pages | Presentations are needed from wiki material |
 | LLM Wiki v2 extensions | Supersession tracking, retention decay, typed relationships, consolidation tiers | The wiki exceeds ~200 pages |
 | CLI interaction layer (`oclif` / `@inquirer/prompts` / `Ink`) | Framework plumbing, one-shot prompts, or a full TUI for interactive use | Interactive ingest mode is built, or the `k-wiki` command set (issue #76: query, status, list, read, health) outgrows the shared CLI shell (`src/cli/shell.ts`); until then it covers all flags |
-| Operator dispatcher (`k-wiki sync \| ingest \| …`, or a second entry name) | **Built 2026-09-07 (issue #337, family 2 of the #289 epic)**: `k-wiki` is the universal front door — one verb table, flat grammar 1:1 with launcher basenames, dispatched by import (never spawn), tiers porcelain-first in bare help, two doors (resolution context: binding → agent door with the read whitelist and loud operator absence; cwd → human door with the full table), mandatory verb classes (read / write-note / operator) with drift guards, global `-w`/`-h` with verb-first-canonical reordering, and door/instance dim lines. The parked-again part is only the trigger tail: `npx`-style distribution stays future work | As built it needs nothing further; the row keeps a trigger only for a distribution story (`npx k-wiki …`) or a second real operator adopting the pipeline. Remaining #289 families: agent write verbs (`propose`), human-door `promote`. The oclif row above stays parked on its own trigger |
+| Operator dispatcher (`k-wiki sync \| ingest \| …`, or a second entry name) | **Built 2026-09-07 (issue #337, family 2 of the #289 epic)**: `k-wiki` is the universal front door — one verb table, flat grammar 1:1 with launcher basenames, dispatched by import (never spawn), tiers porcelain-first in bare help, two doors (resolution context: binding → agent door with the read-plus-`propose` whitelist and loud operator absence; cwd → human door with the full table), mandatory verb classes (read / write-note / operator) with drift guards, global `-w`/`-h` with verb-first-canonical reordering, and door/instance dim lines. The parked-again part is only the trigger tail: `npx`-style distribution stays future work | As built it needs nothing further; the row keeps a trigger only for a distribution story (`npx k-wiki …`) or a second real operator adopting the pipeline. Remaining #289 families: human-door `promote`. The oclif row above stays parked on its own trigger |
 
 Several options pair with agent skills from [kepano/obsidian-skills](https://github.com/kepano/obsidian-skills). Install a skill when its trigger fires, not before — a skill's cost is context and attention. `obsidian-markdown` and `obsidian-bases` are installed at implementation time (Section 23); `defuddle` and `json-canvas` are installed when their rows above are triggered.
 

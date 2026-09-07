@@ -15,8 +15,9 @@ the terminal can follow the same five steps.
 
 `k-wiki` is the one front door for every wiki operation, and which
 verbs answer depends on the door: from a bound project you are on
-the agent door — the read-only verbs (`query`, `status`, `list`,
-`read`, `health`) and nothing else. Operator verbs exist on the
+the agent door — the read verbs (`query`, `status`, `list`,
+`read`, `health`) plus `propose` (the gated write into
+`wiki/sandbox/`) and nothing else. Operator verbs exist on the
 human door only; asking the user is the correct move when one is
 needed.
 
@@ -58,9 +59,11 @@ Lookup: `k-wiki list [type]` for the page catalog, `k-wiki read
 across pages or a recurring question: `k-wiki query "<question>"` —
 runs an LLM, can take minutes; the answer is stdout, stderr is
 progress. A page that already answers makes the query unnecessary:
-browse first. Every run prints its resolved door and instance as
-dim stderr lines — read them; a wrong-corpus call is visible there
-before you trust the answer.
+browse first. To hand a candidate answer over for human review:
+`k-wiki propose <slug> <file>` (the note body from the file, or
+stdin) — the one agent write path. Every run prints its resolved
+door and instance as dim stderr lines — read them; a wrong-corpus
+call is visible there before you trust the answer.
 
 ## Trust rules
 
@@ -79,8 +82,10 @@ before you trust the answer.
 
 ## What it is not
 
-No writes: the agent door exposes no way to file, edit, or commit
-wiki pages, and none should be attempted by hand. Filing an answer
+No writes to the reviewed wiki: the one agent write path is
+`propose` — a gated, stamped candidate under `wiki/sandbox/` that
+a human reviews and promotes; no reviewed page may be edited or
+committed by hand. Filing a reviewed answer
 is the user's step (`wiki-query --file-last` — with `--wiki <name>`
 when the binding named an instance — run by the human inside the
 checkout). Operator verbs (the sync and maintenance pipeline) are

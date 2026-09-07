@@ -63,11 +63,19 @@ describe("k-wiki verb table", () => {
 
   it("lists every runtime launcher 1:1 as an operator verb", async () => {
     const launchers = (await launcherNames()).sort();
-    const dispatched = VERB_NAMES.filter(
-      (name) => !READ_VERBS.includes(name),
-    ).sort();
+    const dispatched = VERBS.filter((verb) => verb.klass === "operator")
+      .map((verb) => verb.name)
+      .sort();
 
     expect(dispatched).toEqual(launchers);
+  });
+
+  it("keeps every write-note verb k-wiki's own and gated", () => {
+    const writeNotes = VERBS.filter((verb) => verb.klass === "write-note").map(
+      (verb) => verb.name,
+    );
+
+    expect(writeNotes).toEqual(["propose"]);
   });
 
   it("keeps every non-read verb wired to a dispatch main", () => {
@@ -76,6 +84,13 @@ describe("k-wiki verb table", () => {
     );
 
     expect(unwired.map((verb) => verb.name)).toEqual([]);
+  });
+
+  it("wires every write-note main to the sandbox domain (the gate's caller)", async () => {
+    const propose = VERBS.find((verb) => verb.name === "propose");
+
+    expect(propose?.klass).toBe("write-note");
+    expect(propose?.main).toBeDefined();
   });
 
   it("keeps every read verb off the launcher mains", () => {
@@ -107,7 +122,7 @@ describe("k-wiki verb table", () => {
   });
 
   it("derives the agent whitelist from the verb classes", () => {
-    expect(AGENT_COMMANDS).toEqual(READ_VERBS);
+    expect(AGENT_COMMANDS).toEqual([...READ_VERBS, "propose"]);
   });
 
   it("keeps every verb inside the porcelain spotlight list", () => {
@@ -117,6 +132,7 @@ describe("k-wiki verb table", () => {
       "list",
       "read",
       "health",
+      "propose",
       "wiki-sync",
       "wiki-query",
     ]);

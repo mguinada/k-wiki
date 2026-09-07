@@ -1,10 +1,10 @@
 /**
  * The k-wiki verb table (issue #337): the full human-door command
  * vocabulary — one row per verb, 1:1 with the `bin/` and
- * `bin/libexec/` launcher basenames (the read verbs are k-wiki's
- * own) — with the mandatory class per verb (decision 11): `read`
- * (both doors), `write-note` (agent-door gated writes; none yet —
- * the first, `propose`, lands with the sandbox family), and
+ * `bin/libexec/` launcher basenames (the read verbs and `propose`
+ * are k-wiki's own) — with the mandatory class per verb (decision
+ * 11): `read` (both doors), `write-note` (agent-door gated
+ * writes — `propose`, the sandbox write, issue #340), and
  * `operator` (human door only; redirection is incoherent for
  * pipeline verbs). The tiers are the #287 grouping the bare help
  * prints, porcelain first. The bare help itself is assembled from
@@ -27,6 +27,7 @@ import { main as checkRawCli } from "../health/check-raw.ts";
 import { main as wikiIngest } from "../ingest/wiki-ingest-cli.ts";
 import { main as wikiPromote } from "../query/wiki-promote.ts";
 import { main as wikiQuery } from "../query/wiki-query.ts";
+import { runProposeVerb as propose } from "../sandbox/propose.ts";
 import { main as scheduledRun } from "../schedule/scheduled-run.ts";
 import { main as setupMetaSync } from "../schedule/setup-meta-sync.ts";
 import { main as setupSchedule } from "../schedule/setup-schedule.ts";
@@ -60,8 +61,9 @@ export interface VerbSpec {
   /** The gate a write-note verb is wired to (decision 11): the
    *  agent-door write path. Undefined for every other class. */
   readonly gate?: "sandbox";
-  /** The launcher-shimmed main (operator verbs); read verbs run
-   *  through runAgentVerbs and carry none. */
+  /** The dispatch main (operator and write-note verbs — the
+   *  write-note main is the gate's caller); read verbs run through
+   *  runAgentVerbs and carry none. */
   readonly main?: (args: readonly string[]) => Promise<void>;
 }
 
@@ -109,6 +111,18 @@ export const VERBS: readonly VerbSpec[] = [
     tier: "porcelain",
     wiki: true,
     lines: ["projection coherence + freshness check (read-only)"],
+  },
+  {
+    name: "propose",
+    klass: "write-note",
+    tier: "porcelain",
+    wiki: true,
+    gate: "sandbox",
+    lines: [
+      "file one candidate note under wiki/sandbox/ — the gated",
+      "agent write; a human promotes it later",
+    ],
+    main: propose,
   },
   {
     name: "wiki-sync",
@@ -293,9 +307,9 @@ export const VERBS: readonly VerbSpec[] = [
 export const VERB_NAMES = VERBS.map((verb) => verb.name);
 
 /** The agent-door whitelist (decision 11): every verb whose class
- *  is not operator — today the read verbs; a gated write-note verb
- *  joins by its class. Drift-guarded against the k-wiki skill by
- *  tests/cli/k-wiki-skill.test.ts. */
+ *  is not operator — the read verbs plus the write-note `propose`;
+ *  another gated write-note verb joins by its class. Drift-guarded
+ *  against the k-wiki skill by tests/cli/k-wiki-skill.test.ts. */
 export const AGENT_COMMANDS: readonly string[] = VERBS.filter(
   (verb) => verb.klass !== "operator",
 ).map((verb) => verb.name);
@@ -399,10 +413,12 @@ export const HELP = [
   "",
   "Verb-specific flags come after the verb only — a verb flag",
   "before the verb is a usage error; no flag changes meaning by",
-  "position. Read-verb switches (after the verb):",
-  "  --checkout <path>    k-wiki checkout for this run (read verbs).",
+  "position. Read-verb and propose switches (after the verb):",
+  "  --checkout <path>    k-wiki checkout for this run (read and",
+  "                       propose verbs).",
   "  --timeout <secs>     Kill the agent run after this many seconds",
-  "                       and fail it (query only). Default: 1800.",
+  "                       and fail it (query and propose). Default:",
+  "                       1800.",
   "  --fail-on-stale      Make a stale projection fail health (exit 1).",
   "",
   "Binding file .k-wiki.json (at the bound project's root):",

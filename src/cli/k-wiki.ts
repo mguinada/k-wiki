@@ -6,7 +6,8 @@
  * The door is the resolution context, not the entry name (decision
  * 1): a checkout resolved by the `--checkout` flag, the
  * `K_WIKI_CHECKOUT` env var, or a `.k-wiki.json` binding is the
- * agent door (read verbs only; operator verbs refused loudly with
+ * agent door (the read verbs plus `propose`, the gated write;
+ * operator verbs refused loudly with
  * both escapes named); the cwd itself is the human door (full
  * table, structural default instance). Flag position is verb-first
  * canonical: leading global flags (`-w`/`--wiki`, `-h`/`--help`)
@@ -35,6 +36,11 @@ import { HELP, PORCELAIN_VERBS, VERBS, type VerbSpec } from "./verb-table.ts";
 const HELP_FLAGS = new Set(["-h", "--help"]);
 const WIKI_FLAGS = new Set(["-w", "--wiki"]);
 const CHECKOUT_TOKENS = new Set(["--checkout"]);
+
+/** True when a verb's own argv asks for help (-h or --help). */
+function asksHelp(tail: readonly string[]): boolean {
+  return tail.includes("-h") || tail.includes("--help");
+}
 
 /** Print one usage error red on stderr and set the exit code. */
 function fail(message: string): void {
@@ -215,10 +221,7 @@ function resolveInvocation(argv: readonly string[]): Invocation | undefined {
 
   const tail = rest.slice(1);
 
-  if (
-    verb.klass === "read" &&
-    (tail.includes("-h") || tail.includes("--help"))
-  ) {
+  if (verb.klass === "read" && asksHelp(tail)) {
     console.log(HELP);
 
     return undefined;
@@ -248,16 +251,23 @@ async function resolveCheckoutOrFail(input: {
 
 /** Run the resolved invocation: classify the door, refuse operator
  *  verbs on the agent door, print the dim door lines, and dispatch
- *  — read verbs through the agent-verb runner, operator verbs
- *  through their launcher-shimmed main with the remaining argv
- *  verbatim. */
+ *  — read verbs through the agent-verb runner, operator and
+ *  write-note verbs through their dispatch main with the remaining
+ *  argv verbatim. */
 async function runInvocation(
   invocation: Invocation,
   input: { readonly cwd: string; readonly home: string },
 ): Promise<void> {
   const { verb } = invocation;
+
+  if (verb.klass === "write-note" && asksHelp(invocation.tail)) {
+    await verb.main?.(invocation.verbArgs);
+
+    return;
+  }
+
   const flag =
-    verb.klass === "read"
+    verb.klass !== "operator"
       ? lastFlagValueFrom(invocation.tail, CHECKOUT_TOKENS, "--checkout=")
       : undefined;
   const resolution = await resolveCheckoutOrFail({

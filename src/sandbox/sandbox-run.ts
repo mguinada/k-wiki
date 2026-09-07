@@ -13,8 +13,9 @@
  * stamps are the pipeline's, the caller cannot forge them), appends
  * the audit entry to `wiki/log.md`, and leaves exactly one commit
  * (`sandbox: <slug>`, decision 5). An empty run commits nothing.
- * The `propose` verb that drives this (family 6) is a later issue;
- * everything here is a library primitive. The instance resolution is
+ * The `propose` verb that drives this is built (family 6, issue
+ * #340 — the gate's caller in `propose.ts`); everything here is a
+ * library primitive. The instance resolution is
  * the caller's own (decision 10): this module takes the resolved
  * instance and the run context, and refuses when they disagree — the
  * #124 wrong-repo foot-gun becomes a loud refusal, not a silent

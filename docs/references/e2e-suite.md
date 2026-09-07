@@ -47,8 +47,7 @@ e2e run or diagnosing a failing one.
   import on the human door, the door/instance dim stderr lines,
   and the tiered bare help.
 - **sandbox** — not a launcher run: the suite drives the `runSandboxRun`
-  library primitive (issue #336; the `propose` verb that will wrap it
-  is family 6) in-process, with a real stub agent child process over
+  library primitive (issue #336) in-process, with a real stub agent child process over
   a real git temp data repo. Four flows: a sandbox-only run lands one
   atomic `sandbox: <slug>` commit with `via:`/`expires:` stamps and
   the `wiki/log.md` audit entry; a main-tree-touching run is
@@ -56,6 +55,16 @@ e2e run or diagnosing a failing one.
   commit and pre-existing dirty work survive; a wrong-repo run
   (instance and run context naming different data repos) is refused
   before the agent runs; an empty run commits nothing.
+- **propose** — `bin/k-wiki propose` (issue #340, the verb that wraps
+  the primitive) as a real front-door child process from bound temp
+  projects with stub agents: a filing run lands the templated note as
+  one stamped `sandbox: <slug>` commit with only sandbox deltas and a
+  clean tree; a rogue stub's main-tree write reverts the run and
+  fails loudly; an idle stub's empty run fails having committed
+  nothing; the body arrives by file or stdin; the binding's `wiki`
+  key lands the note in that instance's repo (the verb's own
+  resolution — never the ambient cwd), and `-w` overrides the key in
+  both positions; the verb's own `-h` and usage errors answer.
 - **wiki-promote** — the human door's sandbox-note promotion (issue
   #341) through the real `bin/libexec/wiki-promote` launcher in temp
   data repos: the one-unit landing (body byte-exact minus stamps and
