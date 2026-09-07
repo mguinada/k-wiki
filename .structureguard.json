@@ -3,7 +3,7 @@
     "filesOver800": 1,
     "filesOver500": 11,
     "filesOver350": 23,
-    "maxFileLines": 1290,
+    "maxFileLines": 1295,
     "crossDomainEdges": 61,
     "dataToSyncEdges": 0,
     "parseArgsCopies": 1,

@@ -143,7 +143,21 @@ What it writes:
     with a loud warning and the run falls back to full mode. A
     legacy snapshot in this repo's outputs/ is adopted (copied) into
     the data repo when the data repo has none;
-  - outputs/runs/<timestamp>.md — the digest, also printed to stdout.
+  - outputs/runs/<timestamp>.md — the digest, also printed to stdout;
+  - <dataRoot>/dashboard.html — the static KPI dashboard,
+    regenerated after every completed run (read-only over the data
+    repo's artifacts; the data repo's .gitignore gains a
+    dashboard.html entry when it lacks one, so a bare git add never
+    commits it).
+
+After the guardrails two epilogues close the run: the static
+KPI dashboard is regenerated (see above), then the sandbox TTL
+reaper deletes each wiki/sandbox/ page whose expires: date is
+strictly past — working-tree deletion only, idempotent, a no-op in
+a repo without a sandbox namespace; the next wiki-sync cycle's
+commit stage versions the removals like any other wiki diff. The
+reaper runs on completed runs and on the no-change skip alike;
+the dashboard follows only a completed agent run.
 
 After every agent run three guardrails check the data repo: (1) immutability — only wiki/ (never the
 wiki/AGENTS.md contract), outputs/, and raw/manifest.json may change,

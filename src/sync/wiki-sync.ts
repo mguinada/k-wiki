@@ -1146,17 +1146,23 @@ What it does, stage by stage:
      [[<vault>/<page>]] link fails the cycle before the commit
      (nothing reverts; the uncommitted diff is the fix surface).
      Instances without the key skip the stage.
-  5. verification — run the deterministic check-fidelity and
+  5. citation wall — the one-way sandbox audit over the working
+     tree, every cycle: main pages never link, embed, or cite
+     wiki/sandbox/ pages, sandbox pages never carry sources edges
+     or cross-wiki links, and via: agent lives only inside the
+     sandbox. A violation fails the cycle after path-scoped-
+     reverting every offending page (never a whole-repo reset).
+  6. verification — run the deterministic check-fidelity and
      check-provenance cores over the data
      repo's wiki/ and raw/ — every cycle, including no-change
      cycles, no configuration. One problem line per finding fails
      the cycle before the commit: the lint edits are reverted (the
      ingest edits stay, uncommitted, as the fix surface), mirroring
      the lint stage's failure semantics, and the command exits 1.
-  6. commit — stage wiki/, raw/, and outputs/ in the data repo and
+  7. commit — stage wiki/, raw/, and outputs/ in the data repo and
      commit with a message summarizing sources processed and pages
      touched.
-  7. publish — only for configs whose sync.json carries a publish
+  8. publish — only for configs whose sync.json carries a publish
      section: copy the data repo's
      include-matched files (["wiki/**"] in the shipped config) into the
      mirror vault — an iCloud-served disposable reading copy for
@@ -1175,8 +1181,8 @@ What it does, stage by stage:
 
 With no changed sources the agent stages skip (cost scales with
 activity, not the clock), a clean data repo commits nothing, and the
-command exits 0; a configured crosslink audit and the verification
-checks still run. A failed previous ingest is retried even when sync
+command exits 0; the citation wall, a configured crosslink audit,
+and the verification checks still run. A failed previous ingest is retried even when sync
 reports no changes — the skip keys on the manifest snapshot, which a
 failed run leaves untouched. A failure at any stage stops the chain
 and exits 1; a tripped guardrail has already reverted its agent run,

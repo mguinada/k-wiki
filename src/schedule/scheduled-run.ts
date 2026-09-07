@@ -469,7 +469,7 @@ const HELP = `Usage: scheduled-run [-h | --help] [--settings <path>] [--outputs 
 Run one unattended pipeline cycle — the command the
 launchd job executes every interval. The wrapper is portable Node:
 lockfile → git pull --rebase → wiki-sync (sync → ingest → lint →
-crosslinks → verification → commit) → git push. wiki-sync stays
+crosslinks → citation wall → verification → commit) → git push. wiki-sync stays
 commit-only; the push happens here and only here.
 
   --settings <path>  Forwarded to wiki-sync. Default: the repo's
