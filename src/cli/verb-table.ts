@@ -307,9 +307,9 @@ export const VERBS: readonly VerbSpec[] = [
 export const VERB_NAMES = VERBS.map((verb) => verb.name);
 
 /** The agent-door whitelist (decision 11): every verb whose class
- *  is not operator — today the read verbs; a gated write-note verb
- *  joins by its class. Drift-guarded against the k-wiki skill by
- *  tests/cli/k-wiki-skill.test.ts. */
+ *  is not operator — the read verbs plus the write-note `propose`;
+ *  another gated write-note verb joins by its class. Drift-guarded
+ *  against the k-wiki skill by tests/cli/k-wiki-skill.test.ts. */
 export const AGENT_COMMANDS: readonly string[] = VERBS.filter(
   (verb) => verb.klass !== "operator",
 ).map((verb) => verb.name);

@@ -251,9 +251,9 @@ async function resolveCheckoutOrFail(input: {
 
 /** Run the resolved invocation: classify the door, refuse operator
  *  verbs on the agent door, print the dim door lines, and dispatch
- *  — read verbs through the agent-verb runner, operator verbs
- *  through their launcher-shimmed main with the remaining argv
- *  verbatim. */
+ *  — read verbs through the agent-verb runner, operator and
+ *  write-note verbs through their dispatch main with the remaining
+ *  argv verbatim. */
 async function runInvocation(
   invocation: Invocation,
   input: { readonly cwd: string; readonly home: string },
