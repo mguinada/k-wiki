@@ -2355,6 +2355,19 @@ describe("k-wiki doors", () => {
     expect(err).toContain("instance: meta");
   });
 
+  it("prints the last -w when the flag repeats across positions", async () => {
+    const h = await makeMetaHarness({});
+    const { err } = await runKWiki(join(h.project, "nested"), [
+      "-w",
+      "default",
+      "status",
+      "-w",
+      "meta",
+    ]);
+
+    expect(err).toContain("instance: meta");
+  });
+
   it("prints default for a flag-less human-door run", async () => {
     const h = await makeMetaHarness({});
     const { err } = await runKWiki(h.checkout, ["status"]);

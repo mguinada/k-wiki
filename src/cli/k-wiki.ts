@@ -119,21 +119,50 @@ function doorFor(origin: CheckoutOrigin): "human" | "agent" {
   return origin === "cwd" ? "human" : "agent";
 }
 
+/** The last value of one flag among a verb's args — the same
+ *  tokens, inline form, and bare `--` stop as the first-wins scan
+ *  above, but a repeated occurrence overrides, matching the
+ *  parseArgs rule (a repeated flag's last value wins) so the dim
+ *  instance line names the corpus the run resolves. */
+function lastFlagValueFrom(
+  args: readonly string[],
+  tokens: ReadonlySet<string>,
+  inlinePrefix: string,
+): string | undefined {
+  let value: string | undefined;
+
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index] ?? "";
+
+    if (arg === "--") {
+      return value;
+    }
+
+    if (tokens.has(arg)) {
+      value = args[index + 1];
+    } else if (arg.startsWith(inlinePrefix)) {
+      value = arg.slice(inlinePrefix.length);
+    }
+  }
+
+  return value;
+}
+
 /** The wiki instance name the dispatcher resolved for the dim line
- *  (decision 16): the explicit -w/--wiki flag — leading or, for a
- *  verb that takes it, in verb position — beats the binding's wiki
- *  key; absent both, the structural default. */
+ *  (decision 16): the explicit -w/--wiki flag — last occurrence
+ *  wins, as in the verb's own parse, wherever it stood before the
+ *  reordering — beats the binding's wiki key; absent both, the
+ *  structural default. */
 function resolvedInstanceName(
   verb: VerbSpec,
-  leadWiki: string | undefined,
   verbArgs: readonly string[],
   resolution: CheckoutResolution,
 ): string {
-  const fromVerb = verb.wiki
-    ? flagValueFrom(verbArgs, WIKI_FLAGS, "--wiki=")
+  const fromFlag = verb.wiki
+    ? lastFlagValueFrom(verbArgs, WIKI_FLAGS, "--wiki=")
     : undefined;
 
-  return leadWiki ?? fromVerb ?? resolution.wiki ?? "default";
+  return fromFlag ?? resolution.wiki ?? "default";
 }
 
 /** Print the resolved door and instance as dim stderr lines — the
@@ -141,7 +170,6 @@ function resolvedInstanceName(
 function printDoorLines(
   verb: VerbSpec,
   resolution: CheckoutResolution,
-  leadWiki: string | undefined,
   verbArgs: readonly string[],
 ): void {
   const dim = terminalColors().dim;
@@ -153,7 +181,7 @@ function printDoorLines(
   );
   console.error(
     dim(
-      `instance: ${resolvedInstanceName(verb, leadWiki, verbArgs, resolution)}`,
+      `instance: ${resolvedInstanceName(verb, verbArgs, resolution)}`,
     ),
   );
 }
@@ -174,13 +202,12 @@ function verbSpec(name: string): VerbSpec | undefined {
 }
 
 /** One resolved invocation: the verb, the argv it runs with (the
- *  verb replaced by the reordered leading globals), the argv that
- *  followed the verb, and the leading -w value. */
+ *  verb replaced by the reordered leading globals), and the argv
+ *  that followed the verb. */
 interface Invocation {
   readonly verb: VerbSpec;
   readonly verbArgs: readonly string[];
   readonly tail: readonly string[];
-  readonly leadWiki: string | undefined;
 }
 
 /** Resolve the front-door argv into the invocation to run; a help
@@ -229,7 +256,6 @@ function resolveInvocation(argv: readonly string[]): Invocation | undefined {
     verb,
     verbArgs: [...lead, ...tail],
     tail,
-    leadWiki: flagValueFrom(lead, WIKI_FLAGS, "--wiki="),
   };
 }
 
@@ -278,7 +304,7 @@ async function runInvocation(
     return;
   }
 
-  printDoorLines(verb, resolution, invocation.leadWiki, invocation.tail);
+  printDoorLines(verb, resolution, invocation.verbArgs);
 
   if (verb.klass === "read") {
     await runAgentVerbs(verb.name, invocation.verbArgs, {
