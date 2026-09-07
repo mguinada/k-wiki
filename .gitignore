@@ -74,3 +74,6 @@ settings-*.yml
 
 # Per-machine agent binding: checkout path differs per clone (README, k-wiki CLI)
 .k-wiki.json
+# Same rationale for the dev-agent config under .agents/ (decision 16,
+# epic #289): checkout path and wiki name differ per clone.
+.agents/.k-wiki.json

@@ -658,6 +658,29 @@ describe("k-wiki dispatcher e2e", () => {
     expect(result.err).toContain("bin/libexec/check-links");
   });
 
+  it("keeps wiki-promote absent on the agent door (human-only authority)", async () => {
+    const setup = await makeSetup();
+
+    await bind(setup);
+
+    const result = await runCli(K_WIKI_SCRIPT, ["wiki-promote"], {
+      cwd: setup.project,
+    });
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("not available on the agent door");
+    expect(result.err).toContain("bin/libexec/wiki-promote");
+  });
+
+  it("lists wiki-promote in the plumbing tier of the bare help", async () => {
+    const result = await runCli(K_WIKI_SCRIPT, []);
+
+    expect(result.code).toBe(0);
+    expect(result.out.indexOf("Maintenance (plumbing")).toBeLessThan(
+      result.out.indexOf("wiki-promote"),
+    );
+  });
+
   it("dispatches a plumbing verb on the human door by import", async () => {
     const setup = await makeSetup();
     const result = await runCli(

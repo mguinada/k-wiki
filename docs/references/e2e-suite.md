@@ -56,3 +56,12 @@ e2e run or diagnosing a failing one.
   commit and pre-existing dirty work survive; a wrong-repo run
   (instance and run context naming different data repos) is refused
   before the agent runs; an empty run commits nothing.
+- **wiki-promote** — the human door's sandbox-note promotion (issue
+  #341) through the real `bin/libexec/wiki-promote` launcher in temp
+  data repos: the one-unit landing (body byte-exact minus stamps and
+  agent-written sources, page + `index.md` + `log.md` entry + sandbox-copy
+  deletion as one `promote: <slug>` commit leaving a clean tree), the
+  already-promoted, dirty-tree, and untraceable-sources refusals, a
+  promotion alongside unrelated sandbox peers, and the whole-unit
+  rollback when the citation wall trips. The verb's agent-door absence
+  is pinned in the k-wiki dispatcher suite.
