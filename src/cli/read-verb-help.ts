@@ -8,6 +8,17 @@
  * in the table lacks its scoped help.
  */
 
+/** The instance-selection and checkout options every read verb
+ *  takes — one authored block, interpolated into every verb's
+ *  help so the five contracts cannot drift apart. */
+const SHARED_OPTIONS = `  -w, --wiki <name>   Select the wiki instance — an alias in
+                      sync.json's instances map first, then a
+                      sync-<name>.json stem in the checkout root —
+                      overriding the binding's wiki key. An unknown
+                      name fails listing every known name.
+  --checkout <path>   k-wiki checkout for this run (a ~ path
+                      expands).`;
+
 export const READ_VERB_HELP: Readonly<Record<string, string>> = {
   query: `Usage: k-wiki query [-h | --help] [-w, --wiki <name>] [--checkout <path>]
        [--timeout <secs>] "<question>"
@@ -22,13 +33,7 @@ Arguments:
                  is a usage error.
 
 Options:
-  -w, --wiki <name>   Select the wiki instance — an alias in
-                      sync.json's instances map first, then a
-                      sync-<name>.json stem in the checkout root —
-                      overriding the binding's wiki key. An unknown
-                      name fails listing every known name.
-  --checkout <path>   k-wiki checkout for this run (a ~ path
-                      expands).
+${SHARED_OPTIONS}
   --timeout <secs>    Kill the agent run after this many seconds
                       and fail it. Default: 1800.
   -h, --help          This help; no side effects.
@@ -52,13 +57,7 @@ directories, the index page, and the wiki's last change. Works on
 both doors; run it before querying an unfamiliar project.
 
 Options:
-  -w, --wiki <name>   Select the wiki instance — an alias in
-                      sync.json's instances map first, then a
-                      sync-<name>.json stem in the checkout root —
-                      overriding the binding's wiki key. An unknown
-                      name fails listing every known name.
-  --checkout <path>   k-wiki checkout for this run (a ~ path
-                      expands).
+${SHARED_OPTIONS}
   -h, --help          This help; no side effects.
 
 What it writes: nothing — the binding report goes to stdout.
@@ -77,13 +76,7 @@ Arguments:
             argument is a usage error.
 
 Options:
-  -w, --wiki <name>   Select the wiki instance — an alias in
-                      sync.json's instances map first, then a
-                      sync-<name>.json stem in the checkout root —
-                      overriding the binding's wiki key. An unknown
-                      name fails listing every known name.
-  --checkout <path>   k-wiki checkout for this run (a ~ path
-                      expands).
+${SHARED_OPTIONS}
   -h, --help          This help; no side effects.
 
 What it writes: nothing — the listing goes to stdout. Exit 0
@@ -102,13 +95,7 @@ Arguments:
             error listing near matches when any exist.
 
 Options:
-  -w, --wiki <name>   Select the wiki instance — an alias in
-                      sync.json's instances map first, then a
-                      sync-<name>.json stem in the checkout root —
-                      overriding the binding's wiki key. An unknown
-                      name fails listing every known name.
-  --checkout <path>   k-wiki checkout for this run (a ~ path
-                      expands).
+${SHARED_OPTIONS}
   -h, --help          This help; no side effects.
 
 What it writes: nothing — the page goes to stdout. Exit 0 prints
@@ -124,13 +111,7 @@ manifest entry and projected note consistent) and freshness
 both doors; run it before trusting answers from a wiki.
 
 Options:
-  -w, --wiki <name>   Select the wiki instance — an alias in
-                      sync.json's instances map first, then a
-                      sync-<name>.json stem in the checkout root —
-                      overriding the binding's wiki key. An unknown
-                      name fails listing every known name.
-  --checkout <path>   k-wiki checkout for this run (a ~ path
-                      expands).
+${SHARED_OPTIONS}
   --fail-on-stale     Make a stale projection fail (Exit 1);
                       without the flag staleness is a warning and
                       exit stays 0.
