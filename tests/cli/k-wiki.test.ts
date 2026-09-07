@@ -2212,6 +2212,12 @@ describe("k-wiki leading global flags", () => {
     expect(out).toContain("Usage: k-wiki");
   });
 
+  it("prints the front-door help for a read verb's own -h", async () => {
+    const out = (await runKWiki(process.cwd(), ["query", "--help"])).out;
+
+    expect(out).toContain("Usage: k-wiki");
+  });
+
   it("prints the front-door help when a global flag has no verb", async () => {
     const { out } = await runKWiki(process.cwd(), ["-w", "meta"]);
 

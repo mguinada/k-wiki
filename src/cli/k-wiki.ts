@@ -115,7 +115,7 @@ function flagValueFrom(
 /** The door an invocation runs on: the resolution chain resolving a
  *  binding (flag, env, file) is the agent door; the cwd fallback is
  *  the human door (decision 1). */
-export function doorFor(origin: CheckoutOrigin): "human" | "agent" {
+function doorFor(origin: CheckoutOrigin): "human" | "agent" {
   return origin === "cwd" ? "human" : "agent";
 }
 
@@ -294,7 +294,7 @@ async function runInvocation(
 
 /** The dispatch loop: reorder leading globals, resolve the verb,
  *  classify the door, print the dim door lines, and run it. */
-export async function dispatch(
+async function dispatch(
   argv: readonly string[],
   input: { readonly cwd: string; readonly home: string },
 ): Promise<void> {
