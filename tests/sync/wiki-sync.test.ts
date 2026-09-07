@@ -1041,7 +1041,7 @@ describe("runWikiSync repo-sourced instances", () => {
       ...optionsFor(h, { onProgress: (m) => progress.push(m) }),
     });
 
-    expect(progress).toContainEqual("wiki-sync: stage 1/5 — sync");
+    expect(progress).toContainEqual("wiki-sync: stage 1/6 — sync");
     expect(progress.join("\n")).toMatch(
       /^repo "k-wiki": \d+ of \d+ examined files selected at commit /m,
     );
@@ -1065,6 +1065,7 @@ describe("stage table", () => {
       "sync",
       "ingest",
       "lint",
+      "citations",
       "verification",
       "commit",
     ]);
@@ -1081,6 +1082,7 @@ describe("stage table", () => {
       "ingest",
       "lint",
       "crosslinks",
+      "citations",
       "verification",
       "commit",
     ]);
@@ -1092,16 +1094,24 @@ describe("stage table", () => {
         domains: undefined,
         publish: { mirror: "/mirror", include: ["wiki/**"], root: undefined },
       }),
-    ).toEqual(["sync", "ingest", "lint", "verification", "commit", "publish"]);
+    ).toEqual([
+      "sync",
+      "ingest",
+      "lint",
+      "citations",
+      "verification",
+      "commit",
+      "publish",
+    ]);
   });
 
   it("numbers a stage line by its table position", () => {
     expect(
       stageLine(
-        ["sync", "ingest", "lint", "verification", "commit"],
+        ["sync", "ingest", "lint", "citations", "verification", "commit"],
         "verification",
       ),
-    ).toBe("wiki-sync: stage 4/5 — verification");
+    ).toBe("wiki-sync: stage 5/6 — verification");
   });
 });
 
@@ -1189,8 +1199,8 @@ describe("runWikiSync publish stage (issue #15)", () => {
       ...optionsFor(h, { onProgress: (m) => progress.push(m) }),
     });
 
-    expect(progress).toContainEqual("wiki-sync: stage 5/6 — commit");
-    expect(progress).toContainEqual("wiki-sync: stage 6/6 — publish");
+    expect(progress).toContainEqual("wiki-sync: stage 6/7 — commit");
+    expect(progress).toContainEqual("wiki-sync: stage 7/7 — publish");
   });
 
   it("withholds the nothing-to-do digest when publish did work", async () => {
@@ -1228,6 +1238,7 @@ describe("formatFinalDigest", () => {
       ingest: { status: "skipped", reason: "no changed sources" },
       lint: undefined,
       crosslinks: undefined,
+      citations: { pages: 1, sandboxPages: 0 },
       verification: {
         fidelity: { problems: [], quotes: 0, titles: 0, skipped: 0, pages: 1 },
         provenance: {
@@ -1326,6 +1337,7 @@ describe("formatFinalDigest", () => {
       ingest: { status: "skipped", reason: "no changed sources" },
       lint: undefined,
       crosslinks: undefined,
+      citations: { pages: 1, sandboxPages: 0 },
       verification: {
         fidelity: { problems: [], quotes: 0, titles: 0, skipped: 0, pages: 1 },
         provenance: {
@@ -1449,7 +1461,7 @@ describe("runWikiSync crosslinks stage", () => {
       ...optionsFor(h, { onProgress: (m) => progress.push(m) }),
     });
 
-    expect(progress).toContainEqual("wiki-sync: stage 4/6 — crosslinks");
+    expect(progress).toContainEqual("wiki-sync: stage 4/7 — crosslinks");
   });
 
   it("skips the stage outright when no domains are configured", async () => {
@@ -1633,6 +1645,112 @@ describe("runWikiSync crosslinks stage", () => {
   });
 });
 
+describe("runWikiSync citation wall stage (issue #339)", () => {
+  /** A stamped sandbox note in the harness's data repo (far-future
+   *  expiry — the reaper must not interfere with the wall tests). */
+  async function seedSandboxNote(h: Harness): Promise<void> {
+    await mkdir(join(h.dataRoot, "wiki", "sandbox"), { recursive: true });
+    await writeFile(
+      join(h.dataRoot, "wiki", "sandbox", "proposal.md"),
+      "---\nvia: agent\nexpires: 2099-01-01\n---\n\nProposal body.\n",
+    );
+  }
+
+  it("passes a sandbox note that only reads main pages", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    await seedSandboxNote(h);
+    await writeFile(
+      join(h.dataRoot, "wiki", "sandbox", "proposal.md"),
+      "---\nvia: agent\nexpires: 2099-01-01\n---\n\nDiscusses [[src]].\n",
+    );
+
+    const result = await runWikiSync(optionsFor(h));
+
+    expect(result.citations).toMatchObject({ pages: 3, sandboxPages: 1 });
+    expect(formatFinalDigest(result)).toContain(
+      "- **Citations:** ok — the one-way wall holds over 3 pages (1 sandbox note)",
+    );
+  });
+
+  it("fails the cycle and reverts a rogue main→sandbox edge to its committed state", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const head = await headOf(h.dataRoot);
+
+    await seedSandboxNote(h);
+    const committed = await readFile(
+      join(h.dataRoot, "wiki", "sources", "src.md"),
+      "utf8",
+    );
+    await writeFile(
+      join(h.dataRoot, "wiki", "sources", "src.md"),
+      `${committed}\nSee [[proposal]].\n`,
+    );
+
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow(
+      /citation wall failed[\s\S]*wiki\/sources\/src\.md:\d+ -> \[\[proposal\]\]/,
+    );
+
+    await expect(
+      readFile(join(h.dataRoot, "wiki", "sources", "src.md"), "utf8"),
+    ).resolves.toBe(committed);
+    await expect(headOf(h.dataRoot)).resolves.toBe(head);
+    // The wall reverts exactly the offending pages — the sandbox note
+    // itself stays (it is legal) and the agent's ingest output stays.
+    await expect(
+      readFile(join(h.dataRoot, "wiki", "sandbox", "proposal.md"), "utf8"),
+    ).resolves.toContain("Proposal body.");
+  });
+
+  it("fails the cycle and reverts a via: agent stamp on a main page", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const head = await headOf(h.dataRoot);
+
+    // src.md is a page the ingest stub never touches, so the rogue
+    // stamp survives to the wall (index.md would be overwritten); it
+    // sits inside the existing frontmatter so the page stays a
+    // parseable source hub for the ingest guardrails.
+    const committed = await readFile(
+      join(h.dataRoot, "wiki", "sources", "src.md"),
+      "utf8",
+    );
+    await writeFile(
+      join(h.dataRoot, "wiki", "sources", "src.md"),
+      committed.replace("---\n", "---\nvia: agent\n"),
+    );
+
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow(
+      /citation wall failed[\s\S]*via: agent \(agent-stamped pages live only under wiki\/sandbox\/\)/,
+    );
+
+    await expect(
+      readFile(join(h.dataRoot, "wiki", "sources", "src.md"), "utf8"),
+    ).resolves.toBe(committed);
+    await expect(headOf(h.dataRoot)).resolves.toBe(head);
+  });
+
+  it("numbers the citation wall stage in the cycle progress", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const progress: string[] = [];
+
+    await runWikiSync(optionsFor(h, { onProgress: (m) => progress.push(m) }));
+
+    expect(progress).toContainEqual("wiki-sync: stage 4/6 — citations");
+  });
+
+  it("still checks the wall when the ingest stage skips", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    await runWikiSync(optionsFor(h));
+    await seedSandboxNote(h);
+
+    const second = await runWikiSync(optionsFor(h));
+
+    expect(second.ingest.status).toBe("skipped");
+    expect(second.citations).toMatchObject({ sandboxPages: 1 });
+  });
+});
+
 describe("runVerificationStage", () => {
   /** A minimal data-repo shape for the stage: wiki/ beside raw/,
    *  one title-clean concept page with a resolvable source link. */
@@ -1791,7 +1909,7 @@ describe("runWikiSync verification stage", () => {
       ...optionsFor(h, { onProgress: (m) => progress.push(m) }),
     });
 
-    expect(progress).toContainEqual("wiki-sync: stage 4/5 — verification");
+    expect(progress).toContainEqual("wiki-sync: stage 5/6 — verification");
   });
 
   it("numbers the commit stage in the cycle progress", async () => {
@@ -1802,7 +1920,7 @@ describe("runWikiSync verification stage", () => {
       ...optionsFor(h, { onProgress: (m) => progress.push(m) }),
     });
 
-    expect(progress).toContainEqual("wiki-sync: stage 5/5 — commit");
+    expect(progress).toContainEqual("wiki-sync: stage 6/6 — commit");
   });
 
   it("announces the crosslinks stage when domains are configured", async () => {
@@ -1816,7 +1934,7 @@ describe("runWikiSync verification stage", () => {
       ...optionsFor(h, { onProgress: (m) => progress.push(m) }),
     });
 
-    expect(progress).toContain("wiki-sync: stage 4/6 — crosslinks");
+    expect(progress).toContain("wiki-sync: stage 4/7 — crosslinks");
   });
 
   it("runs verification after the crosslink audit when domains are configured", async () => {
@@ -1830,9 +1948,9 @@ describe("runWikiSync verification stage", () => {
       ...optionsFor(h, { onProgress: (m) => progress.push(m) }),
     });
 
-    const crosslinks = progress.indexOf("wiki-sync: stage 4/6 — crosslinks");
+    const crosslinks = progress.indexOf("wiki-sync: stage 4/7 — crosslinks");
     const verification = progress.indexOf(
-      "wiki-sync: stage 5/6 — verification",
+      "wiki-sync: stage 6/7 — verification",
     );
 
     expect(verification).toBeGreaterThan(crosslinks);
@@ -2372,7 +2490,7 @@ describe("wiki-sync CLI", () => {
     const h = await makeCliHarness();
     const { err } = await runCli(cycleArgs(h));
 
-    expect(err).toContain("wiki-sync: stage 5/5 — commit");
+    expect(err).toContain("wiki-sync: stage 6/6 — commit");
   });
 
   it("leaves the exit code unset for a successful cycle through main", async () => {
@@ -2622,14 +2740,15 @@ describe("runWikiSync progress and invocation contract", () => {
     });
 
     for (const expected of [
-      "wiki-sync: stage 1/5 — sync",
-      "wiki-sync: stage 2/5 — ingest",
-      "wiki-sync: stage 3/5 — lint",
+      "wiki-sync: stage 1/6 — sync",
+      "wiki-sync: stage 2/6 — ingest",
+      "wiki-sync: stage 3/6 — lint",
       "wiki-sync: lint — invoking agent:",
       "wiki-sync: lint — agent finished",
       "wiki-sync: lint — guardrails passed",
-      "wiki-sync: stage 4/5 — verification",
-      "wiki-sync: stage 5/5 — commit",
+      "wiki-sync: stage 4/6 — citations",
+      "wiki-sync: stage 5/6 — verification",
+      "wiki-sync: stage 6/6 — commit",
     ]) {
       expect(progress.join("\n")).toContain(expected);
     }
@@ -3170,7 +3289,7 @@ describe("runWikiSync commit contents", () => {
     });
 
     expect(progress).toContain(
-      "wiki-sync: stage 3/5 — lint skipped (no ingest ran)",
+      "wiki-sync: stage 3/6 — lint skipped (no ingest ran)",
     );
   });
 });
@@ -3231,6 +3350,7 @@ describe("formatFinalDigest sections", () => {
         entries: [],
       },
       crosslinks: overrides.crosslinks,
+      citations: { pages: 4, sandboxPages: 0 },
       verification: {
         fidelity: { problems: [], quotes: 3, titles: 2, skipped: 0, pages: 4 },
         provenance: {

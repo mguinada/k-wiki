@@ -7,6 +7,7 @@ import { anchorResolves } from "../src/wiki/chapter-headings.ts";
 import {
   closingFence,
   FRONTMATTER_FENCE,
+  listSandboxPages,
   listWikiPages,
 } from "../src/wiki/pages.ts";
 import {
@@ -16,22 +17,27 @@ import {
 } from "../src/wiki/wiki-links.ts";
 
 /**
- * Wikilink checker: scans every Markdown page under wiki/, extracts
- * each `[[wikilink]]` (bare, aliased, or with a heading anchor), and
- * resolves it by page file name against the scanned tree. A
- * body-text heading anchor (`[[page#Chapter]]`, issue #235) must
- * also match a heading in the target page byte-identically — the
- * same rule `check-provenance` enforces for anchored `sources`
- * citations (issue #226), shared through anchorResolves, so the two
- * surfaces cannot drift. Anchored links inside the frontmatter
- * block are `sources` citations — check-provenance's domain — and
- * are not double-reported here. `#^block-id` references are blocks,
- * not headings, and are skipped; a `[[page#A#B]]` multi-level anchor
- * resolves against its final heading segment. Cross-wiki
- * `[[<vault>/<page>]]` links are external to this wiki and are
- * skipped (issue #81); `check-crosslinks` validates them against
- * the domain wikis themselves. Prints one `file:line -> [[link]]` line
- * per broken link and exits 1; exits 0 when every link resolves.
+ * Wikilink checker: scans every Markdown page under wiki/ — the
+ * sandbox namespace included (issue #339's scope rule: links *from*
+ * sandbox pages are validated exactly like main-page links, and
+ * links *into* the sandbox resolve silently — direction violations
+ * are check-citations' and the standing lint's business, never this
+ * tool's) — extracts each `[[wikilink]]` (bare, aliased, or with a
+ * heading anchor), and resolves it by page file name against the
+ * scanned tree. A body-text heading anchor (`[[page#Chapter]]`,
+ * issue #235) must also match a heading in the target page
+ * byte-identically — the same rule `check-provenance` enforces for
+ * anchored `sources` citations (issue #226), shared through
+ * anchorResolves, so the two surfaces cannot drift. Anchored links
+ * inside the frontmatter block are `sources` citations —
+ * check-provenance's domain — and are not double-reported here.
+ * `#^block-id` references are blocks, not headings, and are skipped;
+ * a `[[page#A#B]]` multi-level anchor resolves against its final
+ * heading segment. Cross-wiki `[[<vault>/<page>]]` links are
+ * external to this wiki and are skipped (issue #81);
+ * `check-crosslinks` validates them against the domain wikis
+ * themselves. Prints one `file:line -> [[link]]` line per broken
+ * link and exits 1; exits 0 when every link resolves.
  */
 
 export interface LinkReport {
@@ -61,7 +67,10 @@ export async function checkWikiLinks(
   // listWikiPages asserts the directory; the input path (not the
   // resolved one) lands in the error message, matching every other
   // checker that reports what the operator typed.
-  const files = await listWikiPages(wikiDirInput);
+  const files = [
+    ...(await listWikiPages(wikiDirInput)),
+    ...(await listSandboxPages(wikiDirInput)),
+  ];
   const index = buildPageIndex(files);
   const texts = new Map<string, string>();
   const broken: string[] = [];
@@ -124,12 +133,16 @@ Check that every [[wikilink]] under a wiki resolves: the target page
 must exist by file name, and a body-text heading anchor
 ([[page#Chapter]]) must match a heading in the target page
 byte-identically — no case or punctuation tolerance, because wiki
-anchors are generated, not typed. Anchored citations inside the
-frontmatter sources list are check-provenance's domain and are not
-re-checked here; block references ([[page#^block-id]]) and
-multi-level anchors' parent segments are skipped. Cross-wiki
-[[<vault>/<page>]] links are external and skipped; check-crosslinks
-validates them against the domain wikis.
+anchors are generated, not typed. The sandbox namespace
+(wiki/sandbox/) is scanned too: links from sandbox pages are
+validated exactly like main-page links, and links into the sandbox
+resolve silently — direction violations (main pages citing sandbox
+notes) are check-citations' business, never this tool's. Anchored
+citations inside the frontmatter sources list are check-provenance's
+domain and are not re-checked here; block references
+([[page#^block-id]]) and multi-level anchors' parent segments are
+skipped. Cross-wiki [[<vault>/<page>]] links are external and
+skipped; check-crosslinks validates them against the domain wikis.
 
   <wiki-dir>    Wiki root to scan. Default: the repo's own wiki/.
   -h, --help    Print this help and exit; no side effects.

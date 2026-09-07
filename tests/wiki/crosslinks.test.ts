@@ -75,6 +75,45 @@ describe("checkCrossWikiLinks", () => {
     expect(report.problems).toEqual([]);
   });
 
+  it("allows a sandbox page's plain internal links (the wall judges direction elsewhere)", async () => {
+    const brain = await makeWiki("brain", {
+      "concepts/note.md": "# Note\n",
+      "sandbox/proposal.md": "Discusses [[note]].\n",
+    });
+    const engineering = await makeWiki(
+      "engineering",
+      { "concepts/stub.md": "# Stub\n" },
+      "Engineering",
+    );
+
+    const report = await checkCrossWikiLinks(
+      join(brain, "brain"),
+      join(engineering, "engineering"),
+    );
+
+    expect(report.problems).toEqual([]);
+  });
+
+  it("forbids a slashed cross-wiki link from a sandbox page (issue #339)", async () => {
+    const brain = await makeWiki("brain", {
+      "sandbox/proposal.md": "Leak: [[engineering/stub]].\n",
+    });
+    const engineering = await makeWiki(
+      "engineering",
+      { "concepts/stub.md": "# Stub\n" },
+      "Engineering",
+    );
+
+    const report = await checkCrossWikiLinks(
+      join(brain, "brain"),
+      join(engineering, "engineering"),
+    );
+
+    expect(report.problems).toEqual([
+      "brain/sandbox/proposal.md:1 -> [[engineering/stub]] (sandbox pages must not use cross-wiki links)",
+    ]);
+  });
+
   it("counts the resolved external link", async () => {
     const brain = await makeWiki("brain", {
       "decision-fast-tests.md": "Backed by [[engineering/stub]].\n",

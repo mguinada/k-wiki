@@ -324,6 +324,41 @@ describe("checkWikiLinks", () => {
     expect(report.broken).toEqual([]);
   });
 
+  it("scans the sandbox namespace and validates its links to main pages", async () => {
+    const root = await makeWiki({
+      "concepts/vector-database.md": "# Vector Database\n",
+      "sandbox/proposal.md": "Discusses [[vector-database]].\n",
+    });
+
+    const report = await checkWikiLinks(join(root, "wiki"));
+
+    expect(report.broken).toEqual([]);
+    expect(report.pages).toBe(2);
+  });
+
+  it("reports a sandbox page's link to a renamed-away main page (targets must resolve)", async () => {
+    const root = await makeWiki({
+      "sandbox/proposal.md": "Points at [[renamed-away]].\n",
+    });
+
+    const report = await checkWikiLinks(join(root, "wiki"));
+
+    expect(report.broken).toEqual([
+      "wiki/sandbox/proposal.md:1 -> [[renamed-away]]",
+    ]);
+  });
+
+  it("resolves a main page's link into the sandbox without judging direction", async () => {
+    const root = await makeWiki({
+      "index.md": "See [[proposal]].\n",
+      "sandbox/proposal.md": "Body.\n",
+    });
+
+    const report = await checkWikiLinks(join(root, "wiki"));
+
+    expect(report.broken).toEqual([]);
+  });
+
   it("counts the found links and scanned pages of a clean tree", async () => {
     const root = await makeWiki({
       "index.md": "Start at [[vector-database]].\n",
