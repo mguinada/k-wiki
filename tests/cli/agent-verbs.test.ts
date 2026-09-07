@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
@@ -100,7 +100,7 @@ async function runVerb(
 describe("agentVerbUsageError", () => {
   it("requires a question for query", () => {
     expect(agentVerbUsageError("query", [])).toContain(
-      'a question is required',
+      "a question is required",
     );
   });
 

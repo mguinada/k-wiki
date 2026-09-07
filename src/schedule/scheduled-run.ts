@@ -576,7 +576,6 @@ function reportOutcome(outcome: CycleOutcome): void {
 export async function main(
   args: readonly string[] = process.argv.slice(2),
 ): Promise<void> {
-
   if (args.includes("-h") || args.includes("--help")) {
     console.log(HELP);
 

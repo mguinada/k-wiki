@@ -154,9 +154,7 @@ function printDoorLines(
     ),
   );
   console.error(
-    dim(
-      `instance: ${resolvedInstanceName(verb, verbArgs, resolution)}`,
-    ),
+    dim(`instance: ${resolvedInstanceName(verb, verbArgs, resolution)}`),
   );
 }
 
