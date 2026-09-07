@@ -921,6 +921,20 @@ describe("k-wiki status", () => {
     expect(out).toContain(`checkout:    ${h.checkout}`);
   });
 
+  it("resolves the last --checkout when the flag repeats", async () => {
+    const h = await makeBoundProject();
+    const other = await makeBoundProject();
+    const { out } = await runKWiki(join(h.project, "nested"), [
+      "status",
+      "--checkout",
+      h.checkout,
+      "--checkout",
+      other.checkout,
+    ]);
+
+    expect(out).toContain(`checkout:    ${other.checkout}`);
+  });
+
   it("names the binding file origin in the status output", async () => {
     const h = await makeBoundProject();
     const { out } = await runKWiki(join(h.project, "nested"), ["status"]);

@@ -83,35 +83,6 @@ function splitLeadingGlobals(argv: readonly string[]): {
   return { lead, helpAsked };
 }
 
-/** The first value of one flag among a verb's args: the two-token
- *  form (`--checkout <path>`, `-w <name>`) or the inline long form
- *  (`--flag=value`). Scans left to right, stops at a bare `--`,
- *  matches whole tokens only — a positional containing the flag
- *  text never matches. Undefined when absent. */
-function flagValueFrom(
-  args: readonly string[],
-  tokens: ReadonlySet<string>,
-  inlinePrefix: string,
-): string | undefined {
-  for (let index = 0; index < args.length; index++) {
-    const arg = args[index] ?? "";
-
-    if (arg === "--") {
-      return undefined;
-    }
-
-    if (tokens.has(arg)) {
-      return args[index + 1];
-    }
-
-    if (arg.startsWith(inlinePrefix)) {
-      return arg.slice(inlinePrefix.length);
-    }
-  }
-
-  return undefined;
-}
-
 /** The door an invocation runs on: the resolution chain resolving a
  *  binding (flag, env, file) is the agent door; the cwd fallback is
  *  the human door (decision 1). */
@@ -119,11 +90,14 @@ function doorFor(origin: CheckoutOrigin): "human" | "agent" {
   return origin === "cwd" ? "human" : "agent";
 }
 
-/** The last value of one flag among a verb's args — the same
- *  tokens, inline form, and bare `--` stop as the first-wins scan
- *  above, but a repeated occurrence overrides, matching the
- *  parseArgs rule (a repeated flag's last value wins) so the dim
- *  instance line names the corpus the run resolves. */
+/** The value of one flag among a verb's args: the two-token form
+ *  (`--checkout <path>`, `-w <name>`) or the inline long form
+ *  (`--flag=value`). Scans left to right, stops at a bare `--`,
+ *  matches whole tokens only — a positional containing the flag
+ *  text never matches, and a repeated occurrence overrides — the
+ *  parseArgs rule (a repeated flag's last value wins), so every
+ *  flag the dispatcher reads names the value the run resolves.
+ *  Undefined when absent. */
 function lastFlagValueFrom(
   args: readonly string[],
   tokens: ReadonlySet<string>,
@@ -286,7 +260,7 @@ async function runInvocation(
   const { verb } = invocation;
   const flag =
     verb.klass === "read"
-      ? flagValueFrom(invocation.tail, CHECKOUT_TOKENS, "--checkout=")
+      ? lastFlagValueFrom(invocation.tail, CHECKOUT_TOKENS, "--checkout=")
       : undefined;
   const resolution = await resolveCheckoutOrFail({
     flag,
