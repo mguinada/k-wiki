@@ -47,7 +47,7 @@ import {
 } from "../wiki/pages.ts";
 import { crossWikiTarget, extractWikilinks, stem } from "../wiki/wiki-links.ts";
 import { revertPathsToLastCommit } from "./sandbox-run.ts";
-import { SANDBOX_ROOT } from "./stamps.ts";
+import { SANDBOX_ROOT, SANDBOX_VIA } from "./stamps.ts";
 
 /** What one wall audit found. */
 export interface CitationWallReport {
@@ -107,7 +107,7 @@ function agentStampLine(text: string): number | undefined {
   }
 
   for (const [i, line] of lines.slice(1, end).entries()) {
-    if (/^via:/.test(line) && unquote(line.slice(4).trim()) === "agent") {
+    if (/^via:/.test(line) && unquote(line.slice(4).trim()) === SANDBOX_VIA) {
       return i + 2;
     }
   }
@@ -138,19 +138,19 @@ function bodyViolations(
     const crossWiki = crossWikiTarget(link.target) !== undefined;
     const intoSandbox = namesSandbox(link.target);
 
-    if (fromSandbox && crossWiki) {
-      violations.push({
-        path,
-        line: link.line,
-        message: `${link.raw} (sandbox pages must not use cross-wiki links)`,
-      });
-    } else if (intoSandbox) {
+    if (intoSandbox) {
       violations.push({
         path,
         line: link.line,
         message: fromSandbox
           ? `${link.raw} (sandbox pages cite main wiki content only, never sandbox peers)`
           : `${link.raw} (main pages must not link or embed sandbox pages)`,
+      });
+    } else if (fromSandbox && crossWiki) {
+      violations.push({
+        path,
+        line: link.line,
+        message: `${link.raw} (sandbox pages must not use cross-wiki links)`,
       });
     }
   }

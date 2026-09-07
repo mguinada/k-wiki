@@ -29,6 +29,7 @@ import { statIfExists } from "../cli/shared.ts";
 import {
   changedPaths,
   headCommit,
+  porcelainStatus,
   runGit,
   type StatusEntry,
   tryGit,
@@ -261,7 +262,11 @@ async function revertOnePath(
  * the last committed state is guaranteed clean of it. A mid-window
  * commit is safe: HEAD at call time is simply the newest committed
  * state. Untracked offenders never existed in history and are
- * removed outright.
+ * removed outright. An offender that is a rename's target also
+ * restores its rename origin from HEAD — git pairs a rename only
+ * once the target carries an index entry, so an intent-to-add one
+ * is staged for the pairing, and the origin's deletion belongs to
+ * the offender's last committed state.
  */
 export async function revertPathsToLastCommit(
   run: RunContext,
@@ -269,10 +274,36 @@ export async function revertPathsToLastCommit(
 ): Promise<void> {
   const head = await headCommit(run.dataRoot, run.env);
 
-  for (const path of paths) {
+  await runGit(run.dataRoot, ["add", "-N", "--", ...paths], run.env);
+
+  const targets = new Set(paths);
+  const origins = statusRenameOrigins(
+    await porcelainStatus(run.dataRoot, run.env),
+    targets,
+  );
+
+  for (const path of [...paths, ...origins]) {
     await unstagePath(run, path);
     await checkoutFrom(run, head, path);
   }
+}
+
+/** The rename-origin paths of status entries whose target sits in
+ *  the revert set: restoring a renamed offender means restoring the
+ *  pair, target and origin. */
+function statusRenameOrigins(
+  status: readonly StatusEntry[],
+  targets: ReadonlySet<string>,
+): string[] {
+  return [
+    ...new Set(
+      status.flatMap((entry) =>
+        entry.origin !== undefined && targets.has(entry.path)
+          ? [entry.origin]
+          : [],
+      ),
+    ),
+  ];
 }
 
 /** Drop any index entry staged for the path — a staged addition

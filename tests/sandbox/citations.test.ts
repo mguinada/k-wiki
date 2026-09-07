@@ -243,6 +243,20 @@ describe("checkCitationWall", () => {
     ]);
   });
 
+  it("attributes a sandbox page's slashed same-namespace peer link to the sandbox-peers rule", async () => {
+    const wikiDir = await makeWiki({
+      "note-a.md": mainPage("Body."),
+      "sandbox/proposal.md": sandboxPage("See [[sandbox/draft]]."),
+      "sandbox/draft.md": sandboxPage("Body."),
+    });
+
+    const report = await checkCitationWall(wikiDir);
+
+    expect(report.problems).toEqual([
+      "wiki/sandbox/proposal.md:6 -> [[sandbox/draft]] (sandbox pages cite main wiki content only, never sandbox peers)",
+    ]);
+  });
+
   it("skips wikilinks inside fenced code blocks", async () => {
     const wikiDir = await makeWiki({
       "note-a.md": mainPage("```\n[[proposal]]\n```"),

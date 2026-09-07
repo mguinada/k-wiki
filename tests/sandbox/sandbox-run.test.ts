@@ -12,7 +12,7 @@ import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, describe, expect, it } from "vitest";
 import type { AgentRunner } from "../../src/ingest/agent-run.ts";
-import { runSandboxRun, slugError } from "../../src/sandbox/sandbox-run.ts";
+import { runSandboxRun, revertPathsToLastCommit, slugError } from "../../src/sandbox/sandbox-run.ts";
 import type { WikiInstance } from "../../src/sync/instance.ts";
 
 const run = promisify(execFile);
@@ -138,6 +138,18 @@ function sandboxRun(
     prompt: input.prompt ?? "write the proposal",
     runAgent: input.runAgent,
   });
+}
+
+/** A run context for the exported revert primitive. */
+function runContextAt(dataRoot: string) {
+  return {
+    dataRoot,
+    rawDir: join(dataRoot, "raw"),
+    wikiDir: join(dataRoot, "wiki"),
+    env: process.env,
+    now: NOW,
+    onProgress: () => {},
+  };
 }
 
 describe("slugError", () => {
@@ -553,5 +565,53 @@ describe("runSandboxRun", () => {
     });
 
     expect(subjects.trim().split("\n")).toEqual(["init"]);
+  });
+});
+
+describe("revertPathsToLastCommit", () => {
+  /** A data repo holding one committed wiki/concepts/old.md page. */
+  async function makeRenamedRepo(): Promise<string> {
+    const dataRoot = await makeRepo();
+
+    await mkdir(join(dataRoot, "wiki", "concepts"), { recursive: true });
+    await writeFile(join(dataRoot, "wiki", "concepts", "old.md"), "page\n");
+    await gitCommitAll(dataRoot, "seed page");
+
+    return dataRoot;
+  }
+
+  it("restores the rename origin of an unstaged renamed offender to its committed state", async () => {
+    const dataRoot = await makeRenamedRepo();
+
+    await rm(join(dataRoot, "wiki", "concepts", "old.md"));
+    await writeFile(join(dataRoot, "wiki", "concepts", "new.md"), "page\n");
+
+    await revertPathsToLastCommit(runContextAt(dataRoot), [
+      "wiki/concepts/new.md",
+    ]);
+
+    await expect(
+      readFile(join(dataRoot, "wiki", "concepts", "old.md"), "utf8"),
+    ).resolves.toBe("page\n");
+    expect(await statusOf(dataRoot)).toBe("");
+  });
+
+  it("restores the rename origin of a staged rename (git mv) to its committed state", async () => {
+    const dataRoot = await makeRenamedRepo();
+
+    await run(
+      "git",
+      ["mv", "wiki/concepts/old.md", "wiki/concepts/new.md"],
+      { cwd: dataRoot },
+    );
+
+    await revertPathsToLastCommit(runContextAt(dataRoot), [
+      "wiki/concepts/new.md",
+    ]);
+
+    await expect(
+      readFile(join(dataRoot, "wiki", "concepts", "old.md"), "utf8"),
+    ).resolves.toBe("page\n");
+    expect(await statusOf(dataRoot)).toBe("");
   });
 });
