@@ -30,6 +30,7 @@ import {
   type CheckoutResolution,
   resolveCheckout,
 } from "./k-wiki-binding.ts";
+import { READ_VERB_HELP } from "./read-verb-help.ts";
 import { HELP, PORCELAIN_VERBS, VERBS, type VerbSpec } from "./verb-table.ts";
 
 /** The leading global flag tokens (the reordering set). */
@@ -188,14 +189,30 @@ interface Invocation {
   readonly tail: readonly string[];
 }
 
+/** The front-door help answers this argv: a leading -h/--help
+ *  that cannot resolve to a verb (an unknown or flag-shaped token
+ *  after it) — help never fails, so those print the front-door
+ *  table instead of an error. The caller handles the no-verb
+ *  case. */
+function needsFrontDoorHelp(helpAsked: boolean, verbName: string): boolean {
+  return (
+    helpAsked && (verbName.startsWith("-") || verbSpec(verbName) === undefined)
+  );
+}
+
 /** Resolve the front-door argv into the invocation to run; a help
- *  or usage outcome prints and returns undefined. */
+ *  or usage outcome prints and returns undefined. A leading
+ *  -h/--help with a known verb answers that verb's own help (one
+ *  command, two spellings — the help flag keeps its position in
+ *  verbArgs, which the verbs parse position-independently); with
+ *  no verb — or an unresolvable one — it prints the front-door
+ *  help, never an error (help never fails). */
 function resolveInvocation(argv: readonly string[]): Invocation | undefined {
   const { lead, helpAsked } = splitLeadingGlobals(argv);
   const rest = argv.slice(lead.length);
   const verbName = rest[0];
 
-  if (helpAsked || verbName === undefined) {
+  if (verbName === undefined || needsFrontDoorHelp(helpAsked, verbName)) {
     console.log(HELP);
 
     return undefined;
@@ -221,8 +238,8 @@ function resolveInvocation(argv: readonly string[]): Invocation | undefined {
 
   const tail = rest.slice(1);
 
-  if (verb.klass === "read" && asksHelp(tail)) {
-    console.log(HELP);
+  if (verb.klass === "read" && (helpAsked || asksHelp(tail))) {
+    console.log(READ_VERB_HELP[verb.name]);
 
     return undefined;
   }
@@ -260,7 +277,7 @@ async function runInvocation(
 ): Promise<void> {
   const { verb } = invocation;
 
-  if (verb.klass === "write-note" && asksHelp(invocation.tail)) {
+  if (verb.klass === "write-note" && asksHelp(invocation.verbArgs)) {
     await verb.main?.(invocation.verbArgs);
 
     return;

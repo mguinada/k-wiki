@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { main } from "../../src/cli/k-wiki.ts";
 import { BINDING_FILE, CHECKOUT_ENV } from "../../src/cli/k-wiki-binding.ts";
+import { VERBS } from "../../src/cli/verb-table.ts";
 
 const tempDirs: string[] = [];
 
@@ -2229,16 +2230,11 @@ describe("k-wiki leading global flags", () => {
     expect(out).toContain("instance:    meta");
   });
 
-  it("prints the front-door help for a leading -h with a verb", async () => {
-    const { out } = await runKWiki(process.cwd(), ["-h", "wiki-sync"]);
+  it("prints the front-door help for a leading -h with no resolvable verb", async () => {
+    const { out } = await runKWiki(process.cwd(), ["-h", "no-such-verb"]);
 
     expect(out).toContain("Usage: k-wiki");
-  });
-
-  it("prints the front-door help for a read verb's own -h", async () => {
-    const out = (await runKWiki(process.cwd(), ["query", "--help"])).out;
-
-    expect(out).toContain("Usage: k-wiki");
+    expect(out).toContain("Daily (porcelain):");
   });
 
   it("prints the front-door help when a global flag has no verb", async () => {
@@ -2268,6 +2264,213 @@ describe("k-wiki leading global flags", () => {
     ]);
 
     expect(err).toContain("before the verb");
+  });
+});
+
+/** The read-class verbs — the ones whose help the front door authors. */
+const READ_VERB_NAMES = VERBS.filter((verb) => verb.klass === "read").map(
+  (verb) => verb.name,
+);
+
+/** The expected scoped usage prefix per class: k-wiki's own verbs
+ *  (read and write-note) carry the k-wiki prefix; operator verbs
+ *  their standalone contract. */
+function usageLineFor(verb: (typeof VERBS)[number]): string {
+  const prefix = verb.klass === "operator" ? "" : "k-wiki ";
+
+  return `Usage: ${prefix}${verb.name}`;
+}
+
+describe("k-wiki in-context verb help", () => {
+  it("answers query --help with the query usage line", async () => {
+    expect((await runKWiki(process.cwd(), ["query", "--help"])).out).toContain(
+      "Usage: k-wiki query",
+    );
+  });
+
+  it("answers status --help with the status usage line", async () => {
+    expect((await runKWiki(process.cwd(), ["status", "--help"])).out).toContain(
+      "Usage: k-wiki status",
+    );
+  });
+
+  it("answers list --help with the list usage line", async () => {
+    expect((await runKWiki(process.cwd(), ["list", "--help"])).out).toContain(
+      "Usage: k-wiki list",
+    );
+  });
+
+  it("answers read --help with the read usage line", async () => {
+    expect((await runKWiki(process.cwd(), ["read", "--help"])).out).toContain(
+      "Usage: k-wiki read",
+    );
+  });
+
+  it("answers health --help with the health usage line", async () => {
+    expect((await runKWiki(process.cwd(), ["health", "--help"])).out).toContain(
+      "Usage: k-wiki health",
+    );
+  });
+
+  it("prints no front-door table for a read verb's --help", async () => {
+    const out = (await runKWiki(process.cwd(), ["status", "--help"])).out;
+
+    expect(out).not.toContain("Daily (porcelain):");
+  });
+
+  it("prints no door lines for a read verb's --help", async () => {
+    const { err } = await runKWiki(process.cwd(), ["status", "--help"]);
+
+    expect(err).not.toContain("door:");
+  });
+
+  it("leaves the exit code unset for a read verb's --help", async () => {
+    await runKWiki(process.cwd(), ["status", "--help"]);
+
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("answers -h with the same scoped help as --help for every read verb", async () => {
+    for (const verb of READ_VERB_NAMES) {
+      expect((await runKWiki(process.cwd(), [verb, "-h"])).out).toBe(
+        (await runKWiki(process.cwd(), [verb, "--help"])).out,
+      );
+    }
+  });
+
+  it("resolves a leading -h to the read verb's own scoped help", async () => {
+    expect((await runKWiki(process.cwd(), ["-h", "query"])).out).toBe(
+      (await runKWiki(process.cwd(), ["query", "--help"])).out,
+    );
+  });
+
+  it("resolves a leading -h after -w to the read verb's own scoped help", async () => {
+    const { out } = await runKWiki(process.cwd(), ["-w", "meta", "-h", "list"]);
+
+    expect(out).toContain("Usage: k-wiki list");
+  });
+
+  it("resolves a leading -h with an operator verb to the verb's own help", async () => {
+    const h = await makeMetaHarness({});
+    const { out } = await runKWiki(h.checkout, ["-h", "wiki-sync"]);
+
+    expect(out).toContain("Usage: wiki-sync");
+  });
+
+  it("resolves a leading -h with the write-note verb to the verb's own help", async () => {
+    expect((await runKWiki(process.cwd(), ["-h", "propose"])).out).toContain(
+      "Usage: k-wiki propose",
+    );
+  });
+
+  it("answers --help with verb-scoped usage for every verb in the table", async () => {
+    const h = await makeMetaHarness({});
+
+    for (const verb of VERBS) {
+      const cwd = verb.klass === "operator" ? h.checkout : process.cwd();
+      const { out } = await runKWiki(cwd, [verb.name, "--help"]);
+
+      expect(out).toContain(usageLineFor(verb));
+    }
+  });
+
+  it("answers --help for no verb in the table with the front-door help", async () => {
+    const h = await makeMetaHarness({});
+
+    for (const verb of VERBS) {
+      const cwd = verb.klass === "operator" ? h.checkout : process.cwd();
+      const { out } = await runKWiki(cwd, [verb.name, "--help"]);
+
+      expect(out).not.toContain("Daily (porcelain):");
+    }
+  });
+
+  it("keeps every read verb's help free of issue references", async () => {
+    for (const verb of READ_VERB_NAMES) {
+      const text = (await runKWiki(process.cwd(), [verb, "--help"])).out;
+
+      expect(text.replace(/\s+/g, " ")).not.toMatch(/issues? #\d+/i);
+    }
+  });
+
+  it("keeps every read verb's help free of doc round-trips", async () => {
+    for (const verb of READ_VERB_NAMES) {
+      const text = (await runKWiki(process.cwd(), [verb, "--help"])).out;
+
+      expect(text.replace(/\s+/g, " ")).not.toMatch(
+        /guide §|§\d|README|docs\//i,
+      );
+    }
+  });
+
+  it("documents -w/--wiki and --checkout in every read verb's help", async () => {
+    for (const verb of READ_VERB_NAMES) {
+      const out = (await runKWiki(process.cwd(), [verb, "--help"])).out;
+
+      expect(out).toContain("-w, --wiki <name>");
+      expect(out).toContain("--checkout <path>");
+    }
+  });
+
+  it("documents -h with no side effects in every read verb's help", async () => {
+    for (const verb of READ_VERB_NAMES) {
+      const out = (await runKWiki(process.cwd(), [verb, "--help"])).out;
+
+      expect(out).toContain("-h, --help");
+      expect(out).toContain("no side effects");
+    }
+  });
+
+  it("documents the exit semantics in every read verb's help", async () => {
+    for (const verb of READ_VERB_NAMES) {
+      const out = (await runKWiki(process.cwd(), [verb, "--help"])).out;
+
+      expect(out).toContain("Exit 0");
+      expect(out).toContain("Exit 1");
+    }
+  });
+
+  it("documents query's --timeout with its default", async () => {
+    const out = (await runKWiki(process.cwd(), ["query", "--help"])).out;
+
+    expect(out).toContain("--timeout <secs>");
+    expect(out).toContain("1800");
+  });
+
+  it("documents what query writes", async () => {
+    const out = (await runKWiki(process.cwd(), ["query", "--help"])).out;
+
+    expect(out).toContain("last-query.md");
+  });
+
+  it("documents that status writes nothing", async () => {
+    const out = (await runKWiki(process.cwd(), ["status", "--help"])).out;
+
+    expect(out).toContain("What it writes: nothing");
+  });
+
+  it("documents list's type filter vocabulary", async () => {
+    const out = (await runKWiki(process.cwd(), ["list", "--help"])).out;
+
+    expect(out).toContain("concept|entity|source|query|comparison");
+  });
+
+  it("documents read's slug argument", async () => {
+    const out = (await runKWiki(process.cwd(), ["read", "--help"])).out;
+
+    expect(out).toContain("<slug>");
+  });
+
+  it("documents health's --fail-on-stale switch", async () => {
+    const out = (await runKWiki(process.cwd(), ["health", "--help"])).out;
+
+    expect(out).toContain("--fail-on-stale");
+  });
+
+  it("leaves the exit code unset for a leading -h with a verb", async () => {
+    await runKWiki(process.cwd(), ["-h", "status"]);
+
+    expect(process.exitCode).toBeUndefined();
   });
 });
 

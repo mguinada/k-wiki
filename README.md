@@ -1467,6 +1467,11 @@ k-wiki health                                               # projection coheren
 k-wiki propose my-candidate note.md                        # hand one candidate note to the human (sandboxed)
 ```
 
+Every verb answers `k-wiki <verb> --help` — or `-h`, in either
+position — with its own scoped help: usage, switches, defaults,
+what it writes, exit semantics. `k-wiki --help` on its own stays
+the tiered front-door table.
+
 `k-wiki` is the universal front door — the same one executable that
 serves the operator tiers above — and which verbs answer depends on
 the door, decided by checkout resolution:

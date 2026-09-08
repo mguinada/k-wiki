@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, describe, expect, it } from "vitest";
-import { K_WIKI_SCRIPT, runCli } from "./helpers.ts";
+import { VERBS, type VerbSpec } from "../../src/cli/verb-table.ts";
+import { K_WIKI_SCRIPT, repoRoot, runCli } from "./helpers.ts";
 
 /**
  * k-wiki e2e (issue #76): the agent-facing query entry point as a
@@ -576,6 +577,12 @@ describe("k-wiki wiki key e2e", () => {
  * wiki-query and wiki-ingest through the verbatim argv handoff to
  * their mains).
  */
+/** The operator verbs — the verbatim-passthrough class the
+ *  byte-identical help pin walks. */
+const OPERATOR_VERBS: readonly VerbSpec[] = VERBS.filter(
+  (verb) => verb.klass === "operator",
+);
+
 describe("k-wiki dispatcher e2e", () => {
   it("prints the tiered verb table for a bare run, exit 0", async () => {
     const result = await runCli(K_WIKI_SCRIPT, []);
@@ -597,12 +604,41 @@ describe("k-wiki dispatcher e2e", () => {
     expect(result.err).toContain("only -w/--wiki and -h/--help may lead");
   });
 
-  it("accepts a leading -h and prints the front-door help", async () => {
+  it("resolves a leading -h with an operator verb to the verb's own help", async () => {
     const result = await runCli(K_WIKI_SCRIPT, ["-h", "wiki-sync"]);
 
     expect(result.code).toBe(0);
-    expect(result.out).toContain("Usage: k-wiki");
-    expect(result.out).toContain("Daily (porcelain):");
+    expect(result.out).toContain("Usage: wiki-sync");
+  });
+
+  it("answers a read verb's --help with verb-scoped help", async () => {
+    const result = await runCli(K_WIKI_SCRIPT, ["status", "--help"]);
+
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("Usage: k-wiki status");
+    expect(result.out).not.toContain("Daily (porcelain):");
+  });
+
+  it("resolves a leading -h to the same read-verb help as the trailing form", async () => {
+    const leading = await runCli(K_WIKI_SCRIPT, ["-h", "query"]);
+    const trailing = await runCli(K_WIKI_SCRIPT, ["query", "--help"]);
+
+    expect(leading.code).toBe(0);
+    expect(leading.out).toBe(trailing.out);
+  });
+
+  it("renders the operator verbs' dispatcher help byte-identical to the standalone launchers", async () => {
+    for (const verb of OPERATOR_VERBS) {
+      const viaDoor = await runCli(K_WIKI_SCRIPT, [verb.name, "--help"]);
+      const launcher =
+        verb.tier === "libexec"
+          ? join(repoRoot, "bin", "libexec", verb.name)
+          : join(repoRoot, "bin", verb.name);
+      const standalone = await runCli(launcher, ["--help"]);
+
+      expect(viaDoor.code).toBe(0);
+      expect(viaDoor.out).toBe(standalone.out);
+    }
   });
 
   it("prints the human door line inside the checkout", async () => {
