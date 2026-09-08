@@ -981,7 +981,11 @@ describe("k-wiki completion e2e", () => {
 
   it.skipIf(!hasZsh())(
     "completes the verb table and the global flags under a real zsh",
-    { timeout: 25_000 },
+    // Two full zpty sessions (spawn + compinit + capture each) cost
+    // ~12s per session on macOS — compinit alone is ~4s under a pty —
+    // so 25s timed out deterministically; 60s covers both sessions
+    // with headroom for slower CI images.
+    { timeout: 60_000 },
     async () => {
       const emitted = await runCli(K_WIKI_SCRIPT, ["completion"]);
 
