@@ -11,6 +11,7 @@
  */
 
 import { cliFail } from "./colors.ts";
+import { escapeSingleQuotedShell } from "./shared.ts";
 import { parseArgs } from "./shell.ts";
 import { tierSections, verbTable } from "./verb-table.ts";
 
@@ -50,17 +51,12 @@ operator, maintenance) and the global flags (-w/--wiki, -h/--help,
 completed statically. Exit 0 prints the script; exit 1 is a usage
 error. NO_COLOR is honored (the script itself never uses color).`;
 
-/** Escape text for a single-quoted zsh string (the only character a
- *  single-quoted shell string cannot hold is the quote itself). */
-function zshQuote(text: string): string {
-  return text.replaceAll("'", `'\\''`);
-}
-
 /** One tier's describe entries: `'name:first help line'` per verb,
  *  indented inside the tier's array literal. */
 function tierEntries(tier: string): readonly string[] {
   return verbTable().filter((verb) => verb.tier === tier).map(
-    (verb) => `    '${verb.name}:${zshQuote(verb.lines[0] ?? "")}'`,
+    (verb) =>
+      `    '${verb.name}:${escapeSingleQuotedShell(verb.lines[0] ?? "")}'`,
   );
 }
 

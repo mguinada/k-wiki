@@ -149,11 +149,8 @@ describe("zsh completion script", () => {
   });
 
   it("escapes single quotes in verb descriptions for zsh", () => {
-    const listLine = verbTable().find((verb) => verb.name === "list")?.lines[0] ?? "";
-
-    expect(listLine).toContain("'");
     expect(zshCompletionScript()).toContain(
-      `'list:${listLine.replaceAll("'", "'\\''")}'`,
+      String.raw`    'list:one '\''slug — title'\'' line per page, grouped by type;'`,
     );
   });
 });

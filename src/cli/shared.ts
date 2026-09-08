@@ -198,6 +198,14 @@ function shouldCollect(entry: Dirent, options: ListFilesOptions): boolean {
   );
 }
 
+/** Escape text for a single-quoted shell string — the one form a
+ *  single-quoted string cannot hold is the quote itself (the
+ *  completion emitter's zsh entries and the meta-sync hook's baked
+ *  paths share the rule). */
+export function escapeSingleQuotedShell(text: string): string {
+  return text.replaceAll("'", `'\\''`);
+}
+
 /** Lowercase hex SHA-256 digest of the given bytes. */
 export function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
