@@ -49,8 +49,13 @@ e2e run or diagnosing a failing one.
   `-h`/`--help` renders the verb's own scoped help with the
   leading `-h <verb>` form reordering to the same output, and the
   operator verbs' dispatcher help stays byte-identical to their
-  standalone launchers across the whole table — and the tiered
-  bare help.
+  standalone launchers across the whole table — the tiered bare
+  help, and the completion verb (issue #352): `completion` and
+  `completion zsh` emit byte-identical scripts (exit 0, stdout
+  only), an unknown shell exits 1 naming zsh, and — where a zsh
+  is installed — a zpty run sources the emitted file and proves
+  `k-wiki <TAB>` lists the verbs and `k-wiki query -<TAB>`
+  offers the global flags in a real terminal.
 - **sandbox** — not a launcher run: the suite drives the `runSandboxRun`
   library primitive (issue #336) in-process, with a real stub agent child process over
   a real git temp data repo. Four flows: a sandbox-only run lands one

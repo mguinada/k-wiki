@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -886,4 +887,122 @@ describe("k-wiki dispatcher e2e", () => {
     expect(leading.out).toEqual(verbFirst.out);
     expect(`${leading.out}${leading.err}`).toContain("nothing to do");
   });
+});
+
+const ZSH_PATHS = ["/bin/zsh", "/usr/bin/zsh"];
+
+/** Whether a zsh exists for the completion-menu runs (CI images ship
+ *  one; the runs skip where none does). */
+function hasZsh(): boolean {
+  return ZSH_PATHS.some((path) => existsSync(path));
+}
+
+/**
+ * Drive the emitted completion script through a real pseudo-terminal
+ * (zpty), the zero-setup install path of the acceptance story —
+ * compinit, then `source` of the emitted file (its guarded compdef
+ * registers), then one TAB: `k-wiki <TAB>` lists the verbs, `k-wiki
+ * query -<TAB>` offers the global flags. Each keystroke waits for the
+ * prompt to be quiet first, so the TAB reaches an active zle, and
+ * nothing ever executes — the lines are never accepted. The minimal
+ * env also proves the run needs nothing but zsh itself.
+ */
+async function zshMenus(tmp: string): Promise<string[]> {
+  const harness = `zmodload zsh/zpty
+waitquiet() {
+  local q=0 c=""
+  while (( q < 30 )); do
+    if zpty -r -t zk c 2>/dev/null && [[ -n $c ]]; then q=0; else q=$((q+1)); sleep 0.05; fi
+  done
+}
+capture() {
+  out=""
+  quiet=0
+  end=$(( SECONDS + 10 ))
+  while (( SECONDS < end && quiet < 40 )); do
+    c=""
+    if zpty -r -t zk c 2>/dev/null && [[ -n $c ]]; then out+=$c; quiet=0; else quiet=$((quiet+1)); sleep 0.05; fi
+  done
+  print -r -- "<<CAPTURE>>$out"
+}
+zpty -b zk "zsh -f -i"
+zpty -w zk "autoload -Uz compinit; compinit -u -d ${tmp}/.zcompdump-e2e"
+c=""; waitquiet
+zpty -w zk "source ${tmp}/_k-wiki"
+c=""; waitquiet
+zpty -w -n zk $'k-wiki \\t'
+capture
+zpty -d zk 2>/dev/null
+zpty -b zk "zsh -f -i"
+zpty -w zk "autoload -Uz compinit; compinit -u -d ${tmp}/.zcompdump-e2e2"
+c=""; waitquiet
+zpty -w zk "source ${tmp}/_k-wiki"
+c=""; waitquiet
+zpty -w -n zk $'k-wiki query -\\t'
+capture
+zpty -d zk 2>/dev/null
+`;
+  const harnessPath = join(tmp, "harness.zsh");
+
+  await writeFile(harnessPath, harness);
+
+  const { stdout } = await run("zsh", ["-f", harnessPath], {
+    env: { PATH: "/usr/bin:/bin", HOME: tmp, TERM: "xterm" },
+  });
+
+  return stdout.split("<<CAPTURE>>");
+}
+
+describe("k-wiki completion e2e", () => {
+  it("emits byte-identical scripts for the default and the explicit zsh spelling", async () => {
+    const implicit = await runCli(K_WIKI_SCRIPT, ["completion"]);
+    const explicit = await runCli(K_WIKI_SCRIPT, ["completion", "zsh"]);
+
+    expect(implicit.code).toBe(0);
+    expect(implicit.err).toBe("");
+    expect(explicit.code).toBe(0);
+    expect(explicit.out).toBe(implicit.out);
+    expect(implicit.out.startsWith("#compdef k-wiki")).toBe(true);
+  });
+
+  it("exits 1 naming zsh for an unsupported shell", async () => {
+    const result = await runCli(K_WIKI_SCRIPT, ["completion", "bash"]);
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("zsh");
+  });
+
+  it("answers its own --help through the dispatcher", async () => {
+    const result = await runCli(K_WIKI_SCRIPT, ["completion", "-h"]);
+
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("Usage: k-wiki completion");
+  });
+
+  it.skipIf(!hasZsh())(
+    "completes the verb table and the global flags under a real zsh",
+    { timeout: 25_000 },
+    async () => {
+      const emitted = await runCli(K_WIKI_SCRIPT, ["completion"]);
+
+      expect(emitted.code).toBe(0);
+
+      const tmp = await mkdtemp(join(tmpdir(), "k-wiki-completion-e2e-"));
+
+      tempDirs.push(tmp);
+      await writeFile(join(tmp, "_k-wiki"), emitted.out);
+
+      const menus = await zshMenus(tmp);
+      const verbMenu = menus[1] ?? "";
+      const flagMenu = menus[2] ?? "";
+
+      for (const verb of ["query", "status", "completion", "check-raw"]) {
+        expect(verbMenu).toContain(verb);
+      }
+
+      for (const flag of ["--checkout", "--wiki", "--help"]) {
+        expect(flagMenu).toContain(flag);
+      }
+    },
+  );
 });

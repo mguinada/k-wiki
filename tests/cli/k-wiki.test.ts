@@ -2623,3 +2623,55 @@ describe("k-wiki -w precedence over the binding key", () => {
     expect(out).toContain("instance:    meta");
   });
 });
+
+describe("k-wiki completion verb", () => {
+  it("emits the script from a plain cwd with no door lines", async () => {
+    const { out, err } = await runKWiki(process.cwd(), ["completion"]);
+
+    expect(out.startsWith("#compdef k-wiki")).toBe(true);
+    expect(err).not.toContain("door:");
+  });
+
+  it("emits without resolving a binding that names a missing checkout", async () => {
+    const project = await mkdtemp(join(tmpdir(), "k-wiki-completion-"));
+
+    tempDirs.push(project);
+    await writeFile(
+      join(project, BINDING_FILE),
+      JSON.stringify({ checkout: join(project, "no-such-checkout") }),
+    );
+
+    const { out, err } = await runKWiki(project, ["completion"]);
+
+    expect(out.startsWith("#compdef k-wiki")).toBe(true);
+    expect(err).not.toContain("door:");
+  });
+
+  it("answers its own help through the dispatcher, exit unset", async () => {
+    const { out, err } = await runKWiki(process.cwd(), ["completion", "-h"]);
+
+    expect(out).toContain("Usage: k-wiki completion");
+    expect(err).not.toContain("door:");
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("reorders a leading -h to the verb's own help", async () => {
+    const leading = await runKWiki(process.cwd(), ["-h", "completion"]);
+    const trailing = await runKWiki(process.cwd(), ["completion", "--help"]);
+
+    expect(leading.out).toBe(trailing.out);
+  });
+
+  it("fails through the dispatcher for an unsupported shell", async () => {
+    const { err } = await runKWiki(process.cwd(), ["completion", "bash"]);
+
+    expect(err).toContain('unsupported shell "bash"');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("lists the verb in the bare help", async () => {
+    const { out } = await runKWiki(process.cwd(), ["--help"]);
+
+    expect(out).toContain("completion");
+  });
+});

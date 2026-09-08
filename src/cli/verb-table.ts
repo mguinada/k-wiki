@@ -1,8 +1,8 @@
 /**
  * The k-wiki verb table (issue #337): the full human-door command
  * vocabulary — one row per verb, 1:1 with the `bin/` and
- * `bin/libexec/` launcher basenames (the read verbs and `propose`
- * are k-wiki's own) — with the mandatory class per verb (decision
+ * `bin/libexec/` launcher basenames (the read verbs, `propose`, and
+ * `completion` are k-wiki's own) — with the mandatory class per verb (decision
  * 11): `read` (both doors), `write-note` (agent-door gated
  * writes — `propose`, the sandbox write, issue #340), and
  * `operator` (human door only; redirection is incoherent for
@@ -39,6 +39,7 @@ import { main as setupSchedule } from "../schedule/setup-schedule.ts";
 import { main as syncRepo } from "../sync/sync-repo.ts";
 import { main as syncVault } from "../sync/sync-vault.ts";
 import { main as wikiSync } from "../sync/wiki-sync.ts";
+import { runCompletionVerb } from "./completion.ts";
 import { main as initDataRepo } from "./init-data-repo.ts";
 
 /** The authority class a verb carries (decision 11): `read` verbs
@@ -46,8 +47,9 @@ import { main as initDataRepo } from "./init-data-repo.ts";
  *  gated writes (the class exists from day one — the first,
  *  `propose`, lands with the sandbox family); `operator` verbs are
  *  pipeline verbs, human door only — redirection is incoherent for
- *  them. */
-export type VerbClass = "read" | "write-note" | "operator";
+ *  them; `shell` verbs are front-door plumbing (issue #352) — both
+ *  doors, nothing resolved, static wiki-independent output. */
+export type VerbClass = "read" | "write-note" | "operator" | "shell";
 
 /** The #287 tier a verb belongs to — the bare-help grouping. */
 export type VerbTier = "porcelain" | "operator" | "libexec";
@@ -216,6 +218,14 @@ export function verbTable(): readonly VerbSpec[] {
       main: setupMetaSync,
     },
     {
+      name: "completion",
+      klass: "shell",
+      tier: "operator",
+      wiki: false,
+      lines: ["emit the zsh completion script for this front door"],
+      main: runCompletionVerb,
+    },
+    {
       name: "check-raw",
       klass: "operator",
       tier: "libexec",
@@ -345,16 +355,15 @@ function tierBlock({
   return [heading, ...rows, ""];
 }
 
-/** Help text: every verb (tiered, porcelain first — simple-first),
- *  the base path, both doors, the global flags, the binding file,
- *  and the agent contract (AGENTS.md CLI rule: every switch,
- *  argument, and default). Built at call time with the table —
- *  module-init data is mutation-static (issue #354). */
-export function buildHelp(): string {
-  const tierSections: readonly {
-    readonly tier: VerbTier;
-    readonly heading: string;
-  }[] = [
+/** The tier sections of the bare help (the #287 tiers, porcelain
+ *  first — the simple-first rule), built at call time (issue #354:
+ *  module-init data is mutation-static); also the completion
+ *  emitter's grouping order (issue #352) — one source for both. */
+export function tierSections(): readonly {
+  readonly tier: VerbTier;
+  readonly heading: string;
+}[] {
+  return [
     { tier: "porcelain", heading: "Daily (porcelain):" },
     { tier: "operator", heading: "Occasional operator:" },
     {
@@ -363,6 +372,15 @@ export function buildHelp(): string {
         "Maintenance (plumbing — standalone under bin/libexec/ by design, not for backward compatibility; scripts and CI call them directly, each also answers k-wiki <verb> -h):",
     },
   ];
+}
+
+/** Help text: every verb (tiered, porcelain first — simple-first),
+ *  the base path, both doors, the global flags, the binding file,
+ *  and the agent contract (AGENTS.md CLI rule: every switch,
+ *  argument, and default). Built at call time with the table —
+ *  module-init data is mutation-static (issue #354). */
+export function buildHelp(): string {
+  const sections = tierSections();
 
   return [
     "Usage: k-wiki [-h | --help] | k-wiki <verb> [<args>]",
@@ -392,7 +410,7 @@ export function buildHelp(): string {
     "  k-wiki list, k-wiki read <slug>   browse, deterministic and free",
     "  k-wiki wiki-query --file-last     file a reviewed answer (human step)",
     "",
-    ...tierSections.flatMap(tierBlock),
+    ...sections.flatMap(tierBlock),
     "Every verb above also answers k-wiki <verb> -h (or --help) with",
     "its own scoped help — usage, switches, defaults, what it writes,",
     "and exit semantics.",

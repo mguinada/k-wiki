@@ -23,6 +23,7 @@ and the [checks](#tooling) below are all verbs of it.
 - [Running the full cycle](#running-the-full-cycle-wiki-sync)
 - [Running queries](#running-queries-wiki-query)
 - [Querying from any project](#querying-from-any-project-k-wiki)
+- [Shell completion (zsh)](#shell-completion-zsh)
 
 ## Core invariant
 
@@ -610,6 +611,7 @@ for the rare direct use:
 | `bin/k-wiki sync-vault [--dry-run] [<sync.json>] [<raw-dir>]` | sync CLI | Ingest every note not blocked by the vault's exclusion rule into `raw/notes/` (deterministic, no LLM; [details below](#running-the-sync)) |
 | `bin/k-wiki sync-repo [-h \| --help] [<config>] [<raw-dir>]` | repo sync CLI | Project the allowlisted files of a committed source repository verbatim into `raw/notes/<name>/`, recording the source HEAD commit in the manifest (deterministic, no LLM; the meta-wiki adapter, [§9](#9-the-meta-wiki-a-repository-as-source)) |
 | `bin/k-wiki wiki-ingest [-h \| --help] [--wiki, -w <name>] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [--note <text>] [<raw-dir>]` | ingest wrapper | Run the wiki agent headless over the sources that changed since the last ingest and write the per-run digest (`--wiki <name>` selects the instance — aliases then `sync-<name>.json` stems, derived paths from the resolved config; [details below](#running-the-wiki-agent-wiki-ingest)) |
+| `bin/k-wiki completion [-h \| --help] [<shell>]` | completion emitter | Emit the zsh completion function for the front door — static shell plumbing, byte-identical on every run (default shell `zsh`, the only one today; an unknown shell is a usage error naming the supported shells): try it now with `source <(k-wiki completion)`, keep it with `k-wiki completion > ~/.zfunc/_k-wiki` plus `fpath`/`compinit` in `~/.zshrc` ([recipe below](#shell-completion-zsh)) |
 
 ### Verification & maintenance (plumbing)
 
@@ -1537,6 +1539,34 @@ place), and agents working inside the k-wiki checkout itself
 compose `--checkout <its checkout> -w <its wiki>` from the
 checkout's `.agents/.k-wiki.json` — the k-wiki skill carries that
 mandate.
+
+### Shell completion (zsh)
+
+`k-wiki completion [<shell>]` emits the completion function for the
+front door — static shell plumbing (`zsh` is the only shell today,
+the default; an unknown shell is a usage error): no checkout,
+instance, or door is resolved, nothing is written, and the output
+is byte-identical on every run. Try it now, zero setup:
+
+```sh
+source <(k-wiki completion)
+```
+
+Keep it permanently:
+
+```sh
+mkdir -p ~/.zfunc
+k-wiki completion zsh > ~/.zfunc/_k-wiki
+# ~/.zshrc:
+#   fpath=(~/.zfunc $fpath)
+#   autoload -Uz compinit
+#   compinit
+```
+
+After either install, `k-wiki <TAB>` lists the verbs grouped by the
+bare-help tiers and `k-wiki query -<TAB>` offers the global flags
+(`-w`/`--wiki`, `-h`/`--help`, `--checkout <path>` completing
+paths).
 
 There is no filing passthrough: `--file-last` stays the human-run
 `wiki-query` verb inside the checkout (`wiki-query --wiki <name>

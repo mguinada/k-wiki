@@ -41,7 +41,9 @@ describe("k-wiki skill (issue #77)", () => {
     );
 
     const agentCommands = verbTable()
-      .filter((verb) => verb.klass !== "operator")
+      .filter(
+        (verb) => verb.klass === "read" || verb.klass === "write-note",
+      )
       .map((verb) => verb.name);
     const unknown = referenced.filter(
       (word) => word !== undefined && !agentCommands.includes(word),
