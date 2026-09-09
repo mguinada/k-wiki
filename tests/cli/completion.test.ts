@@ -3,6 +3,7 @@ import {
   runCompletionVerb,
   zshCompletionScript,
 } from "../../src/cli/completion.ts";
+import { GLOBAL_FLAG_TOKENS } from "../../src/cli/k-wiki.ts";
 import { tierSections, verbTable } from "../../src/cli/verb-table.ts";
 
 /**
@@ -142,6 +143,18 @@ describe("zsh completion script", () => {
 
     expect(script).toContain("'1:verb:->verb'");
     expect(script).toContain("'*: :'");
+  });
+
+  it("completes every global flag token the dispatcher accepts (drift guard)", () => {
+    const script = zshCompletionScript();
+    const argsBlock = script.slice(
+      script.indexOf("_arguments"),
+      script.indexOf("case $state"),
+    );
+
+    for (const token of GLOBAL_FLAG_TOKENS) {
+      expect(argsBlock).toContain(token);
+    }
   });
 
   it("registers itself when sourced into a compinit shell", () => {

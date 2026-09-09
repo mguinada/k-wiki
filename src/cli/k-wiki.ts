@@ -39,6 +39,17 @@ const HELP_FLAGS = new Set(["-h", "--help"]);
 const WIKI_FLAGS = new Set(["-w", "--wiki"]);
 const CHECKOUT_TOKENS = new Set(["--checkout"]);
 
+/** The dispatcher's global-flag vocabulary: every flag token the
+ *  front door reorders or reads position-independently. Exported
+ *  for the completion drift guard (issue #352): each token must
+ *  appear in the emitted zsh `_arguments` block, so a new global
+ *  flag lands with its emitter spec in the same change. */
+export const GLOBAL_FLAG_TOKENS: readonly string[] = [
+  ...HELP_FLAGS,
+  ...WIKI_FLAGS,
+  ...CHECKOUT_TOKENS,
+];
+
 /** True when a verb's own argv asks for help (-h or --help). */
 function asksHelp(tail: readonly string[]): boolean {
   return tail.includes("-h") || tail.includes("--help");

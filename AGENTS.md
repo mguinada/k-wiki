@@ -322,7 +322,12 @@ default, say what the script writes (or that it writes nothing), and
 exit 0 without filesystem side effects. Help prints before any
 argument is validated or any file is read, so `--help` never fails.
 A new switch lands together with its help entry and its tests in the
-same change. A new CLI lands as a library module plus a launcher of the right
+same change. A verb-table or dispatcher global-flag change lands with
+the zsh completion emitter's flag spec and its drift-guard test in the
+same change (`tests/cli/completion.test.ts`): the emitter derives
+verbs and tier grouping from the table, but its `_arguments` specs
+are hand-written — the guard fails CI when a dispatcher flag the
+emitter must mirror is missing. A new CLI lands as a library module plus a launcher of the right
 class (`bin/` or `dev/`), wired into `package.json` in the same change.
 
 CLI help text and `README.md` must not reference internal GitHub
