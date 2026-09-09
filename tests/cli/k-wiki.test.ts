@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { main } from "../../src/cli/k-wiki.ts";
 import { BINDING_FILE, CHECKOUT_ENV } from "../../src/cli/k-wiki-binding.ts";
-import { VERBS } from "../../src/cli/verb-table.ts";
+import { type VerbSpec, verbTable } from "../../src/cli/verb-table.ts";
 
 const tempDirs: string[] = [];
 
@@ -2268,14 +2268,14 @@ describe("k-wiki leading global flags", () => {
 });
 
 /** The read-class verbs — the ones whose help the front door authors. */
-const READ_VERB_NAMES = VERBS.filter((verb) => verb.klass === "read").map(
-  (verb) => verb.name,
-);
+const READ_VERB_NAMES = verbTable()
+  .filter((verb) => verb.klass === "read")
+  .map((verb) => verb.name);
 
 /** The expected scoped usage prefix per class: k-wiki's own verbs
  *  (read and write-note) carry the k-wiki prefix; operator verbs
  *  their standalone contract. */
-function usageLineFor(verb: (typeof VERBS)[number]): string {
+function usageLineFor(verb: VerbSpec): string {
   const prefix = verb.klass === "operator" ? "" : "k-wiki ";
 
   return `Usage: ${prefix}${verb.name}`;
@@ -2366,7 +2366,7 @@ describe("k-wiki in-context verb help", () => {
   it("answers --help with verb-scoped usage for every verb in the table", async () => {
     const h = await makeMetaHarness({});
 
-    for (const verb of VERBS) {
+    for (const verb of verbTable()) {
       const cwd = verb.klass === "operator" ? h.checkout : process.cwd();
       const { out } = await runKWiki(cwd, [verb.name, "--help"]);
 
@@ -2377,7 +2377,7 @@ describe("k-wiki in-context verb help", () => {
   it("answers --help for no verb in the table with the front-door help", async () => {
     const h = await makeMetaHarness({});
 
-    for (const verb of VERBS) {
+    for (const verb of verbTable()) {
       const cwd = verb.klass === "operator" ? h.checkout : process.cwd();
       const { out } = await runKWiki(cwd, [verb.name, "--help"]);
 

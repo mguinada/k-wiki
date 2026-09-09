@@ -6,6 +6,10 @@
  * layer must handle. Run via `npm run fixtures -- <target-dir>`; the vault
  * is written to `<target-dir>/Documents/` so path handling mirrors the real
  * vault's shape. A checked-in copy lives at tests/fixtures/Documents.
+ * The vault's bytes and paths are built at call time, not as
+ * module-scope tables (issue #354): module-init data is static to
+ * Stryker's per-test coverage — each of its mutants re-runs the whole
+ * suite — while builder bodies run inside covering tests.
  */
 
 import { mkdir, writeFile } from "node:fs/promises";
@@ -15,7 +19,9 @@ import { refuseDirectExecution } from "../cli/is-main.ts";
 import { parseArgs } from "../cli/shell.ts";
 
 /** Realistic vault name so path handling in tests stays honest. */
-export const VAULT_NAME = "Documents";
+export function vaultName(): string {
+  return "Documents";
+}
 
 interface FixtureFile {
   /** POSIX-style path relative to the vault root. */
@@ -23,7 +29,11 @@ interface FixtureFile {
   readonly content: string | Uint8Array;
 }
 
-const RAG_NOTE = `---
+/** The fixture files — note contents and paths — built at call time
+ *  (issue #354: module-init data is mutation-static). Sorted by path
+ *  so writes and CLI output are deterministic. */
+function fixtureFiles(): readonly FixtureFile[] {
+  const ragNote = `---
 tags:
   - AI
   - retrieval
@@ -41,7 +51,7 @@ Parametric knowledge goes stale and hallucinates; retrieved passages pin
 the model to current, citable sources.
 `;
 
-const ATTENTION_NOTE = `---
+  const attentionNote = `---
 tags:
   - AI
   - transformers
@@ -56,8 +66,8 @@ restore order information; multi-head attention attends to different
 representation subspaces.
 `;
 
-/** Hash-change case: sync tests edit this note's content between runs. */
-const RAG_EVALUATION_NOTE = `---
+  /** Hash-change case: sync tests edit this note's content between runs. */
+  const ragEvaluationNote = `---
 tags:
   - AI
   - evaluation
@@ -70,8 +80,8 @@ Working notes on faithfulness and answer-relevance metrics. This note is
 edited between sync runs to exercise hash-change detection.
 `;
 
-/** Removal case: sync tests delete this note or flip its flag between runs. */
-const TEMP_RESEARCH_NOTE = `---
+  /** Removal case: sync tests delete this note or flip its flag between runs. */
+  const tempResearchNote = `---
 tags:
   - scratch
 wiki: true
@@ -83,8 +93,8 @@ Ephemeral note. This note is deleted or unflagged between sync runs to
 exercise removal detection.
 `;
 
-/** Excluded: explicit opt-out. */
-const PRIVATE_PROJECT_NOTE = `---
+  /** Excluded: explicit opt-out. */
+  const privateProjectNote = `---
 tags:
   - personal
 wiki: false
@@ -95,14 +105,14 @@ wiki: false
 Private project tracking. Must stay out of the wiki.
 `;
 
-/** Ingested under opt-out: no frontmatter means nothing blocks it. */
-const NO_FRONTMATTER_NOTE = `# Parking lot
+  /** Ingested under opt-out: no frontmatter means nothing blocks it. */
+  const noFrontmatterNote = `# Parking lot
 
 Unsorted clippings with no frontmatter. Sync must skip this note.
 `;
 
-/** Noise: trashed note, flagged, but sync must never descend into .trash. */
-const TRASHED_NOTE = `---
+  /** Noise: trashed note, flagged, but sync must never descend into .trash. */
+  const trashedNote = `---
 wiki: true
 ---
 
@@ -111,8 +121,8 @@ wiki: true
 Deleted from the vault. Sync must never pick this up from .trash.
 `;
 
-/** Ingested: flag present but blank (the opt-out rule ingests it). */
-const BLANK_FLAG_NOTE = `---
+  /** Ingested: flag present but blank (the opt-out rule ingests it). */
+  const blankFlagNote = `---
 tags:
   - inbox
 wiki:
@@ -124,8 +134,8 @@ One-liner captured on the go. A blank flag value must not block the
 note.
 `;
 
-/** Ingested: quoted flag, as the Obsidian web clipper writes it. */
-const CLIPPED_NOTE = `---
+  /** Ingested: quoted flag, as the Obsidian web clipper writes it. */
+  const clippedNote = `---
 source: https://example.com/rag-overview
 wiki: "true"
 ---
@@ -136,8 +146,8 @@ Web clipper output. A Text property quotes its value; a quoted value
 counts like an unquoted one.
 `;
 
-/** Excluded: quoted block, as the web clipper writes it. */
-const PRIVATE_CLIPPED_NOTE = `---
+  /** Excluded: quoted block, as the web clipper writes it. */
+  const privateClippedNote = `---
 source: https://example.com/private
 wiki: "false"
 ---
@@ -148,38 +158,38 @@ Clipped private material. The quoted block must keep it out of the
 wiki.
 `;
 
-/** Noise: macOS Finder metadata (Bud1 magic header, fixed bytes). */
-const DS_STORE_BYTES = new Uint8Array([
-  0x00, 0x00, 0x00, 0x01, 0x42, 0x75, 0x64, 0x31,
-]);
+  /** Noise: macOS Finder metadata (Bud1 magic header, fixed bytes). */
+  const dsStoreBytes = new Uint8Array([
+    0x00, 0x00, 0x00, 0x01, 0x42, 0x75, 0x64, 0x31,
+  ]);
 
-/** Noise: Obsidian settings. */
-const OBSIDIAN_APP_JSON = `{
+  /** Noise: Obsidian settings. */
+  const obsidianAppJson = `{
   "alwaysUpdateLinks": true,
   "newFileFolderPath": "Inbox",
   "useMarkdownLinks": false
 }
 `;
 
-/** Sorted by path so writes and CLI output are deterministic. */
-const FILES: readonly FixtureFile[] = [
-  { path: ".DS_Store", content: DS_STORE_BYTES },
-  { path: ".obsidian/app.json", content: OBSIDIAN_APP_JSON },
-  { path: ".trash/deleted.md", content: TRASHED_NOTE },
-  { path: "AI/RAG.md", content: RAG_NOTE },
-  { path: "AI/llms/attention-is-all-you-need.md", content: ATTENTION_NOTE },
-  { path: "AI/rag-evaluation-notes.md", content: RAG_EVALUATION_NOTE },
-  { path: "Inbox/clipped-note.md", content: CLIPPED_NOTE },
-  { path: "Inbox/parking-lot.md", content: NO_FRONTMATTER_NOTE },
-  { path: "Inbox/quick-idea.md", content: BLANK_FLAG_NOTE },
-  { path: "Projects/house-renovation.md", content: PRIVATE_PROJECT_NOTE },
-  { path: "Projects/private-clipped.md", content: PRIVATE_CLIPPED_NOTE },
-  { path: "Scratch/temp-research.md", content: TEMP_RESEARCH_NOTE },
-];
+  return [
+    { path: ".DS_Store", content: dsStoreBytes },
+    { path: ".obsidian/app.json", content: obsidianAppJson },
+    { path: ".trash/deleted.md", content: trashedNote },
+    { path: "AI/RAG.md", content: ragNote },
+    { path: "AI/llms/attention-is-all-you-need.md", content: attentionNote },
+    { path: "AI/rag-evaluation-notes.md", content: ragEvaluationNote },
+    { path: "Inbox/clipped-note.md", content: clippedNote },
+    { path: "Inbox/parking-lot.md", content: noFrontmatterNote },
+    { path: "Inbox/quick-idea.md", content: blankFlagNote },
+    { path: "Projects/house-renovation.md", content: privateProjectNote },
+    { path: "Projects/private-clipped.md", content: privateClippedNote },
+    { path: "Scratch/temp-research.md", content: tempResearchNote },
+  ];
+}
 
 /** Every fixture path, relative to the vault root, POSIX-style, sorted. */
 export function fixtureFilePaths(): string[] {
-  return FILES.map((file) => file.path);
+  return fixtureFiles().map((file) => file.path);
 }
 
 /**
@@ -188,9 +198,9 @@ export function fixtureFilePaths(): string[] {
  * deterministic, so repeated runs are byte-identical.
  */
 export async function generateFixtureVault(targetDir: string): Promise<string> {
-  const vaultRoot = join(targetDir, VAULT_NAME);
+  const vaultRoot = join(targetDir, vaultName());
 
-  for (const file of FILES) {
+  for (const file of fixtureFiles()) {
     const absolute = join(vaultRoot, ...file.path.split("/"));
     await mkdir(dirname(absolute), { recursive: true });
     await writeFile(absolute, file.content);
@@ -199,8 +209,12 @@ export async function generateFixtureVault(targetDir: string): Promise<string> {
   return vaultRoot;
 }
 
-/** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
-const HELP = `Usage: fixtures [-h | --help] <target-dir>
+export async function main(): Promise<void> {
+  const args = process.argv.slice(2);
+
+  if (args.includes("-h") || args.includes("--help")) {
+    /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
+    const help = `Usage: fixtures [-h | --help] <target-dir>
 
 Write the synthetic Obsidian test vault to <target-dir>/Documents —
 deterministic bytes, no timestamps; the snapshot copy lives at
@@ -209,11 +223,7 @@ tests/fixtures/Documents.
   -h, --help      Print this help and exit; no side effects.
   <target-dir>    Destination directory for the Documents/ vault.`;
 
-export async function main(): Promise<void> {
-  const args = process.argv.slice(2);
-
-  if (args.includes("-h") || args.includes("--help")) {
-    console.log(HELP);
+    console.log(help);
 
     return;
   }
@@ -243,7 +253,7 @@ export async function main(): Promise<void> {
   const vaultRoot = await generateFixtureVault(targetDir);
 
   for (const path of fixtureFilePaths()) {
-    console.log(`${VAULT_NAME}/${path}`);
+    console.log(`${vaultName()}/${path}`);
   }
 
   console.log(`Fixture vault written to ${vaultRoot}`);

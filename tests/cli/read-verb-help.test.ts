@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { READ_VERB_HELP } from "../../src/cli/read-verb-help.ts";
-import { VERBS } from "../../src/cli/verb-table.ts";
+import { verbTable } from "../../src/cli/verb-table.ts";
 
 /**
  * The read-verb help table (in-context verb help): every read verb
@@ -12,7 +12,8 @@ import { VERBS } from "../../src/cli/verb-table.ts";
 
 describe("read-verb help table", () => {
   it("covers exactly the read verbs of the verb table", () => {
-    const readNames = VERBS.filter((verb) => verb.klass === "read")
+    const readNames = verbTable()
+      .filter((verb) => verb.klass === "read")
       .map((verb) => verb.name)
       .sort();
 

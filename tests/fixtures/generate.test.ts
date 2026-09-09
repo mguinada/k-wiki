@@ -7,7 +7,7 @@ import {
   fixtureFilePaths,
   generateFixtureVault,
   main,
-  VAULT_NAME,
+  vaultName,
 } from "../../src/fixtures/generate.ts";
 
 const snapshotVaultRoot = fileURLToPath(
@@ -145,7 +145,7 @@ async function wikiTrueDepths(vaultRoot: string): Promise<Set<number>> {
 describe("fixture vault generator", () => {
   it("writes the vault at <target>/Documents", async () => {
     const target = await makeTempDir();
-    expect(await generateFixtureVault(target)).toBe(join(target, VAULT_NAME));
+    expect(await generateFixtureVault(target)).toBe(join(target, vaultName()));
   });
 
   it("creates the vault root as a directory", async () => {
@@ -274,8 +274,8 @@ describe("fixture vault generator", () => {
     await generateFixtureVault(first);
     await generateFixtureVault(second);
 
-    expect(await readTree(join(first, VAULT_NAME))).toEqual(
-      await readTree(join(second, VAULT_NAME)),
+    expect(await readTree(join(first, vaultName()))).toEqual(
+      await readTree(join(second, vaultName())),
     );
   });
 
@@ -284,7 +284,7 @@ describe("fixture vault generator", () => {
 
     await generateFixtureVault(target);
 
-    expect(await readTree(join(target, VAULT_NAME))).toEqual(
+    expect(await readTree(join(target, vaultName()))).toEqual(
       await readTree(snapshotVaultRoot),
     );
   });
@@ -342,7 +342,7 @@ describe("fixture vault CLI", () => {
 
     await runCli(target);
 
-    expect(await collectFiles(join(target, VAULT_NAME))).toEqual(
+    expect(await collectFiles(join(target, vaultName()))).toEqual(
       fixtureFilePaths(),
     );
   });
@@ -351,15 +351,15 @@ describe("fixture vault CLI", () => {
     const target = await makeTempDir();
 
     expect(await runCli(target)).toContain(
-      `Fixture vault written to ${join(target, VAULT_NAME)}`,
+      `Fixture vault written to ${join(target, vaultName())}`,
     );
   });
 
   it("prints every fixture path before the vault root when run with a target dir", async () => {
     const target = await makeTempDir();
     const expected = [
-      ...fixtureFilePaths().map((path) => `${VAULT_NAME}/${path}`),
-      `Fixture vault written to ${join(target, VAULT_NAME)}`,
+      ...fixtureFilePaths().map((path) => `${vaultName()}/${path}`),
+      `Fixture vault written to ${join(target, vaultName())}`,
     ].join("\n");
 
     expect(await runCli(target)).toBe(expected);

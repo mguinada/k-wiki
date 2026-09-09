@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import {
   generateFixtureVault,
-  VAULT_NAME,
+  vaultName,
 } from "../../src/fixtures/generate.ts";
 import { loadSyncConfig } from "../../src/sync/config.ts";
 import { parseManifest } from "../../src/sync/manifest.ts";
@@ -68,7 +68,7 @@ async function makeWorkspace(
     JSON.stringify({
       vaults: [
         {
-          name: options.name ?? VAULT_NAME,
+          name: options.name ?? vaultName(),
           root: options.root ?? vaultRoot,
           exclude: "wiki:false",
         },
@@ -121,7 +121,7 @@ function sourcePath(ws: Workspace, relPath: string): string {
 }
 
 function rawNotePath(ws: Workspace, relPath: string): string {
-  return join(ws.rawDir, "notes", VAULT_NAME, ...relPath.split("/"));
+  return join(ws.rawDir, "notes", vaultName(), ...relPath.split("/"));
 }
 
 /** Re-add a retired namespace on top of an existing projection. */
@@ -160,7 +160,7 @@ describe("runVaultSync first run", () => {
     await run(ws);
 
     expect(await collectFiles(join(ws.rawDir, "notes"))).toEqual(
-      SELECTED_PATHS.map((rel) => `${VAULT_NAME}/${rel}`),
+      SELECTED_PATHS.map((rel) => `${vaultName()}/${rel}`),
     );
   });
 
@@ -180,7 +180,7 @@ describe("runVaultSync first run", () => {
     expect(await run(ws)).toEqual([
       {
         kind: "vault",
-        name: VAULT_NAME,
+        name: vaultName(),
         candidates: 9,
         selected: 7,
         copied: SELECTED_PATHS,
@@ -199,7 +199,7 @@ describe("runVaultSync first run", () => {
     const expected = createHash("sha256").update(bytes).digest("hex");
 
     expect(
-      (await readManifestOf(ws)).vaults[VAULT_NAME]?.["AI/RAG.md"]?.hash,
+      (await readManifestOf(ws)).vaults[vaultName()]?.["AI/RAG.md"]?.hash,
     ).toBe(expected);
   });
 
@@ -209,7 +209,8 @@ describe("runVaultSync first run", () => {
     await run(ws, T1);
 
     expect(
-      (await readManifestOf(ws)).vaults[VAULT_NAME]?.["AI/RAG.md"]?.last_synced,
+      (await readManifestOf(ws)).vaults[vaultName()]?.["AI/RAG.md"]
+        ?.last_synced,
     ).toBe(T1);
   });
 
@@ -237,14 +238,14 @@ describe("runVaultSync first run", () => {
     await writeFile(
       configPath,
       JSON.stringify({
-        vaults: [{ name: VAULT_NAME, root: filePath, exclude: "wiki:false" }],
+        vaults: [{ name: vaultName(), root: filePath, exclude: "wiki:false" }],
       }),
     );
 
     await expect(
       runVaultSync({ configPath, rawDir: join(ws.dir, "raw") }),
     ).rejects.toThrow(
-      `vault root for "${VAULT_NAME}" is not a directory: ${filePath}`,
+      `vault root for "${vaultName()}" is not a directory: ${filePath}`,
     );
   });
 
@@ -254,7 +255,7 @@ describe("runVaultSync first run", () => {
     await chmod(sourcePath(ws, "AI/RAG.md"), 0o000);
 
     await expect(run(ws)).rejects.toThrow(
-      `failed to read note "AI/RAG.md" in vault "${VAULT_NAME}"`,
+      `failed to read note "AI/RAG.md" in vault "${vaultName()}"`,
     );
   });
 
@@ -307,7 +308,7 @@ describe("runVaultSync idempotence", () => {
     expect(second).toEqual([
       {
         kind: "vault",
-        name: VAULT_NAME,
+        name: vaultName(),
         candidates: 9,
         selected: 7,
         copied: [],
@@ -370,7 +371,7 @@ describe("runVaultSync edit detection", () => {
     const expected = createHash("sha256").update(bytes).digest("hex");
 
     expect(
-      (await readManifestOf(ws)).vaults[VAULT_NAME]?.[
+      (await readManifestOf(ws)).vaults[vaultName()]?.[
         "AI/rag-evaluation-notes.md"
       ]?.hash,
     ).toBe(expected);
@@ -386,7 +387,7 @@ describe("runVaultSync edit detection", () => {
     );
     await run(ws, T2);
 
-    const notes = (await readManifestOf(ws)).vaults[VAULT_NAME];
+    const notes = (await readManifestOf(ws)).vaults[vaultName()];
 
     expect(notes?.["AI/rag-evaluation-notes.md"]?.last_synced).toBe(T2);
   });
@@ -401,7 +402,7 @@ describe("runVaultSync edit detection", () => {
     );
     await run(ws, T2);
 
-    const notes = (await readManifestOf(ws)).vaults[VAULT_NAME];
+    const notes = (await readManifestOf(ws)).vaults[vaultName()];
 
     expect(notes?.["AI/RAG.md"]?.last_synced).toBe(T1);
   });
@@ -444,7 +445,7 @@ describe("runVaultSync removal detection", () => {
 
     expect(
       Object.hasOwn(
-        (await readManifestOf(ws)).vaults[VAULT_NAME] ?? {},
+        (await readManifestOf(ws)).vaults[vaultName()] ?? {},
         "Scratch/temp-research.md",
       ),
     ).toBe(false);
@@ -465,7 +466,7 @@ describe("runVaultSync removal detection", () => {
         "Inbox/clipped-note.md",
         "Inbox/parking-lot.md",
         "Inbox/quick-idea.md",
-      ].map((rel) => `${VAULT_NAME}/${rel}`),
+      ].map((rel) => `${vaultName()}/${rel}`),
     );
   });
 
@@ -484,7 +485,7 @@ describe("runVaultSync removal detection", () => {
     "rejects when pruning an emptied directory fails for another reason than being not empty",
     async () => {
       const ws = await makeWorkspace();
-      const namespaceRoot = join(ws.rawDir, "notes", VAULT_NAME);
+      const namespaceRoot = join(ws.rawDir, "notes", vaultName());
 
       await run(ws, T1);
       await rm(sourcePath(ws, "Scratch/temp-research.md"));
@@ -502,7 +503,7 @@ describe("runVaultSync removal detection", () => {
     "keeps the prune error as the cause when pruning fails",
     async () => {
       const ws = await makeWorkspace();
-      const namespaceRoot = join(ws.rawDir, "notes", VAULT_NAME);
+      const namespaceRoot = join(ws.rawDir, "notes", vaultName());
 
       await run(ws, T1);
       await rm(sourcePath(ws, "Scratch/temp-research.md"));
@@ -538,7 +539,7 @@ describe("runVaultSync removal detection", () => {
 
   it("keeps the vault namespace directory after the last note is removed", async () => {
     const ws = await makeWorkspace();
-    const namespaceRoot = join(ws.rawDir, "notes", VAULT_NAME);
+    const namespaceRoot = join(ws.rawDir, "notes", vaultName());
 
     await run(ws, T1);
 
@@ -577,7 +578,7 @@ describe("runVaultSync removal detection", () => {
     await writeFile(
       join(ws.rawDir, "manifest.json"),
       JSON.stringify({
-        vaults: { [VAULT_NAME]: { "b.md": entry, "a.md": entry } },
+        vaults: { [vaultName()]: { "b.md": entry, "a.md": entry } },
       }),
     );
 
@@ -614,8 +615,8 @@ describe("runVaultSync progress", () => {
 
     expect(messages.slice(0, 3).map((message) => message.text)).toEqual([
       `sync-vault: raw dir ${ws.rawDir}`,
-      `vault "${VAULT_NAME}": scanning ${ws.vaultRoot}`,
-      `vault "${VAULT_NAME}": 9 candidates`,
+      `vault "${vaultName()}": scanning ${ws.vaultRoot}`,
+      `vault "${vaultName()}": 9 candidates`,
     ]);
   });
 
@@ -644,9 +645,9 @@ describe("runVaultSync progress", () => {
 
     expect(messages.map((message) => message.text)).toEqual([
       `sync-vault: raw dir ${ws.rawDir}`,
-      `vault "${VAULT_NAME}": scanning ${ws.vaultRoot}`,
-      `vault "${VAULT_NAME}": ${PROGRESS_EVERY + 9} candidates`,
-      `vault "${VAULT_NAME}": ${PROGRESS_EVERY}/${PROGRESS_EVERY + 9} read, ${PROGRESS_EVERY} selected`,
+      `vault "${vaultName()}": scanning ${ws.vaultRoot}`,
+      `vault "${vaultName()}": ${PROGRESS_EVERY + 9} candidates`,
+      `vault "${vaultName()}": ${PROGRESS_EVERY}/${PROGRESS_EVERY + 9} read, ${PROGRESS_EVERY} selected`,
     ]);
   });
 
@@ -689,7 +690,7 @@ describe("runVaultSync progress", () => {
 
     expect(messages).toContainEqual({
       kind: "heartbeat",
-      text: `vault "${VAULT_NAME}": 1/9 read, 1 selected`,
+      text: `vault "${vaultName()}": 1/9 read, 1 selected`,
     });
   });
 
@@ -706,7 +707,7 @@ describe("runVaultSync progress", () => {
 
     expect(messages).toContainEqual({
       kind: "heartbeat",
-      text: `vault "${VAULT_NAME}": 2/9 read, 2 selected`,
+      text: `vault "${vaultName()}": 2/9 read, 2 selected`,
     });
   });
 
@@ -724,7 +725,7 @@ describe("runVaultSync progress", () => {
         (message) =>
           message.kind === "heartbeat" &&
           new RegExp(
-            `^vault "${VAULT_NAME}": scanning \\([^)]+, 1000 dirs\\)$`,
+            `^vault "${vaultName()}": scanning \\([^)]+, 1000 dirs\\)$`,
           ).test(message.text),
       ),
     ).toBe(true);
@@ -743,7 +744,7 @@ describe("runVaultSync progress", () => {
 
     expect(messages).toContainEqual({
       kind: "heartbeat",
-      text: `vault "${VAULT_NAME}": 1/9 read, 1 selected`,
+      text: `vault "${vaultName()}": 1/9 read, 1 selected`,
     });
   });
 });
@@ -781,7 +782,7 @@ describe("runVaultSync candidate count", () => {
 
 describe("runVaultSync home expansion", () => {
   it("syncs a vault whose root is a tilde path", async () => {
-    const ws = await makeWorkspace({ root: `~/${VAULT_NAME}` });
+    const ws = await makeWorkspace({ root: `~/${vaultName()}` });
     const { sources } = await runVaultSync({
       configPath: ws.configPath,
       rawDir: ws.rawDir,
@@ -815,7 +816,7 @@ describe("runVaultSync multiple vaults", () => {
       configPath,
       JSON.stringify({
         vaults: [
-          { name: VAULT_NAME, root: documentsRoot, exclude: "wiki:false" },
+          { name: vaultName(), root: documentsRoot, exclude: "wiki:false" },
           { name: "Journal", root: journalRoot, exclude: "wiki:false" },
         ],
       }),
@@ -879,7 +880,7 @@ describe("runVaultSync stale namespace pruning", () => {
     await run(ws, T1);
 
     expect(Object.keys((await readManifestOf(ws)).vaults)).toEqual([
-      VAULT_NAME,
+      vaultName(),
     ]);
   });
 
@@ -890,7 +891,7 @@ describe("runVaultSync stale namespace pruning", () => {
     await run(ws, T1);
 
     expect(await collectFiles(join(ws.rawDir, "notes"))).toEqual(
-      SELECTED_PATHS.map((rel) => `${VAULT_NAME}/${rel}`),
+      SELECTED_PATHS.map((rel) => `${vaultName()}/${rel}`),
     );
   });
 
@@ -905,7 +906,7 @@ describe("runVaultSync stale namespace pruning", () => {
     await run(ws, T1);
 
     expect(Object.keys((await readManifestOf(ws)).vaults)).toEqual([
-      VAULT_NAME,
+      vaultName(),
     ]);
   });
 
@@ -1007,7 +1008,7 @@ describe("runDryRun", () => {
     expect(
       await runDryRun({ configPath: ws.configPath, rawDir: ws.rawDir }),
     ).toEqual([
-      { vault: VAULT_NAME, candidates: 9, wouldIngest: SELECTED_PATHS },
+      { vault: vaultName(), candidates: 9, wouldIngest: SELECTED_PATHS },
     ]);
   });
 
@@ -1059,13 +1060,13 @@ describe("runDryRun", () => {
     });
 
     expect(messages.slice(1, 3).map((message) => message.text)).toEqual([
-      `vault "${VAULT_NAME}": scanning ${ws.vaultRoot}`,
-      `vault "${VAULT_NAME}": 9 candidates`,
+      `vault "${vaultName()}": scanning ${ws.vaultRoot}`,
+      `vault "${vaultName()}": 9 candidates`,
     ]);
   });
 
   it("expands a tilde vault root against the home override", async () => {
-    const ws = await makeWorkspace({ root: `~/${VAULT_NAME}` });
+    const ws = await makeWorkspace({ root: `~/${vaultName()}` });
 
     const reports = await runDryRun({
       configPath: ws.configPath,
@@ -1083,7 +1084,7 @@ describe("runDryRun", () => {
     await writeFile(
       configPath,
       JSON.stringify({
-        vaults: [{ name: VAULT_NAME, root: "~/v", exclude: "wiki:false" }],
+        vaults: [{ name: vaultName(), root: "~/v", exclude: "wiki:false" }],
       }),
     );
 
@@ -1105,7 +1106,7 @@ describe("sync-vault CLI", () => {
         dataRoot,
         vaults: [
           {
-            name: VAULT_NAME,
+            name: vaultName(),
             root: ws.vaultRoot,
             exclude: "wiki:false",
           },
@@ -1117,7 +1118,7 @@ describe("sync-vault CLI", () => {
 
     expect(
       await readFile(join(dataRoot, "raw", "manifest.json"), "utf8"),
-    ).toContain(VAULT_NAME);
+    ).toContain(vaultName());
   });
 
   async function runCli(
@@ -1170,7 +1171,7 @@ describe("sync-vault CLI", () => {
     const { out } = await runCli([ws.configPath, ws.rawDir]);
 
     expect(out).toContain(
-      `vault "${VAULT_NAME}": 7 selected, 7 copied, 0 unchanged, 0 removed`,
+      `vault "${vaultName()}": 7 selected, 7 copied, 0 unchanged, 0 removed`,
     );
   });
 
@@ -1233,7 +1234,7 @@ describe("sync-vault CLI", () => {
     const { out } = await runCli([ws.configPath, ws.rawDir]);
 
     expect(out.split("\n")[0]).toBe(
-      `vault "${VAULT_NAME}": 6 selected, 0 copied, 6 unchanged, 1 removed`,
+      `vault "${vaultName()}": 6 selected, 0 copied, 6 unchanged, 1 removed`,
     );
     expect(out).toContain("  - Scratch/temp-research.md");
     expect(out.split("\n").at(-1)).toMatch(
@@ -1319,7 +1320,7 @@ describe("sync-vault CLI", () => {
     const ws = await makeWorkspace();
 
     await mkdir(join(ws.rawDir, "notes"), { recursive: true });
-    await writeFile(join(ws.rawDir, "notes", VAULT_NAME), "not a directory");
+    await writeFile(join(ws.rawDir, "notes", vaultName()), "not a directory");
 
     const writes: string[] = [];
     const writeSpy = vi
@@ -1362,7 +1363,7 @@ describe("sync-vault CLI", () => {
     const { out } = await runCli([ws.configPath, ws.rawDir]);
 
     expect(out.split("\n")[0]).toBe(
-      `vault "${VAULT_NAME}": 7 selected, 0 copied, 7 unchanged, 0 removed`,
+      `vault "${vaultName()}": 7 selected, 0 copied, 7 unchanged, 0 removed`,
     );
     expect(out).toContain("  - Retired/ (stale namespace, not configured)");
     expect(out.split("\n").at(-1)).toMatch(
@@ -1376,7 +1377,7 @@ describe("sync-vault CLI", () => {
     const { out } = await runCli(["--dry-run", ws.configPath, ws.rawDir]);
 
     expect(out.split("\n")[0]).toBe(
-      `vault "${VAULT_NAME}": 7 of 9 candidates would be ingested`,
+      `vault "${vaultName()}": 7 of 9 candidates would be ingested`,
     );
 
     for (const rel of SELECTED_PATHS) {

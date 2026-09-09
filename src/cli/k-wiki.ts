@@ -31,7 +31,7 @@ import {
   resolveCheckout,
 } from "./k-wiki-binding.ts";
 import { READ_VERB_HELP } from "./read-verb-help.ts";
-import { HELP, PORCELAIN_VERBS, VERBS, type VerbSpec } from "./verb-table.ts";
+import { buildHelp, type VerbSpec, verbTable } from "./verb-table.ts";
 
 /** The leading global flag tokens (the reordering set). */
 const HELP_FLAGS = new Set(["-h", "--help"]);
@@ -177,7 +177,15 @@ function operatorRefusal(verb: VerbSpec, checkout: string): string {
 
 /** The verb spec for a name, undefined when unknown. */
 function verbSpec(name: string): VerbSpec | undefined {
-  return VERBS.find((verb) => verb.name === name);
+  return verbTable().find((verb) => verb.name === name);
+}
+
+/** The porcelain-tier names — the bare-help spotlight list the
+ *  unknown-verb error names. */
+function porcelainNames(): readonly string[] {
+  return verbTable()
+    .filter((verb) => verb.tier === "porcelain")
+    .map((verb) => verb.name);
 }
 
 /** One resolved invocation: the verb, the argv it runs with (the
@@ -213,7 +221,7 @@ function resolveInvocation(argv: readonly string[]): Invocation | undefined {
   const verbName = rest[0];
 
   if (verbName === undefined || needsFrontDoorHelp(helpAsked, verbName)) {
-    console.log(HELP);
+    console.log(buildHelp());
 
     return undefined;
   }
@@ -230,7 +238,7 @@ function resolveInvocation(argv: readonly string[]): Invocation | undefined {
 
   if (verb === undefined) {
     fail(
-      `unknown verb ${JSON.stringify(verbName)}; the daily verbs are: ${PORCELAIN_VERBS.join(", ")} — k-wiki --help lists every tier`,
+      `unknown verb ${JSON.stringify(verbName)}; the daily verbs are: ${porcelainNames().join(", ")} — k-wiki --help lists every tier`,
     );
 
     return undefined;

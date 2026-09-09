@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { AGENT_COMMANDS } from "../../src/cli/verb-table.ts";
+import { verbTable } from "../../src/cli/verb-table.ts";
 
 /**
  * The k-wiki skill (issue #77, renamed with the CLI it documents):
@@ -40,10 +40,11 @@ describe("k-wiki skill (issue #77)", () => {
       (match) => match[1],
     );
 
+    const agentCommands = verbTable()
+      .filter((verb) => verb.klass !== "operator")
+      .map((verb) => verb.name);
     const unknown = referenced.filter(
-      (word) =>
-        word !== undefined &&
-        !(AGENT_COMMANDS as readonly string[]).includes(word),
+      (word) => word !== undefined && !agentCommands.includes(word),
     );
 
     expect(unknown).toEqual([]);

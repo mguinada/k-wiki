@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, describe, expect, it } from "vitest";
-import { VERBS, type VerbSpec } from "../../src/cli/verb-table.ts";
+import { type VerbSpec, verbTable } from "../../src/cli/verb-table.ts";
 import { K_WIKI_SCRIPT, repoRoot, runCli } from "./helpers.ts";
 
 /**
@@ -579,7 +579,7 @@ describe("k-wiki wiki key e2e", () => {
  */
 /** The operator verbs — the verbatim-passthrough class the
  *  byte-identical help pin walks. */
-const OPERATOR_VERBS: readonly VerbSpec[] = VERBS.filter(
+const OPERATOR_VERBS: readonly VerbSpec[] = verbTable().filter(
   (verb) => verb.klass === "operator",
 );
 

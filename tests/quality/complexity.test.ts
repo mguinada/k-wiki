@@ -56,7 +56,13 @@ const ENGINE_JSON = `{
   ]
 }`;
 
-const REPORT: EngineReport = parseEngineReport(ENGINE_JSON);
+/** The parsed engine report for ENGINE_JSON, built inside each test
+ *  (issue #354: a collection-scope call executes outside per-test
+ *  coverage, making every parseEngineReport mutant static — each
+ *  re-running the whole suite). */
+function report(): EngineReport {
+  return parseEngineReport(ENGINE_JSON);
+}
 
 /** A new file (ranges null) plus a legacy file touched at one hunk. */
 const CHANGED: readonly FileDiff[] = [
@@ -110,7 +116,7 @@ describe("parseEngineReport", () => {
 
 describe("gateChanged", () => {
   it("passes a legacy over-limit function whose lines the change does not touch", () => {
-    expect(gateChanged(REPORT, CHANGED).violations).toEqual([
+    expect(gateChanged(report(), CHANGED).violations).toEqual([
       {
         path: "src/b.ts",
         line: 5,
@@ -125,15 +131,15 @@ describe("gateChanged", () => {
       { path: "src/a.ts", ranges: [{ start: 48, end: 52 }] },
     ];
 
-    expect(gateChanged(REPORT, changed).violations.map((v) => v.name)).toEqual([
-      "legacyBig",
-    ]);
+    expect(
+      gateChanged(report(), changed).violations.map((v) => v.name),
+    ).toEqual(["legacyBig"]);
   });
 
   it("gates a new or untracked file whole", () => {
     const changed: readonly FileDiff[] = [{ path: "src/b.ts", ranges: null }];
 
-    expect(gateChanged(REPORT, changed).functionsGated).toBe(3);
+    expect(gateChanged(report(), changed).functionsGated).toBe(3);
   });
 
   it("passes a function at exactly the limit", () => {
@@ -141,14 +147,14 @@ describe("gateChanged", () => {
       { path: "src/b.ts", ranges: [{ start: 20, end: 24 }] },
     ];
 
-    expect(gateChanged(REPORT, changed).violations).toEqual([]);
+    expect(gateChanged(report(), changed).violations).toEqual([]);
   });
 
   it("reports a changed function above the warning tier as a warning, not a violation", () => {
     const changed: readonly FileDiff[] = [
       { path: "src/b.ts", ranges: [{ start: 12, end: 16 }] },
     ];
-    const result = gateChanged(REPORT, changed);
+    const result = gateChanged(report(), changed);
 
     expect(`${result.violations.length}|${result.warnings[0]?.name}`).toBe(
       "0|warnTier",
@@ -156,7 +162,7 @@ describe("gateChanged", () => {
   });
 
   it("counts only changed files and only gated functions in the summary", () => {
-    const result = gateChanged(REPORT, [
+    const result = gateChanged(report(), [
       { path: "src/a.ts", ranges: [{ start: 60, end: 60 }] },
     ]);
 
@@ -228,13 +234,16 @@ describe("gateChanged (boundaries, issue #240 kill batch)", () => {
   ]
 }`;
 
-  const boundaryReport = parseEngineReport(BOUNDARY_JSON);
+  /** The parsed boundary report, built inside each test (issue #354). */
+  function boundaryReport(): EngineReport {
+    return parseEngineReport(BOUNDARY_JSON);
+  }
   const boundaryChange: readonly FileDiff[] = [
     { path: "src/b.ts", ranges: [{ start: 60, end: 60 }] },
   ];
 
   it("gates a function whose extent touches the range start and keeps boundary scores out of both tiers", () => {
-    expect(gateChanged(boundaryReport, boundaryChange)).toEqual({
+    expect(gateChanged(boundaryReport(), boundaryChange)).toEqual({
       violations: [],
       warnings: [
         { path: "src/b.ts", line: 50, name: "touch", cyclomatic: 9 },
@@ -254,7 +263,7 @@ describe("renderGateReport (exact text, issue #240 kill batch)", () => {
   it("renders the full violating report verbatim without color", () => {
     process.env.NO_COLOR = "1";
 
-    expect(renderGateReport(gateChanged(REPORT, CHANGED))).toBe(
+    expect(renderGateReport(gateChanged(report(), CHANGED))).toBe(
       [
         "complexity gate: 1 violation(s) over cyclomatic 10 — refactor, do not suppress",
         "src/b.ts:5  overNew  cyclomatic 11 > 10",
@@ -300,23 +309,27 @@ describe("renderDebtReport (exact text, issue #240 kill batch)", () => {
 });
 
 describe("renderGateReport", () => {
-  const result = gateChanged(REPORT, CHANGED);
-  const text = renderGateReport(result);
+  /** The rendered report, built inside each test (issue #354:
+   *  collection-scope execution makes every touched src mutant
+   *  static). */
+  function gateText(): string {
+    return renderGateReport(gateChanged(report(), CHANGED));
+  }
 
   it("names path:line, function, score, and limit for each violation", () => {
-    expect(text).toContain("src/b.ts:5  overNew  cyclomatic 11 > 10");
+    expect(gateText()).toContain("src/b.ts:5  overNew  cyclomatic 11 > 10");
   });
 
   it("states the refactor instruction, not a suppression hint", () => {
-    expect(text).toContain("Refactor overNew");
+    expect(gateText()).toContain("Refactor overNew");
   });
 
   it("prints the per-run summary with files, functions, and counts", () => {
-    expect(text).toContain("checked 2 files, 4 functions gated");
+    expect(gateText()).toContain("checked 2 files, 4 functions gated");
   });
 
   it("prints clean and green when no violation exists", () => {
-    const clean = gateChanged(REPORT, [
+    const clean = gateChanged(report(), [
       { path: "src/a.ts", ranges: [{ start: 60, end: 60 }] },
     ]);
 
@@ -326,13 +339,13 @@ describe("renderGateReport", () => {
 
 describe("renderDebtReport", () => {
   it("lists functions worst-first", () => {
-    const lines = renderDebtReport(REPORT).split("\n");
+    const lines = renderDebtReport(report()).split("\n");
 
     expect(lines[1]).toContain("legacyBig");
   });
 
   it("counts functions over the limit and over the warning tier", () => {
-    expect(renderDebtReport(REPORT)).toContain(
+    expect(renderDebtReport(report())).toContain(
       "5 functions, 2 over 10, 4 over 8",
     );
   });
@@ -346,40 +359,44 @@ describe("renderDebtReport boundaries", () => {
     cyclomatic: (i % 13) + 1,
   }));
 
-  const report = parseEngineReport(
-    JSON.stringify({ files: [{ path: "src/many.ts", functions: fns }] }),
-  );
+  /** The parsed many-function report, built inside each test
+   *  (issue #354). */
+  function manyReport(): EngineReport {
+    return parseEngineReport(
+      JSON.stringify({ files: [{ path: "src/many.ts", functions: fns }] }),
+    );
+  }
 
   it("counts the warning tier strictly above eight", () => {
-    expect(renderDebtReport(report)).toContain(
+    expect(renderDebtReport(manyReport())).toContain(
       "21 functions, 3 over 10, 5 over 8",
     );
   });
 
   it("lists the worst function first regardless of input order", () => {
-    expect(renderDebtReport(report).split("\n")[1]).toContain("f12");
+    expect(renderDebtReport(manyReport()).split("\n")[1]).toContain("f12");
   });
 
   it("caps the table at twenty functions", () => {
-    expect(renderDebtReport(report).split("\n")).toHaveLength(21);
+    expect(renderDebtReport(manyReport()).split("\n")).toHaveLength(21);
   });
 
   it("colors an over-limit score red", () => {
-    const lines = renderDebtReport(report).split("\n");
+    const lines = renderDebtReport(manyReport()).split("\n");
     const worst = lines.find((line) => line.includes("f12"));
 
     expect(worst).toContain("\u001b[31m");
   });
 
   it("leaves a score at exactly the limit uncolored", () => {
-    const lines = renderDebtReport(report).split("\n");
+    const lines = renderDebtReport(manyReport()).split("\n");
     const atLimit = lines.find((line) => line.includes("f9"));
 
     expect(atLimit).not.toContain("\u001b[31m");
   });
 
   it("leaves a small score uncolored", () => {
-    const lines = renderDebtReport(report).split("\n");
+    const lines = renderDebtReport(manyReport()).split("\n");
     const small = lines.find((line) => line.includes("f0"));
 
     expect(small).not.toContain("\u001b[31m");

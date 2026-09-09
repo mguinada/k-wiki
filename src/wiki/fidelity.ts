@@ -37,59 +37,66 @@ export interface FidelityReport {
 }
 
 /** Structural pages whose file names the wiki contract mandates;
- *  descriptive titles never kebab to them. */
-const STRUCTURAL_PAGES = new Set(["index", "overview", "log"]);
+ *  descriptive titles never kebab to them. Built at call time so
+ *  the mutants map to covering tests (issue #354: module-init data
+ *  is mutation-static). */
+function structuralPage(stem: string): boolean {
+  const structuralPages = new Set(["index", "overview", "log"]);
 
-/** Trailing segments that mark a dotted token as a reference, not a
- *  config key: file extensions (`sync.json`) and hostname TLDs
- *  (`dev.to`, `example.com`) — check-provenance owns path existence,
- *  and domains are provenance, not configuration. */
-const TRAILING_STOPWORDS = new Set([
-  "md",
-  "markdown",
-  "txt",
-  "json",
-  "yml",
-  "yaml",
-  "toml",
-  "ini",
-  "ts",
-  "tsx",
-  "js",
-  "mjs",
-  "cjs",
-  "sh",
-  "lock",
-  "html",
-  "css",
-  "pdf",
-  "png",
-  "jpg",
-  "com",
-  "org",
-  "net",
-  "io",
-  "dev",
-  "to",
-  "co",
-  "ai",
-  "app",
-  "me",
-  "so",
-  "xyz",
-  "info",
-  "site",
-]);
+  return structuralPages.has(stem);
+}
 
 /** A dotted token is a config key when every segment is at least two
  *  characters and the trailing segment is not a stopword (`e.g` and
  *  `sync.json` are not config keys; `push.pushOption` is). */
 function isConfigKey(token: string): boolean {
+  /** Trailing segments that mark a dotted token a reference, not a
+   *  config key: file extensions (`sync.json`) and hostname TLDs
+   *  (`dev.to`, `example.com`) — built at call time so the mutants
+   *  map to covering tests (issue #354: module-init data is
+   *  mutation-static); check-provenance owns path existence, and
+   *  domains are provenance, not configuration. */
+  const trailingStopwords = new Set([
+    "md",
+    "markdown",
+    "txt",
+    "json",
+    "yml",
+    "yaml",
+    "toml",
+    "ini",
+    "ts",
+    "tsx",
+    "js",
+    "mjs",
+    "cjs",
+    "sh",
+    "lock",
+    "html",
+    "css",
+    "pdf",
+    "png",
+    "jpg",
+    "com",
+    "org",
+    "net",
+    "io",
+    "dev",
+    "to",
+    "co",
+    "ai",
+    "app",
+    "me",
+    "so",
+    "xyz",
+    "info",
+    "site",
+  ]);
   const segments = token.split(".");
 
   return (
     segments.every((segment) => segment.length >= 2) &&
-    !TRAILING_STOPWORDS.has(segments[segments.length - 1] ?? "")
+    !trailingStopwords.has(segments[segments.length - 1] ?? "")
   );
 }
 
@@ -171,7 +178,7 @@ function checkTitle(
   problems: string[],
   counters: FidelityCounters,
 ): void {
-  if (title === undefined || STRUCTURAL_PAGES.has(stem)) {
+  if (title === undefined || structuralPage(stem)) {
     return;
   }
 

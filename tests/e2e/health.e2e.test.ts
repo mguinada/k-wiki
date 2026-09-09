@@ -1,7 +1,7 @@
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { VAULT_NAME } from "../../src/fixtures/generate.ts";
+import { vaultName } from "../../src/fixtures/generate.ts";
 import {
   buildWorkspace,
   cleanupWorkspaces,
@@ -19,7 +19,7 @@ import {
  */
 
 function rawNotePath(ws: Workspace, relPath: string): string {
-  return join(ws.rawDir, "notes", VAULT_NAME, ...relPath.split("/"));
+  return join(ws.rawDir, "notes", vaultName(), ...relPath.split("/"));
 }
 
 async function buildProjection(): Promise<Workspace> {

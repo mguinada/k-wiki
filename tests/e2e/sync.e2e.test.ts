@@ -1,7 +1,7 @@
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { VAULT_NAME } from "../../src/fixtures/generate.ts";
+import { vaultName } from "../../src/fixtures/generate.ts";
 import { parseManifest } from "../../src/sync/manifest.ts";
 import {
   buildWorkspace,
@@ -52,7 +52,7 @@ function sourcePath(ws: Workspace, relPath: string): string {
 }
 
 function rawNotePath(ws: Workspace, relPath: string): string {
-  return join(ws.rawDir, "notes", VAULT_NAME, ...relPath.split("/"));
+  return join(ws.rawDir, "notes", vaultName(), ...relPath.split("/"));
 }
 
 function manifestPath(ws: Workspace): string {
@@ -85,7 +85,7 @@ describe("sync-vault CLI lifecycle: one vault, one story", () => {
 
     expect(lastRun.code).toBe(0);
     expect(lastRun.out.split("\n")[0]).toBe(
-      `vault "${VAULT_NAME}": 7 selected, 7 copied, 0 unchanged, 0 removed`,
+      `vault "${vaultName()}": 7 selected, 7 copied, 0 unchanged, 0 removed`,
     );
 
     for (const rel of SELECTED_PATHS) {
@@ -101,12 +101,12 @@ describe("sync-vault CLI lifecycle: one vault, one story", () => {
     expect(
       await collectFiles(join(ws.rawDir, "notes")),
       cliOutput(lastRun),
-    ).toEqual(SELECTED_PATHS.map((rel) => `${VAULT_NAME}/${rel}`));
+    ).toEqual(SELECTED_PATHS.map((rel) => `${vaultName()}/${rel}`));
   });
 
   it("writes a parseable manifest that records each copied note's sha-256", async () => {
     expect(
-      (await readManifest(ws)).vaults[VAULT_NAME]?.["AI/RAG.md"]?.hash,
+      (await readManifest(ws)).vaults[vaultName()]?.["AI/RAG.md"]?.hash,
       cliOutput(lastRun),
     ).toBe(await hashFile(rawNotePath(ws, "AI/RAG.md")));
   });
@@ -148,7 +148,7 @@ describe("sync-vault CLI lifecycle: one vault, one story", () => {
 
   it("updates the edited note's hash in the manifest", async () => {
     expect(
-      (await readManifest(ws)).vaults[VAULT_NAME]?.[
+      (await readManifest(ws)).vaults[vaultName()]?.[
         "AI/rag-evaluation-notes.md"
       ]?.hash,
       cliOutput(lastRun),
@@ -178,14 +178,14 @@ describe("sync-vault CLI lifecycle: one vault, one story", () => {
         "Inbox/clipped-note.md",
         "Inbox/parking-lot.md",
         "Inbox/quick-idea.md",
-      ].map((rel) => `${VAULT_NAME}/${rel}`),
+      ].map((rel) => `${vaultName()}/${rel}`),
     );
   });
 
   it("drops the deleted note's manifest entry", async () => {
     expect(
       Object.hasOwn(
-        (await readManifest(ws)).vaults[VAULT_NAME] ?? {},
+        (await readManifest(ws)).vaults[vaultName()] ?? {},
         "Scratch/temp-research.md",
       ),
       cliOutput(lastRun),
@@ -202,7 +202,7 @@ describe("sync-vault CLI lifecycle: one vault, one story", () => {
 
     expect(lastRun.code).toBe(0);
     expect(lastRun.out.split("\n")[0]).toBe(
-      `vault "${VAULT_NAME}": 5 selected, 0 copied, 5 unchanged, 1 removed`,
+      `vault "${vaultName()}": 5 selected, 0 copied, 5 unchanged, 1 removed`,
     );
     expect(lastRun.out).toContain("  - AI/llms/attention-is-all-you-need.md");
     expect(lastRun.out.split("\n").at(-2)).toMatch(
@@ -248,7 +248,7 @@ describe("sync-vault CLI scenarios: isolated workspaces", () => {
       ws.configPath,
       JSON.stringify({
         vaults: [
-          { name: VAULT_NAME, root: ws.vaultRoot, exclude: "wiki:false" },
+          { name: vaultName(), root: ws.vaultRoot, exclude: "wiki:false" },
           { name: "Journal", root: journalRoot, exclude: "wiki:false" },
         ],
       }),
@@ -356,7 +356,7 @@ describe("sync-vault CLI scenarios: isolated workspaces", () => {
       ws.configPath,
       JSON.stringify({
         vaults: [
-          { name: VAULT_NAME, root: ws.vaultRoot, exclude: "wiki:false" },
+          { name: vaultName(), root: ws.vaultRoot, exclude: "wiki:false" },
           { name: "Blocked", root: blockedRoot, exclude: "wiki:false" },
         ],
       }),
@@ -374,7 +374,7 @@ describe("sync-vault CLI scenarios: isolated workspaces", () => {
     const result = await syncThenRename(ws);
 
     expect(result.out).toContain(
-      `- ${VAULT_NAME}/ (stale namespace, not configured)`,
+      `- ${vaultName()}/ (stale namespace, not configured)`,
     );
   });
 
@@ -415,7 +415,7 @@ describe("sync-vault CLI scenarios: isolated workspaces", () => {
 
     expect(result.code).toBe(0);
     expect(result.out.split("\n")[0]).toBe(
-      `vault "${VAULT_NAME}": 7 of 9 candidates would be ingested`,
+      `vault "${vaultName()}": 7 of 9 candidates would be ingested`,
     );
 
     for (const rel of SELECTED_PATHS) {
@@ -444,6 +444,6 @@ describe("sync-vault CLI scenarios: isolated workspaces", () => {
     expect(
       await collectFiles(join(ws.rawDir, "notes")),
       cliOutput(result),
-    ).toEqual(SELECTED_PATHS.map((rel) => `${VAULT_NAME}/${rel}`));
+    ).toEqual(SELECTED_PATHS.map((rel) => `${vaultName()}/${rel}`));
   });
 });

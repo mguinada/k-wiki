@@ -32,7 +32,7 @@ afterAll(async () => {
 /** A budget JSON body: every counter at its override or zero. */
 function budgetJson(overrides: Record<string, number> = {}): string {
   const budget = Object.fromEntries(
-    counterKeys.map((key) => [key, overrides[key] ?? 0]),
+    counterKeys().map((key) => [key, overrides[key] ?? 0]),
   );
 
   return JSON.stringify({ budget });

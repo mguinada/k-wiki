@@ -25,41 +25,46 @@ afterAll(async () => {
 });
 
 describe("composePrompt", () => {
-  const diff = diffManifests(
-    manifestWith("Engineering", {
-      "old.md": entry("old"),
-      "gone.md": entry("gone"),
-    }),
-    manifestWith("Engineering", {
-      "new.md": entry("new"),
-      "old.md": entry("old2"),
-    }),
-  );
+  /** The diff fixture, built inside each test (issue #354:
+   *  collection-scope execution makes every manifest-diff mutant
+   *  static — each re-running the whole suite). */
+  function diff(): ReturnType<typeof diffManifests> {
+    return diffManifests(
+      manifestWith("Engineering", {
+        "old.md": entry("old"),
+        "gone.md": entry("gone"),
+      }),
+      manifestWith("Engineering", {
+        "new.md": entry("new"),
+        "old.md": entry("old2"),
+      }),
+    );
+  }
 
   it("returns the prompt text unchanged for a full ingest", () => {
     expect(composePrompt("PROMPT", undefined)).toBe("PROMPT");
   });
 
   it("labels the changed-sources section of the incremental prompt", () => {
-    expect(composePrompt("PROMPT", diff)).toContain(
+    expect(composePrompt("PROMPT", diff())).toContain(
       "Changed sources since the previous ingestion:",
     );
   });
 
   it("lists an added source with a plus in the incremental prompt", () => {
-    expect(composePrompt("PROMPT", diff)).toContain("+ Engineering/new.md");
+    expect(composePrompt("PROMPT", diff())).toContain("+ Engineering/new.md");
   });
 
   it("lists a changed source with a tilde in the incremental prompt", () => {
-    expect(composePrompt("PROMPT", diff)).toContain("~ Engineering/old.md");
+    expect(composePrompt("PROMPT", diff())).toContain("~ Engineering/old.md");
   });
 
   it("lists a removed source with a minus in the incremental prompt", () => {
-    expect(composePrompt("PROMPT", diff)).toContain("- Engineering/gone.md");
+    expect(composePrompt("PROMPT", diff())).toContain("- Engineering/gone.md");
   });
 
   it("renders the exact incremental prompt format", () => {
-    expect(composePrompt("PROMPT", diff)).toBe(
+    expect(composePrompt("PROMPT", diff())).toBe(
       [
         "PROMPT",
         "",
@@ -90,7 +95,7 @@ describe("composePrompt", () => {
   });
 
   it("appends the operator note below the changed-source list under an Operator note heading", () => {
-    expect(composePrompt("PROMPT", diff, "re-adjudicate: under-filed")).toBe(
+    expect(composePrompt("PROMPT", diff(), "re-adjudicate: under-filed")).toBe(
       [
         "PROMPT",
         "",
@@ -113,18 +118,21 @@ describe("composePrompt", () => {
 });
 
 describe("composeExpungePrompt", () => {
-  const diff = diffManifests(
-    manifestWith("Engineering", {
-      "gone.md": entry("gone"),
-      "a.md": entry("a"),
-    }),
-    manifestWith("Engineering", { "a.md": entry("a") }),
-  );
+  /** The diff fixture, built inside each test (issue #354). */
+  function diff(): ReturnType<typeof diffManifests> {
+    return diffManifests(
+      manifestWith("Engineering", {
+        "gone.md": entry("gone"),
+        "a.md": entry("a"),
+      }),
+      manifestWith("Engineering", { "a.md": entry("a") }),
+    );
+  }
 
   it("appends the changed sources, note content, and direct set", () => {
     const composed = composeExpungePrompt(
       "EXPUNGE PROMPT",
-      diff,
+      diff(),
       [
         {
           vault: "Engineering",
@@ -163,7 +171,7 @@ describe("composeExpungePrompt", () => {
   it("states unavailable content instead of an empty fence", () => {
     const composed = composeExpungePrompt(
       "P",
-      diff,
+      diff(),
       [
         {
           vault: "Engineering",
@@ -180,21 +188,24 @@ describe("composeExpungePrompt", () => {
     );
   });
 
-  const mixedDiff = diffManifests(
-    manifestWith("Engineering", {
-      "gone.md": entry("gone"),
-      "keep.md": entry("keep"),
-    }),
-    manifestWith("Engineering", {
-      "keep.md": entry("keep"),
-      "fresh.md": entry("fresh"),
-    }),
-  );
+  /** The mixed diff fixture, built inside each test (issue #354). */
+  function mixedDiff(): ReturnType<typeof diffManifests> {
+    return diffManifests(
+      manifestWith("Engineering", {
+        "gone.md": entry("gone"),
+        "keep.md": entry("keep"),
+      }),
+      manifestWith("Engineering", {
+        "keep.md": entry("keep"),
+        "fresh.md": entry("fresh"),
+      }),
+    );
+  }
 
   it("embeds the incremental instruction block under the expunge prompt", () => {
     const composed = composeExpungePrompt(
       "EXPUNGE PROMPT",
-      mixedDiff,
+      mixedDiff(),
       [
         {
           vault: "Engineering",
@@ -221,7 +232,7 @@ describe("composeExpungePrompt", () => {
   it("lists the addition a mixed expunge run also carries", () => {
     const composed = composeExpungePrompt(
       "EXPUNGE PROMPT",
-      mixedDiff,
+      mixedDiff(),
       [
         {
           vault: "Engineering",
@@ -240,7 +251,7 @@ describe("composeExpungePrompt", () => {
   it("lists the removal a mixed expunge run also carries", () => {
     const composed = composeExpungePrompt(
       "EXPUNGE PROMPT",
-      mixedDiff,
+      mixedDiff(),
       [
         {
           vault: "Engineering",
@@ -259,7 +270,7 @@ describe("composeExpungePrompt", () => {
   it("wraps a note body whose own fences are four backticks long", () => {
     const composed = composeExpungePrompt(
       "P",
-      diff,
+      diff(),
       [
         {
           vault: "Engineering",

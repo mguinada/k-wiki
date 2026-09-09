@@ -3,12 +3,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
-  AGENT_COMMANDS,
-  HELP,
-  PORCELAIN_VERBS,
-  VERB_NAMES,
-  VERBS,
+  buildHelp,
   type VerbSpec,
+  verbTable,
 } from "../../src/cli/verb-table.ts";
 
 /**
@@ -48,7 +45,7 @@ describe("k-wiki verb table", () => {
   it("gives every verb a class of read, write-note, or operator", () => {
     const classes = new Set(["read", "write-note", "operator"]);
 
-    for (const verb of VERBS) {
+    for (const verb of verbTable()) {
       expect(classes.has(verb.klass)).toBe(true);
     }
   });
@@ -56,14 +53,15 @@ describe("k-wiki verb table", () => {
   it("gives every verb a tier of porcelain, operator, or libexec", () => {
     const tiers = new Set(["porcelain", "operator", "libexec"]);
 
-    for (const verb of VERBS) {
+    for (const verb of verbTable()) {
       expect(tiers.has(verb.tier)).toBe(true);
     }
   });
 
   it("lists every runtime launcher 1:1 as an operator verb", async () => {
     const launchers = (await launcherNames()).sort();
-    const dispatched = VERBS.filter((verb) => verb.klass === "operator")
+    const dispatched = verbTable()
+      .filter((verb) => verb.klass === "operator")
       .map((verb) => verb.name)
       .sort();
 
@@ -71,15 +69,15 @@ describe("k-wiki verb table", () => {
   });
 
   it("keeps every write-note verb k-wiki's own and gated", () => {
-    const writeNotes = VERBS.filter((verb) => verb.klass === "write-note").map(
-      (verb) => verb.name,
-    );
+    const writeNotes = verbTable()
+      .filter((verb) => verb.klass === "write-note")
+      .map((verb) => verb.name);
 
     expect(writeNotes).toEqual(["propose"]);
   });
 
   it("keeps every non-read verb wired to a dispatch main", () => {
-    const unwired = VERBS.filter(
+    const unwired = verbTable().filter(
       (verb) => verb.klass !== "read" && verb.main === undefined,
     );
 
@@ -87,14 +85,14 @@ describe("k-wiki verb table", () => {
   });
 
   it("wires every write-note main to the sandbox domain (the gate's caller)", async () => {
-    const propose = VERBS.find((verb) => verb.name === "propose");
+    const propose = verbTable().find((verb) => verb.name === "propose");
 
     expect(propose?.klass).toBe("write-note");
     expect(propose?.main).toBeDefined();
   });
 
   it("keeps every read verb off the launcher mains", () => {
-    const wired = VERBS.filter(
+    const wired = verbTable().filter(
       (verb) => verb.klass === "read" && verb.main !== undefined,
     );
 
@@ -102,7 +100,7 @@ describe("k-wiki verb table", () => {
   });
 
   it("wires every write-note verb to the sandbox gate", () => {
-    const writeNotes = VERBS.filter(
+    const writeNotes = verbTable().filter(
       (verb: VerbSpec) => verb.klass === "write-note",
     );
 
@@ -115,18 +113,28 @@ describe("k-wiki verb table", () => {
 
   it("gates no read or operator verb", () => {
     expect(
-      VERBS.filter(
-        (verb) => verb.klass !== "write-note" && verb.gate !== undefined,
-      ).map((verb) => verb.name),
+      verbTable()
+        .filter(
+          (verb) => verb.klass !== "write-note" && verb.gate !== undefined,
+        )
+        .map((verb) => verb.name),
     ).toEqual([]);
   });
 
   it("derives the agent whitelist from the verb classes", () => {
-    expect(AGENT_COMMANDS).toEqual([...READ_VERBS, "propose"]);
+    const agentCommands = verbTable()
+      .filter((verb) => verb.klass !== "operator")
+      .map((verb) => verb.name);
+
+    expect(agentCommands).toEqual([...READ_VERBS, "propose"]);
   });
 
   it("keeps every verb inside the porcelain spotlight list", () => {
-    expect(PORCELAIN_VERBS).toEqual([
+    const porcelainVerbs = verbTable()
+      .filter((verb) => verb.tier === "porcelain")
+      .map((verb) => verb.name);
+
+    expect(porcelainVerbs).toEqual([
       "query",
       "status",
       "list",
@@ -145,21 +153,21 @@ describe("k-wiki verb table", () => {
       "Maintenance (plumbing",
     ];
 
-    const positions = tiers.map((heading) => HELP.indexOf(heading));
+    const positions = tiers.map((heading) => buildHelp().indexOf(heading));
 
     expect(positions.every((pos) => pos !== -1)).toBe(true);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
   });
 
   it("names every verb of every tier in the bare help", () => {
-    for (const name of VERB_NAMES) {
-      expect(HELP).toContain(`\n  ${name}`);
+    for (const name of verbTable().map((verb) => verb.name)) {
+      expect(buildHelp()).toContain(`\n  ${name}`);
     }
   });
 
   it("documents the -w verbs in the global flag entry", () => {
-    for (const verb of VERBS.filter((entry) => entry.wiki)) {
-      expect(HELP).toContain(verb.name);
+    for (const verb of verbTable().filter((entry) => entry.wiki)) {
+      expect(buildHelp()).toContain(verb.name);
     }
   });
 });
