@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { createColors } from "picocolors";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { pathExists } from "../../src/cli/shared.ts";
-import { VAULT_NAME } from "../../src/fixtures/generate.ts";
+import { vaultName } from "../../src/fixtures/generate.ts";
 import {
   colorizeError,
   colorizeProgress,
@@ -206,15 +206,17 @@ describe("createSyncProgressSink", () => {
     return { sink, written, lines };
   }
 
-  const heartbeat = {
-    kind: "heartbeat",
-    text: `vault "${VAULT_NAME}": 1/9 read, 1 selected`,
-  } as const;
+  function heartbeat() {
+    return {
+      kind: "heartbeat",
+      text: `vault "${vaultName()}": 1/9 read, 1 selected`,
+    } as const;
+  }
 
   it("appends plain lines when not animated", () => {
     const { sink, written } = makeSink(false);
 
-    sink.render(heartbeat);
+    sink.render(heartbeat());
 
     expect(written).toEqual([]);
   });
@@ -222,18 +224,18 @@ describe("createSyncProgressSink", () => {
   it("appends the rendered line to the log when not animated", () => {
     const { sink, lines } = makeSink(false);
 
-    sink.render(heartbeat);
+    sink.render(heartbeat());
 
-    expect(lines).toEqual([`[vault "${VAULT_NAME}": 1/9 read, 1 selected]`]);
+    expect(lines).toEqual([`[vault "${vaultName()}": 1/9 read, 1 selected]`]);
   });
 
   it("keeps heartbeats on the animated line", () => {
     const { sink, written } = makeSink(true);
 
-    sink.render(heartbeat);
+    sink.render(heartbeat());
 
     expect(written).toEqual([
-      `\r⠋ [vault "${VAULT_NAME}": 1/9 read, 1 selected]`,
+      `\r⠋ [vault "${vaultName()}": 1/9 read, 1 selected]`,
     ]);
   });
 
@@ -242,7 +244,7 @@ describe("createSyncProgressSink", () => {
 
     sink.render({
       kind: "heartbeat",
-      text: `vault "${VAULT_NAME}": scanning (0s, 1000 dirs)`,
+      text: `vault "${vaultName()}": scanning (0s, 1000 dirs)`,
     });
 
     expect(written[0]).toMatch(/^\r⠋ \[.*scanning \(0s, 1000 dirs\)\]$/);
@@ -253,10 +255,12 @@ describe("createSyncProgressSink", () => {
 
     sink.render({
       kind: "event",
-      text: `vault "${VAULT_NAME}": scanning /some/root`,
+      text: `vault "${vaultName()}": scanning /some/root`,
     });
 
-    expect(written).toEqual([`[vault "${VAULT_NAME}": scanning /some/root]\n`]);
+    expect(written).toEqual([
+      `[vault "${vaultName()}": scanning /some/root]\n`,
+    ]);
   });
 
   it("keeps multi-digit read heartbeats on the animated line", () => {
@@ -264,7 +268,7 @@ describe("createSyncProgressSink", () => {
 
     sink.render({
       kind: "heartbeat",
-      text: `vault "${VAULT_NAME}": 12/345 read, 67 selected`,
+      text: `vault "${vaultName()}": 12/345 read, 67 selected`,
     });
 
     expect(written[0]).toMatch(/^\r⠋ \[.*12\/345 read, 67 selected\]$/);
@@ -286,18 +290,18 @@ describe("createSyncProgressSink", () => {
 
     sink.render({
       kind: "event",
-      text: `note: vault "${VAULT_NAME}": 1/9 read, 1 selected (quoted)`,
+      text: `note: vault "${vaultName()}": 1/9 read, 1 selected (quoted)`,
     });
 
     expect(written).toEqual([
-      `[note: vault "${VAULT_NAME}": 1/9 read, 1 selected (quoted)]\n`,
+      `[note: vault "${vaultName()}": 1/9 read, 1 selected (quoted)]\n`,
     ]);
   });
 
   it("clears the animated line on end", () => {
     const { sink, written } = makeSink(true);
 
-    sink.render(heartbeat);
+    sink.render(heartbeat());
     sink.end();
 
     expect(written[1]).toMatch(/^\r\s+\r$/);
@@ -332,7 +336,7 @@ describe("formatReport source nouns", () => {
       sources: [
         {
           kind: "vault",
-          name: VAULT_NAME,
+          name: vaultName(),
           candidates: 0,
           selected: 1,
           copied: ["a.md"],
@@ -360,15 +364,17 @@ describe("formatReport source nouns", () => {
 });
 
 describe("formatReport all-blocked hint", () => {
-  const allBlocked: VaultSyncReport = {
-    kind: "vault",
-    name: VAULT_NAME,
-    candidates: 9,
-    selected: 0,
-    copied: [],
-    unchanged: [],
-    removed: [],
-  };
+  function allBlocked(): VaultSyncReport {
+    return {
+      kind: "vault",
+      name: vaultName(),
+      candidates: 9,
+      selected: 0,
+      copied: [],
+      unchanged: [],
+      removed: [],
+    };
+  }
 
   function reportOf(
     vault: VaultSyncReport,
@@ -378,39 +384,39 @@ describe("formatReport all-blocked hint", () => {
   }
 
   it("appends the hint when every candidate is blocked", () => {
-    expect(formatReport(reportOf(allBlocked)).split("\n")[0]).toBe(
-      `vault "${VAULT_NAME}": 0 selected, 0 copied, 0 unchanged, 0 removed (9 candidates, all blocked)`,
+    expect(formatReport(reportOf(allBlocked())).split("\n")[0]).toBe(
+      `vault "${vaultName()}": 0 selected, 0 copied, 0 unchanged, 0 removed (9 candidates, all blocked)`,
     );
   });
 
   it("omits the hint when the vault has no candidates", () => {
-    const report: VaultSyncReport = { ...allBlocked, candidates: 0 };
+    const report: VaultSyncReport = { ...allBlocked(), candidates: 0 };
 
     expect(formatReport(reportOf(report)).split("\n")[0]).toBe(
-      `vault "${VAULT_NAME}": 0 selected, 0 copied, 0 unchanged, 0 removed`,
+      `vault "${vaultName()}": 0 selected, 0 copied, 0 unchanged, 0 removed`,
     );
   });
 
   it("omits the hint when candidates were ingested", () => {
     const report: VaultSyncReport = {
-      ...allBlocked,
+      ...allBlocked(),
       selected: 1,
       copied: ["a.md"],
     };
 
     expect(formatReport(reportOf(report)).split("\n")[0]).toBe(
-      `vault "${VAULT_NAME}": 1 selected, 1 copied, 0 unchanged, 0 removed`,
+      `vault "${vaultName()}": 1 selected, 1 copied, 0 unchanged, 0 removed`,
     );
   });
 
   it("keeps the no-changes summary when nothing was pruned", () => {
-    expect(formatReport(reportOf(allBlocked)).split("\n").at(-1)).toBe(
+    expect(formatReport(reportOf(allBlocked())).split("\n").at(-1)).toBe(
       "sync complete: no changes",
     );
   });
 
   it("appends the formatted duration to the summary", () => {
-    const report: SyncReport = { ...reportOf(allBlocked), elapsedMs: 1200 };
+    const report: SyncReport = { ...reportOf(allBlocked()), elapsedMs: 1200 };
 
     expect(formatReport(report).split("\n").at(-1)).toBe(
       "sync complete: no changes (1s)",
@@ -418,7 +424,7 @@ describe("formatReport all-blocked hint", () => {
   });
 
   it("appends a zero-second duration when the run is sub-second", () => {
-    const report: SyncReport = { ...reportOf(allBlocked), elapsedMs: 100 };
+    const report: SyncReport = { ...reportOf(allBlocked()), elapsedMs: 100 };
 
     expect(formatReport(report).split("\n").at(-1)).toBe(
       "sync complete: no changes (0s)",
@@ -486,19 +492,21 @@ describe("pruneEmptyDirs", () => {
 });
 
 describe("formatReport pruned namespaces", () => {
-  const unchanged: VaultSyncReport = {
-    kind: "vault",
-    name: VAULT_NAME,
-    candidates: 6,
-    selected: 4,
-    copied: [],
-    unchanged: SELECTED_PATHS,
-    removed: [],
-  };
+  function unchanged(): VaultSyncReport {
+    return {
+      kind: "vault",
+      name: vaultName(),
+      candidates: 6,
+      selected: 4,
+      copied: [],
+      unchanged: SELECTED_PATHS,
+      removed: [],
+    };
+  }
 
   it("lists each pruned namespace with a minus sign", () => {
     const report: SyncReport = {
-      sources: [unchanged],
+      sources: [unchanged()],
       prunedNamespaces: ["Retired"],
     };
 
@@ -509,7 +517,7 @@ describe("formatReport pruned namespaces", () => {
 
   it("counts a pruned namespace in the summary instead of reporting no changes", () => {
     const report: SyncReport = {
-      sources: [unchanged],
+      sources: [unchanged()],
       prunedNamespaces: ["Retired"],
     };
 
@@ -534,11 +542,11 @@ describe("formatDryRunReport", () => {
   it("renders the would-ingest list with a nothing-written summary", () => {
     expect(
       formatDryRunReport([
-        { vault: VAULT_NAME, candidates: 9, wouldIngest: ["AI/RAG.md"] },
+        { vault: vaultName(), candidates: 9, wouldIngest: ["AI/RAG.md"] },
       ]),
     ).toBe(
       [
-        `vault "${VAULT_NAME}": 1 of 9 candidates would be ingested`,
+        `vault "${vaultName()}": 1 of 9 candidates would be ingested`,
         "  + AI/RAG.md",
         "dry-run complete: nothing written",
       ].join("\n"),
@@ -557,7 +565,7 @@ describe("colorized output", () => {
       sources: [
         {
           kind: "vault",
-          name: VAULT_NAME,
+          name: vaultName(),
           candidates: 0,
           selected: 0,
           copied: [],
@@ -584,7 +592,7 @@ describe("colorized output", () => {
 
   it("colors vault names bold in report lines", () => {
     expect(formatReport(reportOf(), pc).split("\n")[0]).toBe(
-      `vault ${pc.bold(`"${VAULT_NAME}"`)}: 0 selected, 0 copied, 0 unchanged, 0 removed`,
+      `vault ${pc.bold(`"${vaultName()}"`)}: 0 selected, 0 copied, 0 unchanged, 0 removed`,
     );
   });
 
@@ -639,8 +647,8 @@ describe("colorized output", () => {
   });
 
   it("colors vault names bold in progress messages", () => {
-    expect(colorizeProgress(`vault "${VAULT_NAME}": 6 candidates`)).toBe(
-      `vault ${pc.bold(`"${VAULT_NAME}"`)}: 6 candidates`,
+    expect(colorizeProgress(`vault "${vaultName()}": 6 candidates`)).toBe(
+      `vault ${pc.bold(`"${vaultName()}"`)}: 6 candidates`,
     );
   });
 
@@ -651,7 +659,7 @@ describe("colorized output", () => {
   });
 
   it("colors a WARNING message yellow even when it names a vault", () => {
-    const message = `vault "${VAULT_NAME}": WARNING — drift detected`;
+    const message = `vault "${vaultName()}": WARNING — drift detected`;
 
     expect(colorizeProgress(message)).toBe(pc.yellow(message));
   });
@@ -676,12 +684,12 @@ describe("colorized output", () => {
 
   it("colors a dry-run header bold and its paths green", () => {
     const reports: readonly VaultDryRunReport[] = [
-      { vault: VAULT_NAME, candidates: 9, wouldIngest: ["AI/RAG.md"] },
+      { vault: vaultName(), candidates: 9, wouldIngest: ["AI/RAG.md"] },
     ];
 
     expect(formatDryRunReport(reports, pc)).toBe(
       [
-        `vault ${pc.bold(`"${VAULT_NAME}"`)}: 1 of 9 candidates would be ingested`,
+        `vault ${pc.bold(`"${vaultName()}"`)}: 1 of 9 candidates would be ingested`,
         `  + ${pc.green("AI/RAG.md")}`,
         "dry-run complete: nothing written",
       ].join("\n"),
@@ -690,7 +698,7 @@ describe("colorized output", () => {
 
   it("leaves the dry-run completion line plain", () => {
     const reports: readonly VaultDryRunReport[] = [
-      { vault: VAULT_NAME, candidates: 0, wouldIngest: [] },
+      { vault: vaultName(), candidates: 0, wouldIngest: [] },
     ];
 
     expect(formatDryRunReport(reports, pc).split("\n").at(-1)).toBe(
@@ -700,7 +708,7 @@ describe("colorized output", () => {
 
   it("appends the formatted duration to the dry-run summary", () => {
     const reports: readonly VaultDryRunReport[] = [
-      { vault: VAULT_NAME, candidates: 9, wouldIngest: ["AI/RAG.md"] },
+      { vault: vaultName(), candidates: 9, wouldIngest: ["AI/RAG.md"] },
     ];
 
     expect(formatDryRunReport(reports, pc, 65000).split("\n").at(-1)).toBe(
@@ -746,8 +754,8 @@ describe("colorized output", () => {
     it("strips progress color", () => {
       process.env.NO_COLOR = "1";
 
-      expect(colorizeProgress(`vault "${VAULT_NAME}": 6 candidates`)).toBe(
-        `vault "${VAULT_NAME}": 6 candidates`,
+      expect(colorizeProgress(`vault "${vaultName()}": 6 candidates`)).toBe(
+        `vault "${vaultName()}": 6 candidates`,
       );
     });
 

@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { afterAll, describe, expect, it } from "vitest";
 import {
   generateFixtureVault,
-  VAULT_NAME,
+  vaultName,
 } from "../../src/fixtures/generate.ts";
 import { repoRoot, runCli } from "./helpers.ts";
 
@@ -151,7 +151,7 @@ async function makeRepo(): Promise<Repo> {
     configPath,
     JSON.stringify({
       dataRoot,
-      vaults: [{ name: VAULT_NAME, root: vaultRoot, exclude: "wiki:false" }],
+      vaults: [{ name: vaultName(), root: vaultRoot, exclude: "wiki:false" }],
     }),
   );
   await mkdir(join(dataRoot, "raw"), { recursive: true });

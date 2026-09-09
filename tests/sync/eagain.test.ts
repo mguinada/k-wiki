@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import {
   generateFixtureVault,
-  VAULT_NAME,
+  vaultName,
 } from "../../src/fixtures/generate.ts";
 import {
   copyFileTolerant,
@@ -475,7 +475,7 @@ async function makeVaultWorkspace(): Promise<VaultWorkspace> {
   await writeFile(
     configPath,
     JSON.stringify({
-      vaults: [{ name: VAULT_NAME, root: vaultRoot, exclude: "wiki:false" }],
+      vaults: [{ name: vaultName(), root: vaultRoot, exclude: "wiki:false" }],
     }),
   );
 
@@ -565,7 +565,7 @@ describe("runSync EAGAIN surface", () => {
           rawDir: ws.rawDir,
         }),
       ).rejects.toThrow(
-        `failed to read note "AI/RAG.md" in vault "${VAULT_NAME}"`,
+        `failed to read note "AI/RAG.md" in vault "${vaultName()}"`,
       );
     } finally {
       now.mockRestore();

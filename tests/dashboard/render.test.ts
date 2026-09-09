@@ -577,11 +577,28 @@ describe("renderDashboard golden output", () => {
     sparse: GOLDEN_SPARSE,
   };
 
-  for (const testCase of goldenCases()) {
-    it(`matches the golden HTML byte-for-byte for the ${testCase.name} case`, () => {
-      const html = renderDashboard(testCase.kpis, testCase.meta);
+  // goldenCases() runs the whole KPI pipeline, so the cases build
+  // inside each test: at collection scope their execution lands in
+  // Stryker's static bucket and every kpis mutant re-runs the whole
+  // suite (issue #354). The names come from the goldens map, which
+  // is pure data.
+  it("pins every golden case and leaves no case unpinned", () => {
+    const caseNames = goldenCases().map((entry) => entry.name);
 
-      expect(html).toBe(goldens[testCase.name]);
+    expect([...caseNames].sort()).toEqual([...Object.keys(goldens)].sort());
+  });
+
+  for (const name of Object.keys(goldens)) {
+    it(`matches the golden HTML byte-for-byte for the ${name} case`, () => {
+      const goldCase = goldenCases().find((entry) => entry.name === name);
+
+      if (goldCase === undefined) {
+        throw new Error(`render-cases has no golden case named ${name}`);
+      }
+
+      const html = renderDashboard(goldCase.kpis, goldCase.meta);
+
+      expect(html).toBe(goldens[name]);
     });
   }
 });

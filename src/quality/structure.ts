@@ -13,7 +13,7 @@
 import { isPlainObject } from "../cli/shared.ts";
 import {
   counterKeys,
-  METRIC_LABELS,
+  metricLabels,
   type OffenderSite,
   type StructureMetrics,
   type StructureOffenders,
@@ -39,18 +39,20 @@ export interface StructureBreach {
 
 /** The human-readable label of a counter key. */
 function counterLabel(key: keyof StructureMetrics): string {
-  return METRIC_LABELS.find(([labelKey]) => labelKey === key)?.[1] ?? key;
+  return metricLabels().find(([labelKey]) => labelKey === key)?.[1] ?? key;
 }
 
-/** The counter key set shared by both validators. */
-const KNOWN_COUNTERS = new Set<string>(counterKeys);
+/** The counter key set shared by both validators, built per call
+ *  (issue #354: module-init data is mutation-static). */
+function knownCounters(): ReadonlySet<string> {
+  return new Set(counterKeys());
+}
 
 /** The specific validation problems of a budget object, if any. */
 function counterProblems(entry: Record<string, unknown>): string[] {
-  const unknownKeys = Object.keys(entry).filter(
-    (key) => !KNOWN_COUNTERS.has(key),
-  );
-  const missing = counterKeys.filter((key) => !(key in entry));
+  const counters = knownCounters();
+  const unknownKeys = Object.keys(entry).filter((key) => !counters.has(key));
+  const missing = counterKeys().filter((key) => !(key in entry));
   const problems: string[] = [];
 
   if (unknownKeys.length > 0) {
@@ -61,7 +63,7 @@ function counterProblems(entry: Record<string, unknown>): string[] {
     problems.push(`missing counters ${missing.join(", ")}`);
   }
 
-  for (const key of counterKeys) {
+  for (const key of counterKeys()) {
     const value: unknown = entry[key];
 
     if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
@@ -74,10 +76,11 @@ function counterProblems(entry: Record<string, unknown>): string[] {
 
 /** The specific validation problems of an exclude object, if any. */
 function excludeProblems(entry: Record<string, unknown>): string[] {
+  const counters = knownCounters();
   const problems: string[] = [];
 
   for (const [key, paths] of Object.entries(entry)) {
-    if (!KNOWN_COUNTERS.has(key)) {
+    if (!counters.has(key)) {
       problems.push(`exclude names a non-counter ${key}`);
     } else if (
       !Array.isArray(paths) ||
@@ -123,7 +126,7 @@ export function applyExcludes(
     ...offenders,
   };
 
-  for (const key of counterKeys) {
+  for (const key of counterKeys()) {
     const excluded = new Set(exclude[key] ?? []);
 
     if (excluded.size > 0) {
@@ -139,7 +142,7 @@ export function breachesOf(
   budget: Readonly<Record<keyof StructureMetrics, number>>,
   fresh: StructureMetrics,
 ): readonly StructureBreach[] {
-  return counterKeys
+  return counterKeys()
     .filter((key) => fresh[key] > budget[key])
     .map((key) => ({ key, budget: budget[key], fresh: fresh[key] }));
 }

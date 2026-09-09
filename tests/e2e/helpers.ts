@@ -6,7 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   generateFixtureVault,
-  VAULT_NAME,
+  vaultName,
 } from "../../src/fixtures/generate.ts";
 
 /**
@@ -117,7 +117,7 @@ export async function buildWorkspace(): Promise<Workspace> {
   await writeFile(
     configPath,
     JSON.stringify({
-      vaults: [{ name: VAULT_NAME, root: vaultRoot, exclude: "wiki:false" }],
+      vaults: [{ name: vaultName(), root: vaultRoot, exclude: "wiki:false" }],
     }),
   );
 

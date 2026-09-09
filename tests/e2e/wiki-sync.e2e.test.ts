@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { afterAll, describe, expect, it } from "vitest";
 import {
   generateFixtureVault,
-  VAULT_NAME,
+  vaultName,
 } from "../../src/fixtures/generate.ts";
 import { runCli, SYNC_CYCLE_SCRIPT } from "./helpers.ts";
 
@@ -282,7 +282,7 @@ async function makeRepo(): Promise<Repo> {
   await writeFile(
     configPath,
     JSON.stringify({
-      vaults: [{ name: VAULT_NAME, root: vaultRoot, exclude: "wiki:false" }],
+      vaults: [{ name: vaultName(), root: vaultRoot, exclude: "wiki:false" }],
     }),
   );
   await mkdir(join(dataRoot, "raw"), { recursive: true });
@@ -488,7 +488,7 @@ describe("wiki-sync e2e", () => {
     ).resolves.toContain("stub body");
     await expect(
       readFile(
-        join(repo.dataRoot, "raw", "notes", VAULT_NAME, "AI", "RAG.md"),
+        join(repo.dataRoot, "raw", "notes", vaultName(), "AI", "RAG.md"),
         "utf8",
       ),
     ).resolves.toContain("RAG");
@@ -700,7 +700,7 @@ describe("wiki-sync e2e", () => {
       repo.configPath,
       JSON.stringify({
         vaults: [
-          { name: VAULT_NAME, root: repo.vaultRoot, exclude: "wiki:false" },
+          { name: vaultName(), root: repo.vaultRoot, exclude: "wiki:false" },
         ],
         publish: { mirror, include: ["wiki/**"], root: "wiki" },
       }),
@@ -758,7 +758,7 @@ describe("wiki-sync e2e", () => {
       repo.configPath,
       JSON.stringify({
         vaults: [
-          { name: VAULT_NAME, root: repo.vaultRoot, exclude: "wiki:false" },
+          { name: vaultName(), root: repo.vaultRoot, exclude: "wiki:false" },
         ],
         publish: { mirror, include: ["wiki/**"], root: "wiki" },
       }),

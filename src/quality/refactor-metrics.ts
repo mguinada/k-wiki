@@ -81,30 +81,36 @@ export type StructureOffenders = Readonly<
   Record<keyof StructureMetrics, readonly OffenderSite[]>
 >;
 
-/** The human-readable label for each counter, in print order. */
-export const METRIC_LABELS: readonly (readonly [
+/** The human-readable label for each counter, in print order. Built
+ *  at call time (issue #354: module-init data is mutation-static).
+ */
+export function metricLabels(): readonly (readonly [
   keyof StructureMetrics,
   string,
-])[] = [
-  ["filesOver800", "files >800 lines"],
-  ["filesOver500", "files >500 lines"],
-  ["filesOver350", "files >350 lines"],
-  ["maxFileLines", "max file lines"],
-  ["crossDomainEdges", "cross-domain edges (excl. cli)"],
-  ["dataToSyncEdges", "data\u2192sync edges"],
-  ["parseArgsCopies", "parseArgs copies"],
-  ["directoryWalkers", "directory walkers"],
-  ["repoRootDerivations", "repoRoot derivations"],
-  ["unquoteDefinitions", "unquote definitions"],
-  ["envSignatures", "env: signatures"],
-  ["envSignatureFiles", "env: signature files"],
-  ["dataRootEnvPairs", "(dataRoot, env) pairs"],
-  ["dirnameRawDirDerivations", "dirname derivations of rawDir"],
-];
+])[] {
+  return [
+    ["filesOver800", "files >800 lines"],
+    ["filesOver500", "files >500 lines"],
+    ["filesOver350", "files >350 lines"],
+    ["maxFileLines", "max file lines"],
+    ["crossDomainEdges", "cross-domain edges (excl. cli)"],
+    ["dataToSyncEdges", "data\u2192sync edges"],
+    ["parseArgsCopies", "parseArgs copies"],
+    ["directoryWalkers", "directory walkers"],
+    ["repoRootDerivations", "repoRoot derivations"],
+    ["unquoteDefinitions", "unquote definitions"],
+    ["envSignatures", "env: signatures"],
+    ["envSignatureFiles", "env: signature files"],
+    ["dataRootEnvPairs", "(dataRoot, env) pairs"],
+    ["dirnameRawDirDerivations", "dirname derivations of rawDir"],
+  ];
+}
 
-/** Every counter key, in output order — the budget file's key set. */
-export const counterKeys: readonly (keyof StructureMetrics)[] =
-  METRIC_LABELS.map(([key]) => key);
+/** Every counter key, in output order — the budget file's key set.
+ *  Built at call time with the labels (issue #354). */
+export function counterKeys(): readonly (keyof StructureMetrics)[] {
+  return metricLabels().map(([key]) => key);
+}
 
 const IMPORT_PATTERN = /from\s+["']([^"']+)["']/g;
 const SIGNATURE_PATTERN =
@@ -397,18 +403,44 @@ export async function collectMetrics(
 
 /** The counters as a plain JSON-ready object. */
 function toPlainObject(metrics: StructureMetrics): Record<string, number> {
-  return Object.fromEntries(METRIC_LABELS.map(([key]) => [key, metrics[key]]));
+  return Object.fromEntries(metricLabels().map(([key]) => [key, metrics[key]]));
 }
 
 /** The human-readable counter table, one line per counter. */
 function renderTable(metrics: StructureMetrics): string {
-  return METRIC_LABELS.map(([key, label]) => `${label}: ${metrics[key]}`)
+  return metricLabels()
+    .map(([key, label]) => `${label}: ${metrics[key]}`)
     .join("\n")
     .concat("\n");
 }
 
-/** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
-const HELP = `Usage: refactor-metrics [--json] [<root>] [-h | --help]
+/** Parse argv through the shared CLI shell into the scan root and
+ *  the JSON switch. */
+function metricsOptions(argv: readonly string[]): {
+  root: string;
+  json: boolean;
+} {
+  const parsed = parseArgs(argv, {
+    boolean: ["--json"],
+    positionals: { max: 1, error: (arg) => `unexpected argument: ${arg}` },
+  });
+
+  if (parsed.error !== undefined) {
+    throw new Error(parsed.error);
+  }
+
+  return {
+    root: parsed.positional[0] ?? join(repoRoot, "src"),
+    json: parsed.flags.has("--json"),
+  };
+}
+
+export async function main(
+  argv: readonly string[] = process.argv.slice(2),
+): Promise<void> {
+  if (argv.includes("-h") || argv.includes("--help")) {
+    /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
+    const help = `Usage: refactor-metrics [--json] [<root>] [-h | --help]
 
 Scan a TypeScript tree recursively and print the src/ refactor
 campaign's structure counters. Every counter measures structural
@@ -466,32 +498,7 @@ Counters:
 Writes the counter table (or JSON object) to stdout. Exit 0 after
 printing; exit 1 when the scan directory is missing or unreadable.`;
 
-/** Parse argv through the shared CLI shell into the scan root and
- *  the JSON switch. */
-function metricsOptions(argv: readonly string[]): {
-  root: string;
-  json: boolean;
-} {
-  const parsed = parseArgs(argv, {
-    boolean: ["--json"],
-    positionals: { max: 1, error: (arg) => `unexpected argument: ${arg}` },
-  });
-
-  if (parsed.error !== undefined) {
-    throw new Error(parsed.error);
-  }
-
-  return {
-    root: parsed.positional[0] ?? join(repoRoot, "src"),
-    json: parsed.flags.has("--json"),
-  };
-}
-
-export async function main(
-  argv: readonly string[] = process.argv.slice(2),
-): Promise<void> {
-  if (argv.includes("-h") || argv.includes("--help")) {
-    console.log(HELP);
+    console.log(help);
 
     return;
   }

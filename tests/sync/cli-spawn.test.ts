@@ -16,7 +16,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import {
   generateFixtureVault,
-  VAULT_NAME,
+  vaultName,
 } from "../../src/fixtures/generate.ts";
 // Static import for Stryker's vitest related mode: without it, this
 // file never runs against sync-vault.ts mutants, because the staged
@@ -135,7 +135,7 @@ async function makeTmpRepo(): Promise<string> {
   await writeFile(
     join(dir, "sync.json"),
     JSON.stringify({
-      vaults: [{ name: VAULT_NAME, root: vaultRoot, exclude: "wiki:false" }],
+      vaults: [{ name: vaultName(), root: vaultRoot, exclude: "wiki:false" }],
     }),
   );
 
@@ -161,7 +161,7 @@ async function stageRepo(): Promise<string> {
   await writeFile(
     join(dir, "sync.json"),
     JSON.stringify({
-      vaults: [{ name: VAULT_NAME, root: vaultRoot, exclude: "wiki:false" }],
+      vaults: [{ name: vaultName(), root: vaultRoot, exclude: "wiki:false" }],
     }),
   );
 
@@ -249,7 +249,7 @@ describe("generate CLI", () => {
     const { out } = await importWithArgv(launcherPath, launcherPath, [target]);
 
     expect(out).toContain(
-      `Fixture vault written to ${join(target, VAULT_NAME)}`,
+      `Fixture vault written to ${join(target, vaultName())}`,
     );
   });
 
@@ -274,7 +274,7 @@ describe("generate CLI", () => {
  * (issue #44: a failed child surfaced as an undiagnosable ENOENT).
  */
 async function noteMarker(rawDir: string, result: RunResult): Promise<string> {
-  return stat(join(rawDir, "notes", VAULT_NAME, "AI", "RAG.md")).then(
+  return stat(join(rawDir, "notes", vaultName(), "AI", "RAG.md")).then(
     (info) => (info.isFile() ? "true" : "false"),
     () =>
       `stat failed; child exit ${result.code}, stdout: ${JSON.stringify(result.out)}, stderr: ${JSON.stringify(result.err)}`,
@@ -303,8 +303,8 @@ describe("sync-vault CLI", () => {
         dataRoot: join(dir, "k-wiki-data"),
         vaults: [
           {
-            name: VAULT_NAME,
-            root: join(dir, VAULT_NAME),
+            name: vaultName(),
+            root: join(dir, vaultName()),
             exclude: "wiki:false",
           },
         ],
@@ -337,7 +337,7 @@ describe("sync-vault CLI", () => {
     const { out } = await importWithArgv(launcherPath, launcherPath, []);
 
     const noteStat = await stat(
-      join(repo, "raw", "notes", VAULT_NAME, "AI", "RAG.md"),
+      join(repo, "raw", "notes", vaultName(), "AI", "RAG.md"),
     );
 
     expect(
