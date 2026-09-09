@@ -1571,7 +1571,13 @@ k-wiki completion zsh > ~/.zfunc/_k-wiki
 After either install, `k-wiki <TAB>` lists the verbs grouped by the
 bare-help tiers and `k-wiki query -<TAB>` offers the global flags
 (`-w`/`--wiki`, `-h`/`--help`, `--checkout <path>` completing
-paths).
+paths). If you invoke `k-wiki` through a shell alias
+(`alias k-wiki='node ~/k-wiki/bin/k-wiki'`), also `setopt
+COMPLETE_ALIASES` — otherwise zsh completes the alias's expansion
+(`node`) for the words after the verb; putting the checkout's `bin/`
+on `PATH` avoids the alias entirely. Verb arguments (the question
+text, `read`'s slug, `list`'s type filter) are not completed — the
+emitter is static by design.
 
 There is no filing passthrough: `--file-last` stays the human-run
 `wiki-query` verb inside the checkout (`wiki-query --wiki <name>
