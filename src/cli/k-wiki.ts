@@ -14,11 +14,11 @@
  * only may lead the verb and are reordered after it — a
  * reordering, not a second parser (git's `-C <path> log` model); a
  * verb-specific flag before the verb is a usage error. Every run
- * prints its resolved door and instance as dim stderr lines
- * (decision 16) so wrong-door and wrong-corpus calls stay visible
- * in the transcript. The read verbs live in agent-verbs.ts; the
- * binding-file schema and checkout resolution in
- * k-wiki-binding.ts.
+ * that resolves a door prints its resolved door and instance as
+ * dim stderr lines (decision 16) so wrong-door and wrong-corpus
+ * calls stay visible in the transcript. The read verbs live in
+ * agent-verbs.ts; the binding-file schema and checkout resolution
+ * in k-wiki-binding.ts.
  */
 
 import { homedir } from "node:os";

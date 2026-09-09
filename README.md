@@ -575,10 +575,12 @@ only. `bin/k-wiki` with no arguments prints the same tiered table.
 Which verbs answer depends on the door: inside the checkout (the
 cwd is the checkout) every verb is available — the human door; from
 a bound project (`.k-wiki.json`, `--checkout`, or `K_WIKI_CHECKOUT`)
-only the read verbs plus `propose` (the gated agent write) — the
-agent door, which refuses operator verbs
+only the read verbs plus `propose` (the gated agent write) — and
+the door-free `completion` plumbing — the agent door, which
+refuses operator verbs
 with both escapes named and prints its resolved door and instance
-as dim stderr lines before every run. The plumbing verbs' standalone
+as dim stderr lines before every run that resolves a door. The
+plumbing verbs' standalone
 launchers live under `bin/libexec/` — git's libexec model: every
 launcher stays fully callable, out of the top-level spotlight.
 Development tooling keeps its own table at the end.
@@ -1482,7 +1484,8 @@ the door, decided by checkout resolution:
 - **Agent door** — the resolution chain resolves a binding (the
   `--checkout` flag, `K_WIKI_CHECKOUT`, or a `.k-wiki.json` found
   walking up): the five read verbs above plus `propose`, the one
-  agent write verb. Every
+  agent write verb — `completion`, the door-free shell plumbing
+  ([below](#shell-completion-zsh)), answers too. Every
   operator verb is refused with both escapes named (`cd` into the
   checkout, or the standalone launcher). The query is answer-only
   by construction, so exposing it to agents is safe; the write
@@ -1497,9 +1500,10 @@ the door, decided by checkout resolution:
   flag-less run resolves the checkout's root `sync.json` — the
   default instance, structural, never configured.
 
-Every run first prints two dim stderr lines — the resolved door and
-instance — so wrong-door and wrong-corpus calls are visible in the
-transcript. `-w <name>` (or `--wiki <name>`) selects the instance
+Every run that resolves a door first prints two dim stderr lines —
+the resolved door and instance — so wrong-door and wrong-corpus
+calls are visible in the transcript. `-w <name>` (or `--wiki <name>`)
+selects the instance
 on any verb that takes it — aliases first, then `sync-<name>.json`
 stems — and overrides the binding's `wiki` key; the verb-first
 spelling is canonical (`k-wiki query -w meta` ≡ `k-wiki -w meta

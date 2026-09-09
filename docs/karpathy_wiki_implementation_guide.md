@@ -943,8 +943,9 @@ nearest binding file walking up from the cwd, then the cwd itself.
 Since the dispatcher (issue #337) `k-wiki` is the universal front
 door over both doors: the binding chain classifies the agent door
 (the read verbs plus `propose`, the gated agent write; operator
-verbs refused loudly with both escapes named; every run prints its
-resolved door and instance as dim stderr lines), and the cwd
+verbs refused loudly with both escapes named; every run that
+resolves a door prints its resolved door and instance as dim
+stderr lines), and the cwd
 fallback is the human door with the full verb table — the read
 verbs above behave identically on both.
 One binding binds exactly one wiki — lists and multi-wiki forms are
