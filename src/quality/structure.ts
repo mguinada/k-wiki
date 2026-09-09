@@ -76,10 +76,11 @@ function counterProblems(entry: Record<string, unknown>): string[] {
 
 /** The specific validation problems of an exclude object, if any. */
 function excludeProblems(entry: Record<string, unknown>): string[] {
+  const counters = knownCounters();
   const problems: string[] = [];
 
   for (const [key, paths] of Object.entries(entry)) {
-    if (!knownCounters().has(key)) {
+    if (!counters.has(key)) {
       problems.push(`exclude names a non-counter ${key}`);
     } else if (
       !Array.isArray(paths) ||

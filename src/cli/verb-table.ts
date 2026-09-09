@@ -312,11 +312,6 @@ export function verbTable(): readonly VerbSpec[] {
   ];
 }
 
-/** The verb names, in table order (the full human-door table). */
-export function verbNames(): readonly string[] {
-  return verbTable().map((verb) => verb.name);
-}
-
 /** The column width of one tier's verb names, for help alignment. */
 function nameWidth(tier: VerbTier): number {
   return Math.max(
