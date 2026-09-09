@@ -47,8 +47,7 @@ import { main as initDataRepo } from "./init-data-repo.ts";
  *  gated writes (the class exists from day one — the first,
  *  `propose`, lands with the sandbox family); `operator` verbs are
  *  pipeline verbs, human door only — redirection is incoherent for
- *  them; `shell` verbs are front-door plumbing (issue #352) — both
- *  doors, nothing resolved, static wiki-independent output. */
+ *  them; `shell` verbs are front-door plumbing (issue #352). */
 export type VerbClass = "read" | "write-note" | "operator" | "shell";
 
 /** The #287 tier a verb belongs to — the bare-help grouping. */
@@ -355,10 +354,8 @@ function tierBlock({
   return [heading, ...rows, ""];
 }
 
-/** The tier sections of the bare help (the #287 tiers, porcelain
- *  first — the simple-first rule), built at call time (issue #354:
- *  module-init data is mutation-static); also the completion
- *  emitter's grouping order (issue #352) — one source for both. */
+/** The bare help's tier sections (the #287 tiers, porcelain first),
+ *  built at call time (issue #354); also the emitter's order (#352). */
 export function tierSections(): readonly {
   readonly tier: VerbTier;
   readonly heading: string;
