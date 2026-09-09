@@ -582,6 +582,12 @@ describe("renderDashboard golden output", () => {
   // Stryker's static bucket and every kpis mutant re-runs the whole
   // suite (issue #354). The names come from the goldens map, which
   // is pure data.
+  it("pins every golden case and leaves no case unpinned", () => {
+    const caseNames = goldenCases().map((entry) => entry.name);
+
+    expect([...caseNames].sort()).toEqual([...Object.keys(goldens)].sort());
+  });
+
   for (const name of Object.keys(goldens)) {
     it(`matches the golden HTML byte-for-byte for the ${name} case`, () => {
       const goldCase = goldenCases().find((entry) => entry.name === name);
