@@ -40,7 +40,7 @@ Options:
 
 What it writes: the completion script to stdout, nothing else.
 Try it now, zero setup:
-  source <(k-wiki completion)
+  source <(k-wiki completion zsh)
 Keep it permanently:
   k-wiki completion zsh > ~/.zfunc/_k-wiki
   # ~/.zshrc — fpath=(~/.zfunc $fpath); autoload -Uz compinit; compinit
@@ -82,7 +82,7 @@ function describeCalls(): readonly string[] {
  *  the fpath/compinit install, the `_k-wiki` function (tier-grouped
  *  verbs at the first word, the global flags everywhere,
  *  `--checkout` completing paths), and a guarded trailing compdef
- *  so `source <(k-wiki completion)` registers with zero setup. */
+ *  so `source <(k-wiki completion zsh)` registers with zero setup. */
 export function zshCompletionScript(): string {
   return [
     "#compdef k-wiki",
@@ -91,7 +91,7 @@ export function zshCompletionScript(): string {
     "# completion time). Install it permanently:",
     "#   k-wiki completion zsh > ~/.zfunc/_k-wiki",
     "#   # ~/.zshrc — fpath=(~/.zfunc $fpath); autoload -Uz compinit; compinit",
-    "# Or try it now, zero setup: source <(k-wiki completion)",
+    "# Or try it now, zero setup: source <(k-wiki completion zsh)",
     "",
     "_k-wiki() {",
     "  local context state state_descr line",
