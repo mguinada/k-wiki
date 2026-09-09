@@ -206,15 +206,17 @@ describe("createSyncProgressSink", () => {
     return { sink, written, lines };
   }
 
-  const heartbeat = {
-    kind: "heartbeat",
-    text: `vault "${vaultName()}": 1/9 read, 1 selected`,
-  } as const;
+  function heartbeat() {
+    return {
+      kind: "heartbeat",
+      text: `vault "${vaultName()}": 1/9 read, 1 selected`,
+    } as const;
+  }
 
   it("appends plain lines when not animated", () => {
     const { sink, written } = makeSink(false);
 
-    sink.render(heartbeat);
+    sink.render(heartbeat());
 
     expect(written).toEqual([]);
   });
@@ -222,7 +224,7 @@ describe("createSyncProgressSink", () => {
   it("appends the rendered line to the log when not animated", () => {
     const { sink, lines } = makeSink(false);
 
-    sink.render(heartbeat);
+    sink.render(heartbeat());
 
     expect(lines).toEqual([`[vault "${vaultName()}": 1/9 read, 1 selected]`]);
   });
@@ -230,7 +232,7 @@ describe("createSyncProgressSink", () => {
   it("keeps heartbeats on the animated line", () => {
     const { sink, written } = makeSink(true);
 
-    sink.render(heartbeat);
+    sink.render(heartbeat());
 
     expect(written).toEqual([
       `\r⠋ [vault "${vaultName()}": 1/9 read, 1 selected]`,
@@ -299,7 +301,7 @@ describe("createSyncProgressSink", () => {
   it("clears the animated line on end", () => {
     const { sink, written } = makeSink(true);
 
-    sink.render(heartbeat);
+    sink.render(heartbeat());
     sink.end();
 
     expect(written[1]).toMatch(/^\r\s+\r$/);
@@ -362,15 +364,17 @@ describe("formatReport source nouns", () => {
 });
 
 describe("formatReport all-blocked hint", () => {
-  const allBlocked: VaultSyncReport = {
-    kind: "vault",
-    name: vaultName(),
-    candidates: 9,
-    selected: 0,
-    copied: [],
-    unchanged: [],
-    removed: [],
-  };
+  function allBlocked(): VaultSyncReport {
+    return {
+      kind: "vault",
+      name: vaultName(),
+      candidates: 9,
+      selected: 0,
+      copied: [],
+      unchanged: [],
+      removed: [],
+    };
+  }
 
   function reportOf(
     vault: VaultSyncReport,
@@ -380,13 +384,13 @@ describe("formatReport all-blocked hint", () => {
   }
 
   it("appends the hint when every candidate is blocked", () => {
-    expect(formatReport(reportOf(allBlocked)).split("\n")[0]).toBe(
+    expect(formatReport(reportOf(allBlocked())).split("\n")[0]).toBe(
       `vault "${vaultName()}": 0 selected, 0 copied, 0 unchanged, 0 removed (9 candidates, all blocked)`,
     );
   });
 
   it("omits the hint when the vault has no candidates", () => {
-    const report: VaultSyncReport = { ...allBlocked, candidates: 0 };
+    const report: VaultSyncReport = { ...allBlocked(), candidates: 0 };
 
     expect(formatReport(reportOf(report)).split("\n")[0]).toBe(
       `vault "${vaultName()}": 0 selected, 0 copied, 0 unchanged, 0 removed`,
@@ -395,7 +399,7 @@ describe("formatReport all-blocked hint", () => {
 
   it("omits the hint when candidates were ingested", () => {
     const report: VaultSyncReport = {
-      ...allBlocked,
+      ...allBlocked(),
       selected: 1,
       copied: ["a.md"],
     };
@@ -406,13 +410,13 @@ describe("formatReport all-blocked hint", () => {
   });
 
   it("keeps the no-changes summary when nothing was pruned", () => {
-    expect(formatReport(reportOf(allBlocked)).split("\n").at(-1)).toBe(
+    expect(formatReport(reportOf(allBlocked())).split("\n").at(-1)).toBe(
       "sync complete: no changes",
     );
   });
 
   it("appends the formatted duration to the summary", () => {
-    const report: SyncReport = { ...reportOf(allBlocked), elapsedMs: 1200 };
+    const report: SyncReport = { ...reportOf(allBlocked()), elapsedMs: 1200 };
 
     expect(formatReport(report).split("\n").at(-1)).toBe(
       "sync complete: no changes (1s)",
@@ -420,7 +424,7 @@ describe("formatReport all-blocked hint", () => {
   });
 
   it("appends a zero-second duration when the run is sub-second", () => {
-    const report: SyncReport = { ...reportOf(allBlocked), elapsedMs: 100 };
+    const report: SyncReport = { ...reportOf(allBlocked()), elapsedMs: 100 };
 
     expect(formatReport(report).split("\n").at(-1)).toBe(
       "sync complete: no changes (0s)",
@@ -488,19 +492,21 @@ describe("pruneEmptyDirs", () => {
 });
 
 describe("formatReport pruned namespaces", () => {
-  const unchanged: VaultSyncReport = {
-    kind: "vault",
-    name: vaultName(),
-    candidates: 6,
-    selected: 4,
-    copied: [],
-    unchanged: SELECTED_PATHS,
-    removed: [],
-  };
+  function unchanged(): VaultSyncReport {
+    return {
+      kind: "vault",
+      name: vaultName(),
+      candidates: 6,
+      selected: 4,
+      copied: [],
+      unchanged: SELECTED_PATHS,
+      removed: [],
+    };
+  }
 
   it("lists each pruned namespace with a minus sign", () => {
     const report: SyncReport = {
-      sources: [unchanged],
+      sources: [unchanged()],
       prunedNamespaces: ["Retired"],
     };
 
@@ -511,7 +517,7 @@ describe("formatReport pruned namespaces", () => {
 
   it("counts a pruned namespace in the summary instead of reporting no changes", () => {
     const report: SyncReport = {
-      sources: [unchanged],
+      sources: [unchanged()],
       prunedNamespaces: ["Retired"],
     };
 

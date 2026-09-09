@@ -2268,9 +2268,11 @@ describe("k-wiki leading global flags", () => {
 });
 
 /** The read-class verbs — the ones whose help the front door authors. */
-const READ_VERB_NAMES = verbTable()
-  .filter((verb) => verb.klass === "read")
-  .map((verb) => verb.name);
+function readVerbNames(): string[] {
+  return verbTable()
+    .filter((verb) => verb.klass === "read")
+    .map((verb) => verb.name);
+}
 
 /** The expected scoped usage prefix per class: k-wiki's own verbs
  *  (read and write-note) carry the k-wiki prefix; operator verbs
@@ -2331,7 +2333,7 @@ describe("k-wiki in-context verb help", () => {
   });
 
   it("answers -h with the same scoped help as --help for every read verb", async () => {
-    for (const verb of READ_VERB_NAMES) {
+    for (const verb of readVerbNames()) {
       expect((await runKWiki(process.cwd(), [verb, "-h"])).out).toBe(
         (await runKWiki(process.cwd(), [verb, "--help"])).out,
       );
@@ -2386,7 +2388,7 @@ describe("k-wiki in-context verb help", () => {
   });
 
   it("keeps every read verb's help free of issue references", async () => {
-    for (const verb of READ_VERB_NAMES) {
+    for (const verb of readVerbNames()) {
       const text = (await runKWiki(process.cwd(), [verb, "--help"])).out;
 
       expect(text.replace(/\s+/g, " ")).not.toMatch(/issues? #\d+/i);
@@ -2394,7 +2396,7 @@ describe("k-wiki in-context verb help", () => {
   });
 
   it("keeps every read verb's help free of doc round-trips", async () => {
-    for (const verb of READ_VERB_NAMES) {
+    for (const verb of readVerbNames()) {
       const text = (await runKWiki(process.cwd(), [verb, "--help"])).out;
 
       expect(text.replace(/\s+/g, " ")).not.toMatch(
@@ -2404,7 +2406,7 @@ describe("k-wiki in-context verb help", () => {
   });
 
   it("documents -w/--wiki and --checkout in every read verb's help", async () => {
-    for (const verb of READ_VERB_NAMES) {
+    for (const verb of readVerbNames()) {
       const out = (await runKWiki(process.cwd(), [verb, "--help"])).out;
 
       expect(out).toContain("-w, --wiki <name>");
@@ -2413,7 +2415,7 @@ describe("k-wiki in-context verb help", () => {
   });
 
   it("documents -h with no side effects in every read verb's help", async () => {
-    for (const verb of READ_VERB_NAMES) {
+    for (const verb of readVerbNames()) {
       const out = (await runKWiki(process.cwd(), [verb, "--help"])).out;
 
       expect(out).toContain("-h, --help");
@@ -2422,7 +2424,7 @@ describe("k-wiki in-context verb help", () => {
   });
 
   it("documents the exit semantics in every read verb's help", async () => {
-    for (const verb of READ_VERB_NAMES) {
+    for (const verb of readVerbNames()) {
       const out = (await runKWiki(process.cwd(), [verb, "--help"])).out;
 
       expect(out).toContain("Exit 0");
