@@ -123,9 +123,7 @@ describe("k-wiki verb table", () => {
 
   it("derives the agent whitelist from the verb classes", () => {
     const agentCommands = verbTable()
-      .filter(
-        (verb) => verb.klass === "read" || verb.klass === "write-note",
-      )
+      .filter((verb) => verb.klass === "read" || verb.klass === "write-note")
       .map((verb) => verb.name);
 
     expect(agentCommands).toEqual([...READ_VERBS, "propose"]);

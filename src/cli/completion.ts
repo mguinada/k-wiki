@@ -54,10 +54,12 @@ error. NO_COLOR is honored (the script itself never uses color).`;
 /** One tier's describe entries: `'name:first help line'` per verb,
  *  indented inside the tier's array literal. */
 function tierEntries(tier: string): readonly string[] {
-  return verbTable().filter((verb) => verb.tier === tier).map(
-    (verb) =>
-      `    '${verb.name}:${escapeSingleQuotedShell(verb.lines[0] ?? "")}'`,
-  );
+  return verbTable()
+    .filter((verb) => verb.tier === tier)
+    .map(
+      (verb) =>
+        `    '${verb.name}:${escapeSingleQuotedShell(verb.lines[0] ?? "")}'`,
+    );
 }
 
 /** The tier arrays of the emitted function, one block per bare-help
@@ -95,7 +97,9 @@ export function zshCompletionScript(): string {
     "",
     "_k-wiki() {",
     "  local context state state_descr line",
-    `  local -a ${tierSections().map(({ tier }) => `_k_wiki_${tier}`).join(" ")}`,
+    `  local -a ${tierSections()
+      .map(({ tier }) => `_k_wiki_${tier}`)
+      .join(" ")}`,
     "",
     ...tierArrayBlocks(),
     "  _arguments -S \\",
