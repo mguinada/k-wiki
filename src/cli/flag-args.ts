@@ -1,9 +1,10 @@
 /**
  * Shared flag-argument helpers: the byte-identical usage-error and
  * value-reading rules every CLI applies to the common flags —
- * timeout, date, int flags, and the value-flag bundle — so no CLI
- * drifts from the shell's contract. Pure validators; the shell
- * (cli/shell.ts) owns argv scanning.
+ * timeout, date, int flags, the value-flag bundle, and the k-wiki
+ * dispatcher's raw-argv value reads — so no CLI drifts from the
+ * shell's contract. Pure validators; the shell (cli/shell.ts) owns
+ * argv scanning.
  */
 
 /** Usage error for an invalid `--timeout` value, undefined when it
@@ -44,6 +45,38 @@ export function readDateFlag(args: readonly string[]): {
 /** Whether a `--date` value is calendar-shaped (YYYY-MM-DD). */
 export function isIsoDate(value: string | undefined): value is string {
   return value !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+/** The value of one flag among raw args: the two-token form
+ *  (`--checkout <path>`, `-w <name>`) or the inline long form
+ *  (`--flag=value`). Scans left to right, stops at a bare `--`,
+ *  matches whole tokens only — a positional containing the flag
+ *  text never matches, and a repeated occurrence overrides — the
+ *  parseArgs rule (a repeated flag's last value wins), so every
+ *  flag the k-wiki dispatcher reads names the value the run
+ *  resolves. Undefined when absent. */
+export function lastFlagValueFrom(
+  args: readonly string[],
+  tokens: ReadonlySet<string>,
+  inlinePrefix: string,
+): string | undefined {
+  let value: string | undefined;
+
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index] ?? "";
+
+    if (arg === "--") {
+      return value;
+    }
+
+    if (tokens.has(arg)) {
+      value = args[index + 1];
+    } else if (arg.startsWith(inlinePrefix)) {
+      value = arg.slice(inlinePrefix.length);
+    }
+  }
+
+  return value;
 }
 
 /** Usage error for an int-valued flag, undefined when it is valid.

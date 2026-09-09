@@ -23,6 +23,7 @@ and the [checks](#tooling) below are all verbs of it.
 - [Running the full cycle](#running-the-full-cycle-wiki-sync)
 - [Running queries](#running-queries-wiki-query)
 - [Querying from any project](#querying-from-any-project-k-wiki)
+- [Shell completion (zsh)](#shell-completion-zsh)
 
 ## Core invariant
 
@@ -81,9 +82,10 @@ Obsidian vault            sync-vault                wiki-ingest               re
 sync step; the separate verbs stay available for debugging, and
 `wiki-ingest` already runs the post-run guardrails — checks and
 auto-revert — after every agent run. Every verb except the read
-verbs and `propose` — k-wiki's own, front-door only — is also its
-standalone launcher (`bin/<verb>`, `bin/libexec/<verb>` for the
-maintenance tier): plumbing stays standalone by design, not for
+verbs, `propose`, and `completion` — k-wiki's own, front-door only
+— is also its standalone launcher (`bin/<verb>`,
+`bin/libexec/<verb>` for the maintenance tier): plumbing stays
+standalone by design, not for
 backward compatibility — it is the invocation path for e2e, npm
 scripts, and CI, and the escape hatch when the front door does not
 fit. Unattended scheduling is
@@ -573,10 +575,12 @@ only. `bin/k-wiki` with no arguments prints the same tiered table.
 Which verbs answer depends on the door: inside the checkout (the
 cwd is the checkout) every verb is available — the human door; from
 a bound project (`.k-wiki.json`, `--checkout`, or `K_WIKI_CHECKOUT`)
-only the read verbs plus `propose` (the gated agent write) — the
-agent door, which refuses operator verbs
+only the read verbs plus `propose` (the gated agent write) — and
+the door-free `completion` plumbing — the agent door, which
+refuses operator verbs
 with both escapes named and prints its resolved door and instance
-as dim stderr lines before every run. The plumbing verbs' standalone
+as dim stderr lines before every run that resolves a door. The
+plumbing verbs' standalone
 launchers live under `bin/libexec/` — git's libexec model: every
 launcher stays fully callable, out of the top-level spotlight.
 Development tooling keeps its own table at the end.
@@ -610,6 +614,7 @@ for the rare direct use:
 | `bin/k-wiki sync-vault [--dry-run] [<sync.json>] [<raw-dir>]` | sync CLI | Ingest every note not blocked by the vault's exclusion rule into `raw/notes/` (deterministic, no LLM; [details below](#running-the-sync)) |
 | `bin/k-wiki sync-repo [-h \| --help] [<config>] [<raw-dir>]` | repo sync CLI | Project the allowlisted files of a committed source repository verbatim into `raw/notes/<name>/`, recording the source HEAD commit in the manifest (deterministic, no LLM; the meta-wiki adapter, [§9](#9-the-meta-wiki-a-repository-as-source)) |
 | `bin/k-wiki wiki-ingest [-h \| --help] [--wiki, -w <name>] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [--note <text>] [<raw-dir>]` | ingest wrapper | Run the wiki agent headless over the sources that changed since the last ingest and write the per-run digest (`--wiki <name>` selects the instance — aliases then `sync-<name>.json` stems, derived paths from the resolved config; [details below](#running-the-wiki-agent-wiki-ingest)) |
+| `bin/k-wiki completion [-h \| --help] [<shell>]` | completion emitter | Emit the zsh completion function for the front door — static shell plumbing, byte-identical on every run (default shell `zsh`, the only one today; an unknown shell is a usage error naming the supported shells): try it now with `source <(k-wiki completion zsh)`, keep it with `k-wiki completion zsh > ~/.zfunc/_k-wiki` plus `fpath`/`compinit` in `~/.zshrc` ([recipe below](#shell-completion-zsh)) |
 
 ### Verification & maintenance (plumbing)
 
@@ -1479,7 +1484,8 @@ the door, decided by checkout resolution:
 - **Agent door** — the resolution chain resolves a binding (the
   `--checkout` flag, `K_WIKI_CHECKOUT`, or a `.k-wiki.json` found
   walking up): the five read verbs above plus `propose`, the one
-  agent write verb. Every
+  agent write verb — `completion`, the door-free shell plumbing
+  ([below](#shell-completion-zsh)), answers too. Every
   operator verb is refused with both escapes named (`cd` into the
   checkout, or the standalone launcher). The query is answer-only
   by construction, so exposing it to agents is safe; the write
@@ -1494,9 +1500,10 @@ the door, decided by checkout resolution:
   flag-less run resolves the checkout's root `sync.json` — the
   default instance, structural, never configured.
 
-Every run first prints two dim stderr lines — the resolved door and
-instance — so wrong-door and wrong-corpus calls are visible in the
-transcript. `-w <name>` (or `--wiki <name>`) selects the instance
+Every run that resolves a door first prints two dim stderr lines —
+the resolved door and instance — so wrong-door and wrong-corpus
+calls are visible in the transcript. `-w <name>` (or `--wiki <name>`)
+selects the instance
 on any verb that takes it — aliases first, then `sync-<name>.json`
 stems — and overrides the binding's `wiki` key; the verb-first
 spelling is canonical (`k-wiki query -w meta` ≡ `k-wiki -w meta
@@ -1537,6 +1544,40 @@ place), and agents working inside the k-wiki checkout itself
 compose `--checkout <its checkout> -w <its wiki>` from the
 checkout's `.agents/.k-wiki.json` — the k-wiki skill carries that
 mandate.
+
+### Shell completion (zsh)
+
+`k-wiki completion [<shell>]` emits the completion function for the
+front door — static shell plumbing (`zsh` is the only shell today,
+the default; an unknown shell is a usage error): no checkout,
+instance, or door is resolved, nothing is written, and the output
+is byte-identical on every run. Try it now, zero setup:
+
+```sh
+source <(k-wiki completion zsh)
+```
+
+Keep it permanently:
+
+```sh
+mkdir -p ~/.zfunc
+k-wiki completion zsh > ~/.zfunc/_k-wiki
+# ~/.zshrc:
+#   fpath=(~/.zfunc $fpath)
+#   autoload -Uz compinit
+#   compinit
+```
+
+After either install, `k-wiki <TAB>` lists the verbs grouped by the
+bare-help tiers and `k-wiki query -<TAB>` offers the global flags
+(`-w`/`--wiki`, `-h`/`--help`, `--checkout <path>` completing
+paths). If you invoke `k-wiki` through a shell alias
+(`alias k-wiki='node ~/k-wiki/bin/k-wiki'`), also `setopt
+COMPLETE_ALIASES` — otherwise zsh completes the alias's expansion
+(`node`) for the words after the verb; putting the checkout's `bin/`
+on `PATH` avoids the alias entirely. Verb arguments (the question
+text, `read`'s slug, `list`'s type filter) are not completed — the
+emitter is static by design.
 
 There is no filing passthrough: `--file-last` stays the human-run
 `wiki-query` verb inside the checkout (`wiki-query --wiki <name>

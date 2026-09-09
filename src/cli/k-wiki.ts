@@ -14,16 +14,17 @@
  * only may lead the verb and are reordered after it — a
  * reordering, not a second parser (git's `-C <path> log` model); a
  * verb-specific flag before the verb is a usage error. Every run
- * prints its resolved door and instance as dim stderr lines
- * (decision 16) so wrong-door and wrong-corpus calls stay visible
- * in the transcript. The read verbs live in agent-verbs.ts; the
- * binding-file schema and checkout resolution in
- * k-wiki-binding.ts.
+ * that resolves a door prints its resolved door and instance as
+ * dim stderr lines (decision 16) so wrong-door and wrong-corpus
+ * calls stay visible in the transcript. The read verbs live in
+ * agent-verbs.ts; the binding-file schema and checkout resolution
+ * in k-wiki-binding.ts.
  */
 
 import { homedir } from "node:os";
 import { ORIGIN_LABELS, runAgentVerbs } from "./agent-verbs.ts";
 import { errorMessage, terminalColors } from "./colors.ts";
+import { lastFlagValueFrom } from "./flag-args.ts";
 import { refuseDirectExecution } from "./is-main.ts";
 import {
   type CheckoutOrigin,
@@ -37,6 +38,17 @@ import { buildHelp, type VerbSpec, verbTable } from "./verb-table.ts";
 const HELP_FLAGS = new Set(["-h", "--help"]);
 const WIKI_FLAGS = new Set(["-w", "--wiki"]);
 const CHECKOUT_TOKENS = new Set(["--checkout"]);
+
+/** The dispatcher's global-flag vocabulary: every flag token the
+ *  front door reorders or reads position-independently. Exported
+ *  for the completion drift guard (issue #352): each token must
+ *  appear in the emitted zsh `_arguments` block, so a new global
+ *  flag lands with its emitter spec in the same change. */
+export const GLOBAL_FLAG_TOKENS: readonly string[] = [
+  ...HELP_FLAGS,
+  ...WIKI_FLAGS,
+  ...CHECKOUT_TOKENS,
+];
 
 /** True when a verb's own argv asks for help (-h or --help). */
 function asksHelp(tail: readonly string[]): boolean {
@@ -95,38 +107,6 @@ function splitLeadingGlobals(argv: readonly string[]): {
  *  the human door (decision 1). */
 function doorFor(origin: CheckoutOrigin): "human" | "agent" {
   return origin === "cwd" ? "human" : "agent";
-}
-
-/** The value of one flag among a verb's args: the two-token form
- *  (`--checkout <path>`, `-w <name>`) or the inline long form
- *  (`--flag=value`). Scans left to right, stops at a bare `--`,
- *  matches whole tokens only — a positional containing the flag
- *  text never matches, and a repeated occurrence overrides — the
- *  parseArgs rule (a repeated flag's last value wins), so every
- *  flag the dispatcher reads names the value the run resolves.
- *  Undefined when absent. */
-function lastFlagValueFrom(
-  args: readonly string[],
-  tokens: ReadonlySet<string>,
-  inlinePrefix: string,
-): string | undefined {
-  let value: string | undefined;
-
-  for (let index = 0; index < args.length; index++) {
-    const arg = args[index] ?? "";
-
-    if (arg === "--") {
-      return value;
-    }
-
-    if (tokens.has(arg)) {
-      value = args[index + 1];
-    } else if (arg.startsWith(inlinePrefix)) {
-      value = arg.slice(inlinePrefix.length);
-    }
-  }
-
-  return value;
 }
 
 /** The wiki instance name the dispatcher resolved for the dim line
@@ -274,20 +254,38 @@ async function resolveCheckoutOrFail(input: {
   }
 }
 
+/** The class-level short-circuits that run before any checkout
+ *  resolution: a write-note verb's help answers through its own
+ *  main, and a shell verb runs whole (static plumbing — nothing
+ *  resolved, no door lines). True when the invocation is done. */
+async function ranWithoutResolution(
+  verb: VerbSpec,
+  verbArgs: readonly string[],
+): Promise<boolean> {
+  const selfContained =
+    verb.klass === "shell" ||
+    (verb.klass === "write-note" && asksHelp(verbArgs));
+
+  if (selfContained) {
+    await verb.main?.(verbArgs);
+  }
+
+  return selfContained;
+}
+
 /** Run the resolved invocation: classify the door, refuse operator
  *  verbs on the agent door, print the dim door lines, and dispatch
  *  — read verbs through the agent-verb runner, operator and
  *  write-note verbs through their dispatch main with the remaining
- *  argv verbatim. */
+ *  argv verbatim. Shell verbs (issue #352) run before all of it:
+ *  static plumbing that resolves and prints nothing. */
 async function runInvocation(
   invocation: Invocation,
   input: { readonly cwd: string; readonly home: string },
 ): Promise<void> {
   const { verb } = invocation;
 
-  if (verb.klass === "write-note" && asksHelp(invocation.verbArgs)) {
-    await verb.main?.(invocation.verbArgs);
-
+  if (await ranWithoutResolution(verb, invocation.verbArgs)) {
     return;
   }
 

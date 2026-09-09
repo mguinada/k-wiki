@@ -3,6 +3,7 @@ import {
   flagValueError,
   intFlagError,
   isIsoDate,
+  lastFlagValueFrom,
   readDateFlag,
   timeoutArgError,
 } from "../../src/cli/flag-args.ts";
@@ -217,5 +218,37 @@ describe("intFlagError", () => {
     expect(intFlagError("--expect", undefined)).toBe(
       "--expect requires an integer value",
     );
+  });
+});
+
+describe("lastFlagValueFrom", () => {
+  it("reads the two-token form", () => {
+    expect(
+      lastFlagValueFrom(["query", "-w", "meta"], new Set(["-w"]), "--wiki="),
+    ).toBe("meta");
+  });
+
+  it("reads the inline long form", () => {
+    expect(
+      lastFlagValueFrom(["--wiki=meta", "query"], new Set(["-w"]), "--wiki="),
+    ).toBe("meta");
+  });
+
+  it("lets the last occurrence win", () => {
+    expect(
+      lastFlagValueFrom(["-w", "a", "-w", "b"], new Set(["-w"]), "--wiki="),
+    ).toBe("b");
+  });
+
+  it("stops scanning at a bare --", () => {
+    expect(
+      lastFlagValueFrom(["--", "-w", "meta"], new Set(["-w"]), "--wiki="),
+    ).toBeUndefined();
+  });
+
+  it("never matches a positional containing the flag text", () => {
+    expect(
+      lastFlagValueFrom(["see -w docs"], new Set(["-w"]), "--wiki="),
+    ).toBeUndefined();
   });
 });

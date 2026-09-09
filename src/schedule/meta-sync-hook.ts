@@ -21,6 +21,7 @@
  */
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { escapeSingleQuotedShell } from "../cli/shared.ts";
 
 /** The hooks the installer owns: merges and rebase-based pulls. */
 export const HOOK_NAMES = ["post-merge", "post-rewrite"] as const;
@@ -63,7 +64,7 @@ export function metaSyncLogPath(
 /** Quote a path for the generated shell script — single quotes,
  *  embedded quotes escaped; baked paths may contain spaces. */
 function shellQuote(text: string): string {
-  return `'${text.replaceAll("'", `'\\''`)}'`;
+  return `'${escapeSingleQuotedShell(text)}'`;
 }
 
 /** The generated hook: guards, one detached cycle, one log line per

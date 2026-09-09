@@ -42,8 +42,8 @@ async function launcherNames(): Promise<string[]> {
 const READ_VERBS = ["query", "status", "list", "read", "health"];
 
 describe("k-wiki verb table", () => {
-  it("gives every verb a class of read, write-note, or operator", () => {
-    const classes = new Set(["read", "write-note", "operator"]);
+  it("gives every verb a class of read, write-note, operator, or shell", () => {
+    const classes = new Set(["read", "write-note", "operator", "shell"]);
 
     for (const verb of verbTable()) {
       expect(classes.has(verb.klass)).toBe(true);
@@ -123,7 +123,7 @@ describe("k-wiki verb table", () => {
 
   it("derives the agent whitelist from the verb classes", () => {
     const agentCommands = verbTable()
-      .filter((verb) => verb.klass !== "operator")
+      .filter((verb) => verb.klass === "read" || verb.klass === "write-note")
       .map((verb) => verb.name);
 
     expect(agentCommands).toEqual([...READ_VERBS, "propose"]);
