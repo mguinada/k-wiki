@@ -729,7 +729,7 @@ prompt text. Index of the seven operational prompts:
 | `prompts/expunge.md` | A sync removes notes (manifest diff has `removed` entries; §14a) | Re-derive affected pages from their remaining sources |
 | `prompts/rebuild.md` | Rebuilding the wiki from scratch (§15); the expunge threshold (§14a) | Rebuild the whole wiki from `raw/` |
 | `prompts/query.md` | Asking questions against the built wiki (§16) | Synthesize a cited answer; the wrapper saves it for human-gated filing |
-| `prompts/lint.md` | After every ingestion (§17; step 4 of `wiki-sync`) | Audit wiki quality; fix mechanical problems, report the rest |
+| `prompts/lint.md` | After every ingestion (§17; step 4 of `wiki-sync`) or standalone (`wiki-lint`, §17) | Audit wiki quality; fix mechanical problems, report the rest |
 | `prompts/comparison-harvest.md` | One-shot harvest run manually (trial) | File comparisons where two or more sources explicitly contrast named approaches |
 
 Use this as the core prompt when processing changed sources.
@@ -1022,7 +1022,11 @@ Run lifecycle, completed: `agent-run → accept-gate → stamp → reaper → pr
 
 ## 17. Lint Prompt
 
-Run after ingestion.
+Run after ingestion — in-cycle (step 4 of `wiki-sync`) or standalone
+through `wiki-lint` (issue #357), the retry door for a lint the cycle
+timed out or skipped: the stage's own run unchanged, bound to argv;
+nothing commits — the edits stay in the working tree for the next
+cycle to verify, commit, and publish.
 
 Full text: `prompts/lint.md`.
 
@@ -1606,7 +1610,7 @@ instance (issue #145) — `wiki-sync` reads the repo-typed source in
 `sync-meta.json` and runs the sync-repo core at stage 1, so lint, the
 verification checks, and the single regeneration commit are
 in-cycle. The piecewise stages (`sync-repo`, `wiki-ingest`,
-`health`) stay the debug path, one stage at a time. The README's
+`wiki-lint`, `health`) stay the debug path, one stage at a time. The README's
 meta usage model (its §9) has the exact commands. Automation is
 event-shaped, not interval-shaped (issue #314): the meta source
 changes only when k-wiki's `main` moves, so `setup-meta-sync`
