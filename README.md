@@ -198,8 +198,11 @@ bin/k-wiki dashboard ~/Lab/k-wiki-engineering-data          # regenerate the KPI
 The command commits the data repo itself, so the next digest covers
 only its own run; the printed digest plus `git log -1` tell the whole
 story ([details](#running-the-full-cycle-wiki-sync)). The separate
-commands — `bin/k-wiki sync-vault`, `bin/k-wiki wiki-ingest` — stay
-available for debugging.
+commands — `bin/k-wiki sync-vault`, `bin/k-wiki wiki-ingest`, and
+`bin/k-wiki wiki-lint` (the quality-lint agent alone — the retry
+door when the cycle's lint timed out or was skipped; its edits stay
+uncommitted for the next cycle to verify, commit, and publish) —
+stay available for debugging.
 
 These checks take their directories explicitly: their defaults are
 this repo's skeleton trees, not the data repo at `dataRoot`.
@@ -614,6 +617,7 @@ for the rare direct use:
 | `bin/k-wiki sync-vault [--dry-run] [<sync.json>] [<raw-dir>]` | sync CLI | Ingest every note not blocked by the vault's exclusion rule into `raw/notes/` (deterministic, no LLM; [details below](#running-the-sync)) |
 | `bin/k-wiki sync-repo [-h \| --help] [<config>] [<raw-dir>]` | repo sync CLI | Project the allowlisted files of a committed source repository verbatim into `raw/notes/<name>/`, recording the source HEAD commit in the manifest (deterministic, no LLM; the meta-wiki adapter, [§9](#9-the-meta-wiki-a-repository-as-source)) |
 | `bin/k-wiki wiki-ingest [-h \| --help] [--wiki, -w <name>] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [--note <text>] [<raw-dir>]` | ingest wrapper | Run the wiki agent headless over the sources that changed since the last ingest and write the per-run digest (`--wiki <name>` selects the instance — aliases then `sync-<name>.json` stems, derived paths from the resolved config; [details below](#running-the-wiki-agent-wiki-ingest)) |
+| `bin/k-wiki wiki-lint [-h \| --help] [--wiki, -w <name>] [--settings <path>] [--timeout <secs>] [<raw-dir>]` | lint wrapper | Run the quality-lint agent alone — the cycle's lint stage (same `prompts/lint.md`, same agent settings, same guardrails and auto-revert) as the retry door for a lint the cycle timed out or skipped: nothing commits — the agent's edits and the report (`outputs/lint-<date>.md` in the **data** repo) stay uncommitted for the next cycle to verify, commit, and publish (`--wiki <name>` selects the instance — aliases then `sync-<name>.json` stems, derived paths from the resolved config; default `--timeout 1800`) |
 | `bin/k-wiki completion [-h \| --help] [<shell>]` | completion emitter | Emit the zsh completion function for the front door — static shell plumbing, byte-identical on every run (default shell `zsh`, the only one today; an unknown shell is a usage error naming the supported shells): try it now with `source <(k-wiki completion zsh)`, keep it with `k-wiki completion zsh > ~/.zfunc/_k-wiki` plus `fpath`/`compinit` in `~/.zshrc` ([recipe below](#shell-completion-zsh)) |
 
 ### Verification & maintenance (plumbing)

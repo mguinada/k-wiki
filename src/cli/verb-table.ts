@@ -38,6 +38,7 @@ import { main as setupMetaSync } from "../schedule/setup-meta-sync.ts";
 import { main as setupSchedule } from "../schedule/setup-schedule.ts";
 import { main as syncRepo } from "../sync/sync-repo.ts";
 import { main as syncVault } from "../sync/sync-vault.ts";
+import { main as wikiLint } from "../sync/wiki-lint.ts";
 import { main as wikiSync } from "../sync/wiki-sync.ts";
 import { runCompletionVerb } from "./completion.ts";
 import { main as initDataRepo } from "./init-data-repo.ts";
@@ -183,6 +184,17 @@ export function verbTable(): readonly VerbSpec[] {
       wiki: true,
       lines: ["run the wiki agent over changed sources; write the digest"],
       main: wikiIngest,
+    },
+    {
+      name: "wiki-lint",
+      klass: "operator",
+      tier: "operator",
+      wiki: true,
+      lines: [
+        "run the quality-lint agent alone; report to the data",
+        "repo's outputs/ (the retry door for a timed-out or skipped lint)",
+      ],
+      main: wikiLint,
     },
     {
       name: "dashboard",

@@ -1,9 +1,18 @@
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
-import { readdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import {
   generateFixtureVault,
   vaultName,
@@ -161,3 +170,64 @@ export async function collectFiles(
   return files.sort();
 }
 export const SYNC_REPO_SCRIPT = join(repoRoot, "bin", "sync-repo");
+
+const run = promisify(execFile);
+
+export interface StubDataRepo {
+  readonly tmp: string;
+  readonly dataRoot: string;
+  readonly rawDir: string;
+  readonly settingsPath: string;
+  /** Repo-relative dated report path the stub agent writes. */
+  readonly reportPath: string;
+}
+
+/** A temp data repo (git, wiki/, raw/manifest.json) hosting a stub
+ *  agent: writes the stub script (its `process.env.LINT_REPORT`
+ *  placeholder bound to the dated report path), derives its settings
+ *  file, and commits the skeleton. The caller owns the tmp dir's
+ *  cleanup. */
+export async function makeStubDataRepo(options: {
+  readonly stubAgent: string;
+  readonly prefix: string;
+  readonly model: string;
+}): Promise<StubDataRepo> {
+  const tmp = await mkdtemp(join(tmpdir(), options.prefix));
+  const dataRoot = join(tmp, "data");
+
+  await mkdir(join(dataRoot, "raw"), { recursive: true });
+  await mkdir(join(dataRoot, "wiki"), { recursive: true });
+  await writeFile(join(dataRoot, "raw", "manifest.json"), "{}\n");
+  await writeFile(join(dataRoot, "wiki", "index.md"), "# Index\n");
+
+  const reportPath = `outputs/lint-${new Date().toISOString().slice(0, 10)}.md`;
+
+  await writeFile(
+    join(dataRoot, "stub-agent.mjs"),
+    options.stubAgent.replaceAll(
+      "process.env.LINT_REPORT",
+      JSON.stringify(reportPath),
+    ),
+    { mode: 0o755 },
+  );
+
+  const settingsPath = join(tmp, "settings.yml");
+
+  await writeFile(
+    settingsPath,
+    `command: ${join(dataRoot, "stub-agent.mjs")}\nmodel: ${options.model}\nreasoning: low\n`,
+  );
+  await run("git", ["init", "--quiet"], { cwd: dataRoot });
+  await run("git", ["config", "user.email", "t@t"], { cwd: dataRoot });
+  await run("git", ["config", "user.name", "t"], { cwd: dataRoot });
+  await run("git", ["add", "-A"], { cwd: dataRoot });
+  await run("git", ["commit", "--quiet", "-m", "init"], { cwd: dataRoot });
+
+  return {
+    tmp,
+    dataRoot,
+    rawDir: join(dataRoot, "raw"),
+    settingsPath,
+    reportPath,
+  };
+}

@@ -28,6 +28,11 @@ e2e run or diagnosing a failing one.
   standing lint, is path-scoped-reverted to its last committed
   state, leaves the cycle's commit untouched, and the next cycle
   passes, issue #339) runs.
+- **wiki-lint** — the standalone lint door against a stub agent in
+  temp data repos: completed run (report written, digest on stdout,
+  exit 0), uncommitted-edits (the agent's wiki edits and the report
+  stay uncommitted for the next cycle), and guardrail-revert (a
+  forbidden write reverts the repo and exits 1) runs.
 - **scheduled-run** — full-cycle, no-op re-run, lock-skip,
   push-rejection-retry, double-push-failure, and dirty-tree recovery
   runs in temp data repos with an upstream remote.

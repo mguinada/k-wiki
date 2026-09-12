@@ -33,6 +33,7 @@
     "sync-repo": "node bin/sync-repo",
     "wiki-ingest": "node bin/wiki-ingest",
     "wiki-sync": "node bin/wiki-sync",
+    "wiki-lint": "node bin/wiki-lint",
     "scheduled-run": "node bin/scheduled-run",
     "setup-schedule": "node bin/setup-schedule",
     "wiki-query": "node bin/wiki-query",
