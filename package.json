@@ -59,7 +59,7 @@
     "@vitest/coverage-v8": "^4.1.10",
     "complexity-guard": "0.10.0",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   },
   "dependencies": {
     "picocolors": "^1.1.1"
