@@ -1,11 +1,10 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { rm } from "node:fs/promises";
 import { promisify } from "node:util";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { parseArgs } from "../../src/cli/shell.ts";
 import { LINT_CLI_SPEC, lintFlags, main } from "../../src/sync/wiki-lint.ts";
+import { makeStubDataRepo, type StubDataRepo } from "../e2e/helpers.ts";
 
 /**
  * wiki-lint unit tests: the CLI flag derivation on the shared shell
@@ -56,52 +55,18 @@ await writeFile(process.env.LINT_REPORT, "# lint report\\n");
 console.log("lint: all pages audited, no problems");
 `;
 
-interface Repo {
-  readonly dataRoot: string;
-  readonly rawDir: string;
-  readonly settingsPath: string;
-  readonly reportPath: string;
-}
+/** A stub data repo from the shared e2e helpers, registered for
+ *  this file's cleanup. */
+async function makeRepo(): Promise<StubDataRepo> {
+  const repo = await makeStubDataRepo({
+    stubAgent: STUB_AGENT,
+    prefix: "k-wiki-lint-",
+    model: "STUB",
+  });
 
-/** A temp data repo (git, wiki/, raw/manifest.json) plus a stub
- *  agent and its settings file. */
-async function makeRepo(): Promise<Repo> {
-  const tmp = await mkdtemp(join(tmpdir(), "k-wiki-lint-"));
+  tempDirs.push(repo.tmp);
 
-  tempDirs.push(tmp);
-
-  const dataRoot = join(tmp, "data");
-
-  await mkdir(join(dataRoot, "raw"), { recursive: true });
-  await mkdir(join(dataRoot, "wiki"), { recursive: true });
-  await writeFile(join(dataRoot, "raw", "manifest.json"), "{}\n");
-  await writeFile(join(dataRoot, "wiki", "index.md"), "# Index\n");
-
-  const today = new Date().toISOString().slice(0, 10);
-  const reportPath = `outputs/lint-${today}.md`;
-
-  await writeFile(
-    join(dataRoot, "stub-agent.mjs"),
-    STUB_AGENT.replaceAll(
-      "process.env.LINT_REPORT",
-      JSON.stringify(reportPath),
-    ),
-    { mode: 0o755 },
-  );
-
-  const settingsPath = join(tmp, "settings.yml");
-
-  await writeFile(
-    settingsPath,
-    `command: ${join(dataRoot, "stub-agent.mjs")}\nmodel: STUB\nreasoning: low\n`,
-  );
-  await run("git", ["init", "--quiet"], { cwd: dataRoot });
-  await run("git", ["config", "user.email", "t@t"], { cwd: dataRoot });
-  await run("git", ["config", "user.name", "t"], { cwd: dataRoot });
-  await run("git", ["add", "-A"], { cwd: dataRoot });
-  await run("git", ["commit", "--quiet", "-m", "init"], { cwd: dataRoot });
-
-  return { dataRoot, rawDir: join(dataRoot, "raw"), settingsPath, reportPath };
+  return repo;
 }
 
 /** Run main() in-process, capturing the console. */
@@ -177,7 +142,8 @@ describe("wiki-lint CLI", () => {
   it("answers -h with usage and exits clean", async () => {
     const { out, err } = await runMain(["-h"]);
 
-    expect(out.startsWith("Usage: wiki-lint") && err === "").toBe(true);
+    expect(out.startsWith("Usage: wiki-lint")).toBe(true);
+    expect(err).toBe("");
   });
 
   it("prints a digest naming the report the agent wrote", async () => {
@@ -227,11 +193,9 @@ describe("wiki-lint CLI", () => {
       repo.rawDir,
     ]);
 
-    expect(
-      err.includes("wiki-lint:") &&
-        err.includes("timed out after 1 second") &&
-        process.exitCode === 1,
-    ).toBe(true);
+    expect(err).toContain("wiki-lint:");
+    expect(err).toContain("timed out after 1 second");
+    expect(process.exitCode).toBe(1);
   });
 
   it("exits 1 and names the check when a guardrail trips", async () => {
@@ -245,11 +209,10 @@ describe("wiki-lint CLI", () => {
       repo.rawDir,
     ]);
 
-    expect(
-      err.includes(
-        "lint guardrail check 1 (immutability) failed; reverted to",
-      ) && process.exitCode === 1,
-    ).toBe(true);
+    expect(err).toContain(
+      "lint guardrail check 1 (immutability) failed; reverted to",
+    );
+    expect(process.exitCode).toBe(1);
   });
 
   it("reverts the data repo to its pre-run state on a tripped guardrail", async () => {

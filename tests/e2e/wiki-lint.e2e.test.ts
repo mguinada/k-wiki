@@ -1,10 +1,9 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, describe, expect, it } from "vitest";
-import { repoRoot, runCli } from "./helpers.ts";
+import { makeStubDataRepo, repoRoot, runCli } from "./helpers.ts";
 
 /**
  * wiki-lint e2e: the standalone lint door as a real child process,
@@ -54,59 +53,33 @@ await writeFile("wiki/index.md", [
 console.log("lint: all pages audited, no problems");
 `;
 
-interface Repo {
+/** A stub data repo from the shared helpers (absolute report path
+ *  for reads), registered for this file's cleanup. */
+interface LintRepo {
   readonly dataRoot: string;
   readonly rawDir: string;
   readonly settingsPath: string;
   readonly reportFile: string;
 }
 
-/** A temp data repo (git, wiki/, raw/) plus the stub agent and its
- *  settings file. */
-async function makeRepo(): Promise<Repo> {
-  const tmp = await mkdtemp(join(tmpdir(), "k-wiki-lint-e2e-"));
+async function makeRepo(): Promise<LintRepo> {
+  const repo = await makeStubDataRepo({
+    stubAgent: STUB_AGENT,
+    prefix: "k-wiki-lint-e2e-",
+    model: "E2E-MODEL",
+  });
 
-  tempDirs.push(tmp);
-
-  const dataRoot = join(tmp, "data");
-
-  await mkdir(join(dataRoot, "raw"), { recursive: true });
-  await mkdir(join(dataRoot, "wiki"), { recursive: true });
-  await writeFile(join(dataRoot, "raw", "manifest.json"), "{}\n");
-  await writeFile(join(dataRoot, "wiki", "index.md"), "# Index\n");
-
-  const reportPath = `outputs/lint-${new Date().toISOString().slice(0, 10)}.md`;
-
-  await writeFile(
-    join(dataRoot, "stub-agent.mjs"),
-    STUB_AGENT.replaceAll(
-      "process.env.LINT_REPORT",
-      JSON.stringify(reportPath),
-    ),
-    { mode: 0o755 },
-  );
-
-  const settingsPath = join(tmp, "settings.yml");
-
-  await writeFile(
-    settingsPath,
-    `command: ${join(dataRoot, "stub-agent.mjs")}\nmodel: E2E-MODEL\nreasoning: low\n`,
-  );
-  await run("git", ["init", "--quiet"], { cwd: dataRoot });
-  await run("git", ["config", "user.email", "t@t"], { cwd: dataRoot });
-  await run("git", ["config", "user.name", "t"], { cwd: dataRoot });
-  await run("git", ["add", "-A"], { cwd: dataRoot });
-  await run("git", ["commit", "--quiet", "-m", "init"], { cwd: dataRoot });
+  tempDirs.push(repo.tmp);
 
   return {
-    dataRoot,
-    rawDir: join(dataRoot, "raw"),
-    settingsPath,
-    reportFile: join(dataRoot, reportPath),
+    dataRoot: repo.dataRoot,
+    rawDir: repo.rawDir,
+    settingsPath: repo.settingsPath,
+    reportFile: join(repo.dataRoot, repo.reportPath),
   };
 }
 
-function runLint(repo: Repo, env: NodeJS.ProcessEnv = {}) {
+function runLint(repo: LintRepo, env: NodeJS.ProcessEnv = {}) {
   return runCli(LINT_SCRIPT, ["--settings", repo.settingsPath, repo.rawDir], {
     env,
   });
@@ -118,12 +91,10 @@ describe("wiki-lint e2e", () => {
     const result = await runLint(repo);
     const report = await readFile(repo.reportFile, "utf8");
 
-    expect(
-      result.code === 0 &&
-        result.out.includes("# wiki-lint digest") &&
-        result.out.includes("lint: all pages audited") &&
-        report === "# lint report\n",
-    ).toBe(true);
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("# wiki-lint digest");
+    expect(result.out).toContain("lint: all pages audited");
+    expect(report).toBe("# lint report\n");
   });
 
   it("keeps the lint edits uncommitted for the next cycle", async () => {
@@ -139,11 +110,9 @@ describe("wiki-lint e2e", () => {
       "utf8",
     );
 
-    expect(
-      status.stdout.includes("?? outputs/") &&
-        status.stdout.includes(" M wiki/index.md") &&
-        page.includes("audited"),
-    ).toBe(true);
+    expect(status.stdout).toContain("?? outputs/");
+    expect(status.stdout).toContain(" M wiki/index.md");
+    expect(page).toContain("audited");
   });
 
   it("reverts and exits 1 when a guardrail trips", async () => {
@@ -153,12 +122,10 @@ describe("wiki-lint e2e", () => {
       cwd: repo.dataRoot,
     });
 
-    expect(
-      result.code === 1 &&
-        result.err.includes(
-          "lint guardrail check 1 (immutability) failed; reverted to",
-        ) &&
-        status.stdout.trim() === "",
-    ).toBe(true);
+    expect(result.code).toBe(1);
+    expect(result.err).toContain(
+      "lint guardrail check 1 (immutability) failed; reverted to",
+    );
+    expect(status.stdout.trim()).toBe("");
   });
 });
