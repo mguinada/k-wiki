@@ -216,7 +216,7 @@ if (mode === "link-domain" || mode === "link-broken") {
 }
 
 if (prompt.startsWith("Audit the wiki")) {
-  const reportPath = prompt.match(/outputs\\/lint-\\d{4}-\\d{2}-\\d{2}\\.md/)?.[0];
+  const reportPath = prompt.match(/outputs\\/lint-\\d{4}-\\d{2}-\\d{2}(-full)?\\.md/)?.[0];
   if (reportPath === undefined) process.exit(6);
   await mkdir(join(process.cwd(), "outputs"), { recursive: true });
   await writeFile(
@@ -457,7 +457,7 @@ describe("wiki-sync e2e", () => {
     const repo = await makeRepo();
     const result = await runCycle(repo);
     const lintPath =
-      /- \*\*Lint:\*\* full audit, report `(outputs\/lint-\d{4}-\d{2}-\d{2}\.md)`/.exec(
+      /- \*\*Lint:\*\* full audit, report `(outputs\/lint-\d{4}-\d{2}-\d{2}(-full)?\.md)`/.exec(
         result.out,
       )?.[1];
 

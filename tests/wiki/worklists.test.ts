@@ -157,6 +157,21 @@ describe("computeWikiWorklists", () => {
     ]);
   });
 
+  it("skips raw-path sources entries — the provenance gate's domain", async () => {
+    const wikiDir = await makeWiki({
+      "index.md": "# Index\n",
+      "hub.md": SOURCE_PAGE,
+      "a.md": page().replace(
+        '  - "[[hub-2]]"',
+        '  - "raw/notes/deep/AI/RAG.md"',
+      ),
+    });
+
+    const worklists = await computeWikiWorklists(wikiDir);
+
+    expect(worklists.nonSourceEdges).toEqual([]);
+  });
+
   it("flags missing required frontmatter fields", async () => {
     const wikiDir = await makeWiki({
       "index.md":

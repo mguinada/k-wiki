@@ -14,6 +14,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  isWikilinkEntry,
   kebab,
   listWikiPages,
   type PageFields,
@@ -137,7 +138,9 @@ function singleSourceEntries(scan: WikiScan): WorklistEntry[] {
 
 /** `sources` entries that cite a page which is missing or not of
  *  type `source` (check 17's deterministic part). Source pages are
- *  exempt — their own `sources` cite chapters, the hub pattern. */
+ *  exempt — their own `sources` cite chapters, the hub pattern.
+ *  Raw-path entries are check-provenance's domain, never candidates
+ *  here. */
 function nonSourceEdgeEntries(scan: WikiScan): WorklistEntry[] {
   const entries: WorklistEntry[] = [];
 
@@ -147,6 +150,10 @@ function nonSourceEdgeEntries(scan: WikiScan): WorklistEntry[] {
     }
 
     for (const entry of fields.sources) {
+      if (!isWikilinkEntry(entry)) {
+        continue;
+      }
+
       const target = wikilinkTarget(entry);
       const targetPage = target === "" ? undefined : scan.byStem.get(target);
 

@@ -56,8 +56,11 @@ import { toAbsolute } from "./projection.ts";
 /** Liveness line while the lint agent runs (one animated line on a TTY). */
 export const LINT_HEARTBEAT_PREFIX = "wiki-sync: lint agent still running";
 
-/** The report-path placeholder every lint prompt carries. */
-const REPORT_PLACEHOLDER = "outputs/lint-<YYYY-MM-DD>.md";
+/** The report-path placeholder each mode's prompt carries: the
+ *  windowed audit's standing per-date path, and the full audit's own
+ *  `-full` report. */
+const WINDOW_REPORT_PLACEHOLDER = "outputs/lint-<YYYY-MM-DD>.md";
+const FULL_REPORT_PLACEHOLDER = "outputs/lint-<YYYY-MM-DD>-full.md";
 
 /** What the lint stage reports back to the cycle digest. */
 export interface LintResult {
@@ -82,9 +85,19 @@ export interface LintResult {
   readonly windowPages: readonly string[] | undefined;
 }
 
-/** The data-repo-relative lint report path for a run's date. */
-export function lintReportPath(now: () => Date): string {
-  return `outputs/lint-${now().toISOString().slice(0, 10)}.md`;
+/** The data-repo-relative lint report path for a run's date and
+ *  mode: the windowed audit keeps the standing per-date path, the
+ *  full audit writes its own `-full` report so a same-day windowed
+ *  audit never overwrites the sweep's record. */
+export function lintReportPath(
+  now: () => Date,
+  mode: "window" | "full",
+): string {
+  const date = now().toISOString().slice(0, 10);
+
+  return mode === "full"
+    ? `outputs/lint-${date}-full.md`
+    : `outputs/lint-${date}.md`;
 }
 
 export interface LintOptions {
@@ -212,9 +225,13 @@ async function composeLintPrompt(options: {
   readonly wikiDir: string;
 }): Promise<string> {
   const promptFile = options.mode === "window" ? "lint-window.md" : "lint.md";
+  const placeholder =
+    options.mode === "window"
+      ? WINDOW_REPORT_PLACEHOLDER
+      : FULL_REPORT_PLACEHOLDER;
   const promptText = (
     await readPrompt(join(options.promptsDir, promptFile))
-  ).replaceAll(REPORT_PLACEHOLDER, options.reportPath);
+  ).replaceAll(placeholder, options.reportPath);
   const worklists = await computeWikiWorklists(options.wikiDir);
   const scoped =
     options.windowPages === undefined
@@ -311,7 +328,7 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
     (await loadAgentSettings(options.settingsPath, { onProgress }));
 
   const resolved = await resolveWindow(run, options.full === true);
-  const reportPath = lintReportPath(now);
+  const reportPath = lintReportPath(now, resolved.mode);
 
   if (resolved.mode === "window" && resolved.window.pages.length === 0) {
     return await skipEmptyWindow(run, options, reportPath);

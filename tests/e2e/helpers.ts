@@ -180,13 +180,13 @@ export interface StubDataRepo {
   readonly settingsPath: string;
   /** Repo-relative dated report path the stub agent writes. */
   readonly reportPath: string;
+  /** The full audit's own `-full` report path. */
+  readonly fullReportPath: string;
 }
 
 /** A temp data repo (git, wiki/, raw/manifest.json) hosting a stub
- *  agent: writes the stub script (its `process.env.LINT_REPORT`
- *  placeholder bound to the dated report path), derives its settings
- *  file, and commits the skeleton. The caller owns the tmp dir's
- *  cleanup. */
+ *  agent: writes the stub script, derives its settings file, and
+ *  commits the skeleton. The caller owns the tmp dir's cleanup. */
 export async function makeStubDataRepo(options: {
   readonly stubAgent: string;
   readonly prefix: string;
@@ -207,16 +207,13 @@ export async function makeStubDataRepo(options: {
     "outputs/last-ingested-manifest.json\noutputs/lint-window.json\n",
   );
 
-  const reportPath = `outputs/lint-${new Date().toISOString().slice(0, 10)}.md`;
+  const date = new Date().toISOString().slice(0, 10);
+  const reportPath = `outputs/lint-${date}.md`;
+  const fullReportPath = `outputs/lint-${date}-full.md`;
 
-  await writeFile(
-    join(dataRoot, "stub-agent.mjs"),
-    options.stubAgent.replaceAll(
-      "process.env.LINT_REPORT",
-      JSON.stringify(reportPath),
-    ),
-    { mode: 0o755 },
-  );
+  await writeFile(join(dataRoot, "stub-agent.mjs"), options.stubAgent, {
+    mode: 0o755,
+  });
 
   const settingsPath = join(tmp, "settings.yml");
 
@@ -236,5 +233,6 @@ export async function makeStubDataRepo(options: {
     rawDir: join(dataRoot, "raw"),
     settingsPath,
     reportPath,
+    fullReportPath,
   };
 }

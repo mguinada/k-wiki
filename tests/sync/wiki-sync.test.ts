@@ -118,7 +118,9 @@ const ingestStub: AgentRunner = async (_command, _args, options) => {
 /** The default lint stub: write the report where the prompt says. */
 const lintStub: AgentRunner = async (_command, args, options) => {
   const prompt = args[args.indexOf("--print") + 1] ?? "";
-  const reportPath = /outputs\/lint-\d{4}-\d{2}-\d{2}\.md/.exec(prompt)?.[0];
+  const reportPath = /outputs\/lint-\d{4}-\d{2}-\d{2}(-full)?\.md/.exec(
+    prompt,
+  )?.[0];
 
   if (reportPath !== undefined) {
     await mkdir(join(options.cwd, "outputs"), { recursive: true });
@@ -209,7 +211,7 @@ async function makeHarness(
   await writeFile(join(promptsDir, "expunge.md"), "EXPUNGE PROMPT");
   await writeFile(
     join(promptsDir, "lint.md"),
-    "AUDIT THE WIKI PROMPT\n\nSave the report to `outputs/lint-<YYYY-MM-DD>.md`.\n",
+    "AUDIT THE WIKI PROMPT\n\nSave the report to `outputs/lint-<YYYY-MM-DD>-full.md`.\n",
   );
 
   await cp(await committedDataRepoTemplate(), dataRoot, { recursive: true });
@@ -375,7 +377,7 @@ describe("runWikiSync", () => {
       process.env,
     );
 
-    expect(stdout).toContain("- lint: outputs/lint-2026-08-20.md");
+    expect(stdout).toContain("- lint: outputs/lint-2026-08-20-full.md");
   });
 
   it("processes a renamed source in the next cycle", async () => {
@@ -432,7 +434,7 @@ describe("runWikiSync", () => {
     const result = await runWikiSync(optionsFor(h));
 
     expect(result.lint?.entries.map((entry) => entry.path)).toContain(
-      "outputs/lint-2026-08-20.md",
+      "outputs/lint-2026-08-20-full.md",
     );
   });
 
@@ -441,7 +443,7 @@ describe("runWikiSync", () => {
     await runWikiSync(optionsFor(h));
 
     await expect(
-      readFile(join(h.dataRoot, "outputs", "lint-2026-08-20.md"), "utf8"),
+      readFile(join(h.dataRoot, "outputs", "lint-2026-08-20-full.md"), "utf8"),
     ).resolves.toContain("Lint report");
   });
 
@@ -526,7 +528,7 @@ describe("runWikiSync", () => {
     expect(h.invocations).toHaveLength(2);
     expect(h.invocations[0]).toBe("FULL PROMPT");
     expect(h.invocations[1]).toContain(
-      "AUDIT THE WIKI PROMPT\n\nSave the report to `outputs/lint-2026-08-20.md`.",
+      "AUDIT THE WIKI PROMPT\n\nSave the report to `outputs/lint-2026-08-20-full.md`.",
     );
     expect(h.invocations[1]).toContain("Deterministic worklists");
   });
@@ -1296,7 +1298,7 @@ describe("formatFinalDigest", () => {
     }
 
     expect(formatFinalDigest(result)).toContain(
-      "- **Lint:** full audit, report `outputs/lint-2026-08-20.md`",
+      "- **Lint:** full audit, report `outputs/lint-2026-08-20-full.md`",
     );
   });
 
@@ -2053,7 +2055,7 @@ describe("runWikiSync verification stage", () => {
     await expect(runWikiSync(optionsFor(h))).rejects.toThrow();
 
     await expect(
-      readFile(join(h.dataRoot, "outputs", "lint-2026-08-20.md"), "utf8"),
+      readFile(join(h.dataRoot, "outputs", "lint-2026-08-20-full.md"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
@@ -2182,7 +2184,7 @@ describe("runWikiSync lint stage", () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
     const saboteur: AgentRunner = async (_command, args, options) => {
       const prompt = args[args.indexOf("--print") + 1] ?? "";
-      const reportPath = /outputs\/lint-\d{4}-\d{2}-\d{2}\.md/.exec(
+      const reportPath = /outputs\/lint-\d{4}-\d{2}-\d{2}(-full)?\.md/.exec(
         prompt,
       )?.[0];
 
@@ -2215,7 +2217,7 @@ describe("runWikiSync lint stage", () => {
 
   it("derives the report path from the real clock when the caller passes none", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
-    const expectedPath = `outputs/lint-${new Date().toISOString().slice(0, 10)}.md`;
+    const expectedPath = `outputs/lint-${new Date().toISOString().slice(0, 10)}-full.md`;
 
     const result = await runLintStage({
       settingsPath: h.settingsPath,
@@ -2287,7 +2289,7 @@ describe("runWikiSync lint stage", () => {
 
     await runWikiSync(optionsFor(h));
 
-    expect(h.invocations[1]).toContain("`outputs/lint-2026-08-20.md`");
+    expect(h.invocations[1]).toContain("`outputs/lint-2026-08-20-full.md`");
   });
 
   it("leaves no date placeholder in the lint prompt", async () => {
@@ -3154,7 +3156,7 @@ describe("runWikiSync commit contents", () => {
 
     const names = await committedNames(h.dataRoot);
 
-    expect(names).toContain("outputs/lint-2026-08-20.md");
+    expect(names).toContain("outputs/lint-2026-08-20-full.md");
   });
 
   it("commits the ingest page in the cycle commit", async () => {

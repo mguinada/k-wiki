@@ -30,8 +30,8 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** The stub agent: writes the lint report (the prompt tells the real
- *  agent to); STUB_MODE rebel writes a forbidden raw/ file to trip
+/** The stub agent: writes the lint report (the prompt names its
+ *  path); STUB_MODE rebel writes a forbidden raw/ file to trip
  *  guardrail 1; STUB_MODE sleep outlives a --timeout 1 run. */
 const STUB_AGENT = `#!/usr/bin/env node
 import { mkdir, writeFile } from "node:fs/promises";
@@ -50,8 +50,15 @@ if (mode === "sleep") {
   process.exit(0);
 }
 
+const printIndex = process.argv.indexOf("--print");
+const prompt = printIndex === -1 ? "" : (process.argv[printIndex + 1] ?? "");
+const reportPath = prompt
+  .match(/outputs\\/lint-\\d{4}-\\d{2}-\\d{2}(-full)?\\.md/)?.[0];
+
+if (reportPath === undefined) process.exit(6);
+
 await mkdir("outputs", { recursive: true });
-await writeFile(process.env.LINT_REPORT, "# lint report\\n");
+await writeFile(reportPath, "# lint report\\n");
 console.log("lint: all pages audited, no problems");
 `;
 
@@ -157,7 +164,7 @@ describe("wiki-lint CLI", () => {
     ]);
 
     expect(out).toContain(
-      `# wiki-lint digest\n\n- audit: full audit (every page)\n- report: ${repo.reportPath}`,
+      `# wiki-lint digest\n\n- audit: full audit (every page)\n- report: ${repo.fullReportPath}`,
     );
   });
 

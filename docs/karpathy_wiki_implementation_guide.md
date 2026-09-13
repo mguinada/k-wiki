@@ -1056,7 +1056,9 @@ the full prompt — the weekly sweep's business.
 Intent: audit the wiki for quality problems — fix the clear mechanical
 ones automatically, report the ambiguous ones instead of guessing,
 never touch `wiki/AGENTS.md`, and save the report to
-`outputs/lint-<YYYY-MM-DD>.md`.
+`outputs/lint-<YYYY-MM-DD>.md` (the full audit's own
+`outputs/lint-<YYYY-MM-DD>-full.md`, so a same-day windowed audit
+cannot overwrite the sweep's report).
 
 ---
 

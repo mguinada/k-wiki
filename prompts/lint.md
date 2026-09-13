@@ -39,6 +39,6 @@ Never modify wiki/AGENTS.md.
 Fix clear mechanical problems automatically.
 Report ambiguous problems instead of guessing.
 
-Save the report to `outputs/lint-<YYYY-MM-DD>.md`.
+Save the report to `outputs/lint-<YYYY-MM-DD>-full.md`.
 
 Append significant findings to log.md.

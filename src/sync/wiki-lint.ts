@@ -76,8 +76,11 @@ Switches and arguments:
 
 What it writes:
   - wiki pages, by the agent, in the data repo (never raw/);
-  - the lint report at outputs/lint-<YYYY-MM-DD>.md in the DATA
-    repo's outputs/ — the same path the cycle's lint stage uses;
+  - the lint report in the DATA repo's outputs/: the windowed audit
+    writes outputs/lint-<YYYY-MM-DD>.md, a full audit writes
+    outputs/lint-<YYYY-MM-DD>-full.md — the separate path keeps a
+    same-day windowed audit from overwriting the full sweep's
+    report;
   - the lint-window snapshot outputs/lint-window.json (gitignored,
     per-instance state) after a completed audit.
 

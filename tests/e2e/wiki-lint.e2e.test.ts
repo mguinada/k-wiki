@@ -42,7 +42,12 @@ const prompt = promptIndex === -1 ? "" : process.argv[promptIndex + 1];
 
 await mkdir("outputs", { recursive: true });
 await writeFile("outputs/received-prompt.txt", prompt);
-await writeFile(process.env.LINT_REPORT, "# lint report\\n");
+const reportPath = prompt
+  .match(/outputs\\/lint-\\d{4}-\\d{2}-\\d{2}(-full)?\\.md/)?.[0];
+
+if (reportPath === undefined) process.exit(6);
+
+await writeFile(reportPath, "# lint report\\n");
 await writeFile("wiki/index.md", [
   "---",
   'title: "Index"',
@@ -59,13 +64,14 @@ await writeFile("wiki/index.md", [
 console.log("lint: all pages audited, no problems");
 `;
 
-/** A stub data repo from the shared helpers (absolute report path
+/** A stub data repo from the shared helpers (absolute report paths
  *  for reads), registered for this file's cleanup. */
 interface LintRepo {
   readonly dataRoot: string;
   readonly rawDir: string;
   readonly settingsPath: string;
   readonly reportFile: string;
+  readonly fullReportFile: string;
 }
 
 async function makeRepo(): Promise<LintRepo> {
@@ -82,6 +88,7 @@ async function makeRepo(): Promise<LintRepo> {
     rawDir: repo.rawDir,
     settingsPath: repo.settingsPath,
     reportFile: join(repo.dataRoot, repo.reportPath),
+    fullReportFile: join(repo.dataRoot, repo.fullReportPath),
   };
 }
 
@@ -95,7 +102,7 @@ describe("wiki-lint e2e", () => {
   it("runs the agent, writes the report, and exits 0", async () => {
     const repo = await makeRepo();
     const result = await runLint(repo);
-    const report = await readFile(repo.reportFile, "utf8");
+    const report = await readFile(repo.fullReportFile, "utf8");
 
     expect(result.code).toBe(0);
     expect(result.out).toContain("# wiki-lint digest");

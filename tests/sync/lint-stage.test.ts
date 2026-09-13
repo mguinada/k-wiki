@@ -24,7 +24,7 @@ const NOW = () => new Date("2026-09-12T12:00:00.000Z");
 const SETTINGS_YML = "command: pi\nmodel: GLM-5.2\nreasoning: high\n";
 
 const LINT_PROMPT =
-  "AUDIT THE WIKI PROMPT (full)\n\nSave the report to `outputs/lint-<YYYY-MM-DD>.md`.\n";
+  "AUDIT THE WIKI PROMPT (full)\n\nSave the report to `outputs/lint-<YYYY-MM-DD>-full.md`.\n";
 const LINT_WINDOW_PROMPT =
   "AUDIT THE WINDOW PROMPT\n\nSave the report to `outputs/lint-<YYYY-MM-DD>.md`.\n";
 
@@ -50,7 +50,9 @@ interface StageHarness {
  *  prompt names. */
 const lintStub: AgentRunner = async (_command, args, options) => {
   const prompt = args[args.indexOf("--print") + 1] ?? "";
-  const reportPath = /outputs\/lint-\d{4}-\d{2}-\d{2}\.md/.exec(prompt)?.[0];
+  const reportPath = /outputs\/lint-\d{4}-\d{2}-\d{2}(-full)?\.md/.exec(
+    prompt,
+  )?.[0];
 
   if (reportPath !== undefined) {
     await mkdir(join(options.cwd, "outputs"), { recursive: true });
@@ -365,7 +367,7 @@ describe("runLintStage pre-run capture", () => {
     const h = await makeHarness(BASE_PAGES);
     const saboteur: AgentRunner = async (_command, args, options) => {
       const prompt = args[args.indexOf("--print") + 1] ?? "";
-      const reportPath = /outputs\/lint-\d{4}-\d{2}-\d{2}\.md/.exec(
+      const reportPath = /outputs\/lint-\d{4}-\d{2}-\d{2}(-full)?\.md/.exec(
         prompt,
       )?.[0];
 

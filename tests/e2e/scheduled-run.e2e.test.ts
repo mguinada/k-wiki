@@ -110,7 +110,7 @@ await writeFile(
 );
 
 if (prompt.startsWith("Audit the wiki")) {
-  const reportPath = prompt.match(/outputs\\/lint-\\d{4}-\\d{2}-\\d{2}\\.md/)?.[0];
+  const reportPath = prompt.match(/outputs\\/lint-\\d{4}-\\d{2}-\\d{2}(-full)?\\.md/)?.[0];
   if (reportPath === undefined) process.exit(6);
   await mkdir(join(process.cwd(), "outputs"), { recursive: true });
   await writeFile(
