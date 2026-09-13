@@ -1280,6 +1280,12 @@ bin/k-wiki setup-schedule --calendar --print  # emit the sweep's plist, install 
 bin/k-wiki setup-schedule --calendar --uninstall  # bootout the sweep and remove its plist
 ```
 
+The installer guards its own origin: install and uninstall run only
+from the repository's main working tree on a branch — a Stryker
+sandbox copy, a linked worktree, or a detached HEAD is refused
+before anything is written ([why, below](#scheduling-the-pipeline-launchd));
+`--print` is exempt.
+
 `setup-schedule` registers the pipeline with launchd — two
 independent registrations, each installed, printed, and removed by
 its own invocation; neither command touches the other's plist. The
@@ -1418,7 +1424,9 @@ baked absolute at install time: the node binary (the invocation
 path, stable across Homebrew upgrades), the canonical checkout
 (never the linked worktree the installer may run from), the meta
 configs inside it, `<dataRoot>/raw` from `sync-meta.json`, and the
-fire log.
+fire log. Unlike `setup-schedule`, install from a linked worktree
+is safe here — the hooks resolve the canonical checkout through the
+shared git dir, never the calling worktree's paths.
 
 The hook guards before firing: the fire must land in the
 canonical checkout (a merge on `main` inside a linked worktree
