@@ -247,3 +247,26 @@ export async function writeLintWindowSnapshot(
   );
   await rename(tempPath, snapshotPath);
 }
+
+/** Restore the snapshot file to its pre-lint bytes after a revert:
+ *  the verification stage rewinds the lint edits, so the audit that
+ *  recorded them must be unrecorded too — the next run re-derives
+ *  its window against the pre-lint state and re-audits the reverted
+ *  pages. `previous` undefined deletes a snapshot that did not exist
+ *  before the lint ran. */
+export async function restoreLintWindowSnapshot(
+  snapshotPath: string,
+  previous: string | undefined,
+): Promise<void> {
+  if (previous === undefined) {
+    await rm(snapshotPath, { force: true });
+
+    return;
+  }
+
+  const tempPath = `${snapshotPath}.tmp`;
+
+  await rm(tempPath, { force: true });
+  await writeFile(tempPath, previous, "utf8");
+  await rename(tempPath, snapshotPath);
+}

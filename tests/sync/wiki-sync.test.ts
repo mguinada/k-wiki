@@ -2083,6 +2083,54 @@ describe("runWikiSync verification stage", () => {
     ).resolves.toContain("New page");
   });
 
+  it("leaves no lint-window snapshot when the first cycle's verification fails", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    h.lintAgent = fidelityDriftLintAgent();
+
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow();
+
+    await expect(
+      readFile(join(h.dataRoot, "outputs", "lint-window.json"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("rewinds the lint-window snapshot to its pre-lint bytes when verification fails", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    await runWikiSync(optionsFor(h));
+
+    const snapshotAfterFirstRun = await readFile(
+      join(h.dataRoot, "outputs", "lint-window.json"),
+      "utf8",
+    );
+
+    await writeFile(
+      join(h.vaultRoot, "AI", "Second.md"),
+      "second source body",
+    );
+    h.ingestAgent = async (_command, _args, options) => {
+      await mkdir(join(options.cwd, "wiki", "concepts"), { recursive: true });
+      await writeFile(
+        join(options.cwd, "wiki", "concepts", "second.md"),
+        wikiPage("Second body", "Second"),
+      );
+
+      return { stdout: "agent final report", stderr: "" };
+    };
+    await writeFile(
+      join(h.promptsDir, "lint-window.md"),
+      "AUDIT THE WIKI WINDOW PROMPT\n\nSave the report to `outputs/lint-<YYYY-MM-DD>.md`.\n",
+    );
+    h.lintAgent = fidelityDriftLintAgent();
+
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow();
+
+    await expect(
+      readFile(join(h.dataRoot, "outputs", "lint-window.json"), "utf8"),
+    ).resolves.toBe(snapshotAfterFirstRun);
+  });
+
   /** A lint agent that also writes a page with a dead origin link,
    *  tripping the provenance check after the guardrails pass. */
   function deadOriginLintAgent(): AgentRunner {

@@ -69,7 +69,12 @@ import {
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { AGENT_HEARTBEAT_PREFIX, stderrSink } from "../cli/progress.ts";
 import { type RunContext, runContext } from "../cli/run-context.ts";
-import { pathExists, pluralized, repoRoot } from "../cli/shared.ts";
+import {
+  pathExists,
+  pluralized,
+  readTextIfExists,
+  repoRoot,
+} from "../cli/shared.ts";
 import {
   type AgentRunFlags,
   agentRunFlags,
@@ -92,7 +97,6 @@ import {
   type WikiPages,
   wikiPages,
 } from "../ingest/manifest-diff.ts";
-import { ensureLintWindowIgnored } from "../ingest/snapshot.ts";
 import { type IngestResult, runWikiIngest } from "../ingest/wiki-ingest.ts";
 import {
   type CitationWallStageResult,
@@ -122,6 +126,10 @@ import {
   type LintResult,
   runLintStage,
 } from "./lint-stage.ts";
+import {
+  lintWindowPath,
+  restoreLintWindowSnapshot,
+} from "./lint-window.ts";
 import type {
   DriverOptions,
   RepoSyncReport,
@@ -589,11 +597,14 @@ async function runCrosslinksOrSkip(
 }
 
 /** The verification stage with the cycle's revert semantics: on
- *  failure, revert the lint edits (the ingest edits stay) before
+ *  failure, revert the lint edits (the ingest edits stay) and rewind
+ *  the lint-window snapshot to its pre-lint bytes — the audit those
+ *  edits recorded must not survive its own revert — before
  *  rejecting. */
 async function runVerificationWithRevert(
   options: WikiSyncOptions,
   preLint: PreRunState,
+  preLintSnapshot: string | undefined,
   stages: readonly string[],
 ): Promise<VerificationResult> {
   const { run } = options;
@@ -610,6 +621,10 @@ async function runVerificationWithRevert(
     const post = await runGuardrails(run.dataRoot, run.env, preLint);
 
     await revertToPreRun(run.dataRoot, run.env, preLint, post.entries);
+    await restoreLintWindowSnapshot(
+      lintWindowPath(run.dataRoot),
+      preLintSnapshot,
+    );
 
     throw error;
   }
@@ -740,15 +755,15 @@ async function runCycleStages(
     heartbeatMs: options.heartbeatMs,
   });
 
-  // The lint-window ignore entry must exist before this capture:
-  // the snapshot hygiene write would otherwise read as the lint
-  // run's own change and trip guardrail 1 (the same ordering the
-  // ingest stage's housekeeping uses for its snapshot entry).
-  await ensureLintWindowIgnored(dataRoot, onProgress);
-
   // The verification stage's revert target: everything the ingest
   // stage left, before the lint agent runs.
   const preLint = await capturePreRunState(dataRoot, env);
+
+  // The lint-window snapshot's pre-lint bytes: the verification
+  // revert rewinds the lint edits, so the audit that recorded them
+  // is unrecorded too and the next cycle re-audits the reverted
+  // pages.
+  const preLintSnapshot = await readTextIfExists(lintWindowPath(dataRoot));
 
   const lint = await runLintOrSkip(options, ingest, stages, preLint, settings);
   const crosslinks = await runCrosslinksOrSkip(run, domains, stages);
@@ -760,6 +775,7 @@ async function runCycleStages(
   const verification = await runVerificationWithRevert(
     options,
     preLint,
+    preLintSnapshot,
     stages,
   );
 
