@@ -253,7 +253,10 @@ export async function main(
   const staleAfterText = parsed.values.get("--stale-after");
 
   if (parsed.values.has("--stale-after") && staleAfterText === undefined) {
-    cliFail("sync-watchdog", "--stale-after needs a duration value (e.g. 90minutes)");
+    cliFail(
+      "sync-watchdog",
+      "--stale-after needs a duration value (e.g. 90minutes)",
+    );
 
     return;
   }
