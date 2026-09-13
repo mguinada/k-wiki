@@ -536,16 +536,16 @@ the weekly quality sweep) → wiki-sync (sync → ingest → lint →
 crosslinks → citation wall → verification → commit) → git push.
 wiki-sync stays commit-only; the push happens here and only here.
 
-  --lint-full         Run the full-lint sweep before the cycle
-                     : wiki-lint --full — every page,
-                      the complete check list — then the ordinary
-                      wiki-sync flow (verification, commit, publish;
-                      ingest usually a no-op). The sweep runs under
-                      the same run lock: a concurrent 30-minute cycle
-                      makes this firing refuse loud naming the holder,
-                      and vice versa. Registered weekly by
-                      setup-schedule --calendar (Sundays 03:00 by
-                      default); run it by hand for one sweep now.
+  --lint-full         Run the full-lint sweep before the cycle:
+                      wiki-lint --full — every page, the complete
+                      check list — then the ordinary wiki-sync flow
+                      (verification, commit, publish; ingest usually
+                      a no-op). The sweep runs under the same run
+                      lock: a concurrent 30-minute cycle makes this
+                      firing refuse loud naming the holder, and vice
+                      versa. Registered weekly by setup-schedule
+                      --calendar (Sundays 03:00 by default); run it
+                      by hand for one sweep now.
   --settings <path>  Forwarded to wiki-sync. Default: the repo's
                      settings.yml.
   --outputs <dir>    Forwarded to wiki-sync (ingest digest location).

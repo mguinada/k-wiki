@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildPageIndex,
+  inboundLinkIndex,
   unfencedLines,
   wikilinkBody,
 } from "../../src/wiki/wiki-links.ts";
@@ -59,6 +60,34 @@ describe("unfencedLines fence rules", () => {
     const lines = unfenced("```\nfenced\n```   \nafter");
 
     expect(lines).toEqual(["after"]);
+  });
+});
+
+describe("inboundLinkIndex", () => {
+  it("indexes internal targets to the pages linking them", () => {
+    expect(
+      inboundLinkIndex(
+        new Map([
+          ["concepts/hub.md", "See [[wiki-sync]] and [[wiki-sync|the cycle]]."],
+          ["sources/temp.md", "Links [[other]] once."],
+        ]),
+      ),
+    ).toEqual(
+      new Map([
+        ["wiki-sync", new Set(["concepts/hub.md"])],
+        ["other", new Set(["sources/temp.md"])],
+      ]),
+    );
+  });
+
+  it("never edges in cross-wiki targets or a page's self-links", () => {
+    expect(
+      inboundLinkIndex(
+        new Map([
+          ["concepts/hub.md", "[[other vault/page]] and [[hub]] only."],
+        ]),
+      ),
+    ).toEqual(new Map());
   });
 });
 

@@ -21,7 +21,12 @@ import {
   REQUIRED_PAGE_FIELDS,
   wikilinkTarget,
 } from "./pages.ts";
-import { buildPageIndex, extractWikilinks, stem } from "./wiki-links.ts";
+import {
+  buildPageIndex,
+  extractWikilinks,
+  inboundLinkIndex,
+  stem,
+} from "./wiki-links.ts";
 
 /** One worklist candidate: the page, and the deterministic evidence. */
 export interface WorklistEntry {
@@ -66,7 +71,6 @@ interface WikiScan {
 async function scanWiki(wikiDir: string): Promise<WikiScan> {
   const files = await listWikiPages(wikiDir);
   const fields = new Map<string, PageFields>();
-  const inbound = new Map<string, Set<string>>();
   const texts = new Map<string, string>();
 
   for (const file of files) {
@@ -74,17 +78,6 @@ async function scanWiki(wikiDir: string): Promise<WikiScan> {
 
     texts.set(file, text);
     fields.set(file, parsePageFields(text));
-
-    for (const link of extractWikilinks(text)) {
-      if (link.target.includes("/") || link.target === stem(file)) {
-        continue;
-      }
-
-      const links = inbound.get(link.target) ?? new Set<string>();
-
-      links.add(file);
-      inbound.set(link.target, links);
-    }
   }
 
   const indexText = texts.get("index.md");
@@ -93,7 +86,7 @@ async function scanWiki(wikiDir: string): Promise<WikiScan> {
     files,
     fields,
     byStem: buildPageIndex(files),
-    inbound,
+    inbound: inboundLinkIndex(texts),
     indexTargets: new Set(
       indexText === undefined ? [] : extractIndexTargets(indexText),
     ),

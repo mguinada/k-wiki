@@ -875,9 +875,7 @@ both to files under `raw/` and to no hub that covers them — every
 (`bin/libexec/check-fidelity`: every machine-checkable token a source
 page quotes — tilde paths, config keys, CLI flags, `npm run`
 commands — appears in its `origin`, and every page title kebab-cases
-to its file name), the fidelity item in the lint prompt (relational
-misquotes — right tokens, wrong containment — are detected there,
-not deterministically), the body-text anchor lint
+to its file name), the body-text anchor lint
 (`bin/libexec/check-links`: every `[[wikilink]]` resolves to an existing page, and
 a body-text heading anchor `[[page#Chapter]]` lands on a target
 heading byte-identical to the anchor — the same rule
@@ -1047,7 +1045,7 @@ The deterministic pre-pass (issue #359, phase B): one pass over the
 wiki tree produces the worklists the prompt embeds — orphan,
 single-source, sources→non-source, frontmatter, tag, index, and
 duplicate-title candidates, each a candidate with evidence, never a
-verdict (inspectable standalone: `bin/libexec/lint-worklists`). The
+verdict. The
 checks the standing gates own every cycle — broken wikilinks
 guardrail 3 + check-links, cross-wiki targets, citation fidelity,
 provenance, the sandbox wall — are no LLM checks at all: no

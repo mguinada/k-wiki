@@ -149,6 +149,34 @@ export function extractWikilinks(text: string): Wikilink[] {
   return links;
 }
 
+/** The wiki link graph's reverse edges: for each internal page name,
+ *  the set of pages linking to it. One inbound-index rule for every
+ *  consumer — the orphan worklist, the lint window's neighbor
+ *  expansion — so the edge semantics cannot drift between them.
+ *  Slashed targets are cross-wiki and never resolve in this wiki;
+ *  self-links never count (a page is not its own neighbor, and a
+ *  page linking itself is not thereby linked). */
+export function inboundLinkIndex(
+  pages: ReadonlyMap<string, string>,
+): Map<string, Set<string>> {
+  const inbound = new Map<string, Set<string>>();
+
+  for (const [file, text] of pages) {
+    for (const link of extractWikilinks(text)) {
+      if (link.target.includes("/") || link.target === stem(file)) {
+        continue;
+      }
+
+      const links = inbound.get(link.target) ?? new Set<string>();
+
+      links.add(file);
+      inbound.set(link.target, links);
+    }
+  }
+
+  return inbound;
+}
+
 /** A wikilink target naming a page of another wiki instance (issue
  *  #81): any target containing a `/` is cross-wiki — `[[<vault>/<page>]]`,
  *  where `<vault>` is a domain wiki's vault name. Bare targets are

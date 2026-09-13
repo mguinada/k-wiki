@@ -372,10 +372,7 @@ describe("scheduled-run e2e — lint-full (issue #359)", () => {
     expect(log).toContain("cycle complete");
     expect(await upstreamHead(repo)).toMatch(/^wiki-sync:/);
     await expect(
-      readFile(
-        join(repo.dataRoot, "outputs", "lint-window.json"),
-        "utf8",
-      ),
+      readFile(join(repo.dataRoot, "outputs", "lint-window.json"), "utf8"),
     ).resolves.toContain('"snapshotFor"');
   });
 

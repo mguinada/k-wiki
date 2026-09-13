@@ -242,8 +242,9 @@ async function composeLintPrompt(options: {
  * snapshot. Same guardrail contract as the ingest stage.
  */
 /** The empty-window skip: nothing changed since the last successful
- *  audit, so the agent never runs and the snapshot merely prunes
- *  deleted pages. */
+ *  audit, so the agent never runs and the snapshot write is an
+ *  idempotent re-stamp of the unchanged state (any deletion makes
+ *  the window non-empty, so this write never prunes anything). */
 async function skipEmptyWindow(
   run: RunContext,
   options: LintOptions,

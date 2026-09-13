@@ -17,7 +17,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { isPlainObject, readTextIfExists, sha256 } from "../cli/shared.ts";
 import { listWikiPages } from "../wiki/pages.ts";
-import { extractWikilinks, stem } from "../wiki/wiki-links.ts";
+import { inboundLinkIndex, stem } from "../wiki/wiki-links.ts";
 
 /** The snapshot's file name under the data repo's outputs/. */
 export const LINT_WINDOW_FILENAME = "lint-window.json";
@@ -169,30 +169,19 @@ async function changedPages(
 }
 
 /** The pages linking to each page name (the link graph's reverse
- *  edges): one hop, internal targets only — cross-wiki targets never
- *  resolve in this wiki, so they pull no neighbors in. */
+ *  edges), through the shared inbound index — the one edge rule in
+ *  src/wiki/wiki-links.ts: cross-wiki targets and self-links never
+ *  edge in. */
 async function reverseLinkIndex(
   wikiDir: string,
 ): Promise<Map<string, Set<string>>> {
-  const files = await listWikiPages(wikiDir);
-  const reverse = new Map<string, Set<string>>();
+  const texts = new Map<string, string>();
 
-  for (const file of files) {
-    const text = await readFile(join(wikiDir, file), "utf8");
-
-    for (const link of extractWikilinks(text)) {
-      if (link.target.includes("/")) {
-        continue;
-      }
-
-      const inbound = reverse.get(link.target) ?? new Set<string>();
-
-      inbound.add(file);
-      reverse.set(link.target, inbound);
-    }
+  for (const file of await listWikiPages(wikiDir)) {
+    texts.set(file, await readFile(join(wikiDir, file), "utf8"));
   }
 
-  return reverse;
+  return inboundLinkIndex(texts);
 }
 
 /** Derive the window a lint run audits: every existing page changed
