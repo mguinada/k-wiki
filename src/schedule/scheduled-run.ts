@@ -3,7 +3,9 @@
  * interval (issue #14, guide §18). One portable Node file — identical
  * on macOS/Linux/Windows; only the scheduler registration differs.
  *
- *   lockfile → git pull --rebase → wiki-sync (gates + commit) → git push
+ *   lockfile → git pull --rebase → (with --lint-full: wiki-lint --full,
+ *   the weekly quality sweep, issue #359) → wiki-sync (gates +
+ *   commit) → git push
  *
  * Overlap guard (issue #14 decision 3; the lock itself now lives in
  * `src/sync/run-lock.ts`, shared with manual wiki-sync runs since
@@ -41,7 +43,7 @@ import type { Readable } from "node:stream";
 import { cliFail, errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { pathExists, repoRoot } from "../cli/shared.ts";
-import { agentRunFlags, parseSyncRunArgs } from "../cli/shell.ts";
+import { agentRunFlags, type ParsedCli, parseArgs } from "../cli/shell.ts";
 import { runGit } from "../data/git.ts";
 import { loadSyncConfig } from "../sync/config.ts";
 import {
@@ -100,6 +102,20 @@ export interface ScheduledRunOptions {
   readonly lockPath: string;
   /** Args forwarded verbatim to the wiki-sync invocation. */
   readonly args?: readonly string[];
+  /** The weekly full-lint sweep mode (issue #359 C): run
+   *  `wiki-lint --full` with the sweep budget after the pull and
+   *  before the ordinary wiki-sync cycle, all under the same lock
+   *  tenure — the sweep and a concurrent 30-minute cycle refuse
+   *  loud, never interleave two writers. */
+  readonly lintFull?: boolean | undefined;
+  /** The sweep's per-invocation budget in milliseconds; default
+   *  7 200 000 (two hours — issue #359's per-invocation override,
+   *  never the 1800 s default the cycles keep). */
+  readonly lintFullTimeoutMs?: number | undefined;
+  /** The --settings path forwarded to the sweep, so it lints the
+   *  same instance the cycle syncs (multi-instance setups); absent
+   *  lets the door resolve the default instance. */
+  readonly lintFullSettings?: string | undefined;
   /** Log sink; default: silent (the CLI main wires the log file). */
   readonly log?: (line: string) => void;
   /** The PID recorded in the lockfile; defaults to process.pid. */
@@ -114,6 +130,9 @@ export interface ScheduledRunOptions {
   /** The wiki-sync invocation; defaults to spawning node against the
    *  repo's bin/wiki-sync. Injected in tests. */
   readonly runSync?: (args: readonly string[]) => Promise<void>;
+  /** The full-sweep wiki-lint invocation; defaults to spawning node
+   *  against the repo's bin/wiki-lint. Injected in tests. */
+  readonly runLintFull?: (args: readonly string[]) => Promise<void>;
 }
 
 /**
@@ -187,10 +206,32 @@ function skipReason(holder: LockFileData | undefined): string {
   return `another run holds the lock (fresh${holderLine}) — skipping this tick`;
 }
 
-/** The pre-push stages: verify origin, pull --rebase, wiki-sync. Any
- *  failure throws — wiki-sync's guardrails and verification have
- *  already reverted their agent runs, so the wiki stays at the last
- *  good commit and the next interval is the recovery. */
+/** The sweep's argv: --full, the budget, the instance's settings
+ *  when the wrapper was given one, and the instance's raw dir — the
+ *  sweep lints the same data repo the cycle syncs, never whatever
+ *  the default instance happens to be. */
+function sweepArgsFor(
+  options: ScheduledRunOptions,
+  timeoutMs: number,
+): readonly string[] {
+  const settings = options.lintFullSettings;
+
+  return [
+    "--full",
+    "--timeout",
+    String(timeoutMs / 1000),
+    ...(settings === undefined ? [] : ["--settings", settings]),
+    join(options.dataRoot, "raw"),
+  ];
+}
+
+/** The pre-push stages: verify origin, pull --rebase, the optional
+ *  full-sweep lint, then wiki-sync. Any failure throws — wiki-sync's
+ *  guardrails and verification have already reverted their agent
+ *  runs, so the wiki stays at the last good commit and the next
+ *  interval is the recovery; a failed sweep leaves its own partial,
+ *  guardrail-passed edits uncommitted with the window snapshot
+ *  untouched, so the next sweep retries them (issue #359). */
 async function runPipelineStages(
   options: ScheduledRunOptions,
   runGitStep: NonNullable<ScheduledRunOptions["runGitStep"]>,
@@ -198,12 +239,28 @@ async function runPipelineStages(
 ): Promise<void> {
   await runGitStep(options.dataRoot, ["remote", "get-url", "origin"]);
   await pullWhenClean(options.dataRoot, runGitStep, log);
+
+  if (options.lintFull === true) {
+    const timeoutMs = options.lintFullTimeoutMs ?? DEFAULT_LINT_FULL_TIMEOUT_MS;
+    const runLintFull =
+      options.runLintFull ??
+      (async (lintArgs: readonly string[]) => {
+        await spawnRepoScript(options.repoRoot, "wiki-lint", lintArgs, log);
+      });
+
+    log(
+      `scheduled-run: wiki-lint --full starting (budget ${timeoutMs / 1000}s)`,
+    );
+    await runLintFull(sweepArgsFor(options, timeoutMs));
+    log("scheduled-run: wiki-lint --full finished — running the cycle");
+  }
+
   log("scheduled-run: wiki-sync starting");
 
   const runSync =
     options.runSync ??
     (async (syncArgs: readonly string[]) => {
-      await spawnWikiSync(options.repoRoot, syncArgs, log);
+      await spawnRepoScript(options.repoRoot, "wiki-sync", syncArgs, log);
     });
 
   await runSync(options.args ?? []);
@@ -353,10 +410,16 @@ function streamChildLines(source: Readable, log: (line: string) => void): void {
   });
 }
 
-/** Run bin/wiki-sync as a child with the scheduled env, streaming
- *  its stdout and stderr into the log. */
-async function spawnWikiSync(
+/** The weekly full sweep's default budget (issue #359): two hours,
+ *  a per-invocation override — the cycles' 1800 s default never
+ *  moves. */
+export const DEFAULT_LINT_FULL_TIMEOUT_MS = 7_200_000;
+
+/** Run one of the repo's bin/ scripts as a child with the scheduled
+ *  env, streaming its stdout and stderr into the log. */
+async function spawnRepoScript(
   repoRoot: string,
+  name: string,
   args: readonly string[],
   log: (line: string) => void,
 ): Promise<void> {
@@ -366,7 +429,7 @@ async function spawnWikiSync(
   );
   const child = spawn(
     process.execPath,
-    [join(repoRoot, "bin", "wiki-sync"), ...args],
+    [join(repoRoot, "bin", name), ...args],
     { env, stdio: ["ignore", "pipe", "pipe"] },
   );
 
@@ -383,8 +446,8 @@ async function spawnWikiSync(
     // instead of reporting "exited null" (issue #244).
     throw new Error(
       child.signalCode === null
-        ? `wiki-sync exited ${code}`
-        : `wiki-sync exited by signal ${child.signalCode}`,
+        ? `${name} exited ${code}`
+        : `${name} exited by signal ${child.signalCode}`,
     );
   }
 }
@@ -464,19 +527,34 @@ async function appendFileLine(logPath: string, line: string): Promise<void> {
 }
 
 /** Help text: every switch and default (AGENTS.md CLI rule). */
-const HELP = `Usage: scheduled-run [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<config>] [<raw-dir>]
+const HELP = `Usage: scheduled-run [-h | --help] [--lint-full] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<config>] [<raw-dir>]
 
 Run one unattended pipeline cycle — the command the
 launchd job executes every interval. The wrapper is portable Node:
-lockfile → git pull --rebase → wiki-sync (sync → ingest → lint →
-crosslinks → citation wall → verification → commit) → git push. wiki-sync stays
-commit-only; the push happens here and only here.
+lockfile → git pull --rebase → (with --lint-full: wiki-lint --full,
+the weekly quality sweep) → wiki-sync (sync → ingest → lint →
+crosslinks → citation wall → verification → commit) → git push.
+wiki-sync stays commit-only; the push happens here and only here.
 
+  --lint-full         Run the full-lint sweep before the cycle
+                     : wiki-lint --full — every page,
+                      the complete check list — then the ordinary
+                      wiki-sync flow (verification, commit, publish;
+                      ingest usually a no-op). The sweep runs under
+                      the same run lock: a concurrent 30-minute cycle
+                      makes this firing refuse loud naming the holder,
+                      and vice versa. Registered weekly by
+                      setup-schedule --calendar (Sundays 03:00 by
+                      default); run it by hand for one sweep now.
   --settings <path>  Forwarded to wiki-sync. Default: the repo's
                      settings.yml.
   --outputs <dir>    Forwarded to wiki-sync (ingest digest location).
                      Default: the repo's outputs/.
-  --timeout <secs>   Forwarded to wiki-sync. Default: 1800.
+  --timeout <secs>   Forwarded to wiki-sync. Default: 1800. With
+                     --lint-full, the sweep's own budget defaults to
+                     7200 (two hours — the per-invocation override
+                     the 1800 s default stays) and an
+                     explicit --timeout raises both.
   -h, --help         Print this help and exit; no side effects.
   <config>           Forwarded to wiki-sync. Default: the repo's
                      sync.json.
@@ -505,7 +583,10 @@ Behavior, failure mode by failure mode:
   - wiki-sync failure: the guardrails and verification have already
     reverted the run — the wiki stays at the last good commit, the
     error and digest land in the log, exit 1. The next interval is
-    the recovery (no retry/backoff by design).
+    the recovery (no retry/backoff by design). A --lint-full sweep
+    failure fails the same way: its own guardrails have already
+    handled its edits, the lint-window snapshot stays untouched, and
+    the next firing retries the same audit.
   - Dirty tree: a failed or killed sync leaves its edits uncommitted
     on purpose (the fix surface). The next tick skips its pre-run
     pull — a rebase refuses a dirty tree — so that recovery stays
@@ -572,6 +653,22 @@ function reportOutcome(outcome: CycleOutcome): void {
   }
 }
 
+/** The wrapper's argv shape: the agent-run value flags wiki-sync
+ *  takes, plus the --lint-full boolean only this wrapper owns
+ *  (wiki-sync must reject it — the sweep is a wrapper mode, not a
+ *  cycle stage). */
+export function parseScheduledRunArgs(args: readonly string[]): ParsedCli {
+  return parseArgs(args, {
+    value: ["--settings", "--outputs", "--timeout"],
+    boolean: ["--lint-full"],
+    positionals: {
+      max: 2,
+      error: (_arg, count) =>
+        `expected at most two arguments (<config> and <raw-dir>), got ${count}`,
+    },
+  });
+}
+
 /** scheduled-run entry point. */
 export async function main(
   args: readonly string[] = process.argv.slice(2),
@@ -582,7 +679,7 @@ export async function main(
     return;
   }
 
-  const parsed = parseSyncRunArgs(args);
+  const parsed = parseScheduledRunArgs(args);
 
   if (parsed.error !== undefined) {
     fail(parsed.error);
@@ -617,7 +714,12 @@ export async function main(
     dataRoot,
     repoRoot,
     lockPath: runLockPath(dataRoot),
-    args,
+    // The sweep flag never reaches wiki-sync — it is this wrapper's
+    // mode, not a wiki-sync argument.
+    args: args.filter((arg) => arg !== "--lint-full"),
+    lintFull: parsed.flags.has("--lint-full"),
+    lintFullTimeoutMs: runFlags.timeoutMs ?? DEFAULT_LINT_FULL_TIMEOUT_MS,
+    lintFullSettings: runFlags.settings,
     log: runLog.log,
   });
 

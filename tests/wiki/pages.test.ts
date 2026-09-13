@@ -168,12 +168,16 @@ describe("parsePageFields", () => {
   });
 
   it("returns empty fields for a page without frontmatter", () => {
-    expect(parsePageFields("# Just a page\n")).toEqual({ sources: [] });
+    expect(parsePageFields("# Just a page\n")).toEqual({
+      sources: [],
+      tags: [],
+    });
   });
 
   it("returns empty fields when the frontmatter is never closed", () => {
     expect(parsePageFields("---\norigin: raw/notes/V/a.md\n")).toEqual({
       sources: [],
+      tags: [],
     });
   });
 
@@ -216,20 +220,25 @@ describe("parsePageFields", () => {
   });
 
   it("returns empty fields for empty text", () => {
-    expect(parsePageFields("")).toEqual({ origin: undefined, sources: [] });
+    expect(parsePageFields("")).toEqual({
+      origin: undefined,
+      sources: [],
+      tags: [],
+    });
   });
 
   it("ignores an indented opening fence", () => {
     expect(parsePageFields("  ---\norigin: raw/notes/V/a.md\n---\n")).toEqual({
       origin: undefined,
       sources: [],
+      tags: [],
     });
   });
 
   it("ignores sources-like lines in a body without frontmatter", () => {
     expect(
       parsePageFields('# Not frontmatter\nsources:\n  - "[[A]]"\n'),
-    ).toEqual({ origin: undefined, sources: [] });
+    ).toEqual({ origin: undefined, sources: [], tags: [] });
   });
 
   it("ignores list items that appear before any key", () => {
@@ -250,6 +259,7 @@ describe("parsePageFields", () => {
     expect(parsePageFields("---\norigin:raw/notes/V/a.md\n---\n")).toEqual({
       origin: "raw/notes/V/a.md",
       sources: [],
+      tags: [],
     });
   });
 
@@ -266,13 +276,19 @@ describe("parsePageFields", () => {
       parsePageFields(
         "---\ntitle: T\njust prose\norigin: raw/notes/V/a.md\n---\n",
       ),
-    ).toEqual({ title: "T", origin: "raw/notes/V/a.md", sources: [] });
+    ).toEqual({
+      title: "T",
+      origin: "raw/notes/V/a.md",
+      sources: [],
+      tags: [],
+    });
   });
 
   it("leaves origin unset for an empty value", () => {
     expect(parsePageFields("---\norigin:\n---\n")).toEqual({
       origin: undefined,
       sources: [],
+      tags: [],
     });
   });
 
@@ -320,6 +336,25 @@ describe("parsePageFields", () => {
     expect(
       parsePageFields("---\nsources:\n  - alpha\r\n---\n").sources,
     ).toEqual([]);
+  });
+
+  it("reads a tags list like sources", () => {
+    const fields = parsePageFields('---\ntags:\n  - llm\n  - "rag"\n---\n');
+
+    expect(fields.tags).toEqual(["llm", "rag"]);
+  });
+
+  it("switches list mode off between sources and tags keys", () => {
+    const fields = parsePageFields(
+      '---\nsources:\n  - "[[A]]"\ntags:\n  - llm\n---\n',
+    );
+
+    expect(fields.sources).toEqual(["[[A]]"]);
+    expect(fields.tags).toEqual(["llm"]);
+  });
+
+  it("leaves tags empty for a page without a tags key", () => {
+    expect(parsePageFields("---\ntitle: T\n---\n").tags).toEqual([]);
   });
 });
 
@@ -485,6 +520,7 @@ describe("readPageFields", () => {
     await expect(readPageFields("/no/such/page.md")).resolves.toEqual({
       origin: undefined,
       sources: [],
+      tags: [],
     });
   });
 

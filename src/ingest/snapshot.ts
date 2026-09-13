@@ -82,6 +82,30 @@ export async function readSnapshot(
 
 export const SNAPSHOT_FILENAME = "last-ingested-manifest.json";
 
+/** Keep the lint-window snapshot out of the data repo's history
+ *  (issue #359): like the manifest snapshot, it is per-instance
+ *  state — a commit or clean must never take it. Appends the ignore
+ *  entry when the data repo's .gitignore lacks it. */
+export async function ensureLintWindowIgnored(
+  dataRoot: string,
+  onProgress: (message: string) => void,
+): Promise<void> {
+  const entry = "outputs/lint-window.json";
+
+  if (
+    await appendGitignoreEntry(
+      dataRoot,
+      entry,
+      [entry],
+      "# lint window snapshot: per-instance state, never committed (issue #359)",
+    )
+  ) {
+    onProgress(
+      `wiki-sync: ignoring ${entry} in the data repo (${join(dataRoot, ".gitignore")}) so no commit or clean can take the lint window`,
+    );
+  }
+}
+
 /** Append `entry` under `comment` to the data repo's .gitignore;
  *  false when an accepted form of the entry is already present.
  *  Shared by the snapshot and dashboard ignore guards. */

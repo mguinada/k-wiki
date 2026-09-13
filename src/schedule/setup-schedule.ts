@@ -6,14 +6,19 @@
  * follow-up issues — they fail loud, and the platform switch keeps
  * them additive. `--print` emits the artifact without installing.
  *
- * The plist runs `node bin/scheduled-run` with absolute paths, an
- * explicit HOME, and a minimal PATH — no interactive shell env is
- * assumed; the wrapper builds the rest (see scheduled-run.ts). The
- * trigger is a fixed interval (`StartInterval`, default 30 minutes,
- * issue #14 decision 1); launchd coalesces missed intervals — one run
- * at wake, never a pile-up — and `RunAtLoad` makes the
- * first-run-after-boot deterministic. Re-running with a new
- * `--interval` replaces the registration.
+ * Two independent registrations (issue #359): the default interval
+ * job (Label com.kwiki.scheduled-run, `StartInterval`, default 30
+ * minutes, issue #14 decision 1) and — with `--calendar` — the
+ * weekly full-lint sweep (Label com.kwiki.scheduled-lint,
+ * `StartCalendarInterval`, default Sundays 03:00, running
+ * `bin/scheduled-run --lint-full`). Each is installed, printed, and
+ * removed by its own invocation; neither command touches the other's
+ * plist. The plists run `node bin/scheduled-run` with absolute paths,
+ * an explicit HOME, and a minimal PATH — no interactive shell env is
+ * assumed; the wrapper builds the rest (see scheduled-run.ts).
+ * launchd coalesces missed fires — one run at wake, never a pile-up.
+ * Re-running with a new `--interval` or `--weekly-at` replaces the
+ * registration.
  */
 
 import { execFile } from "node:child_process";
@@ -30,8 +35,17 @@ import { parseArgs } from "../cli/shell.ts";
 /** The fixed launchd label (reverse-domain; rename = reinstall). */
 export const LAUNCHD_LABEL = "com.kwiki.scheduled-run";
 
+/** The weekly full-sweep label (issue #359): a second registration,
+ *  installed and removed independently of the interval job. */
+export const LINT_LAUNCHD_LABEL = "com.kwiki.scheduled-lint";
+
 /** The agreed default: 30 minutes (issue #14 decision 1). */
 export const DEFAULT_INTERVAL_SECONDS = 1800;
+
+/** The sweep's default trigger: Sundays 03:00 (issue #359). launchd,
+ *  not cron, deliberately: launchd coalesces missed calendar fires
+ *  into one run at wake; cron silently skips them. */
+export const DEFAULT_WEEKLY_AT = "sun-03:00";
 
 const run = promisify(execFile);
 
@@ -61,6 +75,50 @@ export function parseIntervalDuration(text: string): number | undefined {
 /** The plist path for the label under the given home. */
 export function plistPath(home: string): string {
   return join(home, "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`);
+}
+
+/** The weekly sweep's plist path under the given home. */
+export function lintPlistPath(home: string): string {
+  return join(home, "Library", "LaunchAgents", `${LINT_LAUNCHD_LABEL}.plist`);
+}
+
+/** The weekday names `--weekly-at` accepts, in launchd's numbering:
+ *  0 Sunday … 6 Saturday. */
+const WEEKDAYS: Readonly<Record<string, number>> = {
+  sun: 0,
+  mon: 1,
+  tue: 2,
+  wed: 3,
+  thu: 4,
+  fri: 5,
+  sat: 6,
+};
+
+/** A calendar trigger: launchd `StartCalendarInterval` fields. */
+export interface WeeklyAt {
+  readonly weekday: number;
+  readonly hour: number;
+  readonly minute: number;
+}
+
+/** Parse a `--weekly-at` value like `sun-03:00` into its calendar
+ *  fields; undefined when the text is not `<weekday>-<HH:MM>`. */
+export function parseWeeklyAt(text: string): WeeklyAt | undefined {
+  const match = /^([a-z]{3})-(\d{2}):(\d{2})$/.exec(text.trim().toLowerCase());
+  const weekday = match === null ? undefined : WEEKDAYS[match[1] ?? ""];
+
+  if (match === null || weekday === undefined) {
+    return undefined;
+  }
+
+  const hour = Number(match[2]);
+  const minute = Number(match[3]);
+
+  if (hour > 23 || minute > 59) {
+    return undefined;
+  }
+
+  return { weekday, hour, minute };
 }
 
 /** Escape XML text content — the interpolated paths come from the
@@ -115,6 +173,57 @@ export function launchdPlist(options: {
 `;
 }
 
+/** The launchd plist for the weekly full sweep (issue #359): the
+ *  same shape as the interval registration with a
+ *  `StartCalendarInterval` trigger and the `--lint-full` argument.
+ *  launchd's calendar semantics coalesce missed fires into one run at
+ *  wake — the property a weekly job on a sleeping laptop needs. */
+export function launchdCalendarPlist(options: {
+  readonly nodePath: string;
+  readonly scriptPath: string;
+  readonly weekly: WeeklyAt;
+  readonly home: string;
+  readonly logDir: string;
+}): string {
+  const { home, logDir, nodePath, scriptPath, weekly } = options;
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>${LINT_LAUNCHD_LABEL}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>${escapeXmlText(nodePath)}</string>
+        <string>${escapeXmlText(scriptPath)}</string>
+        <string>--lint-full</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key>
+        <integer>${weekly.weekday}</integer>
+        <key>Hour</key>
+        <integer>${weekly.hour}</integer>
+        <key>Minute</key>
+        <integer>${weekly.minute}</integer>
+    </dict>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>${escapeXmlText(home)}</string>
+        <key>PATH</key>
+        <string>/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>${escapeXmlText(join(logDir, "launchd-lint-stdout.log"))}</string>
+    <key>StandardErrorPath</key>
+    <string>${escapeXmlText(join(logDir, "launchd-lint-stderr.log"))}</string>
+</dict>
+</plist>
+`;
+}
+
 /** The loud refusal for an OS without a scheduler backend — the
  *  follow-up issues make the backends additive (issue #14). */
 export function schedulerUnsupportedError(platform: string): string {
@@ -137,6 +246,21 @@ function logDirFor(home: string): string {
 /** The launchctl domain for this user's GUI session. */
 function guiDomain(): string {
   return `gui/${process.getuid?.() ?? 501}`;
+}
+
+/** The weekday name of launchd's 0–6 numbering (0 = Sunday). */
+function weekdayName(weekday: number): string {
+  return (
+    [
+      "Sunday",
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday",
+    ][weekday] ?? String(weekday)
+  );
 }
 
 /** The node path pinned into the plist (issue #216): the verbatim
@@ -162,30 +286,44 @@ async function launchctl(args: readonly string[]): Promise<void> {
 }
 
 /** Help text: every switch and default (AGENTS.md CLI rule). */
-const HELP = `Usage: setup-schedule [-h | --help] [--interval <duration>] [--print] [--uninstall]
+const HELP = `Usage: setup-schedule [-h | --help] [--calendar [--weekly-at <day-HH:MM>]] [--interval <duration>] [--print] [--uninstall]
 
-Register the k-wiki pipeline with the OS scheduler. The
-scheduled command is node bin/scheduled-run — lockfile, git pull
---rebase, wiki-sync, git push — run unattended on a fixed interval.
-macOS only today: the source vault lives in iCloud, so only macOS can
-run the pipeline; other OSs host read-only clones that need no
-scheduler. Linux (systemd timer) and Windows (Task Scheduler)
-backends are follow-up issues and fail loud here.
+Register the k-wiki pipeline with the OS scheduler. Two independent
+registrations: the fixed-interval cycle (default) and —
+with --calendar — the weekly full-lint sweep. The scheduled command
+is node bin/scheduled-run — lockfile, git pull --rebase, wiki-sync,
+git push; the calendar registration adds --lint-full (wiki-lint
+--full first). macOS only today: the source vault lives in iCloud, so
+only macOS can run the pipeline; other OSs host read-only clones
+that need no scheduler. Linux (systemd timer) and Windows (Task
+Scheduler) backends are follow-up issues and fail loud here.
 
-  --interval <duration>  Minutes between runs, e.g. --interval
-                         15minutes (also 45seconds, 1hour, 2hours).
-                         Default: 30minutes (launchd StartInterval
-                         1800). Re-running with a new interval
-                         replaces the registration.
+  --calendar            Manage the weekly full-sweep registration
+                         (Label ${LINT_LAUNCHD_LABEL}) instead of the
+                         interval job: installs, prints, or removes
+                         only that plist. The interval registration is
+                         untouched — each is managed by its own
+                         command.
+  --weekly-at <day-HH:MM>  The sweep's calendar trigger, e.g.
+                         sun-03:00 (Sundays 03:00 — the default) or
+                         sat-04:30. Weekday names: sun mon tue wed
+                         thu fri sat. Only with --calendar;
+                         re-running replaces the registration.
+  --interval <duration>  Minutes between runs (interval registration
+                         only), e.g. --interval 15minutes (also
+                         45seconds, 1hour, 2hours). Default: 30minutes
+                         (launchd StartInterval 1800). Re-running with
+                         a new interval replaces the registration.
   --print                Print the macOS launchd plist to stdout
                          without installing or loading anything —
                          works on every OS, for inspection where
                          auto-install lacks permissions.
-  --uninstall            Remove the registration: bootout the launchd
-                         job and delete its plist.
+  --uninstall            Remove the registration this command
+                         addresses: boot out the launchd job and
+                         delete its plist.
   -h, --help             Print this help and exit; no side effects.
 
-What install does (darwin):
+What install does (darwin, interval registration):
   1. builds the plist (Label ${LAUNCHD_LABEL}, StartInterval, RunAtLoad,
      absolute node + script paths — the node path is the invocation
      path when absolute and existing (stable across Homebrew
@@ -195,14 +333,26 @@ What install does (darwin):
   3. writes it to ~/Library/LaunchAgents/${LAUNCHD_LABEL}.plist;
   4. boots it in and verifies with launchctl print.
 
-The job then runs once at load (boot/login) and every interval; a
-sleep coalesces missed intervals into one run at wake. Nothing is
-written outside the plist file and the launchd log captures.
+What install does (darwin, --calendar):
+  the same steps for Label ${LINT_LAUNCHD_LABEL} with a
+  StartCalendarInterval trigger (default sun-03:00), running
+  bin/scheduled-run --lint-full — the weekly wiki-lint --full sweep
+  under the shared run lock: a concurrent 30-minute cycle makes the
+  sweep skip loud naming the holder, and vice versa.
+
+The interval job then runs once at load (boot/login) and every
+interval; the calendar job runs at its weekly time. A sleep
+coalesces missed fires into one run at wake — launchd, not cron,
+  deliberately: cron silently skips missed fires; wrong for a weekly
+job on a laptop closed at 03:00. Nothing is written outside the
+plist files and the launchd log captures.
 
 Exits 0 on success, 1 on refusal (unsupported OS) or failure.`;
 
 interface ParsedArgs {
   readonly interval: number;
+  readonly calendar: boolean;
+  readonly weeklyAt: WeeklyAt;
   readonly print: boolean;
   readonly uninstall: boolean;
   readonly error: string | undefined;
@@ -212,6 +362,8 @@ interface ParsedArgs {
 function usageError(message: string): ParsedArgs {
   return {
     interval: DEFAULT_INTERVAL_SECONDS,
+    calendar: false,
+    weeklyAt: parseWeeklyAt(DEFAULT_WEEKLY_AT) as WeeklyAt,
     print: false,
     uninstall: false,
     error: message,
@@ -221,18 +373,40 @@ function usageError(message: string): ParsedArgs {
 /** The installer's parsed args; the shell parses, this validates. */
 export function parseScheduleArgs(args: readonly string[]): ParsedArgs {
   const parsed = parseArgs(args, {
-    value: ["--interval"],
-    boolean: ["--print", "--uninstall"],
+    value: ["--interval", "--weekly-at"],
+    boolean: ["--print", "--uninstall", "--calendar"],
     positionals: {
       max: 0,
       error: (arg) =>
         `unexpected argument ${JSON.stringify(arg)} — setup-schedule takes no positionals`,
     },
   });
-  const resolved =
-    parsed.error === undefined
-      ? resolveInterval(parsed.values)
-      : { error: parsed.error };
+
+  if (parsed.error !== undefined) {
+    return usageError(parsed.error);
+  }
+
+  const calendar = parsed.flags.has("--calendar");
+  const weeklyText = parsed.values.get("--weekly-at");
+
+  if (weeklyText !== undefined && !calendar) {
+    return usageError(
+      "--weekly-at needs --calendar — it configures the weekly sweep registration",
+    );
+  }
+
+  const weeklyAt =
+    weeklyText === undefined
+      ? parseWeeklyAt(DEFAULT_WEEKLY_AT)
+      : parseWeeklyAt(weeklyText);
+
+  if (weeklyAt === undefined) {
+    return usageError(
+      `invalid --weekly-at value ${JSON.stringify(weeklyText)} — use <weekday>-<HH:MM> with weekday sun|mon|tue|wed|thu|fri|sat (e.g. sun-03:00)`,
+    );
+  }
+
+  const resolved = resolveInterval(parsed.values);
 
   if (typeof resolved !== "number") {
     return usageError(resolved.error);
@@ -240,6 +414,8 @@ export function parseScheduleArgs(args: readonly string[]): ParsedArgs {
 
   return {
     interval: resolved,
+    calendar,
+    weeklyAt,
     print: parsed.flags.has("--print"),
     uninstall: parsed.flags.has("--uninstall"),
     error: undefined,
@@ -273,6 +449,97 @@ function resolveInterval(
 /** setup-schedule entry point. `runLaunchctl` and `home` are
  *  injectable so tests can record the registration commands and write
  *  the plist into a temp dir instead of touching operator state. */
+/** One registration this invocation manages: its label, plist file,
+ *  and plist text. With `--calendar` the weekly sweep; without, the
+ *  interval cycle. Each is installed, printed, and removed by its
+ *  own command — neither touches the other's plist (issue #359). */
+interface Registration {
+  readonly label: string;
+  readonly target: string;
+  readonly plist: string;
+}
+
+/** The registration the parsed args address. */
+function registrationFor(parsed: ParsedArgs, home: string): Registration {
+  const nodePath = stableNodePath(process.argv0, process.execPath);
+  const scriptPath = join(repoRoot, "bin", "scheduled-run");
+
+  if (parsed.calendar) {
+    return {
+      label: LINT_LAUNCHD_LABEL,
+      target: lintPlistPath(home),
+      plist: launchdCalendarPlist({
+        nodePath,
+        scriptPath,
+        weekly: parsed.weeklyAt,
+        home,
+        logDir: logDirFor(home),
+      }),
+    };
+  }
+
+  return {
+    label: LAUNCHD_LABEL,
+    target: plistPath(home),
+    plist: launchdPlist({
+      nodePath,
+      scriptPath,
+      intervalSeconds: parsed.interval,
+      home,
+      logDir: logDirFor(home),
+    }),
+  };
+}
+
+/** Install (or, with --uninstall, remove) the registration through
+ *  launchctl: replace any previous registration of the label, write
+ *  the plist, bootstrap it, and verify it answers print. */
+async function installRegistration(
+  parsed: ParsedArgs,
+  registration: Registration,
+  runLaunchctl: (args: readonly string[]) => Promise<void>,
+): Promise<void> {
+  const { label, target } = registration;
+
+  if (parsed.uninstall) {
+    await runLaunchctl(["bootout", guiDomain(), target]).catch(() => {});
+    await unlink(target).catch(() => {});
+    console.log(
+      `setup-schedule: uninstalled — ${target} removed and booted out`,
+    );
+
+    return;
+  }
+
+  // Replace any previous registration first: a re-run with a new
+  // --interval or --weekly-at must update, not duplicate.
+  await runLaunchctl(["bootout", guiDomain(), target]).catch(() => {});
+
+  await mkdir(dirname(target), { recursive: true });
+  await writeFile(target, registration.plist, { mode: 0o644 });
+  await runLaunchctl(["bootstrap", guiDomain(), target]);
+
+  // Verify from the same clean launchd view the job will run in —
+  // a loaded job answers print.
+  await runLaunchctl(["print", `${guiDomain()}/${label}`]);
+}
+
+/** The installed-registration success line. */
+function installedMessage(
+  parsed: ParsedArgs,
+  registration: Registration,
+  home: string,
+): string {
+  if (parsed.calendar) {
+    const { weekday, hour, minute } = parsed.weeklyAt;
+    const clock = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+
+    return `setup-schedule: installed — ${registration.target} (weekly ${weekdayName(weekday)} ${clock}, bin/scheduled-run --lint-full); logs in ${logDirFor(home)}`;
+  }
+
+  return `setup-schedule: installed — ${registration.target} (every ${parsed.interval}s, RunAtLoad); logs in ${logDirFor(home)}`;
+}
+
 export async function main(
   argv: readonly string[] = process.argv.slice(2),
   platform: NodeJS.Platform = process.platform,
@@ -293,16 +560,10 @@ export async function main(
     return;
   }
 
-  const plist = launchdPlist({
-    nodePath: stableNodePath(process.argv0, process.execPath),
-    scriptPath: join(repoRoot, "bin", "scheduled-run"),
-    intervalSeconds: parsed.interval,
-    home,
-    logDir: logDirFor(home),
-  });
+  const registration = registrationFor(parsed, home);
 
   if (parsed.print) {
-    console.log(plist.trimEnd());
+    console.log(registration.plist.trimEnd());
 
     return;
   }
@@ -313,33 +574,9 @@ export async function main(
     return;
   }
 
-  const target = plistPath(home);
+  await installRegistration(parsed, registration, runLaunchctl);
 
-  if (parsed.uninstall) {
-    await runLaunchctl(["bootout", guiDomain(), target]).catch(() => {});
-    await unlink(target).catch(() => {});
-    console.log(
-      `setup-schedule: uninstalled — ${target} removed and booted out`,
-    );
-
-    return;
-  }
-
-  // Replace any previous registration first: a re-run with a new
-  // --interval must update, not duplicate (issue #14 scope).
-  await runLaunchctl(["bootout", guiDomain(), target]).catch(() => {});
-
-  await mkdir(dirname(target), { recursive: true });
-  await writeFile(target, plist, { mode: 0o644 });
-  await runLaunchctl(["bootstrap", guiDomain(), target]);
-
-  // Verify from the same clean launchd view the job will run in —
-  // a loaded job answers print.
-  await runLaunchctl(["print", `${guiDomain()}/${LAUNCHD_LABEL}`]);
-
-  console.log(
-    `setup-schedule: installed — ${target} (every ${parsed.interval}s, RunAtLoad); logs in ${logDirFor(home)}`,
-  );
+  console.log(installedMessage(parsed, registration, home));
 }
 
 /* v8 ignore next: covered only under direct `node src/schedule/setup-schedule.ts` runs */

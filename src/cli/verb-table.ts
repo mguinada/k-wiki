@@ -26,6 +26,7 @@ import { main as checkFidelity } from "../../scripts/check-fidelity.ts";
 import { main as checkLinks } from "../../scripts/check-links.ts";
 import { main as checkProvenance } from "../../scripts/check-provenance.ts";
 import { main as linkSources } from "../../scripts/link-sources.ts";
+import { main as lintWorklists } from "../../scripts/lint-worklists.ts";
 import { main as openOrigin } from "../../scripts/open-origin.ts";
 import { main as dashboard } from "../dashboard/generate.ts";
 import { main as checkRawCli } from "../health/check-raw.ts";
@@ -270,6 +271,17 @@ export function verbTable(): readonly VerbSpec[] {
         "namespace: links, embeds, sources, stamps",
       ],
       main: checkCitations,
+    },
+    {
+      name: "lint-worklists",
+      klass: "operator",
+      tier: "libexec",
+      wiki: false,
+      lines: [
+        "the deterministic lint pre-pass: orphan, single-source,",
+        "frontmatter, tag, index, duplicate-title candidates",
+      ],
+      main: lintWorklists,
     },
     {
       name: "check-provenance",

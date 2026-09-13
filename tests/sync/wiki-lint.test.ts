@@ -106,6 +106,7 @@ describe("lintFlags", () => {
     expect(flags).toEqual({
       settings: "s.yml",
       timeoutMs: 5000,
+      full: false,
       rawDir: "raw",
       wiki: "eng",
     });
@@ -118,6 +119,7 @@ describe("lintFlags", () => {
     expect(flags).toEqual({
       settings: undefined,
       timeoutMs: undefined,
+      full: false,
       rawDir: undefined,
       wiki: undefined,
     });
@@ -154,7 +156,9 @@ describe("wiki-lint CLI", () => {
       repo.rawDir,
     ]);
 
-    expect(out).toContain(`# wiki-lint digest\n\n- report: ${repo.reportPath}`);
+    expect(out).toContain(
+      `# wiki-lint digest\n\n- audit: full audit (every page)\n- report: ${repo.reportPath}`,
+    );
   });
 
   it("re-labels the stage's progress lines with the door's name", async () => {

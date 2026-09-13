@@ -1,7 +1,7 @@
 /**
  * The wiki-lint CLI: the lint stage's standalone door. The run
  * itself — the prompt, the guardrails, the auto-revert — is
- * runLintStage from wiki-sync.ts, invoked unchanged; this module
+ * runLintStage from lint-stage.ts, invoked unchanged; this module
  * only binds it to argv and renders its result. It exists for the
  * runs the cycle cannot make: a lint that timed out mid-cycle (its
  * partial, guardrail-passed edits stay; the audit never finished)
@@ -27,20 +27,33 @@ import {
   parseArgs,
 } from "../cli/shell.ts";
 import { resolveWikiInstance, wikiArgError } from "./instance.ts";
-import { type LintResult, runLintStage } from "./wiki-sync.ts";
+import { type LintResult, runLintStage } from "./lint-stage.ts";
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
-const HELP = `Usage: wiki-lint [-h | --help] [--wiki, -w <name>] [--settings <path>] [--timeout <secs>] [<raw-dir>]
+const HELP = `Usage: wiki-lint [-h | --help] [--full] [--wiki, -w <name>] [--settings <path>] [--timeout <secs>] [<raw-dir>]
 
-Run the quality-lint agent (the audit prompt prompts/lint.md) over
-the data repo's wiki, alone — no sync, no ingest, no commit. The
-lint stage of the wiki-sync cycle, as a standalone command: same
-prompt, same agent settings, same post-run guardrails and
-auto-revert. Use it when the cycle's lint timed out (its partial
-edits stay in the working tree; the audit never finished) or when
-the cycle skipped lint (lint runs only after an ingest).
+Run the quality-lint agent over the data repo's wiki, alone — no
+sync, no ingest, no commit. The lint stage of the wiki-sync cycle,
+as a standalone command: same agent settings, same post-run
+guardrails and auto-revert. Use it when the cycle's lint timed out
+(its partial edits stay in the working tree; the audit never
+finished) or when the cycle skipped lint (lint runs only after an
+ingest).
+
+Windowed by default: with a lint-window snapshot from a
+previous successful lint, the audit covers only the pages changed
+since plus their reverse-link neighbors (prompts/lint-window.md); a
+missing snapshot means a first run and audits everything
+(prompts/lint.md). The deterministic worklists (orphan,
+single-source, frontmatter, tag, index, duplicate-title candidates)
+ride in the prompt — the agent judges, never scans.
 
 Switches and arguments:
+  --full             Audit every page (prompts/lint.md, the complete
+                     check list including the global report-only
+                     checks), whatever the snapshot says; the snapshot
+                     still advances on success. Default: absent —
+                     windowed when a snapshot exists, full otherwise.
   --wiki, -w <name>  Select the wiki instance to lint: resolved
                      through the checkout's registry, exactly as
                      wiki-ingest resolves it. Default: absent — the
@@ -54,7 +67,8 @@ Switches and arguments:
   --timeout <secs>   Kill the agent run after this many seconds and
                      fail it. Default: 1800 (30 minutes) — the same
                      budget the cycle gives the stage; raise it for a
-                     heavy audit.
+                     heavy audit (the weekly full sweep runs with
+                     7200 through scheduled-run --lint-full).
   -h, --help         Print this help and exit; no side effects.
   <raw-dir>          raw/ directory; its parent is the data repo the
                      agent runs in. Default: <dataRoot>/raw from the
@@ -63,7 +77,9 @@ Switches and arguments:
 What it writes:
   - wiki pages, by the agent, in the data repo (never raw/);
   - the lint report at outputs/lint-<YYYY-MM-DD>.md in the DATA
-    repo's outputs/ — the same path the cycle's lint stage uses.
+    repo's outputs/ — the same path the cycle's lint stage uses;
+  - the lint-window snapshot outputs/lint-window.json (gitignored,
+    per-instance state) after a completed audit.
 
 After the agent run the same three guardrails as the cycle check the
 data repo: (1) immutability — only wiki/ (never wiki/AGENTS.md),
@@ -72,7 +88,8 @@ outputs/, and raw/manifest.json may change, and HEAD may not move;
 fields; (3) wikilinks — every [[wikilink]] in a changed page
 resolves. A tripped check auto-reverts the data repo to its pre-run
 state and exits 1; an agent timeout still runs the guardrails (the
-partial edits stay when they pass) and exits 1.
+partial edits stay when they pass) and exits 1 — the untouched
+snapshot makes the next run retry the same window.
 
 Nothing commits: the edits stay in the working tree, and the next
 wiki-sync cycle's citation wall, verification, commit, and publish
@@ -81,10 +98,11 @@ status line; piped or NO_COLOR runs get one plain heartbeat line per
 60 seconds. Live progress goes to stderr; the digest goes to stdout.`;
 
 /** The wiki-lint argv spec: the agent-run value flags, the instance
- *  `--wiki` name (short alias -w), and at most one `<raw-dir>`
- *  positional. */
+ *  `--wiki` name (short alias -w), the `--full` boolean, and at most
+ *  one `<raw-dir>` positional. */
 export const LINT_CLI_SPEC = {
   value: ["--settings", "--timeout", "--wiki"],
+  boolean: ["--full"],
   alias: new Map([["-w", "--wiki"]]),
   positionals: {
     max: 1,
@@ -100,6 +118,8 @@ export interface LintCliFlags {
   readonly rawDir: string | undefined;
   /** The --wiki instance name, when passed. */
   readonly wiki: string | undefined;
+  /** Whether --full forced the whole-wiki audit. */
+  readonly full: boolean;
 }
 
 /** The empty flag set an invalid argv derives: nothing runs. */
@@ -109,6 +129,7 @@ function emptyFlags(): LintCliFlags {
     timeoutMs: undefined,
     rawDir: undefined,
     wiki: undefined,
+    full: false,
   };
 }
 
@@ -145,6 +166,7 @@ export function lintFlags(parsed: ParsedCli): {
       timeoutMs: runFlags.timeoutMs,
       rawDir: parsed.positional[0],
       wiki: parsed.values.get("--wiki"),
+      full: parsed.flags.has("--full"),
     },
     error: undefined,
   };
@@ -158,14 +180,27 @@ function doorLabel(message: string): string {
   return message.replaceAll("wiki-sync: lint", "wiki-lint");
 }
 
-/** The stdout digest: where the report landed, then the agent's own
- *  summary. */
+/** The stdout digest: which audit ran, where the report landed, then
+ *  the agent's own summary. */
 function digest(result: LintResult): string {
   const report = result.reportWritten
     ? result.reportPath
     : `${result.reportPath} (not written)`;
+  const audit =
+    result.skipped === "empty-window"
+      ? "window empty — nothing changed since the last audit"
+      : `${result.mode} audit (${pluralAudit(result)})`;
 
-  return `# wiki-lint digest\n\n- report: ${report}\n\n${result.summary}`;
+  return `# wiki-lint digest\n\n- audit: ${audit}\n- report: ${report}\n\n${result.summary}`;
+}
+
+/** The audit's page scope for the digest line. */
+function pluralAudit(result: LintResult): string {
+  const pages = result.windowPages ?? undefined;
+
+  return pages === undefined
+    ? "every page"
+    : `${pages.length} ${pages.length === 1 ? "page" : "pages"}`;
 }
 
 /** Print one CLI usage error red on stderr and set the exit code. */
@@ -198,6 +233,7 @@ async function runCliLint(parsed: {
       promptsDir: join(repoRoot, "prompts"),
       timeoutMs: parsed.flags.timeoutMs,
       heartbeatMs: parsed.heartbeatMs,
+      full: parsed.flags.full,
     });
 
     parsed.sink.end();
@@ -209,7 +245,7 @@ async function runCliLint(parsed: {
   }
 }
 
-/** wiki-lint entry point: `wiki-lint [-h | --help] [--wiki, -w <name>] [--settings <path>] [--timeout <secs>] [<raw-dir>]`. */
+/** wiki-lint entry point: `wiki-lint [-h | --help] [--full] [--wiki, -w <name>] [--settings <path>] [--timeout <secs>] [<raw-dir>]`. */
 export async function main(
   args: readonly string[] = process.argv.slice(2),
 ): Promise<void> {

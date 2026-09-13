@@ -729,7 +729,8 @@ prompt text. Index of the seven operational prompts:
 | `prompts/expunge.md` | A sync removes notes (manifest diff has `removed` entries; §14a) | Re-derive affected pages from their remaining sources |
 | `prompts/rebuild.md` | Rebuilding the wiki from scratch (§15); the expunge threshold (§14a) | Rebuild the whole wiki from `raw/` |
 | `prompts/query.md` | Asking questions against the built wiki (§16) | Synthesize a cited answer; the wrapper saves it for human-gated filing |
-| `prompts/lint.md` | After every ingestion (§17; step 4 of `wiki-sync`) or standalone (`wiki-lint`, §17) | Audit wiki quality; fix mechanical problems, report the rest |
+| `prompts/lint.md` | The whole-wiki audit (§17): a first run with no snapshot, `wiki-lint --full`, or the weekly full sweep | Audit wiki quality; fix mechanical problems, report the rest |
+| `prompts/lint-window.md` | The cycle's lint stage and the default `wiki-lint` run once a snapshot exists (§17) | The same contract, scoped to the windowed audit's explicit page list |
 | `prompts/comparison-harvest.md` | One-shot harvest run manually (trial) | File comparisons where two or more sources explicitly contrast named approaches |
 
 Use this as the core prompt when processing changed sources.
@@ -1028,7 +1029,31 @@ timed out or skipped: the stage's own run unchanged, bound to argv;
 nothing commits — the edits stay in the working tree for the next
 cycle to verify, commit, and publish.
 
-Full text: `prompts/lint.md`.
+Windowed by default (issue #359): a successful audit writes the
+lint-window snapshot — every wiki page's sha256, stamped
+`outputs/lint-window.json`, gitignored per-instance state beside the
+ingest manifest snapshot — and the next audit covers only the pages
+whose hash changed since plus their one-hop reverse-link neighbors
+(cross-page effects stay covered; the audited surface scales with
+change, not with the wiki). Full text of the windowed prompt:
+`prompts/lint-window.md`; full text of the whole-wiki prompt:
+`prompts/lint.md`. A missing snapshot (first run, foreign stamp) or
+`wiki-lint --full` audits everything; a failed or timed-out run
+leaves the snapshot untouched, so the next run retries the same
+window, and a timed-out run's guardrail-passed partial edits re-enter
+it through their changed hashes.
+
+The deterministic pre-pass (issue #359, phase B): one pass over the
+wiki tree produces the worklists the prompt embeds — orphan,
+single-source, sources→non-source, frontmatter, tag, index, and
+duplicate-title candidates, each a candidate with evidence, never a
+verdict (inspectable standalone: `bin/libexec/lint-worklists`). The
+checks the standing gates own every cycle — broken wikilinks
+guardrail 3 + check-links, cross-wiki targets, citation fidelity,
+provenance, the sandbox wall — are no LLM checks at all: no
+duplication between the agent and the gates. The global report-only
+checks (missing comparisons, unfiled multi-source concepts) live in
+the full prompt — the weekly sweep's business.
 
 Intent: audit the wiki for quality problems — fix the clear mechanical
 ones automatically, report the ambiguous ones instead of guessing,
@@ -1082,7 +1107,12 @@ Suggested schedule:
 Start manually until the pipeline is reliable, then schedule it. The
 shipped scheduler is `setup-schedule` + `scheduled-run` (issue #14):
 launchd runs the wrapper on a fixed interval — lockfile, pre-run
-pull --rebase, `wiki-sync`, push. The run lock is shared protocol,
+pull --rebase, `wiki-sync`, push — and, as a second independent
+registration (issue #359), a weekly `StartCalendarInterval` job
+(default Sundays 03:00, `setup-schedule --calendar`) running
+`bin/scheduled-run --lint-full`: `wiki-lint --full` (the whole-wiki
+audit, including the global report-only checks) under the same run
+lock, then the ordinary cycle, push. The run lock is shared protocol,
 not wrapper-private (issue #313): a manual `wiki-sync` acquires the
 same `<dataRoot>/.scheduled-run.lock` for its cycle, so a manual run
 mid-cycle makes the next scheduled firing skip (redundant work;

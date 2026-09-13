@@ -610,14 +610,14 @@ for the rare direct use:
 | Command | Tool | Purpose |
 |---|---|---|
 | `bin/k-wiki init-data-repo [--second-brain] [--meta] [<sync.json>]` | data repo seeder | Create and seed the data repo at `sync.json`'s `dataRoot`: git init, copy the `raw/`+`wiki/` skeleton from the code repo, write the standing `.gitignore` (Obsidian UI state, ingest snapshot), first commit; idempotent; `--second-brain` also writes the `.second-brain` identity marker ([§5](#5-the-second-brain)); `--meta` seeds the meta contract (`wiki/AGENTS.meta.md`) as the data repo's `wiki/AGENTS.md` ([§9](#9-the-meta-wiki-a-repository-as-source)) |
-| `bin/k-wiki setup-schedule [-h \| --help] [--interval <duration>] [--print] [--uninstall]` | launchd installer | Register the pipeline with launchd: write `~/Library/LaunchAgents/com.kwiki.scheduled-run.plist` — absolute node + script paths, explicit `HOME`, minimal `PATH`, `StartInterval` (`30minutes` default) + `RunAtLoad` — then bootstrap and verify with `launchctl print`; `--interval` re-registers, `--print` emits the plist without installing (any OS), `--uninstall` boots out and removes it ([details below](#scheduling-the-pipeline-launchd)) |
+| `bin/k-wiki setup-schedule [-h \| --help] [--calendar [--weekly-at <day-HH:MM>]] [--interval <duration>] [--print] [--uninstall]` | launchd installer | Register the pipeline with launchd — two independent registrations, each managed by its own invocation: the default interval job writes `~/Library/LaunchAgents/com.kwiki.scheduled-run.plist` (`StartInterval`, `30minutes` default, `RunAtLoad`); `--calendar` manages the weekly full-lint sweep instead, `~/Library/LaunchAgents/com.kwiki.scheduled-lint.plist` (`StartCalendarInterval`, default Sundays 03:00, `--weekly-at` e.g. `sat-04:30` re-registers, runs `scheduled-run --lint-full`); both build absolute node + script paths, explicit `HOME`, minimal `PATH`, then bootstrap and verify with `launchctl print`; `--print` emits the plist without installing (any OS), `--uninstall` boots out and removes the registration the command addresses ([details below](#scheduling-the-pipeline-launchd)) |
 | `bin/k-wiki setup-meta-sync [-h \| --help] [--print] [--uninstall]` | git-hook installer | Install the meta wiki's post-merge auto-sync git hooks (`post-merge` + `post-rewrite`) into the current checkout's shared hooks dir (`git rev-parse --git-path hooks`), baking absolute paths — canonical checkout, node binary, `settings-meta.yml` + `sync-meta.json`, `<dataRoot>/raw`, and the fire log; a merge or rebase-pull landing on `main` in the canonical checkout with a clean `git status --porcelain` (untracked included) fires one detached `bin/scheduled-run` cycle, anything else log-and-skips; idempotent, refuses to touch a foreign hook; `--print` emits the hook without a git repo, `--uninstall` removes exactly what it wrote ([details below](#the-meta-wiki-post-merge-auto-sync-git-hooks)) |
-| `bin/k-wiki scheduled-run [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<config>] [<raw-dir>]` | scheduled cycle wrapper | Run one unattended cycle — the command the launchd job executes: O_EXCL lockfile (PID + timestamp, two-hour stale takeover) at `<dataRoot>/.scheduled-run.lock` → `git pull --rebase` → `wiki-sync` (commit-only) → `git push` (one pull --rebase + retry on rejection, then alert); fails loud without an `origin` remote ([details below](#scheduling-the-pipeline-launchd)) |
+| `bin/k-wiki scheduled-run [-h \| --help] [--lint-full] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<config>] [<raw-dir>]` | scheduled cycle wrapper | Run one unattended cycle — the command the launchd job executes: O_EXCL lockfile (PID + timestamp, two-hour stale takeover) at `<dataRoot>/.scheduled-run.lock` → `git pull --rebase` → `wiki-sync` (commit-only) → `git push` (one pull --rebase + retry on rejection, then alert); `--lint-full` runs the weekly full-lint sweep first — `wiki-lint --full` under the same lock (a concurrent 30-minute cycle makes either refuse loud naming the holder), default budget 7200 s (an explicit `--timeout` raises both); fails loud without an `origin` remote ([details below](#scheduling-the-pipeline-launchd)) |
 | `bin/k-wiki dashboard [-h \| --help] [-o \| --open] [<data-repo>]` | KPI dashboard generator | Regenerate the static KPI dashboard: read the data repo's wiki, manifests, and git history — read-only — and write the self-contained `<data-repo>/dashboard.html` (gitignored; opens offline via `file://`) with coverage, structure, activity, and provenance KPIs in dark and light themes; refreshed by every ingest, `-o` also opens it ([above](#the-pipeline)) |
 | `bin/k-wiki sync-vault [--dry-run] [<sync.json>] [<raw-dir>]` | sync CLI | Ingest every note not blocked by the vault's exclusion rule into `raw/notes/` (deterministic, no LLM; [details below](#running-the-sync)) |
 | `bin/k-wiki sync-repo [-h \| --help] [<config>] [<raw-dir>]` | repo sync CLI | Project the allowlisted files of a committed source repository verbatim into `raw/notes/<name>/`, recording the source HEAD commit in the manifest (deterministic, no LLM; the meta-wiki adapter, [§9](#9-the-meta-wiki-a-repository-as-source)) |
 | `bin/k-wiki wiki-ingest [-h \| --help] [--wiki, -w <name>] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--sources <vault/path>] [--note <text>] [<raw-dir>]` | ingest wrapper | Run the wiki agent headless over the sources that changed since the last ingest and write the per-run digest (`--wiki <name>` selects the instance — aliases then `sync-<name>.json` stems, derived paths from the resolved config; [details below](#running-the-wiki-agent-wiki-ingest)) |
-| `bin/k-wiki wiki-lint [-h \| --help] [--wiki, -w <name>] [--settings <path>] [--timeout <secs>] [<raw-dir>]` | lint wrapper | Run the quality-lint agent alone — the cycle's lint stage (same `prompts/lint.md`, same agent settings, same guardrails and auto-revert) as the retry door for a lint the cycle timed out or skipped: nothing commits — the agent's edits and the report (`outputs/lint-<date>.md` in the **data** repo) stay uncommitted for the next cycle to verify, commit, and publish (`--wiki <name>` selects the instance — aliases then `sync-<name>.json` stems, derived paths from the resolved config; default `--timeout 1800`) |
+| `bin/k-wiki wiki-lint [-h \| --help] [--full] [--wiki, -w <name>] [--settings <path>] [--timeout <secs>] [<raw-dir>]` | lint wrapper | Run the quality-lint agent alone — the cycle's lint stage (same agent settings, same guardrails and auto-revert) as the retry door for a lint the cycle timed out or skipped: windowed by default — the pages changed since the last successful lint plus their reverse-link neighbors (`prompts/lint-window.md`; a missing snapshot means a first run and a full audit, `prompts/lint.md`), `--full` forces the whole-wiki audit; the deterministic worklists (orphan, single-source, frontmatter, tag, index, duplicate-title candidates) ride in every prompt; nothing commits — the agent's edits and the report (`outputs/lint-<date>.md` in the **data** repo) stay uncommitted for the next cycle to verify, commit, and publish, and a completed audit advances the gitignored `outputs/lint-window.json` snapshot (a failed or timed-out one leaves it, so the next run retries) (`--wiki <name>` selects the instance — aliases then `sync-<name>.json` stems, derived paths from the resolved config; default `--timeout 1800`) |
 | `bin/k-wiki completion [-h \| --help] [<shell>]` | completion emitter | Emit the zsh completion function for the front door — static shell plumbing, byte-identical on every run (default shell `zsh`, the only one today; an unknown shell is a usage error naming the supported shells): try it now with `source <(k-wiki completion zsh)`, keep it with `k-wiki completion zsh > ~/.zfunc/_k-wiki` plus `fpath`/`compinit` in `~/.zshrc` ([recipe below](#shell-completion-zsh)) |
 
 ### Verification & maintenance (plumbing)
@@ -633,6 +633,7 @@ purpose; curation never hides plumbing:
 | `bin/k-wiki check-links [<wiki-dir>]` | wikilink checker | Check that every `[[wikilink]]` under `wiki/` (default) resolves to an existing page by file name, and every body-text heading anchor (`[[page#Chapter]]`) to a heading in the target page byte-identical to the anchor (frontmatter `sources` citations stay `check-provenance`'s domain; block references and multi-level anchors' parent segments are skipped), skipping external slashed `[[<vault>/<page>]]` cross-wiki targets; the sandbox namespace is scanned too — links *from* sandbox pages are validated exactly like main-page links, and links *into* the sandbox resolve silently (direction violations are `check-citations`' business); exit 0 = all links resolve, exit 1 = one `file:line -> [[link]]` line per broken link |
 | `bin/k-wiki check-crosslinks <wiki-dir> <domain-wiki-dir> [<domain-wiki-dir>…]` | cross-wiki link checker | Check the one-way link discipline between a wiki and its domain wikis: every slashed `[[<vault>/<page>]]` link names a vault of a passed domain wiki (validated against its `raw/manifest.json`, case-insensitive) and resolves to an existing page there, the domain wikis carry no cross-wiki links, and the sandbox namespace carries none either (a slashed link from sandbox notes is a cross-instance leak); exit 0 = discipline holds, exit 1 = one `file:line -> [[link]]` line per problem |
 | `bin/k-wiki check-citations [<wiki-dir>]` | one-way citation wall checker | Check the one-way wall between the wiki and its `wiki/sandbox/` namespace (default: the repo's `wiki/`): main pages never link or embed sandbox pages (embeds count as links), sandbox pages never link sandbox peers, `sources` entries never touch a sandbox page in either direction, sandbox pages never use slashed cross-wiki links, and the `via: agent` stamp lives only inside the sandbox; link resolution itself stays `check-links`' business; exit 0 = wall holds, exit 1 = one `wiki/<path>[:<line>] -> <evidence>` line per violation |
+| `bin/k-wiki lint-worklists [<wiki-dir>]` | deterministic lint pre-pass | Print the candidate lists the lint prompt embeds — orphan pages (no inbound links), single-source pages, `sources` → non-source edges, frontmatter field misses, the tag inventory, pages missing from `index.md`, duplicate-title candidates, dangling index entries — one pass over the wiki tree, every entry a candidate with its evidence, never a verdict; read-only, writes nothing, the sandbox namespace never lists (default: the repo's `wiki/`) |
 | `bin/k-wiki check-provenance [<wiki-dir> [<raw-dir>]]` | dead-provenance checker | Check that every `sources` entry under `wiki/` resolves — a wikilink to an existing `type: source` page, an anchored `[[hub#Chapter]]` entry that lands on a hub heading byte-identical to its anchor, a raw path to an existing `raw/` file that **no hub covers** (a hub-covered path must cite the wikilink; default: the repo's `wiki/` and its sibling `raw/`); exit 0 = coherent, exit 1 = one `wiki/<page> -> …` line per problem (an anchor miss reports `wiki/<page>:<line>`); when `type: source` pages lack `origin`, a yellow warning below the ok summary (exit stays 0; printed only when no dead provenance was found) names the exact `backfill-origin` commands to run, dry run first — the deterministic backstop that catches any purge miss |
 | `bin/k-wiki check-fidelity [<wiki-dir> [<raw-dir>]]` | citation-fidelity checker | Check that every machine-checkable token a `type: source` page quotes in its body — tilde paths, dotted config keys (file extensions and hostnames excluded), long and short CLI flags, `npm run` commands — appears in the page's `origin` file under `raw/` (a prefix of a longer name does not count), and every page's `title` kebab-cases to its file name (`index`, `overview`, `log` exempt; default: the repo's `wiki/` and its sibling `raw/`); exit 0 = faithful, exit 1 = one `wiki/<page> -> …` line per problem — catches fabricated tokens deterministically; relational misquotes (right tokens, wrong containment) stay with the lint prompt and diff review; source pages without `origin` skip quote checking and get the same yellow `backfill-origin` warning as check-provenance |
 | `bin/k-wiki backfill-origin [<wiki-dir> [<raw-dir>]]` | origin backfill | Deterministically write `origin` on every `type: source` page lacking it whose `sources` cites exactly one existing `raw/` path **and** whose title corroborates that note's name, bumping `updated` (default: the repo's `wiki/` and sibling `raw/`; `--date YYYY-MM-DD` overrides the bump date, `--dry-run` previews every pairing without writing); zero/several-path and title-mismatch pages are reported for judgment, never guessed; refuses a dirty wiki tree, appends an audit entry to `wiki/log.md`, idempotent — `git diff` is the review surface |
@@ -1236,10 +1237,19 @@ command exits 0 — a configured crosslink audit and the verification
 checks still run, and their passes are noted in the digest.
 Because the skip keys on the ingest snapshot — which a failed agent
 run leaves untouched — the next cycle retries a failed ingest even
-when sync then reports no changes. Lint gets no such retry: it runs
-only in a cycle whose ingest ran, so after a failed lint the report
-waits for the next cycle with changed sources (or a manual lint run).
-A failure at any stage stops the chain and exits 1; a tripped
+when sync then reports no changes. The lint stage is bounded by
+change the same way: it audits the pages changed since the last
+successful lint plus their one-hop reverse-link neighbors
+(`prompts/lint-window.md`, the deterministic worklists embedded), a
+missing snapshot makes the first run a full audit (`prompts/lint.md`),
+and the gitignored `outputs/lint-window.json` snapshot advances only
+after a completed audit — a failed or timed-out lint retries its
+window next cycle, a timed-out lint's guardrail-passed partial edits
+re-enter through their changed hashes. The global report-only checks
+and a whole-wiki audit live in the weekly sweep
+(`scheduled-run --lint-full`, `wiki-lint --full`; [next
+section](#scheduling-the-pipeline-launchd)). A failure at any stage
+stops the chain and exits 1; a tripped
 guardrail has already reverted its agent run, and a verification
 failure has reverted the lint edits. Switches:
 `--settings <path>`, `--outputs <dir>` (the run digest location;
@@ -1257,10 +1267,16 @@ bin/k-wiki setup-schedule                        # install: every 30 minutes
 bin/k-wiki setup-schedule --interval 15minutes  # re-register with a new interval
 bin/k-wiki setup-schedule --print             # emit the plist, install nothing
 bin/k-wiki setup-schedule --uninstall         # bootout the job and remove the plist
+bin/k-wiki setup-schedule --calendar          # install the weekly full-lint sweep (Sundays 03:00)
+bin/k-wiki setup-schedule --calendar --weekly-at sat-04:30  # re-register at another time
+bin/k-wiki setup-schedule --calendar --print  # emit the sweep's plist, install nothing
+bin/k-wiki setup-schedule --calendar --uninstall  # bootout the sweep and remove its plist
 ```
 
-`setup-schedule` registers the pipeline with launchd:
-the job runs `node bin/scheduled-run` on a fixed interval —
+`setup-schedule` registers the pipeline with launchd — two
+independent registrations, each installed, printed, and removed by
+its own invocation; neither command touches the other's plist. The
+interval job runs `node bin/scheduled-run` on a fixed interval —
 `StartInterval 1800` by default, `RunAtLoad` — from the checkout you
 installed it from, with absolute node + script paths, an explicit
 `HOME`, and a minimal `PATH` (the wrapper builds the rest). The
@@ -1276,7 +1292,7 @@ the launcher (as the switch to extensionless launcher names did),
 re-run `bin/k-wiki setup-schedule` once — until then the installed job
 points at the deleted path and every tick fails into
 `launchd-stderr.log` with `MODULE_NOT_FOUND`, leaving the wiki stale
-with no other alert. The plist
+with no other alert. The interval plist
 lands at `~/Library/LaunchAgents/com.kwiki.scheduled-run.plist` and is
 verified with `launchctl print` before the installer reports success.
 After installing, one manual kick proves the whole path:
@@ -1284,6 +1300,19 @@ After installing, one manual kick proves the whole path:
 ```sh
 launchctl kickstart gui/$(id -u)/com.kwiki.scheduled-run
 ```
+
+The weekly sweep (`--calendar`) is a second registration —
+`com.kwiki.scheduled-lint`, a `StartCalendarInterval` trigger
+(default Sundays 03:00, `--weekly-at <day-HH:MM>` overrides, weekday
+names `sun mon tue wed thu fri sat`) running
+`bin/scheduled-run --lint-full`: `wiki-lint --full` — every page, the
+complete check list — under the same run lock the 30-minute cycle
+uses (a concurrent cycle makes either firing refuse loud naming the
+holder), with a per-invocation 7200 s budget, then the ordinary
+cycle (verification, commit, publish; ingest usually a no-op), push.
+launchd coalesces a missed calendar fire into one run at wake —
+deliberately launchd, not cron: cron silently skips missed fires,
+wrong for a weekly job on a laptop closed at 03:00.
 
 `scheduled-run` wraps the manual cycle with exactly what unattended
 operation needs and nothing else:

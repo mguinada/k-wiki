@@ -46,7 +46,12 @@ const index = process.argv.indexOf("--print");
 const prompt = index === -1 ? undefined : process.argv[index + 1];
 
 async function firstNote(dir) {
-  const entries = await readdir(dir, { withFileTypes: true });
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return undefined;
+  }
 
   for (const entry of entries) {
     if (entry.name.startsWith(".")) {
@@ -207,6 +212,29 @@ function runScheduled(repo: Repo, extraEnv: NodeJS.ProcessEnv = {}) {
   );
 }
 
+/** The weekly full-sweep firing: the same launchd-shaped env, with
+ *  --lint-full so the sweep runs before the cycle. */
+function runLintFull(repo: Repo) {
+  return runCli(
+    SCHEDULED_RUN_SCRIPT,
+    [
+      "--lint-full",
+      "--settings",
+      repo.settingsPath,
+      "--outputs",
+      repo.outputsDir,
+      repo.configPath,
+      join(repo.dataRoot, "raw"),
+    ],
+    {
+      env: {
+        PATH: "/usr/bin:/bin:/usr/sbin:/sbin",
+        KWIKI_SCHEDULED_LOG: join(repo.tmp, "scheduled-run.log"),
+      },
+    },
+  );
+}
+
 function lockPath(repo: Repo): string {
   return join(repo.dataRoot, ".scheduled-run.lock");
 }
@@ -329,5 +357,46 @@ describe("scheduled-run e2e", () => {
     await expect(
       readFile(join(repo.tmp, "scheduled-run.log"), "utf8"),
     ).resolves.toContain("skipping the pre-run pull");
+  });
+});
+
+describe("scheduled-run e2e — lint-full (issue #359)", () => {
+  it("runs the full sweep under the lock, then the cycle, and pushes once", async () => {
+    const repo = await makeRepo();
+    const result = await runLintFull(repo);
+    const log = await readFile(join(repo.tmp, "scheduled-run.log"), "utf8");
+
+    expect(result.code).toBe(0);
+    expect(log).toContain("wiki-lint --full starting (budget 7200s)");
+    expect(log).toContain("wiki-lint --full finished — running the cycle");
+    expect(log).toContain("cycle complete");
+    expect(await upstreamHead(repo)).toMatch(/^wiki-sync:/);
+    await expect(
+      readFile(
+        join(repo.dataRoot, "outputs", "lint-window.json"),
+        "utf8",
+      ),
+    ).resolves.toContain('"snapshotFor"');
+  });
+
+  it("refuses loud naming the holder when a cycle holds the lock", async () => {
+    const repo = await makeRepo();
+
+    await runScheduled(repo);
+
+    const head = await upstreamHead(repo);
+
+    await writeFile(
+      lockPath(repo),
+      `${JSON.stringify({ pid: 4242, takenAt: new Date().toISOString() })}\n`,
+    );
+
+    const result = await runLintFull(repo);
+
+    expect(result.code).toBe(0);
+    expect(result.out).toMatch(
+      /skipped — another run holds the lock \(fresh, in progress since \d{2}:\d{2} \(PID 4242\)\)/,
+    );
+    expect(await upstreamHead(repo)).toBe(head);
   });
 });

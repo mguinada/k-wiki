@@ -18,16 +18,18 @@ import { type RunContextInput, runContext } from "../../src/cli/run-context.ts";
 import { runGit } from "../../src/data/git.ts";
 import type { AgentRunner } from "../../src/ingest/agent-run.ts";
 import { loadSyncConfig } from "../../src/sync/config.ts";
+import {
+  LINT_HEARTBEAT_PREFIX,
+  runLintStage,
+} from "../../src/sync/lint-stage.ts";
 import { serializeManifest } from "../../src/sync/manifest.ts";
 import {
   type CommitResult,
   type CrosslinksResult,
   formatCommitMessage,
   formatFinalDigest,
-  LINT_HEARTBEAT_PREFIX,
   main,
   runCrosslinksStage,
-  runLintStage,
   runVerificationStage,
   runWikiSync,
   stageLine,
@@ -521,10 +523,12 @@ describe("runWikiSync", () => {
     await runWikiSync(optionsFor(h));
     await runWikiSync(optionsFor(h));
 
-    expect(h.invocations).toEqual([
-      "FULL PROMPT",
-      "AUDIT THE WIKI PROMPT\n\nSave the report to `outputs/lint-2026-08-20.md`.\n",
-    ]);
+    expect(h.invocations).toHaveLength(2);
+    expect(h.invocations[0]).toBe("FULL PROMPT");
+    expect(h.invocations[1]).toContain(
+      "AUDIT THE WIKI PROMPT\n\nSave the report to `outputs/lint-2026-08-20.md`.",
+    );
+    expect(h.invocations[1]).toContain("Deterministic worklists");
   });
 
   it("fails the cycle when the ingest agent fails", async () => {
@@ -1292,7 +1296,7 @@ describe("formatFinalDigest", () => {
     }
 
     expect(formatFinalDigest(result)).toContain(
-      "- **Lint:** report `outputs/lint-2026-08-20.md`",
+      "- **Lint:** full audit, report `outputs/lint-2026-08-20.md`",
     );
   });
 
@@ -3373,10 +3377,13 @@ describe("formatFinalDigest sections", () => {
         diff: { vaults: [], empty: true },
       },
       lint: {
+        mode: "full" as const,
+        skipped: undefined,
         reportPath: "outputs/lint-2026-08-20.md",
         reportWritten: true,
         summary: overrides.lintSummary ?? "lint summary body",
         entries: [],
+        windowPages: undefined,
       },
       crosslinks: overrides.crosslinks,
       citations: { pages: 4, sandboxPages: 0 },
@@ -3559,7 +3566,7 @@ describe("formatFinalDigest sections", () => {
     });
 
     expect(digest).toContain(
-      "- **Lint:** report not written (expected `outputs/lint-2026-08-20.md`)",
+      "- **Lint:** full audit, report not written (expected `outputs/lint-2026-08-20.md`)",
     );
   });
 

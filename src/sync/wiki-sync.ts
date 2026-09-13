@@ -67,11 +67,7 @@ import {
   errorMessage,
 } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
-import {
-  AGENT_HEARTBEAT_PREFIX,
-  formatDuration,
-  stderrSink,
-} from "../cli/progress.ts";
+import { AGENT_HEARTBEAT_PREFIX, stderrSink } from "../cli/progress.ts";
 import { type RunContext, runContext } from "../cli/run-context.ts";
 import { pathExists, pluralized, repoRoot } from "../cli/shared.ts";
 import {
@@ -79,16 +75,10 @@ import {
   agentRunFlags,
   parseSyncRunArgs,
 } from "../cli/shell.ts";
-import { parseStatus, runGit, type StatusEntry } from "../data/git.ts";
-import {
-  type AgentRunner,
-  readPrompt,
-  spawnAgent,
-} from "../ingest/agent-run.ts";
+import { parseStatus, runGit } from "../data/git.ts";
+import type { AgentRunner } from "../ingest/agent-run.ts";
 import {
   type AgentSettings,
-  agentArgs,
-  formatAgentInvocation,
   loadAgentSettings,
 } from "../ingest/agent-settings.ts";
 import {
@@ -102,6 +92,7 @@ import {
   type WikiPages,
   wikiPages,
 } from "../ingest/manifest-diff.ts";
+import { ensureLintWindowIgnored } from "../ingest/snapshot.ts";
 import { type IngestResult, runWikiIngest } from "../ingest/wiki-ingest.ts";
 import {
   type CitationWallStageResult,
@@ -126,12 +117,16 @@ import {
   type SourceConfig,
   type SyncConfig,
 } from "./config.ts";
+import {
+  LINT_HEARTBEAT_PREFIX,
+  type LintResult,
+  runLintStage,
+} from "./lint-stage.ts";
 import type {
   DriverOptions,
   RepoSyncReport,
   SyncReport,
 } from "./projection.ts";
-import { toAbsolute } from "./projection.ts";
 import { type PublishResult, runPublishStage } from "./publish.ts";
 import {
   acquireLock,
@@ -142,168 +137,6 @@ import {
 } from "./run-lock.ts";
 import { runRepoSync } from "./sync-repo.ts";
 import { runVaultSync } from "./sync-vault.ts";
-
-/** Liveness line while the lint agent runs (one animated line on a TTY). */
-export const LINT_HEARTBEAT_PREFIX = "wiki-sync: lint agent still running";
-
-/** What the lint stage reports back to the cycle digest. */
-export interface LintResult {
-  /** The data-repo-relative path the prompt told the agent to write. */
-  readonly reportPath: string;
-  /** False when the agent finished without writing the report. */
-  readonly reportWritten: boolean;
-  /** The agent's final report (stdout). */
-  readonly summary: string;
-  /** The post-run status the stage's guardrails produced; the cycle's
-   *  commit summary reuses it instead of spawning git again (B-10:
-   *  no hidden child-process run inside the summary builder). */
-  readonly entries: readonly StatusEntry[];
-}
-
-/** The data-repo-relative lint report path for a run's date. */
-export function lintReportPath(now: () => Date): string {
-  return `outputs/lint-${now().toISOString().slice(0, 10)}.md`;
-}
-
-export interface LintOptions {
-  /** Path to the agent settings file (settings.yml). */
-  readonly settingsPath: string;
-  /** Agent settings when the caller already loaded them — the cycle
-   *  loads once and threads them (R-1, one settings.yml parse per
-   *  run); loaded from `settingsPath` otherwise. */
-  readonly settings?: AgentSettings | undefined;
-  /** The run context: raw dir, data root, wiki dir, environment,
-   *  clock, progress sink — built once at the CLI boundary (issue
-   *  #257). The agent runs in the context's data root. */
-  readonly run: RunContext;
-  /** Directory holding lint.md. */
-  readonly promptsDir: string;
-  /** Agent runner; defaults to the real non-interactive invocation. */
-  readonly runAgent?: AgentRunner | undefined;
-  /** Kill the agent run after this many milliseconds; default 30 min. */
-  readonly timeoutMs?: number | undefined;
-  /** Heartbeat interval while the agent runs; default 60 s. */
-  readonly heartbeatMs?: number | undefined;
-  /** Pre-run state captured by the caller (the wiki-sync cycle
-   *  captures it once so its verification stage can revert to the
-   *  same point); captured here when absent. */
-  readonly pre?: PreRunState | undefined;
-}
-
-/** The lint agent run's outcome: its stdout, or the failure that
- *  must wait for the guardrail check before it escapes. */
-interface LintAgentRun {
-  readonly stdout: string;
-  readonly error: unknown;
-}
-
-/** Invoke the lint agent under its heartbeat line. The run's failure
- *  is captured, not thrown: the guardrails must run first, and a
- *  guardrail failure names the agent error as its cause. */
-async function invokeLintAgent(
-  run: RunContext,
-  options: LintOptions,
-  settings: AgentSettings,
-  args: readonly string[],
-): Promise<LintAgentRun> {
-  const startedAt = run.now().getTime();
-  const heartbeat = setInterval(() => {
-    const elapsed = formatDuration(run.now().getTime() - startedAt);
-
-    run.onProgress(`${LINT_HEARTBEAT_PREFIX} (${elapsed})`);
-  }, options.heartbeatMs ?? 60_000);
-
-  let stdout = "";
-  let error: unknown;
-
-  try {
-    ({ stdout } = await (options.runAgent ?? spawnAgent)(
-      settings.command,
-      args,
-      {
-        cwd: run.dataRoot,
-        env: run.env,
-        timeoutMs: options.timeoutMs,
-      },
-    ));
-  } catch (caught) {
-    error = caught;
-  } finally {
-    clearInterval(heartbeat);
-  }
-
-  if (error === undefined) {
-    run.onProgress("wiki-sync: lint — agent finished");
-  }
-
-  return { stdout, error };
-}
-
-/**
- * One headless lint run (guide §17): invoke the agent with
- * prompts/lint.md in the data repo root, guardrail the result, and
- * auto-revert on a tripped check — the same contract the ingest stage
- * applies to its agent run.
- */
-export async function runLintStage(options: LintOptions): Promise<LintResult> {
-  const { run } = options;
-  const { env, now, onProgress, dataRoot } = run;
-  const settings =
-    options.settings ??
-    (await loadAgentSettings(options.settingsPath, { onProgress }));
-
-  onProgress("wiki-sync: lint — reading prompts/lint.md");
-
-  const reportPath = lintReportPath(now);
-  const promptText = (
-    await readPrompt(join(options.promptsDir, "lint.md"))
-  ).replaceAll("outputs/lint-<YYYY-MM-DD>.md", reportPath);
-  const args = agentArgs(settings, promptText);
-  const pre = options.pre ?? (await capturePreRunState(dataRoot, env));
-
-  onProgress(
-    `wiki-sync: lint — invoking agent: ${formatAgentInvocation(settings)}`,
-  );
-
-  const { stdout, error: agentError } = await invokeLintAgent(
-    run,
-    options,
-    settings,
-    args,
-  );
-
-  const post = await runGuardrails(dataRoot, env, pre);
-
-  if (post.failure !== undefined) {
-    const failure = post.failure;
-
-    onProgress(
-      `wiki-sync: lint guardrail check ${failure.check} (${failure.name}) failed — reverting to ${pre.commit.slice(0, 8)}`,
-    );
-
-    await revertToPreRun(dataRoot, env, pre, post.entries);
-
-    throw new Error(
-      `lint guardrail check ${failure.check} (${failure.name}) failed; reverted to ${pre.commit.slice(0, 8)} — ${failure.problems.join("; ")}`,
-      { cause: agentError },
-    );
-  }
-
-  onProgress("wiki-sync: lint — guardrails passed");
-
-  if (agentError !== undefined) {
-    throw agentError;
-  }
-
-  const reportWritten = await pathExists(toAbsolute(dataRoot, reportPath));
-
-  return {
-    reportPath,
-    reportWritten,
-    summary: stdout,
-    entries: post.entries,
-  };
-}
 
 /** What the crosslink stage reports back to the cycle digest. */
 export interface CrosslinksResult {
@@ -907,6 +740,12 @@ async function runCycleStages(
     heartbeatMs: options.heartbeatMs,
   });
 
+  // The lint-window ignore entry must exist before this capture:
+  // the snapshot hygiene write would otherwise read as the lint
+  // run's own change and trip guardrail 1 (the same ordering the
+  // ingest stage's housekeeping uses for its snapshot entry).
+  await ensureLintWindowIgnored(dataRoot, onProgress);
+
   // The verification stage's revert target: everything the ingest
   // stage left, before the lint agent runs.
   const preLint = await capturePreRunState(dataRoot, env);
@@ -1007,6 +846,27 @@ function nothingToDoLine(result: WikiSyncResult): string | undefined {
   return `wiki-sync: nothing to do — ${ingest.reason}${audit}; fidelity + provenance ok\n`;
 }
 
+/** The digest's lint lines: skipped (no ingest), window-empty, or
+ *  the completed audit with its scope and report. */
+function lintLines(lint: LintResult | undefined): string[] {
+  if (lint === undefined) {
+    return ["- **Lint:** skipped — no ingest ran"];
+  }
+
+  if (lint.skipped === "empty-window") {
+    return ["- **Lint:** window empty — nothing changed since the last audit"];
+  }
+
+  const scope =
+    lint.windowPages === undefined
+      ? "full audit"
+      : `window audit (${pluralized(lint.windowPages.length, "page")})`;
+
+  return [
+    `- **Lint:** ${scope}, ${lint.reportWritten ? `report \`${lint.reportPath}\`` : `report not written (expected \`${lint.reportPath}\`)`} — summary below`,
+  ];
+}
+
 /**
  * The final printed digest: counts first, details after — the sync
  * summary, the lint summary, the commit hash, then the full ingest
@@ -1033,13 +893,7 @@ export function formatFinalDigest(result: WikiSyncResult): string {
     lines.push(`- **Ingest:** skipped — ${ingest.reason}`);
   }
 
-  if (lint === undefined) {
-    lines.push("- **Lint:** skipped — no ingest ran");
-  } else {
-    lines.push(
-      `- **Lint:** ${lint.reportWritten ? `report \`${lint.reportPath}\`` : `report not written (expected \`${lint.reportPath}\`)`} — summary below`,
-    );
-  }
+  lines.push(...lintLines(lint));
 
   if (crosslinks !== undefined) {
     lines.push(`- **Crosslinks:** ok — ${crosslinksLine(crosslinks)}`);
@@ -1066,7 +920,7 @@ export function formatFinalDigest(result: WikiSyncResult): string {
     );
   }
 
-  if (lint !== undefined) {
+  if (lint !== undefined && lint.skipped === undefined) {
     lines.push("", "## Lint summary", "", lint.summary.trimEnd());
   }
 
@@ -1082,7 +936,10 @@ const HELP = `Usage: wiki-sync [-h | --help] [--settings <path>] [--outputs <dir
 
 Run the whole cycle in one command:
 sync (sync-vault for vault sources, sync-repo for repo sources) →
-wiki-ingest → headless lint (prompts/lint.md) →
+wiki-ingest → headless lint (windowed by default:
+prompts/lint-window.md over the pages changed since the last audit
+plus their reverse-link neighbors; a missing snapshot or a first run
+audits everything, prompts/lint.md) →
 crosslink audit (configured second brains) → citation wall
 (one-way sandbox check — rogue edges are path-scoped-reverted,
 never committed) → verification (check-fidelity +
@@ -1135,9 +992,18 @@ What it does, stage by stage:
   2. ingest — wiki-ingest: run the wiki agent over the changed
      sources, guardrail-check it (auto-revert on failure), and write
      the digest to the code repo's outputs/runs/ (gitignored).
-  3. lint — run the agent headless with prompts/lint.md; the report
-     lands in the DATA repo's outputs/ and is committed with the
-     cycle. Same guardrails and auto-revert as the ingest stage.
+  3. lint — the windowed quality audit: prompts/
+     lint-window.md over the pages changed since the last successful
+     lint (a missing snapshot means a full audit, prompts/lint.md)
+     plus their one-hop reverse-link neighbors, the deterministic
+     worklists embedded; the report lands in the DATA repo's
+     outputs/ and is committed with the cycle; the gitignored
+     outputs/lint-window.json snapshot advances only after a
+     completed audit, so a failed or timed-out lint retries its
+     window next cycle. Same guardrails and auto-revert as the
+     ingest stage; the weekly whole-wiki sweep (including the
+     global report-only checks) is scheduled by setup-schedule
+     --calendar.
   4. crosslinks — only for instances whose settings carry a
      secondBrain.domains list ([<wiki dirs>], comma-separated,
      brackets optional): run the check-crosslinks audit of the data

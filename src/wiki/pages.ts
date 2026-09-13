@@ -1,11 +1,10 @@
 /**
  * Deterministic wiki-page reading, shared by the expunge seed
  * (wiki-ingest) and the dead-provenance check (scripts/): which pages
- * exist, and the frontmatter fields the pipeline treats as
- * machine-readable provenance — `type`, `updated`, `status`,
- * `origin`, and `sources`. The one wiki walker (issue #338): the
- * sandbox root never lists, so listings, coverage, dashboards, and
- * checkers never count a sandbox page.
+ * exist, and the frontmatter fields the pipeline reads — `title`,
+ * `type`, `updated`, `status`, `origin`, `sources`, and `tags`. The one
+ * wiki walker (issue #338): the sandbox root never lists, so listings,
+ * coverage, dashboards, and checkers never count a sandbox page.
  * Agent-written frontmatter is tolerant input: a page whose fields
  * cannot be read simply contributes nothing to the deterministic
  * layer.
@@ -21,6 +20,8 @@ import { wikilinkBody, wikilinkBodyTarget } from "./wiki-links.ts";
 export interface PageFields {
   /** The page title scalar, as written. */
   readonly title: string | undefined;
+  /** The `created` date scalar, as written. */
+  readonly created: string | undefined;
   /** The page type scalar (e.g. `source`), as written. */
   readonly type: string | undefined;
   /** The `updated` date scalar, as written. */
@@ -31,7 +32,20 @@ export interface PageFields {
   readonly origin: string | undefined;
   /** `sources` list entries as written (wikilinks still bracketed). */
   readonly sources: readonly string[];
+  /** `tags` list entries as written, unquoted. */
+  readonly tags: readonly string[];
 }
+
+/** The frontmatter fields the wiki contract (§9) requires on every
+ *  page (wiki/AGENTS.md "Obsidian Frontmatter"); `sources` is added
+ *  per page type by the guardrails, so it stays out of this list. */
+export const REQUIRED_PAGE_FIELDS = [
+  "title",
+  "type",
+  "created",
+  "updated",
+  "tags",
+] as const;
 
 /** Kebab-case slug: lowercased, every non-alphanumeric run collapsed
  *  to one hyphen, leading and trailing hyphens trimmed. */
@@ -48,11 +62,13 @@ export const FRONTMATTER_FENCE = "---";
 
 const EMPTY_FIELDS: PageFields = {
   title: undefined,
+  created: undefined,
   type: undefined,
   updated: undefined,
   status: undefined,
   origin: undefined,
   sources: [],
+  tags: [],
 };
 
 /** Unquote one frontmatter scalar or list-item value: only a value
@@ -113,15 +129,19 @@ function scalar(value: string | undefined): string | undefined {
 }
 
 /** Page fields under construction while parsing, plus the list mode
- *  the `sources` key switches on and every other key switches off. */
+ *  the `sources` and `tags` keys switch on and every other key
+ *  switches off. */
 interface MutablePageFields {
   title: string | undefined;
+  created: string | undefined;
   type: string | undefined;
   updated: string | undefined;
   status: string | undefined;
   origin: string | undefined;
   sources: string[];
+  tags: string[];
   inSources: boolean;
+  inTags: boolean;
 }
 
 /** Apply a `key: value` line to `fields`, returning whether the line
@@ -134,9 +154,14 @@ function applyKeyLine(line: string, fields: MutablePageFields): boolean {
   }
 
   fields.inSources = key[1] === "sources";
+  fields.inTags = key[1] === "tags";
 
   if (key[1] === "title") {
     fields.title = scalar(key[2]);
+  }
+
+  if (key[1] === "created") {
+    fields.created = scalar(key[2]);
   }
 
   if (key[1] === "type") {
@@ -158,10 +183,10 @@ function applyKeyLine(line: string, fields: MutablePageFields): boolean {
   return true;
 }
 
-/** Add one `- item` line to `sources` while inside the sources
- *  list. */
+/** Add one `- item` line to a list field (`sources`, `tags`) while
+ *  inside that key's list. */
 function applySourcesItem(line: string, fields: MutablePageFields): void {
-  if (!fields.inSources) {
+  if (!fields.inSources && !fields.inTags) {
     return;
   }
 
@@ -171,7 +196,13 @@ function applySourcesItem(line: string, fields: MutablePageFields): void {
     return;
   }
 
-  fields.sources.push(unquote(item.trim()));
+  const value = unquote(item.trim());
+
+  if (fields.inSources) {
+    fields.sources.push(value);
+  } else {
+    fields.tags.push(value);
+  }
 }
 
 /** Fold the lines after the opening fence into fields until the
@@ -179,23 +210,28 @@ function applySourcesItem(line: string, fields: MutablePageFields): void {
 function parseFrontmatterBody(lines: readonly string[]): PageFields {
   const fields: MutablePageFields = {
     title: undefined,
+    created: undefined,
     type: undefined,
     updated: undefined,
     status: undefined,
     origin: undefined,
     sources: [],
+    tags: [],
     inSources: false,
+    inTags: false,
   };
 
   for (const line of lines) {
     if (line.trim() === FRONTMATTER_FENCE) {
       return {
         title: fields.title,
+        created: fields.created,
         type: fields.type,
         updated: fields.updated,
         status: fields.status,
         origin: fields.origin,
         sources: fields.sources,
+        tags: fields.tags,
       };
     }
 
@@ -207,10 +243,10 @@ function parseFrontmatterBody(lines: readonly string[]): PageFields {
   return EMPTY_FIELDS;
 }
 
-/** Parse `title`, `type`, `updated`, `status`, `origin`, and
- *  `sources` from a wiki page's YAML frontmatter: top-level scalars
- *  and one list of single-line items, nothing more. Returns empty
- *  fields when there is no closed frontmatter block. */
+/** Parse `title`, `created`, `type`, `updated`, `status`, `origin`,
+ * `sources`, and `tags` from a wiki page's YAML frontmatter: top-level
+ * scalars and two lists of single-line items, nothing more. Returns
+ * empty fields when there is no closed frontmatter block. */
 export function parsePageFields(text: string): PageFields {
   const lines = text.split("\n");
 
