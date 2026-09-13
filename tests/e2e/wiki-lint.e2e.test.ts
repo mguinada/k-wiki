@@ -212,12 +212,16 @@ describe("wiki-lint e2e — windowed audits (issue #359)", () => {
 
     await runLint(repo);
 
-    const gitignore = await readFile(join(repo.dataRoot, ".gitignore"), "utf8");
+    const exclude = await readFile(
+      join(repo.dataRoot, ".git", "info", "exclude"),
+      "utf8",
+    );
     const status = await run("git", ["status", "--porcelain"], {
       cwd: repo.dataRoot,
     });
 
-    expect(gitignore).toContain("outputs/lint-window.json");
+    expect(exclude).toContain("outputs/lint-window.json");
+    expect(exclude).toContain("outputs/lint-window.json.tmp");
     expect(status.stdout).not.toContain("lint-window.json");
   });
 });

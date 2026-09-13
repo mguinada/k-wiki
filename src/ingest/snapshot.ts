@@ -83,27 +83,51 @@ export async function readSnapshot(
 export const SNAPSHOT_FILENAME = "last-ingested-manifest.json";
 
 /** Keep the lint-window snapshot out of the data repo's history
- *  (issue #359): like the manifest snapshot, it is per-instance
- *  state — a commit or clean must never take it. Appends the ignore
- *  entry when the data repo's .gitignore lacks it. */
+ *  (issue #359): the snapshot is per-instance state — a commit or
+ *  clean must never take it. The entries live in .git/info/exclude:
+ *  untracked, never committed, re-applied by every run so fresh
+ *  clones self-heal. */
 export async function ensureLintWindowIgnored(
   dataRoot: string,
   onProgress: (message: string) => void,
 ): Promise<void> {
-  const entry = "outputs/lint-window.json";
+  const entries = ["outputs/lint-window.json", "outputs/lint-window.json.tmp"];
 
-  if (
-    await appendGitignoreEntry(
-      dataRoot,
-      entry,
-      [entry],
-      "# lint window snapshot: per-instance state, never committed (issue #359)",
-    )
-  ) {
+  if (await appendExcludeEntries(dataRoot, entries)) {
     onProgress(
-      `wiki-sync: ignoring ${entry} in the data repo (${join(dataRoot, ".gitignore")}) so no commit or clean can take the lint window`,
+      `wiki-sync: excluding the lint window (${entries[0]}) via ${join(dataRoot, ".git", "info", "exclude")} so no commit or clean can take it`,
     );
   }
+}
+
+/** Append the entries under a comment to the data repo's
+ *  .git/info/exclude; false when every entry is already present. */
+async function appendExcludeEntries(
+  dataRoot: string,
+  entries: readonly string[],
+): Promise<boolean> {
+  const excludePath = join(dataRoot, ".git", "info", "exclude");
+  const existing = (await readTextIfExists(excludePath)) ?? "";
+  const absent = entries.filter(
+    (entry) => !existing.split("\n").some((line) => line.trim() === entry),
+  );
+
+  if (absent.length === 0) {
+    return false;
+  }
+
+  await mkdir(dirname(excludePath), { recursive: true });
+
+  const body =
+    existing === "" || existing.endsWith("\n") ? existing : `${existing}\n`;
+
+  await writeFile(
+    excludePath,
+    `${body}# lint window snapshot: per-instance state, never committed (issue #359)\n${absent.join("\n")}\n`,
+    "utf8",
+  );
+
+  return true;
 }
 
 /** Append `entry` under `comment` to the data repo's .gitignore;

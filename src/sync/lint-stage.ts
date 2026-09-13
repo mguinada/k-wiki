@@ -67,8 +67,8 @@ export interface LintResult {
   /** Which audit ran: the windowed stage or the full sweep. */
   readonly mode: "window" | "full";
   /** Undefined after a completed audit; "empty-window" when the
-   *  windowed audit had nothing to do (no page changed since the
-   *  last successful lint) and the agent never ran. */
+   *  windowed audit had nothing to do (no existing page differs from
+   *  the last successful lint) and the agent never ran. */
   readonly skipped: "empty-window" | undefined;
   /** The data-repo-relative path the prompt told the agent to write. */
   readonly reportPath: string;
@@ -251,10 +251,12 @@ async function composeLintPrompt(options: {
   return lines.join("\n");
 }
 
-/** The empty-window skip: nothing changed since the last successful
- *  audit, so the agent never runs and the snapshot write is an
- *  idempotent re-stamp of the unchanged state (any deletion makes
- *  the window non-empty, so this write never prunes anything). */
+/** The empty-window skip: no existing page differs from the last
+ *  successful audit's record — a deletion-only change still reaches
+ *  it (the deleted pages stay in the changed set but add nothing to
+ *  the audited pages list) — so the agent never runs and the
+ *  re-stamp write re-records the current state, pruning the deleted
+ *  entries. */
 async function skipEmptyWindow(
   run: RunContext,
   options: LintOptions,

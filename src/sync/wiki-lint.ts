@@ -81,8 +81,9 @@ What it writes:
     outputs/lint-<YYYY-MM-DD>-full.md — the separate path keeps a
     same-day windowed audit from overwriting the full sweep's
     report;
-  - the lint-window snapshot outputs/lint-window.json (gitignored,
-    per-instance state) after a completed audit.
+  - the lint-window snapshot outputs/lint-window.json (excluded via
+    the data repo's .git/info/exclude, per-instance state) after a
+    completed audit.
 
 After the agent run the same three guardrails as the cycle check the
 data repo: (1) immutability — only wiki/ (never wiki/AGENTS.md),

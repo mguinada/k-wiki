@@ -79,7 +79,7 @@ async function makeHarness(
   await writeFile(join(dataRoot, "raw", "manifest.json"), "{}\n");
   await writeFile(
     join(dataRoot, ".gitignore"),
-    "outputs/lint-window.json\noutputs/last-ingested-manifest.json\n",
+    "outputs/last-ingested-manifest.json\n",
   );
 
   for (const [file, body] of Object.entries(pages)) {

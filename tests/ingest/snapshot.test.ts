@@ -1,9 +1,10 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import {
   ensureDashboardIgnored,
+  ensureLintWindowIgnored,
   ensureSnapshotIgnored,
   readSnapshot,
   warnTrackedIgnored,
@@ -109,5 +110,67 @@ describe("gitignore guards (issue #240 kill batch)", () => {
     await ensureDashboardIgnored(dir, (m) => messages.push(m));
 
     expect(messages[0]).toContain(`${join(dir, ".gitignore")}`);
+  });
+});
+
+describe("lint-window exclude guard (issue #359)", () => {
+  it("excludes the snapshot and its temp sibling in .git/info/exclude", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-lint-exclude-"));
+
+    tempDirs.push(dir);
+
+    await ensureLintWindowIgnored(dir, () => {});
+
+    const exclude = await readFile(
+      join(dir, ".git", "info", "exclude"),
+      "utf8",
+    );
+
+    expect(exclude).toContain("outputs/lint-window.json\n");
+    expect(exclude).toContain("outputs/lint-window.json.tmp\n");
+  });
+
+  it("names the exclude path in the lint-window progress line", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-lint-exclude-"));
+
+    tempDirs.push(dir);
+
+    const messages: string[] = [];
+    await ensureLintWindowIgnored(dir, (m) => messages.push(m));
+
+    expect(messages[0]).toContain(join(dir, ".git", "info", "exclude"));
+  });
+
+  it("appends nothing when the entries are already excluded", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-lint-exclude-"));
+
+    tempDirs.push(dir);
+
+    const excludePath = join(dir, ".git", "info", "exclude");
+
+    await ensureLintWindowIgnored(dir, () => {});
+    const before = await readFile(excludePath, "utf8");
+
+    await ensureLintWindowIgnored(dir, () => {});
+
+    expect(await readFile(excludePath, "utf8")).toBe(before);
+  });
+
+  it("keeps an operator's own exclude lines ahead of the guard block", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-lint-exclude-"));
+
+    tempDirs.push(dir);
+
+    const excludePath = join(dir, ".git", "info", "exclude");
+
+    await mkdir(join(dir, ".git", "info"), { recursive: true });
+    await writeFile(excludePath, "*.secret\n");
+
+    await ensureLintWindowIgnored(dir, () => {});
+
+    const exclude = await readFile(excludePath, "utf8");
+
+    expect(exclude.startsWith("*.secret\n")).toBe(true);
+    expect(exclude).toContain("outputs/lint-window.json");
   });
 });

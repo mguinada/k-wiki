@@ -1029,7 +1029,8 @@ cycle to verify, commit, and publish.
 
 Windowed by default (issue #359): a successful audit writes the
 lint-window snapshot — every wiki page's sha256, stamped
-`outputs/lint-window.json`, gitignored per-instance state beside the
+`outputs/lint-window.json`, per-instance state excluded via the
+data repo's `.git/info/exclude`, beside the
 ingest manifest snapshot — and the next audit covers only the pages
 whose hash changed since plus their one-hop reverse-link neighbors
 (cross-page effects stay covered; the audited surface scales with

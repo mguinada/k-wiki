@@ -199,12 +199,13 @@ export async function makeStubDataRepo(options: {
   await mkdir(join(dataRoot, "wiki"), { recursive: true });
   await writeFile(join(dataRoot, "raw", "manifest.json"), "{}\n");
   await writeFile(join(dataRoot, "wiki", "index.md"), "# Index\n");
-  // The per-instance ignore entries a real data repo carries after its
-  // first run, so clean-tree assertions survive the stages' gitignore
-  // hygiene (issue #112, #359).
+  // The per-instance ignore entries a real data repo carries after
+  // its first run, so clean-tree assertions survive the stages'
+  // gitignore hygiene (issue #112). The lint-window snapshot's
+  // entries live in .git/info/exclude, re-applied by every run.
   await writeFile(
     join(dataRoot, ".gitignore"),
-    "outputs/last-ingested-manifest.json\noutputs/lint-window.json\n",
+    "outputs/last-ingested-manifest.json\n",
   );
 
   const date = new Date().toISOString().slice(0, 10);
