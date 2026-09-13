@@ -19,6 +19,15 @@
  * launchd coalesces missed fires — one run at wake, never a pile-up.
  * Re-running with a new `--interval` or `--weekly-at` replaces the
  * registration.
+ *
+ * Origin guard (issue #361): install and uninstall refuse every
+ * origin that is temporary — a Stryker sandbox, a linked worktree,
+ * a detached HEAD — because the plist bakes this checkout's
+ * absolute paths into a launchd job that must outlive the checkout;
+ * the 2026-08-30 registration from a sandbox copy died 84 fires in a
+ * row once Stryker cleaned the sandbox. `--print` is exempt (it
+ * writes nothing). No `--force`: every alternative origin is
+ * wrong, not merely discouraged.
  */
 
 import { execFile } from "node:child_process";
@@ -237,6 +246,59 @@ export function schedulerUnsupportedError(platform: string): string {
   return `scheduling on ${platform} is not implemented yet — the backend is ${backend}, a follow-up issue (out of scope); use --print to inspect the macOS artifact or run wiki-sync manually`;
 }
 
+/** Whether this module runs from a Stryker sandbox copy — the
+ *  quality tests' detector pattern (tests/quality/src-tree.ts,
+ *  issue #276): the module loaded from a .stryker-tmp path, or the
+ *  instrumented global present. A sandbox must never register
+ *  launchd — its paths are temporary (issue #361). */
+function insideStrykerSandbox(): boolean {
+  return (
+    import.meta.url.includes(".stryker-tmp") || "__stryker__" in globalThis
+  );
+}
+
+/** What git says about the checkout the installer runs from; each
+ *  field undefined when git could not answer it. */
+export interface CheckoutFacts {
+  /** The worktree's own git dir (`--git-dir`). */
+  readonly gitDir: string | undefined;
+  /** The shared git dir (`--git-common-dir`) — the main checkout's
+   *  `.git` also for linked worktrees. */
+  readonly commonDir: string | undefined;
+  /** The ref HEAD points at (`symbolic-ref HEAD`); undefined when
+   *  detached. */
+  readonly head: string | undefined;
+}
+
+/** The origin refusal (issue #361): undefined when the installer's
+ *  origin is safe — not a Stryker sandbox, and the main working
+ *  tree on a branch. Every other origin is temporary, and the
+ *  registration bakes its absolute paths into a launchd job that
+ *  must outlive it. */
+export function originRefusal(
+  sandboxed: boolean,
+  facts: CheckoutFacts,
+  root: string,
+): string | undefined {
+  if (sandboxed) {
+    return "refusing to install: this process runs inside a Stryker sandbox — the sandbox copy is temporary, and the registration would bake its paths into the launchd job; run k-wiki setup-schedule from the main k-wiki checkout instead";
+  }
+
+  if (facts.gitDir === undefined || facts.commonDir === undefined) {
+    return `refusing to install: ${root} is not inside a git repository — the installer cannot verify it is the main checkout; run k-wiki setup-schedule from the main k-wiki checkout instead`;
+  }
+
+  if (facts.gitDir !== facts.commonDir) {
+    return `refusing to install: ${root} is a linked worktree — a worktree is temporary, and the registration would bake its paths into the launchd job; run k-wiki setup-schedule from the main checkout (${dirname(facts.commonDir)}) instead`;
+  }
+
+  if (facts.head === undefined) {
+    return `refusing to install: HEAD is detached at ${root} — a detached checkout is temporary state; run k-wiki setup-schedule from the main checkout (${dirname(facts.commonDir)}) on a branch instead`;
+  }
+
+  return undefined;
+}
+
 /** The log dir the plist points launchd's own captures at — the same
  *  home the wrapper logs beside (scheduled-run.ts). */
 function logDirFor(home: string): string {
@@ -283,6 +345,36 @@ async function launchctl(args: readonly string[]): Promise<void> {
       `launchctl ${args.join(" ")} failed — ${errorMessage(error)}`,
     );
   });
+}
+
+/** Run git in `dir`, returning trimmed stdout — the origin guard's
+ *  probe; injectable so tests feed facts without a repository. */
+async function runGitIn(dir: string, args: readonly string[]): Promise<string> {
+  const { stdout } = await run("git", args, { cwd: dir });
+
+  return stdout.trim();
+}
+
+/** Ask git what the checkout at `root` is: its own git dir, the
+ *  shared one, and the ref HEAD names. Failed queries read as
+ *  undefined — the guard refuses what it cannot verify. */
+async function probeCheckout(
+  root: string,
+  git: (dir: string, args: readonly string[]) => Promise<string>,
+): Promise<CheckoutFacts> {
+  const [gitDir, commonDir, head] = await Promise.all([
+    git(root, ["rev-parse", "--path-format=absolute", "--git-dir"]).catch(
+      () => undefined,
+    ),
+    git(root, [
+      "rev-parse",
+      "--path-format=absolute",
+      "--git-common-dir",
+    ]).catch(() => undefined),
+    git(root, ["symbolic-ref", "--quiet", "HEAD"]).catch(() => undefined),
+  ]);
+
+  return { commonDir, gitDir, head };
 }
 
 /** Help text: every switch and default (AGENTS.md CLI rule). */
@@ -347,7 +439,17 @@ coalesces missed fires into one run at wake — launchd, not cron,
 job on a laptop closed at 03:00. Nothing is written outside the
 plist files and the launchd log captures.
 
-Exits 0 on success, 1 on refusal (unsupported OS) or failure.`;
+Origin guard: install and uninstall run only from the
+repository's main working tree on a branch. The command refuses —
+exit 1, nothing written — when it runs inside a Stryker sandbox, a
+linked worktree, or a detached HEAD: the registration bakes this
+checkout's absolute paths into a launchd job that must outlive the
+checkout, and those origins are temporary. Run k-wiki setup-schedule
+from the main checkout instead; --print is exempt (it writes
+nothing).
+
+Exits 0 on success, 1 on refusal (unsafe origin, unsupported OS) or
+failure.`;
 
 interface ParsedArgs {
   readonly interval: number;
@@ -537,14 +639,16 @@ function installedMessage(
   return `setup-schedule: installed — ${registration.target} (every ${parsed.interval}s, RunAtLoad); logs in ${logDirFor(home)}`;
 }
 
-/** setup-schedule entry point. `runLaunchctl` and `home` are
- *  injectable so tests can record the registration commands and write
- *  the plist into a temp dir instead of touching operator state. */
+/** setup-schedule entry point. `runLaunchctl`, `home`, and `git`
+ *  are injectable so tests can record the registration commands,
+ *  write the plist into a temp dir, and feed the origin guard
+ *  checkout facts instead of touching operator state. */
 export async function main(
   argv: readonly string[] = process.argv.slice(2),
   platform: NodeJS.Platform = process.platform,
   runLaunchctl: (args: readonly string[]) => Promise<void> = launchctl,
   home: string = homedir(),
+  git: (dir: string, args: readonly string[]) => Promise<string> = runGitIn,
 ): Promise<void> {
   if (argv.includes("-h") || argv.includes("--help")) {
     console.log(HELP);
@@ -564,6 +668,18 @@ export async function main(
 
   if (parsed.print) {
     console.log(registration.plist.trimEnd());
+
+    return;
+  }
+
+  const refusal = originRefusal(
+    insideStrykerSandbox(),
+    await probeCheckout(repoRoot, git),
+    repoRoot,
+  );
+
+  if (refusal !== undefined) {
+    cliFail("setup-schedule", refusal);
 
     return;
   }

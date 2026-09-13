@@ -22,12 +22,28 @@ vi.mock("node:child_process", async (importOriginal) => {
 
 const tempDirs: string[] = [];
 
-/** launchctl succeeding: resolve whatever callback position promisify used. */
+/** launchctl succeeding: resolve whatever callback position promisify used.
+ *  git queries answer the canonical main checkout — the origin
+ *  guard (issue #361) must pass so the install path runs. */
 function succeedLaunchctl(...callArgs: unknown[]): undefined {
+  const command = callArgs[0] as string;
+  const args = callArgs[1] as readonly string[];
   const callback = callArgs[callArgs.length - 1] as (
     error: Error | null,
     result?: { stdout: string },
   ) => void;
+
+  if (command === "git") {
+    const last = args.at(-1) ?? "";
+    const stdout =
+      last === "--git-dir" || last === "--git-common-dir"
+        ? "/repo/.git\n"
+        : "refs/heads/main\n";
+
+    callback(null, { stdout });
+
+    return undefined;
+  }
 
   callback(null, { stdout: "" });
 

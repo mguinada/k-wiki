@@ -52,7 +52,12 @@ e2e run or diagnosing a failing one.
 - **setup-schedule** — the plist emitters as real child processes:
   `--print` (interval registration) and `--print --calendar` (the
   weekly `com.kwiki.scheduled-lint` sweep, `StartCalendarInterval`,
-  `--weekly-at` honored), issue #359.
+  `--weekly-at` honored), issue #359; the origin-guard refusals
+  (issue #361) run `bin/setup-schedule` as a child from a repo copy
+  under a `.stryker-tmp` path and from a real linked worktree (with
+  the working `src/`/`bin/` overlaid, since a worktree checks out
+  the committed tree), asserting exit 1, the refusal naming
+  `k-wiki setup-schedule`, and nothing written under a temp `HOME`.
 - **setup-meta-sync** — hook install, idempotent re-install,
   uninstall, merge and rebase-pull fires, and feature-branch,
   linked-worktree, and dirty-tree guard skips in a temp source repo

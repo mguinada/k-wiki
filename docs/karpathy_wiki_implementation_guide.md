@@ -1128,7 +1128,20 @@ path** (`process.argv0`) when it is absolute and existing — stable
 across Homebrew upgrades, unlike the symlink-resolved `execPath`,
 which points into a versioned Cellar — falling back to the resolved
 binary (issue #216); one re-registration after upgrading to this
-behavior moves existing installs onto the stable path. The README's
+behavior moves existing installs onto the stable path. The installer
+refuses unsafe origins (issue #361) — the same construction-level
+guard class as the module-scope launch ban (issue #123): a Stryker
+sandbox copy (detected the way the quality tests detect it —
+`.stryker-tmp` in the running module's own URL, or the `__stryker__`
+global), a linked worktree (`git rev-parse --git-dir` differing from
+`--git-common-dir`), and a detached HEAD all refuse with exit 1
+before anything is written, naming `k-wiki setup-schedule` from the
+main checkout as the cure — the 2026-08-30 registration from a
+mutation-triage sandbox baked the sandbox's `bin/scheduled-run`
+into launchd and died 84 consecutive fires after Stryker cleaned
+up. No `--force` override: every alternative origin bakes temporary
+paths into a job that must outlive them. `--print` stays available
+everywhere (it writes nothing). The README's
 Scheduling the pipeline section documents the wrapper's contract.
 
 ### Ingest modes
