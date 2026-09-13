@@ -610,9 +610,10 @@ for the rare direct use:
 | Command | Tool | Purpose |
 |---|---|---|
 | `bin/k-wiki init-data-repo [--second-brain] [--meta] [<sync.json>]` | data repo seeder | Create and seed the data repo at `sync.json`'s `dataRoot`: git init, copy the `raw/`+`wiki/` skeleton from the code repo, write the standing `.gitignore` (Obsidian UI state, ingest snapshot), first commit; idempotent; `--second-brain` also writes the `.second-brain` identity marker ([§5](#5-the-second-brain)); `--meta` seeds the meta contract (`wiki/AGENTS.meta.md`) as the data repo's `wiki/AGENTS.md` ([§9](#9-the-meta-wiki-a-repository-as-source)) |
-| `bin/k-wiki setup-schedule [-h \| --help] [--calendar [--weekly-at <day-HH:MM>]] [--interval <duration>] [--print] [--uninstall]` | launchd installer | Register the pipeline with launchd — two independent registrations, each managed by its own invocation: the default interval job writes `~/Library/LaunchAgents/com.kwiki.scheduled-run.plist` (`StartInterval`, `30minutes` default, `RunAtLoad`); `--calendar` manages the weekly full-lint sweep instead, `~/Library/LaunchAgents/com.kwiki.scheduled-lint.plist` (`StartCalendarInterval`, default Sundays 03:00, `--weekly-at` e.g. `sat-04:30` re-registers, runs `scheduled-run --lint-full`); both build absolute node + script paths, explicit `HOME`, minimal `PATH`, then bootstrap and verify with `launchctl print`; `--print` emits the plist without installing (any OS), `--uninstall` boots out and removes the registration the command addresses ([details below](#scheduling-the-pipeline-launchd)) |
+| `bin/k-wiki setup-schedule [-h \| --help] [--calendar [--weekly-at <day-HH:MM>]] [--watchdog [--stale-after <duration>]] [--interval <duration>] [--print] [--uninstall]` | launchd installer | Register the pipeline with launchd — three independent registrations, each managed by its own invocation: the default interval job writes `~/Library/LaunchAgents/com.kwiki.scheduled-run.plist` (`StartInterval`, `30minutes` default, `RunAtLoad`); `--calendar` manages the weekly full-lint sweep instead, `~/Library/LaunchAgents/com.kwiki.scheduled-lint.plist` (`StartCalendarInterval`, default Sundays 03:00, `--weekly-at` e.g. `sat-04:30` re-registers, runs `scheduled-run --lint-full`); `--watchdog` manages the hourly heartbeat watchdog, `~/Library/LaunchAgents/com.kwiki.watchdog.plist` (runs `bin/libexec/sync-watchdog --stale-after <duration>`, default `90minutes`); all build absolute node + script paths, explicit `HOME`, minimal `PATH`, then bootstrap and verify with `launchctl print`; `--print` emits the plist without installing (any OS), `--uninstall` boots out and removes the registration the command addresses ([details below](#scheduling-the-pipeline-launchd)) |
 | `bin/k-wiki setup-meta-sync [-h \| --help] [--print] [--uninstall]` | git-hook installer | Install the meta wiki's post-merge auto-sync git hooks (`post-merge` + `post-rewrite`) into the current checkout's shared hooks dir (`git rev-parse --git-path hooks`), baking absolute paths — canonical checkout, node binary, `settings-meta.yml` + `sync-meta.json`, `<dataRoot>/raw`, and the fire log; a merge or rebase-pull landing on `main` in the canonical checkout with a clean `git status --porcelain` (untracked included) fires one detached `bin/scheduled-run` cycle, anything else log-and-skips; idempotent, refuses to touch a foreign hook; `--print` emits the hook without a git repo, `--uninstall` removes exactly what it wrote ([details below](#the-meta-wiki-post-merge-auto-sync-git-hooks)) |
-| `bin/k-wiki scheduled-run [-h \| --help] [--lint-full] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<config>] [<raw-dir>]` | scheduled cycle wrapper | Run one unattended cycle — the command the launchd job executes: O_EXCL lockfile (PID + timestamp, four-hour stale takeover) at `<dataRoot>/.scheduled-run.lock` → `git pull --rebase` → `wiki-sync` (commit-only) → `git push` (one pull --rebase + retry on rejection, then alert); `--lint-full` runs the weekly full-lint sweep first — `wiki-lint --full` under the same lock (a concurrent 30-minute cycle makes either refuse loud naming the holder), default budget 7200 s (one explicit `--timeout` sets both the cycle's and the sweep's budget; the 1800 s cycle default and the 7200 s sweep default stay); fails loud without an `origin` remote ([details below](#scheduling-the-pipeline-launchd)) |
+| `bin/k-wiki scheduled-run [-h \| --help] [--lint-full] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<config>] [<raw-dir>]` | scheduled cycle wrapper | Run one unattended cycle — the command the launchd job executes: O_EXCL lockfile (PID + timestamp, four-hour stale takeover) at `<dataRoot>/.scheduled-run.lock` → `git pull --rebase` → `wiki-sync` (commit-only) → `git push` (one pull --rebase + retry on rejection, then alert); every completed cycle (ok or failed) writes the heartbeat stamp `<dataRoot>/outputs/last-cycle.json` (gitignored via `.git/info/exclude`) and an ALERT also fires a macOS notification (`KWIKI_NOTIFY=0` disables); `--lint-full` runs the weekly full-lint sweep first — `wiki-lint --full` under the same lock (a concurrent 30-minute cycle makes either refuse loud naming the holder), default budget 7200 s (one explicit `--timeout` sets both the cycle's and the sweep's budget; the 1800 s cycle default and the 7200 s sweep default stay); fails loud without an `origin` remote ([details below](#scheduling-the-pipeline-launchd)) |
+| `bin/k-wiki sync-watchdog [-h \| --help] [--stale-after <duration>] [<config>] [<raw-dir>]` | heartbeat watchdog | The independent observer of the scheduled pipeline: read the data repo's `outputs/last-cycle.json` stamp and classify it — fresh (inside `--stale-after`, default `90minutes` = three run intervals) prints one line naming age and threshold, exit 0; stale, unreadable, or missing past the grace window (anchored on the newest data-repo commit, so a fresh install stays quiet) prints one line, fires a macOS notification (`KWIKI_NOTIFY=0` disables), exit 1; read-only, never runs the pipeline — the launchd registration `com.kwiki.watchdog` (installed by `setup-schedule --watchdog`) runs it hourly ([details below](#scheduling-the-pipeline-launchd)) |
 | `bin/k-wiki dashboard [-h \| --help] [-o \| --open] [<data-repo>]` | KPI dashboard generator | Regenerate the static KPI dashboard: read the data repo's wiki, manifests, and git history — read-only — and write the self-contained `<data-repo>/dashboard.html` (gitignored; opens offline via `file://`) with coverage, structure, activity, and provenance KPIs in dark and light themes; refreshed by every ingest, `-o` also opens it ([above](#the-pipeline)) |
 | `bin/k-wiki sync-vault [--dry-run] [<sync.json>] [<raw-dir>]` | sync CLI | Ingest every note not blocked by the vault's exclusion rule into `raw/notes/` (deterministic, no LLM; [details below](#running-the-sync)) |
 | `bin/k-wiki sync-repo [-h \| --help] [<config>] [<raw-dir>]` | repo sync CLI | Project the allowlisted files of a committed source repository verbatim into `raw/notes/<name>/`, recording the source HEAD commit in the manifest (deterministic, no LLM; the meta-wiki adapter, [§9](#9-the-meta-wiki-a-repository-as-source)) |
@@ -1278,6 +1279,10 @@ bin/k-wiki setup-schedule --calendar          # install the weekly full-lint swe
 bin/k-wiki setup-schedule --calendar --weekly-at sat-04:30  # re-register at another time
 bin/k-wiki setup-schedule --calendar --print  # emit the sweep's plist, install nothing
 bin/k-wiki setup-schedule --calendar --uninstall  # bootout the sweep and remove its plist
+bin/k-wiki setup-schedule --watchdog          # install the hourly heartbeat watchdog (90minutes threshold)
+bin/k-wiki setup-schedule --watchdog --stale-after 3hours  # re-register with another threshold
+bin/k-wiki setup-schedule --watchdog --print  # emit the watchdog's plist, install nothing
+bin/k-wiki setup-schedule --watchdog --uninstall  # bootout the watchdog and remove its plist
 ```
 
 The installer guards its own origin: install and uninstall run only
@@ -1286,9 +1291,10 @@ sandbox copy, a linked worktree, or a detached HEAD is refused
 before anything is written ([why, below](#scheduling-the-pipeline-launchd));
 `--print` is exempt.
 
-`setup-schedule` registers the pipeline with launchd — two
-independent registrations, each installed, printed, and removed by
-its own invocation; neither command touches the other's plist. The
+`setup-schedule` registers the pipeline with launchd — three
+independent registrations (interval cycle, weekly sweep, heartbeat
+watchdog), each installed, printed, and removed by its own
+invocation; no command touches another's plist. The
 interval job runs `node bin/scheduled-run` on a fixed interval —
 `StartInterval 1800` by default, `RunAtLoad` — from the checkout you
 installed it from, with absolute node + script paths, an explicit
@@ -1329,9 +1335,29 @@ complete check list — under the same run lock the 30-minute cycle
 uses (a concurrent cycle makes either firing refuse loud naming the
 holder), with a per-invocation 7200 s budget, then the ordinary
 cycle (verification, commit, publish; ingest usually a no-op), push.
-launchd coalesces a missed calendar fire into one run at wake —
-deliberately launchd, not cron: cron silently skips missed fires,
+launchd coalesces a missed calendar fire into one run at wake — deliberately launchd, not cron: cron silently skips missed fires,
 wrong for a weekly job on a laptop closed at 03:00.
+
+The heartbeat watchdog (`--watchdog`) is the third registration —
+`com.kwiki.watchdog`, hourly, running the read-only
+`bin/libexec/sync-watchdog` door with a staleness threshold baked
+into its arguments (`--stale-after`, default `90minutes` — three run
+intervals). The watchdog is independent of the pipeline it watches
+by design: every completed cycle (ok or failed) writes a heartbeat
+stamp (`outputs/last-cycle.json` in the data repo, kept out of git
+via `.git/info/exclude`), and the watchdog reads exactly that stamp
+— never the pipeline's process or its log — so an outage that
+fails before the process starts (a broken registration, a deleted
+checkout) is caught the same as an in-cycle failure: stale stamp →
+macOS notification + exit 1. A missing stamp holds a grace window
+anchored on the newest data-repo commit, so a fresh install stays
+quiet until the first cycle has had its chance; an unreadable stamp
+alerts immediately. The same notification fires in-process when
+`scheduled-run` logs an `ALERT` (cycle failed, push failed after
+its retry), so failures surface in near-real-time instead of
+waiting for the hourly sweep. `KWIKI_NOTIFY=0` disables every
+notification (tests, quiet hosts); the dashboard's coverage section
+also renders "since last successful cycle" from the stamp.
 
 `scheduled-run` wraps the manual cycle with exactly what unattended
 operation needs and nothing else:

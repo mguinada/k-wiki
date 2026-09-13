@@ -36,6 +36,7 @@ import { runProposeVerb as propose } from "../sandbox/propose.ts";
 import { main as scheduledRun } from "../schedule/scheduled-run.ts";
 import { main as setupMetaSync } from "../schedule/setup-meta-sync.ts";
 import { main as setupSchedule } from "../schedule/setup-schedule.ts";
+import { main as syncWatchdog } from "../schedule/sync-watchdog.ts";
 import { main as syncRepo } from "../sync/sync-repo.ts";
 import { main as syncVault } from "../sync/sync-vault.ts";
 import { main as wikiLint } from "../sync/wiki-lint.ts";
@@ -329,6 +330,17 @@ export function verbTable(): readonly VerbSpec[] {
         "unit, one commit, human-approved sources",
       ],
       main: wikiPromote,
+    },
+    {
+      name: "sync-watchdog",
+      klass: "operator",
+      tier: "libexec",
+      wiki: false,
+      lines: [
+        "heartbeat watchdog — alert when the scheduled cycle's",
+        "stamp goes stale, missing, or unreadable",
+      ],
+      main: syncWatchdog,
     },
   ];
 }

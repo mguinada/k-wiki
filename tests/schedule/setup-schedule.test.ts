@@ -14,16 +14,19 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { pathExists } from "../../src/cli/shared.ts";
 import {
+  LAUNCHD_LABEL,
+  plistPath,
+  WATCHDOG_LAUNCHD_LABEL,
+  watchdogPlistPath,
+} from "../../src/schedule/launchd-plists.ts";
+import {
   type CheckoutFacts,
   DEFAULT_INTERVAL_SECONDS,
-  LAUNCHD_LABEL,
-  launchdPlist,
   main,
   originRefusal,
   parseIntervalDuration,
   parseScheduleArgs,
   parseWeeklyAt,
-  plistPath,
   schedulerUnsupportedError,
   stableNodePath,
 } from "../../src/schedule/setup-schedule.ts";
@@ -75,276 +78,6 @@ describe("parseIntervalDuration", () => {
       expect(parseIntervalDuration(text)).toBeUndefined();
     },
   );
-});
-
-/** The plist XML subset as a semantic value: dict → object, array →
- *  array, string → string, integer → number, true/false → boolean. */
-type PlistValue =
-  | string
-  | number
-  | boolean
-  | PlistValue[]
-  | { readonly [key: string]: PlistValue };
-
-type PlistToken =
-  | { readonly kind: "open"; readonly name: string }
-  | { readonly kind: "close"; readonly name: string }
-  | { readonly kind: "text"; readonly text: string };
-
-const PLIST_ELEMENTS = "dict|array|key|string|integer|true|false|plist";
-
-/** Decode the entities the generator escapes, so parsed values are
- *  the semantic paths — not the escaped serialization. */
-function decodeXmlEntities(text: string): string {
-  return text
-    .replaceAll("&lt;", "<")
-    .replaceAll("&gt;", ">")
-    .replaceAll("&amp;", "&");
-}
-
-function tokenizePlist(source: string): readonly PlistToken[] {
-  const pattern = new RegExp(
-    `<!DOCTYPE[^>]*>|<\\?[^?]*\\?>|<(/?)(${PLIST_ELEMENTS})([^>]*)>|([^<]+)`,
-    "g",
-  );
-  const tokens: PlistToken[] = [];
-  let match: RegExpExecArray | null = pattern.exec(source);
-
-  while (match !== null) {
-    if (match[2] !== undefined) {
-      tokens.push({
-        kind: match[1] === "/" ? "close" : "open",
-        name: match[2],
-      });
-
-      if (match[1] !== "/" && match[3]?.endsWith("/")) {
-        tokens.push({ kind: "close", name: match[2] });
-      }
-    } else if (match[4] !== undefined && match[4].trim() !== "") {
-      tokens.push({ kind: "text", text: decodeXmlEntities(match[4]) });
-    }
-
-    match = pattern.exec(source);
-  }
-
-  return tokens;
-}
-
-function expectClose(
-  tokens: readonly PlistToken[],
-  cursor: { index: number },
-  name: string,
-): void {
-  const token = tokens[cursor.index];
-  cursor.index += 1;
-
-  if (token?.kind !== "close" || token.name !== name) {
-    throw new Error(`expected </${name}>, got ${JSON.stringify(token)}`);
-  }
-}
-
-function readKey(
-  tokens: readonly PlistToken[],
-  cursor: { index: number },
-): string {
-  const [open, text, close] = [
-    tokens[cursor.index],
-    tokens[cursor.index + 1],
-    tokens[cursor.index + 2],
-  ];
-  cursor.index += 3;
-
-  if (
-    open?.kind !== "open" ||
-    open.name !== "key" ||
-    text?.kind !== "text" ||
-    close?.kind !== "close" ||
-    close.name !== "key"
-  ) {
-    throw new Error("dict entry does not start with a <key>…</key>");
-  }
-
-  return text.text;
-}
-
-function parsePlistValue(
-  tokens: readonly PlistToken[],
-  cursor: { index: number },
-): PlistValue {
-  const token = tokens[cursor.index];
-  cursor.index += 1;
-
-  if (token?.kind !== "open") {
-    throw new Error(
-      `expected an opening element, got ${JSON.stringify(token)}`,
-    );
-  }
-
-  if (token.name === "string" || token.name === "integer") {
-    const text = tokens[cursor.index];
-
-    if (text?.kind !== "text") {
-      throw new Error(`<${token.name}> without text`);
-    }
-
-    cursor.index += 1;
-    expectClose(tokens, cursor, token.name);
-
-    return token.name === "string" ? text.text : Number(text.text);
-  }
-
-  if (token.name === "true" || token.name === "false") {
-    expectClose(tokens, cursor, token.name);
-
-    return token.name === "true";
-  }
-
-  if (token.name === "array") {
-    const items: PlistValue[] = [];
-
-    while (tokens[cursor.index]?.kind === "open") {
-      items.push(parsePlistValue(tokens, cursor));
-    }
-
-    expectClose(tokens, cursor, "array");
-
-    return items;
-  }
-
-  if (token.name === "plist") {
-    const inner = parsePlistValue(tokens, cursor);
-    expectClose(tokens, cursor, "plist");
-
-    return inner;
-  }
-
-  if (token.name === "dict") {
-    const dict: Record<string, PlistValue> = {};
-
-    while (tokens[cursor.index]?.kind === "open") {
-      const key = readKey(tokens, cursor);
-      dict[key] = parsePlistValue(tokens, cursor);
-    }
-
-    expectClose(tokens, cursor, "dict");
-
-    return dict;
-  }
-
-  throw new Error(`unsupported element <${token.name}>`);
-}
-
-/** Parse a generated plist into its semantic key→value model — tests
- *  assert meaning, not raw substrings. */
-function parsePlistDict(source: string): Record<string, PlistValue> {
-  const value = parsePlistValue(tokenizePlist(source), { index: 0 });
-
-  if (typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("plist root is not a dict");
-  }
-
-  return value;
-}
-
-function dictOf(value: PlistValue | undefined): Record<string, PlistValue> {
-  if (typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(`expected a dict, got ${JSON.stringify(value)}`);
-  }
-
-  return value;
-}
-
-function arrayOf(value: PlistValue | undefined): readonly PlistValue[] {
-  if (!Array.isArray(value)) {
-    throw new Error(`expected an array, got ${JSON.stringify(value)}`);
-  }
-
-  return value;
-}
-
-describe("launchdPlist", () => {
-  const base = {
-    nodePath: "/opt/node/bin/node",
-    scriptPath: "/Users/me/Lab/k-wiki/bin/scheduled-run",
-    home: "/Users/me",
-    logDir: "/Users/me/Library/Logs/k-wiki",
-  } as const;
-  const plist = parsePlistDict(
-    launchdPlist({ ...base, intervalSeconds: 1800 }),
-  );
-
-  it("labels the job with the fixed launchd label", () => {
-    expect(plist.Label).toBe(LAUNCHD_LABEL);
-  });
-
-  it("runs node against the scheduled-run script by absolute path, in order", () => {
-    expect(arrayOf(plist.ProgramArguments)).toEqual([
-      "/opt/node/bin/node",
-      "/Users/me/Lab/k-wiki/bin/scheduled-run",
-    ]);
-  });
-
-  it("sets StartInterval to the interval in seconds", () => {
-    expect(plist.StartInterval).toBe(1800);
-  });
-
-  it("binds StartInterval to the given interval, not the default", () => {
-    const other = parsePlistDict(
-      launchdPlist({ ...base, intervalSeconds: 900 }),
-    );
-
-    expect(other.StartInterval).toBe(900);
-  });
-
-  it("runs once at load so a boot or wake catch-up is deterministic", () => {
-    expect(plist.RunAtLoad).toBe(true);
-  });
-
-  it("sets an explicit HOME so a clean launchd env resolves ~ paths", () => {
-    expect(dictOf(plist.EnvironmentVariables).HOME).toBe("/Users/me");
-  });
-
-  it("sets a minimal PATH — the wrapper builds the rest", () => {
-    expect(dictOf(plist.EnvironmentVariables).PATH).toBe(
-      "/usr/bin:/bin:/usr/sbin:/sbin",
-    );
-  });
-
-  it("redirects launchd stdout into the log dir", () => {
-    expect(plist.StandardOutPath).toBe(
-      "/Users/me/Library/Logs/k-wiki/launchd-stdout.log",
-    );
-  });
-
-  it("redirects launchd stderr into the log dir", () => {
-    expect(plist.StandardErrorPath).toBe(
-      "/Users/me/Library/Logs/k-wiki/launchd-stderr.log",
-    );
-  });
-
-  it("escapes XML-significant characters in the interpolated paths", () => {
-    const weird = parsePlistDict(
-      launchdPlist({
-        nodePath: "/opt/a<b>&c/node",
-        scriptPath: "/Users/me&Lab/k-wiki/bin/scheduled-run",
-        home: "/Users/me<home>",
-        logDir: "/Users/me/Library&Logs/k-wiki",
-        intervalSeconds: 1800,
-      }),
-    );
-
-    expect(arrayOf(weird.ProgramArguments)).toEqual([
-      "/opt/a<b>&c/node",
-      "/Users/me&Lab/k-wiki/bin/scheduled-run",
-    ]);
-    expect(dictOf(weird.EnvironmentVariables).HOME).toBe("/Users/me<home>");
-    expect(weird.StandardOutPath).toBe(
-      "/Users/me/Library&Logs/k-wiki/launchd-stdout.log",
-    );
-    expect(weird.StandardErrorPath).toBe(
-      "/Users/me/Library&Logs/k-wiki/launchd-stderr.log",
-    );
-  });
 });
 
 describe("parseScheduleArgs", () => {
@@ -594,7 +327,7 @@ describe("setup-schedule help", () => {
     const { out, exitCode } = await runMain(["--help"]);
 
     expect(`${exitCode}|${out.split("\n")[0]}`).toBe(
-      "0|Usage: setup-schedule [-h | --help] [--calendar [--weekly-at <day-HH:MM>]] [--interval <duration>] [--print] [--uninstall]",
+      "0|Usage: setup-schedule [-h | --help] [--calendar [--weekly-at <day-HH:MM>]] [--watchdog [--stale-after <duration>]] [--interval <duration>] [--print] [--uninstall]",
     );
   });
 
@@ -1238,5 +971,161 @@ describe("calendar registration (issue #359)", () => {
     const parsed = parseScheduleArgs(["--calendar", "--weekly-at", "whenever"]);
 
     expect(parsed.error).toContain("invalid --weekly-at value");
+  });
+});
+
+describe("watchdog registration (issue #362)", () => {
+  async function tempHome(): Promise<string> {
+    return await mkdtemp(join(tmpdir(), "k-wiki-wd-"));
+  }
+
+  it("prints the watchdog plist with the libexec door and hourly trigger", async () => {
+    const home = await tempHome();
+    const printed: string[] = [];
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) =>
+        printed.push(parts.join(" ")),
+      );
+
+    try {
+      await main(["--watchdog", "--print"], "linux", async () => {}, home);
+    } finally {
+      logSpy.mockRestore();
+    }
+
+    expect(printed.join("\n")).toContain(
+      `<string>${WATCHDOG_LAUNCHD_LABEL}</string>`,
+    );
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("bakes the default staleness threshold into the door's arguments", async () => {
+    const home = await tempHome();
+    const printed: string[] = [];
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) =>
+        printed.push(parts.join(" ")),
+      );
+
+    try {
+      await main(["--watchdog", "--print"], "linux", async () => {}, home);
+    } finally {
+      logSpy.mockRestore();
+    }
+
+    expect(printed.join("\n")).toContain("<string>--stale-after</string>");
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("bakes an explicit threshold verbatim", async () => {
+    const home = await tempHome();
+    const printed: string[] = [];
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) =>
+        printed.push(parts.join(" ")),
+      );
+
+    try {
+      await main(
+        ["--watchdog", "--stale-after", "3hours", "--print"],
+        "linux",
+        async () => {},
+        home,
+      );
+    } finally {
+      logSpy.mockRestore();
+    }
+
+    expect(printed.join("\n")).toContain("<string>3hours</string>");
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("runs the libexec door hourly, not the cycle wrapper", async () => {
+    const home = await tempHome();
+    const printed: string[] = [];
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) =>
+        printed.push(parts.join(" ")),
+      );
+
+    try {
+      await main(["--watchdog", "--print"], "linux", async () => {}, home);
+    } finally {
+      logSpy.mockRestore();
+    }
+
+    const plist = printed.join("\n");
+
+    expect(plist).toContain("/bin/libexec/sync-watchdog</string>");
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("installs, replaces, and uninstalls only the watchdog plist", async () => {
+    const home = await tempHome();
+    const calls: string[][] = [];
+
+    await main(
+      ["--watchdog"],
+      "darwin",
+      async (args) => {
+        calls.push([...args]);
+      },
+      home,
+      canonicalGit,
+    );
+
+    const target = watchdogPlistPath(home);
+
+    expect(calls).toEqual([
+      ["bootout", expect.any(String), target],
+      ["bootstrap", expect.any(String), target],
+      ["print", expect.any(String)],
+    ]);
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("leaves the interval and sweep plists untouched by a watchdog install", async () => {
+    const home = await tempHome();
+
+    await main(["--watchdog", "--print"], "linux", async () => {}, home);
+
+    expect(await pathExists(plistPath(home))).toBe(false);
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("rejects --stale-after without --watchdog", () => {
+    const parsed = parseScheduleArgs(["--stale-after", "3hours"]);
+
+    expect(parsed.error).toContain("--stale-after needs --watchdog");
+  });
+
+  it("rejects an invalid --stale-after value", () => {
+    const parsed = parseScheduleArgs(["--watchdog", "--stale-after", "soon"]);
+
+    expect(parsed.error).toContain("invalid --stale-after value");
+  });
+
+  it("rejects --interval alongside --watchdog", () => {
+    const parsed = parseScheduleArgs(["--watchdog", "--interval", "1hour"]);
+
+    expect(parsed.error).toContain(
+      "--interval configures the cycle registration only",
+    );
+  });
+
+  it("rejects --calendar alongside --watchdog", () => {
+    const parsed = parseScheduleArgs(["--calendar", "--watchdog"]);
+
+    expect(parsed.error).toContain("choose one registration per invocation");
   });
 });

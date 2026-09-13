@@ -397,3 +397,84 @@ describe("scheduled-run e2e — lint-full (issue #359)", () => {
     expect(await upstreamHead(repo)).toBe(head);
   });
 });
+
+describe("scheduled-run heartbeat e2e (issue #362)", () => {
+  it("writes an ok stamp after a completed cycle and keeps it out of git", async () => {
+    const repo = await makeRepo();
+    const result = await runScheduled(repo);
+
+    expect(result.code).toBe(0);
+
+    const stamp = JSON.parse(
+      await readFile(join(repo.dataRoot, "outputs", "last-cycle.json"), "utf8"),
+    );
+
+    expect(stamp.outcome).toBe("ok");
+    expect(stamp.timestamp).toEqual(expect.any(String));
+    expect(stamp.pid).toEqual(expect.any(Number));
+    expect(stamp.lastOk).toBe(stamp.timestamp);
+
+    const status = await git(
+      ["status", "--porcelain", "--untracked-files=all"],
+      repo.dataRoot,
+    );
+
+    expect(status).not.toContain("last-cycle.json");
+  });
+
+  it("excludes the stamp via .git/info/exclude so a clean tree stays clean", async () => {
+    const repo = await makeRepo();
+
+    await runScheduled(repo);
+
+    const exclude = await readFile(
+      join(repo.dataRoot, ".git", "info", "exclude"),
+      "utf8",
+    );
+
+    expect(exclude).toContain("outputs/last-cycle.json");
+  });
+
+  it("writes a failed stamp when the push fails twice", async () => {
+    const repo = await makeRepo();
+    const hook = join(repo.upstream, "hooks", "pre-receive");
+
+    await mkdir(join(repo.upstream, "hooks"), { recursive: true });
+    await writeFile(hook, "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+
+    const result = await runScheduled(repo);
+
+    expect(result.code).toBe(1);
+
+    const stamp = JSON.parse(
+      await readFile(join(repo.dataRoot, "outputs", "last-cycle.json"), "utf8"),
+    );
+
+    expect(stamp.outcome).toBe("failed");
+  });
+
+  it("does not touch the stamp when the tick skips on a held lock", async () => {
+    const repo = await makeRepo();
+
+    await runScheduled(repo);
+    await writeFile(
+      lockPath(repo),
+      `${JSON.stringify({ pid: 4242, takenAt: new Date().toISOString() })}\n`,
+    );
+
+    const before = await readFile(
+      join(repo.dataRoot, "outputs", "last-cycle.json"),
+      "utf8",
+    );
+    const result = await runScheduled(repo);
+
+    expect(result.code).toBe(0);
+
+    const after = await readFile(
+      join(repo.dataRoot, "outputs", "last-cycle.json"),
+      "utf8",
+    );
+
+    expect(after).toBe(before);
+  });
+});

@@ -28,6 +28,7 @@
     "anchor-citations": "node bin/libexec/anchor-citations",
     "open-origin": "node bin/libexec/open-origin",
     "wiki-promote": "node bin/libexec/wiki-promote",
+    "sync-watchdog": "node bin/libexec/sync-watchdog",
     "fixtures": "node dev/generate.ts",
     "sync-vault": "node bin/sync-vault",
     "sync-repo": "node bin/sync-repo",

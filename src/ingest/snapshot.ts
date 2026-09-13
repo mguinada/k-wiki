@@ -109,6 +109,30 @@ export async function ensureLintWindowIgnored(
   }
 }
 
+/** Keep the scheduled cycle's heartbeat stamp out of the data
+ *  repo's history (issue #362): the stamp is per-instance state
+ *  written by every completed cycle — a commit or clean must never
+ *  take it. Same home as the lint window (.git/info/exclude),
+ *  re-applied on every write so fresh clones self-heal. */
+export async function ensureHeartbeatIgnored(
+  dataRoot: string,
+  onProgress: (message: string) => void,
+): Promise<void> {
+  const entries = ["outputs/last-cycle.json", "outputs/last-cycle.json.tmp"];
+
+  if (
+    await appendIgnoreEntries(
+      join(dataRoot, ".git", "info", "exclude"),
+      "# cycle heartbeat: per-instance state, never committed (issue #362)",
+      entries.map((entry) => [entry, [entry]] as const),
+    )
+  ) {
+    onProgress(
+      `scheduled-run: excluding the cycle heartbeat (${entries[0]}) via ${join(dataRoot, ".git", "info", "exclude")} so no commit or clean can take it`,
+    );
+  }
+}
+
 /** Append the absent entries under `comment` to the ignore file at
  *  `path`, creating the parent directory; false when every entry is
  *  already present. An entry is present when some line trim-matches

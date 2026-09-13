@@ -167,6 +167,7 @@ describe("computeKpis link graph", () => {
       commits: [],
       firstAdded: [],
       lastQuery: null,
+      lastCycle: null,
     });
 
     expect(kpis.orphans).toEqual(["a.md"]);
@@ -188,6 +189,7 @@ describe("computeKpis link graph", () => {
       commits: [],
       firstAdded: [],
       lastQuery: null,
+      lastCycle: null,
     });
 
     expect(kpis.deadLinks).toEqual([]);
@@ -206,6 +208,7 @@ describe("computeKpis link graph", () => {
       commits: [],
       firstAdded: [],
       lastQuery: null,
+      lastCycle: null,
     });
 
     expect(kpis.deadLinks).toEqual([{ source: "a.md", target: "Missing" }]);
@@ -227,6 +230,7 @@ describe("computeKpis link graph", () => {
       commits: [],
       firstAdded: [],
       lastQuery: null,
+      lastCycle: null,
     });
 
     expect(kpis.orphans).toEqual(["a.md"]);
@@ -248,6 +252,7 @@ describe("computeKpis link graph", () => {
       commits: [],
       firstAdded: [],
       lastQuery: null,
+      lastCycle: null,
     });
 
     expect(kpis.orphans).toEqual(["orphan.md"]);
@@ -269,6 +274,7 @@ describe("computeKpis link graph", () => {
       commits: [],
       firstAdded: [],
       lastQuery: null,
+      lastCycle: null,
     });
 
     expect(kpis.orphans).toEqual(["a.md", "z.md"]);
@@ -287,6 +293,7 @@ describe("computeKpis link graph", () => {
       commits: [],
       firstAdded: [],
       lastQuery: null,
+      lastCycle: null,
     });
 
     expect(kpis.deadLinks).toEqual([]);
@@ -310,6 +317,7 @@ describe("computeKpis link graph", () => {
       commits: [],
       firstAdded: [],
       lastQuery: null,
+      lastCycle: null,
     });
 
     expect(kpis.hubs).toEqual([
@@ -339,6 +347,7 @@ describe("computeKpis link graph", () => {
       commits: [],
       firstAdded: [],
       lastQuery: null,
+      lastCycle: null,
     });
 
     expect(kpis.hubs).toHaveLength(5);
@@ -361,6 +370,7 @@ describe("computeKpis link graph", () => {
       commits: [],
       firstAdded: [],
       lastQuery: null,
+      lastCycle: null,
     });
 
     expect(kpis.hubs.map((hub) => hub.path)).toEqual(["alpha.md", "zeta.md"]);
@@ -540,6 +550,7 @@ describe("computeKpis totals", () => {
       commits: [],
       firstAdded: [],
       lastQuery: null,
+      lastCycle: null,
     });
 
     expect(kpis.totalPages).toBe(2);
@@ -558,6 +569,7 @@ describe("computeKpis totals", () => {
       commits: [],
       firstAdded: [],
       lastQuery: null,
+      lastCycle: null,
     });
 
     expect(kpis.syncLagDays).toBe(2);
@@ -576,6 +588,7 @@ describe("computeKpis totals", () => {
       commits: [],
       firstAdded: [],
       lastQuery: null,
+      lastCycle: null,
     });
 
     expect(kpis.syncLagDays).toBeNull();
@@ -594,6 +607,7 @@ describe("computeKpis totals", () => {
       commits: [],
       firstAdded: [],
       lastQuery: null,
+      lastCycle: null,
     });
 
     expect(kpis.syncLagDays).toBeNull();
@@ -618,6 +632,7 @@ describe("missingPages", () => {
       commits: [],
       firstAdded: [],
       lastQuery: null,
+      lastCycle: null,
     });
 
     expect(kpis.missingPages).toEqual([
@@ -641,6 +656,7 @@ describe("missingPages", () => {
       commits: [],
       firstAdded: [],
       lastQuery: null,
+      lastCycle: null,
     });
 
     expect(kpis.missingPages).toHaveLength(5);
@@ -659,6 +675,7 @@ describe("missingPages", () => {
       commits: [],
       firstAdded: [],
       lastQuery: null,
+      lastCycle: null,
     });
 
     expect(kpis.missingPages).toEqual([]);
@@ -946,5 +963,76 @@ describe("topCounts tie order", () => {
       "raw/notes/y.md",
       "raw/notes/z.md",
     ]);
+  });
+});
+
+describe("computeKpis last ok cycle (issue #362)", () => {
+  function input(lastCycle: Parameters<typeof computeKpis>[0]["lastCycle"]) {
+    return {
+      now: NOW,
+      head: "abc1234",
+      pages: [],
+      rawNoteKeys: [],
+      ingestedKeys: [],
+      lastSync: null,
+      rawNoteSyncDates: [],
+      statusFlips: [],
+      commits: [],
+      firstAdded: [],
+      lastQuery: null,
+      lastCycle,
+    };
+  }
+
+  it("reports the age of an ok stamp", () => {
+    const kpis = computeKpis(
+      input({
+        timestamp: "2026-09-01T09:00:00.000Z",
+        outcome: "ok",
+        lastOk: null,
+      }),
+    );
+
+    expect(kpis.lastOkCycleAgeMs).toBe(3 * 3_600_000);
+  });
+
+  it("falls back to the carried lastOk for a failed stamp", () => {
+    const kpis = computeKpis(
+      input({
+        timestamp: "2026-09-01T11:00:00.000Z",
+        outcome: "failed",
+        lastOk: "2026-09-01T09:00:00.000Z",
+      }),
+    );
+
+    expect(kpis.lastOkCycleAgeMs).toBe(3 * 3_600_000);
+  });
+
+  it("reports null for a failed stamp with no success on record", () => {
+    const kpis = computeKpis(
+      input({
+        timestamp: "2026-09-01T09:00:00.000Z",
+        outcome: "failed",
+        lastOk: null,
+      }),
+    );
+
+    expect(kpis.lastOkCycleAgeMs).toBeNull();
+  });
+
+  it("reports null without a stamp", () => {
+    expect(computeKpis(input(null)).lastOkCycleAgeMs).toBeNull();
+  });
+
+  it("clamps a future-dated stamp to zero age", () => {
+    const kpis = computeKpis(
+      input({
+        timestamp: "2026-09-01T12:00:00.000Z",
+        outcome: "ok",
+        lastOk: null,
+      }),
+    );
+
+    expect(kpis.lastOkCycleAgeMs).toBe(0);
   });
 });

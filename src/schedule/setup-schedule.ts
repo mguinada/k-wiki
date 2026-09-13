@@ -6,14 +6,20 @@
  * follow-up issues — they fail loud, and the platform switch keeps
  * them additive. `--print` emits the artifact without installing.
  *
- * Two independent registrations (issue #359): the default interval
- * job (Label com.kwiki.scheduled-run, `StartInterval`, default 30
- * minutes, issue #14 decision 1) and — with `--calendar` — the
- * weekly full-lint sweep (Label com.kwiki.scheduled-lint,
+ * Two independent registrations became three (issue #359, then the
+ * watchdog, issue #362): the default interval job (Label
+ * com.kwiki.scheduled-run, `StartInterval`, default 30
+ * minutes, issue #14 decision 1); — with `--calendar` — the weekly
+ * full-lint sweep (Label com.kwiki.scheduled-lint,
  * `StartCalendarInterval`, default Sundays 03:00, running
- * `bin/scheduled-run --lint-full`). Each is installed, printed, and
- * removed by its own invocation; neither command touches the other's
- * plist. The plists run `node bin/scheduled-run` with absolute paths,
+ * `bin/scheduled-run --lint-full`); and — with `--watchdog` — the
+ * hourly heartbeat watchdog (Label com.kwiki.watchdog, running the
+ * read-only `bin/libexec/sync-watchdog`). Each is installed, printed,
+ * and removed by its own invocation; no command touches another's
+ * plist. The plists themselves are pure renderers in
+ * launchd-plists.ts; this module keeps the arg parsing, the origin
+ * guard, and the launchctl orchestration. The plists run `node
+ * bin/scheduled-run` with absolute paths,
  * an explicit HOME, and a minimal PATH — no interactive shell env is
  * assumed; the wrapper builds the rest (see scheduled-run.ts).
  * launchd coalesces missed fires — one run at wake, never a pile-up.
@@ -40,16 +46,41 @@ import { cliFail, errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { repoRoot } from "../cli/shared.ts";
 import { parseArgs } from "../cli/shell.ts";
-
-/** The fixed launchd label (reverse-domain; rename = reinstall). */
-export const LAUNCHD_LABEL = "com.kwiki.scheduled-run";
-
-/** The weekly full-sweep label (issue #359): a second registration,
- *  installed and removed independently of the interval job. */
-export const LINT_LAUNCHD_LABEL = "com.kwiki.scheduled-lint";
+import {
+  LAUNCHD_LABEL,
+  LINT_LAUNCHD_LABEL,
+  launchdCalendarPlist,
+  launchdPlist,
+  launchdWatchdogPlist,
+  lintPlistPath,
+  plistPath,
+  WATCHDOG_LAUNCHD_LABEL,
+  type WeeklyAt,
+  watchdogPlistPath,
+} from "./launchd-plists.ts";
 
 /** The agreed default: 30 minutes (issue #14 decision 1). */
 export const DEFAULT_INTERVAL_SECONDS = 1800;
+
+/** The watchdog's fixed sweep cadence: hourly (issue #362). */
+export const DEFAULT_WATCHDOG_INTERVAL_SECONDS = 3600;
+
+/** The watchdog's default staleness threshold: three run intervals
+ *  (3 × 30 minutes = 90 minutes) — one missed cycle is noise (sleep
+ *  coalescing, a held lock), three in a row is an outage. Lives here
+ *  beside the run interval it derives from; sync-watchdog imports
+ *  it (one-way: the watchdog never imports the installer beyond
+ *  this module's parsers, so no cycle). */
+export const DEFAULT_STALE_AFTER_SECONDS = 3 * DEFAULT_INTERVAL_SECONDS;
+
+/** The default --stale-after text: minutes when the threshold is a
+ *  whole number of them, else seconds — always a value the
+ *  watchdog re-parses. */
+export function defaultStaleAfterText(): string {
+  const seconds = DEFAULT_STALE_AFTER_SECONDS;
+
+  return seconds % 60 === 0 ? `${seconds / 60}minutes` : `${seconds}seconds`;
+}
 
 /** The sweep's default trigger: Sundays 03:00 (issue #359). launchd,
  *  not cron, deliberately: launchd coalesces missed calendar fires
@@ -81,16 +112,6 @@ export function parseIntervalDuration(text: string): number | undefined {
   return Number(match[1]) * multiplier;
 }
 
-/** The plist path for the label under the given home. */
-export function plistPath(home: string): string {
-  return join(home, "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`);
-}
-
-/** The weekly sweep's plist path under the given home. */
-export function lintPlistPath(home: string): string {
-  return join(home, "Library", "LaunchAgents", `${LINT_LAUNCHD_LABEL}.plist`);
-}
-
 /** The weekday names `--weekly-at` accepts, in launchd's numbering:
  *  0 Sunday … 6 Saturday. */
 const WEEKDAYS: Readonly<Record<string, number>> = {
@@ -102,13 +123,6 @@ const WEEKDAYS: Readonly<Record<string, number>> = {
   fri: 5,
   sat: 6,
 };
-
-/** A calendar trigger: launchd `StartCalendarInterval` fields. */
-export interface WeeklyAt {
-  readonly weekday: number;
-  readonly hour: number;
-  readonly minute: number;
-}
 
 /** Parse a `--weekly-at` value like `sun-03:00` into its calendar
  *  fields; undefined when the text is not `<weekday>-<HH:MM>`. */
@@ -128,109 +142,6 @@ export function parseWeeklyAt(text: string): WeeklyAt | undefined {
   }
 
   return { weekday, hour, minute };
-}
-
-/** Escape XML text content — the interpolated paths come from the
- *  environment and may contain &, <, or >. */
-function escapeXmlText(text: string): string {
-  return text
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
-}
-
-/** The launchd plist for one registration: absolute node + script
- *  paths, explicit HOME, minimal PATH, fixed-interval trigger, and
- *  launchd-level output capture beside the wrapper's own log. */
-export function launchdPlist(options: {
-  readonly nodePath: string;
-  readonly scriptPath: string;
-  readonly intervalSeconds: number;
-  readonly home: string;
-  readonly logDir: string;
-}): string {
-  const { home, intervalSeconds, logDir, nodePath, scriptPath } = options;
-
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>${LAUNCHD_LABEL}</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>${escapeXmlText(nodePath)}</string>
-        <string>${escapeXmlText(scriptPath)}</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>StartInterval</key>
-    <integer>${intervalSeconds}</integer>
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>HOME</key>
-        <string>${escapeXmlText(home)}</string>
-        <key>PATH</key>
-        <string>/usr/bin:/bin:/usr/sbin:/sbin</string>
-    </dict>
-    <key>StandardOutPath</key>
-    <string>${escapeXmlText(join(logDir, "launchd-stdout.log"))}</string>
-    <key>StandardErrorPath</key>
-    <string>${escapeXmlText(join(logDir, "launchd-stderr.log"))}</string>
-</dict>
-</plist>
-`;
-}
-
-/** The launchd plist for the weekly full sweep (issue #359): the
- *  same shape as the interval registration with a
- *  `StartCalendarInterval` trigger and the `--lint-full` argument.
- *  launchd's calendar semantics coalesce missed fires into one run at
- *  wake — the property a weekly job on a sleeping laptop needs. */
-export function launchdCalendarPlist(options: {
-  readonly nodePath: string;
-  readonly scriptPath: string;
-  readonly weekly: WeeklyAt;
-  readonly home: string;
-  readonly logDir: string;
-}): string {
-  const { home, logDir, nodePath, scriptPath, weekly } = options;
-
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>${LINT_LAUNCHD_LABEL}</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>${escapeXmlText(nodePath)}</string>
-        <string>${escapeXmlText(scriptPath)}</string>
-        <string>--lint-full</string>
-    </array>
-    <key>StartCalendarInterval</key>
-    <dict>
-        <key>Weekday</key>
-        <integer>${weekly.weekday}</integer>
-        <key>Hour</key>
-        <integer>${weekly.hour}</integer>
-        <key>Minute</key>
-        <integer>${weekly.minute}</integer>
-    </dict>
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>HOME</key>
-        <string>${escapeXmlText(home)}</string>
-        <key>PATH</key>
-        <string>/usr/bin:/bin:/usr/sbin:/sbin</string>
-    </dict>
-    <key>StandardOutPath</key>
-    <string>${escapeXmlText(join(logDir, "launchd-lint-stdout.log"))}</string>
-    <key>StandardErrorPath</key>
-    <string>${escapeXmlText(join(logDir, "launchd-lint-stderr.log"))}</string>
-</dict>
-</plist>
-`;
 }
 
 /** The loud refusal for an OS without a scheduler backend — the
@@ -382,18 +293,39 @@ async function probeCheckout(
 }
 
 /** Help text: every switch and default (AGENTS.md CLI rule). */
-const HELP = `Usage: setup-schedule [-h | --help] [--calendar [--weekly-at <day-HH:MM>]] [--interval <duration>] [--print] [--uninstall]
+const HELP = `Usage: setup-schedule [-h | --help] [--calendar [--weekly-at <day-HH:MM>]] [--watchdog [--stale-after <duration>]] [--interval <duration>] [--print] [--uninstall]
 
-Register the k-wiki pipeline with the OS scheduler. Two independent
-registrations: the fixed-interval cycle (default) and —
-with --calendar — the weekly full-lint sweep. The scheduled command
-is node bin/scheduled-run — lockfile, git pull --rebase, wiki-sync,
-git push; the calendar registration adds --lint-full (wiki-lint
---full first). macOS only today: the source vault lives in iCloud, so
-only macOS can run the pipeline; other OSs host read-only clones
-that need no scheduler. Linux (systemd timer) and Windows (Task
-Scheduler) backends are follow-up issues and fail loud here.
+Register the k-wiki pipeline with the OS scheduler. Three independent
+registrations: the fixed-interval cycle (default), — with --calendar —
+the weekly full-lint sweep, and — with --watchdog — the hourly
+heartbeat watchdog. The scheduled command is node bin/scheduled-run —
+lockfile, git pull --rebase, wiki-sync, git push; the calendar
+registration adds --lint-full (wiki-lint --full first); the watchdog
+registration runs the read-only bin/libexec/sync-watchdog door, which
+alerts when the cycle heartbeat goes stale, missing, or unreadable.
+macOS only today: the source vault lives in iCloud, so only macOS can
+run the pipeline; other OSs host read-only clones that need no
+scheduler. Linux (systemd timer) and Windows (Task Scheduler) backends
+are follow-up issues and fail loud here.
 
+  --watchdog           Manage the heartbeat watchdog registration
+                         (Label ${WATCHDOG_LAUNCHD_LABEL}) instead:
+                         an hourly launchd job running the read-only
+                         bin/libexec/sync-watchdog door, independent
+                         of the cycle job — it reads the
+                         outputs/last-cycle.json stamp every
+                         completed cycle writes and alerts (macOS
+                         notification, exit 1) when the stamp is
+                         stale, unreadable, or missing past the
+                         grace window. Installed, printed, and
+                         removed by its own invocation; the other
+                         registrations are untouched.
+  --stale-after <duration>  The watchdog's staleness threshold,
+                         e.g. 90minutes (the default: three
+                         30-minute run intervals) or 3hours; baked
+                         into the watchdog job's arguments. Only
+                         with --watchdog; re-running replaces the
+                         registration.
   --calendar            Manage the weekly full-sweep registration
                          (Label ${LINT_LAUNCHD_LABEL}) instead of the
                          interval job: installs, prints, or removes
@@ -429,6 +361,13 @@ What install does (darwin, interval registration):
   3. writes it to ~/Library/LaunchAgents/${LAUNCHD_LABEL}.plist;
   4. boots it in and verifies with launchctl print.
 
+What install does (darwin, --watchdog):
+  the same steps for Label ${WATCHDOG_LAUNCHD_LABEL} with an hourly
+  StartInterval, running bin/libexec/sync-watchdog --stale-after
+  <duration> — the independent heartbeat observer: it never runs
+  the pipeline, only reads its stamp, so an outage that fails
+  before the pipeline's process starts is still caught.
+
 What install does (darwin, --calendar):
   the same steps for Label ${LINT_LAUNCHD_LABEL} with a
   StartCalendarInterval trigger (default sun-03:00), running
@@ -437,8 +376,9 @@ What install does (darwin, --calendar):
   sweep skip loud naming the holder, and vice versa.
 
 The interval job then runs once at load (boot/login) and every
-interval; the calendar job runs at its weekly time. A sleep
-coalesces missed fires into one run at wake — launchd, not cron,
+interval; the calendar job runs at its weekly time; the watchdog
+job sweeps hourly. A sleep coalesces missed fires into one run at
+wake — launchd, not cron,
   deliberately: cron silently skips missed fires; wrong for a weekly
 job on a laptop closed at 03:00. Nothing is written outside the
 plist files and the launchd log captures.
@@ -459,6 +399,11 @@ interface ParsedArgs {
   readonly interval: number;
   readonly calendar: boolean;
   readonly weeklyAt: WeeklyAt;
+  /** Manages the watchdog registration instead (issue #362). */
+  readonly watchdog: boolean;
+  /** The watchdog's staleness threshold as duration text, e.g.
+   *  `90minutes`; baked verbatim into its launchd arguments. */
+  readonly staleAfter: string;
   readonly print: boolean;
   readonly uninstall: boolean;
   readonly error: string | undefined;
@@ -470,17 +415,65 @@ function usageError(message: string): ParsedArgs {
     interval: DEFAULT_INTERVAL_SECONDS,
     calendar: false,
     weeklyAt: parseWeeklyAt(DEFAULT_WEEKLY_AT) as WeeklyAt,
+    watchdog: false,
+    staleAfter: "",
     print: false,
     uninstall: false,
     error: message,
   };
 }
 
+/** The flag-combination usage errors for the registration the
+ *  args address: exactly one registration per invocation, and each
+ *  registration's own value flag must come with it. */
+function registrationChoiceError(
+  calendar: boolean,
+  watchdog: boolean,
+  weeklyText: string | undefined,
+  staleAfterText: string | undefined,
+  intervalGiven: boolean,
+): string | undefined {
+  if (calendar && watchdog) {
+    return "choose one registration per invocation — --calendar (the weekly sweep) and --watchdog (the heartbeat watchdog) manage different plists";
+  }
+
+  if (weeklyText !== undefined && !calendar) {
+    return "--weekly-at needs --calendar — it configures the weekly sweep registration";
+  }
+
+  if (intervalGiven && watchdog) {
+    return "--interval configures the cycle registration only — the watchdog sweeps hourly";
+  }
+
+  if (staleAfterText !== undefined && !watchdog) {
+    return "--stale-after needs --watchdog — it configures the watchdog registration's staleness threshold";
+  }
+
+  return undefined;
+}
+
+/** The --stale-after seconds: the default when absent, else the
+ *  error naming the text it rejected. */
+function resolveStaleAfter(
+  text: string | undefined,
+): number | { readonly error: string } {
+  const seconds =
+    text === undefined
+      ? DEFAULT_STALE_AFTER_SECONDS
+      : parseIntervalDuration(text);
+
+  return seconds === undefined
+    ? {
+        error: `invalid --stale-after value ${JSON.stringify(text)} — use <n><unit> with unit seconds|minutes|hours (e.g. 90minutes)`,
+      }
+    : seconds;
+}
+
 /** The installer's parsed args; the shell parses, this validates. */
 export function parseScheduleArgs(args: readonly string[]): ParsedArgs {
   const parsed = parseArgs(args, {
-    value: ["--interval", "--weekly-at"],
-    boolean: ["--print", "--uninstall", "--calendar"],
+    value: ["--interval", "--weekly-at", "--stale-after"],
+    boolean: ["--print", "--uninstall", "--calendar", "--watchdog"],
     positionals: {
       max: 0,
       error: (arg) =>
@@ -493,12 +486,25 @@ export function parseScheduleArgs(args: readonly string[]): ParsedArgs {
   }
 
   const calendar = parsed.flags.has("--calendar");
+  const watchdog = parsed.flags.has("--watchdog");
   const weeklyText = parsed.values.get("--weekly-at");
+  const staleAfterText = parsed.values.get("--stale-after");
+  const choiceError = registrationChoiceError(
+    calendar,
+    watchdog,
+    weeklyText,
+    staleAfterText,
+    parsed.values.has("--interval"),
+  );
 
-  if (weeklyText !== undefined && !calendar) {
-    return usageError(
-      "--weekly-at needs --calendar — it configures the weekly sweep registration",
-    );
+  if (choiceError !== undefined) {
+    return usageError(choiceError);
+  }
+
+  const staleAfterSeconds = resolveStaleAfter(staleAfterText);
+
+  if (typeof staleAfterSeconds !== "number") {
+    return usageError(staleAfterSeconds.error);
   }
 
   const weeklyAt =
@@ -522,6 +528,8 @@ export function parseScheduleArgs(args: readonly string[]): ParsedArgs {
     interval: resolved,
     calendar,
     weeklyAt,
+    watchdog,
+    staleAfter: staleAfterText ?? defaultStaleAfterText(),
     print: parsed.flags.has("--print"),
     uninstall: parsed.flags.has("--uninstall"),
     error: undefined,
@@ -566,6 +574,21 @@ interface Registration {
 function registrationFor(parsed: ParsedArgs, home: string): Registration {
   const nodePath = stableNodePath(process.argv0, process.execPath);
   const scriptPath = join(repoRoot, "bin", "scheduled-run");
+
+  if (parsed.watchdog) {
+    return {
+      label: WATCHDOG_LAUNCHD_LABEL,
+      target: watchdogPlistPath(home),
+      plist: launchdWatchdogPlist({
+        nodePath,
+        scriptPath: join(repoRoot, "bin", "libexec", "sync-watchdog"),
+        intervalSeconds: DEFAULT_WATCHDOG_INTERVAL_SECONDS,
+        staleAfter: parsed.staleAfter,
+        home,
+        logDir: logDirFor(home),
+      }),
+    };
+  }
 
   if (parsed.calendar) {
     return {
@@ -633,6 +656,10 @@ function installedMessage(
   registration: Registration,
   home: string,
 ): string {
+  if (parsed.watchdog) {
+    return `setup-schedule: installed — ${registration.target} (hourly, bin/libexec/sync-watchdog --stale-after ${parsed.staleAfter}); logs in ${logDirFor(home)}`;
+  }
+
   if (parsed.calendar) {
     const { weekday, hour, minute } = parsed.weeklyAt;
     const clock = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;

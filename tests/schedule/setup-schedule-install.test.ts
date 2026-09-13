@@ -2,7 +2,8 @@ import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { LAUNCHD_LABEL, main } from "../../src/schedule/setup-schedule.ts";
+import { LAUNCHD_LABEL } from "../../src/schedule/launchd-plists.ts";
+import { main } from "../../src/schedule/setup-schedule.ts";
 
 /**
  * The install path over a mocked launchctl: the plist lands in the

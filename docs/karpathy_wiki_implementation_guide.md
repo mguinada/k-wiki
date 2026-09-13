@@ -1115,7 +1115,27 @@ registration (issue #359), a weekly `StartCalendarInterval` job
 (default Sundays 03:00, `setup-schedule --calendar`) running
 `bin/scheduled-run --lint-full`: `wiki-lint --full` (the whole-wiki
 audit, including the global report-only checks) under the same run
-lock, then the ordinary cycle, push. The run lock is shared protocol,
+lock, then the ordinary cycle, push. A third registration (issue
+#362) watches the pipeline from outside it: `com.kwiki.watchdog`
+(hourly, `setup-schedule --watchdog [--stale-after <duration>]`)
+runs the read-only `bin/libexec/sync-watchdog` door, which reads the
+heartbeat stamp every completed cycle writes
+(`<dataRoot>/outputs/last-cycle.json`, excluded via the data repo's
+`.git/info/exclude`) and alerts — macOS notification + exit 1 —
+when the stamp is stale (default threshold: three run intervals,
+90 minutes), unreadable, or missing past the grace window (the
+newest data-repo commit anchors a fresh install's grace). The
+watchdog exists because the 2026-09-13 outage failed *before the
+pipeline's process started* — its own ALERT logging never ran, the
+only trace was `launchd-stderr.log`, which nobody reads — so the
+monitor must be independent of the monitored pipeline: it catches
+in-cycle failures and process-never-started failures alike. The
+wrapper's ALERT path fires the same notification in-process
+(near-real-time failures; `KWIKI_NOTIFY=0` disables every
+notification), and the dashboard's coverage section renders
+"since last successful cycle" from the stamp (failed cycles keep
+the older success on record — the stamp carries `lastOk` forward).
+The run lock is shared protocol,
 not wrapper-private (issue #313): a manual `wiki-sync` acquires the
 same `<dataRoot>/.scheduled-run.lock` for its cycle, so a manual run
 mid-cycle makes the next scheduled firing skip (redundant work;
@@ -1157,7 +1177,7 @@ Start with autonomous mode. Its safety mechanisms are the post-run guardrails �
 
 Two rules keep multi-instance setups safe (hardened during the first full build, issue #61; the README's Usage models section has the worked examples):
 
-1. Run every `sync-vault` / `wiki-ingest` from its own checkout root. The ingest snapshot (`<dataRoot>/outputs/last-ingested-manifest.json`) is per-data-repo state kept in the data repo's own `outputs/` (ignored there via the standing `.gitignore`; the lint stage's window snapshot and its `.tmp` sibling live beside it, excluded via the data repo's `.git/info/exclude`, issue #359), and the wrapper resolves `sync.json`, `settings.yml`, and its own `outputs/` relative to the checkout it runs from. A legacy snapshot in a checkout's `outputs/` is adopted into the data repo on the next run (issue #112). A foreign snapshot is caught mechanically (issue #95): the snapshot is stamped with its data repo root at write time, and a read whose stamp does not match — foreign or unstamped — warns loudly; an unscoped run then falls back to a full run, while a scoped `--sources` run rejects with “run a full ingest first” (issue #151), so a crossed instance costs at most an unintended full re-run, never a silently wrong change set.
+1. Run every `sync-vault` / `wiki-ingest` from its own checkout root. The ingest snapshot (`<dataRoot>/outputs/last-ingested-manifest.json`) is per-data-repo state kept in the data repo's own `outputs/` (ignored there via the standing `.gitignore`; the lint stage's window snapshot and its `.tmp` sibling live beside it, excluded via the data repo's `.git/info/exclude`, issue #359; so does the cycle heartbeat stamp `outputs/last-cycle.json`, issue #362), and the wrapper resolves `sync.json`, `settings.yml`, and its own `outputs/` relative to the checkout it runs from. A legacy snapshot in a checkout's `outputs/` is adopted into the data repo on the next run (issue #112). A foreign snapshot is caught mechanically (issue #95): the snapshot is stamped with its data repo root at write time, and a read whose stamp does not match — foreign or unstamped — warns loudly; an unscoped run then falls back to a full run, while a scoped `--sources` run rejects with “run a full ingest first” (issue #151), so a crossed instance costs at most an unintended full re-run, never a silently wrong change set.
 2. Keep instance-specific configuration uncommitted or pass it explicitly (the config positional to `sync-vault`, `--settings <path>` to `wiki-ingest`, or `--wiki <name>` for a committed sibling config): `sync.json` and `settings.yml` are tracked files in a publishable repo, and a private instance's vault paths must never be committed.
 
 ---

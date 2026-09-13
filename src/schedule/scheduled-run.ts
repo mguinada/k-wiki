@@ -54,6 +54,8 @@ import {
   releaseLock,
   runLockPath,
 } from "../sync/run-lock.ts";
+import { writeCycleHeartbeat } from "./heartbeat.ts";
+import { notifyUser } from "./notify.ts";
 
 /** The PATH a scheduled run gets: node's bin dir first (the wrapper
  *  and any sibling CLIs), then the standard install locations — the
@@ -118,6 +120,10 @@ export interface ScheduledRunOptions {
   readonly lintFullSettings?: string | undefined;
   /** Log sink; default: silent (the CLI main wires the log file). */
   readonly log?: (line: string) => void;
+  /** ALERT notifier (macOS notification); default: silent (the CLI
+   *  main wires the notifier — a failed cycle then reaches the
+   *  operator's screen, not just the log). */
+  readonly notify?: (message: string) => void | Promise<void>;
   /** The PID recorded in the lockfile; defaults to process.pid. */
   readonly pid?: number;
   /** Clock for log timestamps and lock staleness. */
@@ -154,11 +160,35 @@ export async function runScheduledCycle(
       runGit(dir, gitArgs, process.env));
 
   const stamp = (): string => now().toISOString();
+  const notify = options.notify ?? (() => {});
+
+  /** Best-effort heartbeat write: the stamp records that this cycle
+   *  reached its end (ok or failed) so the independent watchdog can
+   *  see a pipeline that stops completing cycles — including one
+   *  that never starts again. A failed write warns in the log and
+   *  never changes the cycle's outcome. */
+  const stampHeartbeat = async (outcome: "ok" | "failed"): Promise<void> => {
+    try {
+      await writeCycleHeartbeat({
+        dataRoot: options.dataRoot,
+        outcome,
+        pid,
+        now: now(),
+        onProgress: log,
+      });
+    } catch (error) {
+      log(
+        `scheduled-run: WARNING — heartbeat write failed — ${errorMessage(error)}`,
+      );
+    }
+  };
 
   const fail = async (error: string): Promise<CycleOutcome> => {
     log(`scheduled-run: ALERT ${error}`);
 
+    await stampHeartbeat("failed");
     await releaseLock(options.lockPath, pid);
+    await notify(error);
 
     return { status: "failed", error };
   };
@@ -191,6 +221,7 @@ export async function runScheduledCycle(
   }
 
   await releaseLock(options.lockPath, pid);
+  await stampHeartbeat("ok");
   log(`scheduled-run: ${stamp()} — cycle complete`);
 
   return { status: "ok" };
@@ -595,6 +626,18 @@ Behavior, failure mode by failure mode:
     one previous generation kept); wiki-sync's digest and progress
     stream into the same file. KWIKI_SCHEDULED_LOG overrides the log
     path (tests and multi-instance setups).
+  - Heartbeat: every completed cycle (ok or failed) writes the stamp
+    outputs/last-cycle.json in the data repo — timestamp, outcome,
+    holder PID, and the last ok cycle's timestamp — kept out of git
+    via .git/info/exclude. The sync-watchdog door and the dashboard's
+    last-cycle row read it; a skipped tick (lock held) writes
+    nothing, and the stamp never changes the cycle's outcome.
+  - Notifications: an ALERT (cycle failed, push failed after its
+    one retry) also fires a macOS notification (osascript), and the
+    independent com.kwiki.watchdog launchd job (installed by
+    setup-schedule --watchdog) alerts when the heartbeat goes stale,
+    missing, or unreadable — failures reach the screen, not only a
+    log. KWIKI_NOTIFY=0 disables every notification.
 
 Exits 0 on a completed or skipped cycle, 1 on failure.`;
 
@@ -720,6 +763,9 @@ export async function main(
     lintFullTimeoutMs: runFlags.timeoutMs ?? DEFAULT_LINT_FULL_TIMEOUT_MS,
     lintFullSettings: runFlags.settings,
     log: runLog.log,
+    notify: async (message) => {
+      await notifyUser("k-wiki", `scheduled-run: ${message}`);
+    },
   });
 
   // Flush the log before reporting: an exit must never outrun its own

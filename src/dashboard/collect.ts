@@ -11,6 +11,7 @@ import { readdir } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { listFiles, readTextIfExists } from "../cli/shared.ts";
 import { runGit } from "../data/git.ts";
+import { readCycleHeartbeat } from "../schedule/heartbeat.ts";
 import { parseManifest } from "../sync/manifest.ts";
 import {
   CONTRACT_FILES,
@@ -156,6 +157,23 @@ async function collectLastQuery(dataRoot: string): Promise<string | null> {
   return /^timestamp: "(.+)"$/m.exec(text)?.[1] ?? null;
 }
 
+/** The scheduled cycle's heartbeat stamp (outputs/last-cycle.json);
+ *  null when absent or unreadable — a torn stamp reads as no data,
+ *  never as a wrong age (the watchdog owns alerting on it). */
+async function collectLastCycle(
+  dataRoot: string,
+): Promise<DashboardInput["lastCycle"]> {
+  const read = await readCycleHeartbeat(dataRoot);
+
+  return read.kind === "present"
+    ? {
+        timestamp: read.stamp.timestamp,
+        outcome: read.stamp.outcome,
+        lastOk: read.stamp.lastOk,
+      }
+    : null;
+}
+
 /** A git command's stdout, or undefined when git fails. */
 async function tryGit(
   dataRoot: string,
@@ -294,5 +312,6 @@ export async function collectData(
     commits: await collectCommits(dataRoot, env),
     firstAdded: await collectFirstAdded(dataRoot, env),
     lastQuery: await collectLastQuery(dataRoot),
+    lastCycle: await collectLastCycle(dataRoot),
   };
 }

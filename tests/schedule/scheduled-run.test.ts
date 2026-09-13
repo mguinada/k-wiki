@@ -1606,3 +1606,142 @@ describe("runScheduledCycle streamed output hygiene", () => {
     await rm(dir, { recursive: true, force: true });
   });
 });
+
+describe("runScheduledCycle heartbeat (issue #362)", () => {
+  it("writes an ok stamp after a completed cycle", async () => {
+    const dir = await tempDir();
+    const { runGitStep } = fakeGit();
+
+    const outcome = await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: async () => {},
+      pid: 4321,
+    });
+
+    expect(outcome).toEqual({ status: "ok" });
+    expect(
+      JSON.parse(
+        await readFile(join(dir, "outputs", "last-cycle.json"), "utf8"),
+      ),
+    ).toMatchObject({ outcome: "ok", pid: 4321 });
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("writes a failed stamp and notifies when the cycle fails", async () => {
+    const dir = await tempDir();
+    const { runGitStep } = fakeGit((args) => {
+      if (args[0] === "remote") {
+        throw new Error("fatal: no origin configured");
+      }
+    });
+    const notified: string[] = [];
+
+    const outcome = await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: async () => {},
+      notify: (message) => {
+        notified.push(message);
+      },
+    });
+
+    expect(outcome.status).toBe("failed");
+    expect(
+      JSON.parse(
+        await readFile(join(dir, "outputs", "last-cycle.json"), "utf8"),
+      ),
+    ).toMatchObject({ outcome: "failed" });
+
+    await rm(dir, { recursive: true, force: true });
+    expect(notified).toHaveLength(1);
+  });
+
+  it("keeps the previous ok stamp's lastOk when a later cycle fails", async () => {
+    const dir = await tempDir();
+    const okGit = fakeGit();
+    const failGit = fakeGit((args) => {
+      if (args[0] === "remote") {
+        throw new Error("fatal: no origin configured");
+      }
+    });
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep: okGit.runGitStep,
+      runSync: async () => {},
+      now: () => new Date("2026-09-20T10:00:00.000Z"),
+    });
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep: failGit.runGitStep,
+      runSync: async () => {},
+      now: () => new Date("2026-09-20T10:30:00.000Z"),
+    });
+
+    expect(
+      JSON.parse(
+        await readFile(join(dir, "outputs", "last-cycle.json"), "utf8"),
+      ),
+    ).toMatchObject({ lastOk: "2026-09-20T10:00:00.000Z" });
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("writes no stamp when the tick skips on a held lock", async () => {
+    const dir = await tempDir();
+    const lockPath = join(dir, ".scheduled-run.lock");
+
+    await acquireLock(lockPath, { pid: 1 });
+
+    const outcome = await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath,
+      runGitStep: fakeGit().runGitStep,
+      runSync: async () => {},
+    });
+
+    expect(outcome.status).toBe("skipped");
+    await expect(
+      readFile(join(dir, "outputs", "last-cycle.json"), "utf8"),
+    ).rejects.toThrow();
+
+    await releaseLock(lockPath);
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("logs a warning instead of failing when the stamp write fails", async () => {
+    const dir = await tempDir();
+    const lines: string[] = [];
+
+    // A file where the outputs directory must go makes the stamp
+    // write fail (ENOTDIR) while the cycle itself succeeds.
+    await writeFile(join(dir, "outputs"), "not a directory", "utf8");
+
+    const outcome = await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep: fakeGit().runGitStep,
+      runSync: async () => {},
+      log: (line) => lines.push(line),
+    });
+
+    expect(outcome).toEqual({ status: "ok" });
+    expect(lines.some((line) => line.includes("heartbeat write failed"))).toBe(
+      true,
+    );
+
+    await rm(dir, { recursive: true, force: true });
+  });
+});

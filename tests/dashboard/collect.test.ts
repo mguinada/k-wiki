@@ -137,6 +137,15 @@ async function makeRichRepo(): Promise<{
     join(dataRoot, "outputs", "last-query.md"),
     '---\nquestion: "Why?"\npages: []\ntimestamp: "2026-08-30T10:00:00.000Z"\n---\n\nBecause.\n',
   );
+  await writeFile(
+    join(dataRoot, "outputs", "last-cycle.json"),
+    JSON.stringify({
+      timestamp: "2026-08-30T09:00:00.000Z",
+      outcome: "ok",
+      pid: 123,
+      lastOk: "2026-08-30T09:00:00.000Z",
+    }),
+  );
 
   await run("git", ["init", "--quiet"], { cwd: dataRoot });
   await git(dataRoot, "add", "-A");
@@ -261,6 +270,11 @@ describe("collectData", () => {
         { path: "wiki/no-frontmatter.md", date: "2026-08-10" },
       ],
       lastQuery: "2026-08-30T10:00:00.000Z",
+      lastCycle: {
+        timestamp: "2026-08-30T09:00:00.000Z",
+        outcome: "ok",
+        lastOk: "2026-08-30T09:00:00.000Z",
+      },
     });
   });
 
@@ -310,6 +324,7 @@ describe("collectData", () => {
       commits: [],
       firstAdded: [],
       lastQuery: null,
+      lastCycle: null,
     });
   });
 });
@@ -491,5 +506,43 @@ describe("parseAdditionLog", () => {
       { path: "normal.md", date: "2026-02-02" },
       { path: "Anot-a-date.md", date: "2026-02-02" },
     ]);
+  });
+});
+
+describe("collectData heartbeat (issue #362)", () => {
+  it("reads a present heartbeat stamp", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "k-wiki-collect-hb-"));
+
+    tempDirs.push(dataRoot);
+    await mkdir(join(dataRoot, "outputs"), { recursive: true });
+    await writeFile(
+      join(dataRoot, "outputs", "last-cycle.json"),
+      JSON.stringify({
+        timestamp: "2026-09-20T10:00:00.000Z",
+        outcome: "failed",
+        pid: 9,
+        lastOk: "2026-09-19T10:00:00.000Z",
+      }),
+    );
+
+    expect((await collectData(dataRoot, { now: () => NOW })).lastCycle).toEqual(
+      {
+        timestamp: "2026-09-20T10:00:00.000Z",
+        outcome: "failed",
+        lastOk: "2026-09-19T10:00:00.000Z",
+      },
+    );
+  });
+
+  it("degrades to null on an unreadable heartbeat", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "k-wiki-collect-hb-"));
+
+    tempDirs.push(dataRoot);
+    await mkdir(join(dataRoot, "outputs"), { recursive: true });
+    await writeFile(join(dataRoot, "outputs", "last-cycle.json"), "garbage");
+
+    expect(
+      (await collectData(dataRoot, { now: () => NOW })).lastCycle,
+    ).toBeNull();
   });
 });
