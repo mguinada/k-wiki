@@ -999,8 +999,9 @@ What it does, stage by stage:
      lint (a missing snapshot means a full audit, prompts/lint.md)
      plus their one-hop reverse-link neighbors, the deterministic
      worklists embedded; the report lands in the DATA repo's
-     outputs/ and is committed with the cycle; the gitignored
-     outputs/lint-window.json snapshot advances only after a
+     outputs/ and is committed with the cycle; the
+     outputs/lint-window.json snapshot (excluded via the data
+     repo's .git/info/exclude) advances only after a
      completed audit, so a failed or timed-out lint retries its
      window next cycle. Same guardrails and auto-revert as the
      ingest stage; the weekly whole-wiki sweep (including the

@@ -38,13 +38,11 @@ e2e run or diagnosing a failing one.
   stay uncommitted for the next cycle), and guardrail-revert (a
   forbidden write reverts the repo and exits 1) runs; windowed audits
   (issue #359): a first run is the full audit and writes the
-  temp data repos: a first run is the full audit and writes the
   `outputs/lint-window.json` snapshot (excluded from git history via
   the data repo's `.git/info/exclude`, `.tmp` sibling included), the
-  next run after
-  an edit is windowed to the changed page (its prompt recorded by the
-  stub), `--full` forces the whole-wiki prompt whatever the snapshot
-  says.
+  next run after an edit is windowed to the changed page (its prompt
+  recorded by the stub), `--full` forces the whole-wiki prompt
+  whatever the snapshot says.
 - **scheduled-run** — full-cycle, no-op re-run, lock-skip,
   push-rejection-retry, double-push-failure, and dirty-tree recovery
   runs in temp data repos with an upstream remote; `--lint-full`
