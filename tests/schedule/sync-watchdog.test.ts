@@ -446,6 +446,21 @@ describe("main", () => {
       errorSpy.mockRestore();
     }
   });
+
+  it("fails loud on --stale-after without a value", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      await main(["--stale-after"]);
+
+      expect(errorSpy.mock.calls.flat().join("\n")).toContain(
+        "--stale-after needs a duration value",
+      );
+      expect(process.exitCode).toBe(1);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
 });
 
 describe("runWatchdog against a non-repo data root", () => {

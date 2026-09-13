@@ -101,6 +101,12 @@ describe("parseScheduleArgs", () => {
     expect(parsed.error).toContain("needs a duration value");
   });
 
+  it("rejects --stale-after without a value", () => {
+    const parsed = parseScheduleArgs(["--watchdog", "--stale-after"]);
+
+    expect(parsed.error).toContain("needs a duration value");
+  });
+
   it("rejects an invalid --interval value", () => {
     const parsed = parseScheduleArgs(["--interval", "soon"]);
 

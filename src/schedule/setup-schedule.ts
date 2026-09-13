@@ -467,8 +467,14 @@ function registrationChoiceError(
 /** The --stale-after seconds: the default when absent, else the
  *  error naming the text it rejected. */
 function resolveStaleAfter(
-  text: string | undefined,
+  values: ReadonlyMap<string, string | undefined>,
 ): number | { readonly error: string } {
+  const text = values.get("--stale-after");
+
+  if (values.has("--stale-after") && text === undefined) {
+    return { error: "--stale-after needs a duration value (e.g. 90minutes)" };
+  }
+
   const seconds =
     text === undefined
       ? DEFAULT_STALE_AFTER_SECONDS
@@ -513,7 +519,7 @@ export function parseScheduleArgs(args: readonly string[]): ParsedArgs {
     return usageError(choiceError);
   }
 
-  const staleAfterSeconds = resolveStaleAfter(staleAfterText);
+  const staleAfterSeconds = resolveStaleAfter(parsed.values);
 
   if (typeof staleAfterSeconds !== "number") {
     return usageError(staleAfterSeconds.error);
