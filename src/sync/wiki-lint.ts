@@ -188,7 +188,7 @@ function digest(result: LintResult): string {
     : `${result.reportPath} (not written)`;
   const audit =
     result.skipped === "empty-window"
-      ? "window empty — nothing changed since the last audit"
+      ? "window empty — nothing left to audit since the last audit"
       : `${result.mode} audit (${pluralAudit(result)})`;
 
   return `# wiki-lint digest\n\n- audit: ${audit}\n- report: ${report}\n\n${result.summary}`;

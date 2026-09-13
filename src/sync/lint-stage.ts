@@ -244,7 +244,7 @@ async function skipEmptyWindow(
   reportPath: string,
 ): Promise<LintResult> {
   run.onProgress(
-    "wiki-sync: lint — window empty (nothing changed since the last audit); skipping the agent",
+    "wiki-sync: lint — window empty (nothing left to audit since the last audit); skipping the agent",
   );
 
   await writeLintWindowSnapshot(

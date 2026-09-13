@@ -13,7 +13,7 @@
  * window. Derivation is pure file reading: no git, no LLM.
  */
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { isPlainObject, readTextIfExists, sha256 } from "../cli/shared.ts";
 import { listWikiPages } from "../wiki/pages.ts";
@@ -236,9 +236,12 @@ export async function writeLintWindowSnapshot(
   }
 
   await mkdir(dirname(snapshotPath), { recursive: true });
+  const tempPath = `${snapshotPath}.tmp`;
+
   await writeFile(
-    snapshotPath,
+    tempPath,
     `${JSON.stringify({ snapshotFor: dataRoot, pages: record }, null, 2)}\n`,
     "utf8",
   );
+  await rename(tempPath, snapshotPath);
 }

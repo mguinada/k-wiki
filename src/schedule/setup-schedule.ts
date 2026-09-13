@@ -446,9 +446,6 @@ function resolveInterval(
   return interval;
 }
 
-/** setup-schedule entry point. `runLaunchctl` and `home` are
- *  injectable so tests can record the registration commands and write
- *  the plist into a temp dir instead of touching operator state. */
 /** One registration this invocation manages: its label, plist file,
  *  and plist text. With `--calendar` the weekly sweep; without, the
  *  interval cycle. Each is installed, printed, and removed by its
@@ -540,6 +537,9 @@ function installedMessage(
   return `setup-schedule: installed — ${registration.target} (every ${parsed.interval}s, RunAtLoad); logs in ${logDirFor(home)}`;
 }
 
+/** setup-schedule entry point. `runLaunchctl` and `home` are
+ *  injectable so tests can record the registration commands and write
+ *  the plist into a temp dir instead of touching operator state. */
 export async function main(
   argv: readonly string[] = process.argv.slice(2),
   platform: NodeJS.Platform = process.platform,

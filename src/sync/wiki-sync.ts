@@ -854,7 +854,9 @@ function lintLines(lint: LintResult | undefined): string[] {
   }
 
   if (lint.skipped === "empty-window") {
-    return ["- **Lint:** window empty — nothing changed since the last audit"];
+    return [
+      "- **Lint:** window empty — nothing left to audit since the last audit",
+    ];
   }
 
   const scope =

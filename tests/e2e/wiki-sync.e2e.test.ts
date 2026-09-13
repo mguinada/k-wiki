@@ -946,7 +946,7 @@ describe("wiki-sync e2e — windowed lint (issue #359)", () => {
 
     expect(second.code).toBe(0);
     expect(second.out).toContain(
-      "**Lint:** window empty — nothing changed since the last audit",
+      "**Lint:** window empty — nothing left to audit since the last audit",
     );
   });
 });
