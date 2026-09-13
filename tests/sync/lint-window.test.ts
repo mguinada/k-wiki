@@ -1,6 +1,13 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import {
   deriveLintWindow,
@@ -209,5 +216,34 @@ describe("writeLintWindowSnapshot", () => {
         "b.md": expect.any(String),
       },
     });
+  });
+
+  it("removes a stale temp sibling and leaves only the valid snapshot", async () => {
+    // R3-F1 (gate run 01M2C6EAMYH54C4V6PFK7KFX1M): the write is atomic
+    // temp-then-rename, so a crash mid-write can never leave a
+    // truncated snapshot (the reader throws on invalid JSON and would
+    // wedge every future lint); a leftover .tmp from an interrupted
+    // write must be cleared, and the directory must hold no residue.
+    const { dataRoot, wikiDir } = await makeWiki({
+      "a.md": PAGE_A,
+      "b.md": PAGE_B,
+    });
+    const snapshotPath = lintWindowPath(dataRoot);
+    const tempPath = `${snapshotPath}.tmp`;
+
+    await mkdir(dirname(tempPath), { recursive: true });
+    await writeFile(tempPath, "{ truncated garbage", "utf8");
+
+    await writeLintWindowSnapshot(wikiDir, snapshotPath, dataRoot);
+
+    const entries = (await readdir(dirname(snapshotPath))).filter((name) =>
+      name.startsWith("lint-window.json"),
+    );
+
+    expect(entries).toEqual(["lint-window.json"]);
+
+    const read = await readLintWindowSnapshot(snapshotPath, dataRoot, () => {});
+
+    expect(read?.get("a.md")).toEqual(expect.any(String));
   });
 });
