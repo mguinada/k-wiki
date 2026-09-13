@@ -1061,7 +1061,7 @@ failure, guardrail revert). When another run holds a fresh lock, the
 command fails loud with one line naming the holder's start time and
 PID — “a run has been in progress since HH:MM (PID N) — retry in a
 few minutes” — instead of colliding at the git layer. A lock older
-than two hours (a killed run) is taken over. The lock lives at the
+than four hours (a killed run) is taken over. The lock lives at the
 data repo root, outside the commit pathspecs, so it is never
 committed; one lock per data repo, so independent instances never
 contend. A scheduled wrapper's child run reuses its parent's tenure

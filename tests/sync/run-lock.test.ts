@@ -372,8 +372,8 @@ describe("lockData", () => {
 });
 
 describe("LOCK_STALE_MS", () => {
-  it("gives a run two hours before its lock goes stale", () => {
-    expect(LOCK_STALE_MS).toBe(2 * 60 * 60 * 1000);
+  it("gives a run four hours before its lock goes stale", () => {
+    expect(LOCK_STALE_MS).toBe(4 * 60 * 60 * 1000);
   });
 });
 

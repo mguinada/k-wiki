@@ -1081,7 +1081,7 @@ describe("scheduled-run main: help", () => {
   it("documents the lock takeover and the push retry in the help text", async () => {
     const { out } = await runMain(["--help"]);
 
-    expect(out).toContain("older than two hours is taken over");
+    expect(out).toContain("older than four hours is taken over");
   });
 
   it("documents the push rejection sequence in the help text", async () => {

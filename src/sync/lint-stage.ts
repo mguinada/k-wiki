@@ -234,13 +234,6 @@ async function composeLintPrompt(options: {
   return lines.join("\n");
 }
 
-/**
- * One headless lint run (guide §17): pick the audit window, compose
- * the prompt with the deterministic worklists, invoke the agent in
- * the data repo root, guardrail the result, auto-revert on a tripped
- * check, and — only on a completed audit — advance the window
- * snapshot. Same guardrail contract as the ingest stage.
- */
 /** The empty-window skip: nothing changed since the last successful
  *  audit, so the agent never runs and the snapshot write is an
  *  idempotent re-stamp of the unchanged state (any deletion makes
@@ -286,8 +279,6 @@ function modeAnnouncement(
 
 /** Revert to the pre-run state and reject with the guardrail
  *  failure, its cause the agent error. */
-/** Revert to the pre-run state and reject with the guardrail
- *  failure, its cause the agent error. */
 async function failGuardrailed(
   run: RunContext,
   pre: PreRunState,
@@ -307,6 +298,11 @@ async function failGuardrailed(
   );
 }
 
+/** One headless lint run (guide §17): pick the audit window, compose
+ *  the prompt with the deterministic worklists, invoke the agent in
+ *  the data repo root, guardrail the result, auto-revert on a tripped
+ *  check, and — only on a completed audit — advance the window
+ *  snapshot. Same guardrail contract as the ingest stage. */
 export async function runLintStage(options: LintOptions): Promise<LintResult> {
   const { run } = options;
   const { env, now, onProgress, dataRoot } = run;

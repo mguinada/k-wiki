@@ -551,10 +551,9 @@ wiki-sync stays commit-only; the push happens here and only here.
   --outputs <dir>    Forwarded to wiki-sync (ingest digest location).
                      Default: the repo's outputs/.
   --timeout <secs>   Forwarded to wiki-sync. Default: 1800. With
-                     --lint-full, the sweep's own budget defaults to
-                     7200 (two hours — the per-invocation override
-                     the 1800 s default stays) and an
-                     explicit --timeout raises both.
+                     --lint-full, one explicit value sets both the
+                     cycle's and the sweep's budget; the defaults
+                     stay 1800 (the cycle) and 7200 (the sweep).
   -h, --help         Print this help and exit; no side effects.
   <config>           Forwarded to wiki-sync. Default: the repo's
                      sync.json.
@@ -563,8 +562,8 @@ wiki-sync stays commit-only; the push happens here and only here.
 Behavior, failure mode by failure mode:
   - Overlap (same machine): an O_EXCL lockfile at
     <dataRoot>/.scheduled-run.lock (PID + timestamp) prevents
-    concurrent runs; a lock older than two hours is taken over, so a
-    killed run never wedges the schedule. The lock is shared with
+    concurrent runs; a lock older than four hours is taken over, so
+    a killed run never wedges the schedule. The lock is shared with
     manual wiki-sync runs: a manual cycle in progress makes this
     firing skip — naming the holder's PID and start time —
     while a scheduled cycle in progress makes a manual wiki-sync

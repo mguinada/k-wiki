@@ -800,7 +800,7 @@ describe("runWikiSync run lock (issue #313)", () => {
   it("takes over a stale lock from a killed run and releases it", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 
-    await writeFreshLock(h, 4242, 3 * 60 * 60 * 1000);
+    await writeFreshLock(h, 4242, 5 * 60 * 60 * 1000);
 
     await expect(runWikiSync(optionsFor(h))).resolves.toBeDefined();
 

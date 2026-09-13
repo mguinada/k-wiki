@@ -31,15 +31,6 @@ export function lintWindowPath(dataRoot: string): string {
  *  wiki-relative path to its content hash. */
 export type LintWindowSnapshot = ReadonlyMap<string, string>;
 
-/** Read the snapshot when it belongs to this data repo. The stamp
- *  guard mirrors the ingest snapshot's (issue #95): a snapshot
- *  stamped for another instance — or an unstamped one whose origin
- *  is unknowable — is foreign state; diffing against it would
- *  mis-shape the window, so warn and return undefined (the caller
- *  falls back to the full audit, and the next successful lint
- *  rewrites the stamp). A missing file is a first run, no warning.
- *  Invalid JSON throws: a corrupt snapshot must not silently become
- *  a full audit. */
 /** The parsed snapshot's `pages` record as a path→hash map; throws
  *  naming the file when the record is missing or an entry has no
  *  hash. */
@@ -81,6 +72,15 @@ function foreignSnapshotWarning(
   return `lint window ${snapshotPath} ${origin}, not this instance (${dataRoot}); ignoring it and running a full audit; the next successful lint rewrites the snapshot`;
 }
 
+/** Read the snapshot when it belongs to this data repo. The stamp
+ *  guard mirrors the ingest snapshot's (issue #95): a snapshot
+ *  stamped for another instance — or an unstamped one whose origin
+ *  is unknowable — is foreign state; diffing against it would
+ *  mis-shape the window, so warn and return undefined (the caller
+ *  falls back to the full audit, and the next successful lint
+ *  rewrites the stamp). A missing file is a first run, no warning.
+ *  Invalid JSON throws: a corrupt snapshot must not silently become
+ *  a full audit. */
 export async function readLintWindowSnapshot(
   snapshotPath: string,
   dataRoot: string,

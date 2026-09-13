@@ -21,8 +21,10 @@ import { link, open, readFile, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 /** A lock older than this is stale and taken over (a full cycle —
- *  two agent stages at a 30-min timeout each — stays well inside it). */
-export const LOCK_STALE_MS = 2 * 60 * 60 * 1000;
+ *  two agent stages at a 30-min timeout each — and the weekly full
+ *  sweep — a two-hour audit plus its own cycle — stay well inside
+ *  it). */
+export const LOCK_STALE_MS = 4 * 60 * 60 * 1000;
 
 /** The parsed contents of a lockfile: PID + ISO timestamp. */
 export interface LockFileData {
