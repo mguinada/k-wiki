@@ -1192,7 +1192,8 @@ It chains the proven pieces and adds no capability of its own:
    `wiki/` and `raw/`, after lint, the crosslink audit, and the
    citation wall. One problem line per finding fails the cycle
    before the commit: the lint edits are reverted (the ingest edits
-   stay, uncommitted, as the fix surface), mirroring the lint stage's failure semantics.
+   stay, uncommitted, as the fix surface) and the lint-window snapshot
+   is rewound with them, mirroring the lint stage's failure semantics.
    The misquote and dead-citation classes are produced by ingest;
    the cycle is where their detection is guaranteed to run.
 7. **commit** — one data-repo commit staging `wiki/`, `raw/`, and
@@ -1249,7 +1250,9 @@ and the `outputs/lint-window.json` snapshot — excluded via the data
 repo's `.git/info/exclude` — advances only
 after a completed audit — a failed or timed-out lint retries its
 window next cycle, a timed-out lint's guardrail-passed partial edits
-re-enter through their changed hashes. The global report-only checks
+re-enter through their changed hashes. A verification failure reverts
+the lint edits and rewinds the snapshot with them, so the next cycle
+re-audits the reverted pages. The global report-only checks
 and a whole-wiki audit live in the weekly sweep
 (`scheduled-run --lint-full`, `wiki-lint --full`; [next
 section](#scheduling-the-pipeline-launchd)). A failure at any stage

@@ -720,7 +720,7 @@ Detected:
 The operational prompt text lives only in `prompts/` in the code
 repository — the CLIs load these files verbatim at runtime. This guide
 describes what each prompt does and points to the file; it never embeds
-prompt text. Index of the seven operational prompts:
+prompt text. Index of the eight operational prompts:
 
 | Prompt file | Trigger | Purpose |
 |---|---|---|
@@ -1040,7 +1040,9 @@ change, not with the wiki). Full text of the windowed prompt:
 `wiki-lint --full` audits everything; a failed or timed-out run
 leaves the snapshot untouched, so the next run retries the same
 window, and a timed-out run's guardrail-passed partial edits re-enter
-it through their changed hashes.
+it through their changed hashes. A cycle's verification failure
+reverts the lint edits and rewinds the snapshot with them, so the
+next cycle re-audits the reverted pages.
 
 The deterministic pre-pass (issue #359, phase B): one pass over the
 wiki tree produces the worklists the prompt embeds — orphan,
@@ -1142,7 +1144,7 @@ Start with autonomous mode. Its safety mechanisms are the post-run guardrails �
 
 Two rules keep multi-instance setups safe (hardened during the first full build, issue #61; the README's Usage models section has the worked examples):
 
-1. Run every `sync-vault` / `wiki-ingest` from its own checkout root. The ingest snapshot (`<dataRoot>/outputs/last-ingested-manifest.json`) is per-data-repo state kept in the data repo's own `outputs/` (gitignored there), and the wrapper resolves `sync.json`, `settings.yml`, and its own `outputs/` relative to the checkout it runs from. A legacy snapshot in a checkout's `outputs/` is adopted into the data repo on the next run (issue #112). A foreign snapshot is caught mechanically (issue #95): the snapshot is stamped with its data repo root at write time, and a read whose stamp does not match — foreign or unstamped — warns loudly; an unscoped run then falls back to a full run, while a scoped `--sources` run rejects with “run a full ingest first” (issue #151), so a crossed instance costs at most an unintended full re-run, never a silently wrong change set.
+1. Run every `sync-vault` / `wiki-ingest` from its own checkout root. The ingest snapshot (`<dataRoot>/outputs/last-ingested-manifest.json`) is per-data-repo state kept in the data repo's own `outputs/` (ignored there via the standing `.gitignore`; the lint stage's window snapshot and its `.tmp` sibling live beside it, excluded via the data repo's `.git/info/exclude`, issue #359), and the wrapper resolves `sync.json`, `settings.yml`, and its own `outputs/` relative to the checkout it runs from. A legacy snapshot in a checkout's `outputs/` is adopted into the data repo on the next run (issue #112). A foreign snapshot is caught mechanically (issue #95): the snapshot is stamped with its data repo root at write time, and a read whose stamp does not match — foreign or unstamped — warns loudly; an unscoped run then falls back to a full run, while a scoped `--sources` run rejects with “run a full ingest first” (issue #151), so a crossed instance costs at most an unintended full re-run, never a silently wrong change set.
 2. Keep instance-specific configuration uncommitted or pass it explicitly (the config positional to `sync-vault`, `--settings <path>` to `wiki-ingest`, or `--wiki <name>` for a committed sibling config): `sync.json` and `settings.yml` are tracked files in a publishable repo, and a private instance's vault paths must never be committed.
 
 ---
@@ -1154,7 +1156,7 @@ Two repositories, two concerns:
 - **Code repo** (`k-wiki`): the pipeline — sync, prompts, tests, skills, this guide. It versions only the `raw/` and `wiki/` directory skeleton; the contents of both trees are gitignored. It holds no personal material, so it can be shared or published as-is.
 - **Data repo** (`k-wiki-engineering-data`, placed by `sync.json`'s `dataRoot`): the contents of `raw/` and `wiki/`, plus `raw/manifest.json`. Ingestion commits land here. The data repo can hold personal notes: push it only to a private remote you explicitly control. Local git — history, rollback, audit — works with no remote at all; the remote is the opt-in.
 
-Seed the data repo once with `bin/init-data-repo`: git init, copy the skeleton from the code repo, first commit. The copy step derives from `git ls-files`, so the skeleton cannot drift. The seed also writes the standing `.gitignore` the data repo must carry — Obsidian UI state (`.obsidian/`, `wiki/.obsidian/`: an open Obsidian writing into the repo is an external writer that guardrail 1 would revert runs over) and the ingest snapshot (issue #112). gitignore does not apply to already-tracked files, so the rules must precede the files; when one does not — a rule added after its files were committed — `wiki-ingest` warns pre-flight, one line per file, with the fix (`git rm --cached <path>`), and proceeds: a signal, not a gate (issue #146). The code repo's `wiki/AGENTS.md` is the canonical contract; the copy shipped into the data repo is derived, exactly like the mirror copy (Section 26). Worked examples of data-repo privacy postures — local only, opt-in remote, bare repo on an external disk — are in the README's Usage models section.
+Seed the data repo once with `bin/init-data-repo`: git init, copy the skeleton from the code repo, first commit. The copy step derives from `git ls-files`, so the skeleton cannot drift. The seed also writes the standing `.gitignore` the data repo must carry — Obsidian UI state (`.obsidian/`, `wiki/.obsidian/`: an open Obsidian writing into the repo is an external writer that guardrail 1 would revert runs over) and the ingest snapshot (issue #112); the lint stage's window snapshot is not seeded — it is per-run state, excluded on first use via `.git/info/exclude` (issue #359). gitignore does not apply to already-tracked files, so the rules must precede the files; when one does not — a rule added after its files were committed — `wiki-ingest` warns pre-flight, one line per file, with the fix (`git rm --cached <path>`), and proceeds: a signal, not a gate (issue #146). The code repo's `wiki/AGENTS.md` is the canonical contract; the copy shipped into the data repo is derived, exactly like the mirror copy (Section 26). Worked examples of data-repo privacy postures — local only, opt-in remote, bare repo on an external disk — are in the README's Usage models section.
 
 Keep both checkouts in plain local folders — never inside a cloud-synced folder — and share them between Macs through git remotes (Section 26).
 
