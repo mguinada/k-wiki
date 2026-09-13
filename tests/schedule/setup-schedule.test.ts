@@ -22,6 +22,7 @@ import {
 import {
   type CheckoutFacts,
   DEFAULT_INTERVAL_SECONDS,
+  DEFAULT_STALE_AFTER_SECONDS,
   main,
   originRefusal,
   parseIntervalDuration,
@@ -29,6 +30,7 @@ import {
   parseWeeklyAt,
   schedulerUnsupportedError,
   stableNodePath,
+  staleAfterTextFor,
 } from "../../src/schedule/setup-schedule.ts";
 
 /** A git probe reporting the canonical main checkout — the origin
@@ -1127,5 +1129,19 @@ describe("watchdog registration (issue #362)", () => {
     const parsed = parseScheduleArgs(["--calendar", "--watchdog"]);
 
     expect(parsed.error).toContain("choose one registration per invocation");
+  });
+});
+
+describe("staleAfterTextFor (issue #362)", () => {
+  it("renders whole minutes as minutes", () => {
+    expect(staleAfterTextFor(5400)).toBe("90minutes");
+  });
+
+  it("renders a sub-minute remainder in seconds", () => {
+    expect(staleAfterTextFor(135)).toBe("135seconds");
+  });
+
+  it("renders the default threshold as three run intervals in minutes", () => {
+    expect(staleAfterTextFor(DEFAULT_STALE_AFTER_SECONDS)).toBe("90minutes");
   });
 });

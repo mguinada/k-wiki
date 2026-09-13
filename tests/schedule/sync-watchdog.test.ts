@@ -38,28 +38,20 @@ async function tempDataRoot(committedAt?: Date): Promise<string> {
   await mkdir(join(dataRoot, "raw"), { recursive: true });
   await writeFile(join(dataRoot, "raw", "manifest.json"), "{}\n");
 
-  if (committedAt === undefined) {
-    await run("git", ["init", "--quiet"], { cwd: dataRoot });
-    await run("git", ["config", "user.email", "t@t"], { cwd: dataRoot });
-    await run("git", ["config", "user.name", "t"], { cwd: dataRoot });
-    await run("git", ["add", "-A"], { cwd: dataRoot });
-    await run("git", ["commit", "--quiet", "-m", "init"], { cwd: dataRoot });
-  } else {
-    const env = {
-      ...process.env,
-      GIT_AUTHOR_DATE: committedAt.toISOString(),
-      GIT_COMMITTER_DATE: committedAt.toISOString(),
-    };
+  const env =
+    committedAt === undefined
+      ? undefined
+      : {
+          ...process.env,
+          GIT_AUTHOR_DATE: committedAt.toISOString(),
+          GIT_COMMITTER_DATE: committedAt.toISOString(),
+        };
 
-    await run("git", ["init", "--quiet"], { cwd: dataRoot });
-    await run("git", ["config", "user.email", "t@t"], { cwd: dataRoot });
-    await run("git", ["config", "user.name", "t"], { cwd: dataRoot });
-    await run("git", ["add", "-A"], { cwd: dataRoot });
-    await run("git", ["commit", "--quiet", "-m", "init"], {
-      cwd: dataRoot,
-      env,
-    });
-  }
+  await run("git", ["init", "--quiet"], { cwd: dataRoot });
+  await run("git", ["config", "user.email", "t@t"], { cwd: dataRoot });
+  await run("git", ["config", "user.name", "t"], { cwd: dataRoot });
+  await run("git", ["add", "-A"], { cwd: dataRoot });
+  await run("git", ["commit", "--quiet", "-m", "init"], { cwd: dataRoot, env });
 
   return dataRoot;
 }
@@ -384,5 +376,25 @@ describe("main", () => {
     } finally {
       errorSpy.mockRestore();
     }
+  });
+});
+
+describe("runWatchdog against a non-repo data root", () => {
+  it("alerts with no git history to hold the grace window", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-watchdog-nogit-"));
+
+    tempDirs.push(dir);
+
+    const lines: string[] = [];
+
+    const code = await runWatchdog({
+      dataRoot: dir,
+      staleAfterMs: THRESHOLD,
+      log: (line) => lines.push(line),
+      notify: () => {},
+    });
+
+    expect(code).toBe(1);
+    expect(lines[0]).toContain("no data-repo git history");
   });
 });

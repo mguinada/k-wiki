@@ -73,12 +73,11 @@ export const DEFAULT_WATCHDOG_INTERVAL_SECONDS = 3600;
  *  this module's parsers, so no cycle). */
 export const DEFAULT_STALE_AFTER_SECONDS = 3 * DEFAULT_INTERVAL_SECONDS;
 
-/** The default --stale-after text: minutes when the threshold is a
- *  whole number of them, else seconds — always a value the
- *  watchdog re-parses. */
-export function defaultStaleAfterText(): string {
-  const seconds = DEFAULT_STALE_AFTER_SECONDS;
-
+/** The duration text for a threshold in seconds: minutes when the
+ *  threshold is a whole number of them, else seconds — always a
+ *  value parseIntervalDuration re-parses (a sub-minute default
+ *  interval stays expressible). */
+export function staleAfterTextFor(seconds: number): string {
   return seconds % 60 === 0 ? `${seconds / 60}minutes` : `${seconds}seconds`;
 }
 
@@ -529,7 +528,8 @@ export function parseScheduleArgs(args: readonly string[]): ParsedArgs {
     calendar,
     weeklyAt,
     watchdog,
-    staleAfter: staleAfterText ?? defaultStaleAfterText(),
+    staleAfter:
+      staleAfterText ?? staleAfterTextFor(DEFAULT_STALE_AFTER_SECONDS),
     print: parsed.flags.has("--print"),
     uninstall: parsed.flags.has("--uninstall"),
     error: undefined,
