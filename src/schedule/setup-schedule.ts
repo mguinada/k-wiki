@@ -347,9 +347,13 @@ async function launchctl(args: readonly string[]): Promise<void> {
   });
 }
 
-/** Run git in `dir`, returning trimmed stdout — the origin guard's
- *  probe; injectable so tests feed facts without a repository. */
-async function runGitIn(dir: string, args: readonly string[]): Promise<string> {
+/** Run git in `dir`, returning trimmed stdout — shared by the
+ *  installers' origin probes (setup-meta-sync reuses it); injectable
+ *  so tests feed facts without a repository. */
+export async function runGitIn(
+  dir: string,
+  args: readonly string[],
+): Promise<string> {
   const { stdout } = await run("git", args, { cwd: dir });
 
   return stdout.trim();
