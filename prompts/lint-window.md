@@ -3,8 +3,8 @@ problems.
 
 This is a windowed audit: the listed pages — those changed since the
 last audit plus the pages that link to them — are the audit's scope.
-Work only on them; do not rewrite pages outside the window. The
-weekly full sweep audits everything else.
+Work only on them; do not rewrite pages outside the window; pages
+outside the window keep their last audited state until a full sweep.
 
 The deterministic worklists embedded below are candidates with
 evidence, not verdicts: judge each one; the scan is already done.

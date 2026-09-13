@@ -309,10 +309,12 @@ export function agentRunFlags(
   };
 }
 
-/** Parse the argv shape wiki-sync and scheduled-run share: the
- *  agent-run flag set plus at most the `<config>` and `<raw-dir>`
- *  positionals (the wrapper forwards everything verbatim, so the two
- *  CLIs must accept exactly the same command line). */
+/** Parse wiki-sync's argv shape: the agent-run flag set plus at most
+ *  the `<config>` and `<raw-dir>` positionals. scheduled-run parses
+ *  its own shape (parseScheduledRunArgs) — the same value flags plus
+ *  the `--lint-full` boolean wiki-sync must reject, stripped before
+ *  the wrapper forwards its argv — so the two specs are deliberately
+ *  not one: a wrapper-only flag never reaches wiki-sync's parser. */
 export function parseSyncRunArgs(args: readonly string[]): ParsedCli {
   return parseArgs(args, {
     value: ["--settings", "--outputs", "--timeout"],

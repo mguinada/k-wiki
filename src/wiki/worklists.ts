@@ -49,13 +49,27 @@ export interface WikiWorklists {
 }
 
 /** Structural pages: navigation and the append-only log — exempt from
- *  orphan candidacy and index listing (they are the structure). */
-const STRUCTURAL = new Set(["index.md", "overview.md", "log.md"]);
+ *  orphan candidacy and index listing (they are the structure). The
+ *  second brain's accreted profile layer joins them: the contract says
+ *  it is read by convention and carries no `sources` (wiki/AGENTS.md,
+ *  "Profile layer"), so listing it as an orphan candidate, an index
+ *  miss, or a sources miss would be noise on every audit. */
+const STRUCTURAL = new Set([
+  "index.md",
+  "overview.md",
+  "log.md",
+  "second-brain/profile.md",
+]);
 
 /** The log is append-only with no frontmatter by design; the index
  *  and overview carry frontmatter but no `sources` (nothing derives
- *  from source material in them). */
-const SOURCES_EXEMPT = new Set(["index.md", "overview.md"]);
+ *  from source material in them), and the second brain's profile is
+ *  the accreted layer the contract exempts from `sources`. */
+const SOURCES_EXEMPT = new Set([
+  "index.md",
+  "overview.md",
+  "second-brain/profile.md",
+]);
 
 /** The wiki tree in one read: every page's fields and the inbound-link
  *  index, plus the stem→page index — the shared substrate of every

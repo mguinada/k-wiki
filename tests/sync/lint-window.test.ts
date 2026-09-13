@@ -105,6 +105,23 @@ describe("readLintWindowSnapshot", () => {
     );
 
     expect(read).toBeUndefined();
+  });
+
+  it("warns naming the foreign stamp when the snapshot is ignored", async () => {
+    const { dataRoot } = await makeWiki({ "a.md": PAGE_A });
+    const path = lintWindowPath(dataRoot);
+
+    await mkdir(join(path, ".."), { recursive: true });
+    await writeFile(
+      path,
+      JSON.stringify({ snapshotFor: "/other", pages: {} }),
+      "utf8",
+    );
+
+    const warnings: string[] = [];
+
+    await readLintWindowSnapshot(path, dataRoot, (m) => warnings.push(m));
+
     expect(warnings[0]).toContain("stamped for /other");
   });
 
@@ -136,6 +153,20 @@ describe("deriveLintWindow", () => {
 
     // b changed; a links to b (neighbor); c links to a, not b.
     expect(window.pages).toEqual(["a.md", "b.md"]);
+  });
+
+  it("counts only the changed page, not its neighbors", async () => {
+    const { wikiDir } = await makeWiki({
+      "a.md": PAGE_A,
+      "b.md": PAGE_B,
+      "c.md": PAGE_C,
+    });
+    const snapshot = await snapshotOf(wikiDir);
+
+    await writeFile(join(wikiDir, "b.md"), `${PAGE_B}edited\n`, "utf8");
+
+    const window = await deriveLintWindow(wikiDir, snapshot);
+
     expect(window.changedCount).toBe(1);
   });
 
@@ -168,6 +199,19 @@ describe("deriveLintWindow", () => {
     // b is gone (cannot be audited); a linked to it and is the audit
     // target.
     expect(window.pages).toEqual(["a.md"]);
+  });
+
+  it("counts a deleted page in the changed set", async () => {
+    const { wikiDir } = await makeWiki({
+      "a.md": PAGE_A,
+      "b.md": PAGE_B,
+    });
+    const snapshot = await snapshotOf(wikiDir);
+
+    await rm(join(wikiDir, "b.md"));
+
+    const window = await deriveLintWindow(wikiDir, snapshot);
+
     expect(window.changedCount).toBe(1);
   });
 
@@ -241,6 +285,20 @@ describe("writeLintWindowSnapshot", () => {
     );
 
     expect(entries).toEqual(["lint-window.json"]);
+  });
+
+  it("writes a snapshot the reader accepts", async () => {
+    const { dataRoot, wikiDir } = await makeWiki({
+      "a.md": PAGE_A,
+      "b.md": PAGE_B,
+    });
+    const snapshotPath = lintWindowPath(dataRoot);
+    const tempPath = `${snapshotPath}.tmp`;
+
+    await mkdir(dirname(tempPath), { recursive: true });
+    await writeFile(tempPath, "{ truncated garbage", "utf8");
+
+    await writeLintWindowSnapshot(wikiDir, snapshotPath, dataRoot);
 
     const read = await readLintWindowSnapshot(snapshotPath, dataRoot, () => {});
 

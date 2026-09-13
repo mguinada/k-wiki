@@ -16,7 +16,8 @@ import {
  * The lint stage (issue #359): window/full mode selection, the
  * composed prompt (worklists + window list), the snapshot's
  * advance-on-success / untouched-on-failure semantics, and the
- * empty-window skip.
+ * empty-window skip. One expectation per it block; facts that share
+ * one setup share a harness built by their local helper.
  */
 
 const run = promisify(execFile);
@@ -186,61 +187,124 @@ const BASE_PAGES = {
   "concepts/concept.md": CONCEPT,
 };
 
-describe("runLintStage mode selection", () => {
-  it("audits the full wiki when no snapshot exists (first run)", async () => {
-    const h = await makeHarness(BASE_PAGES);
+/** Advance the harness past a first successful audit: the snapshot
+ *  exists and the recorded prompts are cleared for the run under
+ *  test. */
+async function audited(h: StageHarness): Promise<void> {
+  await runLintStage(optionsFor(h));
+  h.prompts.length = 0;
+}
 
+describe("runLintStage mode selection (first run)", () => {
+  it("reports the full-audit mode when no snapshot exists", async () => {
+    const h = await makeHarness(BASE_PAGES);
     const result = await runLintStage(optionsFor(h));
 
     expect(result.mode).toBe("full");
-    expect(result.windowPages).toBeUndefined();
-    expect(h.prompts[0]).toContain("AUDIT THE WIKI PROMPT (full)");
   });
 
-  it("audits the window when a snapshot exists", async () => {
+  it("leaves the window page list undefined on the full audit", async () => {
+    const h = await makeHarness(BASE_PAGES);
+    const result = await runLintStage(optionsFor(h));
+
+    expect(result.windowPages).toBeUndefined();
+  });
+
+  it("composes the full-audit prompt", async () => {
     const h = await makeHarness(BASE_PAGES);
 
     await runLintStage(optionsFor(h));
-    h.prompts.length = 0;
+
+    expect(h.prompts[0]).toContain("AUDIT THE WIKI PROMPT (full)");
+  });
+});
+
+describe("runLintStage mode selection (snapshot present)", () => {
+  async function editedWindowHarness(): Promise<StageHarness> {
+    const h = await makeHarness(BASE_PAGES);
+
+    await audited(h);
 
     // Change one page; its reverse-link neighbor (src links to
-    // concept) joins the window.
+    // concept) and the index (it links to concept) join the window.
     await writeFile(
       join(h.wikiDir, "concepts", "concept.md"),
       `${CONCEPT}edited\n`,
       "utf8",
     );
 
+    return h;
+  }
+
+  it("reports the windowed mode", async () => {
+    const h = await editedWindowHarness();
     const result = await runLintStage(optionsFor(h));
 
     expect(result.mode).toBe("window");
+  });
+
+  it("lists the changed page and its reverse-link neighbors", async () => {
+    const h = await editedWindowHarness();
+    const result = await runLintStage(optionsFor(h));
+
     expect(result.windowPages).toEqual([
       "concepts/concept.md",
       "index.md",
       "sources/src.md",
     ]);
-    expect(h.prompts[0]).toContain("AUDIT THE WINDOW PROMPT");
-    expect(h.prompts[0]).toContain("- wiki/concepts/concept.md");
-    expect(h.prompts[0]).toContain("- wiki/index.md");
-    expect(h.prompts[0]).toContain("- wiki/sources/src.md");
-    expect(h.prompts[0]).not.toContain("AUDIT THE WIKI PROMPT (full)");
   });
 
-  it("forces the full audit with the full option", async () => {
-    const h = await makeHarness(BASE_PAGES);
+  it("composes the windowed prompt", async () => {
+    const h = await editedWindowHarness();
 
     await runLintStage(optionsFor(h));
-    h.prompts.length = 0;
+
+    expect(h.prompts[0]).toContain("AUDIT THE WINDOW PROMPT");
+  });
+
+  it("names every window page in the prompt's page list", async () => {
+    const h = await editedWindowHarness();
+    const result = await runLintStage(optionsFor(h));
+    const prompt = h.prompts[0] ?? "";
+    const named = (result.windowPages ?? []).map((page) => `- wiki/${page}`);
+    const missing = named.filter((line) => !prompt.includes(line));
+
+    expect(missing).toEqual([]);
+  });
+
+  it("uses the windowed prompt, never the full-audit prompt", async () => {
+    const h = await editedWindowHarness();
+
+    await runLintStage(optionsFor(h));
+
+    expect(h.prompts[0]).not.toContain("AUDIT THE WIKI PROMPT (full)");
+  });
+});
+
+describe("runLintStage full option", () => {
+  it("reports the full-audit mode whatever the snapshot says", async () => {
+    const h = await makeHarness(BASE_PAGES);
+
+    await audited(h);
 
     const result = await runLintStage({ ...optionsFor(h), full: true });
 
     expect(result.mode).toBe("full");
+  });
+
+  it("composes the full-audit prompt with the full option", async () => {
+    const h = await makeHarness(BASE_PAGES);
+
+    await audited(h);
+
+    await runLintStage({ ...optionsFor(h), full: true });
+
     expect(h.prompts[0]).toContain("AUDIT THE WIKI PROMPT (full)");
   });
 });
 
 describe("runLintStage snapshot semantics", () => {
-  it("writes the snapshot after a successful audit", async () => {
+  it("stamps the snapshot with the data root after a successful audit", async () => {
     const h = await makeHarness(BASE_PAGES);
 
     await runLintStage(optionsFor(h));
@@ -250,6 +314,17 @@ describe("runLintStage snapshot semantics", () => {
     );
 
     expect(snapshot.snapshotFor).toBe(h.dataRoot);
+  });
+
+  it("records every page's hash in the snapshot", async () => {
+    const h = await makeHarness(BASE_PAGES);
+
+    await runLintStage(optionsFor(h));
+
+    const snapshot = JSON.parse(
+      await readFile(lintWindowPath(h.dataRoot), "utf8"),
+    );
+
     expect(Object.keys(snapshot.pages).sort()).toEqual([
       "concepts/concept.md",
       "index.md",
@@ -261,6 +336,7 @@ describe("runLintStage snapshot semantics", () => {
     const h = await makeHarness(BASE_PAGES);
 
     await runLintStage(optionsFor(h));
+
     const before = await readFile(lintWindowPath(h.dataRoot), "utf8");
 
     h.agent = async () => {
@@ -272,14 +348,12 @@ describe("runLintStage snapshot semantics", () => {
       "utf8",
     );
 
-    await expect(runLintStage(optionsFor(h))).rejects.toThrow(
-      "lint agent exploded",
-    );
+    await runLintStage(optionsFor(h)).catch(() => {});
 
     expect(await readFile(lintWindowPath(h.dataRoot), "utf8")).toBe(before);
   });
 
-  it("re-audits a timed-out run's partial edits through their hashes", async () => {
+  it("fails a run whose agent errors after its guardrails passed", async () => {
     const h = await makeHarness(BASE_PAGES);
 
     await runLintStage(optionsFor(h));
@@ -296,13 +370,29 @@ describe("runLintStage snapshot semantics", () => {
     };
 
     await expect(runLintStage(optionsFor(h))).rejects.toThrow("timeout");
+  });
 
-    // The next run's window must include the partially-edited page.
+  it("re-enters a timed-out run's partial edits into the next window", async () => {
+    const h = await makeHarness(BASE_PAGES);
+
+    await runLintStage(optionsFor(h));
+
+    await writeFile(
+      join(h.wikiDir, "concepts", "concept.md"),
+      `${CONCEPT}partial lint edit\n`,
+      "utf8",
+    );
+
+    h.agent = async () => {
+      throw new Error("timeout");
+    };
+
+    await runLintStage(optionsFor(h)).catch(() => {});
+
     h.agent = lintStub;
 
     const result = await runLintStage(optionsFor(h));
 
-    expect(result.mode).toBe("window");
     expect(result.windowPages).toContain("concepts/concept.md");
   });
 });
@@ -311,13 +401,30 @@ describe("runLintStage empty window", () => {
   it("skips the agent when nothing changed since the snapshot", async () => {
     const h = await makeHarness(BASE_PAGES);
 
-    await runLintStage(optionsFor(h));
-    h.prompts.length = 0;
+    await audited(h);
 
     const result = await runLintStage(optionsFor(h));
 
     expect(result.skipped).toBe("empty-window");
+  });
+
+  it("writes no report on the empty-window skip", async () => {
+    const h = await makeHarness(BASE_PAGES);
+
+    await audited(h);
+
+    const result = await runLintStage(optionsFor(h));
+
     expect(result.reportWritten).toBe(false);
+  });
+
+  it("invokes no agent on the empty-window skip", async () => {
+    const h = await makeHarness(BASE_PAGES);
+
+    await audited(h);
+
+    await runLintStage(optionsFor(h));
+
     expect(h.prompts).toEqual([]);
   });
 });
@@ -329,36 +436,79 @@ describe("runLintStage worklists", () => {
     await runLintStage(optionsFor(h));
 
     expect(h.prompts[0]).toContain("Deterministic worklists");
-    expect(h.prompts[0]).toContain("### Orphan candidates (");
-    expect(h.prompts[0]).toContain("### Tag inventory (");
   });
 
-  it("scopes the worklists to the window on a windowed audit", async () => {
+  it("carries the orphan section in the prompt", async () => {
     const h = await makeHarness(BASE_PAGES);
 
-    // The full audit's tag inventory lists every tagged page.
     await runLintStage(optionsFor(h));
-    expect(h.prompts[0]).toMatch(/- index\.md — nav/);
-    expect(h.prompts[0]).toMatch(/- sources\/src\.md — source/);
+
+    expect(h.prompts[0]).toContain("### Orphan candidates (");
+  });
+
+  it("carries the tag-inventory section in the prompt", async () => {
+    const h = await makeHarness(BASE_PAGES);
+
+    await runLintStage(optionsFor(h));
+
+    expect(h.prompts[0]).toContain("### Tag inventory (");
+  });
+});
+
+describe("runLintStage windowed worklists", () => {
+  async function sourceEditedHarness(): Promise<StageHarness> {
+    const h = await makeHarness(BASE_PAGES);
+
+    await audited(h);
 
     // Edit the source page: its window is itself plus its linkers
     // (concept, through its `sources` citation) — index.md stays out,
     // so its tag entry must not appear in the windowed worklists.
-    h.prompts.length = 0;
     await writeFile(
       join(h.wikiDir, "sources", "src.md"),
       `${SOURCE}edited\n`,
       "utf8",
     );
 
+    return h;
+  }
+
+  it("lists the window's scope as changed source plus its linker", async () => {
+    const h = await sourceEditedHarness();
     const result = await runLintStage(optionsFor(h));
 
     expect(result.windowPages).toEqual([
       "concepts/concept.md",
       "sources/src.md",
     ]);
+  });
+
+  it("carries a window page's tag entry in the windowed worklists", async () => {
+    const h = await sourceEditedHarness();
+
+    await runLintStage(optionsFor(h));
+
     expect(h.prompts[0]).toMatch(/- concepts\/concept\.md — llm/);
+  });
+
+  it("drops out-of-window pages' tag entries from the worklists", async () => {
+    const h = await sourceEditedHarness();
+
+    await runLintStage(optionsFor(h));
+
     expect(h.prompts[0]).not.toMatch(/- index\.md — nav/);
+  });
+
+  it("carries the full audit's whole tag inventory", async () => {
+    const h = await makeHarness(BASE_PAGES);
+
+    await runLintStage(optionsFor(h));
+
+    const tagged = ["- index.md — nav", "- sources/src.md — source"];
+    const prompt = h.prompts[0] ?? "";
+    const missing = tagged.filter((line) => !prompt.includes(line));
+
+    expect(missing).toEqual([]);
   });
 });
 

@@ -3,9 +3,12 @@
  * wiki-ingest.ts): the last-ingested manifest snapshot — reading it
  * with its instance-stamp guard, adopting a pre-#112 legacy copy,
  * advancing it after a successful run (ordinary and scoped --sources
- * merges) — plus the data repo's gitignore hygiene and the
- * tracked-but-ignored pre-flight warning (issue #146). Orchestration
- * and prompt composition live in the sibling modules.
+ * merges) — plus the data repo's per-instance ignore hygiene for the
+ * ingest snapshot, the dashboard, and the cycle lint stage's window
+ * snapshot (gitignore and .git/info/exclude through one shared append
+ * helper, issue #359), and the tracked-but-ignored pre-flight warning
+ * (issue #146). Orchestration and prompt composition live in the
+ * sibling modules.
  */
 import { copyFile, mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -93,65 +96,53 @@ export async function ensureLintWindowIgnored(
 ): Promise<void> {
   const entries = ["outputs/lint-window.json", "outputs/lint-window.json.tmp"];
 
-  if (await appendExcludeEntries(dataRoot, entries)) {
+  if (
+    await appendIgnoreEntries(
+      join(dataRoot, ".git", "info", "exclude"),
+      "# lint window snapshot: per-instance state, never committed (issue #359)",
+      entries.map((entry) => [entry, [entry]] as const),
+    )
+  ) {
     onProgress(
       `wiki-sync: excluding the lint window (${entries[0]}) via ${join(dataRoot, ".git", "info", "exclude")} so no commit or clean can take it`,
     );
   }
 }
 
-/** Append the entries under a comment to the data repo's
- *  .git/info/exclude; false when every entry is already present. */
-async function appendExcludeEntries(
-  dataRoot: string,
-  entries: readonly string[],
+/** Append the absent entries under `comment` to the ignore file at
+ *  `path`, creating the parent directory; false when every entry is
+ *  already present. An entry is present when some line trim-matches
+ *  one of its accepted forms. The one append helper for the data
+ *  repo's per-instance ignore files — .gitignore and
+ *  .git/info/exclude — so their append semantics cannot drift. */
+async function appendIgnoreEntries(
+  path: string,
+  comment: string,
+  entries: readonly (readonly [string, readonly string[]])[],
 ): Promise<boolean> {
-  const excludePath = join(dataRoot, ".git", "info", "exclude");
-  const existing = (await readTextIfExists(excludePath)) ?? "";
-  const absent = entries.filter(
-    (entry) => !existing.split("\n").some((line) => line.trim() === entry),
-  );
+  const existing = (await readTextIfExists(path)) ?? "";
+  const lines = existing.split("\n").map((line) => line.trim());
+  const absent = entries
+    .filter(([, accepted]) => !lines.some((line) => accepted.includes(line)))
+    .map(([line]) => line);
 
   if (absent.length === 0) {
     return false;
   }
 
-  await mkdir(dirname(excludePath), { recursive: true });
+  await mkdir(dirname(path), { recursive: true });
 
   const body =
     existing === "" || existing.endsWith("\n") ? existing : `${existing}\n`;
 
-  await writeFile(
-    excludePath,
-    `${body}# lint window snapshot: per-instance state, never committed (issue #359)\n${absent.join("\n")}\n`,
-    "utf8",
-  );
+  await writeFile(path, `${body}${comment}\n${absent.join("\n")}\n`, "utf8");
 
   return true;
 }
 
-/** Append `entry` under `comment` to the data repo's .gitignore;
- *  false when an accepted form of the entry is already present.
- *  Shared by the snapshot and dashboard ignore guards. */
-async function appendGitignoreEntry(
-  dataRoot: string,
-  entry: string,
-  accepted: readonly string[],
-  comment: string,
-): Promise<boolean> {
-  const ignorePath = join(dataRoot, ".gitignore");
-  const existing = (await readTextIfExists(ignorePath)) ?? "";
-
-  if (existing.split("\n").some((line) => accepted.includes(line.trim()))) {
-    return false;
-  }
-
-  const body =
-    existing === "" || existing.endsWith("\n") ? existing : `${existing}\n`;
-
-  await writeFile(ignorePath, `${body}${comment}\n${entry}\n`, "utf8");
-
-  return true;
+/** The data repo's .gitignore path. */
+function gitignorePath(dataRoot: string): string {
+  return join(dataRoot, ".gitignore");
 }
 
 /**
@@ -167,15 +158,14 @@ export async function ensureSnapshotIgnored(
   const entry = `outputs/${SNAPSHOT_FILENAME}`;
 
   if (
-    await appendGitignoreEntry(
-      dataRoot,
-      entry,
-      [entry],
+    await appendIgnoreEntries(
+      gitignorePath(dataRoot),
       "# wiki-ingest manifest snapshot: per-instance state, never committed (issue #112)",
+      [[entry, [entry]]],
     )
   ) {
     onProgress(
-      `wiki-ingest: ignoring ${entry} in the data repo (${join(dataRoot, ".gitignore")}) so no commit or clean can take the snapshot`,
+      `wiki-ingest: ignoring ${entry} in the data repo (${gitignorePath(dataRoot)}) so no commit or clean can take the snapshot`,
     );
   }
 }
@@ -193,15 +183,14 @@ export async function ensureDashboardIgnored(
   const entry = "dashboard.html";
 
   if (
-    await appendGitignoreEntry(
-      dataRoot,
-      entry,
-      [entry, `/${entry}`],
+    await appendIgnoreEntries(
+      gitignorePath(dataRoot),
       "# static dashboard: regenerated per checkout, never committed (issue #73)",
+      [[entry, [entry, `/${entry}`]]],
     )
   ) {
     onProgress(
-      `wiki-ingest: ignoring ${entry} in the data repo (${join(dataRoot, ".gitignore")})`,
+      `wiki-ingest: ignoring ${entry} in the data repo (${gitignorePath(dataRoot)})`,
     );
   }
 }

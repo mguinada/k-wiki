@@ -259,6 +259,38 @@ describe("computeWikiWorklists", () => {
   });
 });
 
+describe("computeWikiWorklists second brain", () => {
+  it("gives the second brain's profile no orphan, index, or sources rows", async () => {
+    const wikiDir = await makeWiki({
+      "index.md":
+        "---\ntitle: I\ntype: topic\ncreated: 2026-09-01\nupdated: 2026-09-01\ntags:\n  - nav\n---\n# Index\n- [[a]]\n",
+      "a.md": page(),
+      "second-brain/profile.md": [
+        "---",
+        'title: "Profile"',
+        "type: profile",
+        "created: 2026-09-01",
+        "updated: 2026-09-01",
+        "tags:",
+        "  - profile",
+        "---",
+        "",
+        "Context about the subject.",
+        "",
+      ].join("\n"),
+    });
+
+    const worklists = await computeWikiWorklists(wikiDir);
+
+    // The contract's accreted layer: read by convention, no `sources`,
+    // never an index entry — none of it is a lint candidate.
+    expect(worklists.orphans).toEqual([]);
+    expect(worklists.indexMisses).toEqual([]);
+    expect(worklists.frontmatterMisses).toEqual([]);
+    expect(worklists.singleSource).toEqual([]);
+  });
+});
+
 describe("filterWorklistsToWindow", () => {
   it("keeps only window pages, and the index's own dangling entries", () => {
     const worklists = {
