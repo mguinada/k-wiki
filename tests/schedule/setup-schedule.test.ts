@@ -14,10 +14,12 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { pathExists } from "../../src/cli/shared.ts";
 import {
+  type CheckoutFacts,
   DEFAULT_INTERVAL_SECONDS,
   LAUNCHD_LABEL,
   launchdPlist,
   main,
+  originRefusal,
   parseIntervalDuration,
   parseScheduleArgs,
   parseWeeklyAt,
@@ -25,6 +27,22 @@ import {
   schedulerUnsupportedError,
   stableNodePath,
 } from "../../src/schedule/setup-schedule.ts";
+
+/** A git probe reporting the canonical main checkout — the origin
+ *  guard's default, injected so tests do not depend on where the
+ *  suite's own checkout sits (a linked worktree locally, the main
+ *  checkout in CI). */
+const canonicalGit = async (
+  _dir: string,
+  args: readonly string[],
+): Promise<string> => {
+  const last = args.at(-1);
+
+  if (last === "--git-common-dir") return "/repo/.git";
+  if (last === "--git-dir") return "/repo/.git";
+
+  return "refs/heads/main";
+};
 
 describe("parseIntervalDuration", () => {
   it.each([
@@ -608,7 +626,7 @@ describe("setup-schedule main: failure rendering", () => {
       .mockImplementation((...parts: unknown[]) => err.push(parts.join(" ")));
 
     try {
-      await main(args, platform);
+      await main(args, platform, undefined, "/unused-home", canonicalGit);
     } finally {
       errorSpy.mockRestore();
     }
@@ -628,6 +646,238 @@ describe("setup-schedule main: failure rendering", () => {
     expect(await runFail([], "linux")).toBe(
       "1|\u001b[31msetup-schedule: scheduling on linux is not implemented yet — the backend is a systemd timer, a follow-up issue (out of scope); use --print to inspect the macOS artifact or run wiki-sync manually\u001b[39m",
     );
+  });
+});
+
+describe("setup-schedule origin guard (issue #361)", () => {
+  /** Git facts for the canonical main checkout on a branch. */
+  const canonicalFacts: CheckoutFacts = {
+    commonDir: "/repo/.git",
+    gitDir: "/repo/.git",
+    head: "refs/heads/main",
+  };
+
+  /** A git probe reporting a linked worktree on a branch. */
+  const worktreeGit = async (
+    _dir: string,
+    args: readonly string[],
+  ): Promise<string> => {
+    const last = args.at(-1);
+
+    if (last === "--git-common-dir") return "/repo/.git";
+    if (last === "--git-dir") return "/repo/.git/worktrees/issue-x";
+
+    return "refs/heads/issue-x";
+  };
+
+  /** Run main() with the origin guard's outcome captured: stderr,
+   *  exit code, the launchctl calls made, and whether anything landed
+   *  under the temp home. */
+  async function runGuarded(
+    args: readonly string[],
+    platform: NodeJS.Platform,
+    git: (dir: string, args: readonly string[]) => Promise<string>,
+    sandboxed = false,
+  ): Promise<{
+    err: string;
+    exitCode: number | undefined;
+    launchctl: string[][];
+    home: string;
+  }> {
+    const home = await mkdtemp(join(tmpdir(), "k-wiki-setup-origin-"));
+    const err: string[] = [];
+    const launchctl: string[][] = [];
+
+    process.exitCode = undefined;
+
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) => err.push(parts.join(" ")));
+
+    try {
+      if (sandboxed) {
+        (globalThis as Record<string, unknown>).__stryker__ = {};
+      }
+
+      await main(
+        args,
+        platform,
+        async (callArgs) => void launchctl.push([...callArgs]),
+        home,
+        git,
+      );
+    } finally {
+      if (sandboxed) {
+        delete (globalThis as Record<string, unknown>).__stryker__;
+      }
+
+      errorSpy.mockRestore();
+    }
+
+    return {
+      err: err.join("\n"),
+      exitCode: process.exitCode,
+      launchctl,
+      home,
+    };
+  }
+
+  it("accepts the main checkout on a branch", () => {
+    expect(originRefusal(false, canonicalFacts, "/repo")).toBeUndefined();
+  });
+
+  it("refuses a Stryker sandbox, naming the k-wiki verb to run instead", () => {
+    const refusal = originRefusal(true, canonicalFacts, "/repo");
+
+    expect(refusal).toContain("Stryker sandbox");
+    expect(refusal).toContain("k-wiki setup-schedule");
+  });
+
+  it("refuses a linked worktree, naming the main checkout path", () => {
+    const refusal = originRefusal(
+      false,
+      {
+        commonDir: "/repo/.git",
+        gitDir: "/repo/.git/worktrees/issue-x",
+        head: "refs/heads/issue-x",
+      },
+      "/repo-wt",
+    );
+
+    expect(refusal).toContain("linked worktree");
+    expect(refusal).toContain("/repo");
+  });
+
+  it("refuses a detached HEAD", () => {
+    const refusal = originRefusal(
+      false,
+      { commonDir: "/repo/.git", gitDir: "/repo/.git", head: undefined },
+      "/repo",
+    );
+
+    expect(refusal).toContain("detached");
+  });
+
+  it("refuses a checkout git cannot inspect", () => {
+    const refusal = originRefusal(
+      false,
+      { commonDir: undefined, gitDir: undefined, head: undefined },
+      "/repo",
+    );
+
+    expect(refusal).toContain("not inside a git repository");
+  });
+
+  it("refuses install from a linked worktree: exit 1, the refusal, and nothing written", async () => {
+    const { err, exitCode, launchctl, home } = await runGuarded(
+      [],
+      "darwin",
+      worktreeGit,
+    );
+
+    expect(exitCode).toBe(1);
+    expect(err).toContain("linked worktree");
+    expect(launchctl).toEqual([]);
+    await expect(pathExists(join(home, "Library"))).resolves.toBe(false);
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("refuses uninstall from a linked worktree the same way", async () => {
+    const { err, exitCode, launchctl, home } = await runGuarded(
+      ["--uninstall"],
+      "darwin",
+      worktreeGit,
+    );
+
+    expect(exitCode).toBe(1);
+    expect(err).toContain("linked worktree");
+    expect(launchctl).toEqual([]);
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("refuses install inside a Stryker sandbox even on an unsupported platform", async () => {
+    const { err, exitCode, launchctl, home } = await runGuarded(
+      [],
+      "linux",
+      canonicalGit,
+      true,
+    );
+
+    expect(exitCode).toBe(1);
+    expect(err).toContain("Stryker sandbox");
+    expect(err).not.toContain("systemd");
+    expect(launchctl).toEqual([]);
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("lets --print through from a sandboxed origin (it writes nothing)", async () => {
+    const home = await mkdtemp(join(tmpdir(), "k-wiki-setup-print-"));
+    const printed: string[] = [];
+
+    process.exitCode = undefined;
+
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) =>
+        printed.push(parts.join(" ")),
+      );
+
+    try {
+      (globalThis as Record<string, unknown>).__stryker__ = {};
+
+      await main(["--print"], "linux", async () => {}, home, canonicalGit);
+    } finally {
+      delete (globalThis as Record<string, unknown>).__stryker__;
+      logSpy.mockRestore();
+    }
+
+    expect(printed.join("\n")).toContain(LAUNCHD_LABEL);
+    expect(process.exitCode).toBeUndefined();
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("installs and replaces cleanly from the main checkout on a branch", async () => {
+    const { exitCode, launchctl, home } = await runGuarded(
+      [],
+      "darwin",
+      canonicalGit,
+    );
+
+    expect(exitCode).toBeUndefined();
+    expect(launchctl.length).toBe(3);
+    await expect(
+      pathExists(
+        join(home, "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`),
+      ),
+    ).resolves.toBe(true);
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("documents the origin guard in the help text", async () => {
+    const printed: string[] = [];
+
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) =>
+        printed.push(parts.join(" ")),
+      );
+
+    try {
+      await main(["--help"]);
+    } finally {
+      logSpy.mockRestore();
+    }
+
+    const help = printed.join("\n");
+
+    expect(help).toContain("main working tree");
+    expect(help).toContain("Stryker sandbox");
+    expect(help).toContain("linked worktree");
   });
 });
 
@@ -654,6 +904,7 @@ describe("setup-schedule main: install and uninstall", () => {
             recorded.push([...args]);
           },
           home,
+          canonicalGit,
         );
       } finally {
         process.argv = argv;
@@ -704,6 +955,7 @@ describe("setup-schedule main: install and uninstall", () => {
             }
           },
           home,
+          canonicalGit,
         ),
       ).rejects.toThrow("bootstrap refused");
     } finally {
@@ -738,6 +990,7 @@ describe("setup-schedule main: install and uninstall", () => {
           recorded.push([...args]);
         },
         home,
+        canonicalGit,
       );
     } finally {
       logSpy.mockRestore();
@@ -767,6 +1020,7 @@ describe("setup-schedule main: install and uninstall", () => {
           throw new Error("no such job");
         },
         home,
+        canonicalGit,
       );
     } finally {
       logSpy.mockRestore();
@@ -939,6 +1193,7 @@ describe("calendar registration (issue #359)", () => {
         calls.push([...args]);
       },
       home,
+      canonicalGit,
     );
 
     const target = join(
@@ -964,6 +1219,7 @@ describe("calendar registration (issue #359)", () => {
         calls.push([...args]);
       },
       home,
+      canonicalGit,
     );
 
     expect(calls.at(-1)).toEqual(["bootout", expect.any(String), target]);

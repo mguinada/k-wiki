@@ -6,11 +6,9 @@
  * paths resolved at install time. Hooks are unversioned
  * per-machine state by nature: install runs once per machine.
  */
-import { execFile } from "node:child_process";
 import { chmod, mkdir, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import { promisify } from "node:util";
 import { cliFail, errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { readTextIfExists } from "../cli/shared.ts";
@@ -26,7 +24,7 @@ import {
   metaSyncLogPath,
 } from "./meta-sync-hook.ts";
 import { resolveDataRoot } from "./scheduled-run.ts";
-import { stableNodePath } from "./setup-schedule.ts";
+import { runGitIn, stableNodePath } from "./setup-schedule.ts";
 
 /** Help text: every switch and default (AGENTS.md CLI rule). */
 const HELP = `Usage: setup-meta-sync [-h | --help] [--print] [--uninstall]
@@ -98,14 +96,6 @@ export interface MetaSyncDeps {
   readonly home?: string;
   readonly cwd?: string;
   readonly git?: (dir: string, args: readonly string[]) => Promise<string>;
-}
-
-const run = promisify(execFile);
-
-async function runGitIn(dir: string, args: readonly string[]): Promise<string> {
-  const { stdout } = await run("git", args, { cwd: dir });
-
-  return stdout.trim();
 }
 
 /** The canonical checkout: the parent of the shared git dir, so an

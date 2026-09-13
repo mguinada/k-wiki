@@ -1280,6 +1280,12 @@ bin/k-wiki setup-schedule --calendar --print  # emit the sweep's plist, install 
 bin/k-wiki setup-schedule --calendar --uninstall  # bootout the sweep and remove its plist
 ```
 
+The installer guards its own origin: install and uninstall run only
+from the repository's main working tree on a branch — a Stryker
+sandbox copy, a linked worktree, or a detached HEAD is refused
+before anything is written ([why, below](#scheduling-the-pipeline-launchd));
+`--print` is exempt.
+
 `setup-schedule` registers the pipeline with launchd — two
 independent registrations, each installed, printed, and removed by
 its own invocation; neither command touches the other's plist. The
@@ -1299,7 +1305,13 @@ the launcher (as the switch to extensionless launcher names did),
 re-run `bin/k-wiki setup-schedule` once — until then the installed job
 points at the deleted path and every tick fails into
 `launchd-stderr.log` with `MODULE_NOT_FOUND`, leaving the wiki stale
-with no other alert. The interval plist
+with no other alert. The installer also guards its own origin:
+install and uninstall refuse to run from a Stryker sandbox copy, a
+linked worktree, or a detached HEAD — the registration bakes the
+calling checkout's absolute paths into a job that must outlive the
+checkout, and those origins are temporary. The refusal exits 1
+having written nothing and names the cure (run `k-wiki setup-schedule`
+from the main checkout); `--print` is exempt. The interval plist
 lands at `~/Library/LaunchAgents/com.kwiki.scheduled-run.plist` and is
 verified with `launchctl print` before the installer reports success.
 After installing, one manual kick proves the whole path:
@@ -1412,7 +1424,9 @@ baked absolute at install time: the node binary (the invocation
 path, stable across Homebrew upgrades), the canonical checkout
 (never the linked worktree the installer may run from), the meta
 configs inside it, `<dataRoot>/raw` from `sync-meta.json`, and the
-fire log.
+fire log. Unlike `setup-schedule`, install from a linked worktree
+is safe here — the hooks resolve the canonical checkout through the
+shared git dir, never the calling worktree's paths.
 
 The hook guards before firing: the fire must land in the
 canonical checkout (a merge on `main` inside a linked worktree
