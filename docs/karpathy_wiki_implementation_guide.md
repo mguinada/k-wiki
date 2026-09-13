@@ -720,7 +720,7 @@ Detected:
 The operational prompt text lives only in `prompts/` in the code
 repository — the CLIs load these files verbatim at runtime. This guide
 describes what each prompt does and points to the file; it never embeds
-prompt text. Index of the seven operational prompts:
+prompt text. Index of the eight operational prompts:
 
 | Prompt file | Trigger | Purpose |
 |---|---|---|
@@ -729,7 +729,8 @@ prompt text. Index of the seven operational prompts:
 | `prompts/expunge.md` | A sync removes notes (manifest diff has `removed` entries; §14a) | Re-derive affected pages from their remaining sources |
 | `prompts/rebuild.md` | Rebuilding the wiki from scratch (§15); the expunge threshold (§14a) | Rebuild the whole wiki from `raw/` |
 | `prompts/query.md` | Asking questions against the built wiki (§16) | Synthesize a cited answer; the wrapper saves it for human-gated filing |
-| `prompts/lint.md` | After every ingestion (§17; step 4 of `wiki-sync`) or standalone (`wiki-lint`, §17) | Audit wiki quality; fix mechanical problems, report the rest |
+| `prompts/lint.md` | The whole-wiki audit (§17): a first run with no snapshot, `wiki-lint --full`, or the weekly full sweep | Audit wiki quality; fix mechanical problems, report the rest |
+| `prompts/lint-window.md` | The cycle's lint stage and the default `wiki-lint` run once a snapshot exists (§17) | The same contract, scoped to the windowed audit's explicit page list |
 | `prompts/comparison-harvest.md` | One-shot harvest run manually (trial) | File comparisons where two or more sources explicitly contrast named approaches |
 
 Use this as the core prompt when processing changed sources.
@@ -874,9 +875,7 @@ both to files under `raw/` and to no hub that covers them — every
 (`bin/libexec/check-fidelity`: every machine-checkable token a source
 page quotes — tilde paths, config keys, CLI flags, `npm run`
 commands — appears in its `origin`, and every page title kebab-cases
-to its file name), the fidelity item in the lint prompt (relational
-misquotes — right tokens, wrong containment — are detected there,
-not deterministically), the body-text anchor lint
+to its file name), the body-text anchor lint
 (`bin/libexec/check-links`: every `[[wikilink]]` resolves to an existing page, and
 a body-text heading anchor `[[page#Chapter]]` lands on a target
 heading byte-identical to the anchor — the same rule
@@ -1028,12 +1027,41 @@ timed out or skipped: the stage's own run unchanged, bound to argv;
 nothing commits — the edits stay in the working tree for the next
 cycle to verify, commit, and publish.
 
-Full text: `prompts/lint.md`.
+Windowed by default (issue #359): a successful audit writes the
+lint-window snapshot — every wiki page's sha256, stamped
+`outputs/lint-window.json`, per-instance state excluded via the
+data repo's `.git/info/exclude`, beside the
+ingest manifest snapshot — and the next audit covers only the pages
+whose hash changed since plus their one-hop reverse-link neighbors
+(cross-page effects stay covered; the audited surface scales with
+change, not with the wiki). Full text of the windowed prompt:
+`prompts/lint-window.md`; full text of the whole-wiki prompt:
+`prompts/lint.md`. A missing snapshot (first run, foreign stamp) or
+`wiki-lint --full` audits everything; a failed or timed-out run
+leaves the snapshot untouched, so the next run retries the same
+window, and a timed-out run's guardrail-passed partial edits re-enter
+it through their changed hashes. A cycle's verification failure
+reverts the lint edits and rewinds the snapshot with them, so the
+next cycle re-audits the reverted pages.
+
+The deterministic pre-pass (issue #359, phase B): one pass over the
+wiki tree produces the worklists the prompt embeds — orphan,
+single-source, sources→non-source, frontmatter, tag, index, and
+duplicate-title candidates, each a candidate with evidence, never a
+verdict. The
+checks the standing gates own every cycle — broken wikilinks
+guardrail 3 + check-links, cross-wiki targets, citation fidelity,
+provenance, the sandbox wall — are no LLM checks at all: no
+duplication between the agent and the gates. The global report-only
+checks (missing comparisons, unfiled multi-source concepts) live in
+the full prompt — the weekly sweep's business.
 
 Intent: audit the wiki for quality problems — fix the clear mechanical
 ones automatically, report the ambiguous ones instead of guessing,
 never touch `wiki/AGENTS.md`, and save the report to
-`outputs/lint-<YYYY-MM-DD>.md`.
+`outputs/lint-<YYYY-MM-DD>.md` (the full audit's own
+`outputs/lint-<YYYY-MM-DD>-full.md`, so a same-day windowed audit
+cannot overwrite the sweep's report).
 
 ---
 
@@ -1082,7 +1110,12 @@ Suggested schedule:
 Start manually until the pipeline is reliable, then schedule it. The
 shipped scheduler is `setup-schedule` + `scheduled-run` (issue #14):
 launchd runs the wrapper on a fixed interval — lockfile, pre-run
-pull --rebase, `wiki-sync`, push. The run lock is shared protocol,
+pull --rebase, `wiki-sync`, push — and, as a second independent
+registration (issue #359), a weekly `StartCalendarInterval` job
+(default Sundays 03:00, `setup-schedule --calendar`) running
+`bin/scheduled-run --lint-full`: `wiki-lint --full` (the whole-wiki
+audit, including the global report-only checks) under the same run
+lock, then the ordinary cycle, push. The run lock is shared protocol,
 not wrapper-private (issue #313): a manual `wiki-sync` acquires the
 same `<dataRoot>/.scheduled-run.lock` for its cycle, so a manual run
 mid-cycle makes the next scheduled firing skip (redundant work;
@@ -1111,7 +1144,7 @@ Start with autonomous mode. Its safety mechanisms are the post-run guardrails �
 
 Two rules keep multi-instance setups safe (hardened during the first full build, issue #61; the README's Usage models section has the worked examples):
 
-1. Run every `sync-vault` / `wiki-ingest` from its own checkout root. The ingest snapshot (`<dataRoot>/outputs/last-ingested-manifest.json`) is per-data-repo state kept in the data repo's own `outputs/` (gitignored there), and the wrapper resolves `sync.json`, `settings.yml`, and its own `outputs/` relative to the checkout it runs from. A legacy snapshot in a checkout's `outputs/` is adopted into the data repo on the next run (issue #112). A foreign snapshot is caught mechanically (issue #95): the snapshot is stamped with its data repo root at write time, and a read whose stamp does not match — foreign or unstamped — warns loudly; an unscoped run then falls back to a full run, while a scoped `--sources` run rejects with “run a full ingest first” (issue #151), so a crossed instance costs at most an unintended full re-run, never a silently wrong change set.
+1. Run every `sync-vault` / `wiki-ingest` from its own checkout root. The ingest snapshot (`<dataRoot>/outputs/last-ingested-manifest.json`) is per-data-repo state kept in the data repo's own `outputs/` (ignored there via the standing `.gitignore`; the lint stage's window snapshot and its `.tmp` sibling live beside it, excluded via the data repo's `.git/info/exclude`, issue #359), and the wrapper resolves `sync.json`, `settings.yml`, and its own `outputs/` relative to the checkout it runs from. A legacy snapshot in a checkout's `outputs/` is adopted into the data repo on the next run (issue #112). A foreign snapshot is caught mechanically (issue #95): the snapshot is stamped with its data repo root at write time, and a read whose stamp does not match — foreign or unstamped — warns loudly; an unscoped run then falls back to a full run, while a scoped `--sources` run rejects with “run a full ingest first” (issue #151), so a crossed instance costs at most an unintended full re-run, never a silently wrong change set.
 2. Keep instance-specific configuration uncommitted or pass it explicitly (the config positional to `sync-vault`, `--settings <path>` to `wiki-ingest`, or `--wiki <name>` for a committed sibling config): `sync.json` and `settings.yml` are tracked files in a publishable repo, and a private instance's vault paths must never be committed.
 
 ---
@@ -1123,7 +1156,7 @@ Two repositories, two concerns:
 - **Code repo** (`k-wiki`): the pipeline — sync, prompts, tests, skills, this guide. It versions only the `raw/` and `wiki/` directory skeleton; the contents of both trees are gitignored. It holds no personal material, so it can be shared or published as-is.
 - **Data repo** (`k-wiki-engineering-data`, placed by `sync.json`'s `dataRoot`): the contents of `raw/` and `wiki/`, plus `raw/manifest.json`. Ingestion commits land here. The data repo can hold personal notes: push it only to a private remote you explicitly control. Local git — history, rollback, audit — works with no remote at all; the remote is the opt-in.
 
-Seed the data repo once with `bin/init-data-repo`: git init, copy the skeleton from the code repo, first commit. The copy step derives from `git ls-files`, so the skeleton cannot drift. The seed also writes the standing `.gitignore` the data repo must carry — Obsidian UI state (`.obsidian/`, `wiki/.obsidian/`: an open Obsidian writing into the repo is an external writer that guardrail 1 would revert runs over) and the ingest snapshot (issue #112). gitignore does not apply to already-tracked files, so the rules must precede the files; when one does not — a rule added after its files were committed — `wiki-ingest` warns pre-flight, one line per file, with the fix (`git rm --cached <path>`), and proceeds: a signal, not a gate (issue #146). The code repo's `wiki/AGENTS.md` is the canonical contract; the copy shipped into the data repo is derived, exactly like the mirror copy (Section 26). Worked examples of data-repo privacy postures — local only, opt-in remote, bare repo on an external disk — are in the README's Usage models section.
+Seed the data repo once with `bin/init-data-repo`: git init, copy the skeleton from the code repo, first commit. The copy step derives from `git ls-files`, so the skeleton cannot drift. The seed also writes the standing `.gitignore` the data repo must carry — Obsidian UI state (`.obsidian/`, `wiki/.obsidian/`: an open Obsidian writing into the repo is an external writer that guardrail 1 would revert runs over) and the ingest snapshot (issue #112); the lint stage's window snapshot is not seeded — it is per-run state, excluded on first use via `.git/info/exclude` (issue #359). gitignore does not apply to already-tracked files, so the rules must precede the files; when one does not — a rule added after its files were committed — `wiki-ingest` warns pre-flight, one line per file, with the fix (`git rm --cached <path>`), and proceeds: a signal, not a gate (issue #146). The code repo's `wiki/AGENTS.md` is the canonical contract; the copy shipped into the data repo is derived, exactly like the mirror copy (Section 26). Worked examples of data-repo privacy postures — local only, opt-in remote, bare repo on an external disk — are in the README's Usage models section.
 
 Keep both checkouts in plain local folders — never inside a cloud-synced folder — and share them between Macs through git remotes (Section 26).
 

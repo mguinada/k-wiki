@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
+import { pathExists } from "../../src/cli/shared.ts";
 import {
   DEFAULT_INTERVAL_SECONDS,
   LAUNCHD_LABEL,
@@ -19,6 +20,7 @@ import {
   main,
   parseIntervalDuration,
   parseScheduleArgs,
+  parseWeeklyAt,
   plistPath,
   schedulerUnsupportedError,
   stableNodePath,
@@ -574,7 +576,7 @@ describe("setup-schedule help", () => {
     const { out, exitCode } = await runMain(["--help"]);
 
     expect(`${exitCode}|${out.split("\n")[0]}`).toBe(
-      "0|Usage: setup-schedule [-h | --help] [--interval <duration>] [--print] [--uninstall]",
+      "0|Usage: setup-schedule [-h | --help] [--calendar [--weekly-at <day-HH:MM>]] [--interval <duration>] [--print] [--uninstall]",
     );
   });
 
@@ -839,5 +841,146 @@ describe("setup-schedule main wiring (issue #240 kill batch)", () => {
     expect(printed.join("\n")).toContain("Usage: setup-schedule");
 
     await rm(home, { recursive: true, force: true });
+  });
+});
+
+describe("parseWeeklyAt", () => {
+  it("parses a weekday-time into launchd calendar fields", () => {
+    expect(parseWeeklyAt("sun-03:00")).toEqual({
+      weekday: 0,
+      hour: 3,
+      minute: 0,
+    });
+    expect(parseWeeklyAt("SAT-16:45")).toEqual({
+      weekday: 6,
+      hour: 16,
+      minute: 45,
+    });
+  });
+
+  it("rejects malformed values", () => {
+    expect(parseWeeklyAt("sunday-03:00")).toBeUndefined();
+    expect(parseWeeklyAt("sun-3:00")).toBeUndefined();
+    expect(parseWeeklyAt("sun-24:00")).toBeUndefined();
+    expect(parseWeeklyAt("sun-03:60")).toBeUndefined();
+    expect(parseWeeklyAt("")).toBeUndefined();
+  });
+});
+
+describe("calendar registration (issue #359)", () => {
+  async function tempHome(): Promise<string> {
+    return await mkdtemp(join(tmpdir(), "k-wiki-cal-"));
+  }
+
+  it("prints the sweep plist with a StartCalendarInterval trigger", async () => {
+    const home = await tempHome();
+    const printed: string[] = [];
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) =>
+        printed.push(parts.join(" ")),
+      );
+
+    try {
+      await main(["--calendar", "--print"], "linux", async () => {}, home);
+    } finally {
+      logSpy.mockRestore();
+    }
+
+    const plist = printed.join("\n");
+
+    expect(plist).toContain("<string>com.kwiki.scheduled-lint</string>");
+    expect(plist).toContain("<key>StartCalendarInterval</key>");
+    expect(plist).toContain("<integer>0</integer>");
+    expect(plist).toContain("<integer>3</integer>");
+    expect(plist).toContain("<string>--lint-full</string>");
+    expect(plist).not.toContain("StartInterval");
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("honors --weekly-at for the trigger fields", async () => {
+    const home = await tempHome();
+    const printed: string[] = [];
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) =>
+        printed.push(parts.join(" ")),
+      );
+
+    try {
+      await main(
+        ["--calendar", "--weekly-at", "sat-04:30", "--print"],
+        "linux",
+        async () => {},
+        home,
+      );
+    } finally {
+      logSpy.mockRestore();
+    }
+
+    const plist = printed.join("\n");
+
+    expect(plist).toContain("<integer>6</integer>");
+    expect(plist).toContain("<integer>4</integer>");
+    expect(plist).toContain("<integer>30</integer>");
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("installs, replaces, and uninstalls only the sweep plist", async () => {
+    const home = await tempHome();
+    const calls: string[][] = [];
+
+    await main(
+      ["--calendar"],
+      "darwin",
+      async (args) => {
+        calls.push([...args]);
+      },
+      home,
+    );
+
+    const target = join(
+      home,
+      "Library",
+      "LaunchAgents",
+      "com.kwiki.scheduled-lint.plist",
+    );
+
+    expect(calls).toEqual([
+      ["bootout", expect.any(String), target],
+      ["bootstrap", expect.any(String), target],
+      ["print", expect.any(String)],
+    ]);
+    expect(calls[2]?.[1]).toContain("com.kwiki.scheduled-lint");
+    expect(await readFile(target, "utf8")).toContain("--lint-full");
+    expect(await pathExists(plistPath(home))).toBe(false);
+
+    await main(
+      ["--calendar", "--uninstall"],
+      "darwin",
+      async (args) => {
+        calls.push([...args]);
+      },
+      home,
+    );
+
+    expect(calls.at(-1)).toEqual(["bootout", expect.any(String), target]);
+    expect(await pathExists(target)).toBe(false);
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("rejects --weekly-at without --calendar", async () => {
+    const parsed = parseScheduleArgs(["--weekly-at", "sun-03:00"]);
+
+    expect(parsed.error).toContain("--weekly-at needs --calendar");
+  });
+
+  it("rejects an invalid --weekly-at value", async () => {
+    const parsed = parseScheduleArgs(["--calendar", "--weekly-at", "whenever"]);
+
+    expect(parsed.error).toContain("invalid --weekly-at value");
   });
 });

@@ -27,15 +27,32 @@ e2e run or diagnosing a failing one.
   #338), and citation-wall (a rogue main→sandbox edge fails the
   standing lint, is path-scoped-reverted to its last committed
   state, leaves the cycle's commit untouched, and the next cycle
-  passes, issue #339) runs.
+  passes, issue #339) runs; windowed lint (issue #359): a first
+  cycle audits the whole wiki and writes the snapshot, the next
+  cycle's lint is windowed to the changed page, a clean no-change
+  cycle keeps the skip, and an ingest whose pages all come back
+  byte-identical skips the agent with the empty-window digest line.
 - **wiki-lint** — the standalone lint door against a stub agent in
   temp data repos: completed run (report written, digest on stdout,
   exit 0), uncommitted-edits (the agent's wiki edits and the report
   stay uncommitted for the next cycle), and guardrail-revert (a
-  forbidden write reverts the repo and exits 1) runs.
+  forbidden write reverts the repo and exits 1) runs; windowed audits
+  (issue #359): a first run is the full audit and writes the
+  `outputs/lint-window.json` snapshot (excluded from git history via
+  the data repo's `.git/info/exclude`, `.tmp` sibling included), the
+  next run after an edit is windowed to the changed page (its prompt
+  recorded by the stub), `--full` forces the whole-wiki prompt
+  whatever the snapshot says.
 - **scheduled-run** — full-cycle, no-op re-run, lock-skip,
   push-rejection-retry, double-push-failure, and dirty-tree recovery
-  runs in temp data repos with an upstream remote.
+  runs in temp data repos with an upstream remote; `--lint-full`
+  (issue #359) runs the full sweep (`wiki-lint --full`, the sweep
+  budget forwarded with the instance's settings and raw dir) before
+  the cycle, all under the shared run lock.
+- **setup-schedule** — the plist emitters as real child processes:
+  `--print` (interval registration) and `--print --calendar` (the
+  weekly `com.kwiki.scheduled-lint` sweep, `StartCalendarInterval`,
+  `--weekly-at` honored), issue #359.
 - **setup-meta-sync** — hook install, idempotent re-install,
   uninstall, merge and rebase-pull fires, and feature-branch,
   linked-worktree, and dirty-tree guard skips in a temp source repo

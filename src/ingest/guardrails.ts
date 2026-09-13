@@ -47,6 +47,7 @@ import {
   isWikilinkEntry,
   listWikiPages,
   parsePageFields,
+  REQUIRED_PAGE_FIELDS,
   wikilinkTarget,
 } from "../wiki/pages.ts";
 import {
@@ -92,15 +93,6 @@ const SOURCES_EXEMPT = new Set([
   // source.
   "wiki/second-brain/profile.md",
 ]);
-
-/** Frontmatter fields every wiki page must carry (§9). */
-const REQUIRED_FIELDS = [
-  "title",
-  "type",
-  "created",
-  "updated",
-  "tags",
-] as const;
 
 /** One tripped guardrail: which check, and every problem found. */
 export interface GuardrailFailure {
@@ -301,7 +293,9 @@ export function checkWikiFrontmatter(
   }
 
   const { keys, type } = parseFrontmatterKeys(lines.slice(1, closing));
-  const missing: string[] = REQUIRED_FIELDS.filter((field) => !keys.has(field));
+  const missing: string[] = REQUIRED_PAGE_FIELDS.filter(
+    (field) => !keys.has(field),
+  );
 
   if (
     type !== undefined &&

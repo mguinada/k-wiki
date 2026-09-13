@@ -176,6 +176,7 @@ if (mode === "link-domain" || mode === "link-broken") {
       "",
     ].join("\\n"),
   );
+  const mark = process.env.STUB_INGEST_MARK ?? "";
   await writeFile(
     join(process.cwd(), "wiki", "concepts", "stub.md"),
     [
@@ -190,7 +191,7 @@ if (mode === "link-domain" || mode === "link-broken") {
       '  - "[[stub-source]]"',
       "---",
       "",
-      "stub body",
+      "stub body" + (mark === "" ? "" : " " + mark),
       "",
     ].join("\\n"),
   );
@@ -215,12 +216,16 @@ if (mode === "link-domain" || mode === "link-broken") {
 }
 
 if (prompt.startsWith("Audit the wiki")) {
-  const reportPath = prompt.match(/outputs\\/lint-\\d{4}-\\d{2}-\\d{2}\\.md/)?.[0];
+  const reportPath = prompt.match(/outputs\\/lint-\\d{4}-\\d{2}-\\d{2}(-full)?\\.md/)?.[0];
   if (reportPath === undefined) process.exit(6);
   await mkdir(join(process.cwd(), "outputs"), { recursive: true });
   await writeFile(
     join(process.cwd(), reportPath),
     "# Lint report\\n\\nAll checks passed.\\n",
+  );
+  await writeFile(
+    join(process.cwd(), "outputs", "received-lint-prompt.txt"),
+    prompt,
   );
   console.log("lint: all pages audited, no problems");
 } else {
@@ -452,7 +457,7 @@ describe("wiki-sync e2e", () => {
     const repo = await makeRepo();
     const result = await runCycle(repo);
     const lintPath =
-      /- \*\*Lint:\*\* report `(outputs\/lint-\d{4}-\d{2}-\d{2}\.md)`/.exec(
+      /- \*\*Lint:\*\* full audit, report `(outputs\/lint-\d{4}-\d{2}-\d{2}(-full)?\.md)`/.exec(
         result.out,
       )?.[1];
 
@@ -462,7 +467,9 @@ describe("wiki-sync e2e", () => {
 
     expect(result.code).toBe(0);
     expect(result.out).toContain("# wiki-sync cycle digest");
-    expect(result.out).toContain(`**Lint:** report \`${lintPath}\``);
+    expect(result.out).toContain(
+      `**Lint:** full audit, report \`${lintPath}\``,
+    );
     expect(result.out).toMatch(
       /- \*\*Fidelity:\*\* ok — \d+ tokens? trace to origins, \d+ titles? match(?:es)? across \d+ pages?/,
     );
@@ -861,5 +868,85 @@ describe("wiki-sync e2e", () => {
     const rerun = await runCycle(repo);
 
     expect(rerun.code).toBe(0);
+  });
+});
+
+describe("wiki-sync e2e — windowed lint (issue #359)", () => {
+  it("audits the full wiki first, then only the changed window on the next ingest", async () => {
+    const repo = await makeRepo();
+    const promptPath = join(
+      repo.dataRoot,
+      "outputs",
+      "received-lint-prompt.txt",
+    );
+
+    // Cycle 1: no snapshot — the full audit, and the snapshot lands.
+    const first = await runCycle(repo);
+    const firstPrompt = await readFile(promptPath, "utf8");
+
+    expect(first.code).toBe(0);
+    expect(firstPrompt.startsWith("Audit the wiki for quality problems.")).toBe(
+      true,
+    );
+    expect(firstPrompt).not.toContain("Pages in this audit window");
+    expect(
+      await readFile(
+        join(repo.dataRoot, "outputs", "lint-window.json"),
+        "utf8",
+      ),
+    ).toContain('"snapshotFor"');
+
+    // One vault note changes; the next cycle's ingest rewrites the
+    // stub concept page with the run's mark, so its hash — and only
+    // its hash — differs from the snapshot.
+    const notePath = join(repo.vaultRoot, "AI", "RAG.md");
+    const note = await readFile(notePath, "utf8");
+
+    await writeFile(notePath, `${note}\nA late addition.\n`, "utf8");
+
+    const second = await runCycle(repo, { STUB_INGEST_MARK: "v2" });
+    const secondPrompt = await readFile(promptPath, "utf8");
+
+    expect(second.code).toBe(0);
+    expect(secondPrompt.startsWith("Audit the wiki pages listed")).toBe(true);
+    expect(secondPrompt).toContain("Pages in this audit window");
+    expect(secondPrompt).toContain("- wiki/concepts/stub.md");
+    expect(secondPrompt).toContain("Deterministic worklists");
+    expect(second.out).toContain(
+      "**Lint:** window audit (1 page), report `outputs/lint-",
+    );
+  });
+
+  it("keeps the no-change skip: a clean cycle runs no lint at all", async () => {
+    const repo = await makeRepo();
+
+    await runCycle(repo);
+
+    const second = await runCycle(repo);
+
+    expect(second.code).toBe(0);
+    expect(second.out).toContain("nothing to do");
+  });
+
+  it("skips the lint agent when the window is empty after an ingest", async () => {
+    const repo = await makeRepo();
+
+    // Cycle 1 establishes the snapshot. Cycle 2 carries a vault
+    // change whose ingest writes byte-identical wiki pages (no mark):
+    // the ingest runs, but no page hash differs — the window is empty
+    // and the lint agent never fires.
+    await runCycle(repo);
+
+    const notePath = join(repo.vaultRoot, "AI", "RAG.md");
+    const note = await readFile(notePath, "utf8");
+
+    await writeFile(notePath, `${note}\nA whitespace-only tweak.\n`, "utf8");
+
+    const second = await runCycle(repo);
+
+    expect(second.code).toBe(0);
+    expect(second.out).toContain(
+      "**Lint:** window empty — nothing left to audit since the last audit",
+    );
   });
 });

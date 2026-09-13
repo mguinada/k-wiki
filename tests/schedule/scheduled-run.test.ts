@@ -16,6 +16,7 @@ import {
   buildScheduledEnv,
   createRunLog,
   main,
+  parseScheduledRunArgs,
   resolveDataRoot,
   rotateLogIfNeeded,
   runScheduledCycle,
@@ -60,6 +61,157 @@ describe("runScheduledCycle (issue #240 kill batch)", () => {
 
     await rm(dir, { recursive: true, force: true });
     expect(outcome).toEqual({ status: "ok" });
+  });
+});
+
+describe("runScheduledCycle --lint-full (issue #359)", () => {
+  it("runs the full sweep after the pull and before the cycle", async () => {
+    const dir = await tempDir();
+    const { git, runGitStep } = fakeGit();
+    const sweeps: string[][] = [];
+
+    const outcome = await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      runLintFull: async (sweepArgs) => {
+        sweeps.push([...sweepArgs]);
+        git.calls.push(["wiki-lint", ...sweepArgs]);
+      },
+      lintFullSettings: "s.yml",
+      lintFull: true,
+      log: () => {},
+    });
+
+    expect(git.calls).toEqual([
+      ["remote", "get-url", "origin"],
+      ["status", "--porcelain", "--untracked-files=no"],
+      ["pull", "--rebase"],
+      [
+        "wiki-lint",
+        "--full",
+        "--timeout",
+        "7200",
+        "--settings",
+        "s.yml",
+        join(dir, "raw"),
+      ],
+      ["wiki-sync"],
+      ["push"],
+    ]);
+    expect(sweeps).toEqual([
+      ["--full", "--timeout", "7200", "--settings", "s.yml", join(dir, "raw")],
+    ]);
+    expect(outcome).toEqual({ status: "ok" });
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("honors an explicit timeout for the sweep budget", async () => {
+    const dir = await tempDir();
+    const { git, runGitStep } = fakeGit();
+    const sweeps: string[][] = [];
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      runLintFull: async (sweepArgs) => {
+        sweeps.push([...sweepArgs]);
+      },
+      lintFull: true,
+      lintFullTimeoutMs: 3_600_000,
+      log: () => {},
+    });
+
+    expect(sweeps).toEqual([["--full", "--timeout", "3600", join(dir, "raw")]]);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("fails the run without the cycle when the sweep fails", async () => {
+    const dir = await tempDir();
+    const { git, runGitStep } = fakeGit();
+
+    const outcome = await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      runLintFull: async () => {
+        throw new Error("wiki-lint exited 1");
+      },
+      lintFull: true,
+      log: () => {},
+    });
+
+    expect(outcome).toEqual({
+      status: "failed",
+      error: "wiki-lint exited 1",
+    });
+    expect(git.calls).toEqual([
+      ["remote", "get-url", "origin"],
+      ["status", "--porcelain", "--untracked-files=no"],
+      ["pull", "--rebase"],
+    ]);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("skips loud naming the holder when the lock is busy", async () => {
+    const dir = await tempDir();
+    const { git, runGitStep } = fakeGit();
+    const lockPath = join(dir, ".scheduled-run.lock");
+
+    await mkdir(join(dir, "outputs"), { recursive: true });
+    await acquireLock(lockPath, { pid: 4242 });
+
+    const outcome = await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath,
+      runGitStep,
+      runSync: syncRecorder(git),
+      lintFull: true,
+      log: () => {},
+    });
+
+    expect(outcome.status).toBe("skipped");
+    if (outcome.status === "skipped") {
+      expect(outcome.reason).toContain("4242");
+    }
+    expect(git.calls).toEqual([]);
+
+    await releaseLock(lockPath);
+    await rm(dir, { recursive: true, force: true });
+  });
+});
+
+describe("parseScheduledRunArgs", () => {
+  it("accepts the lint-full boolean with the shared value flags", () => {
+    const parsed = parseScheduledRunArgs([
+      "--lint-full",
+      "--timeout",
+      "3600",
+      "config.json",
+      "raw",
+    ]);
+
+    expect(parsed.error).toBeUndefined();
+    expect(parsed.flags.has("--lint-full")).toBe(true);
+    expect(parsed.values.get("--timeout")).toBe("3600");
+  });
+
+  it("keeps the boolean optional", () => {
+    const parsed = parseScheduledRunArgs([]);
+
+    expect(parsed.error).toBeUndefined();
+    expect(parsed.flags.has("--lint-full")).toBe(false);
   });
 });
 
@@ -916,7 +1068,7 @@ describe("scheduled-run main: help", () => {
     const { out, exitCode } = await runMain(["--help"]);
 
     expect(`${exitCode}|${out.split("\n")[0]}`).toBe(
-      "0|Usage: scheduled-run [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<config>] [<raw-dir>]",
+      "0|Usage: scheduled-run [-h | --help] [--lint-full] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<config>] [<raw-dir>]",
     );
   });
 
@@ -929,7 +1081,7 @@ describe("scheduled-run main: help", () => {
   it("documents the lock takeover and the push retry in the help text", async () => {
     const { out } = await runMain(["--help"]);
 
-    expect(out).toContain("older than two hours is taken over");
+    expect(out).toContain("older than four hours is taken over");
   });
 
   it("documents the push rejection sequence in the help text", async () => {
