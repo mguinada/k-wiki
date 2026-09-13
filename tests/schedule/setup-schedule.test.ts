@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { pathExists } from "../../src/cli/shared.ts";
 import {
+  type CheckoutFacts,
   DEFAULT_INTERVAL_SECONDS,
   LAUNCHD_LABEL,
   launchdPlist,
@@ -25,7 +26,6 @@ import {
   plistPath,
   schedulerUnsupportedError,
   stableNodePath,
-  type CheckoutFacts,
 } from "../../src/schedule/setup-schedule.ts";
 
 /** A git probe reporting the canonical main checkout — the origin
