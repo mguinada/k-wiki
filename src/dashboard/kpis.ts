@@ -67,6 +67,13 @@ export interface DashboardInput {
   readonly firstAdded: readonly AdditionFact[];
   /** Timestamp recorded in outputs/last-query.md; null when absent. */
   readonly lastQuery: string | null;
+  /** The scheduled cycle's heartbeat stamp (outputs/last-cycle.json);
+   *  null when absent or unreadable. */
+  readonly lastCycle: {
+    readonly timestamp: string;
+    readonly outcome: "ok" | "failed";
+    readonly lastOk: string | null;
+  } | null;
 }
 
 /** One labeled count, rendered as a bar. */
@@ -441,6 +448,31 @@ export function needsReviewChurn(
   return factsPerWeek(statusFlips, now, () => true, weeks);
 }
 
+/** Age of the last ok scheduled cycle from the heartbeat stamp:
+ *  the stamp's own timestamp when it completed ok, else the carried
+ *  lastOk; null when the pipeline has no success on record (no
+ *  stamp, unreadable stamp, or only failed cycles). Clamped at zero
+ *  so a future-dated stamp cannot read as negative age. */
+export function lastOkCycleAgeMs(
+  lastCycle: DashboardInput["lastCycle"],
+  now: Date,
+): number | null {
+  if (lastCycle === null) {
+    return null;
+  }
+
+  const lastOk =
+    lastCycle.outcome === "ok" ? lastCycle.timestamp : lastCycle.lastOk;
+
+  if (lastOk === null) {
+    return null;
+  }
+
+  const ageMs = now.getTime() - Date.parse(lastOk);
+
+  return Number.isFinite(ageMs) ? Math.max(0, ageMs) : null;
+}
+
 /** Every KPI the dashboard renders, from one input. */
 export interface DashboardKpis {
   readonly totalPages: number;
@@ -480,6 +512,9 @@ export interface DashboardKpis {
     readonly filedCount: number;
     readonly lastRunAt: string | null;
   };
+  /** Age of the last ok scheduled cycle, from the heartbeat stamp;
+   *  null when no ok cycle is on record. */
+  readonly lastOkCycleAgeMs: number | null;
 }
 
 /** The wiki's navigation root: linked structurally (the file list,
@@ -556,5 +591,6 @@ export function computeKpis(input: DashboardInput): DashboardKpis {
     growth: growthSeries(input.firstAdded, input.now),
     provenance: provenanceBuckets(input.pages),
     funnel: funnelFrom(input.pages, input.lastQuery),
+    lastOkCycleAgeMs: lastOkCycleAgeMs(input.lastCycle, input.now),
   };
 }

@@ -80,6 +80,11 @@ export function fixtureKpis(): DashboardKpis {
       { path: "queries/how-to-eval.md", date: "2026-08-28" },
     ],
     lastQuery: "2026-08-30T10:00:00.000Z",
+    lastCycle: {
+      timestamp: "2026-09-01T09:00:00.000Z",
+      outcome: "ok",
+      lastOk: "2026-09-01T09:00:00.000Z",
+    },
   };
 
   return computeKpis(input);
@@ -163,6 +168,7 @@ export function goldenCases(): RenderCase[] {
     growth: [],
     provenance: { zero: 0, single: 0, twoThree: 0, fourPlus: 0 },
     funnel: { present: false, filedCount: 0, lastRunAt: null },
+    lastOkCycleAgeMs: null,
   };
 
   return [

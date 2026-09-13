@@ -2,6 +2,8 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
+    // See tests/setup-env.ts — macOS notifications stay off in tests.
+    setupFiles: ["tests/setup-env.ts"],
     // Git- and clock-heavy tests (wiki-ingest, guardrails, sync
     // progress) spawn real child processes and wait real intervals;
     // under heavy machine load (e.g. endpoint-security scanning) the

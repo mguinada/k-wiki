@@ -48,7 +48,22 @@ e2e run or diagnosing a failing one.
   runs in temp data repos with an upstream remote; `--lint-full`
   (issue #359) runs the full sweep (`wiki-lint --full`, the sweep
   budget forwarded with the instance's settings and raw dir) before
-  the cycle, all under the shared run lock.
+  the cycle, all under the shared run lock; heartbeat (issue #362):
+  a completed cycle writes the `outputs/last-cycle.json` stamp (ok
+  after a clean push with `lastOk` set, failed when the push fails
+  twice), the stamp stays out of git status via
+  `.git/info/exclude`, and a lock-skip tick leaves the previous
+  stamp untouched.
+- **sync-watchdog** — the libexec door as a real child process
+  against temp data repos (issue #362): `--help` answers with usage
+  and exit 0; a fresh stamp exits 0, a stale or unreadable stamp
+  exits 1, both naming the age and threshold; a missing stamp holds
+  the grace window (exit 0) while the newest data-repo commit is
+  inside the threshold and alerts (exit 1) once it is older; the
+  installer's `watchdog-since.txt` anchor holds the same grace over
+  old commits; an explicit `--stale-after` overrides the default;
+  and the stamp a scheduled-run cycle wrote is read back correctly
+  end to end.
 - **setup-schedule** — the plist emitters as real child processes:
   `--print` (interval registration) and `--print --calendar` (the
   weekly `com.kwiki.scheduled-lint` sweep, `StartCalendarInterval`,

@@ -6,6 +6,7 @@
  * stays quiet; the KPIs are the content.
  */
 
+import { formatAge } from "../schedule/heartbeat.ts";
 import type { DashboardKpis, KpiBar, WeekPoint } from "./kpis.ts";
 
 /** The reference palette (grayscale ramp) plus the accent. */
@@ -126,6 +127,7 @@ function coverageSection(kpis: DashboardKpis): string {
     `${stat(String(kpis.totalPages), "wiki pages", false, "Every content page under wiki/ (AGENTS.md and its meta template excluded).")}` +
       `${stat(String(kpis.backlog.count), "un-ingested sources", kpis.backlog.count > 0, "Raw notes present in raw/ but absent from the last ingest snapshot — waiting for the next wiki-ingest run.")}` +
       `${stat(kpis.syncLagDays === null ? "—" : `${kpis.syncLagDays}d`, "since last sync", false, "Days since the newest last_synced stamp in raw/manifest.json — how far the projection trails the vault.")}` +
+      `${stat(kpis.lastOkCycleAgeMs === null ? "—" : formatAge(kpis.lastOkCycleAgeMs), "since last successful cycle", false, "Age of the last scheduled cycle that completed ok, from the data repo's outputs/last-cycle.json heartbeat — failed cycles keep the older success on record.")}` +
       `<div class="card wide">${cardTitle("Pages by type", "Frontmatter type of each page: source (one per raw note), concept, entity, comparison, query, topic.")}${barTable(kpis.typeCounts)}</div>` +
       `<div class="card wide">${cardTitle("Staleness — pages by age since update", "Days since each page's frontmatter updated date. > 90 days (accent) means the page has not been touched in a quarter.")}` +
       barTable(

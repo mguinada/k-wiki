@@ -1,0 +1,4 @@
+#!/usr/bin/env node
+import { main } from "../../src/schedule/sync-watchdog.ts";
+
+await main();
