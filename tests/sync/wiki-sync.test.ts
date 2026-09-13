@@ -2105,10 +2105,7 @@ describe("runWikiSync verification stage", () => {
       "utf8",
     );
 
-    await writeFile(
-      join(h.vaultRoot, "AI", "Second.md"),
-      "second source body",
-    );
+    await writeFile(join(h.vaultRoot, "AI", "Second.md"), "second source body");
     h.ingestAgent = async (_command, _args, options) => {
       await mkdir(join(options.cwd, "wiki", "concepts"), { recursive: true });
       await writeFile(

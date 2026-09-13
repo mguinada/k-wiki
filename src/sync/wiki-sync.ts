@@ -126,10 +126,7 @@ import {
   type LintResult,
   runLintStage,
 } from "./lint-stage.ts";
-import {
-  lintWindowPath,
-  restoreLintWindowSnapshot,
-} from "./lint-window.ts";
+import { lintWindowPath, restoreLintWindowSnapshot } from "./lint-window.ts";
 import type {
   DriverOptions,
   RepoSyncReport,
