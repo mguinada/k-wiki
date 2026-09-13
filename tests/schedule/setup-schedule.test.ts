@@ -1073,6 +1073,7 @@ describe("watchdog registration (issue #362)", () => {
   it("installs, replaces, and uninstalls only the watchdog plist", async () => {
     const home = await tempHome();
     const calls: string[][] = [];
+    const anchored: string[] = [];
 
     await main(
       ["--watchdog"],
@@ -1082,6 +1083,9 @@ describe("watchdog registration (issue #362)", () => {
       },
       home,
       canonicalGit,
+      async (dataRoot) => {
+        anchored.push(dataRoot);
+      },
     );
 
     const target = watchdogPlistPath(home);
@@ -1091,6 +1095,36 @@ describe("watchdog registration (issue #362)", () => {
       ["bootstrap", expect.any(String), target],
       ["print", expect.any(String)],
     ]);
+    expect(anchored).toHaveLength(1);
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("stamps the grace anchor only on a real watchdog install", async () => {
+    const home = await tempHome();
+    const anchored: string[] = [];
+    const writeAnchor = async (dataRoot: string) => {
+      anchored.push(dataRoot);
+    };
+
+    await main(
+      ["--watchdog", "--print"],
+      "linux",
+      async () => {},
+      home,
+      undefined,
+      writeAnchor,
+    );
+    await main(
+      ["--watchdog", "--uninstall"],
+      "darwin",
+      async () => {},
+      home,
+      canonicalGit,
+      writeAnchor,
+    );
+
+    expect(anchored).toEqual([]);
 
     await rm(home, { recursive: true, force: true });
   });

@@ -163,6 +163,51 @@ describe("watchdogVerdict", () => {
     });
   });
 
+  it("holds the grace on a fresh install anchor even when commits are old", () => {
+    expect(
+      watchdogVerdict({
+        read: { kind: "missing" },
+        now: NOW,
+        thresholdMs: THRESHOLD,
+        newestCommitAt: new Date("2026-09-20T09:00:00.000Z"),
+        installedAt: new Date("2026-09-20T11:30:00.000Z"),
+      }),
+    ).toEqual({
+      line: "sync-watchdog: no heartbeat yet — watchdog install 30m old, inside the 1h 30m grace window",
+      exitCode: 0,
+    });
+  });
+
+  it("alerts once the install anchor passes the threshold", () => {
+    expect(
+      watchdogVerdict({
+        read: { kind: "missing" },
+        now: NOW,
+        thresholdMs: THRESHOLD,
+        newestCommitAt: undefined,
+        installedAt: new Date("2026-09-20T08:00:00.000Z"),
+      }),
+    ).toEqual({
+      line: "sync-watchdog: ALERT — no heartbeat; watchdog install 4h old, past the 1h 30m threshold",
+      exitCode: 1,
+    });
+  });
+
+  it("prefers the newer grace reference: a fresh commit over an old anchor", () => {
+    expect(
+      watchdogVerdict({
+        read: { kind: "missing" },
+        now: NOW,
+        thresholdMs: THRESHOLD,
+        newestCommitAt: new Date("2026-09-20T11:00:00.000Z"),
+        installedAt: new Date("2026-09-20T08:00:00.000Z"),
+      }),
+    ).toEqual({
+      line: "sync-watchdog: no heartbeat yet — newest data-repo commit 1h old, inside the 1h 30m grace window",
+      exitCode: 0,
+    });
+  });
+
   it("alerts for a missing stamp with no git history to hold the grace", () => {
     expect(
       watchdogVerdict({
@@ -172,7 +217,7 @@ describe("watchdogVerdict", () => {
         newestCommitAt: undefined,
       }),
     ).toEqual({
-      line: "sync-watchdog: ALERT — no heartbeat and no data-repo git history to hold the grace window (threshold 1h 30m)",
+      line: "sync-watchdog: ALERT — no heartbeat and no data-repo git history or install anchor to hold the grace window (threshold 1h 30m)",
       exitCode: 1,
     });
   });
@@ -288,6 +333,30 @@ describe("runWatchdog", () => {
 
     expect(code).toBe(1);
     expect(notified[0]).toContain("no heartbeat");
+  });
+  it("holds the grace on a fresh install anchor over old commits", async () => {
+    const dataRoot = await tempDataRoot(new Date("2026-09-20T09:00:00.000Z"));
+    const notified: string[] = [];
+
+    await mkdir(join(dataRoot, "outputs"), { recursive: true });
+    await writeFile(
+      join(dataRoot, "outputs", "watchdog-since.txt"),
+      "2026-09-20T11:30:00.000Z\n",
+      "utf8",
+    );
+
+    const code = await runWatchdog({
+      dataRoot,
+      staleAfterMs: THRESHOLD,
+      now: () => NOW,
+      log: () => {},
+      notify: (message) => {
+        notified.push(message);
+      },
+    });
+
+    expect(code).toBe(0);
+    expect(notified).toEqual([]);
   });
 });
 

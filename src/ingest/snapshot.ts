@@ -109,16 +109,22 @@ export async function ensureLintWindowIgnored(
   }
 }
 
-/** Keep the scheduled cycle's heartbeat stamp out of the data
- *  repo's history (issue #362): the stamp is per-instance state
- *  written by every completed cycle — a commit or clean must never
- *  take it. Same home as the lint window (.git/info/exclude),
+/** Keep the scheduled cycle's heartbeat state out of the data
+ *  repo's history (issue #362): the cycle stamp is per-instance
+ *  state written by every completed cycle, the watchdog's install
+ *  anchor by setup-schedule — a commit or clean must never take
+ *  either. Same home as the lint window (.git/info/exclude),
  *  re-applied on every write so fresh clones self-heal. */
 export async function ensureHeartbeatIgnored(
   dataRoot: string,
   onProgress: (message: string) => void,
 ): Promise<void> {
-  const entries = ["outputs/last-cycle.json", "outputs/last-cycle.json.tmp"];
+  const entries = [
+    "outputs/last-cycle.json",
+    "outputs/last-cycle.json.tmp",
+    "outputs/watchdog-since.txt",
+    "outputs/watchdog-since.txt.tmp",
+  ];
 
   if (
     await appendIgnoreEntries(
@@ -128,7 +134,7 @@ export async function ensureHeartbeatIgnored(
     )
   ) {
     onProgress(
-      `scheduled-run: excluding the cycle heartbeat (${entries[0]}) via ${join(dataRoot, ".git", "info", "exclude")} so no commit or clean can take it`,
+      `excluding the heartbeat state (${entries[0]}, ${entries[2]}) via ${join(dataRoot, ".git", "info", "exclude")} so no commit or clean can take it`,
     );
   }
 }

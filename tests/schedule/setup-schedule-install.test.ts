@@ -93,7 +93,7 @@ async function runMain(
     .mockImplementation((...parts: unknown[]) => err.push(parts.join(" ")));
 
   try {
-    await main(args, platform, undefined, runHome);
+    await main(args, platform, undefined, runHome, undefined, async () => {});
   } finally {
     process.argv = argv;
     logSpy.mockRestore();

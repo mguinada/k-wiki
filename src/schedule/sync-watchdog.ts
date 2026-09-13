@@ -8,16 +8,20 @@
  * reads exactly one file — the data repo's outputs/last-cycle.json
  * heartbeat stamp, written by every completed cycle — and compares
  * its age against a staleness threshold. No git state is trusted
- * beyond the one fallback the grace window needs (the newest commit
- * date, the best freshness signal a stamp-less fresh install has).
+ * beyond the grace-window fallbacks: the newest commit date (the
+ * freshness signal a stamp-less fresh init has) and the install
+ * anchor setup-schedule writes when the watchdog registration is
+ * installed — the upgrade path, an existing data repo whose commits
+ * are old, would otherwise alert before its first cycle completes.
  *
  * Verdicts: fresh → one line, exit 0. Stale, unreadable, or missing
  * past the grace window → one line, a macOS notification
  * (osascript; KWIKI_NOTIFY=0 disables), exit 1 — launchd records
  * the non-zero exit too. A missing stamp inside the grace window is
- * the fresh-install case: the newest data-repo commit is younger
- * than the threshold, so the first cycle has not had its chance
- * yet and the watchdog stays quiet.
+ * the fresh-install case: the newest of the data-repo commit date
+ * and the install anchor is younger than the threshold, so the
+ * first cycle has not had its chance yet and the watchdog stays
+ * quiet.
  */
 
 import { join } from "node:path";
@@ -30,6 +34,7 @@ import {
   classifyHeartbeat,
   formatAge,
   readCycleHeartbeat,
+  readWatchdogSince,
 } from "./heartbeat.ts";
 import { notifyUser } from "./notify.ts";
 import { resolveDataRoot } from "./scheduled-run.ts";
@@ -59,33 +64,46 @@ export function watchdogVerdict(input: {
   readonly read: Awaited<ReturnType<typeof readCycleHeartbeat>>;
   readonly now: Date;
   readonly thresholdMs: number;
-  /** The newest data-repo commit date, the grace reference when no
+  /** The newest data-repo commit date, one grace reference when no
    *  stamp exists; undefined when git could not answer. */
   readonly newestCommitAt: Date | undefined;
+  /** The install anchor setup-schedule wrote at watchdog install,
+   *  the other grace reference; optional. */
+  readonly installedAt?: Date | undefined;
 }): { readonly line: string; readonly exitCode: 0 | 1 } {
   const { now, thresholdMs, read } = input;
   const threshold = formatAge(thresholdMs);
 
   if (read.kind === "missing") {
-    if (input.newestCommitAt === undefined) {
+    /** The grace references available, newest wins: the install
+     *  anchor (the upgrade path) and the newest commit date (the
+     *  fresh-init fallback when no anchor was stamped). */
+    const refs: readonly (readonly [string, Date])[] = [
+      ...(input.newestCommitAt === undefined
+        ? []
+        : [["newest data-repo commit", input.newestCommitAt] as const]),
+      ...(input.installedAt === undefined
+        ? []
+        : [["watchdog install", input.installedAt] as const]),
+    ];
+
+    if (refs.length === 0) {
       return {
-        line: `sync-watchdog: ALERT — no heartbeat and no data-repo git history to hold the grace window (threshold ${threshold})`,
+        line: `sync-watchdog: ALERT — no heartbeat and no data-repo git history or install anchor to hold the grace window (threshold ${threshold})`,
         exitCode: 1,
       };
     }
 
-    const commitAgeMs = Math.max(
-      0,
-      now.getTime() - input.newestCommitAt.getTime(),
-    );
+    const [label, refAt] = refs.reduce((a, b) => (b[1] > a[1] ? b : a));
+    const refAgeMs = Math.max(0, now.getTime() - refAt.getTime());
 
-    return commitAgeMs <= thresholdMs
+    return refAgeMs <= thresholdMs
       ? {
-          line: `sync-watchdog: no heartbeat yet — newest data-repo commit ${formatAge(commitAgeMs)} old, inside the ${threshold} grace window`,
+          line: `sync-watchdog: no heartbeat yet — ${label} ${formatAge(refAgeMs)} old, inside the ${threshold} grace window`,
           exitCode: 0,
         }
       : {
-          line: `sync-watchdog: ALERT — no heartbeat; newest data-repo commit ${formatAge(commitAgeMs)} old, past the ${threshold} threshold`,
+          line: `sync-watchdog: ALERT — no heartbeat; ${label} ${formatAge(refAgeMs)} old, past the ${threshold} threshold`,
           exitCode: 1,
         };
   }
@@ -110,9 +128,9 @@ export function watchdogVerdict(input: {
       };
 }
 
-/** The newest data-repo commit date, the grace reference for a
- *  missing stamp; undefined when git could not answer (no repo, no
- *  commits). */
+/** The newest data-repo commit date, the fresh-install grace
+ *  reference for a missing stamp; undefined when git could not
+ *  answer (no repo, no commits). */
 export async function newestCommitDate(
   dataRoot: string,
   env: NodeJS.ProcessEnv,
@@ -139,19 +157,26 @@ export async function runWatchdog(options: {
   const notify = options.notify ?? (() => {});
   const log = options.log ?? ((line: string) => console.log(line));
   const read = await readCycleHeartbeat(options.dataRoot);
-  const newestCommitAt =
-    read.kind === "missing"
-      ? await newestCommitDate(
-          options.dataRoot,
-          options.env ?? process.env,
-        ).catch(() => undefined)
-      : undefined;
+
+  let newestCommitAt: Date | undefined;
+  let installedAt: Date | undefined;
+
+  if (read.kind === "missing") {
+    newestCommitAt = await newestCommitDate(
+      options.dataRoot,
+      options.env ?? process.env,
+    ).catch(() => undefined);
+    installedAt = await readWatchdogSince(options.dataRoot).catch(
+      () => undefined,
+    );
+  }
 
   const verdict = watchdogVerdict({
     read,
     now: (options.now ?? (() => new Date()))(),
     thresholdMs: options.staleAfterMs,
     newestCommitAt,
+    installedAt,
   });
 
   log(verdict.line);
@@ -190,13 +215,17 @@ log line, but a stalling heartbeat is visible from outside.
                             the config's raw dir.
 
 Grace window: a fresh install has no stamp until the first cycle
-completes. While no stamp exists, the newest data-repo commit date
-holds the grace — quiet while it is inside the threshold, an alert
-once it is older. An unreadable stamp alerts immediately: torn
-bytes must never read as fresh.
+completes. While no stamp exists, the newest of the data-repo
+commit date and the install anchor (the ISO line setup-schedule
+writes when the watchdog registration installs — the upgrade path,
+an existing data repo whose commits are old) holds the grace:
+quiet while inside the threshold, an alert once older. An
+unreadable stamp alerts immediately: torn bytes must never read
+as fresh.
 
 Reads the stamp file and (only when it is missing) the newest git
-commit date; writes nothing. The launchd registration
+commit date and the install anchor; writes nothing. The launchd
+registration
 com.kwiki.watchdog (setup-schedule --watchdog) runs this door
 hourly.
 

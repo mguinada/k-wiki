@@ -46,6 +46,7 @@ import { cliFail, errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { repoRoot } from "../cli/shared.ts";
 import { parseArgs } from "../cli/shell.ts";
+import { writeWatchdogSince } from "./heartbeat.ts";
 import {
   LAUNCHD_LABEL,
   LINT_LAUNCHD_LABEL,
@@ -58,6 +59,7 @@ import {
   type WeeklyAt,
   watchdogPlistPath,
 } from "./launchd-plists.ts";
+import { resolveDataRoot } from "./scheduled-run.ts";
 
 /** The agreed default: 30 minutes (issue #14 decision 1). */
 export const DEFAULT_INTERVAL_SECONDS = 1800;
@@ -361,11 +363,20 @@ What install does (darwin, interval registration):
   4. boots it in and verifies with launchctl print.
 
 What install does (darwin, --watchdog):
-  the same steps for Label ${WATCHDOG_LAUNCHD_LABEL} with an hourly
-  StartInterval, running bin/libexec/sync-watchdog --stale-after
-  <duration> — the independent heartbeat observer: it never runs
-  the pipeline, only reads its stamp, so an outage that fails
-  before the pipeline's process starts is still caught.
+  1. stamps the data repo's watchdog grace anchor (the ISO line at
+     outputs/watchdog-since.txt, resolved through the repo's
+     sync.json) — the watchdog's RunAtLoad fire against an existing
+     (upgrade) data repo would otherwise read a missing stamp over
+     old commits and alert before the first cycle completes; the
+     stamp is best-effort, a failure warns and the install proceeds;
+  2. builds the plist (Label ${WATCHDOG_LAUNCHD_LABEL}, hourly
+     StartInterval, RunAtLoad, running bin/libexec/sync-watchdog
+     --stale-after <duration>) — the independent heartbeat observer:
+     it never runs the pipeline, only reads its stamp, so an outage
+     that fails before the pipeline's process starts is still caught;
+  3. boots out any previous registration of the label;
+  4. writes it to ~/Library/LaunchAgents/${WATCHDOG_LAUNCHD_LABEL}.plist;
+  5. boots it in and verifies with launchctl print.
 
 What install does (darwin, --calendar):
   the same steps for Label ${LINT_LAUNCHD_LABEL} with a
@@ -380,7 +391,9 @@ job sweeps hourly. A sleep coalesces missed fires into one run at
 wake — launchd, not cron,
   deliberately: cron silently skips missed fires; wrong for a weekly
 job on a laptop closed at 03:00. Nothing is written outside the
-plist files and the launchd log captures.
+plist files, the launchd log captures, and — with --watchdog — the
+data repo's outputs/watchdog-since.txt grace anchor (a per-instance
+file, kept out of git history like the heartbeat stamp).
 
 Origin guard: install and uninstall run only from the
 repository's main working tree on a branch. The command refuses —
@@ -617,6 +630,46 @@ function registrationFor(parsed: ParsedArgs, home: string): Registration {
   };
 }
 
+/** The real grace-anchor writer for a watchdog install: the same
+ *  data-root resolution the installed watchdog door itself runs
+ *  with (the repo's sync.json defaults). */
+function defaultWatchdogAnchor(dataRoot: string): Promise<void> {
+  return writeWatchdogSince({
+    dataRoot,
+    now: new Date(),
+    onProgress: (line) => console.log(line),
+  });
+}
+
+/** Stamp the watchdog's grace anchor before the registration
+ *  installs (best-effort: a failure warns; the install proceeds —
+ *  the watchdog's verdict machinery still catches a dead pipeline
+ *  once a stamp exists or the anchor expires). */
+async function stampWatchdogGrace(
+  writeAnchor: (dataRoot: string) => Promise<void>,
+): Promise<void> {
+  try {
+    const resolved = await resolveDataRoot(
+      join(repoRoot, "sync.json"),
+      undefined,
+    );
+
+    if (resolved.error !== undefined) {
+      console.log(
+        `setup-schedule: WARNING — no watchdog grace anchor stamped: ${resolved.error}`,
+      );
+
+      return;
+    }
+
+    await writeAnchor(resolved.dataRoot);
+  } catch (error) {
+    console.log(
+      `setup-schedule: WARNING — no watchdog grace anchor stamped: ${errorMessage(error)}`,
+    );
+  }
+}
+
 /** Install (or, with --uninstall, remove) the registration through
  *  launchctl: replace any previous registration of the label, write
  *  the plist, bootstrap it, and verify it answers print. */
@@ -680,6 +733,7 @@ export async function main(
   runLaunchctl: (args: readonly string[]) => Promise<void> = launchctl,
   home: string = homedir(),
   git: (dir: string, args: readonly string[]) => Promise<string> = runGitIn,
+  writeAnchor: (dataRoot: string) => Promise<void> = defaultWatchdogAnchor,
 ): Promise<void> {
   if (argv.includes("-h") || argv.includes("--help")) {
     console.log(HELP);
@@ -719,6 +773,10 @@ export async function main(
     cliFail("setup-schedule", schedulerUnsupportedError(platform));
 
     return;
+  }
+
+  if (parsed.watchdog && !parsed.uninstall) {
+    await stampWatchdogGrace(writeAnchor);
   }
 
   await installRegistration(parsed, registration, runLaunchctl);

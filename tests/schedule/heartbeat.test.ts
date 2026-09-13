@@ -16,7 +16,10 @@ import {
   formatAge,
   parseHeartbeat,
   readCycleHeartbeat,
+  readWatchdogSince,
+  watchdogSincePath,
   writeCycleHeartbeat,
+  writeWatchdogSince,
 } from "../../src/schedule/heartbeat.ts";
 
 const tempDirs: string[] = [];
@@ -328,5 +331,42 @@ describe("formatAge", () => {
 
   it("clamps a negative age to zero minutes", () => {
     expect(formatAge(-5_000)).toBe("0m");
+  });
+});
+
+describe("watchdog grace anchor", () => {
+  it("writes and reads the anchor as one ISO line", async () => {
+    const dataRoot = await tempDataRoot();
+    const now = new Date("2026-09-20T11:00:00.000Z");
+
+    await writeWatchdogSince({ dataRoot, now });
+
+    expect((await readWatchdogSince(dataRoot))?.getTime()).toBe(now.getTime());
+    expect(await readFile(watchdogSincePath(dataRoot), "utf8")).toBe(
+      "2026-09-20T11:00:00.000Z\n",
+    );
+  });
+
+  it("reads undefined when no anchor exists", async () => {
+    expect(await readWatchdogSince(await tempDataRoot())).toBeUndefined();
+  });
+
+  it("reads undefined for unusable anchor bytes", async () => {
+    const dataRoot = await tempDataRoot();
+
+    await mkdir(join(dataRoot, "outputs"), { recursive: true });
+    await writeFile(watchdogSincePath(dataRoot), "garbage", "utf8");
+
+    expect(await readWatchdogSince(dataRoot)).toBeUndefined();
+  });
+
+  it("excludes the anchor via .git/info/exclude", async () => {
+    const dataRoot = await tempDataRoot();
+
+    await writeWatchdogSince({ dataRoot, now: new Date() });
+
+    expect(
+      await readFile(join(dataRoot, ".git", "info", "exclude"), "utf8"),
+    ).toContain("outputs/watchdog-since.txt");
   });
 });

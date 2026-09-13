@@ -9,7 +9,12 @@
  * (bin/libexec/sync-watchdog) and the dashboard's last-cycle row
  * read it; both catch failures the pipeline's own process can never
  * report — a crash before startup leaves no log line, but a
- * stamping heartbeat that goes stale is visible from outside.
+ * stamping heartbeat that goes stale is visible from outside. The
+ * watchdog's grace window also has an install anchor here: the ISO
+ * line setup-schedule writes when the watchdog registration is
+ * installed, so a stamp-less upgrade (an existing data repo whose
+ * commits are old) holds the same grace a fresh init gets from its
+ * seed commit.
  */
 
 import { mkdir, rename, writeFile } from "node:fs/promises";
@@ -45,6 +50,61 @@ export type ReadHeartbeat =
 /** The stamp file's path in a data repo. */
 export function cycleHeartbeatPath(dataRoot: string): string {
   return join(dataRoot, "outputs", CYCLE_HEARTBEAT_FILENAME);
+}
+
+/** The watchdog install anchor's file name in the data repo's
+ *  outputs/: one ISO line, written by setup-schedule when the
+ *  watchdog registration installs (and re-written on every
+ *  re-install, which re-arms the grace — a fresh install legitimately
+ *  expects the pipeline to reach its next cycle within the
+ *  threshold). */
+export const WATCHDOG_SINCE_FILENAME = "watchdog-since.txt";
+
+/** The grace anchor's path in a data repo. */
+export function watchdogSincePath(dataRoot: string): string {
+  return join(dataRoot, "outputs", WATCHDOG_SINCE_FILENAME);
+}
+
+/** Read the grace anchor; undefined when absent or unusable — the
+ *  watchdog then falls back to its other grace reference. */
+export async function readWatchdogSince(
+  dataRoot: string,
+): Promise<Date | undefined> {
+  const text = await readTextIfExists(watchdogSincePath(dataRoot));
+
+  if (text === undefined) {
+    return undefined;
+  }
+
+  const date = new Date(text.trim());
+
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
+/** Write the grace anchor for a watchdog install: one ISO line,
+ *  atomic (tmp + rename) like the stamp so torn bytes can never
+ *  read as a reference, and kept out of the data repo's history the
+ *  same per-instance way. */
+export async function writeWatchdogSince(options: {
+  readonly dataRoot: string;
+  readonly now: Date;
+  /** Progress sink for the one-time exclude announcement; default
+   *  silent. */
+  readonly onProgress?: (line: string) => void;
+}): Promise<void> {
+  await ensureHeartbeatIgnored(
+    options.dataRoot,
+    options.onProgress ?? (() => {}),
+  );
+  await mkdir(dirname(watchdogSincePath(options.dataRoot)), {
+    recursive: true,
+  });
+
+  const path = watchdogSincePath(options.dataRoot);
+  const tmpPath = `${path}.tmp`;
+
+  await writeFile(tmpPath, `${options.now.toISOString()}\n`, "utf8");
+  await rename(tmpPath, path);
 }
 
 /** An ISO timestamp string. */

@@ -153,6 +153,22 @@ describe("sync-watchdog e2e", () => {
     expect(result.out).toContain("no heartbeat yet");
   });
 
+  it("holds the grace on the installer's anchor even when commits are old", async () => {
+    const repo = await makeRepo(new Date("2026-01-01T00:00:00.000Z"));
+
+    await mkdir(join(repo.dataRoot, "outputs"), { recursive: true });
+    await writeFile(
+      join(repo.dataRoot, "outputs", "watchdog-since.txt"),
+      `${new Date().toISOString()}\n`,
+      "utf8",
+    );
+
+    const result = await runWatchdog(repo);
+
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("watchdog install");
+  });
+
   it("alerts once a stamp-less repo's newest commit passes the threshold", async () => {
     const repo = await makeRepo(new Date("2026-01-01T00:00:00.000Z"));
 

@@ -1124,7 +1124,10 @@ heartbeat stamp every completed cycle writes
 `.git/info/exclude`) and alerts — macOS notification + exit 1 —
 when the stamp is stale (default threshold: three run intervals,
 90 minutes), unreadable, or missing past the grace window (the
-newest data-repo commit anchors a fresh install's grace). The
+newest data-repo commit anchors a fresh install's grace; over an
+existing data repo whose commits are old, the install anchor
+`setup-schedule --watchdog` stamps into the data repo
+(`outputs/watchdog-since.txt`) holds the same grace). The
 watchdog exists because the 2026-09-13 outage failed *before the
 pipeline's process started* — its own ALERT logging never ran, the
 only trace was `launchd-stderr.log`, which nobody reads — so the
