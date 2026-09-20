@@ -319,6 +319,42 @@ describe("invertLog", () => {
     );
   });
 
+  it("inverts a header missing its blank line without tripping the post-write gate", async () => {
+    const wikiDir = await makeRepo(
+      "# Wiki Log\n## [2026-07-01] a | x\n\nOld.\n## [2026-08-01] b | y\n\nNew.\n",
+    );
+
+    await expect(
+      invertLog(wikiDir, { date: "2026-09-01", write: true }),
+    ).resolves.toEqual({
+      outcome: "inverted",
+      entries: 2,
+      written: true,
+    });
+
+    expect(await readLog(wikiDir)).toBe(
+      "# Wiki Log\n\n## [2026-09-01] log-inversion | 2 entries\n## [2026-08-01] b | y\n\nNew.\n## [2026-07-01] a | x\n\nOld.\n",
+    );
+  });
+
+  it("inverts a log missing its trailing newline without tripping the post-write gate", async () => {
+    const wikiDir = await makeRepo(
+      "# Wiki Log\n\n## [2026-07-01] a | x\n\nOld.\n\n## [2026-08-01] b | y\n\nNew.",
+    );
+
+    await expect(
+      invertLog(wikiDir, { date: "2026-09-01", write: true }),
+    ).resolves.toEqual({
+      outcome: "inverted",
+      entries: 2,
+      written: true,
+    });
+
+    expect(await readLog(wikiDir)).toBe(
+      "# Wiki Log\n\n## [2026-09-01] log-inversion | 2 entries\n\n## [2026-08-01] b | y\n\nNew.\n\n## [2026-07-01] a | x\n\nOld.\n",
+    );
+  });
+
   it("refuses --write on a dirty tree", async () => {
     const wikiDir = await makeRepo(OLDEST_FIRST);
 

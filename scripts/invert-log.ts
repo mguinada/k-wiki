@@ -172,28 +172,21 @@ function verifyPermutation(before: ParsedLog, after: ParsedLog): void {
   }
 }
 
-/** Verify the written log: the audit entry on top, the original
- *  entries below it reversed and byte-identical, and the header
- *  (created when the log was headerless), separators, and tail
- *  untouched. Throws on any mismatch. */
+/** Verify the written log's entries: the audit entry on top, the
+ *  original entries below it reversed and byte-identical. The header
+ *  and file ending take prependWikiLog's normalized forms by design;
+ *  the disk text is verified byte-exactly by the caller. Throws on
+ *  any mismatch. */
 function verifyWrittenLog(
   original: ParsedLog,
   written: ParsedLog,
   audit: string,
 ): void {
-  const reversed = [...original.entries].reverse();
-  const rest = written.entries.slice(1);
-  const header = original.header === "" ? "# Wiki Log\n\n" : original.header;
+  const expected = [audit, ...[...original.entries].reverse()];
 
   if (
-    written.entries[0] !== audit ||
-    rest.length !== reversed.length ||
-    rest.some((entry, index) => entry !== reversed[index]) ||
-    written.header !== header ||
-    written.tail !== original.tail ||
-    written.separators
-      .slice(1)
-      .some((separator, index) => separator !== original.separators[index])
+    written.entries.length !== expected.length ||
+    written.entries.some((entry, index) => entry !== expected[index])
   ) {
     throw new Error(
       "lossless gate failed (after write) — log is not the pure inversion plus the audit entry",
@@ -290,9 +283,15 @@ export async function invertLog(
 
   await writeFile(logPath, finalText, "utf8");
 
-  const reread = parseWikiLog(await readFile(logPath, "utf8"));
+  const reread = await readFile(logPath, "utf8");
 
-  verifyWrittenLog(parsed, reread, audit);
+  if (reread !== finalText) {
+    throw new Error(
+      "lossless gate failed (after write) — file on disk differs from the verified inversion",
+    );
+  }
+
+  verifyWrittenLog(parsed, parseWikiLog(reread), audit);
 
   return { outcome: "inverted", entries: count, written: true };
 }

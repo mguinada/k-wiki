@@ -135,7 +135,7 @@ export function templatePromotedPage(
   ].join("\n");
 }
 
-/** The `wiki/log.md` audit entry one promotion appends (guide §12
+/** The `wiki/log.md` audit entry one promotion prepends (guide §12
  *  header format): what moved where, and the approved sources. */
 export function promoteLogEntry(input: {
   readonly date: string;
