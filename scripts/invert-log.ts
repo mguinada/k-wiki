@@ -15,8 +15,11 @@ import { prependWikiLog } from "../src/wiki/pages.ts";
  * parsed into its header, byte-exact entries, inter-entry
  * separators, and file tail; only the entry order reverses; the
  * permutation property (entry count equal, sorted entries
- * byte-identical, everything else untouched) is verified before the
- * write and re-verified by re-reading from disk after it. One-way:
+ * byte-identical, everything else untouched) is verified before
+ * the write, and the file on disk is re-read afterwards and
+ * matched byte-exact against the verified inversion plus its
+ * audit entry — the header and file ending take the shared
+ * writer's normalized form by design. One-way:
  * no flag can produce oldest-first output — a log that already runs
  * newest-first (or carries a prior `log-inversion` audit entry) is a
  * clean exit-0 no-op, and a log whose dates run out of order in both
@@ -96,11 +99,7 @@ export function invertWikiLog(parsed: ParsedLog): string {
   const entries = [...parsed.entries].reverse();
 
   entries.forEach((entry, index) => {
-    parts.push(entry);
-
-    const separator = parsed.separators[index] ?? parsed.tail;
-
-    parts.push(index + 1 < entries.length ? separator : parsed.tail);
+    parts.push(entry, parsed.separators[index] ?? parsed.tail);
   });
 
   return parts.join("");
@@ -126,8 +125,7 @@ export function logDirection(entries: readonly string[]): LogDirection {
   });
 
   const nonIncreasing = dates.every(
-    (date, index) =>
-      index + 1 === dates.length || date >= (dates[index + 1] ?? date),
+    (date, index) => date >= (dates[index + 1] ?? date),
   );
 
   if (nonIncreasing) {
@@ -135,8 +133,7 @@ export function logDirection(entries: readonly string[]): LogDirection {
   }
 
   const nonDecreasing = dates.every(
-    (date, index) =>
-      index + 1 === dates.length || date <= (dates[index + 1] ?? date),
+    (date, index) => date <= (dates[index + 1] ?? date),
   );
 
   return nonDecreasing ? "oldest-first" : "ambiguous";
@@ -328,8 +325,11 @@ any wiki instance.
 Lossless gate: the log is parsed into its header, byte-exact entries,
 separators, and tail; only the entry order reverses. The permutation
 property (same entry count, sorted entries byte-identical, everything
-else untouched) is verified before the write and re-verified by
-re-reading the file after it; any mismatch refuses the write.
+else untouched) is verified before the write — any mismatch refuses
+it. After the write, the file on disk is re-read and matched
+byte-exact against the verified inversion plus its audit entry (the
+header and file ending take the shared writer's normalized form by
+design).
 
 One-way: no flag can produce oldest-first output. A log that already
 runs newest-first (non-increasing dates top-down) or carries a prior
