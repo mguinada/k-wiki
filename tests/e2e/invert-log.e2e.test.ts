@@ -29,6 +29,8 @@ afterAll(async () => {
 const OLDEST_FIRST = [
   "# Wiki Log",
   "",
+  '<!-- Append-only. Every entry starts with "## [YYYY-MM-DD] <operation> | <title>" so the log stays parseable with standard tools (guide §12). -->',
+  "",
   "## [2026-07-01] ingest | Old",
   "",
   "Old body.",
@@ -83,6 +85,7 @@ describe("invert-log e2e", () => {
 
     expect(result.code).toBe(0);
     expect(result.out).toContain("would invert — 2 entries verified lossless");
+    expect(result.out).toContain("standing comment migrated to prepend-only");
     expect(await readFile(join(dataRoot, "wiki", "log.md"), "utf8")).toBe(
       OLDEST_FIRST,
     );
@@ -100,9 +103,12 @@ describe("invert-log e2e", () => {
 
     expect(result.code).toBe(0);
     expect(result.out).toContain("invert-log: inverted — 2 entries");
+    expect(result.out).toContain("standing comment migrated to prepend-only");
     expect(await readFile(join(dataRoot, "wiki", "log.md"), "utf8")).toBe(
       [
         "# Wiki Log",
+        "",
+        '<!-- Prepend-only (newest-first). Every entry starts with "## [YYYY-MM-DD] <operation> | <title>" so the log stays parseable with standard tools (guide §12). -->',
         "",
         "## [2026-09-01] log-inversion | 2 entries",
         "",

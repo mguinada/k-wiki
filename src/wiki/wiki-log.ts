@@ -12,9 +12,11 @@
  *  directly above the first existing entry — under the `# Wiki Log`
  *  header when one stands there, after frontmatter and standing
  *  comments when the log opens with them (never above frontmatter).
- *  The header is created only when the log is absent; the entries
- *  below stay untouched, and a blank line separates the new entry
- *  from what follows (guide §12). */
+ *  The header is created only when the log is absent; a log with
+ *  no entries yet takes its first entry at the end, below any
+ *  standing preamble; the entries below stay untouched, and a
+ *  blank line separates the new entry from what follows (guide
+ *  §12). */
 export function prependWikiLog(prior: string, entry: string): string {
   const trimmed = entry.replace(/\n+$/, "");
   const firstEntry = /^## \[/m.exec(prior);
@@ -36,7 +38,5 @@ export function prependWikiLog(prior: string, entry: string): string {
     return `# Wiki Log\n\n${trimmed}\n\n${normalized}`;
   }
 
-  const split = headerEnd + "# Wiki Log\n".length;
-
-  return `${normalized.slice(0, split)}\n${trimmed}\n${normalized.slice(split)}`;
+  return `${normalized}\n${trimmed}\n`;
 }

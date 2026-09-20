@@ -85,6 +85,26 @@ describe("prependWikiLog", () => {
     );
   });
 
+  it("keeps a seeded preamble above the log's first entry", () => {
+    const seeded = [
+      "# Wiki Log",
+      "",
+      '<!-- Prepend-only (newest-first). Every entry starts with "## [YYYY-MM-DD] <operation> | <title>" so the log stays parseable with standard tools (guide §12). -->',
+      "",
+    ].join("\n");
+
+    expect(prependWikiLog(seeded, "## [2026-09-01] query | Q")).toBe(
+      [
+        "# Wiki Log",
+        "",
+        '<!-- Prepend-only (newest-first). Every entry starts with "## [YYYY-MM-DD] <operation> | <title>" so the log stays parseable with standard tools (guide §12). -->',
+        "",
+        "## [2026-09-01] query | Q",
+        "",
+      ].join("\n"),
+    );
+  });
+
   it("keeps bytes preceding the header untouched", () => {
     expect(prependWikiLog("\n# Wiki Log", "## [2026-09-01] query | Q")).toBe(
       "\n# Wiki Log\n\n## [2026-09-01] query | Q\n",
