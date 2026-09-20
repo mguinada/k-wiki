@@ -4,7 +4,7 @@
  * `via: agent` (authorship: the pipeline wrote it, the caller cannot
  * forge it) and `expires:` (the date-level TTL stamp, 7-day floor,
  * decision 8) — plus the `wiki/log.md` audit entry every sandbox
- * commit appends. Pure string surgery, no I/O: the epilogue in
+ * commit prepends. Pure string surgery, no I/O: the epilogue in
  * sandbox-run.ts owns when and where these land. The `via:`/`expires:`
  * key semantics are documented here (landed docs, the implementation
  * guide's sandbox section), not in `wiki/AGENTS.md`: the wiki
@@ -68,7 +68,7 @@ export function stampSandboxPage(text: string, expires: string): string {
   return stamped.join("\n");
 }
 
-/** The `wiki/log.md` audit entry one sandbox commit appends: the
+/** The `wiki/log.md` audit entry one sandbox commit prepends: the
  *  contract's parseable header (`## [YYYY-MM-DD] sandbox | <slug>`)
  *  plus a body naming the committed pages and the expiry the reaper
  *  will act on. */

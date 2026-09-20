@@ -162,7 +162,7 @@ the dashboard follows only a completed agent run.
 After every agent run three guardrails check the data repo: (1) immutability — only wiki/ (never the
 wiki/AGENTS.md contract), outputs/, and raw/manifest.json may change,
 and HEAD may not move; (2) frontmatter — every changed wiki page
-parses with the required fields (wiki/log.md, the append-only log,
+parses with the required fields (wiki/log.md, the prepend-only log,
 is exempt); (3) wikilinks — every [[wikilink]]
 in a changed page resolves, and no remaining page links to a page
 the run deleted. A tripped check auto-reverts the data repo to its

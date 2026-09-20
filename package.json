@@ -26,6 +26,7 @@
     "backfill-origin": "node bin/libexec/backfill-origin",
     "link-sources": "node bin/libexec/link-sources",
     "anchor-citations": "node bin/libexec/anchor-citations",
+    "invert-log": "node bin/libexec/invert-log",
     "open-origin": "node bin/libexec/open-origin",
     "wiki-promote": "node bin/libexec/wiki-promote",
     "sync-watchdog": "node bin/libexec/sync-watchdog",

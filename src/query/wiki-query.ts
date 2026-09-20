@@ -244,8 +244,10 @@ Stage 2 (human-only): wiki-query --file-last
   Deterministic code, no agent, zero tokens: template the saved
   answer byte-exactly into wiki/queries/<slug>.md (slug derived from
   the question; -2, -3, … suffixes on collision), append the
-  index.md entry under ## Queries, and append the log.md entry
-  (## [date] query | <question>). The three writes are a unit: a
+  index.md entry under ## Queries, and prepend the log.md entry
+  (## [date] query | <question>) as the new topmost entry — below
+  the # Wiki Log header and any standing comment; older entries
+  stay untouched. The three writes are a unit: a
   failure anywhere in the filing rolls all of them back — no
   half-filed wiki is left behind. Fails cleanly when no saved answer
   exists. Warns when the data repo's raw/ or wiki/ changed after the

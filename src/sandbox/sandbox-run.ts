@@ -10,7 +10,7 @@
  * wiki-sync commit landing mid-window survives) and fails loudly.
  * On success the epilogue stamps every sandbox page it wrote
  * (`via: agent`, `expires:` with the 7-day floor, decision 8 — the
- * stamps are the pipeline's, the caller cannot forge them), appends
+ * stamps are the pipeline's, the caller cannot forge them), prepends
  * the audit entry to `wiki/log.md`, and leaves exactly one commit
  * (`sandbox: <slug>`, decision 5). An empty run commits nothing.
  * The `propose` verb that drives this is built (family 6, issue
@@ -43,6 +43,7 @@ import {
 } from "../ingest/agent-settings.ts";
 import { capturePreRunState, type PreRunState } from "../ingest/guardrails.ts";
 import type { WikiInstance } from "../sync/instance.ts";
+import { prependWikiLog } from "../wiki/wiki-log.ts";
 import {
   expiresOn,
   SANDBOX_DIR,
@@ -125,7 +126,7 @@ function dirtySandboxPaths(status: readonly StatusEntry[]): string[] {
 }
 
 /** True when the audit log carries pre-run uncommitted changes
- *  (target or rename origin): the run's audit append and its atomic
+ *  (target or rename origin): the run's audit prepend and its atomic
  *  commit must not absorb them. */
 function logMdDirty(status: readonly StatusEntry[]): boolean {
   return status.some(
@@ -178,7 +179,7 @@ async function prepareStep(options: SandboxRunOptions): Promise<SandboxPlan> {
 
   if (logMdDirty(pre.status)) {
     throw new Error(
-      "sandbox run refused — wiki/log.md is already dirty (commit or revert it first; the audit append and the sandbox commit must not absorb edits that predate the run)",
+      "sandbox run refused — wiki/log.md is already dirty (commit or revert it first; the audit prepend and the sandbox commit must not absorb edits that predate the run)",
     );
   }
 
@@ -427,17 +428,17 @@ async function stampStep(
   return pages;
 }
 
-/** The audit step: append the run's entry to `wiki/log.md` (created
- *  when absent), keeping the log's append-only shape. */
+/** The audit step: prepend the run's entry to `wiki/log.md` (created
+ *  when absent) through the shared helper, keeping the log's
+ *  prepend-only shape. */
 async function auditStep(plan: SandboxPlan, entry: string): Promise<void> {
   const logPath = join(plan.options.run.dataRoot, "wiki", "log.md");
 
   await mkdir(dirname(logPath), { recursive: true });
 
   const existing = await readFile(logPath, "utf8").catch(() => "");
-  const separator = existing === "" || existing.endsWith("\n") ? "" : "\n";
 
-  await writeFile(logPath, `${existing}${separator}${entry}`, "utf8");
+  await writeFile(logPath, prependWikiLog(existing, entry), "utf8");
 }
 
 /** The commit step: stage the sandbox namespace and the log, then
@@ -464,7 +465,7 @@ async function commitStep(plan: SandboxPlan, slug: string): Promise<string> {
 /** An epilogue failure must not leave the run's writes dirty: drop
  *  the epilogue's staging and path-scoped-revert the run's paths
  *  plus the log it touched. */
-// ponytail: a mid-window commit's own log.md append could be
+// ponytail: a mid-window commit's own log.md prepend could be
 // reverted here with the run's — an IO-failure edge inside an edge;
 // the reaper-grade fix (log entry checksums) is not worth it now.
 async function revertAfterEpilogue(
@@ -484,7 +485,7 @@ async function revertAfterEpilogue(
   ]);
 }
 
-/** The epilogue: stamp the pages, append the audit entry, commit —
+/** The epilogue: stamp the pages, prepend the audit entry, commit —
  *  or revert everything the run wrote if any step fails, so no run
  *  leaves a dirty tree. */
 async function epilogueStep(

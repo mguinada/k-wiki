@@ -48,7 +48,7 @@ export interface WikiWorklists {
   readonly danglingIndexEntries: readonly string[];
 }
 
-/** Structural pages: navigation and the append-only log — exempt from
+/** Structural pages: navigation and the prepend-only log — exempt from
  *  orphan candidacy and index listing (they are the structure). The
  *  second brain's accreted profile layer joins them: the contract says
  *  it is read by convention and carries no `sources` (wiki/AGENTS.md,
@@ -61,7 +61,7 @@ const STRUCTURAL = new Set([
   "second-brain/profile.md",
 ]);
 
-/** The log is append-only with no frontmatter by design; the index
+/** The log is prepend-only with no frontmatter by design; the index
  *  and overview carry frontmatter but no `sources` (nothing derives
  *  from source material in them), and the second brain's profile is
  *  the accreted layer the contract exempts from `sources`. */
@@ -195,7 +195,7 @@ function nonSourceEdgeEntries(scan: WikiScan): WorklistEntry[] {
 }
 
 /** Pages missing a required frontmatter field (checks 7 and 8's
- *  deterministic part); the log is append-only by design. */
+ *  deterministic part); the log is prepend-only by design. */
 function frontmatterMissEntries(scan: WikiScan): WorklistEntry[] {
   const entries: WorklistEntry[] = [];
 

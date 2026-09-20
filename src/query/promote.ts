@@ -33,13 +33,13 @@ import { readExpiresStamp } from "../sandbox/reaper.ts";
 import { slugError } from "../sandbox/sandbox-run.ts";
 import { sandboxNotePath } from "../sandbox/stamps.ts";
 import {
-  appendWikiLog,
   listWikiPages,
   normalizeRawPath,
   parsePageFields,
   readPageFields,
 } from "../wiki/pages.ts";
 import { buildPageIndex } from "../wiki/wiki-links.ts";
+import { prependWikiLog } from "../wiki/wiki-log.ts";
 import {
   appendIndexEntry,
   type FilingTarget,
@@ -135,7 +135,7 @@ export function templatePromotedPage(
   ].join("\n");
 }
 
-/** The `wiki/log.md` audit entry one promotion appends (guide §12
+/** The `wiki/log.md` audit entry one promotion prepends (guide §12
  *  header format): what moved where, and the approved sources. */
 export function promoteLogEntry(input: {
   readonly date: string;
@@ -342,7 +342,7 @@ async function writeUnit(plan: PromotionPlan, targets: PromotionTargets) {
   );
   await writeFile(
     join(wikiDir, "log.md"),
-    appendWikiLog(
+    prependWikiLog(
       textOrEmpty(targets.log.state),
       promoteLogEntry({
         date: plan.date,

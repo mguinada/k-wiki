@@ -326,7 +326,7 @@ describe("anchorCitations", () => {
     );
   });
 
-  it("appends an audit entry with every rewrite and heading to wiki/log.md", async () => {
+  it("prepends an audit entry with every rewrite and heading to wiki/log.md", async () => {
     const wikiDir = await makeWiki({
       ...MIGRATED_HUB,
       "concepts/cites.md": citing(["[[sdn|04. Rate Limiter]]"]),

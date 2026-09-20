@@ -25,6 +25,7 @@ import { main as checkCrosslinks } from "../../scripts/check-crosslinks.ts";
 import { main as checkFidelity } from "../../scripts/check-fidelity.ts";
 import { main as checkLinks } from "../../scripts/check-links.ts";
 import { main as checkProvenance } from "../../scripts/check-provenance.ts";
+import { main as invertLog } from "../../scripts/invert-log.ts";
 import { main as linkSources } from "../../scripts/link-sources.ts";
 import { main as openOrigin } from "../../scripts/open-origin.ts";
 import { main as dashboard } from "../dashboard/generate.ts";
@@ -311,6 +312,14 @@ export function verbTable(): readonly VerbSpec[] {
       wiki: false,
       lines: ["migrate aliased hub citations to chapter anchors"],
       main: anchorCitations,
+    },
+    {
+      name: "invert-log",
+      klass: "operator",
+      tier: "libexec",
+      wiki: false,
+      lines: ["invert log.md to newest-first; lossless, one-way"],
+      main: invertLog,
     },
     {
       name: "open-origin",

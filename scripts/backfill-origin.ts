@@ -6,13 +6,13 @@ import { isIsoDate, readDateFlag } from "../src/cli/flag-args.ts";
 import { refuseDirectExecution } from "../src/cli/is-main.ts";
 import { assertCleanTree } from "../src/data/git.ts";
 import {
-  appendWikiLog,
   closingFence,
   isWikilinkEntry,
   listWikiPages,
   normalizeRawPath,
   parsePageFields,
 } from "../src/wiki/pages.ts";
+import { prependWikiLog } from "../src/wiki/wiki-log.ts";
 
 /**
  * Deterministic origin backfill (guide §14a, issue #88): every
@@ -24,7 +24,7 @@ import {
  * guesses a pairing. Safety envelope: dry-run mode writes nothing;
  * a real run refuses a wiki tree with uncommitted changes (the git
  * diff is the review surface, `git restore` the revert); every
- * backfilled pair is appended to `wiki/log.md` as an audit trail.
+ * backfilled pair is prepended to `wiki/log.md` as an audit trail.
  * Idempotent: pages that already carry `origin` are untouched.
  */
 
@@ -162,11 +162,13 @@ async function assertDirectory(dir: string, label: string): Promise<void> {
 }
 
 /**
- * Append the audit entry to `wiki/log.md` in the contract's format
+ * Prepend the audit entry to `wiki/log.md` in the contract's format
  * (`## [date] origin-backfill | N pages` plus one pair per line),
- * creating the log with its standard header when absent.
+ * as the new topmost entry (below the `# Wiki Log` header and any
+ * standing comment), creating the log with its standard header
+ * when absent.
  */
-async function appendLogEntry(
+async function prependLogEntry(
   wikiDir: string,
   pairs: readonly BackfilledPair[],
   date: string,
@@ -187,7 +189,7 @@ async function appendLogEntry(
     ...pairs.map((pair) => `- wiki/${pair.page} -> ${pair.origin}`),
   ].join("\n");
 
-  await writeFile(logPath, appendWikiLog(prior, entry));
+  await writeFile(logPath, prependWikiLog(prior, entry));
 }
 
 /**
@@ -265,7 +267,7 @@ export async function backfillOrigins(
   }
 
   if (options.dryRun !== true && backfilled.length > 0) {
-    await appendLogEntry(wikiDir, backfilled, options.date);
+    await prependLogEntry(wikiDir, backfilled, options.date);
   }
 
   return { backfilled, needsJudgment, untouched };

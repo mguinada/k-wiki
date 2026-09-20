@@ -1482,7 +1482,7 @@ describe("fileLastQuery against an established wiki", () => {
     );
   });
 
-  it("appends the log entry after the existing ones, preserving them", async () => {
+  it("prepends the log entry above the existing ones, preserving them", async () => {
     const { dataRoot, artifactPath } = await makeEstablishedRepo();
 
     await fileLastQuery({
@@ -1492,7 +1492,7 @@ describe("fileLastQuery against an established wiki", () => {
     });
 
     expect(await readFile(join(dataRoot, "wiki", "log.md"), "utf8")).toBe(
-      `# Wiki Log\n\n## [2026-08-01] ingest | RAG notes\n\n## [2026-08-21] query | ${QUESTION}\n`,
+      `# Wiki Log\n\n## [2026-08-21] query | ${QUESTION}\n\n## [2026-08-01] ingest | RAG notes\n`,
     );
   });
 

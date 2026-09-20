@@ -76,8 +76,9 @@ call is visible there before you trust the answer.
   so the user can check the grounding.
 - Freshness: `k-wiki status` ends with a `last change:` line — the
   data repo's last commit time (`never` for a fresh, never-committed
-  data repo). For more: vault-derived wikis — check the last entries
-  of `wiki/log.md`; repo-derived wikis — `k-wiki health` (records
+  data repo). For more: vault-derived wikis — check the newest
+  entries at the top of `wiki/log.md` (the log reads newest-first);
+  repo-derived wikis — `k-wiki health` (records
   the projected source commit). Old entries mean old knowledge;
   treat accordingly.
 

@@ -303,7 +303,7 @@ describe("promoteSandboxNote", () => {
     );
   });
 
-  it("appends the promote audit entry to log.md", async () => {
+  it("prepends the promote audit entry to log.md", async () => {
     const dataRoot = await makeRepo();
     await promote(dataRoot);
 

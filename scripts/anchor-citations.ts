@@ -7,7 +7,6 @@ import { refuseDirectExecution } from "../src/cli/is-main.ts";
 import { assertCleanTree } from "../src/data/git.ts";
 import { insertChapterHeadings } from "../src/wiki/chapter-headings.ts";
 import {
-  appendWikiLog,
   closingFence,
   isWikilinkEntry,
   listWikiPages,
@@ -22,6 +21,7 @@ import {
   loadSourceHubIndex,
 } from "../src/wiki/source-hubs.ts";
 import { stem } from "../src/wiki/wiki-links.ts";
+import { prependWikiLog } from "../src/wiki/wiki-log.ts";
 
 /**
  * One-shot chapter-anchor migration: every aliased hub citation
@@ -183,10 +183,11 @@ function rewritePage(
   return rewritten.join("\n");
 }
 
-/** Append the audit entry to `wiki/log.md` — one line per rewrite and
- *  per inserted heading — creating the log with its standard header
- *  when absent. */
-async function appendLogEntry(
+/** Prepend the audit entry to `wiki/log.md` — one line per rewrite and
+ *  per inserted heading — as the new topmost entry, below the
+ *  `# Wiki Log` header and any standing comment, creating the log
+ *  with its standard header when absent. */
+async function prependLogEntry(
   wikiDir: string,
   report: AnchorReport,
   date: string,
@@ -216,7 +217,7 @@ async function appendLogEntry(
     ),
   ].join("\n");
 
-  await writeFile(logPath, appendWikiLog(prior, entry));
+  await writeFile(logPath, prependWikiLog(prior, entry));
 }
 
 /**
@@ -294,7 +295,7 @@ export async function anchorCitations(
       await writeFile(join(wikiDir, file), text);
     }
 
-    await appendLogEntry(wikiDir, report, options.date);
+    await prependLogEntry(wikiDir, report, options.date);
   }
 
   return report;
