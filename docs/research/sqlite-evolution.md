@@ -166,7 +166,7 @@ rebuild is the simpler correct thing.
 |---|---|---|
 | Replace `raw/manifest.json` | No | Git-diff review is a designed property; JSON+sorted keys is the review surface (§8, §19) |
 | Store the wiki (`wiki/*.md` → DB) | No | The wiki is an Obsidian vault, human-readable, disposable-derived — the core premise (§22) |
-| Store `wiki/log.md`, digests | No | Append-only audit artifacts; text is the contract |
+| Store `wiki/log.md`, digests | No | Audit artifacts; text is the contract |
 | Sync-state cache (mtime skip) | No | Unsafe under iCloud mtime lies; correctness already chosen over speed (§26) |
 | Early retrieval index now | No | §20/#78 trigger not fired; premature cache adds drift risk with no win |
 | Multi-wiki instance catalog | No | Config files + `--raw-dir` identity suffice (#124); speculative |
