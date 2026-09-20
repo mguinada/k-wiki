@@ -7,12 +7,12 @@ import { refuseDirectExecution } from "../src/cli/is-main.ts";
 import { assertCleanTree } from "../src/data/git.ts";
 import { insertChapterHeadings } from "../src/wiki/chapter-headings.ts";
 import {
-  appendWikiLog,
   closingFence,
   isWikilinkEntry,
   listWikiPages,
   normalizeRawPath,
   type PageFields,
+  prependWikiLog,
   unquote,
   wikilinkTarget,
 } from "../src/wiki/pages.ts";
@@ -183,10 +183,10 @@ function rewritePage(
   return rewritten.join("\n");
 }
 
-/** Append the audit entry to `wiki/log.md` — one line per rewrite and
- *  per inserted heading — creating the log with its standard header
- *  when absent. */
-async function appendLogEntry(
+/** Prepend the audit entry to `wiki/log.md` — one line per rewrite and
+ *  per inserted heading — directly under the `# Wiki Log` header,
+ *  creating the log with its standard header when absent. */
+async function prependLogEntry(
   wikiDir: string,
   report: AnchorReport,
   date: string,
@@ -216,7 +216,7 @@ async function appendLogEntry(
     ),
   ].join("\n");
 
-  await writeFile(logPath, appendWikiLog(prior, entry));
+  await writeFile(logPath, prependWikiLog(prior, entry));
 }
 
 /**
@@ -294,7 +294,7 @@ export async function anchorCitations(
       await writeFile(join(wikiDir, file), text);
     }
 
-    await appendLogEntry(wikiDir, report, options.date);
+    await prependLogEntry(wikiDir, report, options.date);
   }
 
   return report;

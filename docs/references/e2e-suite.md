@@ -77,6 +77,14 @@ e2e run or diagnosing a failing one.
   uninstall, merge and rebase-pull fires, and feature-branch,
   linked-worktree, and dirty-tree guard skips in a temp source repo
   with a stubbed cycle runner.
+- **invert-log** — the one-way log inverter (issue #369) as a real
+  child process against temp data repos: `--help` answers with
+  usage and exit 0; the dry-run default reports the inversion and
+  writes nothing; `--write` inverts an oldest-first log losslessly
+  with the `log-inversion` audit entry on top; a re-run is an
+  exit-0 no-op naming the prior audit entry (idempotent); ambiguous
+  dates (out of order in both directions) refuse with exit 1 and
+  write nothing; `--write` on a dirty tree refuses with exit 1.
 - **k-wiki** — the front door (issue #337) in temp checkouts, temp
   data repos, and bound temp projects: read verbs on both doors
   (agent door via `.k-wiki.json`, human door from the checkout

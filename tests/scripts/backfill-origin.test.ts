@@ -544,7 +544,7 @@ describe("backfillOrigins", () => {
     );
   });
 
-  it("appends nothing to log.md when no page was backfilled", async () => {
+  it("prepends nothing to log.md when no page was backfilled", async () => {
     const f = await makeFixture(
       { "sources/multi.md": sourcePage([NOTE, "notes/V/b.md"]) },
       { [NOTE]: "a", "notes/V/b.md": "b" },

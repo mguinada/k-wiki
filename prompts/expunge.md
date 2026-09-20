@@ -33,8 +33,9 @@ not surgically delete content:
   same way — the queries layer is preserved, its citing pages are not.
 
 Repair links to deleted pages, update index.md, revise overview.md, and
-append one entry to log.md in the format
-`## [YYYY-MM-DD] expunge | <title>`.
+prepend one entry to `log.md` in the format
+`## [YYYY-MM-DD] expunge | <title>` — insert it directly below the
+`# Wiki Log` header and leave the entries below untouched.
 
 Threshold escape hatch: when the affected set exceeds roughly one third
 of the wiki, stop the surgical pass and execute the rebuild procedure

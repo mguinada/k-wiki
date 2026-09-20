@@ -461,7 +461,7 @@ describe("linkSources", () => {
     expect(second.rewrites).toEqual([]);
   });
 
-  it("appends an audit entry to wiki/log.md on a write with rewrites", async () => {
+  it("prepends an audit entry to wiki/log.md on a write with rewrites", async () => {
     const wikiDir = await makeWiki({
       "sources/gpu-memory-math.md": SIMPLE_HUB,
       "concepts/cites.md": citing(["notes/V/gpu-memory-math.md"]),

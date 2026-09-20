@@ -29,7 +29,9 @@ For every qualifying contrast:
 
 Update index.md.
 Revise overview.md only if the harvest changes the overall picture.
-Append `## [YYYY-MM-DD] harvest | Comparison harvest (trial)` to log.md.
+Prepend `## [YYYY-MM-DD] harvest | Comparison harvest (trial)` to
+`log.md`: insert it directly below the `# Wiki Log` header, entries
+below untouched.
 
 Do not modify raw/.
 Do not modify the original source vault.

@@ -40,4 +40,5 @@ Report ambiguous problems instead of guessing.
 
 Save the report to `outputs/lint-<YYYY-MM-DD>.md`.
 
-Append significant findings to log.md.
+Prepend significant findings to `log.md`: insert each entry directly
+below the `# Wiki Log` header, entries below untouched.

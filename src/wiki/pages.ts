@@ -320,12 +320,26 @@ export function pageReportPath(wikiDir: string, file: string): string {
   return relative(resolve(wikiDir, ".."), join(wikiDir, file));
 }
 
-/** Append one audit entry to wiki/log.md content: the standing
- *  `# Wiki Log` header is created when the log is absent, and a
- *  blank line separates entries (guide §12). */
-export function appendWikiLog(prior: string, entry: string): string {
-  const prefix =
-    prior === "" ? "# Wiki Log\n" : prior.endsWith("\n") ? prior : `${prior}\n`;
+/** Prepend one audit entry to wiki/log.md content: the entry lands
+ *  directly under the standing `# Wiki Log` header (created when the
+ *  log is absent or headerless), the entries below stay untouched,
+ *  and a blank line separates the header, the new entry, and the
+ *  rest (guide §12). */
+export function prependWikiLog(prior: string, entry: string): string {
+  const trimmed = entry.replace(/\n+$/, "");
 
-  return `${prefix}\n${entry}\n`;
+  if (prior === "") {
+    return `# Wiki Log\n\n${trimmed}\n`;
+  }
+
+  const normalized = prior.endsWith("\n") ? prior : `${prior}\n`;
+  const headerEnd = normalized.indexOf("# Wiki Log\n");
+
+  if (headerEnd === -1) {
+    return `# Wiki Log\n\n${trimmed}\n\n${normalized}`;
+  }
+
+  const split = headerEnd + "# Wiki Log\n".length;
+
+  return `${normalized.slice(0, split)}\n${trimmed}\n${normalized.slice(split)}`;
 }

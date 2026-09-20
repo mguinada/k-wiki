@@ -17,9 +17,9 @@ import { basename, dirname, join } from "node:path";
 import { errorMessage } from "../cli/colors.ts";
 import { parseStatus, runGit } from "../data/git.ts";
 import {
-  appendWikiLog,
   kebab,
   listWikiPages,
+  prependWikiLog,
   readPageFields,
 } from "../wiki/pages.ts";
 import { buildPageIndex, extractWikilinks } from "../wiki/wiki-links.ts";
@@ -606,7 +606,7 @@ export async function fileLastQuery(
 
     await writeFile(
       logPath,
-      appendWikiLog(textOrEmpty(log.state), logEntry(artifact.question, date)),
+      prependWikiLog(textOrEmpty(log.state), logEntry(artifact.question, date)),
       "utf8",
     );
   } catch (cause) {

@@ -124,7 +124,7 @@ Recommended ownership:
 | `k-wiki-engineering-data/raw/` | Sync process | No |
 | `k-wiki-engineering-data/wiki/` | LLM | Yes |
 | `k-wiki-engineering-data/wiki/index.md` | LLM | Yes |
-| `k-wiki-engineering-data/wiki/log.md` | LLM | Append-only |
+| `k-wiki-engineering-data/wiki/log.md` | LLM | Prepend-only (newest-first) |
 | `k-wiki/AGENTS.md` | Human (router, invariants); dev agent (conventions) | Conventions block only |
 | `k-wiki/wiki/AGENTS.md` | Human | Only via approved schema changes |
 | `k-wiki/sync.json` | Human | No |
@@ -691,9 +691,10 @@ The agent should maintain this.
 
 ```
 
-Keep it append-only.
+Keep it prepend-only: insert every new entry directly under the
+`# Wiki Log` header so the log reads newest-first down to oldest.
 
-Every entry starts with `## [YYYY-MM-DD] <operation> | <title>`, which keeps the log parseable: `grep "^## \[" wiki/log.md | tail -5` lists the last five operations.
+Every entry starts with `## [YYYY-MM-DD] <operation> | <title>`, which keeps the log parseable: `grep "^## \[" wiki/log.md | head -5` lists the five most recent operations.
 
 Example entry:
 
@@ -858,7 +859,7 @@ page as needing judgment (zero or several verifiable paths, title
 mismatch) for a one-off agent pass — it never guesses. Safety
 envelope: `--dry-run` previews every pairing without writing; a real
 run refuses a dirty wiki tree (the clean git diff is the review
-surface, `git restore` the revert) and appends an audit entry naming
+surface, `git restore` the revert) and prepends an audit entry naming
 each `page -> origin` pair to `wiki/log.md`. Idempotent — re-runs
 write nothing. Any later run that touches a source page adds a
 missing `origin` automatically (Sections 13–14).
@@ -1851,7 +1852,7 @@ Three refusals guard the window before any write: a run whose sandbox
   target paths are already dirty is refused (the path-scoped revert
   must never destroy changes that predate the run), a run whose
   `wiki/log.md` already carries uncommitted edits is refused (the
-  audit append and the atomic commit must not absorb edits that
+  audit prepend and the atomic commit must not absorb edits that
   predate the run), and a run whose
   instance resolution and run context name different data repos is
   refused as a wrong-repo accept-gate (decision 10: the instance

@@ -6,10 +6,10 @@ import { isIsoDate, readDateFlag } from "../src/cli/flag-args.ts";
 import { refuseDirectExecution } from "../src/cli/is-main.ts";
 import { assertCleanTree } from "../src/data/git.ts";
 import {
-  appendWikiLog,
   closingFence,
   isWikilinkEntry,
   listWikiPages,
+  prependWikiLog,
   unquote,
 } from "../src/wiki/pages.ts";
 import {
@@ -144,10 +144,10 @@ function rewritePage(
   return rewritten.join("\n");
 }
 
-/** Append the audit entry to `wiki/log.md` — the contract's log
- *  format, one line per rewrite — creating the log with its standard
- *  header when absent. */
-async function appendLogEntry(
+/** Prepend the audit entry to `wiki/log.md` — the contract's log
+ *  format, one line per rewrite — directly under the `# Wiki Log`
+ *  header, creating the log with its standard header when absent. */
+async function prependLogEntry(
   wikiDir: string,
   rewrites: readonly SourceRewrite[],
   date: string,
@@ -171,7 +171,7 @@ async function appendLogEntry(
     ),
   ].join("\n");
 
-  await writeFile(logPath, appendWikiLog(prior, entry));
+  await writeFile(logPath, prependWikiLog(prior, entry));
 }
 
 /**
@@ -209,7 +209,7 @@ export async function linkSources(
       await writeFile(join(wikiDir, file), text);
     }
 
-    await appendLogEntry(wikiDir, report.rewrites, options.date);
+    await prependLogEntry(wikiDir, report.rewrites, options.date);
   }
 
   return report;

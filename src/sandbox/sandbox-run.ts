@@ -43,6 +43,7 @@ import {
 } from "../ingest/agent-settings.ts";
 import { capturePreRunState, type PreRunState } from "../ingest/guardrails.ts";
 import type { WikiInstance } from "../sync/instance.ts";
+import { prependWikiLog } from "../wiki/pages.ts";
 import {
   expiresOn,
   SANDBOX_DIR,
@@ -178,7 +179,7 @@ async function prepareStep(options: SandboxRunOptions): Promise<SandboxPlan> {
 
   if (logMdDirty(pre.status)) {
     throw new Error(
-      "sandbox run refused — wiki/log.md is already dirty (commit or revert it first; the audit append and the sandbox commit must not absorb edits that predate the run)",
+      "sandbox run refused — wiki/log.md is already dirty (commit or revert it first; the audit prepend and the sandbox commit must not absorb edits that predate the run)",
     );
   }
 
@@ -427,17 +428,17 @@ async function stampStep(
   return pages;
 }
 
-/** The audit step: append the run's entry to `wiki/log.md` (created
- *  when absent), keeping the log's append-only shape. */
+/** The audit step: prepend the run's entry to `wiki/log.md` (created
+ *  when absent) through the shared helper, keeping the log's
+ *  prepend-only shape. */
 async function auditStep(plan: SandboxPlan, entry: string): Promise<void> {
   const logPath = join(plan.options.run.dataRoot, "wiki", "log.md");
 
   await mkdir(dirname(logPath), { recursive: true });
 
   const existing = await readFile(logPath, "utf8").catch(() => "");
-  const separator = existing === "" || existing.endsWith("\n") ? "" : "\n";
 
-  await writeFile(logPath, `${existing}${separator}${entry}`, "utf8");
+  await writeFile(logPath, prependWikiLog(existing, entry), "utf8");
 }
 
 /** The commit step: stage the sandbox namespace and the log, then

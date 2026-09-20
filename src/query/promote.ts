@@ -33,10 +33,10 @@ import { readExpiresStamp } from "../sandbox/reaper.ts";
 import { slugError } from "../sandbox/sandbox-run.ts";
 import { sandboxNotePath } from "../sandbox/stamps.ts";
 import {
-  appendWikiLog,
   listWikiPages,
   normalizeRawPath,
   parsePageFields,
+  prependWikiLog,
   readPageFields,
 } from "../wiki/pages.ts";
 import { buildPageIndex } from "../wiki/wiki-links.ts";
@@ -342,7 +342,7 @@ async function writeUnit(plan: PromotionPlan, targets: PromotionTargets) {
   );
   await writeFile(
     join(wikiDir, "log.md"),
-    appendWikiLog(
+    prependWikiLog(
       textOrEmpty(targets.log.state),
       promoteLogEntry({
         date: plan.date,

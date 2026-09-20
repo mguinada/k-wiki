@@ -12,7 +12,7 @@
  *  2. frontmatter — every wiki page the run changed carries the
  *     required fields (`title`, `type`, `created`, `updated`, `tags`;
  *     plus `sources` for pages not of type `source`) — except
- *     `wiki/log.md`, the append-only log, which has none by design;
+ *     `wiki/log.md`, the prepend-only log, which has none by design;
  *     on a changed non-source page every `sources` entry must be a
  *     wikilink to an existing `type: source` page (issue #126): a
  *     legacy raw-path entry fails only when a hub covers the path
@@ -78,8 +78,8 @@ const FORBIDDEN_EXACT = "wiki/AGENTS.md";
  *  self-granted. */
 const SECOND_BRAIN_MARKER = ".second-brain";
 
-/** The contract's append-only log (guide §10): no §9 frontmatter by
- *  design — the agent appends to it on every meaningful run, so
+/** The contract's prepend-only log (guide §10): no §9 frontmatter by
+ *  design — the agent prepends to it on every meaningful run, so
  *  check 2 exempts it (first exposed by a real logged run, #13). */
 const FRONTMATTER_EXEMPT = "wiki/log.md";
 
