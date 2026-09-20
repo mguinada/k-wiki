@@ -693,6 +693,12 @@ The agent should maintain this.
 
 Keep it prepend-only: insert every new entry directly under the
 `# Wiki Log` header so the log reads newest-first down to oldest.
+An existing oldest-first `log.md` migrates once to this order with
+`bin/libexec/invert-log --write <wiki-dir>` (issue #369; the wiki
+verb is `k-wiki invert-log`) — one-way and lossless: the entry order
+reverses byte-exact, a `log-inversion` audit entry lands on top, and
+the same safety envelope as backfill-origin holds (dry run by
+default, `--write` refuses a dirty tree).
 
 Every entry starts with `## [YYYY-MM-DD] <operation> | <title>`, which keeps the log parseable: `grep "^## \[" wiki/log.md | head -5` lists the five most recent operations.
 
