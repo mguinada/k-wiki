@@ -13,9 +13,12 @@ import { prependWikiLog } from "../src/wiki/wiki-log.ts";
  * entry stays byte-identical, and the run's own audit entry lands on
  * top. Lossless by construction and by verification: the log is
  * parsed into its header, byte-exact entries, inter-entry
- * separators, and file tail; only the entry order reverses; the
- * permutation property (entry count equal, sorted entries
- * byte-identical, everything else untouched) is verified before
+ * separators, and file tail; only the entry order reverses, plus
+ * one deterministic header rewrite — a legacy "Append-only."
+ * standing comment's opening becomes "Prepend-only (newest-first).",
+ * scoped to the header region so comments inside entry bodies are
+ * never touched; the permutation property (entry count equal, sorted
+ * entries byte-identical, everything else untouched) is verified before
  * the write, and the file on disk is re-read afterwards and
  * matched byte-exact against the verified inversion plus its
  * audit entry — the header and file ending take the shared
@@ -50,6 +53,24 @@ const ENTRY_OPERATION = /^## \[\d{4}-\d{2}-\d{2}\] ([^|\n]+) \|/;
 
 /** The audit operation this tool writes (issue #369's convention). */
 const INVERSION_OPERATION = "log-inversion";
+
+/** The legacy standing comment the header may carry: its
+ *  "Append-only." opening becomes the prepend-only form — the one
+ *  header rewrite the inversion performs. */
+const LEGACY_APPEND_COMMENT = /(<!--\s*)Append-only\./;
+
+/** Deterministically migrate a header's legacy standing comment:
+ *  the "Append-only." opening of an HTML comment above every entry
+ *  becomes "Prepend-only (newest-first)." Scoped to the header
+ *  region by construction — the caller only ever passes the bytes
+ *  before the first `## [` entry, so comments inside entry bodies
+ *  (immutable history) are never touched. */
+export function migrateLogHeader(header: string): string {
+  return header.replace(
+    LEGACY_APPEND_COMMENT,
+    "$1Prepend-only (newest-first).",
+  );
+}
 
 /** Parse a log into its lossless parts. Empty entries list means the
  *  log holds nothing to invert (the header swallows the whole text). */
@@ -198,12 +219,15 @@ export interface InvertOptions {
   readonly write?: boolean | undefined;
 }
 
-/** A completed run: inverted (written or previewed) or a no-op. */
+/** A completed run: inverted (written or previewed, with the
+ *  standing comment migrated when the header carried the legacy
+ *  form) or a no-op. */
 export type InvertReport =
   | {
       readonly outcome: "inverted";
       readonly entries: number;
       readonly written: boolean;
+      readonly commentMigrated: boolean;
     }
   | {
       readonly outcome: "no-op";
@@ -280,17 +304,19 @@ export async function invertLog(
     );
   }
 
-  const invertedText = invertWikiLog(parsed);
+  const migrated = { ...parsed, header: migrateLogHeader(parsed.header) };
+  const invertedText = invertWikiLog(migrated);
 
   assertAuditDateNotStale(parsed.entries, options.date);
 
-  verifyPermutation(parsed, parseWikiLog(invertedText));
+  verifyPermutation(migrated, parseWikiLog(invertedText));
 
   if (options.write !== true) {
     return {
       outcome: "inverted",
       entries: parsed.entries.length,
       written: false,
+      commentMigrated: migrated.header !== parsed.header,
     };
   }
 
@@ -312,7 +338,12 @@ export async function invertLog(
 
   verifyWrittenLog(parsed, parseWikiLog(reread), audit);
 
-  return { outcome: "inverted", entries: count, written: true };
+  return {
+    outcome: "inverted",
+    entries: count,
+    written: true,
+    commentMigrated: migrated.header !== parsed.header,
+  };
 }
 
 /** Fail unless `dir` is a readable directory. */
@@ -345,9 +376,14 @@ any wiki instance.
   -h, --help  Print this help and exit; no side effects.
 
 Lossless gate: the log is parsed into its header, byte-exact entries,
-separators, and tail; only the entry order reverses. The permutation
-property (same entry count, sorted entries byte-identical, everything
-else untouched) is verified before the write — any mismatch refuses
+separators, and tail; only the entry order reverses — plus one
+deterministic header rewrite: a legacy "<!-- Append-only. ... -->"
+standing comment's opening becomes "Prepend-only (newest-first).",
+scoped above every entry so comments inside entry bodies are never
+rewritten; a run that migrated the comment says so in its summary.
+The permutation property (same entry count, sorted entries
+byte-identical, everything else untouched) is verified before the
+write — any mismatch refuses
 it. After the write, the file on disk is re-read and matched
 byte-exact against the verified inversion plus its audit entry (the
 header and file ending take the shared writer's normalized form by
@@ -416,12 +452,17 @@ export async function main(
     }
 
     const summary = `${report.entries} entries verified lossless, audit entry on top`;
+    const comment = report.commentMigrated
+      ? ", standing comment migrated to prepend-only"
+      : "";
     const suffix = report.written ? "" : " — dry run, nothing written";
 
     console.log(
       report.written
-        ? colors().green(`invert-log: inverted — ${summary}`)
-        : colors().dim(`invert-log: would invert — ${summary}${suffix}`),
+        ? colors().green(`invert-log: inverted — ${summary}${comment}`)
+        : colors().dim(
+            `invert-log: would invert — ${summary}${comment}${suffix}`,
+          ),
     );
   } catch (error) {
     console.error(colors().red(`invert-log: ${errorMessage(error)}`));

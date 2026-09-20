@@ -7,6 +7,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import {
   invertLog,
   logDirection,
+  migrateLogHeader,
   parseWikiLog,
 } from "../../scripts/invert-log.ts";
 
@@ -71,6 +72,33 @@ const OLDEST_FIRST = [
   "New body.",
   "",
 ].join("\n");
+
+describe("migrateLogHeader", () => {
+  it("rewrites the legacy Append-only standing comment opening", () => {
+    expect(
+      migrateLogHeader(
+        '# Wiki Log\n\n<!-- Append-only. Every entry starts with "## [YYYY-MM-DD] <operation> | <title>" so the log stays parseable with standard tools (guide §12). -->\n\n',
+      ),
+    ).toBe(
+      '# Wiki Log\n\n<!-- Prepend-only (newest-first). Every entry starts with "## [YYYY-MM-DD] <operation> | <title>" so the log stays parseable with standard tools (guide §12). -->\n\n',
+    );
+  });
+
+  it("leaves a header without the legacy comment byte-identical", () => {
+    expect(migrateLogHeader("# Wiki Log\n\n")).toBe("# Wiki Log\n\n");
+    expect(migrateLogHeader("---\ntitle: X\n---\n\n")).toBe(
+      "---\ntitle: X\n---\n\n",
+    );
+  });
+
+  it("leaves a Prepend-only comment untouched", () => {
+    expect(
+      migrateLogHeader(
+        "# Wiki Log\n\n<!-- Prepend-only (newest-first). -->\n\n",
+      ),
+    ).toBe("# Wiki Log\n\n<!-- Prepend-only (newest-first). -->\n\n");
+  });
+});
 
 describe("parseWikiLog", () => {
   it("splits the log into the header, byte-exact entries, separators, and tail", () => {
@@ -223,6 +251,7 @@ describe("invertLog", () => {
       outcome: "inverted",
       entries: 2,
       written: false,
+      commentMigrated: false,
     });
 
     expect(await readLog(wikiDir)).toBe(OLDEST_FIRST);
@@ -240,6 +269,7 @@ describe("invertLog", () => {
       outcome: "inverted",
       entries: 2,
       written: true,
+      commentMigrated: false,
     });
 
     expect(await readLog(wikiDir)).toBe(
@@ -255,6 +285,56 @@ describe("invertLog", () => {
         "## [2026-07-01] ingest | Old",
         "",
         "Old body.",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("migrates the legacy standing comment while inverting", async () => {
+    const wikiDir = await makeRepo(
+      [
+        "# Wiki Log",
+        "",
+        '<!-- Append-only. Every entry starts with "## [YYYY-MM-DD] <operation> | <title>" so the log stays parseable with standard tools (guide §12). -->',
+        "",
+        "## [2026-07-01] ingest | Old",
+        "",
+        "Old.",
+        "",
+        "## [2026-08-01] ingest | New",
+        "",
+        "New.",
+        "",
+      ].join("\n"),
+    );
+
+    const report = await invertLog(wikiDir, {
+      date: "2026-09-01",
+      write: true,
+    });
+
+    expect(report).toEqual({
+      outcome: "inverted",
+      entries: 2,
+      written: true,
+      commentMigrated: true,
+    });
+
+    expect(await readLog(wikiDir)).toBe(
+      [
+        "# Wiki Log",
+        "",
+        '<!-- Prepend-only (newest-first). Every entry starts with "## [YYYY-MM-DD] <operation> | <title>" so the log stays parseable with standard tools (guide §12). -->',
+        "",
+        "## [2026-09-01] log-inversion | 2 entries",
+        "",
+        "## [2026-08-01] ingest | New",
+        "",
+        "New.",
+        "",
+        "## [2026-07-01] ingest | Old",
+        "",
+        "Old.",
         "",
       ].join("\n"),
     );
@@ -288,6 +368,7 @@ describe("invertLog", () => {
       outcome: "inverted",
       entries: 2,
       written: true,
+      commentMigrated: false,
     });
 
     expect(await readLog(wikiDir)).toBe(
@@ -328,6 +409,7 @@ describe("invertLog", () => {
       outcome: "inverted",
       entries: 2,
       written: true,
+      commentMigrated: false,
     });
 
     expect(await readLog(wikiDir)).toBe(
@@ -346,6 +428,7 @@ describe("invertLog", () => {
       outcome: "inverted",
       entries: 2,
       written: true,
+      commentMigrated: false,
     });
 
     expect(await readLog(wikiDir)).toBe(

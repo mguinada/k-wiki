@@ -81,7 +81,9 @@ e2e run or diagnosing a failing one.
   child process against temp data repos: `--help` answers with
   usage and exit 0; the dry-run default reports the inversion and
   writes nothing; `--write` inverts an oldest-first log losslessly
-  with the `log-inversion` audit entry on top; a re-run is an
+  with the `log-inversion` audit entry on top (a legacy
+  `<!-- Append-only. -->` standing comment migrates to the
+  prepend-only wording in the same write); a re-run is an
   exit-0 no-op naming the prior audit entry (idempotent); ambiguous
   dates (out of order in both directions) refuse with exit 1 and
   write nothing; `--write` on a dirty tree refuses with exit 1.
