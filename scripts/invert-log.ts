@@ -173,8 +173,9 @@ function verifyPermutation(before: ParsedLog, after: ParsedLog): void {
 }
 
 /** Verify the written log: the audit entry on top, the original
- *  entries below it reversed and byte-identical, and the header,
- *  separators, and tail untouched. Throws on any mismatch. */
+ *  entries below it reversed and byte-identical, and the header
+ *  (created when the log was headerless), separators, and tail
+ *  untouched. Throws on any mismatch. */
 function verifyWrittenLog(
   original: ParsedLog,
   written: ParsedLog,
@@ -182,12 +183,13 @@ function verifyWrittenLog(
 ): void {
   const reversed = [...original.entries].reverse();
   const rest = written.entries.slice(1);
+  const header = original.header === "" ? "# Wiki Log\n\n" : original.header;
 
   if (
     written.entries[0] !== audit ||
     rest.length !== reversed.length ||
     rest.some((entry, index) => entry !== reversed[index]) ||
-    written.header !== original.header ||
+    written.header !== header ||
     written.tail !== original.tail ||
     written.separators
       .slice(1)

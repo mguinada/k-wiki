@@ -274,6 +274,51 @@ describe("invertLog", () => {
     expect(await readLog(wikiDir)).toBe(before);
   });
 
+  it("inverts a headerless legacy log and creates the header", async () => {
+    const wikiDir = await makeRepo(
+      "## [2026-07-01] sandbox | old\n\nPages; expires X.\n## [2026-08-01] sandbox | new\n\nPages; expires Y.\n",
+    );
+
+    const report = await invertLog(wikiDir, {
+      date: "2026-09-01",
+      write: true,
+    });
+
+    expect(report).toEqual({
+      outcome: "inverted",
+      entries: 2,
+      written: true,
+    });
+
+    expect(await readLog(wikiDir)).toBe(
+      [
+        "# Wiki Log",
+        "",
+        "## [2026-09-01] log-inversion | 2 entries",
+        "",
+        "## [2026-08-01] sandbox | new",
+        "",
+        "Pages; expires Y.",
+        "## [2026-07-01] sandbox | old",
+        "",
+        "Pages; expires X.",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("preserves uneven separators byte-exactly through a write", async () => {
+    const uneven =
+      "# Wiki Log\n\n## [2026-07-01] a | x\n\nB.\n## [2026-08-01] b | y\n\nC.\n\n";
+    const wikiDir = await makeRepo(uneven);
+
+    await invertLog(wikiDir, { date: "2026-09-01", write: true });
+
+    expect(await readLog(wikiDir)).toBe(
+      "# Wiki Log\n\n## [2026-09-01] log-inversion | 2 entries\n\n## [2026-08-01] b | y\n\nC.\n## [2026-07-01] a | x\n\nB.\n\n",
+    );
+  });
+
   it("refuses --write on a dirty tree", async () => {
     const wikiDir = await makeRepo(OLDEST_FIRST);
 
