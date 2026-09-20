@@ -5,7 +5,7 @@ import { terminalColors as colors, errorMessage } from "../src/cli/colors.ts";
 import { isIsoDate, readDateFlag } from "../src/cli/flag-args.ts";
 import { refuseDirectExecution } from "../src/cli/is-main.ts";
 import { assertCleanTree } from "../src/data/git.ts";
-import { prependWikiLog } from "../src/wiki/pages.ts";
+import { prependWikiLog } from "../src/wiki/wiki-log.ts";
 
 /**
  * One-way log.md inverter (issue #369): reorders a wiki/log.md from
@@ -211,6 +211,26 @@ export type InvertReport =
       readonly reason: "log absent" | "log-inversion" | "newest-first";
     };
 
+/** Refuse an audit date older than the entry that will sit below
+ *  it: a stale `--date` (or a default run against a future-typo'd
+ *  log) would write a log that is neither newest-first nor
+ *  oldest-first while reporting success — and the idempotency
+ *  guard would then mask it forever. */
+function assertAuditDateNotStale(
+  entries: readonly string[],
+  date: string,
+): void {
+  const newestAfterInversion = ENTRY_DATE.exec(
+    entries[entries.length - 1] ?? "",
+  )?.[1];
+
+  if (newestAfterInversion !== undefined && date < newestAfterInversion) {
+    throw new Error(
+      `audit date ${date} sorts before the newest entry ${newestAfterInversion} — the written log would not be newest-first; use a --date on or after ${newestAfterInversion}`,
+    );
+  }
+}
+
 /** Invert `wikiDir/log.md` to newest-first under the full safety
  *  envelope. Throws on refusals (ambiguous order, dirty tree, a
  *  failed lossless gate, a missing wiki dir); resolves no-op for a
@@ -261,6 +281,8 @@ export async function invertLog(
   }
 
   const invertedText = invertWikiLog(parsed);
+
+  assertAuditDateNotStale(parsed.entries, options.date);
 
   verifyPermutation(parsed, parseWikiLog(invertedText));
 

@@ -16,13 +16,9 @@ import { lstat, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { errorMessage } from "../cli/colors.ts";
 import { parseStatus, runGit } from "../data/git.ts";
-import {
-  kebab,
-  listWikiPages,
-  prependWikiLog,
-  readPageFields,
-} from "../wiki/pages.ts";
+import { kebab, listWikiPages, readPageFields } from "../wiki/pages.ts";
 import { buildPageIndex, extractWikilinks } from "../wiki/wiki-links.ts";
+import { prependWikiLog } from "../wiki/wiki-log.ts";
 
 /** What stage 1 persisted to outputs/last-query.md. */
 export interface QueryArtifact {

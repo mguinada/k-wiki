@@ -11,8 +11,8 @@ import {
   listWikiPages,
   normalizeRawPath,
   parsePageFields,
-  prependWikiLog,
 } from "../src/wiki/pages.ts";
+import { prependWikiLog } from "../src/wiki/wiki-log.ts";
 
 /**
  * Deterministic origin backfill (guide §14a, issue #88): every

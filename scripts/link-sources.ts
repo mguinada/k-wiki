@@ -9,7 +9,6 @@ import {
   closingFence,
   isWikilinkEntry,
   listWikiPages,
-  prependWikiLog,
   unquote,
 } from "../src/wiki/pages.ts";
 import {
@@ -18,6 +17,7 @@ import {
   wikilinkFor,
 } from "../src/wiki/source-hubs.ts";
 import { stem } from "../src/wiki/wiki-links.ts";
+import { prependWikiLog } from "../src/wiki/wiki-log.ts";
 
 /**
  * One-shot `sources` wikilink migration (issue #126, Part A): every

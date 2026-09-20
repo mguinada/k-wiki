@@ -12,7 +12,6 @@ import {
   listWikiPages,
   normalizeRawPath,
   type PageFields,
-  prependWikiLog,
   unquote,
   wikilinkTarget,
 } from "../src/wiki/pages.ts";
@@ -22,6 +21,7 @@ import {
   loadSourceHubIndex,
 } from "../src/wiki/source-hubs.ts";
 import { stem } from "../src/wiki/wiki-links.ts";
+import { prependWikiLog } from "../src/wiki/wiki-log.ts";
 
 /**
  * One-shot chapter-anchor migration: every aliased hub citation

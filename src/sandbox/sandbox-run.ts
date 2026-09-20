@@ -43,7 +43,7 @@ import {
 } from "../ingest/agent-settings.ts";
 import { capturePreRunState, type PreRunState } from "../ingest/guardrails.ts";
 import type { WikiInstance } from "../sync/instance.ts";
-import { prependWikiLog } from "../wiki/pages.ts";
+import { prependWikiLog } from "../wiki/wiki-log.ts";
 import {
   expiresOn,
   SANDBOX_DIR,

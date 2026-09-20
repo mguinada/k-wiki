@@ -10,7 +10,6 @@ import {
   listWikiPages,
   normalizeRawPath,
   parsePageFields,
-  prependWikiLog,
   readPageFields,
   wikilinkTarget,
 } from "../../src/wiki/pages.ts";
@@ -537,49 +536,6 @@ describe("readPageFields", () => {
     await expect(readPageFields(page)).resolves.toMatchObject({
       origin: "raw/notes/V/a.md",
     });
-  });
-});
-
-describe("prependWikiLog", () => {
-  it("creates the header and the entry in an empty log", () => {
-    expect(prependWikiLog("", "## [2026-09-01] query | Q")).toBe(
-      "# Wiki Log\n\n## [2026-09-01] query | Q\n",
-    );
-  });
-
-  it("lands the new entry directly under the header of an existing log", () => {
-    expect(
-      prependWikiLog(
-        "# Wiki Log\n\n## [2026-08-01] ingest | Old\n\nBody.\n",
-        "## [2026-09-01] query | New",
-      ),
-    ).toBe(
-      "# Wiki Log\n\n## [2026-09-01] query | New\n\n## [2026-08-01] ingest | Old\n\nBody.\n",
-    );
-  });
-
-  it("normalizes a log without a trailing newline before inserting", () => {
-    expect(prependWikiLog("# Wiki Log", "## [2026-09-01] query | Q")).toBe(
-      "# Wiki Log\n\n## [2026-09-01] query | Q\n",
-    );
-  });
-
-  it("creates the missing header above a headerless log", () => {
-    expect(
-      prependWikiLog("## [2026-08-01] sandbox | s\n\nPages.\n", "## [d] e"),
-    ).toBe("# Wiki Log\n\n## [d] e\n\n## [2026-08-01] sandbox | s\n\nPages.\n");
-  });
-
-  it("trims the entry's trailing newlines to keep the file ending uniform", () => {
-    expect(prependWikiLog("", "## [2026-09-01] sandbox | s\n\nPages.\n")).toBe(
-      "# Wiki Log\n\n## [2026-09-01] sandbox | s\n\nPages.\n",
-    );
-  });
-
-  it("keeps bytes preceding the header untouched", () => {
-    expect(prependWikiLog("\n# Wiki Log", "## [2026-09-01] query | Q")).toBe(
-      "\n# Wiki Log\n\n## [2026-09-01] query | Q\n",
-    );
   });
 });
 

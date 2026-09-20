@@ -36,10 +36,10 @@ import {
   listWikiPages,
   normalizeRawPath,
   parsePageFields,
-  prependWikiLog,
   readPageFields,
 } from "../wiki/pages.ts";
 import { buildPageIndex } from "../wiki/wiki-links.ts";
+import { prependWikiLog } from "../wiki/wiki-log.ts";
 import {
   appendIndexEntry,
   type FilingTarget,
