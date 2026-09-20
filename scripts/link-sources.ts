@@ -145,8 +145,9 @@ function rewritePage(
 }
 
 /** Prepend the audit entry to `wiki/log.md` — the contract's log
- *  format, one line per rewrite — directly under the `# Wiki Log`
- *  header, creating the log with its standard header when absent. */
+ *  format, one line per rewrite — as the new topmost entry, below
+ *  the `# Wiki Log` header and any standing comment, creating the
+ *  log with its standard header when absent. */
 async function prependLogEntry(
   wikiDir: string,
   rewrites: readonly SourceRewrite[],

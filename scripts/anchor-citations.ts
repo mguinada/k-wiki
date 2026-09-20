@@ -184,8 +184,9 @@ function rewritePage(
 }
 
 /** Prepend the audit entry to `wiki/log.md` — one line per rewrite and
- *  per inserted heading — directly under the `# Wiki Log` header,
- *  creating the log with its standard header when absent. */
+ *  per inserted heading — as the new topmost entry, below the
+ *  `# Wiki Log` header and any standing comment, creating the log
+ *  with its standard header when absent. */
 async function prependLogEntry(
   wikiDir: string,
   report: AnchorReport,

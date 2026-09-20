@@ -16,8 +16,9 @@ The human-owned source vault is outside this repository and is authoritative.
 - NEVER modify `wiki/AGENTS.md` — this contract is not editable during operations.
 - `index.md` must remain current.
 - `overview.md` must reflect the current synthesis.
-- `log.md` is prepend-only: a new entry lands directly under the
-  `# Wiki Log` header, so the log reads newest-first down to oldest.
+- `log.md` is prepend-only: a new entry lands as the topmost entry —
+  below the `# Wiki Log` header and any standing comment — so the
+  log reads newest-first down to oldest.
 
 ## Source of Truth
 
@@ -60,8 +61,9 @@ For every new or changed source:
 7. Add/update cross-links.
 8. Update `index.md`.
 9. Revise `overview.md` when the overall picture changes.
-10. Prepend a concise entry to `log.md` — insert it directly below
-    the `# Wiki Log` header and leave the entries below untouched.
+10. Prepend a concise entry to `log.md` — insert it as the new
+    topmost entry (below the `# Wiki Log` header and any standing
+    comment) and leave the older entries untouched.
 11. Check for contradictions, duplicates, orphan pages, and unsupported claims.
 12. Revisit any `status: needs-review` pages the new sources touch:
     corroborate → raise status and confidence; contradict → add or update
@@ -221,8 +223,9 @@ live on the individual pages.
 ## Log
 
 `wiki/log.md` records meaningful ingestion operations. It reads
-newest-first: every new entry is inserted directly below the
-`# Wiki Log` header, older entries stay below untouched.
+newest-first: every new entry is inserted as the topmost entry —
+below the `# Wiki Log` header and any standing comment — older
+entries stay below untouched.
 
 Keep entries short and factual.
 

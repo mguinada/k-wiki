@@ -164,8 +164,9 @@ async function assertDirectory(dir: string, label: string): Promise<void> {
 /**
  * Prepend the audit entry to `wiki/log.md` in the contract's format
  * (`## [date] origin-backfill | N pages` plus one pair per line),
- * directly under the `# Wiki Log` header, creating the log with its
- * standard header when absent.
+ * as the new topmost entry (below the `# Wiki Log` header and any
+ * standing comment), creating the log with its standard header
+ * when absent.
  */
 async function prependLogEntry(
   wikiDir: string,

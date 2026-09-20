@@ -55,8 +55,9 @@ For each changed source:
 15. Revisit any `status: needs-review` pages that the new sources touch:
     corroborate → raise status and confidence; contradict → add or update
     a `CONTRADICTION` callout; unrelated → leave flagged.
-16. Prepend a concise operation summary to `log.md`: insert it directly
-    below the `# Wiki Log` header and leave the entries below untouched.
+16. Prepend a concise operation summary to `log.md`: insert it as the
+    new topmost entry — below the `# Wiki Log` header and any standing
+    comment — and leave the older entries untouched.
 
 When a changed source is a chapter of a multi-part hub (a source page
 whose note in `raw/` is a directory of chapters), write that chapter's

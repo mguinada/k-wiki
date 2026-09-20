@@ -91,8 +91,9 @@ Do not modify raw/.
 Do not modify the original source vault.
 
 Update index.md, revise overview.md if the overall picture changed, and
-prepend a concise entry to `log.md` — insert it directly below the
-`# Wiki Log` header and leave the entries below untouched.
+prepend a concise entry to `log.md` — insert it as the new topmost
+entry (below the `# Wiki Log` header and any standing comment) and
+leave the older entries untouched.
 
 Revisit any `status: needs-review` pages that the new sources touch:
 corroborate → raise status and confidence; contradict → add or update a
