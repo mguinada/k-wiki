@@ -1524,8 +1524,9 @@ omitted flag can never produce wiki writes:
   `-2`/`-3` suffixes on collision; `type: query` frontmatter with
   `sources` derived from the answer's citations of `type: source`
   pages), appends the `index.md` entry under `## Queries`, and
-  prepends the `log.md` entry (`## [date] query | <question>`) directly
-  under the log header. The
+  prepends the `log.md` entry (`## [date] query | <question>`) as
+  the new topmost entry — below the `# Wiki Log` header and any
+  standing comment; older entries stay untouched. The
   three writes are a unit: a failure anywhere in the filing rolls
   all of them back — no half-filed wiki is left behind. It fails
   cleanly when no saved answer exists, and warns when the data
