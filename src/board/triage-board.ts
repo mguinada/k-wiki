@@ -66,7 +66,7 @@ const BOARD_PAGE_QUERY = `query BoardPage($owner: String!, $projectNumber: Int!,
                 nodes { number state }
                 pageInfo { hasNextPage }
               }
-              timelineItems(first: 30, itemTypes: CROSS_REFERENCED_EVENT) {
+              timelineItems(first: 100, itemTypes: CROSS_REFERENCED_EVENT) {
                 nodes {
                   ... on CrossReferencedEvent {
                     source { ... on PullRequest { number state } }
