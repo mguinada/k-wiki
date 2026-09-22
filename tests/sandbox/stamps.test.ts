@@ -136,6 +136,43 @@ describe("stampSandboxPage", () => {
     expect(stampSandboxPage(once, "2026-08-27")).toBe(once);
   });
 
+  it("keeps an indented via line that is list content, not a stamp", () => {
+    const text = [
+      "---",
+      'title: "Proposal"',
+      "  via: list-item",
+      "---",
+      "Body.",
+    ].join("\n");
+
+    expect(stampSandboxPage(text, "2026-08-27")).toBe(
+      [
+        "---",
+        'title: "Proposal"',
+        "  via: list-item",
+        "via: agent",
+        "expires: 2026-08-27",
+        "---",
+        "Body.",
+      ].join("\n"),
+    );
+  });
+
+  it("removes an expiresx line never: only exact via and expires keys", () => {
+    const text = ["---", "viaphase: keep", "---", "Body."].join("\n");
+
+    expect(stampSandboxPage(text, "2026-08-27")).toBe(
+      [
+        "---",
+        "viaphase: keep",
+        "via: agent",
+        "expires: 2026-08-27",
+        "---",
+        "Body.",
+      ].join("\n"),
+    );
+  });
+
   it("treats an unclosed frontmatter block as no frontmatter", () => {
     expect(stampSandboxPage("---\ntitle: x\n", "2026-08-27")).toBe(
       [
@@ -164,6 +201,19 @@ describe("sandboxLogEntry", () => {
     expect(
       entry.startsWith("## [2026-08-20] sandbox | attention-notes\n"),
     ).toBe(true);
+  });
+
+  it("renders the exact audit entry", () => {
+    expect(
+      sandboxLogEntry({
+        date: "2026-08-20",
+        slug: "attention-notes",
+        expires: "2026-08-27",
+        pages: ["wiki/sandbox/attention-notes.md"],
+      }),
+    ).toBe(
+      "## [2026-08-20] sandbox | attention-notes\n\nAgent sandbox run committed wiki/sandbox/attention-notes.md; expires 2026-08-27.\n",
+    );
   });
 
   it("names every committed page and the expiry", () => {

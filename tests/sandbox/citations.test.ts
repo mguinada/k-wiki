@@ -219,6 +219,69 @@ describe("checkCitationWall", () => {
     expect(report.offendingPaths).toEqual(["note-a.md"]);
   });
 
+  it('flags a quoted via: "agent" stamp outside the sandbox', async () => {
+    const wikiDir = await makeWiki({
+      "note-a.md": [
+        "---",
+        'title: "P"',
+        "type: concept",
+        'via: "agent"',
+        "---",
+        "",
+        "Body.",
+        "",
+      ].join("\n"),
+    });
+
+    const report = await checkCitationWall(wikiDir);
+
+    expect(report.problems).toEqual([
+      "wiki/note-a.md:4 -> via: agent (agent-stamped pages live only under wiki/sandbox/)",
+    ]);
+  });
+
+  it("does not flag a via: human line on a main page", async () => {
+    const wikiDir = await makeWiki({
+      "note-a.md": mainPage("Body.", ["via: human"]),
+    });
+
+    const report = await checkCitationWall(wikiDir);
+
+    expect(report.problems).toEqual([]);
+  });
+
+  it("does not flag a via: agent line in a main page body (no frontmatter key)", async () => {
+    const wikiDir = await makeWiki({
+      "note-a.md": "No frontmatter.\n\nvia: agent\n",
+    });
+
+    const report = await checkCitationWall(wikiDir);
+
+    expect(report.problems).toEqual([]);
+  });
+
+  it("does not flag a via: agent stamp in a never-closed frontmatter block", async () => {
+    const wikiDir = await makeWiki({
+      "note-a.md": "---\ntitle: x\nvia: agent\nBody.\n",
+    });
+
+    const report = await checkCitationWall(wikiDir);
+
+    expect(report.problems).toEqual([]);
+  });
+
+  it("reports the offending paths sorted when several pages offend", async () => {
+    const wikiDir = await makeWiki({
+      "z-page.md": mainPage("See [[proposal]]."),
+      "a-page.md": mainPage("See [[proposal]] too."),
+      "sandbox/proposal.md": sandboxPage("Body."),
+    });
+
+    const report = await checkCitationWall(wikiDir);
+
+    expect(report.offendingPaths).toEqual(["a-page.md", "z-page.md"]);
+  });
+
   it("allows the via: agent stamp inside the sandbox", async () => {
     const wikiDir = await makeWiki({
       "sandbox/proposal.md": sandboxPage("Body."),

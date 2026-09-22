@@ -45,6 +45,41 @@ async function runVerb(args: readonly string[]): Promise<Capture> {
 }
 
 describe("completion verb", () => {
+  it("answers -h with the exact shipped help text", async () => {
+    const { out } = await runVerb(["-h"]);
+
+    expect(out).toBe(`Usage: k-wiki completion [-h | --help] [<shell>]
+
+Emit the shell completion function for the k-wiki front door.
+Shell plumbing, not a wiki verb: no checkout, instance, or door is
+resolved, nothing is read but the verb table this CLI ships, and
+nothing is written anywhere — the script goes to stdout only, and
+stderr stays silent on success. The output is static and
+byte-identical on every run, so it can be redirected into a file
+or sourced directly.
+
+Arguments:
+  <shell>    The shell to emit for. Default: zsh — the only
+             supported shell today. Any other name is a usage
+             error naming the supported shells, never a guess.
+
+Options:
+  -h, --help          This help; no side effects.
+
+What it writes: the completion script to stdout, nothing else.
+Try it now, zero setup:
+  source <(k-wiki completion zsh)
+Keep it permanently:
+  k-wiki completion zsh > ~/.zfunc/_k-wiki
+  # ~/.zshrc — fpath=(~/.zfunc $fpath); autoload -Uz compinit; compinit
+The script defines a zsh compdef function for k-wiki that completes
+the verbs grouped by the bare-help tiers (daily, occasional
+operator, maintenance) and the global flags (-w/--wiki, -h/--help,
+--checkout <path>, which completes paths); verb arguments are not
+completed statically. Exit 0 prints the script; exit 1 is a usage
+error. NO_COLOR is honored (the script itself never uses color).`);
+  });
+
   it("answers -h with usage and exits 0 without side effects", async () => {
     const { out, err } = await runVerb(["-h"]);
 
@@ -165,6 +200,80 @@ describe("zsh completion script", () => {
     expect(zshCompletionScript()).toContain(
       String.raw`    'list:one '\''slug — title'\'' line per page, grouped by type;'`,
     );
+  });
+
+  it("emits the exact shipped zsh script (the pinned completion contract)", () => {
+    expect(zshCompletionScript()).toBe(`#compdef k-wiki
+# k-wiki zsh completion — emitted by \`k-wiki completion\` (static:
+# the verb table and the global flags; no wiki state is read at
+# completion time). Install it permanently:
+#   k-wiki completion zsh > ~/.zfunc/_k-wiki
+#   # ~/.zshrc — fpath=(~/.zfunc $fpath); autoload -Uz compinit; compinit
+# Or try it now, zero setup: source <(k-wiki completion zsh)
+
+_k-wiki() {
+  local context state state_descr line
+  local -a _k_wiki_porcelain _k_wiki_operator _k_wiki_libexec
+
+  _k_wiki_porcelain=(
+    'query:ask the bound wiki one question (the only LLM verb;'
+    'status:print the resolved binding, paths, and last change'
+    'list:one '\\''slug — title'\\'' line per page, grouped by type;'
+    'read:print one page verbatim, resolved by file name'
+    'health:projection coherence + freshness check (read-only)'
+    'propose:file one candidate note under wiki/sandbox/ — the gated'
+    'wiki-sync:run the whole cycle and print the digest'
+    'wiki-query:ask one question headless; --file-last files the'
+  )
+
+  _k_wiki_operator=(
+    'init-data-repo:create and seed the data repo (once; idempotent)'
+    'sync-vault:project every vault note into raw/ (deterministic)'
+    'sync-repo:project a source repository verbatim into raw/ (meta)'
+    'wiki-ingest:run the wiki agent over changed sources; write the digest'
+    'wiki-lint:run the quality-lint agent alone; report to the data'
+    'dashboard:regenerate the static KPI dashboard (read-only)'
+    'scheduled-run:run one unattended cycle (the launchd command)'
+    'setup-schedule:register the launchd schedule'
+    'setup-meta-sync:install the meta wiki'\\''s post-merge auto-sync hooks'
+    'completion:emit the zsh completion script for this front door'
+  )
+
+  _k_wiki_libexec=(
+    'check-raw:coherence (and staleness) of a raw/ projection'
+    'check-links:every [[wikilink]] and heading anchor resolves'
+    'check-crosslinks:one-way cross-wiki link discipline'
+    'check-citations:one-way wall between the wiki and its wiki/sandbox/'
+    'check-provenance:every sources entry and origin is alive'
+    'check-fidelity:quoted tokens trace to origins; titles match names'
+    'backfill-origin:write origin on source pages lacking it; dry run first'
+    'link-sources:migrate path-form sources entries to hub wikilinks'
+    'anchor-citations:migrate aliased hub citations to chapter anchors'
+    'invert-log:invert log.md to newest-first; lossless, one-way'
+    'open-origin:emit an obsidian://open URI for a hub'\\''s origin'
+    'wiki-promote:walk a sandbox note into the main wiki — one'
+    'sync-watchdog:heartbeat watchdog — alert when the scheduled cycle'\\''s'
+  )
+
+  _arguments -S \\
+    '(-h --help)'{-h,--help}'[print help — the front door alone, or the verb after it]' \\
+    '(-w --wiki)'{-w,--wiki}'[select the wiki instance]:instance:' \\
+    '--checkout[k-wiki checkout for this run]:path:_files' \\
+    '1:verb:->verb' \\
+    '*: :'
+
+  case $state in
+    verb)
+      _describe -t porcelain 'porcelain verb' _k_wiki_porcelain
+      _describe -t operator 'operator verb' _k_wiki_operator
+      _describe -t libexec 'libexec verb' _k_wiki_libexec
+      ;;
+  esac
+}
+
+if (( $+functions[compdef] )); then
+  compdef _k-wiki k-wiki
+fi`);
   });
 });
 

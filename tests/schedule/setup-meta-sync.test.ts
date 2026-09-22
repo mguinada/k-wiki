@@ -158,6 +158,185 @@ beforeEach(() => {
   process.exitCode = undefined;
 });
 
+describe("setup-meta-sync exact output contracts", () => {
+  it("prints the exact shipped help for -h", async () => {
+    const { out, err, exitCode } = await runMain(["-h"], {
+      platform: "darwin",
+      home: "/unused-home",
+      cwd: "/unused",
+      git: fakeGit("/unused"),
+    });
+
+    expect(
+      out,
+    ).toBe(`Usage: setup-meta-sync [-h | --help] [--print] [--uninstall]
+
+Install the meta wiki's post-merge auto-sync git hooks into the
+current checkout's shared hooks dir (git rev-parse --git-path hooks
+— also served to the checkout's linked worktrees). A merge or
+rebase-pull landing on the default branch (main) with a
+clean tree fires one detached meta cycle: bin/scheduled-run
+--settings settings-meta.yml sync-meta.json <dataRoot>/raw, logged and
+locked per data repo. Install runs once per machine — hooks are
+unversioned git state — and the meta data repo needs a private
+origin remote for two-machine convergence.
+
+  --print       Print the hook script (with the paths this checkout
+                would bake) without installing anything — needs no
+                git repo, works on every OS.
+  --uninstall   Remove exactly the hooks this installer wrote
+                (post-merge, post-rewrite); a hook without the
+                installer's marker is never touched.
+  -h, --help    Print this help and exit; no side effects.
+
+Install resolves the canonical checkout (the parent of the shared
+git dir — not a linked worktree), reads sync-meta.json there for the
+data repo root, and writes both hooks (mode 0755, idempotent: an
+identical hook is left alone, an older generation of ours is
+replaced, a foreign hook is refused loud and untouched). The fire
+log is ~/Library/Logs/kwiki/meta-sync.log on macOS,
+~/.local/state/k-wiki/logs/ elsewhere; the hook skips (logged)
+whenever the firing worktree is not the canonical checkout, the
+tree is not on main, or the tree is not clean, and
+k-wiki health keeps flagging the staleness until the next real
+fire.
+
+Exits 0 on success, 1 on a refusal (no git repo, no dataRoot,
+foreign hook in the way) or failure.`);
+    expect(err).toBe("");
+    expect(exitCode).toBeUndefined();
+  });
+
+  it("prints the exact install summary for a fresh install", async () => {
+    const { deps, root, home } = await tempCheckout();
+
+    const { out, err, exitCode } = await runMain([], deps);
+
+    expect(exitCode).toBeUndefined();
+    expect(err).toBe("");
+    expect(out).toBe(
+      `setup-meta-sync: installed post-merge, post-rewrite in ${join(root, ".git", "hooks")} — merges to main fire a detached meta cycle; log: ${join(home, "Library", "Logs", "kwiki", "meta-sync.log")}`,
+    );
+  });
+
+  it("prints the exact already-current summary on the idempotent rerun", async () => {
+    const { deps } = await tempCheckout();
+
+    await runMain([], deps);
+
+    const { out } = await runMain([], deps);
+    const [head] = out.split(
+      " — merges to main fire a detached meta cycle; log: ",
+    );
+    const hooksDir = (head ?? "").slice((head ?? "").indexOf(" in ") + 4);
+
+    expect(out).toBe(
+      `setup-meta-sync: post-merge, post-rewrite already current in ${hooksDir} — merges to main fire a detached meta cycle; log: ${out.slice(out.indexOf("log: ") + 5)}`,
+    );
+  });
+
+  it("prints the exact mixed summary when one hook is current and one is replaced", async () => {
+    const { deps } = await tempCheckout();
+
+    await runMain([], deps);
+
+    const { out } = await runMain([], deps);
+    const hooksDir = out.slice(
+      out.indexOf(" in ") + 4,
+      out.indexOf(" — merges"),
+    );
+    const logPath = out.slice(out.indexOf("log: ") + 5);
+
+    await runMain(["--uninstall"], deps);
+    const partial = await runMain([], deps);
+
+    expect(partial.out).toBe(
+      `setup-meta-sync: installed post-merge, post-rewrite in ${hooksDir} — merges to main fire a detached meta cycle; log: ${logPath}`,
+    );
+  });
+
+  it("prints the exact singular foreign-hook refusal", async () => {
+    const { deps, root } = await tempCheckout();
+
+    const foreign = join(root, ".git", "hooks", "post-merge");
+
+    await putForeign(foreign);
+
+    const { err, exitCode } = await runMain([], deps);
+
+    expect(exitCode).toBe(1);
+    expect(err).toBe(
+      `\u001b[31msetup-meta-sync: refusing to overwrite it — foreign hook not installed by setup-meta-sync: ${foreign} (resolve manually and re-run)\u001b[39m`,
+    );
+  });
+
+  it("prints the exact plural foreign-hooks refusal", async () => {
+    const { deps, root } = await tempCheckout();
+
+    const one = join(root, ".git", "hooks", "post-merge");
+    const two = join(root, ".git", "hooks", "post-rewrite");
+
+    await putForeign(one);
+    await putForeign(two);
+
+    const { err } = await runMain(["--uninstall"], deps);
+
+    expect(err).toBe(
+      `\u001b[31msetup-meta-sync: refusing to uninstall around it — foreign hooks not installed by setup-meta-sync: ${one}, ${two} (resolve manually and re-run)\u001b[39m`,
+    );
+  });
+
+  it("prints the exact not-inside-a-repository refusal", async () => {
+    const { deps } = await tempCheckout();
+
+    const throwing = {
+      ...deps,
+      git: async () => {
+        throw new Error("fatal: not a git repository");
+      },
+    };
+
+    const { err, exitCode } = await runMain([], throwing);
+
+    expect(exitCode).toBe(1);
+    expect(err).toBe(
+      "\u001b[31msetup-meta-sync: not inside a git repository — run setup-meta-sync from the k-wiki checkout whose merges should re-sync the meta wiki\u001b[39m",
+    );
+  });
+
+  it("prints the exact uninstall summaries", async () => {
+    const { deps, root } = await tempCheckout();
+
+    await runMain([], deps);
+
+    const removed = await runMain(["--uninstall"], deps);
+
+    expect(removed.out).toBe(
+      `setup-meta-sync: uninstalled — removed post-merge, post-rewrite from ${join(root, ".git", "hooks")}`,
+    );
+
+    const nothing = await runMain(["--uninstall"], deps);
+
+    expect(nothing.out).toBe(
+      `setup-meta-sync: uninstalled — removed nothing (not installed) from ${join(root, ".git", "hooks")}`,
+    );
+  });
+
+  it("prints the exact positional-argument refusal", async () => {
+    const { err, exitCode } = await runMain(["extra"], {
+      platform: "darwin",
+      home: "/unused-home",
+      cwd: "/unused",
+      git: fakeGit("/unused"),
+    });
+
+    expect(exitCode).toBe(1);
+    expect(err).toBe(
+      '\u001b[31msetup-meta-sync: unexpected argument "extra" — setup-meta-sync takes no positionals\u001b[39m',
+    );
+  });
+});
+
 describe("main install", () => {
   it("writes both hooks executable with the generated content", async () => {
     const { deps, home, root } = await tempCheckout();

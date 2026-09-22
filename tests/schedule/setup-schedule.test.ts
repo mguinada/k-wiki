@@ -32,6 +32,7 @@ import {
   stableNodePath,
   staleAfterTextFor,
 } from "../../src/schedule/setup-schedule.ts";
+import { insideStrykerSandbox } from "../quality/src-tree.ts";
 
 /** A git probe reporting the canonical main checkout — the origin
  *  guard's default, injected so tests do not depend on where the
@@ -383,7 +384,19 @@ describe("setup-schedule main: failure rendering", () => {
     );
   });
 
-  it("renders the unsupported-platform refusal red on stderr with exit 1", async () => {
+  it("renders the unsupported-platform refusal red on stderr with exit 1", async ({
+    skip,
+  }) => {
+    // The #361 origin guard refuses before the platform check when
+    // Stryker instruments the module (insideStrykerSandbox), so this
+    // rendering is unobservable inside a mutation dry run (issue #276
+    // skip pattern).
+    if (insideStrykerSandbox()) {
+      skip("origin guard refuses before the platform check under Stryker");
+
+      return;
+    }
+
     expect(await runFail([], "linux")).toBe(
       "1|\u001b[31msetup-schedule: scheduling on linux is not implemented yet — the backend is a systemd timer, a follow-up issue (out of scope); use --print to inspect the macOS artifact or run wiki-sync manually\u001b[39m",
     );
@@ -509,7 +522,15 @@ describe("setup-schedule origin guard (issue #361)", () => {
     expect(refusal).toContain("not inside a git repository");
   });
 
-  it("refuses install from a linked worktree: exit 1, the refusal, and nothing written", async () => {
+  it("refuses install from a linked worktree: exit 1, the refusal, and nothing written", async ({
+    skip,
+  }) => {
+    if (insideStrykerSandbox()) {
+      skip("the sandbox refusal preempts the worktree refusal under Stryker");
+
+      return;
+    }
+
     const { err, exitCode, launchctl, home } = await runGuarded(
       [],
       "darwin",
@@ -524,7 +545,15 @@ describe("setup-schedule origin guard (issue #361)", () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  it("refuses uninstall from a linked worktree the same way", async () => {
+  it("refuses uninstall from a linked worktree the same way", async ({
+    skip,
+  }) => {
+    if (insideStrykerSandbox()) {
+      skip("the sandbox refusal preempts the worktree refusal under Stryker");
+
+      return;
+    }
+
     const { err, exitCode, launchctl, home } = await runGuarded(
       ["--uninstall"],
       "darwin",
@@ -581,7 +610,15 @@ describe("setup-schedule origin guard (issue #361)", () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  it("installs and replaces cleanly from the main checkout on a branch", async () => {
+  it("installs and replaces cleanly from the main checkout on a branch", async ({
+    skip,
+  }) => {
+    if (insideStrykerSandbox()) {
+      skip("a sandboxed module refuses instead of installing under Stryker");
+
+      return;
+    }
+
     const { exitCode, launchctl, home } = await runGuarded(
       [],
       "darwin",
@@ -627,7 +664,14 @@ describe("setup-schedule main: install and uninstall", () => {
     return await mkdtemp(join(tmpdir(), "k-wiki-setup-"));
   }
 
-  it("writes the plist, registers it, and verifies it from the clean launchd view", async () => {
+  it("writes the plist, registers it, and verifies it from the clean launchd view", async ({
+    skip,
+  }) => {
+    if (insideStrykerSandbox()) {
+      skip("the #361 origin guard refuses to install under Stryker");
+
+      return;
+    }
     const home = await tempHome();
     const recorded: string[][] = [];
     const { out, exitCode } = await (async () => {
@@ -681,7 +725,12 @@ describe("setup-schedule main: install and uninstall", () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  it("fails loud when launchctl cannot bootstrap the job", async () => {
+  it("fails loud when launchctl cannot bootstrap the job", async ({ skip }) => {
+    if (insideStrykerSandbox()) {
+      skip("the #361 origin guard refuses to install under Stryker");
+
+      return;
+    }
     const home = await tempHome();
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
 
@@ -706,7 +755,14 @@ describe("setup-schedule main: install and uninstall", () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  it("removes the plist and boots the job out on --uninstall", async () => {
+  it("removes the plist and boots the job out on --uninstall", async ({
+    skip,
+  }) => {
+    if (insideStrykerSandbox()) {
+      skip("the #361 origin guard refuses to install under Stryker");
+
+      return;
+    }
     const home = await tempHome();
     const target = join(
       home,
@@ -746,7 +802,14 @@ describe("setup-schedule main: install and uninstall", () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  it("tolerates a failed bootout during uninstall (nothing was installed)", async () => {
+  it("tolerates a failed bootout during uninstall (nothing was installed)", async ({
+    skip,
+  }) => {
+    if (insideStrykerSandbox()) {
+      skip("the #361 origin guard refuses to install under Stryker");
+
+      return;
+    }
     const home = await tempHome();
     const outs: string[] = [];
     const logSpy = vi
@@ -923,7 +986,14 @@ describe("calendar registration (issue #359)", () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  it("installs, replaces, and uninstalls only the sweep plist", async () => {
+  it("installs, replaces, and uninstalls only the sweep plist", async ({
+    skip,
+  }) => {
+    if (insideStrykerSandbox()) {
+      skip("the #361 origin guard refuses to install under Stryker");
+
+      return;
+    }
     const home = await tempHome();
     const calls: string[][] = [];
 
@@ -1076,7 +1146,14 @@ describe("watchdog registration (issue #362)", () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  it("installs, replaces, and uninstalls only the watchdog plist", async () => {
+  it("installs, replaces, and uninstalls only the watchdog plist", async ({
+    skip,
+  }) => {
+    if (insideStrykerSandbox()) {
+      skip("the #361 origin guard refuses to install under Stryker");
+
+      return;
+    }
     const home = await tempHome();
     const calls: string[][] = [];
     const anchored: string[] = [];

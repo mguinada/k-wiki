@@ -190,6 +190,205 @@ async function makeRepo(
   return dataRoot;
 }
 
+describe("promoteSandboxNote exact refusal contracts", () => {
+  it("reports the exact dirty-tree refusal naming the dirty paths", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(join(dataRoot, "wiki", "index.md"), `${INDEX_TEXT}dirty\n`);
+
+    const failure = await promote(dataRoot).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    expect(failure?.message).toBe(
+      "promotion refused — the data repo is dirty (commit or revert first; the one-commit unit must not absorb unrelated edits): wiki/index.md, ",
+    );
+  });
+
+  it("reports the exact no-page trace refusal", async () => {
+    const dataRoot = await makeRepo();
+
+    const failure = await promote(dataRoot, { sources: ["Nope"] }).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    expect(failure?.message).toBe(
+      'promotion refused — sources do not trace to raw/: no wiki page named "Nope" — sources must name existing source pages',
+    );
+  });
+
+  it("reports the exact not-a-source refusal with the page's type", async () => {
+    const dataRoot = await makeRepo({ withConcept: "other-notes" });
+
+    const failure = await promote(dataRoot, {
+      sources: ["other-notes"],
+    }).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    expect(failure?.message).toBe(
+      'promotion refused — sources do not trace to raw/: "other-notes" is not a source page (type: concept)',
+    );
+  });
+
+  it("reports the exact missing-origin and dead-trace refusals joined", async () => {
+    const dataRoot = await makeRepo({ removeOrigin: true, withConcept: "c" });
+
+    const failure = await promote(dataRoot, {
+      sources: ["rag-notes", "c"],
+    }).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    expect(failure?.message).toBe(
+      'promotion refused — sources do not trace to raw/: "rag-notes"\'s origin raw/notes/myvault/rag.md does not trace to raw/; "c" is not a source page (type: concept)',
+    );
+  });
+
+  it("reports the exact empty-sources refusal", async () => {
+    const dataRoot = await makeRepo();
+
+    const failure = await promote(dataRoot, { sources: [] }).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    expect(failure?.message).toBe(
+      "promotion refused — at least one source is required: promotion is how a note earns provenance",
+    );
+  });
+
+  it("reports the exact slug-collision refusal naming the colliding page", async () => {
+    const dataRoot = await makeRepo({ collide: true });
+
+    const failure = await promote(dataRoot).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    expect(failure?.message).toBe(
+      'promotion refused — a main page named "attention-notes" already exists (concepts/attention-notes.md); renaming is the human\'s explicit act (re-propose under the new slug, then promote)',
+    );
+  });
+
+  it("reports the exact expired-note refusal", async () => {
+    const dataRoot = await makeRepo({
+      noteText: NOTE_TEXT.replace("expires: 2026-08-27", "expires: 2026-08-19"),
+    });
+
+    const failure = await promote(dataRoot).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    expect(failure?.message).toBe(
+      "promotion refused — wiki/sandbox/attention-notes.md expired 2026-08-19; an expired note is dead by definition (re-derive it as a new proposal)",
+    );
+  });
+
+  it("reports the exact nothing-to-promote refusal", async () => {
+    const dataRoot = await makeRepo();
+
+    await rm(join(dataRoot, "wiki", "sandbox", "attention-notes.md"));
+
+    const failure = await promote(dataRoot).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    expect(failure?.message).toBe(
+      "nothing to promote — wiki/sandbox/attention-notes.md does not exist (already promoted, reaped, or never proposed)",
+    );
+  });
+
+  it("reports the exact bad-type refusal listing the page types", async () => {
+    const dataRoot = await makeRepo({
+      noteText: NOTE_TEXT.replace("type: concept", "type: musing"),
+    });
+
+    const failure = await promote(dataRoot).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    expect(failure?.message).toBe(
+      'promotion refused — the note\'s type "musing" is not a wiki page type (concept, entity, source, query, comparison); the promoted page must land in a typed directory',
+    );
+  });
+
+  it("reports the exact invalid-slug refusal", async () => {
+    const dataRoot = await makeRepo();
+
+    const failure = await promote(dataRoot, { slug: "Not A Slug" }).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    expect(failure?.message).toBe(
+      'sandbox slug "Not A Slug" must be lowercase kebab-case — letters and digits, single hyphens between them',
+    );
+  });
+
+  it("reports the exact citation-wall refusal naming the violating edge", async () => {
+    const dataRoot = await makeRepo({
+      noteText: NOTE_TEXT.replace(
+        "Proposal body citing [[rag-notes]].",
+        "Proposal body citing [[rag-notes]] and [[peer-note]].",
+      ),
+      withPeer: true,
+    });
+
+    const failure = await promote(dataRoot).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    expect(failure?.message).toBe(
+      "promotion failed — rolled back, nothing was promoted: promotion refused — the promoted page violates the one-way citation wall: wiki/concepts/attention-notes.md:12 -> [[peer-note]] (main pages must not link or embed sandbox pages)",
+    );
+  });
+
+  it("reports the exact rollback wrapper around the failing cause", async () => {
+    const dataRoot = await makeRepo();
+
+    await run("git", ["config", "user.name", ""], { cwd: dataRoot });
+
+    const failure = await promote(dataRoot).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    expect(failure?.message).toMatch(
+      /^promotion failed — rolled back, nothing was promoted: /,
+    );
+  });
+
+  it("emits the exact committed progress line", async () => {
+    const dataRoot = await makeRepo();
+    const messages: string[] = [];
+    const result = await promoteSandboxNote({
+      run: {
+        dataRoot,
+        rawDir: join(dataRoot, "raw"),
+        wikiDir: join(dataRoot, "wiki"),
+        env: process.env,
+        now: NOW,
+        onProgress: (message) => messages.push(message),
+      },
+      slug: "attention-notes",
+      sources: ["rag-notes"],
+    });
+
+    expect(messages).toEqual([
+      `wiki-promote: committed ${result.commit.slice(0, 8)} (promote: attention-notes)`,
+    ]);
+  });
+});
+
 describe("templatePromotedPage", () => {
   it("keeps the note's body byte-exact", () => {
     const page = templatePromotedPage(NOTE_TEXT, ["rag-notes"], "2026-08-20");

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { LAUNCHD_LABEL } from "../../src/schedule/launchd-plists.ts";
 import { main } from "../../src/schedule/setup-schedule.ts";
+import { insideStrykerSandbox } from "../quality/src-tree.ts";
 
 /**
  * The install path over a mocked launchctl: the plist lands in the
@@ -108,7 +109,13 @@ async function runMain(
 }
 
 describe("setup-schedule install", () => {
-  it("writes the plist with mode 0644", async () => {
+  it("writes the plist with mode 0644", async ({ skip }) => {
+    if (insideStrykerSandbox()) {
+      skip("the #361 origin guard refuses to install under Stryker");
+
+      return;
+    }
+
     const home = await tempHome();
 
     await runMain([], "darwin", home);
@@ -126,7 +133,15 @@ describe("setup-schedule install", () => {
     expect(out.endsWith("</plist>")).toBe(true);
   });
 
-  it("fails loud, naming the launchctl command, when loading fails", async () => {
+  it("fails loud, naming the launchctl command, when loading fails", async ({
+    skip,
+  }) => {
+    if (insideStrykerSandbox()) {
+      skip("the #361 origin guard refuses to install under Stryker");
+
+      return;
+    }
+
     const home = await tempHome();
 
     execFile.mockImplementation((...callArgs: unknown[]) => {
@@ -153,7 +168,13 @@ describe("setup-schedule install", () => {
     await expect(failure).rejects.toThrow("failed — Bootstrap failed: 5");
   });
 
-  it("reads back the installed plist", async () => {
+  it("reads back the installed plist", async ({ skip }) => {
+    if (insideStrykerSandbox()) {
+      skip("the #361 origin guard refuses to install under Stryker");
+
+      return;
+    }
+
     const home = await tempHome();
 
     await runMain([], "darwin", home);

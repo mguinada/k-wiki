@@ -187,6 +187,39 @@ describe("reapExpiredSandboxNotes", () => {
     expect((await reapExpiredSandboxNotes(run)).reaped).toEqual([]);
   });
 
+  it("reaps a CRLF-line-ended expired note", async () => {
+    const text = [
+      "---",
+      "via: agent",
+      "expires: 2026-08-19",
+      "---",
+      "",
+      "Body.",
+      "",
+    ].join("\r\n");
+    const { run } = await makeRepo({ "crlf.md": text });
+
+    expect((await reapExpiredSandboxNotes(run)).reaped).toEqual([
+      "wiki/sandbox/crlf.md",
+    ]);
+  });
+
+  it("reaps a note whose expires key carries no space", async () => {
+    const { run } = await makeRepo({
+      "tight.md": "---\nexpires:2026-08-19\n---\n\nBody.\n",
+    });
+
+    expect((await reapExpiredSandboxNotes(run)).reaped).toEqual([
+      "wiki/sandbox/tight.md",
+    ]);
+  });
+
+  it("keeps a note whose date stamp carries leading junk", async () => {
+    const { run } = await makeRepo({ "junk.md": page("x2026-08-01") });
+
+    expect((await reapExpiredSandboxNotes(run)).reaped).toEqual([]);
+  });
+
   it("is a silent no-op when the sandbox namespace is absent", async () => {
     const dataRoot = await mkdtemp(join(tmpdir(), "k-wiki-reaper-"));
 

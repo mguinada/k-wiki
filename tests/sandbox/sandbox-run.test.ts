@@ -125,6 +125,7 @@ function sandboxRun(
     readonly instance?: WikiInstance;
     readonly runAgent?: AgentRunner;
     readonly prompt?: string;
+    readonly progress?: string[];
   } = {},
 ) {
   return runSandboxRun({
@@ -135,7 +136,7 @@ function sandboxRun(
       wikiDir: join(dataRoot, "wiki"),
       env: process.env,
       now: NOW,
-      onProgress: () => {},
+      onProgress: input.progress?.push.bind(input.progress) ?? (() => {}),
     },
     settings: SETTINGS,
     slug: input.slug ?? "note-slug",
@@ -569,6 +570,182 @@ describe("runSandboxRun", () => {
     });
 
     expect(subjects.trim().split("\n")).toEqual(["init"]);
+  });
+});
+
+describe("runSandboxRun exact contracts", () => {
+  it("reports the exact wrong-repo refusal", async () => {
+    const dataRoot = await makeRepo();
+    const otherRoot = await makeRepo();
+
+    const failure = await sandboxRun(dataRoot, {
+      instance: instanceAt(otherRoot),
+      runAgent: agentWriting({}),
+    }).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    expect(failure?.message).toBe(
+      `sandbox run refused — wrong-repo accept-gate: the run context targets ${dataRoot} but the resolved instance (default) targets ${otherRoot}; resolve the instance through the verb's own --wiki resolution and retry`,
+    );
+  });
+
+  it("reports the exact dirty-namespace refusal naming the paths", async () => {
+    const dataRoot = await makeRepo();
+
+    await mkdir(join(dataRoot, "wiki", "sandbox"), { recursive: true });
+    await writeFile(
+      join(dataRoot, "wiki", "sandbox", "other-note.md"),
+      "uncommitted earlier work\n",
+    );
+
+    const failure = await sandboxRun(dataRoot, {
+      runAgent: agentWriting({}),
+    }).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    expect(failure?.message).toBe(
+      "sandbox run refused — the sandbox namespace is already dirty (commit or revert these paths first; the path-scoped revert must not destroy changes that predate the run): wiki/sandbox/other-note.md",
+    );
+  });
+
+  it("reports the exact dirty-log refusal", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(join(dataRoot, "wiki", "log.md"), "## stale audit entry\n");
+
+    const failure = await sandboxRun(dataRoot, {
+      runAgent: agentWriting({}),
+    }).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    expect(failure?.message).toBe(
+      "sandbox run refused — wiki/log.md is already dirty (commit or revert it first; the audit prepend and the sandbox commit must not absorb edits that predate the run)",
+    );
+  });
+
+  it("reports the exact colliding-slug refusal", async () => {
+    const dataRoot = await makeRepo();
+
+    await mkdir(join(dataRoot, "wiki", "sandbox"), { recursive: true });
+    await writeFile(join(dataRoot, "wiki", "sandbox", "note-slug.md"), "old\n");
+    await gitCommitAll(dataRoot, "seed sandbox note");
+
+    const failure = await sandboxRun(dataRoot, {
+      runAgent: agentWriting({}),
+    }).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    expect(failure?.message).toBe(
+      "sandbox run refused — wiki/sandbox/note-slug.md already exists; the slug is the note's identity, a second run may not overwrite it",
+    );
+  });
+
+  it("emits the exact progress lines of a committed run", async () => {
+    const dataRoot = await makeRepo();
+    const progress: string[] = [];
+
+    const result = await sandboxRun(dataRoot, {
+      runAgent: agentWriting({ "wiki/sandbox/note-slug.md": "note\n" }),
+      progress,
+    });
+
+    expect(result.status).toBe("committed");
+    expect(progress).toEqual([
+      "sandbox: invoking agent: stub --model test-model --thinking low (isolated)",
+      "sandbox: accept-gate passed — 1 path(s) under wiki/sandbox/",
+      `sandbox: committed ${result.status === "committed" ? result.commit.slice(0, 8) : ""} (sandbox: note-slug), expires 2026-08-27`,
+    ]);
+  });
+
+  it("emits the exact accept-gate failure progress and refusal", async () => {
+    const dataRoot = await makeRepo();
+    const progress: string[] = [];
+
+    const failure = await sandboxRun(dataRoot, {
+      runAgent: agentWriting({
+        "wiki/sandbox/note-slug.md": "note\n",
+        "wiki/index.md": "# Mangled\n",
+      }),
+      progress,
+    }).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    expect(progress).toEqual([
+      "sandbox: invoking agent: stub --model test-model --thinking low (isolated)",
+      "sandbox: accept-gate failed — 1 path(s) outside wiki/sandbox/; reverting 2 changed path(s)",
+    ]);
+    expect(failure?.message).toBe(
+      "sandbox accept-gate failed — the run touched paths outside wiki/sandbox/: wiki/index.md; reverted 2 changed path(s) to their pre-run state (no whole-repo reset)",
+    );
+  });
+
+  it("reports the exact agent-failure revert message with the path count", async () => {
+    const dataRoot = await makeRepo();
+    const agent: AgentRunner = async (_c, _a, options) => {
+      await mkdir(join(options.cwd, "wiki", "sandbox"), { recursive: true });
+      await writeFile(
+        join(options.cwd, "wiki", "sandbox", "note-slug.md"),
+        "half-written\n",
+      );
+
+      throw new Error("agent died mid-run");
+    };
+
+    const failure = await sandboxRun(dataRoot, { runAgent: agent }).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    expect(failure?.message).toBe(
+      "sandbox agent run failed — the run's 1 sandbox path(s) were reverted",
+    );
+  });
+
+  it("reports the exact epilogue-failure message naming the reverted writes", async () => {
+    const dataRoot = await makeRepo();
+    const agent = async () => {
+      const note = join(dataRoot, "wiki", "sandbox", "note-slug.md");
+
+      await mkdir(dirname(note), { recursive: true });
+      await writeFile(note, "sandbox note\n");
+      await chmod(note, 0o444);
+
+      return { stdout: "", stderr: "" };
+    };
+
+    const failure = await sandboxRun(dataRoot, { runAgent: agent }).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    expect(failure?.message).toMatch(
+      /^sandbox epilogue failed — the run's writes were reverted: /,
+    );
+  });
+
+  it("returns the exact commit message and pages of a committed run", async () => {
+    const dataRoot = await makeRepo();
+
+    const result = await sandboxRun(dataRoot, {
+      runAgent: agentWriting({ "wiki/sandbox/note-slug.md": "note\n" }),
+    });
+
+    expect(result.status).toBe("committed");
+
+    if (result.status === "committed") {
+      expect(result.message).toBe("sandbox: note-slug");
+      expect(result.pages).toEqual(["wiki/sandbox/note-slug.md"]);
+    }
   });
 });
 
