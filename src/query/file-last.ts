@@ -16,7 +16,7 @@ import { lstat, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { errorMessage } from "../cli/colors.ts";
 import { parseStatus, runGit } from "../data/git.ts";
-import { kebab, listWikiPages, readPageFields } from "../wiki/pages.ts";
+import { listWikiPages, pageSlug, readPageFields } from "../wiki/pages.ts";
 import { buildPageIndex, extractWikilinks } from "../wiki/wiki-links.ts";
 import { prependWikiLog } from "../wiki/wiki-log.ts";
 
@@ -210,12 +210,9 @@ export async function citedSourcePages(
   return sources.sort();
 }
 
-/** Longest slug; questions can be long, file names should not be. */
-const MAX_SLUG = 80;
-
 /** Kebab-case slug from the question; `query` when nothing survives. */
 export function slugForQuestion(question: string): string {
-  const slug = kebab(question).slice(0, MAX_SLUG).replace(/-+$/, "");
+  const slug = pageSlug(question);
 
   return slug === "" ? "query" : slug;
 }

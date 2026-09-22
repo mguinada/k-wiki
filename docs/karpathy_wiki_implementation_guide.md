@@ -882,8 +882,10 @@ both to files under `raw/` and to no hub that covers them — every
 `origin` exists under `raw/`), the quote-fidelity check
 (`bin/libexec/check-fidelity`: every machine-checkable token a source
 page quotes — tilde paths, config keys, CLI flags, `npm run`
-commands — appears in its `origin`, and every page title kebab-cases
-to its file name), the body-text anchor lint
+commands — appears in its `origin`, and every page title matches
+its file name under the shared page-slug rule — kebab-case capped
+at the 80-character file-name budget, or the uncapped kebab for
+longer names), the body-text anchor lint
 (`bin/libexec/check-links`: every `[[wikilink]]` resolves to an existing page, and
 a body-text heading anchor `[[page#Chapter]]` lands on a target
 heading byte-identical to the anchor — the same rule

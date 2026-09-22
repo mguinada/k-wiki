@@ -7,9 +7,11 @@ import { runChecker } from "./check-provenance.ts";
  * the fidelity stack. Every machine-checkable token a `type: source`
  * page quotes — tilde paths, dotted config keys, CLI flags, `npm run`
  * commands — must appear in the page's `origin` file, and every
- * non-structural page's `title` must kebab-case to its file name. The
- * core lives in src/wiki/fidelity.ts (the wiki-sync verification stage
- * runs it every cycle, issue #138); this script renders its report.
+ * non-structural page's `title` must slug to its file name under
+ * the shared page-slug rule (the filing cap, or the uncapped kebab
+ * for longer names). The core lives in src/wiki/fidelity.ts (the
+ * wiki-sync verification stage runs it every cycle, issue #138);
+ * this script renders its report.
  * Prints one `wiki/<page> -> …` line per problem and exits 1; exits 0
  * when the wiki is faithful. Relational misquotes (right tokens, wrong
  * containment) stay with the lint prompt (tier 2) and §19 review.
@@ -23,7 +25,9 @@ Check citation fidelity: every machine-checkable token a
 dotted config keys (\`push.pushOption\` style, file names excluded),
 long and short CLI flags, and \`npm run\` commands — appears in the
 page's \`origin\` file under the raw projection, and every page's
-\`title\` kebab-cases to its file name (\`index\`, \`overview\`, and
+\`title\` matches its file name under the shared page-slug rule —
+kebab-case capped at the 80-character file-name budget, or the
+uncapped kebab (\`index\`, \`overview\`, and
 \`log\` are exempt; their file names are mandated by the wiki
 contract). Relational misquotes (right tokens, wrong containment)
 are not detectable here — the lint prompt and diff review own them.

@@ -3,11 +3,14 @@
  * fidelity stack. Every machine-checkable token a `type: source` page
  * quotes — tilde paths, dotted config keys, CLI flags, `npm run`
  * commands — must appear in the page's `origin` file, and every
- * non-structural page's `title` must kebab-case to its file name. The
- * scripts/check-fidelity CLI renders it; the wiki-sync verification
- * stage (issue #138) runs it every cycle. Relational misquotes (right
- * tokens, wrong containment) stay with the lint prompt (tier 2) and
- * §19 review.
+ * non-structural page's `title` must slug to its file name under
+ * either naming rule that produces one: the shared filing cap
+ * (`pageSlug`, issue #377 — a filed page re-verifies against its own
+ * file) or the uncapped kebab that still names promoted sandbox
+ * slugs and agent-authored pages. The scripts/check-fidelity CLI
+ * renders it; the wiki-sync verification stage (issue #138) runs it
+ * every cycle. Relational misquotes (right tokens, wrong
+ * containment) stay with the lint prompt (tier 2) and §19 review.
  */
 
 import { readFile } from "node:fs/promises";
@@ -18,6 +21,7 @@ import {
   listWikiPages,
   normalizeRawPath,
   pageReportPath,
+  pageSlug,
   parsePageFields,
 } from "./pages.ts";
 import { assertRawDir } from "./provenance.ts";
@@ -169,8 +173,12 @@ interface FidelityCounters {
   skipped: number;
 }
 
-/** Check a non-structural page's `title` kebab-cases to its file
- *  stem. */
+/** Check a non-structural page's `title` file-kebabs to its file
+ *  stem under either naming rule that produces page names: the
+ *  shared filing cap (`pageSlug`) or the uncapped kebab that names
+ *  promoted sandbox slugs and agent-authored pages — a name longer
+ *  than the 80-character cap verifies by the uncapped match, a
+ *  filed page by the cap (issue #377). */
 function checkTitle(
   page: string,
   stem: string,
@@ -182,7 +190,7 @@ function checkTitle(
     return;
   }
 
-  if (kebab(title) === stem) {
+  if (pageSlug(title) === stem || kebab(title) === stem) {
     counters.titles++;
   } else {
     problems.push(

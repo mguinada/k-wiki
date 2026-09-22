@@ -57,6 +57,19 @@ export function kebab(text: string): string {
     .replace(/-+$/, "");
 }
 
+/** Longest page-name slug; questions and titles can be long, file
+ *  names should not be. */
+const MAX_SLUG = 80;
+
+/** Kebab-case page-name slug from a page's title or question: kebab,
+ *  capped at MAX_SLUG, a trailing hyphen left by the cut trimmed.
+ *  The one derivation shared by query filing (`slugForQuestion`) and
+ *  the fidelity title rule — a filed page re-derives to its own file
+ *  name, however long the question was (issue #377). */
+export function pageSlug(text: string): string {
+  return kebab(text).slice(0, MAX_SLUG).replace(/-+$/, "");
+}
+
 /** The frontmatter block's opening and closing fence line. */
 export const FRONTMATTER_FENCE = "---";
 
