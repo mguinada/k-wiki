@@ -145,8 +145,11 @@ unrelated → leave flagged.
 
 Use lowercase kebab-case filenames for concepts, comparisons, and queries.
 
-A page's `title` must kebab-case to its file name; `index`, `overview`,
-and `log` are exempt (`check-fidelity` enforces this).
+A page's `title` must file-kebab to its file name under the page-slug
+rule: kebab-case, capped at 80 characters, a trailing hyphen left by
+the cut trimmed. `index`, `overview`, and `log` are exempt
+(`check-fidelity` enforces this). Titles whose kebab is at most 80
+characters are unaffected.
 
 Examples:
 
