@@ -70,6 +70,20 @@ export function pageSlug(text: string): string {
   return kebab(text).slice(0, MAX_SLUG).replace(/-+$/, "");
 }
 
+/** Highest collision counter query filing appends to an already
+ *  taken slug: the second filing of a question lands at
+ *  `<slug>-2.md`, the last one at `<slug>-999.md`. Shared with the
+ *  fidelity title rule so the two cannot drift (issue #383). */
+export const MAX_QUERY_ATTEMPT = 999;
+
+/** The collision-counter suffix query filing appends for `attempt`:
+ *  none for the first, `-<attempt>` from the second on. The build
+ *  side of the convention `stemWithoutCollisionCounter` (fidelity)
+ *  reads back. */
+export function queryAttemptSuffix(attempt: number): string {
+  return attempt === 1 ? "" : `-${attempt}`;
+}
+
 /** The frontmatter block's opening and closing fence line. */
 export const FRONTMATTER_FENCE = "---";
 

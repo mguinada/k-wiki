@@ -414,6 +414,90 @@ describe("checkWikiFidelity", () => {
     expect(`${report.problems.length}:${report.titles}`).toBe("0:1");
   });
 
+  it("accepts the second filing of the same question, collision counter and all", async () => {
+    // The two names queryPagePath claims when the same question is
+    // filed twice: the slug, then slug-2 (issue #383).
+    const question = "How does the sync cycle decide what to commit?";
+    const slug = slugForQuestion(question);
+    const page = templateQueryPage(
+      {
+        question,
+        timestamp: "2026-09-22T10:00:00Z",
+        pages: [],
+        answer: "body",
+      },
+      { created: "2026-09-22", updated: "2026-09-22", sources: [] },
+    );
+    const { wikiDir, rawDir } = await makeFixture({
+      [`queries/${slug}.md`]: page,
+      [`queries/${slug}-2.md`]: page,
+    });
+
+    const report = await checkWikiFidelity(wikiDir, rawDir);
+
+    expect(`${report.problems.length}:${report.titles}`).toBe("0:2");
+  });
+
+  it("accepts a capped long question filed twice", async () => {
+    const question =
+      "Why do we need all operations on the render thread of an UI to have an time to complete within 120 frames per second?";
+    const slug = slugForQuestion(question);
+    const { wikiDir, rawDir } = await makeFixture({
+      [`queries/${slug}-2.md`]: `---\ntitle: ${JSON.stringify(question)}\ntype: query\n---\nbody`,
+    });
+
+    const report = await checkWikiFidelity(wikiDir, rawDir);
+
+    expect(`${report.problems.length}:${report.titles}`).toBe("0:1");
+  });
+
+  it("reports a collision-suffixed page whose base does not derive from the title", async () => {
+    const { wikiDir, rawDir } = await makeFixture({
+      "concepts/wiki-page-primitives-2.md":
+        '---\ntitle: "Wiki parsing primitives"\ntype: concept\n---\nbody',
+    });
+
+    const report = await checkWikiFidelity(wikiDir, rawDir);
+
+    expect(report.problems).toEqual([
+      'wiki/concepts/wiki-page-primitives-2.md -> title "Wiki parsing primitives" does not kebab to wiki-page-primitives-2',
+    ]);
+  });
+
+  it("passes a numbered title whose kebab equals the full stem, before any counter strip", async () => {
+    const { wikiDir, rawDir } = await makeFixture({
+      "queries/top-10-2.md": '---\ntitle: "Top 10 2"\ntype: query\n---\nbody',
+    });
+
+    const report = await checkWikiFidelity(wikiDir, rawDir);
+
+    expect(`${report.problems.length}:${report.titles}`).toBe("0:1");
+  });
+
+  it("accepts a collision counter at the 999 filing cap", async () => {
+    const question = "How does the sync cycle decide what to commit?";
+    const { wikiDir, rawDir } = await makeFixture({
+      [`queries/${slugForQuestion(question)}-999.md`]: `---\ntitle: ${JSON.stringify(question)}\ntype: query\n---\nbody`,
+    });
+
+    const report = await checkWikiFidelity(wikiDir, rawDir);
+
+    expect(`${report.problems.length}:${report.titles}`).toBe("0:1");
+  });
+
+  it("reports a four-digit suffix the 999 filing loop cannot emit", async () => {
+    const question = "How does the sync cycle decide what to commit?";
+    const { wikiDir, rawDir } = await makeFixture({
+      [`queries/${slugForQuestion(question)}-1000.md`]: `---\ntitle: ${JSON.stringify(question)}\ntype: query\n---\nbody`,
+    });
+
+    const report = await checkWikiFidelity(wikiDir, rawDir);
+
+    expect(report.problems).toEqual([
+      `wiki/queries/${slugForQuestion(question)}-1000.md -> title ${JSON.stringify(question)} does not kebab to ${slugForQuestion(question)}-1000`,
+    ]);
+  });
+
   it("exempts the structural pages from the title check", async () => {
     const { wikiDir, rawDir } = await makeFixture({
       "index.md": "---\ntitle: Wiki Index\n---\n",

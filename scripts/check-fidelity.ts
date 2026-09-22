@@ -8,8 +8,10 @@ import { runChecker } from "./check-provenance.ts";
  * page quotes — tilde paths, dotted config keys, CLI flags, `npm run`
  * commands — must appear in the page's `origin` file, and every
  * non-structural page's `title` must slug to its file name under
- * the shared page-slug rule (the filing cap, or the uncapped kebab
- * for longer names). The core lives in src/wiki/fidelity.ts (the
+ * the shared page-slug rule (the filing cap, the uncapped kebab
+ * for longer names, either minus query filing's `-2` … `-999`
+ * collision counter — see src/wiki/fidelity.ts, issue #383). The
+ * core lives in src/wiki/fidelity.ts (the
  * wiki-sync verification stage runs it every cycle, issue #138);
  * this script renders its report.
  * Prints one `wiki/<page> -> …` line per problem and exits 1; exits 0
@@ -27,7 +29,9 @@ long and short CLI flags, and \`npm run\` commands — appears in the
 page's \`origin\` file under the raw projection, and every page's
 \`title\` matches its file name under the shared page-slug rule —
 kebab-case capped at the 80-character file-name budget, or the
-uncapped kebab (\`index\`, \`overview\`, and
+uncapped kebab, with query filing's collision counter (\`-2\` …
+\`-999\`) accepted between rule and stem, the counter itself
+un-verified (\`index\`, \`overview\`, and
 \`log\` are exempt; their file names are mandated by the wiki
 contract). Relational misquotes (right tokens, wrong containment)
 are not detectable here — the lint prompt and diff review own them.

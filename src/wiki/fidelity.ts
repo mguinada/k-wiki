@@ -7,10 +7,14 @@
  * either naming rule that produces one: the shared filing cap
  * (`pageSlug`, issue #377 — a filed page re-verifies against its own
  * file) or the uncapped kebab that still names promoted sandbox
- * slugs and agent-authored pages. The scripts/check-fidelity CLI
- * renders it; the wiki-sync verification stage (issue #138) runs it
- * every cycle. Relational misquotes (right tokens, wrong
- * containment) stay with the lint prompt (tier 2) and §19 review.
+ * slugs and agent-authored pages — with filing's collision counter
+ * accepted between rule and stem (issue #383): the second filing of
+ * a question names its page `<slug>-2.md`, a suffix no title
+ * derives, so the base must derive and the counter goes un-verified.
+ * The scripts/check-fidelity CLI renders it; the wiki-sync
+ * verification stage (issue #138) runs it every cycle. Relational
+ * misquotes (right tokens, wrong containment) stay with the lint
+ * prompt (tier 2) and §19 review.
  */
 
 import { readFile } from "node:fs/promises";
@@ -173,12 +177,41 @@ interface FidelityCounters {
   skipped: number;
 }
 
+/** The stem minus one trailing collision-counter suffix — the exact
+ *  format `queryAttemptSuffix` (pages.ts, attempt ≤
+ *  MAX_QUERY_ATTEMPT) appends — or undefined when none is present: a
+ *  stem that is nothing but a counter has no base to derive. The
+ *  counter is filing's choice, not a title derivation, so only the
+ *  base verifies (issue #383). */
+function stemWithoutCollisionCounter(stem: string): string | undefined {
+  const base = stem.replace(/-\d{1,3}$/, "");
+
+  return base === stem || base === "" ? undefined : base;
+}
+
+/** A title verifies against its page's file stem when either naming
+ *  rule produces the stem, or filing's collision counter sits
+ *  between them (issue #383): the shared filing cap (`pageSlug`,
+ *  issue #377), the uncapped kebab that names promoted sandbox slugs
+ *  and agent-authored pages, or either against the stem minus one
+ *  trailing `-<attempt>` suffix — the counter is filing's choice and
+ *  never derives from the title, so only the base must. A numbered
+ *  title ("Top 10 2" → `top-10-2`) matches the full stem by the bare
+ *  rule before the strip path is even tried. */
+function titleMatchesStem(title: string, stem: string): boolean {
+  if (pageSlug(title) === stem || kebab(title) === stem) {
+    return true;
+  }
+
+  const base = stemWithoutCollisionCounter(stem);
+
+  return (
+    base !== undefined && (pageSlug(title) === base || kebab(title) === base)
+  );
+}
+
 /** Check a non-structural page's `title` file-kebabs to its file
- *  stem under either naming rule that produces page names: the
- *  shared filing cap (`pageSlug`) or the uncapped kebab that names
- *  promoted sandbox slugs and agent-authored pages — a name longer
- *  than the 80-character cap verifies by the uncapped match, a
- *  filed page by the cap (issue #377). */
+ *  stem under the rules `titleMatchesStem` states. */
 function checkTitle(
   page: string,
   stem: string,
@@ -190,7 +223,7 @@ function checkTitle(
     return;
   }
 
-  if (pageSlug(title) === stem || kebab(title) === stem) {
+  if (titleMatchesStem(title, stem)) {
     counters.titles++;
   } else {
     problems.push(
