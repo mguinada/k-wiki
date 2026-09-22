@@ -438,6 +438,19 @@ describe("checkWikiFidelity", () => {
     expect(`${report.problems.length}:${report.titles}`).toBe("0:2");
   });
 
+  it("accepts a capped long question filed twice", async () => {
+    const question =
+      "Why do we need all operations on the render thread of an UI to have an time to complete within 120 frames per second?";
+    const slug = slugForQuestion(question);
+    const { wikiDir, rawDir } = await makeFixture({
+      [`queries/${slug}-2.md`]: `---\ntitle: ${JSON.stringify(question)}\ntype: query\n---\nbody`,
+    });
+
+    const report = await checkWikiFidelity(wikiDir, rawDir);
+
+    expect(`${report.problems.length}:${report.titles}`).toBe("0:1");
+  });
+
   it("reports a collision-suffixed page whose base does not derive from the title", async () => {
     const { wikiDir, rawDir } = await makeFixture({
       "concepts/wiki-page-primitives-2.md":
