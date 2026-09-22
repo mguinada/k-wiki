@@ -51,6 +51,56 @@ describe("fetchBoardState", () => {
     expect(state.ids.projectId).toBe("PVT_1");
   });
 
+  it("paginates each issue timeline with cursor progression until it terminates", async () => {
+    const node = issueNode({
+      id: "I1",
+      number: 1,
+      status: "Backlog",
+      refs: [{ number: 10, state: "OPEN", pr: true }],
+    });
+    const content = node.content as Record<string, unknown>;
+    content.timelineItems = {
+      ...(content.timelineItems as Record<string, unknown>),
+      pageInfo: { hasNextPage: true, endCursor: "ignored" },
+    };
+    const timelineCursors: (string | null)[] = [];
+    const graphql: GraphQLFn = async (query, variables) => {
+      if (query.includes("query TimelinePage")) {
+        timelineCursors.push(
+          typeof variables.cursor === "string" ? variables.cursor : null,
+        );
+
+        return {
+          data: {
+            node: {
+              timelineItems:
+                variables.cursor === null
+                  ? {
+                      nodes: [{ source: { number: 11, state: "OPEN" } }],
+                      pageInfo: { hasNextPage: true, endCursor: "timeline-c2" },
+                    }
+                  : {
+                      nodes: [{ source: { number: 12, state: "OPEN" } }],
+                      pageInfo: {
+                        hasNextPage: false,
+                        endCursor: "timeline-c3",
+                      },
+                    },
+            },
+          },
+        };
+      }
+
+      return boardPage([node]);
+    };
+
+    const state = await fetchBoardState(graphql, "mguinada", 2);
+
+    expect(
+      `${timelineCursors.map((cursor) => cursor ?? "null").join()}|${state.items[0]?.openPrs.join()}`,
+    ).toBe("null,timeline-c2|10,11,12");
+  });
+
   it("throws naming owner and project when the board is not readable", async () => {
     const graphql: GraphQLFn = async () => ({
       data: { user: { projectV2: null } },
