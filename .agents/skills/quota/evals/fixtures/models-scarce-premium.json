@@ -1,0 +1,1 @@
+{"selection":[{"scope":"claude:premium","effectivePercentRemaining":24},{"scope":"codex:commodity","effectivePercentRemaining":78}],"models":[{"model":"premium-review","runway":"35m"},{"model":"commodity-implementation","runway":"4h"}]}

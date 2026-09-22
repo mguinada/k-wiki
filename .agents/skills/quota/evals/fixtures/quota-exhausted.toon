@@ -1,0 +1,5 @@
+quota[1]{scope,effectivePercentRemaining,runway,spendPriority}:
+claude:review,0,0m,low
+exhaustion[1]{scope,condition,resetsAt}:
+claude:review,exhausted_now,2026-09-22T21:00:00Z
+attention[0]{}:
