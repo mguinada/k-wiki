@@ -885,7 +885,8 @@ page quotes — tilde paths, config keys, CLI flags, `npm run`
 commands — appears in its `origin`, and every page title matches
 its file name under the shared page-slug rule — kebab-case capped
 at the 80-character file-name budget, or the uncapped kebab for
-longer names), the body-text anchor lint
+longer names — with query filing's collision counter (`-2` … `-999`)
+accepted between rule and stem, the counter itself un-verified), the body-text anchor lint
 (`bin/libexec/check-links`: every `[[wikilink]]` resolves to an existing page, and
 a body-text heading anchor `[[page#Chapter]]` lands on a target
 heading byte-identical to the anchor — the same rule

@@ -149,7 +149,10 @@ A page's `title` must file-kebab to its file name under the page-slug
 rule: kebab-case, capped at 80 characters, a trailing hyphen left by
 the cut trimmed. `index`, `overview`, and `log` are exempt
 (`check-fidelity` enforces this). Titles whose kebab is at most 80
-characters are unaffected.
+characters are unaffected. When a question is filed again and its
+slug is taken, the new page's name gets a collision counter
+(`-2` … `-999`); a title that kebabs to the name minus one such
+counter still verifies — the base must derive, the counter need not.
 
 Examples:
 

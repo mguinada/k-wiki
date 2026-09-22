@@ -8,9 +8,11 @@ import {
   kebab,
   listSandboxPages,
   listWikiPages,
+  MAX_QUERY_ATTEMPT,
   normalizeRawPath,
   pageSlug,
   parsePageFields,
+  queryAttemptSuffix,
   readPageFields,
   wikilinkTarget,
 } from "../../src/wiki/pages.ts";
@@ -60,6 +62,26 @@ describe("pageSlug", () => {
 
   it("keeps an all-punctuation title's empty slug empty", () => {
     expect(pageSlug("??? — ???")).toBe("");
+  });
+});
+
+describe("MAX_QUERY_ATTEMPT", () => {
+  it("caps the collision counter at the 999 loop queryPagePath runs", () => {
+    expect(MAX_QUERY_ATTEMPT).toBe(999);
+  });
+});
+
+describe("queryAttemptSuffix", () => {
+  it("leaves the first attempt unsuffixed", () => {
+    expect(queryAttemptSuffix(1)).toBe("");
+  });
+
+  it("suffixes the second attempt with the counter", () => {
+    expect(queryAttemptSuffix(2)).toBe("-2");
+  });
+
+  it("suffixes the last attempt with the 999 cap", () => {
+    expect(queryAttemptSuffix(MAX_QUERY_ATTEMPT)).toBe("-999");
   });
 });
 

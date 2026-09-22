@@ -16,7 +16,13 @@ import { lstat, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { errorMessage } from "../cli/colors.ts";
 import { parseStatus, runGit } from "../data/git.ts";
-import { listWikiPages, pageSlug, readPageFields } from "../wiki/pages.ts";
+import {
+  listWikiPages,
+  MAX_QUERY_ATTEMPT,
+  pageSlug,
+  queryAttemptSuffix,
+  readPageFields,
+} from "../wiki/pages.ts";
 import { buildPageIndex, extractWikilinks } from "../wiki/wiki-links.ts";
 import { prependWikiLog } from "../wiki/wiki-log.ts";
 
@@ -230,15 +236,17 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-/** The first free `wiki/queries/<slug>.md` name; -2, -3, … on collision. */
+/** The first free `wiki/queries/<slug>.md` name; the shared collision
+ *  convention (`queryAttemptSuffix`, issue #383) suffixes -2, -3, …
+ *  on collision. */
 async function queryPagePath(
   wikiDir: string,
   question: string,
 ): Promise<string> {
   const slug = slugForQuestion(question);
 
-  for (let attempt = 1; attempt <= 999; attempt += 1) {
-    const name = `${slug}${attempt === 1 ? "" : `-${attempt}`}.md`;
+  for (let attempt = 1; attempt <= MAX_QUERY_ATTEMPT; attempt += 1) {
+    const name = `${slug}${queryAttemptSuffix(attempt)}.md`;
 
     if (!(await exists(join(wikiDir, "queries", name)))) {
       return `wiki/queries/${name}`;
@@ -246,7 +254,7 @@ async function queryPagePath(
   }
 
   throw new Error(
-    `cannot file the query: 999 pages already share the slug ${JSON.stringify(slug)}`,
+    `cannot file the query: ${MAX_QUERY_ATTEMPT} pages already share the slug ${JSON.stringify(slug)}`,
   );
 }
 
