@@ -14,6 +14,9 @@ wiki/**
 
 # skill-creator eval workspaces (scratch)
 .agents/skills/do-gh-issue-workspace/
+# quota skill-creator workspace: deterministic eval fixtures stay versioned;
+# generated outputs, grades, and viewer bundles remain local.
+.agents/skills/quota-workspace/
 # mutation-triage eval workspace: run outputs and the git-recoverable
 # snapshot are session-local. The versionable iteration assets stay
 # tracked: evals/ (prompts + assertions), scripts/ (the grader),

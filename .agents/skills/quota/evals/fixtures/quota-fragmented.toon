@@ -1,0 +1,11 @@
+bin: ~/.local/bin/quota-axi
+description: Report local agent-provider quota windows for routing-aware agents
+generatedAt: "2026-09-22T19:00:00.000Z"
+quota[2]{provider,scope,effectivePercentRemaining,spendPriority,runway,confidence,limitedBy,resetsAt}:
+  codex,all_models,55,1.2,through_reset,established,five_hour,"2026-09-22T21:00:00.000Z"
+  zai,all_models,12,-1.4,projected_exhaustion,established,five_hour,"2026-09-22T20:00:00.000Z"
+exhaustion[1]{provider,scope,usableRunwaySeconds,projectedExhaustedAt,limitingWindowId}:
+  zai,all_models,1200,"2026-09-22T19:20:00.000Z",five_hour
+attention[0]:
+help[1]:
+  Run `quota-axi --full` for windows, pace, reserve, and account evidence

@@ -8,8 +8,9 @@ You (host) only resolve issues and launch agents. Each fresh pi main agent works
 ## 1. Preconditions
 
 1. `test "${HERDR_ENV:-}" = 1` or stop: tell the user to run this from a Herdr pane. Load the `herdr` skill.
-2. Resolve repo and default branch (`gh repo view --json nameWithOwner,defaultBranchRef`); a URL naming another repo → stop and ask. `git fetch origin <default-branch>`.
-3. Record `$HERDR_PANE_ID` — the address agents report outcomes to.
+2. Run `quota-axi` once before launching (`npx -y quota-axi` when the binary is absent; the `quota` skill owns the policy). A healthy read is silent; report only a quota finding, a spread/serialize decision for 2+ issues, or a hard-condition ask.
+3. Resolve repo and default branch (`gh repo view --json nameWithOwner,defaultBranchRef`); a URL naming another repo → stop and ask. `git fetch origin <default-branch>`.
+4. Record `$HERDR_PANE_ID` — the address agents report outcomes to.
 
 ## 2. Resolve issues
 

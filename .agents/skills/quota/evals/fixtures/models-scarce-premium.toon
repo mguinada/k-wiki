@@ -1,0 +1,26 @@
+bin: ~/.local/bin/quota-axi
+description: Join curated provider-native model intelligence buckets with local quota evidence
+generatedAt: "2026-09-22T19:00:00.000Z"
+catalogVersion: 2026-09-15
+models[4]{provider,id,label,intelligence,quotaScopes,status,stale,effectivePercentRemaining,runway,usableRunwaySeconds}:
+  claude,claude-opus-4-5,Claude Opus 4.5,high,all_models,fresh,false,24,projected_exhaustion,2100
+  claude,claude-sonnet-4-5,Claude Sonnet 4.5,high,all_models,fresh,false,24,projected_exhaustion,2100
+  codex,gpt-5-codex-mini,GPT-5 Codex Mini,medium,all_models,fresh,false,78,through_reset,unknown
+  codex,gpt-5.1-codex,GPT-5.1 Codex,high,all_models,fresh,false,78,through_reset,unknown
+sort:
+  key: runway
+  tieGroups[2]:
+    - [2]:
+      - provider: claude
+        id: claude-opus-4-5
+      - provider: claude
+        id: claude-sonnet-4-5
+    - [2]:
+      - provider: codex
+        id: gpt-5-codex-mini
+      - provider: codex
+        id: gpt-5.1-codex
+help[3]:
+  Default model order is deterministic and non-preferential (provider, accountKey, then id)
+  Run `quota-axi models --sort runway` for the documented opt-in runway comparator
+  Run `quota-axi models --json` for catalog provenance and full quota evidence

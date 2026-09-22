@@ -1,0 +1,83 @@
+{
+  "skill_name": "quota",
+  "evals": [
+    {
+      "id": "install-if-missing",
+      "prompt": "quota-axi is not on PATH. Help me check quota without installing random software.",
+      "expected_output": "Checks Node 22.19+, uses npx -y quota-axi, offers global install, and defers flags to live help.",
+      "files": ["fixtures/cli-absent.json"],
+      "assertions": [
+        "Runs command -v quota-axi before choosing a path.",
+        "Names npx -y quota-axi and npm install -g quota-axi without inventing a binary path.",
+        "Mentions update --check or update for upgrades."
+      ]
+    },
+    {
+      "id": "preflight-go-no-go",
+      "prompt": "Can I start a 45 minute gate run on this scope?",
+      "expected_output": "Healthy fixture is silent; exhausted fixture refuses and names reset or an alternative.",
+      "files": ["fixtures/quota-healthy.toon", "fixtures/quota-exhausted.toon"],
+      "assertions": [
+        "Healthy fixture produces no advisory output.",
+        "exhausted_now fixture asks before work and names the quota[] resetsAt.",
+        "Finite exhaustion[] runway is compared with the task estimate; effective remaining with the 20% floor."
+      ]
+    },
+    {
+      "id": "concentration",
+      "prompt": "Launch three child agents from this quota report.",
+      "expected_output": "Spreads when alternatives have headroom; serializes and reports when headroom is fragmented.",
+      "files": ["fixtures/quota-spread.toon", "fixtures/quota-fragmented.toon"],
+      "assertions": [
+        "Treats three children as concurrent work.",
+        "Uses spendPriority and remaining headroom to spread work.",
+        "Names forced serialization when no clean spread exists."
+      ]
+    },
+    {
+      "id": "model-advice",
+      "prompt": "Which model should I use for implementation and the final review?",
+      "expected_output": "Reserves scarce premium capacity for review or gate work and uses commodity capacity for bulk work.",
+      "files": ["fixtures/quota-premium-scarce.toon", "fixtures/models-scarce-premium.toon"],
+      "assertions": [
+        "Reads quota[] spendPriority and models sorted by runway as evidence.",
+        "Makes advice instead of routing or switching a provider.",
+        "States the quality trade-off before a lower-quality choice."
+      ]
+    },
+    {
+      "id": "fleet-honesty-and-diagnosis",
+      "prompt": "Why cannot you see my Claude and Alibaba quota?",
+      "expected_output": "Reports usable versus nominal fleet and gives source-specific, secret-safe remedies.",
+      "files": ["fixtures/auth-degraded.json"],
+      "assertions": [
+        "Uses auth --json statuses to calculate a usable fleet.",
+        "Gives the documented Claude Keychain and Alibaba bl CLI remedies.",
+        "Does not request or print a secret."
+      ]
+    },
+    {
+      "id": "interactive-configuration-and-bypass",
+      "prompt": "I just got Cursor. Set it up; if I say I will do it myself, stop and give me the remaining steps.",
+      "expected_output": "Guides one action at a time, re-reads auth after each step, and stops cleanly on bypass; empty fleet asks which subscriptions first.",
+      "files": ["fixtures/auth-cursor-missing.json", "fixtures/auth-empty.json"],
+      "assertions": [
+        "Provider-targeted setup gives Cursor's source-specific step.",
+        "Verification is a fresh auth --json re-read that expects available.",
+        "Bypass returns a checklist and ends without re-prompting.",
+        "Empty fleet asks which subscriptions to configure before guidance."
+      ]
+    },
+    {
+      "id": "triggering",
+      "prompt": "Can I run 3 agents, am I about to hit rate limits, which model should I use, and why cannot you see my Claude quota?",
+      "expected_output": "Uses the quota skill for concurrency, projected exhaustion, model choice, and unreadable-provider diagnosis.",
+      "files": [],
+      "assertions": [
+        "Description names fan-outs, rate limits, model advice, and provider setup as triggers.",
+        "Healthy autonomous monitoring remains quiet.",
+        "Hard conditions require a pre-start user decision."
+      ]
+    }
+  ]
+}

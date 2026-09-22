@@ -1,0 +1,1 @@
+{"auth":[{"provider":"claude","sources":[{"source":"keychain","status":"skipped","error":"keychain_prompt_required"}]},{"provider":"codex","sources":[{"source":"auth-json","status":"available"}]},{"provider":"alibaba","sources":[{"source":"bl-cli","status":"missing"}]}]}
