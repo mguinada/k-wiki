@@ -14,8 +14,8 @@ non-secret read.
 ## Calibration — edit these lines when the user's preferences change
 
 - Effective remaining floor: **20%**.
-- Do not start new work estimated above **30 minutes** when runway is below
-  **1 hour**.
+- Do not start new work estimated above **30 minutes** when finite runway
+  (`usableRunwaySeconds` in `exhaustion[]`) is below **1 hour**.
 - Spread work whenever **2 or more** children or a child fan-out plus a gate
   pipeline will run concurrently.
 - Reserve premium quota for review and gate phases; use commodity capacity for
@@ -41,20 +41,25 @@ when structured parsing is needed. Inspect `quota[]`, `exhaustion[]`, and
 Pair the reading with `herdr agent list` when Herdr is available, so the report
 reflects both running agents and remaining capacity.
 
-Estimate the task duration conservatively. A healthy target has effective
-remaining at or above the floor, runway beyond the estimate, no exhausted or
-attention-blocked scope, and enough independent headroom to spread concurrent
-work. When all relevant scopes are healthy, proceed silently: no report line,
-advice, or interruption.
+Estimate the task duration conservatively. The report states runway as a
+status: `through_reset` reaches the next reset, while `exhausted_now` and
+`projected_exhaustion` carry the finite duration as `usableRunwaySeconds` and
+`projectedExhaustedAt` in `exhaustion[]`. A healthy target has effective
+remaining at or above the floor, `through_reset` runway or finite runway
+beyond the estimate, no exhausted or attention-blocked scope, and enough
+independent headroom to spread concurrent work. When all relevant scopes are
+healthy, proceed silently: no report line, advice, or interruption.
 
-Ask before starting when a target scope is `exhausted_now`, runway is shorter
-than the estimate, or effective remaining is below the floor. This is a hard
-stop, not advice to continue: ask the user for a decision before launch and
-do not start until they choose an alternative or explicitly approve it.
+Ask before starting when a target scope is `exhausted_now`, its
+`exhaustion[]` runway is shorter than the estimate, or effective remaining is
+below the floor. This is a hard stop, not advice to continue: ask the user
+for a decision before launch and do not start until they choose an
+alternative or explicitly approve it.
 
-For every hard condition, state the estimate beside the reported runway and
-the effective remaining beside the 20% floor, even when one condition already
-blocks the work. Name the reset time when present and end with an explicit
+For every hard condition, state the estimate beside the reported runway
+(`through_reset`, or the `usableRunwaySeconds` and `projectedExhaustedAt`
+from `exhaustion[]`) and the effective remaining beside the 20% floor, even
+when one condition already blocks the work. Name the reset time when present and end with an explicit
 question: **"Pre-start decision required: choose wait for reset, a healthy
 user-approved provider, reduced work, serialization, or explicit approval."**
 Do not replace that question with a passive recommendation to wait. Never
@@ -73,7 +78,8 @@ why. A fan-out plus a no-mistakes pipeline counts as concurrent work.
 
 ## Give model advice, not routing
 
-Read the per-scope `selection` signal and `quota-axi models --sort runway`.
+Read the per-scope `spendPriority` signal in `quota[]` and
+`quota-axi models --sort runway`.
 Interpret them using the calibration: premium capacity is for review, design,
 and gate work; commodity capacity is for bulk implementation and routine test
 work. Explain the trade-off and ask before choosing a lower-quality model for

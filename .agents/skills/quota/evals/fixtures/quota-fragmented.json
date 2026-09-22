@@ -1,1 +1,0 @@
-{"quota":[{"scope":"codex:implementation","effectivePercentRemaining":55,"runway":"2h","spendPriority":1},{"scope":"zai:implementation","effectivePercentRemaining":12,"runway":"20m","spendPriority":2}],"exhaustion":[],"attention":[{"scope":"zai:implementation","condition":"low_runway"}]}

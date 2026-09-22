@@ -19,15 +19,15 @@
       "files": ["fixtures/quota-healthy.toon", "fixtures/quota-exhausted.toon"],
       "assertions": [
         "Healthy fixture produces no advisory output.",
-        "exhausted_now fixture asks before work and names resetsAt.",
-        "Low runway is compared with the task estimate and the 20% floor."
+        "exhausted_now fixture asks before work and names the quota[] resetsAt.",
+        "Finite exhaustion[] runway is compared with the task estimate; effective remaining with the 20% floor."
       ]
     },
     {
       "id": "concentration",
       "prompt": "Launch three child agents from this quota report.",
       "expected_output": "Spreads when alternatives have headroom; serializes and reports when headroom is fragmented.",
-      "files": ["fixtures/quota-spread.json", "fixtures/quota-fragmented.json"],
+      "files": ["fixtures/quota-spread.toon", "fixtures/quota-fragmented.toon"],
       "assertions": [
         "Treats three children as concurrent work.",
         "Uses spendPriority and remaining headroom to spread work.",
@@ -38,9 +38,9 @@
       "id": "model-advice",
       "prompt": "Which model should I use for implementation and the final review?",
       "expected_output": "Reserves scarce premium capacity for review or gate work and uses commodity capacity for bulk work.",
-      "files": ["fixtures/models-scarce-premium.json"],
+      "files": ["fixtures/quota-premium-scarce.toon", "fixtures/models-scarce-premium.toon"],
       "assertions": [
-        "Reads selection and models sorted by runway as evidence.",
+        "Reads quota[] spendPriority and models sorted by runway as evidence.",
         "Makes advice instead of routing or switching a provider.",
         "States the quality trade-off before a lower-quality choice."
       ]

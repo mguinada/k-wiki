@@ -1,5 +1,10 @@
-quota[1]{scope,effectivePercentRemaining,runway,spendPriority}:
-claude:review,0,0m,low
-exhaustion[1]{scope,condition,resetsAt}:
-claude:review,exhausted_now,2026-09-22T21:00:00Z
-attention[0]{}:
+bin: ~/.local/bin/quota-axi
+description: Report local agent-provider quota windows for routing-aware agents
+generatedAt: "2026-09-22T19:00:00.000Z"
+quota[1]{provider,scope,effectivePercentRemaining,spendPriority,runway,confidence,limitedBy,resetsAt}:
+  claude,all_models,0,-0.75,exhausted_now,unknown,five_hour,"2026-09-22T21:00:00.000Z"
+exhaustion[1]{provider,scope,usableRunwaySeconds,projectedExhaustedAt,limitingWindowId}:
+  claude,all_models,0,"2026-09-22T19:00:00.000Z",five_hour
+attention[0]:
+help[1]:
+  Run `quota-axi --full` for windows, pace, reserve, and account evidence
