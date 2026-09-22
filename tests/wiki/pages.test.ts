@@ -9,6 +9,7 @@ import {
   listSandboxPages,
   listWikiPages,
   normalizeRawPath,
+  pageSlug,
   parsePageFields,
   readPageFields,
   wikilinkTarget,
@@ -41,6 +42,24 @@ describe("kebab", () => {
 
   it("drops a leading dot instead of keeping a leading hyphen", () => {
     expect(kebab(".second-brain marker")).toBe("second-brain-marker");
+  });
+});
+
+describe("pageSlug", () => {
+  it("kebabs a short title unchanged", () => {
+    expect(pageSlug("Wiki parsing primitives")).toBe("wiki-parsing-primitives");
+  });
+
+  it("caps the slug at the 80-character file-name budget", () => {
+    expect(pageSlug("a".repeat(200))).toHaveLength(80);
+  });
+
+  it("drops a trailing hyphen left by the 80-character cut", () => {
+    expect(pageSlug(`${"a".repeat(79)}-tail`)).toBe("a".repeat(79));
+  });
+
+  it("keeps an all-punctuation title's empty slug empty", () => {
+    expect(pageSlug("??? — ???")).toBe("");
   });
 });
 

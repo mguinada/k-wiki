@@ -3,7 +3,10 @@
  * fidelity stack. Every machine-checkable token a `type: source` page
  * quotes — tilde paths, dotted config keys, CLI flags, `npm run`
  * commands — must appear in the page's `origin` file, and every
- * non-structural page's `title` must kebab-case to its file name. The
+ * non-structural page's `title` must file-kebab to its file name
+ * under the shared page-slug rule (`pageSlug`, issue #377: the rule
+ * filing derives names by, so a filed page re-verifies against its
+ * own file). The
  * scripts/check-fidelity CLI renders it; the wiki-sync verification
  * stage (issue #138) runs it every cycle. Relational misquotes (right
  * tokens, wrong containment) stay with the lint prompt (tier 2) and
@@ -14,10 +17,10 @@ import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import {
   bodyAfterFrontmatter,
-  kebab,
   listWikiPages,
   normalizeRawPath,
   pageReportPath,
+  pageSlug,
   parsePageFields,
 } from "./pages.ts";
 import { assertRawDir } from "./provenance.ts";
@@ -169,8 +172,10 @@ interface FidelityCounters {
   skipped: number;
 }
 
-/** Check a non-structural page's `title` kebab-cases to its file
- *  stem. */
+/** Check a non-structural page's `title` file-kebabs to its file
+ *  stem — the shared filing derivation (`pageSlug`), not a bare
+ *  kebab, so a filed page whose question outruns the 80-character
+ *  name cap still matches (issue #377). */
 function checkTitle(
   page: string,
   stem: string,
@@ -182,7 +187,7 @@ function checkTitle(
     return;
   }
 
-  if (kebab(title) === stem) {
+  if (pageSlug(title) === stem) {
     counters.titles++;
   } else {
     problems.push(

@@ -347,6 +347,36 @@ describe("checkWikiFidelity", () => {
     expect((await checkWikiFidelity(wikiDir, rawDir)).problems).toEqual([]);
   });
 
+  it("passes a query title longer than the 80-character filing slug", async () => {
+    const question =
+      "Why do we need all operations on the render thread of an UI to have an time to complete within 120 frames per second?";
+    const { wikiDir, rawDir } = await makeFixture({
+      "queries/why-do-we-need-all-operations-on-the-render-thread-of-an-ui-to-have-an-time-to-c.md": `---\ntitle: ${JSON.stringify(question)}\ntype: query\n---\nbody`,
+    });
+
+    const report = await checkWikiFidelity(wikiDir, rawDir);
+
+    expect(`${report.problems.length}:${report.titles}`).toBe("0:1");
+  });
+
+  it("reports a long title whose filing truncation does not match the file name", async () => {
+    const question =
+      "Why do we need all operations on the render thread of an UI to have an time to complete within 120 frames per second?";
+    const { wikiDir, rawDir } = await makeFixture({
+      "queries/why-do-we-need-all-operations.md": `---\ntitle: ${JSON.stringify(question)}\ntype: query\n---\nbody`,
+    });
+
+    const report = await checkWikiFidelity(wikiDir, rawDir);
+
+    expect(
+      report.problems.some((problem) =>
+        problem.startsWith(
+          'wiki/queries/why-do-we-need-all-operations.md -> title "Why',
+        ),
+      ),
+    ).toBe(true);
+  });
+
   it("exempts the structural pages from the title check", async () => {
     const { wikiDir, rawDir } = await makeFixture({
       "index.md": "---\ntitle: Wiki Index\n---\n",
