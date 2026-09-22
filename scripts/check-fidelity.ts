@@ -23,7 +23,9 @@ Check citation fidelity: every machine-checkable token a
 dotted config keys (\`push.pushOption\` style, file names excluded),
 long and short CLI flags, and \`npm run\` commands — appears in the
 page's \`origin\` file under the raw projection, and every page's
-\`title\` kebab-cases to its file name (\`index\`, \`overview\`, and
+\`title\` matches its file name under the shared page-slug rule —
+kebab-case capped at the 80-character file-name budget, or the
+uncapped kebab (\`index\`, \`overview\`, and
 \`log\` are exempt; their file names are mandated by the wiki
 contract). Relational misquotes (right tokens, wrong containment)
 are not detectable here — the lint prompt and diff review own them.

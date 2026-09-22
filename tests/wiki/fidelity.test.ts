@@ -10,6 +10,7 @@ import {
   checkWikiFidelity,
   extractArtifacts,
 } from "../../src/wiki/fidelity.ts";
+import { kebab } from "../../src/wiki/pages.ts";
 
 /** Unit tests for the citation-fidelity core (src/wiki/fidelity.ts,
  *  issue #125): the pure token extraction and containment rules,
@@ -394,6 +395,18 @@ describe("checkWikiFidelity", () => {
         },
         { created: "2026-09-22", updated: "2026-09-22", sources: [] },
       ),
+    });
+
+    const report = await checkWikiFidelity(wikiDir, rawDir);
+
+    expect(`${report.problems.length}:${report.titles}`).toBe("0:1");
+  });
+
+  it("passes a page named by the uncapped kebab of a title longer than the cap", async () => {
+    const question =
+      "Why do we need all operations on the render thread of an UI to have an time to complete within 120 frames per second?";
+    const { wikiDir, rawDir } = await makeFixture({
+      [`queries/${kebab(question)}.md`]: `---\ntitle: ${JSON.stringify(question)}\ntype: query\n---\nbody`,
     });
 
     const report = await checkWikiFidelity(wikiDir, rawDir);
