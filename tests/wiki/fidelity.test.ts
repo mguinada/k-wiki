@@ -3,6 +3,10 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import {
+  slugForQuestion,
+  templateQueryPage,
+} from "../../src/query/file-last.ts";
+import {
   checkWikiFidelity,
   extractArtifacts,
 } from "../../src/wiki/fidelity.ts";
@@ -375,6 +379,26 @@ describe("checkWikiFidelity", () => {
         ),
       ),
     ).toBe(true);
+  });
+
+  it("accepts a long-question page exactly as filing produces it", async () => {
+    const question =
+      "Why do we need all operations on the render thread of an UI to have an time to complete within 120 frames per second?";
+    const { wikiDir, rawDir } = await makeFixture({
+      [`queries/${slugForQuestion(question)}.md`]: templateQueryPage(
+        {
+          question,
+          timestamp: "2026-09-22T10:00:00Z",
+          pages: [],
+          answer: "body",
+        },
+        { created: "2026-09-22", updated: "2026-09-22", sources: [] },
+      ),
+    });
+
+    const report = await checkWikiFidelity(wikiDir, rawDir);
+
+    expect(`${report.problems.length}:${report.titles}`).toBe("0:1");
   });
 
   it("exempts the structural pages from the title check", async () => {
