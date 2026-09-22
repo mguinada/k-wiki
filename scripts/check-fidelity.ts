@@ -7,9 +7,11 @@ import { runChecker } from "./check-provenance.ts";
  * the fidelity stack. Every machine-checkable token a `type: source`
  * page quotes — tilde paths, dotted config keys, CLI flags, `npm run`
  * commands — must appear in the page's `origin` file, and every
- * non-structural page's `title` must kebab-case to its file name. The
- * core lives in src/wiki/fidelity.ts (the wiki-sync verification stage
- * runs it every cycle, issue #138); this script renders its report.
+ * non-structural page's `title` must slug to its file name under
+ * the shared page-slug rule (the filing cap, or the uncapped kebab
+ * for longer names). The core lives in src/wiki/fidelity.ts (the
+ * wiki-sync verification stage runs it every cycle, issue #138);
+ * this script renders its report.
  * Prints one `wiki/<page> -> …` line per problem and exits 1; exits 0
  * when the wiki is faithful. Relational misquotes (right tokens, wrong
  * containment) stay with the lint prompt (tier 2) and §19 review.
