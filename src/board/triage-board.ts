@@ -12,6 +12,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { errorMessage } from "../cli/colors.ts";
+import { isPlainObject } from "../cli/shared.ts";
 import {
   type BoardIds,
   type BoardState,
@@ -56,6 +57,7 @@ const BOARD_PAGE_QUERY = `query BoardPage($owner: String!, $projectNumber: Int!,
           content {
             __typename
             ... on Issue {
+              id
               number
               state
               labels(first: 20) {
@@ -86,6 +88,21 @@ const BOARD_PAGE_QUERY = `query BoardPage($owner: String!, $projectNumber: Int!,
   }
 }`;
 
+const TIMELINE_PAGE_QUERY = `query TimelinePage($issueId: ID!, $cursor: String) {
+  node(id: $issueId) {
+    ... on Issue {
+      timelineItems(first: 100, after: $cursor, itemTypes: CROSS_REFERENCED_EVENT) {
+        nodes {
+          ... on CrossReferencedEvent {
+            source { ... on PullRequest { number state } }
+          }
+        }
+        pageInfo { hasNextPage endCursor }
+      }
+    }
+  }
+}`;
+
 const MOVE_MUTATION = `mutation MoveItem($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
   updateProjectV2ItemFieldValue(
     input: {
@@ -99,6 +116,116 @@ const MOVE_MUTATION = `mutation MoveItem($projectId: ID!, $itemId: ID!, $fieldId
 
 export const DEFAULT_OWNER = "mguinada";
 export const DEFAULT_PROJECT = 2;
+
+const timelineTruncation = (number: number): Error =>
+  new Error(
+    `board read truncated: issue #${number} cross-referenced events exceeded one page — raise the cap in BOARD_PAGE_QUERY or paginate`,
+  );
+
+function record(value: unknown): Record<string, unknown> | undefined {
+  return isPlainObject(value) ? value : undefined;
+}
+function timelineDetails(
+  content: Record<string, unknown>,
+  timeline: Record<string, unknown>,
+): {
+  readonly number: number;
+  readonly issueId: string;
+  readonly nodes: unknown[];
+} {
+  const number = content.number;
+  const issueId = content.id;
+
+  if (typeof number !== "number" || typeof issueId !== "string") {
+    throw timelineTruncation(typeof number === "number" ? number : 0);
+  }
+
+  return {
+    number,
+    issueId,
+    nodes: Array.isArray(timeline.nodes) ? [...timeline.nodes] : [],
+  };
+}
+async function timelinePage(
+  graphql: GraphQLFn,
+  issueId: string,
+  number: number,
+  cursor: string | null,
+): Promise<{
+  readonly nodes: readonly unknown[];
+  readonly pageInfo: Record<string, unknown>;
+}> {
+  const response = await graphql(TIMELINE_PAGE_QUERY, { issueId, cursor });
+  const issue = record(record(response)?.data);
+  const page = record(record(issue)?.node);
+  const timeline = record(page?.timelineItems);
+  const pageInfo = record(timeline?.pageInfo);
+
+  if (timeline === undefined || pageInfo === undefined) {
+    throw timelineTruncation(number);
+  }
+
+  if (pageInfo.hasNextPage === true && typeof pageInfo.endCursor !== "string") {
+    throw timelineTruncation(number);
+  }
+
+  return {
+    nodes: Array.isArray(timeline.nodes) ? timeline.nodes : [],
+    pageInfo,
+  };
+}
+async function completeTimeline(
+  graphql: GraphQLFn,
+  content: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const timeline = record(content.timelineItems);
+
+  if (
+    timeline === undefined ||
+    record(timeline.pageInfo)?.hasNextPage !== true
+  ) {
+    return content;
+  }
+
+  const details = timelineDetails(content, timeline);
+  let pageInfo = record(timeline.pageInfo);
+  let cursor: string | null = null;
+
+  while (pageInfo?.hasNextPage === true) {
+    const page = await timelinePage(
+      graphql,
+      details.issueId,
+      details.number,
+      cursor,
+    );
+
+    details.nodes.push(...page.nodes);
+    pageInfo = page.pageInfo;
+    cursor = typeof pageInfo.endCursor === "string" ? pageInfo.endCursor : null;
+  }
+
+  return {
+    ...content,
+    timelineItems: { ...timeline, nodes: details.nodes, pageInfo },
+  };
+}
+async function completeBoardNodes(
+  graphql: GraphQLFn,
+  nodes: readonly unknown[],
+): Promise<readonly unknown[]> {
+  return Promise.all(
+    nodes.map(async (raw) => {
+      const node = record(raw);
+      const content = record(node?.content);
+
+      if (node === undefined || content?.__typename !== "Issue") {
+        return raw;
+      }
+
+      return { ...node, content: await completeTimeline(graphql, content) };
+    }),
+  );
+}
 
 async function boardPage(
   graphql: GraphQLFn,
@@ -128,12 +255,20 @@ export async function fetchBoardState(
   const ids = parseBoardIds(first.project);
   let cursor = first.cursor;
 
-  items.push(...parseBoardItems(itemNodes(first.project)));
+  items.push(
+    ...parseBoardItems(
+      await completeBoardNodes(graphql, itemNodes(first.project)),
+    ),
+  );
 
   while (cursor !== null) {
     const page = await boardPage(graphql, owner, projectNumber, cursor);
 
-    items.push(...parseBoardItems(itemNodes(page.project)));
+    items.push(
+      ...parseBoardItems(
+        await completeBoardNodes(graphql, itemNodes(page.project)),
+      ),
+    );
     cursor = page.cursor;
   }
 

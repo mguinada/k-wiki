@@ -48,6 +48,7 @@ export function issueNode(spec: IssueSpec): Record<string, unknown> {
     fieldValueByName: status,
     content: {
       __typename: "Issue",
+      id: `ISSUE_${spec.number}`,
       number: spec.number,
       state: spec.state ?? "OPEN",
       labels: {
