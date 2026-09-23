@@ -37,12 +37,19 @@ afterAll(async () => {
  * variant that fails outright tests the stopped chain.
  */
 const STUB_AGENT = `#!/usr/bin/env node
-import { mkdir, readdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const index = process.argv.indexOf("--print");
 const prompt = index === -1 ? undefined : process.argv[index + 1];
 const mode = process.env.STUB_MODE ?? "";
+
+if (process.env.STUB_PROMPT_CAPTURE) {
+  await appendFile(
+    process.env.STUB_PROMPT_CAPTURE,
+    "---PROMPT---\\n" + prompt + "\\n",
+  );
+}
 
 // A real raw/notes file for the stub hub's origin: the vault name
 // differs between the fixture (Documents) and the repo-sourced
@@ -478,9 +485,15 @@ describe("wiki-sync e2e", () => {
     );
     expect(result.out).toContain("**Commit:** `");
 
-    const { stdout: log } = await run("git", ["log", "-1", "--pretty=%B"], {
-      cwd: repo.dataRoot,
-    });
+    // The cycle's content commit sits below its digest commit (issue
+    // #385).
+    const { stdout: log } = await run(
+      "git",
+      ["log", "-1", "--pretty=%B", "HEAD~1"],
+      {
+        cwd: repo.dataRoot,
+      },
+    );
 
     expect(log).toMatch(
       /^wiki-sync: \d+ sources processed, \d+ pages touched$/m,
@@ -504,11 +517,66 @@ describe("wiki-sync e2e", () => {
   it("prints the cycle's commit hash in the digest", async () => {
     const repo = await makeRepo();
     const result = await runCycle(repo);
-    const { stdout: hash } = await run("git", ["rev-parse", "HEAD"], {
+    // The cycle's content commit sits below its digest commit (issue
+    // #385); the digest cites the content commit.
+    const { stdout: hash } = await run("git", ["rev-parse", "HEAD~1"], {
       cwd: repo.dataRoot,
     });
 
     expect(result.out).toContain(hash.trim().slice(0, 8));
+  });
+
+  it("commits the cycle digest beside the lint reports", async () => {
+    const repo = await makeRepo();
+    const result = await runCycle(repo);
+    const date = new Date().toISOString().slice(0, 10);
+
+    expect(result.code).toBe(0);
+
+    const digest = await readFile(
+      join(repo.dataRoot, "outputs", `cycle-${date}.md`),
+      "utf8",
+    );
+
+    expect(digest).toContain("# wiki-sync cycle digest");
+    expect(digest).toContain("## Ingest digest");
+
+    const { stdout: subjects } = await run(
+      "git",
+      ["log", "-2", "--pretty=%s"],
+      { cwd: repo.dataRoot },
+    );
+
+    expect(subjects.split("\n")[0]).toBe(
+      `wiki-sync: cycle digest outputs/cycle-${date}.md`,
+    );
+
+    // The digest commit carries the digest alone — never a sweep of
+    // wiki/ or raw/.
+    const { stdout: names } = await run(
+      "git",
+      ["show", "--name-only", "--pretty=format:", "HEAD"],
+      { cwd: repo.dataRoot },
+    );
+
+    expect(names.trim()).toBe(`outputs/cycle-${date}.md`);
+  });
+
+  it("carries the cycle report promise in the ingest prompt", async () => {
+    const repo = await makeRepo();
+    const capture = join(repo.outputsDir, "captured-prompts.txt");
+
+    await mkdir(repo.outputsDir, { recursive: true });
+
+    const result = await runCycle(repo, { STUB_PROMPT_CAPTURE: capture });
+
+    expect(result.code).toBe(0);
+
+    const captured = await readFile(capture, "utf8");
+
+    expect(captured).toMatch(
+      /This cycle's full report will be committed at `outputs\/cycle-\d{4}-\d{2}-\d{2}\.md`; cite it in your log entry\./,
+    );
   });
 
   it("does nothing on a rerun with no vault changes", async () => {
@@ -529,6 +597,12 @@ describe("wiki-sync e2e", () => {
     });
 
     expect(headAfter).toBe(head);
+
+    const { stdout: status } = await run("git", ["status", "--porcelain"], {
+      cwd: repo.dataRoot,
+    });
+
+    expect(status).not.toContain("outputs");
   });
 
   it("stops the chain with exit 1 and no commit when the ingest agent fails", async () => {
@@ -668,9 +742,13 @@ describe("wiki-sync e2e", () => {
 
     expect(manifest.source_commit).toBe(sourceHead.trim());
 
-    const { stdout: log } = await run("git", ["log", "-1", "--pretty=%B"], {
-      cwd: repo.dataRoot,
-    });
+    const { stdout: log } = await run(
+      "git",
+      ["log", "-1", "--pretty=%B", "HEAD~1"],
+      {
+        cwd: repo.dataRoot,
+      },
+    );
 
     expect(log).toMatch(/^wiki-sync: 2 sources processed, 3 pages touched$/m);
   });

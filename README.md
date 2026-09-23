@@ -1224,7 +1224,19 @@ crosslink audit result (configured instances), the citation-wall
 result, the fidelity and provenance results, the commit hash, the
 publish summary (configured mirror), then the full ingest digest —
 plus `git log -1` in the data repo tell the whole story of the run
-without opening any other file.
+without opening any other file. On a cycle that did real work, the
+same digest is committed beside the lint reports: written to
+`outputs/cycle-<YYYY-MM-DD>.md` in the data repo and landed in its
+own follow-up commit (`wiki-sync: cycle digest <path>`) — the digest
+cites the content commit's hash, so it is written after that commit
+rather than amended into it; a same-day rerun overwrites the file,
+git history disambiguates (the mechanism the lint reports already
+rely on). No-op cycles — the every-30-minutes steady state — write
+no artifact and create no commit. The ingest prompt promises the
+path (the agent cites it in its log entry as ``Cycle report:
+`outputs/cycle-…` ``), and a cycle that fails after ingest still
+writes the day's file recording the failure, so the citation never
+dangles.
 
 Every cycle holds the shared run lock — the same
 `<dataRoot>/.scheduled-run.lock` the scheduled wrapper takes — from

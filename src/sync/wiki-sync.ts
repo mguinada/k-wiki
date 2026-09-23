@@ -58,7 +58,7 @@
  * has landed; the next run retries the copy.
  */
 
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import {
@@ -741,6 +741,12 @@ async function runCycleStages(
 
   onProgress(stageLine(stages, "ingest"));
 
+  // The cycle report is promised in the ingest prompt and written at
+  // the cycle's end (issue #385): one path, computed once, so a
+  // cycle spanning midnight cannot cite a file the write never
+  // creates.
+  const cyclePath = cycleReportPath(run.now);
+
   const ingest = await runWikiIngest({
     settingsPath: options.settingsPath,
     settings,
@@ -750,6 +756,7 @@ async function runCycleStages(
     runAgent: options.runAgent,
     timeoutMs: options.timeoutMs,
     heartbeatMs: options.heartbeatMs,
+    cycleReportNote: cycleReportPromise(cyclePath),
   });
 
   // The verification stage's revert target: everything the ingest
@@ -762,39 +769,74 @@ async function runCycleStages(
   // pages.
   const preLintSnapshot = await readTextIfExists(lintWindowPath(dataRoot));
 
-  const lint = await runLintOrSkip(options, ingest, stages, preLint, settings);
-  const crosslinks = await runCrosslinksOrSkip(run, domains, stages);
+  // Everything after ingest runs inside the citation promise (issue
+  // #385): the agent's log entry already names the cycle report, so a
+  // later failure still writes the day's file — recording the
+  // failure — before the error propagates. Ingest-stage failures
+  // propagate unwritten: the guardrails reverted the run's log entry,
+  // so nothing cites.
+  try {
+    const lint = await runLintOrSkip(
+      options,
+      ingest,
+      stages,
+      preLint,
+      settings,
+    );
+    const crosslinks = await runCrosslinksOrSkip(run, domains, stages);
 
-  onProgress(stageLine(stages, "citations"));
+    onProgress(stageLine(stages, "citations"));
 
-  const citations = await runCitationWallStage({ run });
+    const citations = await runCitationWallStage({ run });
 
-  const verification = await runVerificationWithRevert(
-    options,
-    preLint,
-    preLintSnapshot,
-    stages,
-  );
+    const verification = await runVerificationWithRevert(
+      options,
+      preLint,
+      preLintSnapshot,
+      stages,
+    );
 
-  onProgress(stageLine(stages, "commit"));
+    onProgress(stageLine(stages, "commit"));
 
-  // The commit summary's page counts, from the status snapshot the
-  // cycle already holds: the lint stage's post-run entries when lint
-  // ran; otherwise the pre-lint capture (nothing changes between it
-  // and the commit on a lint-skip path — verification is read-only).
-  const pages = await wikiPages(dataRoot, lint?.entries ?? preLint.status);
-  const summary = commitSummaryOf(sync, ingest, lint, pages);
+    // The commit summary's page counts, from the status snapshot the
+    // cycle already holds: the lint stage's post-run entries when lint
+    // ran; otherwise the pre-lint capture (nothing changes between it
+    // and the commit on a lint-skip path — verification is read-only).
+    const pages = await wikiPages(dataRoot, lint?.entries ?? preLint.status);
+    const summary = commitSummaryOf(sync, ingest, lint, pages);
+    const commit = await commitDataRepo(
+      dataRoot,
+      env,
+      formatCommitMessage(summary),
+    );
 
-  return {
-    sync,
-    ingest,
-    lint,
-    crosslinks,
-    citations,
-    verification,
-    commit: await commitDataRepo(dataRoot, env, formatCommitMessage(summary)),
-    publish: await runPublishOrSkip(run, config.publish, stages),
-  };
+    const publish = await runPublishOrSkip(run, config.publish, stages);
+    const result: WikiSyncResult = {
+      sync,
+      ingest,
+      lint,
+      crosslinks,
+      citations,
+      verification,
+      commit,
+      publish,
+    };
+
+    if (nothingToDoLine(result) === undefined) {
+      await commitCycleDigest(
+        dataRoot,
+        env,
+        cyclePath,
+        formatFinalDigest(result),
+      );
+    }
+
+    return result;
+  } catch (error) {
+    await writeFailureDigest(dataRoot, cyclePath, error);
+
+    throw error;
+  }
 }
 
 /** One line per source: what sync copied and removed; a repo run
@@ -835,6 +877,61 @@ function citationsLine(citations: CitationWallStageResult): string {
       : "";
 
   return `the one-way wall holds over ${pages}${sandbox}`;
+}
+
+/** The data-repo-relative cycle digest path for a run's date — the
+ *  lint report's date-named mechanism (issue #385): a same-day rerun
+ *  overwrites, git history disambiguates. */
+export function cycleReportPath(now: () => Date): string {
+  return `outputs/cycle-${now().toISOString().slice(0, 10)}.md`;
+}
+
+/** The ingest-prompt line promising the cycle report (issue #385):
+ *  the agent writes its log entry during stage 2, before the digest
+ *  exists, and cites this exact path. */
+function cycleReportPromise(path: string): string {
+  return `This cycle's full report will be committed at \`${path}\`; cite it in your log entry.`;
+}
+
+/** Write the finished digest beside the lint reports and commit it in
+ *  its own commit (issue #385). The digest cites the content commit's
+ *  hash, so it must be written after that commit — amending would
+ *  rewrite the hash away from the one the digest cites; the digest
+ *  commit keeps both true. */
+async function commitCycleDigest(
+  dataRoot: string,
+  env: NodeJS.ProcessEnv,
+  path: string,
+  digest: string,
+): Promise<void> {
+  await mkdir(join(dataRoot, dirname(path)), { recursive: true });
+  await writeFile(join(dataRoot, path), digest);
+
+  await commitDataRepo(dataRoot, env, `wiki-sync: cycle digest ${path}`);
+}
+
+/** The failure digest (issue #385): once the ingest prompt promised
+ *  the cycle report, a later stage failure still writes the day's
+ *  file — recording the failure — so the log entry's citation
+ *  resolves. Uncommitted, it rides the next real cycle's commit,
+ *  like the ingest edits a failed cycle already leaves. Best-effort:
+ *  the cycle's real failure must surface. */
+async function writeFailureDigest(
+  dataRoot: string,
+  path: string,
+  error: unknown,
+): Promise<void> {
+  try {
+    await mkdir(join(dataRoot, dirname(path)), { recursive: true });
+    await writeFile(
+      join(dataRoot, path),
+      `# wiki-sync cycle digest\n\n- **Result:** failed — ${errorMessage(error)}\n`,
+    );
+  } catch {
+    // An unwritable digest is secondary; nothing committed cites it —
+    // a failed cycle's log entry stays uncommitted with the ingest
+    // edits.
+  }
 }
 
 /** The one-line digest of a no-op cycle — nothing to commit after
@@ -1087,8 +1184,13 @@ The final digest on stdout — sync summary, lint summary, the crosslink
 audit (configured second brains), the fidelity and provenance results,
 the commit hash, the publish summary (configured mirror), and the full
 ingest digest — plus git log -1 in the data repo tell the whole story
-of the run. Live progress goes to stderr. Unattended scheduling is
-setup-schedule.`;
+of the run. On a cycle that did real work the same digest is committed
+into the data repo as outputs/cycle-<YYYY-MM-DD>.md, in its own commit
+naming the path (a same-day rerun overwrites); no-op cycles write and
+commit nothing. The ingest prompt names that path so the agent's log
+entry can cite it; a cycle failing after ingest still writes the file,
+recording the failure. Live progress goes to stderr. Unattended
+scheduling is setup-schedule.`;
 
 /** Print one CLI usage error red on stderr and set the exit code. */
 function fail(message: string): void {

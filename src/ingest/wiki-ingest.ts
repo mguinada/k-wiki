@@ -115,6 +115,11 @@ export interface IngestOptions {
    *  full runs. Undefined with `--sources` present means the default
    *  line (DEFAULT_OPERATOR_NOTE). */
   readonly note?: string | undefined;
+  /** The cycle's report promise (issue #385), appended verbatim below
+   *  the composed agent message: the agent cites the path in its log
+   *  entry. Only the wiki-sync cycle sets it, at prompt-composition
+   *  time; standalone wiki-ingest runs never do. */
+  readonly cycleReportNote?: string | undefined;
 }
 
 export type IngestResult =
@@ -336,7 +341,8 @@ interface RunPrompt {
 }
 
 /** The prompt step: read the mode's prompt file and compose the
- *  agent message. */
+ *  agent message, with the cycle's report promise below it when the
+ *  cycle set one (issue #385). */
 async function promptStep(
   inputs: RunInputs,
   change: RunChange,
@@ -345,8 +351,24 @@ async function promptStep(
   const promptText = await readPrompt(
     join(inputs.options.promptsDir, mode.promptFile),
   );
+  const { composed, directSet } = await composeRunPrompt(
+    promptInput(inputs, change, mode, promptText),
+  );
 
-  return await composeRunPrompt(promptInput(inputs, change, mode, promptText));
+  return {
+    composed: appendCycleReportNote(composed, inputs.options.cycleReportNote),
+    directSet,
+  };
+}
+
+/** The cycle report promise rides below everything else (issue #385):
+ *  the changed-source list and the operator note keep their existing
+ *  order; the citation line lands last. */
+function appendCycleReportNote(
+  composed: string,
+  note: string | undefined,
+): string {
+  return note === undefined ? composed : `${composed}\n\n${note}`;
 }
 
 /** The prompt input for the run's mode (the C-14 union's builder):

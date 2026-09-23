@@ -26,6 +26,7 @@ import { serializeManifest } from "../../src/sync/manifest.ts";
 import {
   type CommitResult,
   type CrosslinksResult,
+  cycleReportPath,
   formatCommitMessage,
   formatFinalDigest,
   main,
@@ -34,6 +35,7 @@ import {
   runWikiSync,
   stageLine,
   stageNames,
+  type WikiSyncResult,
 } from "../../src/sync/wiki-sync.ts";
 
 const run = promisify(execFile);
@@ -151,7 +153,7 @@ function committedDataRepoTemplate(): Promise<string> {
     await mkdir(join(template, "wiki", "sources"), { recursive: true });
     await writeFile(
       join(template, ".gitignore"),
-      "# Obsidian UI state: never part of the wiki (external writer; guardrail 1 hazard)\n.obsidian/\nwiki/.obsidian/\n\n# wiki-ingest manifest snapshot: per-instance state, never committed (issue #112)\noutputs/last-ingested-manifest.json\n",
+      "# Obsidian UI state: never part of the wiki (external writer; guardrail 1 hazard)\n.obsidian/\nwiki/.obsidian/\n\n# wiki-ingest manifest snapshot: per-instance state, never committed (issue #112)\noutputs/last-ingested-manifest.json\n\n# static dashboard: regenerated per checkout, never committed (issue #73)\ndashboard.html\n",
     );
     await writeFile(
       join(template, "raw", "manifest.json"),
@@ -337,7 +339,7 @@ describe("runWikiSync", () => {
     await runWikiSync(optionsFor(h));
     const { stdout } = await runGit(
       h.dataRoot,
-      ["log", "-1", "--pretty=%B"],
+      ["log", "-1", "--pretty=%B", "HEAD~1"],
       process.env,
     );
 
@@ -349,7 +351,7 @@ describe("runWikiSync", () => {
     await runWikiSync(optionsFor(h));
     const { stdout } = await runGit(
       h.dataRoot,
-      ["log", "-1", "--pretty=%B"],
+      ["log", "-1", "--pretty=%B", "HEAD~1"],
       process.env,
     );
 
@@ -361,7 +363,7 @@ describe("runWikiSync", () => {
     await runWikiSync(optionsFor(h));
     const { stdout } = await runGit(
       h.dataRoot,
-      ["log", "-1", "--pretty=%B"],
+      ["log", "-1", "--pretty=%B", "HEAD~1"],
       process.env,
     );
 
@@ -373,7 +375,7 @@ describe("runWikiSync", () => {
     await runWikiSync(optionsFor(h));
     const { stdout } = await runGit(
       h.dataRoot,
-      ["log", "-1", "--pretty=%B"],
+      ["log", "-1", "--pretty=%B", "HEAD~1"],
       process.env,
     );
 
@@ -393,7 +395,7 @@ describe("runWikiSync", () => {
 
     const { stdout } = await runGit(
       h.dataRoot,
-      ["log", "-1", "--pretty=%B"],
+      ["log", "-1", "--pretty=%B", "HEAD~1"],
       process.env,
     );
 
@@ -413,7 +415,7 @@ describe("runWikiSync", () => {
 
     const { stdout } = await runGit(
       h.dataRoot,
-      ["log", "-1", "--pretty=%B"],
+      ["log", "-1", "--pretty=%B", "HEAD~1"],
       process.env,
     );
 
@@ -526,7 +528,9 @@ describe("runWikiSync", () => {
     await runWikiSync(optionsFor(h));
 
     expect(h.invocations).toHaveLength(2);
-    expect(h.invocations[0]).toBe("FULL PROMPT");
+    expect(h.invocations[0]).toBe(
+      "FULL PROMPT\n\nThis cycle's full report will be committed at `outputs/cycle-2026-08-20.md`; cite it in your log entry.",
+    );
     expect(h.invocations[1]).toContain(
       "AUDIT THE WIKI PROMPT\n\nSave the report to `outputs/lint-2026-08-20-full.md`.",
     );
@@ -670,7 +674,9 @@ describe("runWikiSync", () => {
 
     await runWikiSync(optionsFor(h));
 
-    expect(h.invocations.filter((p) => p === "FULL PROMPT")).toHaveLength(2);
+    expect(
+      h.invocations.filter((p) => p.startsWith("FULL PROMPT")),
+    ).toHaveLength(2);
   });
 
   it("commits the retry cycle after a failed run", async () => {
@@ -3166,14 +3172,24 @@ describe("runWikiSync failure reporting", () => {
 
 describe("runWikiSync commit contents", () => {
   /** The paths the HEAD commit touched. */
-  async function committedNames(dataRoot: string): Promise<string[]> {
+  async function committedNames(
+    dataRoot: string,
+    treeish = "HEAD",
+  ): Promise<string[]> {
     const { stdout } = await runGit(
       dataRoot,
-      ["show", "--name-only", "--pretty=format:", "HEAD"],
+      ["show", "--name-only", "--pretty=format:", treeish],
       process.env,
     );
 
     return stdout.split("\n").filter(Boolean);
+  }
+
+  /** The cycle's content-commit ref: the commit result's hash when
+   *  the cycle committed, HEAD otherwise. The digest commit (issue
+   *  #385) sits on top, so HEAD alone is not the cycle's commit. */
+  function contentCommitRef(result: WikiSyncResult): string {
+    return result.commit.status === "committed" ? result.commit.hash : "HEAD";
   }
 
   it("commits a full 40-char commit hash", async () => {
@@ -3197,9 +3213,8 @@ describe("runWikiSync commit contents", () => {
 
     await writeFile(stray, "stray\n");
 
-    await runWikiSync(optionsFor(h));
-
-    const names = await committedNames(h.dataRoot);
+    const result = await runWikiSync(optionsFor(h));
+    const names = await committedNames(h.dataRoot, contentCommitRef(result));
 
     expect(names).toContain("outputs/lint-2026-08-20-full.md");
   });
@@ -3210,9 +3225,8 @@ describe("runWikiSync commit contents", () => {
 
     await writeFile(stray, "stray\n");
 
-    await runWikiSync(optionsFor(h));
-
-    const names = await committedNames(h.dataRoot);
+    const result = await runWikiSync(optionsFor(h));
+    const names = await committedNames(h.dataRoot, contentCommitRef(result));
 
     expect(names).toContain("wiki/concepts/new.md");
   });
@@ -3223,9 +3237,8 @@ describe("runWikiSync commit contents", () => {
 
     await writeFile(stray, "stray\n");
 
-    await runWikiSync(optionsFor(h));
-
-    const names = await committedNames(h.dataRoot);
+    const result = await runWikiSync(optionsFor(h));
+    const names = await committedNames(h.dataRoot, contentCommitRef(result));
 
     expect(names).toContain("raw/notes/Engineering/AI/RAG.md");
   });
@@ -3728,5 +3741,160 @@ describe("runLintStage heartbeat clock", () => {
     expect(progress).toContainEqual(
       "wiki-sync: lint agent still running (1m00s)",
     );
+  });
+});
+
+describe("runWikiSync cycle digest (issue #385)", () => {
+  /** The data-repo-relative cycle digest path under the fixed NOW clock. */
+  const DIGEST_PATH = join("outputs", "cycle-2026-08-20.md");
+
+  /** The committed lint-guardrail trip: an agent-written page without
+   *  frontmatter, failing guardrail 2 after ingest ran. */
+  function tripLintGuardrail(h: Harness): void {
+    h.lintAgent = async (_command, _args, options) => {
+      await mkdir(join(options.cwd, "wiki", "concepts"), { recursive: true });
+      await writeFile(
+        join(options.cwd, "wiki", "concepts", "broken.md"),
+        "no frontmatter\n",
+      );
+
+      return { stdout: "rogue lint", stderr: "" };
+    };
+  }
+
+  it("composes the data-repo-relative cycle report path from the run clock", () => {
+    expect(cycleReportPath(NOW)).toBe("outputs/cycle-2026-08-20.md");
+  });
+
+  it("writes the full digest into the data repo outputs on a real-work cycle", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    await runWikiSync(optionsFor(h));
+
+    const digest = await readFile(join(h.dataRoot, DIGEST_PATH), "utf8");
+
+    expect(digest).toContain("# wiki-sync cycle digest");
+    expect(digest).toContain("## Ingest digest");
+  });
+
+  it("commits the cycle digest in its own commit naming the path", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    await runWikiSync(optionsFor(h));
+
+    const { stdout } = await runGit(
+      h.dataRoot,
+      ["log", "--format=%s", "-2"],
+      process.env,
+    );
+    const [digestSubject, contentSubject] = stdout.trim().split("\n");
+
+    expect(digestSubject).toBe(
+      "wiki-sync: cycle digest outputs/cycle-2026-08-20.md",
+    );
+    expect(contentSubject).not.toBe(digestSubject);
+  });
+
+  it("cites the content commit hash in the committed digest", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    await runWikiSync(optionsFor(h));
+
+    const digest = await readFile(join(h.dataRoot, DIGEST_PATH), "utf8");
+    const { stdout } = await runGit(
+      h.dataRoot,
+      ["log", "--format=%H", "-2"],
+      process.env,
+    );
+    const contentHash = stdout.trim().split("\n")[1] ?? "";
+
+    expect(digest).toContain(contentHash.slice(0, 8));
+  });
+
+  it("overwrites the same-day cycle digest when a rerun does new work", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    await runWikiSync(optionsFor(h));
+
+    const firstDigest = await readFile(join(h.dataRoot, DIGEST_PATH), "utf8");
+
+    await writeFile(join(h.vaultRoot, "AI", "RAG2.md"), "more body");
+    await runWikiSync(optionsFor(h));
+
+    const secondDigest = await readFile(join(h.dataRoot, DIGEST_PATH), "utf8");
+
+    expect(secondDigest).not.toBe(firstDigest);
+  });
+
+  it("leaves outputs and HEAD untouched when a no-op cycle follows real work", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    await runWikiSync(optionsFor(h));
+
+    const headAfterRealWork = await headOf(h.dataRoot);
+
+    await runWikiSync(optionsFor(h));
+
+    expect(await headOf(h.dataRoot)).toBe(headAfterRealWork);
+
+    const { stdout } = await runGit(
+      h.dataRoot,
+      ["status", "--porcelain"],
+      process.env,
+    );
+
+    expect(stdout.trim()).toBe("");
+  });
+
+  it("cites the cycle report path in the ingest prompt", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    await runWikiSync(optionsFor(h));
+
+    expect(h.invocations[0]).toContain(
+      "This cycle's full report will be committed at `outputs/cycle-2026-08-20.md`; cite it in your log entry.",
+    );
+  });
+
+  it("writes the failure digest when the cycle fails after ingest", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    tripLintGuardrail(h);
+
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow(
+      "guardrail check 2 (frontmatter)",
+    );
+
+    const digest = await readFile(join(h.dataRoot, DIGEST_PATH), "utf8");
+
+    expect(digest).toContain("- **Result:** failed");
+  });
+
+  it("commits nothing when the cycle fails after ingest", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    tripLintGuardrail(h);
+
+    const headBefore = await headOf(h.dataRoot);
+
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow(
+      "guardrail check 2 (frontmatter)",
+    );
+
+    expect(await headOf(h.dataRoot)).toBe(headBefore);
+  });
+
+  it("writes no cycle digest when the ingest agent fails", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    h.ingestAgent = async () => {
+      throw new Error("agent exploded");
+    };
+
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow("agent exploded");
+
+    await expect(
+      readFile(join(h.dataRoot, DIGEST_PATH), "utf8"),
+    ).rejects.toThrow();
   });
 });

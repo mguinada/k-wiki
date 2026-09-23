@@ -2565,6 +2565,53 @@ describe("runWikiIngest --sources", () => {
     );
   });
 
+  it("appends the cycle report note below the composed prompt when the cycle sets one", async () => {
+    const h = await makeHarness({ "a.md": "a", "b.md": "b" }, track);
+    await seedSnapshot(h, { "a.md": "a" });
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      cycleReportNote:
+        "This cycle's full report will be committed at `outputs/cycle-2026-08-20.md`; cite it in your log entry.",
+    });
+
+    const prompt = invocation(h, 0).args.at(-1) ?? "";
+
+    expect(prompt).toContain(
+      "This cycle's full report will be committed at `outputs/cycle-2026-08-20.md`; cite it in your log entry.",
+    );
+    expect(prompt.indexOf("+ Engineering/b.md")).toBeLessThan(
+      prompt.indexOf("This cycle's full report will be committed"),
+    );
+  });
+
+  it("appends the cycle report note to a full run's prompt when the cycle sets one", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      cycleReportNote:
+        "This cycle's full report will be committed at `outputs/cycle-2026-08-20.md`; cite it in your log entry.",
+    });
+
+    const prompt = invocation(h, 0).args.at(-1) ?? "";
+
+    expect(prompt).toContain(
+      "This cycle's full report will be committed at `outputs/cycle-2026-08-20.md`; cite it in your log entry.",
+    );
+  });
+
+  it("omits the cycle report note on a standalone ingest that sets none", async () => {
+    const h = await makeHarness({ "a.md": "a", "b.md": "b" }, track);
+    await seedSnapshot(h, { "a.md": "a" });
+
+    await runWikiIngest(optionsFor(h));
+
+    const prompt = invocation(h, 0).args.at(-1) ?? "";
+
+    expect(prompt).not.toContain("full report will be committed");
+  });
+
   it("omits the operator note on an ordinary incremental run", async () => {
     const h = await makeHarness({ "a.md": "a", "b.md": "b" }, track);
     await seedSnapshot(h, { "a.md": "a" });
