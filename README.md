@@ -596,7 +596,7 @@ every edit. Queries complete the daily loop:
 
 | Command | Tool | Purpose |
 |---|---|---|
-| `bin/k-wiki wiki-sync [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<sync.json>] [<raw-dir>]` | cycle orchestrator | Run the whole cycle — sync (sync-vault for vault sources, sync-repo for repo-sourced configs, [§9](#9-the-meta-wiki-a-repository-as-source)) → ingest → lint → crosslink audit (configured second brains) → citation wall (sandbox one-way audit) → verification (check-fidelity + check-provenance) → one data-repo commit → mirror publish (configured `publish` section) — and print the digest (reads `settings.yml`, including its optional `secondBrain.domains` list; [details below](#running-the-full-cycle-wiki-sync)) |
+| `bin/k-wiki wiki-sync [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<sync.json>] [<raw-dir>]` | cycle orchestrator | Run the whole cycle — sync (sync-vault for vault sources, sync-repo for repo-sourced configs, [§9](#9-the-meta-wiki-a-repository-as-source)) → ingest → lint → crosslink audit (configured second brains) → citation wall (sandbox one-way audit) → verification (check-fidelity + check-provenance) → the data-repo commit (the cycle digest follows as its own commit on real-work cycles) → mirror publish (configured `publish` section) — and print the digest (reads `settings.yml`, including its optional `secondBrain.domains` list; [details below](#running-the-full-cycle-wiki-sync)) |
 | `bin/k-wiki wiki-query [-h \| --help] [--file-last] [--wiki, -w <name>] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>` | query wrapper | Ask the built wiki one question headless: print the answer, save it for review (stage 1, default); `--file-last` files the reviewed answer deterministically (stage 2); `--wiki <name>` selects the instance — aliases then `sync-<name>.json` stems, both stages, derived paths from the resolved config (stage 1 reads the instance's settings; [details below](#running-queries-wiki-query)) |
 | `bin/k-wiki <read verb>` — `query "<question>"`, `status`, `list [<type>]`, `read <slug>`, `health` | read verbs (both doors) | Ask the wiki bound to the current project from any cwd — zero flags once `.k-wiki.json` binds it; `status` (binding + paths), `list` (pages by type), `read` (one page verbatim), `health` (projection check); `-w <name>` selects the instance (aliases then `sync-<name>.json` stems) and overrides the binding's `wiki` key — `k-wiki query -w meta` and `k-wiki -w meta query` are the same command; answer-only, no filing passthrough ([details below](#querying-from-any-project-k-wiki)) |
 | `bin/k-wiki propose [-h \| --help] [-w, --wiki <name>] [--checkout <path>] [--timeout <secs>] [--title <text>] [--type <type>] <slug> [<file>]` | agent write verb (both doors) | File one candidate note for the wiki: the body from `<file>` (or stdin), wrapped in the deterministic template, landed under `wiki/sandbox/` of the resolved instance as one gated run — accept-gate (only sandbox deltas survive; anything else reverts the run and fails it), `via: agent` + `expires:` stamps, one atomic `sandbox: <slug>` commit with a `wiki/log.md` audit entry; `-w <name>` overrides the binding's `wiki` key; a human reviews and promotes the note (filing reviewed pages stays `--file-last`) |
@@ -1200,7 +1200,8 @@ It chains the proven pieces and adds no capability of its own:
    the cycle is where their detection is guaranteed to run.
 7. **commit** — one data-repo commit staging `wiki/`, `raw/`, and
    `outputs/`, with a message summarizing sources processed, pages
-   touched, and the lint report.
+   touched, and the lint report; on a real-work cycle the final
+   digest follows in its own commit (below).
 8. **publish** — only for configs whose `sync.json` carries a
    `publish` section: copy the data repo's
    include-matched files (`["wiki/**"]` in the shipped config)
@@ -1224,7 +1225,19 @@ crosslink audit result (configured instances), the citation-wall
 result, the fidelity and provenance results, the commit hash, the
 publish summary (configured mirror), then the full ingest digest —
 plus `git log -1` in the data repo tell the whole story of the run
-without opening any other file.
+without opening any other file. On a cycle that did real work, the
+same digest is committed beside the lint reports: written to
+`outputs/cycle-<YYYY-MM-DD>.md` in the data repo and landed in its
+own follow-up commit (`wiki-sync: cycle digest <path>`) — the digest
+cites the content commit's hash, so it is written after that commit
+rather than amended into it; a same-day rerun overwrites the file,
+git history disambiguates (the mechanism the lint reports already
+rely on). No-op cycles — the every-30-minutes steady state — write
+no artifact and create no commit. The ingest prompt promises the
+path (the agent cites it in its log entry as ``Cycle report:
+`outputs/cycle-…` ``), and a cycle that fails after ingest still
+writes the day's file recording the failure, so the citation never
+dangles.
 
 Every cycle holds the shared run lock — the same
 `<dataRoot>/.scheduled-run.lock` the scheduled wrapper takes — from

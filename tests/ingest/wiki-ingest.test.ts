@@ -6,7 +6,10 @@ import { runContext } from "../../src/cli/run-context.ts";
 import { runGit } from "../../src/data/git.ts";
 import { type AgentRunner, readPrompt } from "../../src/ingest/agent-run.ts";
 import { loadAgentSettings } from "../../src/ingest/agent-settings.ts";
-import { runWikiIngest } from "../../src/ingest/wiki-ingest.ts";
+import {
+  ingestEditsKept,
+  runWikiIngest,
+} from "../../src/ingest/wiki-ingest.ts";
 import { parseManifest, serializeManifest } from "../../src/sync/manifest.ts";
 import {
   commitAll,
@@ -2565,6 +2568,53 @@ describe("runWikiIngest --sources", () => {
     );
   });
 
+  it("appends the cycle report note below the composed prompt when the cycle sets one", async () => {
+    const h = await makeHarness({ "a.md": "a", "b.md": "b" }, track);
+    await seedSnapshot(h, { "a.md": "a" });
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      cycleReportNote:
+        "This cycle's full report will be committed at `outputs/cycle-2026-08-20.md`; cite it in your log entry.",
+    });
+
+    const prompt = invocation(h, 0).args.at(-1) ?? "";
+
+    expect(prompt).toContain(
+      "This cycle's full report will be committed at `outputs/cycle-2026-08-20.md`; cite it in your log entry.",
+    );
+    expect(prompt.indexOf("+ Engineering/b.md")).toBeLessThan(
+      prompt.indexOf("This cycle's full report will be committed"),
+    );
+  });
+
+  it("appends the cycle report note to a full run's prompt when the cycle sets one", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      cycleReportNote:
+        "This cycle's full report will be committed at `outputs/cycle-2026-08-20.md`; cite it in your log entry.",
+    });
+
+    const prompt = invocation(h, 0).args.at(-1) ?? "";
+
+    expect(prompt).toContain(
+      "This cycle's full report will be committed at `outputs/cycle-2026-08-20.md`; cite it in your log entry.",
+    );
+  });
+
+  it("omits the cycle report note on a standalone ingest that sets none", async () => {
+    const h = await makeHarness({ "a.md": "a", "b.md": "b" }, track);
+    await seedSnapshot(h, { "a.md": "a" });
+
+    await runWikiIngest(optionsFor(h));
+
+    const prompt = invocation(h, 0).args.at(-1) ?? "";
+
+    expect(prompt).not.toContain("full report will be committed");
+  });
+
   it("omits the operator note on an ordinary incremental run", async () => {
     const h = await makeHarness({ "a.md": "a", "b.md": "b" }, track);
     await seedSnapshot(h, { "a.md": "a" });
@@ -3542,6 +3592,37 @@ describe("runWikiIngest failure reporting detail", () => {
         runAgent: failing,
       }),
     ).rejects.toThrow("agent exited with code 9");
+  });
+
+  it("marks a kept-changes agent failure as edits-kept", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+    const failing: AgentRunner = async () => {
+      throw new Error("agent exited with code 9");
+    };
+
+    const error = await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: failing,
+    }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    expect(ingestEditsKept(error)).toBe(true);
+  });
+
+  it("leaves a guardrail-reverted failure unmarked", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    const error = await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: frontmatterSaboteur("bad.md"),
+    }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    expect(ingestEditsKept(error)).toBe(false);
   });
 });
 

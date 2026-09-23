@@ -31,7 +31,12 @@ e2e run or diagnosing a failing one.
   cycle audits the whole wiki and writes the snapshot, the next
   cycle's lint is windowed to the changed page, a clean no-change
   cycle keeps the skip, and an ingest whose pages all come back
-  byte-identical skips the agent with the empty-window digest line.
+  byte-identical skips the agent with the empty-window digest line;
+  the cycle digest (issue #385): a real-work cycle commits the dated
+  digest beside the lint reports in its own commit
+  (`outputs/cycle-<date>.md`, the digest commit naming the path)
+  while a no-op cycle writes and commits nothing, and the ingest
+  prompt carries the cycle-report promise the log entry cites.
 - **wiki-lint** — the standalone lint door against a stub agent in
   temp data repos: completed run (report written, digest on stdout,
   exit 0), uncommitted-edits (the agent's wiki edits and the report

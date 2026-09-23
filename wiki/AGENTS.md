@@ -238,6 +238,9 @@ Keep entries short and factual.
 Start every entry with `## [YYYY-MM-DD] <operation> | <title>` so the log stays
 parseable with standard tools.
 
+When the ingest prompt names a cycle report, cite it as the entry's
+last line: ``Cycle report: `outputs/cycle-<YYYY-MM-DD>.md` ``.
+
 ## Queries
 
 Queries are two-stage (issue #72): the wiki agent answers; the human

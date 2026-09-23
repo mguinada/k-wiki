@@ -239,9 +239,9 @@ function lockPath(repo: Repo): string {
   return join(repo.dataRoot, ".scheduled-run.lock");
 }
 
-async function upstreamHead(repo: Repo): Promise<string> {
+async function upstreamHead(repo: Repo, count = 1): Promise<string> {
   return (
-    await git(["log", "main", "-1", "--pretty=%s"], repo.upstream)
+    await git(["log", "main", `-${count}`, "--pretty=%s"], repo.upstream)
   ).trim();
 }
 
@@ -257,8 +257,10 @@ describe("scheduled-run e2e", () => {
     const result = await runScheduled(repo);
 
     expect(result.code).toBe(0);
-    expect(await upstreamHead(repo)).toMatch(
-      /^wiki-sync: \d+ sources? processed/,
+    // The cycle's content commit sits below its digest commit (issue
+    // #385); both push.
+    expect(await upstreamHead(repo, 2)).toMatch(
+      /^[^\n]*\nwiki-sync: \d+ sources? processed/,
     );
     await expect(readFile(lockPath(repo), "utf8")).rejects.toThrow();
     await expect(
