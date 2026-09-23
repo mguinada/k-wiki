@@ -3884,7 +3884,7 @@ describe("runWikiSync cycle digest (issue #385)", () => {
     expect(await headOf(h.dataRoot)).toBe(headBefore);
   });
 
-  it("writes no cycle digest when the ingest agent fails", async () => {
+  it("writes the failure digest when the ingest agent fails with its changes kept", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 
     h.ingestAgent = async () => {
@@ -3892,6 +3892,28 @@ describe("runWikiSync cycle digest (issue #385)", () => {
     };
 
     await expect(runWikiSync(optionsFor(h))).rejects.toThrow("agent exploded");
+
+    const digest = await readFile(join(h.dataRoot, DIGEST_PATH), "utf8");
+
+    expect(digest).toContain("- **Result:** failed");
+  });
+
+  it("writes no cycle digest when the ingest guardrail reverts the run", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    h.ingestAgent = async (_command, _args, options) => {
+      await mkdir(join(options.cwd, "wiki", "concepts"), { recursive: true });
+      await writeFile(
+        join(options.cwd, "wiki", "concepts", "broken.md"),
+        "no frontmatter\n",
+      );
+
+      return { stdout: "rogue ingest", stderr: "" };
+    };
+
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow(
+      "guardrail check 2 (frontmatter)",
+    );
 
     await expect(
       readFile(join(h.dataRoot, DIGEST_PATH), "utf8"),

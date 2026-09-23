@@ -6,7 +6,10 @@ import { runContext } from "../../src/cli/run-context.ts";
 import { runGit } from "../../src/data/git.ts";
 import { type AgentRunner, readPrompt } from "../../src/ingest/agent-run.ts";
 import { loadAgentSettings } from "../../src/ingest/agent-settings.ts";
-import { runWikiIngest } from "../../src/ingest/wiki-ingest.ts";
+import {
+  ingestEditsKept,
+  runWikiIngest,
+} from "../../src/ingest/wiki-ingest.ts";
 import { parseManifest, serializeManifest } from "../../src/sync/manifest.ts";
 import {
   commitAll,
@@ -3589,6 +3592,37 @@ describe("runWikiIngest failure reporting detail", () => {
         runAgent: failing,
       }),
     ).rejects.toThrow("agent exited with code 9");
+  });
+
+  it("marks a kept-changes agent failure as edits-kept", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+    const failing: AgentRunner = async () => {
+      throw new Error("agent exited with code 9");
+    };
+
+    const error = await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: failing,
+    }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    expect(ingestEditsKept(error)).toBe(true);
+  });
+
+  it("leaves a guardrail-reverted failure unmarked", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    const error = await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: frontmatterSaboteur("bad.md"),
+    }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    expect(ingestEditsKept(error)).toBe(false);
   });
 });
 

@@ -480,10 +480,35 @@ interface CheckedRun {
   readonly digestPath: string;
 }
 
+/** Marks a rejection that leaves the run's edits — among them the log
+ *  entry citing the cycle report — in the working tree, so the
+ *  wiki-sync cycle knows to still write the promised cycle report
+ *  (issue #385). */
+const editsKept = Symbol("wiki-ingest edits kept");
+
+/** An Error carrying the edits-kept mark. */
+type MarkedError = Error & { [editsKept]?: boolean };
+
+function markEditsKept(error: unknown): unknown {
+  if (error instanceof Error) {
+    (error as MarkedError)[editsKept] = true;
+  }
+
+  return error;
+}
+
+/** Whether a wiki-ingest rejection left the run's edits in the data
+ *  repo's working tree: the cycle's failure digest must still be
+ *  written so the log entry's cycle-report citation resolves. */
+export function ingestEditsKept(error: unknown): boolean {
+  return error instanceof Error && (error as MarkedError)[editsKept] === true;
+}
+
 /** The guardrail-or-fail step: run the post-run guardrails. A tripped
  *  check reverts the data repo to its pre-run state, writes the
  *  failure digest, and rejects; a passed check with a failed agent
- *  rejects with the agent's error (the changes stay, uncommitted). */
+ *  rejects with the agent's error, marked edits-kept — the changes
+ *  stay in the working tree, uncommitted. */
 async function guardrailStep(
   inputs: RunInputs,
   change: RunChange,
@@ -502,7 +527,7 @@ async function guardrailStep(
     if (agent.agentError !== undefined) {
       onProgress("wiki-ingest: agent failed — guardrails passed, changes kept");
 
-      throw agent.agentError;
+      throw markEditsKept(agent.agentError);
     }
 
     return { post, startedAt, digestPath };
@@ -631,22 +656,30 @@ export async function runWikiIngest(
   const prompt = await promptStep(inputs, change, mode);
   const agent = await spawnStep(inputs, mode, prompt.composed);
   const checked = await guardrailStep(inputs, change, mode, agent);
-  const result = await successStep(
-    inputs,
-    change,
-    mode,
-    prompt,
-    agent,
-    checked,
-  );
 
-  await dashboardStep(inputs.run);
+  // Guardrails passed: the run's edits stay in the working tree
+  // whatever happens next, so every rejection from here on is marked
+  // edits-kept for the cycle.
+  try {
+    const result = await successStep(
+      inputs,
+      change,
+      mode,
+      prompt,
+      agent,
+      checked,
+    );
 
-  // The reaper epilogue (decision 6, issue #338): expired sandbox
-  // notes go last, after the run's own results are complete.
-  await reapExpiredSandboxNotes(inputs.run);
+    await dashboardStep(inputs.run);
 
-  return result;
+    // The reaper epilogue (decision 6, issue #338): expired sandbox
+    // notes go last, after the run's own results are complete.
+    await reapExpiredSandboxNotes(inputs.run);
+
+    return result;
+  } catch (error) {
+    throw markEditsKept(error);
+  }
 }
 
 /* v8 ignore next: covered only under direct `node src/ingest/wiki-ingest.ts` runs */

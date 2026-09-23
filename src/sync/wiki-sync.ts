@@ -97,7 +97,11 @@ import {
   type WikiPages,
   wikiPages,
 } from "../ingest/manifest-diff.ts";
-import { type IngestResult, runWikiIngest } from "../ingest/wiki-ingest.ts";
+import {
+  type IngestResult,
+  ingestEditsKept,
+  runWikiIngest,
+} from "../ingest/wiki-ingest.ts";
 import {
   type CitationWallStageResult,
   runCitationWallStage,
@@ -747,35 +751,38 @@ async function runCycleStages(
   // creates.
   const cyclePath = cycleReportPath(run.now);
 
-  const ingest = await runWikiIngest({
-    settingsPath: options.settingsPath,
-    settings,
-    run,
-    outputsDir: options.outputsDir,
-    promptsDir: options.promptsDir,
-    runAgent: options.runAgent,
-    timeoutMs: options.timeoutMs,
-    heartbeatMs: options.heartbeatMs,
-    cycleReportNote: cycleReportPromise(cyclePath),
-  });
+  // Everything from the ingest call onward runs inside the citation
+  // promise (issue #385): the agent's log entry names the cycle
+  // report, so a failure while the entry survives still writes the
+  // day's file — recording the failure — before the error propagates.
+  // Ingest-stage failures write it only when the ingest stage kept
+  // the run's edits; a guardrail-reverted failure leaves nothing
+  // citing and the clean tree the scheduled wrapper's recovery owns.
+  let ingest: IngestResult | undefined;
 
-  // The verification stage's revert target: everything the ingest
-  // stage left, before the lint agent runs.
-  const preLint = await capturePreRunState(dataRoot, env);
-
-  // The lint-window snapshot's pre-lint bytes: the verification
-  // revert rewinds the lint edits, so the audit that recorded them
-  // is unrecorded too and the next cycle re-audits the reverted
-  // pages.
-  const preLintSnapshot = await readTextIfExists(lintWindowPath(dataRoot));
-
-  // Everything after ingest runs inside the citation promise (issue
-  // #385): the agent's log entry already names the cycle report, so a
-  // later failure still writes the day's file — recording the
-  // failure — before the error propagates. Ingest-stage failures
-  // propagate unwritten: the guardrails reverted the run's log entry,
-  // so nothing cites.
   try {
+    ingest = await runWikiIngest({
+      settingsPath: options.settingsPath,
+      settings,
+      run,
+      outputsDir: options.outputsDir,
+      promptsDir: options.promptsDir,
+      runAgent: options.runAgent,
+      timeoutMs: options.timeoutMs,
+      heartbeatMs: options.heartbeatMs,
+      cycleReportNote: cycleReportPromise(cyclePath),
+    });
+
+    // The verification stage's revert target: everything the ingest
+    // stage left, before the lint agent runs.
+    const preLint = await capturePreRunState(dataRoot, env);
+
+    // The lint-window snapshot's pre-lint bytes: the verification
+    // revert rewinds the lint edits, so the audit that recorded them
+    // is unrecorded too and the next cycle re-audits the reverted
+    // pages.
+    const preLintSnapshot = await readTextIfExists(lintWindowPath(dataRoot));
+
     const lint = await runLintOrSkip(
       options,
       ingest,
@@ -833,7 +840,9 @@ async function runCycleStages(
 
     return result;
   } catch (error) {
-    await writeFailureDigest(dataRoot, cyclePath, error);
+    if (ingest !== undefined || ingestEditsKept(error)) {
+      await writeFailureDigest(dataRoot, cyclePath, error);
+    }
 
     throw error;
   }
