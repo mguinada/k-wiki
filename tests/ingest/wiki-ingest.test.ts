@@ -3666,6 +3666,22 @@ describe("runWikiIngest failure reporting detail", () => {
     expect(ingestEditsKept(error)).toBe(true);
   });
 
+  it("marks a digest-path failure as edits-kept even when guardrails tripped", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    await writeFile(join(h.outputsDir, "runs"), "not a directory");
+
+    const error = await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: frontmatterSaboteur("bad.md"),
+    }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    expect(ingestEditsKept(error)).toBe(true);
+  });
+
   it("marks a mid-revert throw as edits-kept", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
     const saboteur = frontmatterSaboteur("bad.md");
