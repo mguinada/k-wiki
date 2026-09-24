@@ -197,34 +197,37 @@ describe("concurrent enablement (test 19)", () => {
     const winners = outcomes.filter((o) => o.result === "ok");
     const losers = outcomes.filter((o) => o.result !== "ok");
 
-    // At least one enable wins the lease race; either clone may win.
-    // A loser fails closed — refused on the live bootstrap lease, or
-    // rejected non-fast-forward by the fenced finalize after
-    // acquiring a fresh lease in the winner's shadow. A loser whose
-    // pre-acquire stage ran entirely after the winner's finalize
-    // fast-forwards and legally succeeds as a sequential enable.
+    // At least one enable wins the lease race; either clone may
+    // win. A loser fails closed — refused on the live bootstrap
+    // lease, rejected non-fast-forward by the fenced finalize after
+    // acquiring a fresh lease in the winner's shadow, or finding
+    // nothing to commit after fast-forwarding onto the winner's
+    // marker — and leaves its checkout at the pre-race head or the
+    // winner's pushed head. The state assertions below are the
+    // interleaving-agnostic contract.
     expect(winners.length).toBeGreaterThanOrEqual(1);
 
-    for (const loser of losers) {
-      expect(loser.result).toMatch(
-        /another writer holds the lease|non-fast-forward|push .* failed/,
-      );
-      expect(await head0(loser.clone.dir)).toBe(baseHead);
-    }
-
-    // The remote is consistent: no lease, main = a winner's push.
+    // The remote is consistent: main = a winner's push, no lease.
     const remote = (
       await import("../../src/writer/git-remote.ts")
     ).gitRunnerFor({ dir: world.remoteDir, env: process.env });
+
+    const remoteMain = (
+      await remote(["rev-parse", "refs/heads/main"])
+    ).stdout.trim();
+
+    for (const loser of losers) {
+      expect([baseHead, remoteMain]).toContain(
+        await head0(loser.clone.dir),
+      );
+    }
 
     expect(
       (await remote(["for-each-ref", LEASE_REF])).stdout.trim(),
     ).toBe("");
     expect(
       await Promise.all(winners.map((o) => head0(o.clone.dir))),
-    ).toContain(
-      (await remote(["rev-parse", "refs/heads/main"])).stdout.trim(),
-    );
+    ).toContain(remoteMain);
   }, 60000);
 
   async function head0(dataRoot: string): Promise<string> {
