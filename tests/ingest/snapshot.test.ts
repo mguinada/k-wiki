@@ -4,12 +4,14 @@ import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { runContext } from "../../src/cli/run-context.ts";
 import {
+  buildSnapshotAdvance,
   ensureDashboardIgnored,
   ensureLintWindowIgnored,
   ensureSnapshotIgnored,
   readSnapshot,
   SNAPSHOT_FILENAME as SNAPSHOT_NAME,
   warnTrackedIgnored,
+  writeSnapshotAdvance,
   writeSnapshotIfNeeded,
 } from "../../src/ingest/snapshot.ts";
 import { makeDataRepo } from "./harness.ts";
@@ -273,5 +275,49 @@ describe("committed-head anchor (issue #390)", () => {
 
     expect(stored.committedHead).toBe(head);
     expect(stored.snapshotFor).toBe(dataRoot);
+  });
+});
+
+describe("deferred shared-cycle snapshot (issue #390 steering repair 3)", () => {
+  it("builds the pending state without writing; the writer anchors to a given head", async () => {
+    const dataRoot = await makeDataRepo({ "kept.md": "kept" }, (dir) =>
+      tempDirs.push(dir),
+    );
+    const snapshotPath = join(dataRoot, "outputs", SNAPSHOT_NAME);
+    const run = runContext({
+      rawDir: join(dataRoot, "raw"),
+      env: process.env,
+    });
+
+    // Build-only: no file written.
+    const advance = buildSnapshotAdvance(run, undefined, undefined, {
+      vaults: {},
+    });
+
+    expect(advance.manifest).toEqual({ vaults: {} });
+    expect(await readFile(snapshotPath, "utf8").catch(() => "absent")).toBe(
+      "absent",
+    );
+
+    // The deferred write anchors to the head the caller knows — the
+    // post-content-commit HEAD in a shared cycle.
+    await writeSnapshotAdvance(snapshotPath, run, advance.manifest);
+
+    const stored = JSON.parse(await readFile(snapshotPath, "utf8")) as {
+      committedHead: string;
+    };
+
+    expect(stored.committedHead).toBe(
+      (
+        await (
+          await import("node:util")
+        ).promisify((await import("node:child_process")).execFile)("git", [
+          "-C",
+          dataRoot,
+          "rev-parse",
+          "HEAD",
+        ])
+      ).stdout.trim(),
+    );
   });
 });

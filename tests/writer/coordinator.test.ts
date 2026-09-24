@@ -139,7 +139,7 @@ describe("lease refusal", () => {
       remote: "origin",
       leaseRef: LEASE_REF,
       treeOid: await fetchedTreeOid(world.b.git),
-      base: "abc",
+      base: "b".repeat(40),
       now: NOW,
       holder: "other-mac:99",
     });
@@ -233,7 +233,7 @@ describe("fail-closed states", () => {
       remote: "origin",
       leaseRef: LEASE_REF,
       treeOid: await fetchedTreeOid(world.b.git),
-      base: "abc",
+      base: "b".repeat(40),
       now: NOW,
       holder: "sneaky:1",
     });

@@ -3945,3 +3945,39 @@ describe("gitignore guard progress", () => {
     );
   });
 });
+
+describe("deferSnapshot (issue #390 steering repair 3)", () => {
+  it("returns the pending snapshot instead of writing it", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    const result = await runWikiIngest({
+      ...optionsFor(h),
+      deferSnapshot: true,
+    });
+
+    if (result.status !== "ran") {
+      throw new Error("expected a ran result");
+    }
+
+    expect(result.pendingSnapshot).toBeDefined();
+
+    const written = await readFile(h.snapshotPath, "utf8").catch(
+      () => "absent",
+    );
+
+    expect(written).toBe("absent");
+  });
+
+  it("keeps writing the snapshot immediately without the flag", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    const result = await runWikiIngest(optionsFor(h));
+
+    if (result.status !== "ran") {
+      throw new Error("expected a ran result");
+    }
+
+    expect(result.pendingSnapshot).toBeUndefined();
+    expect(await readFile(h.snapshotPath, "utf8")).toContain("snapshotFor");
+  });
+});

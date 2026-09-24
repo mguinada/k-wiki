@@ -59,9 +59,12 @@ export async function runSharedPipeline(
     throw new Error(runFlags.error);
   }
 
-  const configPath = args[0] ?? join(repoRoot, "sync.json");
+  // The parsed positionals, never the raw argv head — value flags
+  // (--settings, --outputs, --timeout) precede them.
+  const configPath = parsed.positional[0] ?? join(repoRoot, "sync.json");
+  const rawDirArg = parsed.positional[1];
   const config = await loadSyncConfig(configPath, homedir());
-  const rawDir = args[1] ?? join(options.dataRoot, "raw");
+  const rawDir = rawDirArg ?? join(options.dataRoot, "raw");
   const { runSharedCycle } = await import("../writer/coordinator.ts");
 
   log("scheduled-run: shared-writer mode — delegating to the coordinator");
@@ -81,7 +84,6 @@ export async function runSharedPipeline(
     outputsDir: runFlags.outputs ?? join(options.repoRoot, "outputs"),
     promptsDir: join(options.repoRoot, "prompts"),
     timeoutMs: runFlags.timeoutMs,
-    removalReceiptPath: runFlags.removalReceipt,
     runSweep:
       options.lintFull === true ? () => runSweepStep(options, log) : undefined,
   });

@@ -499,13 +499,62 @@ function heldBackMessage(
  *  (issue #390's committed-head anchor): the reader refuses any
  *  snapshot whose anchor left the checkout's history — the incident
  *  invariant that a reset-away snapshot can never make a re-added
- *  source look already-ingested. */
+ *  source look already-ingested. Shared-writer cycles defer the
+ *  write until the content commit exists (buildSnapshotAdvance +
+ *  writeSnapshotAdvance from wiki-sync); standalone runs anchor to
+ *  the head at write time, exactly as before. */
 export async function writeSnapshotIfNeeded(
   run: RunContext,
   explicitDiff: ManifestDiff | undefined,
   previous: Manifest | undefined,
   snapshotPath: string,
   current: Manifest,
+): Promise<void> {
+  const advance = buildSnapshotAdvance(run, explicitDiff, previous, current);
+
+  if (advance.heldBack !== undefined) {
+    run.onProgress(advance.heldBack);
+  }
+
+  await writeSnapshotAdvance(snapshotPath, run, advance.manifest);
+}
+
+/** The pending snapshot state a deferred (shared-writer) cycle
+ *  carries outward until the content commit SHA is known: the next
+ *  manifest (full or scoped-merge) plus the held-back notice. */
+export interface PendingSnapshotAdvance {
+  readonly manifest: Manifest;
+  readonly heldBack?: string | undefined;
+}
+
+/** Compute the snapshot's next state without writing it — the pure
+ *  half of writeSnapshotIfNeeded, shared by both write paths. */
+export function buildSnapshotAdvance(
+  run: RunContext,
+  explicitDiff: ManifestDiff | undefined,
+  previous: Manifest | undefined,
+  current: Manifest,
+): PendingSnapshotAdvance {
+  if (explicitDiff === undefined) {
+    return { manifest: current, heldBack: undefined };
+  }
+
+  const base = previous ?? emptyManifest();
+
+  return {
+    manifest: mergedSnapshot(base, current, explicitDiff),
+    heldBack: heldBackMessage(base, current, explicitDiff),
+  };
+}
+
+/** Write the advanced snapshot, stamped for this data root and
+ *  anchored to the data repo's current head — the caller decides
+ *  when that head is trustworthy (post-content-commit in shared
+ *  cycles). */
+export async function writeSnapshotAdvance(
+  snapshotPath: string,
+  run: RunContext,
+  manifest: Manifest,
 ): Promise<void> {
   await mkdir(dirname(snapshotPath), { recursive: true });
 
@@ -515,22 +564,5 @@ export async function writeSnapshotIfNeeded(
       ? { snapshotFor: run.dataRoot }
       : { snapshotFor: run.dataRoot, committedHead: head.trim() };
 
-  if (explicitDiff === undefined) {
-    await writeManifest(snapshotPath, current, extra);
-
-    return;
-  }
-
-  const base = previous ?? emptyManifest();
-  const message = heldBackMessage(base, current, explicitDiff);
-
-  if (message !== undefined) {
-    run.onProgress(message);
-  }
-
-  await writeManifest(
-    snapshotPath,
-    mergedSnapshot(base, current, explicitDiff),
-    extra,
-  );
+  await writeManifest(snapshotPath, manifest, extra);
 }

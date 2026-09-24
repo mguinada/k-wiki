@@ -653,31 +653,35 @@ describe("shared-writer e2e", () => {
 
       expect(takeover.code).toBe(0);
 
-      // The operator resolves the dirty fix surface (the failed
-      // run's kept wiki edits, its raw/ projection of the new note,
-      // and the uncommitted failure digest) before the recovery
-      // cycle.
-      await run("git", ["checkout", "--", "wiki", "raw", "outputs"], {
-        cwd: world.a.dataRoot,
-      });
-      await run("git", ["clean", "-f", "wiki", "raw"], {
-        cwd: world.a.dataRoot,
-      });
-      await run("git", ["clean", "-fd", "outputs"], {
-        cwd: world.a.dataRoot,
-      });
-
+      // The takeover published a fresh recovery lease: the lane stays
+      // serialized under it — a retry refuses (fail closed), naming
+      // the recovery holder, until its own expiry hands the lane to
+      // the next cycle.
       const retry = await cycle(world.a, {
         STUB_INGEST_MARK: "retry",
         STUB_MARKER: world.env.marker,
       });
 
-      if (retry.code !== 0) {
-        console.log("DBG-RETRY-ERR:", retry.err.slice(-1500));
-      }
+      // The dirty fix surface fires first in the state machine's
+      // precondition order — either way the retry fails closed
+      // before any source scan or agent work.
+      expect(retry.code).toBe(1);
+      expect(retry.err).toContain("dirty");
 
-      expect(retry.code).toBe(0);
-      expect(await remoteLeaseOid(world.remoteDir)).toBeUndefined();
+      const recovery = await (
+        await import("../../src/writer/lease.ts")
+      ).observeLease(
+        (await import("../../src/writer/git-remote.ts")).gitRunnerFor({
+          dir: world.a.dataRoot,
+          env: process.env,
+        }),
+        "origin",
+        LEASE_REF,
+      );
+
+      expect(recovery).toBeDefined();
+      expect(recovery?.body.renewals).toBe(0);
+      expect(recovery?.body.base).toBe(await remoteHead(world.remoteDir));
     } finally {
       await rm(world.root, { recursive: true, force: true });
     }
@@ -743,4 +747,114 @@ describe("shared-writer e2e", () => {
       await rm(world.root, { recursive: true, force: true });
     }
   }, 180000);
+});
+
+describe("shared-writer scheduler e2e (issue #390 tests 21-22)", () => {
+  it("a scheduled shared-mode run refuses proposed removals before mutation (test 21)", async () => {
+    const world = await makeWorld();
+
+    try {
+      expect(
+        (
+          await cycle(world.a, {
+            STUB_INGEST_MARK: "base",
+            STUB_MARKER: world.env.marker,
+          })
+        ).code,
+      ).toBe(0);
+
+      const { unlink } = await import("node:fs/promises");
+
+      await unlink(join(world.a.vaultRoot, "Inbox", "clipped-note.md"));
+
+      const manifestBefore = await readFile(
+        join(world.a.dataRoot, "raw", "manifest.json"),
+        "utf8",
+      );
+      const log = join(world.root, "scheduled.log");
+      const scheduled = await runCli(
+        join(import.meta.dirname ?? ".", "../../bin/scheduled-run"),
+        [
+          "--settings",
+          world.a.settingsPath,
+          world.a.configPath,
+          join(world.a.dataRoot, "raw"),
+        ],
+        { env: { KWIKI_SCHEDULED_LOG: log } },
+      );
+
+      expect(scheduled.code).toBe(1);
+
+      const logText = await readFile(log, "utf8");
+
+      expect(logText).toContain("ALERT");
+      expect(logText).toContain("--removal-receipt");
+
+      // Nothing mutated, nothing committed, lease released.
+      expect(
+        await readFile(join(world.a.dataRoot, "raw", "manifest.json"), "utf8"),
+      ).toBe(manifestBefore);
+      expect(await remoteLeaseOid(world.remoteDir)).toBeUndefined();
+    } finally {
+      await rm(world.root, { recursive: true, force: true });
+    }
+  }, 180000);
+
+  it("A→B then B→A scheduler handoff needs no migration; racers serialize (test 22)", async () => {
+    const world = await makeWorld();
+
+    try {
+      const scheduledRun = (writer: Writer, env: NodeJS.ProcessEnv = {}) =>
+        runCli(
+          join(import.meta.dirname ?? ".", "../../bin/scheduled-run"),
+          [
+            "--settings",
+            writer.settingsPath,
+            writer.configPath,
+            join(writer.dataRoot, "raw"),
+          ],
+          { env: { STUB_MARKER: world.env.marker, ...env } },
+        );
+
+      // A→B: the schedule hands off cleanly, no marker/data migration.
+      expect(
+        (await scheduledRun(world.a, { STUB_INGEST_MARK: "a1" })).code,
+      ).toBe(0);
+      expect(
+        (await scheduledRun(world.b, { STUB_INGEST_MARK: "b1" })).code,
+      ).toBe(0);
+
+      // B→A: back again.
+      expect(
+        (await scheduledRun(world.b, { STUB_INGEST_MARK: "b2" })).code,
+      ).toBe(0);
+      expect(
+        (await scheduledRun(world.a, { STUB_INGEST_MARK: "a2" })).code,
+      ).toBe(0);
+
+      // Accidental dual scheduling: exactly one writer reaches the
+      // source/agent work; the other refuses on the live lease.
+      const [racerA, racerB] = await Promise.all([
+        scheduledRun(world.a, { STUB_SLOW: "1500" }).then(
+          (r) => r.code,
+          () => 1,
+        ),
+        scheduledRun(world.b, { STUB_SLOW: "1500" }).then(
+          (r) => r.code,
+          () => 1,
+        ),
+      ]);
+
+      expect([racerA, racerB].sort()).toEqual([0, 1]);
+      expect(await remoteLeaseOid(world.remoteDir)).toBeUndefined();
+
+      // Both worktrees at the same canonical main.
+      const final = await remoteHead(world.remoteDir);
+
+      expect(await head(world.a.dataRoot)).toBe(final);
+      expect(await head(world.b.dataRoot)).toBe(final);
+    } finally {
+      await rm(world.root, { recursive: true, force: true });
+    }
+  }, 300000);
 });

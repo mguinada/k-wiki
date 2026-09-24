@@ -15,12 +15,9 @@ import { refuseDirectExecution } from "../cli/is-main.ts";
 import { repoRoot } from "../cli/shared.ts";
 import { parseArgs } from "../cli/shell.ts";
 import { type GitRunner, gitRunnerFor, lsRemoteOid } from "./git-remote.ts";
-import {
-  casPush,
-  LEASE_PROTOCOL_VERSION,
-  leaseExpired,
-  observeLease,
-} from "./lease.ts";
+import { leaseExpired, leaseHolder, observeLease } from "./lease.ts";
+import { fetchedTreeOid, replaceLease } from "./lease-ops.ts";
+import { LEASE_PROTOCOL_VERSION } from "./lease-schema.ts";
 import { readSharedWriterMarker } from "./marker.ts";
 import { resolveDataRootFromArgs } from "./resolve.ts";
 
@@ -41,14 +38,18 @@ and released (or taken over) by the protocol itself.
             malformed marker or unreadable lease fails closed
             (exit 1).
 
-  takeover  Re-open the lane by deleting the exact expected lease —
-            the exceptional recovery for a holder that died with the
-            lease live. Requires the full lease OID as reported by
-            status and an explicit --confirm; it refuses a lease
-            that no longer reads as the expected OID (someone else
-            moved it), and there is no generic force-unlock. The
-            deleted holder's fenced finalize push still fails, so a
-            live writer can never be silently overridden.
+  takeover  Replace the lease by an exact expected OID with a fresh
+            recovery lease (new token, base = current remote main,
+            TTL restarted) — the exceptional recovery for a holder
+            that died with the lease live. Requires the full lease
+            OID as reported by status and an explicit --confirm; it
+            refuses a lease that no longer reads as the expected OID
+            (someone else moved it), and there is no generic
+            force-unlock. The stale holder's fenced finalize push
+            fails its fence: its expected lease OID no longer
+            matches. The lane stays serialized under the recovery
+            lease until its own expiry, when the next cycle takes it
+            over automatically.
 
   --expected <oid>  The exact lease OID to replace (takeover only).
   --confirm         Required: the takeover happens when both the OID
@@ -61,7 +62,7 @@ and released (or taken over) by the protocol itself.
                     repo's own raw/.
 
 What it writes: nothing on disk. status prints the lease's fields;
-takeover prints the replacement lease's OID and expiry. Exit 0 on a
+takeover prints the recovery lease's OID and expiry. Exit 0 on a
 completed read or takeover, 1 on a refusal or failure. Errors print
 red, prefixed "writer-lease:"; progress goes to stderr; NO_COLOR is
 honored.`;
@@ -174,30 +175,44 @@ async function takeoverVerb(
     );
   }
 
-  // Re-open the lane: a fenced, compare-and-swap delete of the exact
-  // quoted lease. The stale holder's atomic finalize still fails —
-  // its delete update targets an absent ref, and an atomic push
-  // refuses as a whole. There is no unlocked-gap hazard: the next
-  // acquirer creates by compare-and-swap on an absent ref, the same
-  // race every normal acquire runs.
-  await casPush(git, marker.marker.remote, [
-    { ref: marker.marker.leaseRef, deleted: true, expectedOid: expected },
-  ]);
-
-  const after = await lsRemoteOid(
+  // Publish a fresh recovery lease by exact-OID compare-and-swap
+  // replacement — new token, base = the current remote main, TTL
+  // restarted. Never delete-then-create: the single-ref update leaves
+  // no unlocked gap, and the stale holder's fenced finalize push
+  // still fails because its expected lease OID no longer matches.
+  const remoteMain = await lsRemoteOid(
     git,
     marker.marker.remote,
-    marker.marker.leaseRef,
+    `refs/heads/${marker.marker.branch}`,
   );
 
-  if (after !== undefined) {
+  if (remoteMain === undefined) {
     throw new Error(
-      `lease ${marker.marker.leaseRef} still present after takeover — fail closed`,
+      `remote ${marker.marker.remote} has no refs/heads/${marker.marker.branch} — cannot anchor a recovery lease; fail closed`,
     );
   }
 
+  await git([
+    "fetch",
+    "--force",
+    marker.marker.remote,
+    `${marker.marker.leaseRef}:refs/k-wiki/lease-observed`,
+  ]);
+
+  const treeOid = await fetchedTreeOid(git, "refs/k-wiki/lease-observed");
+  const recovery = await replaceLease({
+    git,
+    remote: marker.marker.remote,
+    leaseRef: marker.marker.leaseRef,
+    expectedOid: expected,
+    treeOid,
+    base: remoteMain,
+    now: () => new Date(),
+    holder: leaseHolder(),
+  });
+
   console.log(
-    `lease ${expected.slice(0, 8)} taken over and released — the lane is free; the previous holder's fenced finalize push will fail`,
+    `lease taken over: ${expected.slice(0, 8)} → recovery lease ${recovery.oid} held by you, expires ${recovery.body.expires}; the stale holder's fenced finalize push fails its fence`,
   );
 }
 

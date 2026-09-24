@@ -128,7 +128,7 @@ describe("writer-lease status", () => {
 });
 
 describe("writer-lease takeover", () => {
-  it("re-opens the lane by deleting the exact OID lease (fenced)", async () => {
+  it("replaces the lease by exact OID with a fresh recovery lease", async () => {
     const world = await makeWriterWorld();
     worlds.push(world);
     const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
@@ -158,14 +158,22 @@ describe("writer-lease takeover", () => {
 
     expect(
       logSpy.mock.calls.map((call) => String(call[0])).join("\n"),
-    ).toContain("taken over and released");
+    ).toContain("lease taken over");
 
-    // The lane is free: the lease is gone from the remote.
+    // The recovery lease replaced the old one by exact OID: new
+    // token, base = current remote main, TTL restarted — and the
+    // lane stays serialized under it.
     const lease = await (
       await import("../../src/writer/lease.ts")
     ).observeLease(git, "origin", LEASE_REF);
 
-    expect(lease).toBeUndefined();
+    expect(lease).toBeDefined();
+    expect(lease?.oid).not.toBe(acquire.lease.oid);
+    expect(lease?.body.holder).not.toBe("mac-a:1");
+    expect(lease?.body.base).toBe(
+      (await git(["rev-parse", "HEAD"])).stdout.trim(),
+    );
+    expect(lease?.body.renewals).toBe(0);
     process.exitCode = undefined;
   }, 30000);
 

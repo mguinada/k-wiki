@@ -38,7 +38,7 @@ describe("acquireLease", () => {
         remote: "origin",
         leaseRef: LEASE_REF,
         treeOid,
-        base: "abc",
+        base: "b".repeat(40),
         now: NOW,
         holder: HOLDER,
       });
@@ -59,7 +59,7 @@ describe("acquireLease", () => {
         remote: "origin",
         leaseRef: LEASE_REF,
         treeOid,
-        base: "abc",
+        base: "b".repeat(40),
         now: NOW,
         holder: HOLDER,
       });
@@ -69,7 +69,7 @@ describe("acquireLease", () => {
         remote: "origin",
         leaseRef: LEASE_REF,
         treeOid,
-        base: "abc",
+        base: "b".repeat(40),
         now: NOW,
         holder: "other:2",
       });
@@ -99,7 +99,7 @@ describe("renewLease", () => {
         remote: "origin",
         leaseRef: LEASE_REF,
         treeOid,
-        base: "abc",
+        base: "b".repeat(40),
         now: NOW,
         holder: HOLDER,
       });
@@ -115,7 +115,7 @@ describe("renewLease", () => {
         leaseRef: LEASE_REF,
         current: first.lease,
         treeOid,
-        base: "abc",
+        base: "b".repeat(40),
         now: later,
         holder: HOLDER,
       });
@@ -138,7 +138,7 @@ describe("renewLease", () => {
         remote: "origin",
         leaseRef: LEASE_REF,
         treeOid,
-        base: "abc",
+        base: "b".repeat(40),
         now: NOW,
         holder: HOLDER,
       });
@@ -159,7 +159,7 @@ describe("renewLease", () => {
           body: { ...first.lease.body, expires: "2020-01-01T00:00:00Z" },
         },
         treeOid,
-        base: "abc",
+        base: "b".repeat(40),
         now: NOW,
         holder: "thief:2",
       });
@@ -175,7 +175,7 @@ describe("renewLease", () => {
           leaseRef: LEASE_REF,
           current: first.lease,
           treeOid,
-          base: "abc",
+          base: "b".repeat(40),
           now: later,
           holder: HOLDER,
         }),
@@ -197,7 +197,7 @@ describe("takeOverExpiredLease", () => {
         remote: "origin",
         leaseRef: LEASE_REF,
         treeOid,
-        base: "abc",
+        base: "b".repeat(40),
         now: NOW,
         holder: HOLDER,
       });
@@ -213,7 +213,7 @@ describe("takeOverExpiredLease", () => {
         leaseRef: LEASE_REF,
         observed: first.lease,
         treeOid,
-        base: "abc",
+        base: "b".repeat(40),
         now: NOW,
         holder: "other:2",
       });
@@ -237,7 +237,7 @@ describe("takeOverExpiredLease", () => {
         remote: "origin",
         leaseRef: LEASE_REF,
         treeOid,
-        base: "abc",
+        base: "b".repeat(40),
         now: NOW,
         holder: HOLDER,
       });
@@ -257,7 +257,7 @@ describe("takeOverExpiredLease", () => {
         leaseRef: LEASE_REF,
         observed: expired,
         treeOid,
-        base: "abc",
+        base: "b".repeat(40),
         now: NOW,
         holder: "other:2",
       });
@@ -288,7 +288,7 @@ describe("finalizeWithLeaseRelease", () => {
         remote: "origin",
         leaseRef: LEASE_REF,
         treeOid,
-        base: "abc",
+        base: "b".repeat(40),
         now: NOW,
         holder: HOLDER,
       });
@@ -331,7 +331,7 @@ describe("finalizeWithLeaseRelease", () => {
         remote: "origin",
         leaseRef: LEASE_REF,
         treeOid,
-        base: "abc",
+        base: "b".repeat(40),
         now: NOW,
         holder: HOLDER,
       });
@@ -355,7 +355,7 @@ describe("finalizeWithLeaseRelease", () => {
         leaseRef: LEASE_REF,
         observed: expired,
         treeOid,
-        base: "abc",
+        base: "b".repeat(40),
         now: NOW,
         holder: "thief:2",
       });
@@ -396,7 +396,7 @@ describe("releaseOwnLease", () => {
         remote: "origin",
         leaseRef: LEASE_REF,
         treeOid,
-        base: "abc",
+        base: "b".repeat(40),
         now: NOW,
         holder: HOLDER,
       });
@@ -432,7 +432,7 @@ describe("releaseOwnLease", () => {
         remote: "origin",
         leaseRef: LEASE_REF,
         treeOid,
-        base: "abc",
+        base: "b".repeat(40),
         now: NOW,
         holder: HOLDER,
       });

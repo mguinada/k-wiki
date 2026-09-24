@@ -22,17 +22,15 @@ import {
   lsRemoteOid,
   revParseOid,
 } from "./git-remote.ts";
-
-/** The only lease protocol this build speaks; anything else fails
- *  closed (issue #390 — never take over an unknown protocol). */
-export const LEASE_PROTOCOL_VERSION = 1;
+import {
+  LEASE_PROTOCOL_VERSION,
+  LEASE_SUBJECT,
+  parseLeaseBody,
+} from "./lease-schema.ts";
 
 /** Four hours, matching the local run lock's stale window: a full
  *  cycle with both agent stages stays well inside it. */
 export const LEASE_TTL_MS = 4 * 60 * 60 * 1000;
-
-/** The commit-message subject every lease carries. */
-const LEASE_SUBJECT = `k-wiki shared-writer lease v${LEASE_PROTOCOL_VERSION}`;
 
 /** The machine-readable fields of one lease commit's message body. */
 export interface LeaseBody {
@@ -82,71 +80,14 @@ function parseField(line: string): [string, string] | undefined {
 }
 
 /** Parse and validate a lease commit message; throws with the
- *  origin in the message on unknown protocol, missing fields, or an
- *  unparseable expiry — the fail-closed direction (issue #390). */
-export function parseLeaseBody(message: string, origin: string): LeaseBody {
-  const lines = message.trimEnd().split("\n");
+ *  origin in the message on unknown protocol, any unknown or
+ *  duplicated field, missing fields, or a value that fails its
+ *  strict syntax — integers without junk, ISO-8601 Z timestamps,
+ *  a 32-hex token, a 40-hex base SHA. A malformed or unknown lease
+ *  must be retained and fail closed, never auto-taken-over
+ *  (issue #390). */
 
-  if (lines[0] !== LEASE_SUBJECT) {
-    throw new Error(`${origin}: not a k-wiki shared-writer lease commit`);
-  }
-
-  const fields = new Map<string, string>();
-
-  for (const line of lines.slice(1)) {
-    if (line === "") {
-      continue;
-    }
-
-    const field = parseField(line);
-
-    if (field === undefined) {
-      throw new Error(
-        `${origin}: malformed lease line ${JSON.stringify(line)}`,
-      );
-    }
-
-    fields.set(field[0], field[1]);
-  }
-
-  const required = (name: string): string => {
-    const value = fields.get(name);
-
-    if (value === undefined || value === "") {
-      throw new Error(`${origin}: lease field "${name}" missing`);
-    }
-
-    return value;
-  };
-
-  if (fields.get("protocol") !== String(LEASE_PROTOCOL_VERSION)) {
-    throw new Error(
-      `${origin}: unknown lease protocol ${JSON.stringify(fields.get("protocol"))}`,
-    );
-  }
-
-  const expires = required("expires");
-
-  if (Number.isNaN(Date.parse(expires))) {
-    throw new Error(`${origin}: lease "expires" is not an ISO timestamp`);
-  }
-
-  const renewals = Number.parseInt(required("renewals"), 10);
-
-  if (Number.isNaN(renewals) || renewals < 0) {
-    throw new Error(`${origin}: lease "renewals" is not a count`);
-  }
-
-  return {
-    token: required("token"),
-    holder: required("holder"),
-    acquired: required("acquired"),
-    expires,
-    base: required("base"),
-    renewals,
-  };
-}
-
+/** A fresh lease body for this holder: token, TTL, base remote SHA. */
 /** True when the lease's expiry has passed at `now`. */
 export function leaseExpired(body: LeaseBody, now: () => Date): boolean {
   return Date.parse(body.expires) < now().getTime();
@@ -271,7 +212,6 @@ export async function observeLease(
   return { oid, body: parseLeaseBody(message, leaseRef) };
 }
 
-/** A fresh lease body for this holder: token, TTL, base remote SHA. */
 export function newLeaseBody(
   base: string,
   now: () => Date,

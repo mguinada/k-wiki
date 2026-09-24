@@ -2,6 +2,7 @@ import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ScheduledRunOptions } from "../../src/schedule/scheduled-run.ts";
+import { parseScheduledRunArgs } from "../../src/schedule/scheduled-run.ts";
 import {
   runSharedPipeline,
   scheduledSharedMode,
@@ -92,4 +93,28 @@ describe("runSharedPipeline", () => {
       /dirty/,
     );
   }, 30000);
+});
+
+describe("scheduled-run flag surface (issue #390 steering repair 2)", () => {
+  it("rejects --removal-receipt as an unknown flag before any cycle work", () => {
+    const parsed = parseScheduledRunArgs([
+      "--removal-receipt",
+      "/tmp/receipt.json",
+      "sync.json",
+      "raw",
+    ]);
+
+    expect(parsed.error).toMatch(/--removal-receipt/);
+  });
+
+  it("keeps accepting the forwarding flags scheduled-run owns", () => {
+    const parsed = parseScheduledRunArgs([
+      "--settings",
+      "s.yml",
+      "--lint-full",
+    ]);
+
+    expect(parsed.error).toBeUndefined();
+    expect(parsed.flags.has("--lint-full")).toBe(true);
+  });
 });

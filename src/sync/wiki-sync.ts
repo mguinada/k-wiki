@@ -97,6 +97,7 @@ import {
   type WikiPages,
   wikiPages,
 } from "../ingest/manifest-diff.ts";
+import { SNAPSHOT_FILENAME, writeSnapshotAdvance } from "../ingest/snapshot.ts";
 import {
   type IngestResult,
   ingestEditsKept,
@@ -423,6 +424,12 @@ export interface WikiSyncOptions {
   readonly onAgentBoundary?:
     | ((stage: "ingest" | "lint", phase: "before" | "after") => Promise<void>)
     | undefined;
+  /** The shared-writer coordinator's snapshot deferral (issue #390):
+   *  the ingest stage returns its pending snapshot state instead of
+   *  writing, and the cycle anchors it to the content commit after
+   *  that commit exists. Undefined outside shared mode — standalone
+   *  ingest writes immediately, exactly as before. */
+  readonly deferIngestSnapshot?: boolean | undefined;
 }
 
 /** Count a sync report's copied and removed notes across every
@@ -788,6 +795,7 @@ async function runCycleStages(
       timeoutMs: options.timeoutMs,
       heartbeatMs: options.heartbeatMs,
       cycleReportNote: cycleReportPromise(cyclePath),
+      deferSnapshot: options.deferIngestSnapshot === true,
     });
 
     // The verification stage's revert target: everything the ingest
@@ -840,6 +848,8 @@ async function runCycleStages(
       formatCommitMessage(summary),
     );
 
+    await writeDeferredSnapshot(dataRoot, run, ingest);
+
     const publish = await runPublishOrSkip(run, config.publish, stages);
     const result: WikiSyncResult = {
       sync,
@@ -869,6 +879,26 @@ async function runCycleStages(
 
     throw error;
   }
+}
+
+/** The deferred shared-writer snapshot (issue #390): the content
+ *  commit now exists, so the pending snapshot state is written
+ *  anchored to it — the anchor is only ever a commit already in the
+ *  branch's history. No-op outside shared mode (no pending state). */
+async function writeDeferredSnapshot(
+  dataRoot: string,
+  run: RunContext,
+  ingest: IngestResult,
+): Promise<void> {
+  if (ingest.status !== "ran" || ingest.pendingSnapshot === undefined) {
+    return;
+  }
+
+  await writeSnapshotAdvance(
+    join(dataRoot, "outputs", SNAPSHOT_FILENAME),
+    run,
+    ingest.pendingSnapshot.manifest,
+  );
 }
 
 /** One line per source: what sync copied and removed; a repo run

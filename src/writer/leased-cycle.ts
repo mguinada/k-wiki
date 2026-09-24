@@ -118,6 +118,7 @@ export async function leasedCycle(
     timeoutMs: options.timeoutMs,
     heartbeatMs: options.heartbeatMs,
     ...(options.runAgent !== undefined && { runAgent: options.runAgent }),
+    deferIngestSnapshot: true,
     onAgentBoundary: async () => {
       await renew("an agent stage");
     },
