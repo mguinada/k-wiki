@@ -431,6 +431,11 @@ export interface WikiSyncOptions {
    *  that commit exists. Undefined outside shared mode — standalone
    *  ingest writes immediately, exactly as before. */
   readonly deferIngestSnapshot?: boolean | undefined;
+  /** The shared-writer coordinator's phase hook (issue #390):
+   *  invoked once the content commit exists — from that point a
+   *  failure must retain the lease (the commit is local-only;
+   *  releasing would strand it). Undefined outside shared mode. */
+  readonly onContentCommit?: (() => Promise<void> | void) | undefined;
 }
 
 /** Count a sync report's copied and removed notes across every
@@ -860,44 +865,15 @@ async function runCycleStages(
       stages,
     );
 
-    onProgress(stageLine(stages, "commit"));
-
-    // The commit summary's page counts, from the status snapshot the
-    // cycle already holds: the lint stage's post-run entries when lint
-    // ran; otherwise the pre-lint capture (nothing changes between it
-    // and the commit on a lint-skip path — verification is read-only).
-    const pages = await wikiPages(dataRoot, lint?.entries ?? preLint.status);
-    const summary = commitSummaryOf(sync, ingest, lint, pages);
-    const commit = await commitDataRepo(
-      dataRoot,
-      env,
-      formatCommitMessage(summary),
-    );
-
-    await writeDeferredSnapshot(dataRoot, run, ingest);
-
-    const publish = await runPublishOrSkip(run, config.publish, stages);
-    const result: WikiSyncResult = {
+    return await runCommitStage(options, run, config, stages, cyclePath, {
       sync,
       ingest,
       lint,
       crosslinks,
       citations,
       verification,
-      commit,
-      publish,
-    };
-
-    if (nothingToDoLine(result) === undefined) {
-      await commitCycleDigest(
-        dataRoot,
-        env,
-        cyclePath,
-        formatFinalDigest(result),
-      );
-    }
-
-    return result;
+      preLint,
+    });
   } catch (error) {
     if (ingest !== undefined || ingestEditsKept(error)) {
       await writeFailureDigest(dataRoot, cyclePath, error);
@@ -905,6 +881,75 @@ async function runCycleStages(
 
     throw error;
   }
+}
+
+/** The verified stages the commit stage assembles the result from. */
+interface VerifiedStages {
+  readonly sync: SyncReport;
+  readonly ingest: IngestResult;
+  readonly lint: LintResult | undefined;
+  readonly crosslinks: CrosslinksResult | undefined;
+  readonly citations: CitationWallStageResult;
+  readonly verification: VerificationResult;
+  readonly preLint: PreRunState;
+}
+
+/** The commit stage onward: content commit, the shared-writer
+ *  phase hook, the deferred snapshot's anchor, publish, digest. */
+async function runCommitStage(
+  options: WikiSyncOptions,
+  run: RunContext,
+  config: SyncConfig,
+  stages: readonly string[],
+  cyclePath: string,
+  verified: VerifiedStages,
+): Promise<WikiSyncResult> {
+  const { dataRoot, env, onProgress } = run;
+  const { sync, ingest, lint, crosslinks, citations, verification, preLint } =
+    verified;
+
+  onProgress(stageLine(stages, "commit"));
+
+  // The commit summary's page counts, from the status snapshot the
+  // cycle already holds: the lint stage's post-run entries when lint
+  // ran; otherwise the pre-lint capture (nothing changes between it
+  // and the commit on a lint-skip path — verification is read-only).
+  const pages = await wikiPages(dataRoot, lint?.entries ?? preLint.status);
+  const summary = commitSummaryOf(sync, ingest, lint, pages);
+  const commit = await commitDataRepo(
+    dataRoot,
+    env,
+    formatCommitMessage(summary),
+  );
+
+  if (commit.status === "committed") {
+    await options.onContentCommit?.();
+  }
+
+  await writeDeferredSnapshot(dataRoot, run, ingest);
+
+  const publish = await runPublishOrSkip(run, config.publish, stages);
+  const result: WikiSyncResult = {
+    sync,
+    ingest,
+    lint,
+    crosslinks,
+    citations,
+    verification,
+    commit,
+    publish,
+  };
+
+  if (nothingToDoLine(result) === undefined) {
+    await commitCycleDigest(
+      dataRoot,
+      env,
+      cyclePath,
+      formatFinalDigest(result),
+    );
+  }
+
+  return result;
 }
 
 /** The deferred shared-writer snapshot (issue #390): the content

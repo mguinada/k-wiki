@@ -19,6 +19,7 @@ import { refuseDirectExecution } from "../cli/is-main.ts";
 import { repoRoot } from "../cli/shared.ts";
 import { parseArgs } from "../cli/shell.ts";
 import {
+  classifyPosition,
   currentBranch,
   fetchRefspec,
   type GitRunner,
@@ -155,8 +156,7 @@ export async function enable(dataRoot: string): Promise<string> {
     );
   }
 
-  const headOid = (await git(["rev-parse", "HEAD"])).stdout.trim();
-  const position = await classifyAheadOrBehind(git, remoteOid, headOid);
+  const position = await classifyPosition(git, remoteOid);
 
   if (position === "behind") {
     await mergeFfOnly(git, "FETCH_HEAD");
@@ -185,23 +185,6 @@ export async function enable(dataRoot: string): Promise<string> {
   }
 
   return await commitMarkerUnderLease(dataRoot, git, branch, treeOid);
-}
-
-/** The ahead/diverged classification for enable (never resets). */
-async function classifyAheadOrBehind(
-  git: GitRunner,
-  remoteOid: string,
-  head: string,
-): Promise<"up-to-date" | "behind" | "refuse"> {
-  if (head === remoteOid) {
-    return "up-to-date";
-  }
-
-  const ancestor =
-    (await gitOk(git, ["merge-base", "--is-ancestor", head, remoteOid])) ||
-    false;
-
-  return ancestor ? "behind" : "refuse";
 }
 
 /** Steps 3–4: bootstrap lease, marker commit, atomic finalize. */
@@ -237,7 +220,7 @@ async function commitMarkerUnderLease(
         leaseOid: outcome.oid,
       });
     } catch (error) {
-      await resetOwnCommit(git);
+      await resetOwnCommit(git, markerHead);
       throw error;
     }
 
@@ -273,11 +256,22 @@ async function acquireBootstrapLease(
   return attempt.lease;
 }
 
-/** Reset the marker commit this command made (never pushed): the
- *  tree was verified clean at entry, so a hard reset to HEAD~1
- *  discards only the command's own commit. */
-async function resetOwnCommit(git: GitRunner): Promise<void> {
-  await git(["reset", "--hard", "HEAD~1"]).catch(() => {});
+/** Reset the marker commit this command made (never pushed): only
+ *  while HEAD still is that exact commit — a commit that landed
+ *  meanwhile belongs to another writer and must survive. */
+async function resetOwnCommit(
+  git: GitRunner,
+  markerHead: string,
+): Promise<void> {
+  const head = (await git(["rev-parse", "HEAD"])).stdout.trim();
+
+  if (head !== markerHead) {
+    throw new Error(
+      `finalize failed and HEAD is no longer this enable's marker commit (HEAD ${head.slice(0, 8) || "unresolved"}, marker ${markerHead.slice(0, 8)}) — nothing was reset; remove the unpushed marker commit by hand`,
+    );
+  }
+
+  await git(["reset", "--hard", `${markerHead}~1`]);
 }
 
 /** Best-effort release of the exact bootstrap lease. */

@@ -121,6 +121,9 @@ export async function leasedCycle(
     onAgentBoundary: async () => {
       await renew("an agent stage");
     },
+    onContentCommit: () => {
+      phaseToFinalize();
+    },
   });
 
   // Step 10: a no-op cycle conditionally releases the exact owned

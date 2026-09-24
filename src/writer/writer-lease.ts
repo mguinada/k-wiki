@@ -61,7 +61,9 @@ and released (or taken over) by the protocol itself.
                     <dataRoot>/raw from the config, otherwise the
                     repo's own raw/.
 
-What it writes: nothing on disk. status prints the lease's fields;
+What it writes: the observed lease fetched into the data repo's
+scratch ref refs/k-wiki/lease-observed — no working-tree or history
+changes. status prints the lease's fields;
 takeover prints the recovery lease's OID and expiry. Exit 0 on a
 completed read or takeover, 1 on a refusal or failure. Errors print
 red, prefixed "writer-lease:"; progress goes to stderr; NO_COLOR is

@@ -73,6 +73,7 @@ protocol never relies on it.
 | Unsupported remote | Enable refuses; shared run fails loud |
 | Malformed marker/lease | Fail closed before source scan |
 | Renewal CAS race lost | Abort before final push |
+| Failure once the content commit exists | Retain the lease; the commit is local-only — recover by manual push or takeover |
 | Final push response lost | Recognize success only when the expected branch head is remote and the lease is absent; otherwise retain |
 | Removal/rename without a matching receipt | Fail before `raw/` mutation or expunge |
 

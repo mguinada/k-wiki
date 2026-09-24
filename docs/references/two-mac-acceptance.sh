@@ -56,14 +56,14 @@ if [ "$MACHINE" = "B" ]; then
   echo "-- [B] while A holds the lease, prove the refusal happens BEFORE"
   echo "    any source scan or agent invocation (expect exit 1 and a"
   echo "    'lease ... live' line naming A's holder and expiry):"
-  if "$KWIKI" wiki-sync "$CHECKOUT/sync.json" "$DATA/raw"; then
+  if "$KWIKI" wiki-sync "$DATA/sync.json" "$DATA/raw"; then
     echo "    FAIL: B's cycle ran while A held the lease"
     exit 1
   fi
   echo "    PASS: B refused while A held the lease."
   echo "-- [B] after A finishes: B fast-forwards and succeeds (expect"
   echo "    exit 0, and B's HEAD equals origin/main):"
-  "$KWIKI" wiki-sync "$CHECKOUT/sync.json" "$DATA/raw"
+  "$KWIKI" wiki-sync "$DATA/sync.json" "$DATA/raw"
   git -C "$DATA" fetch -q origin
   A_HEAD="$(git -C "$DATA" rev-parse origin/main)"
   B_HEAD="$(git -C "$DATA" rev-parse HEAD)"
