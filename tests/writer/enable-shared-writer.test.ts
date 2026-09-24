@@ -155,7 +155,7 @@ describe("writer-lease verbs (library)", () => {
 });
 
 describe("concurrent enablement (test 19)", () => {
-  it("racing enables: exactly one marker lands; the loser leaves no partial state", async () => {
+  it("racing enables: a marker lands and the remote stays consistent; any loser fails closed", async () => {
     const world = await makeWriterWorld();
     worlds.push(world);
     const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
@@ -177,6 +177,8 @@ describe("concurrent enablement (test 19)", () => {
     await world.b.git(["fetch", "-q", "origin", "refs/heads/main"]);
     await world.b.git(["reset", "-q", "--hard", "origin/main"]);
 
+    const baseHead = await head0(cw.dataRoot);
+
     const [first, second] = await Promise.all([
       enable(cw.dataRoot).then(
         () => "ok",
@@ -188,20 +190,29 @@ describe("concurrent enablement (test 19)", () => {
       ),
     ]);
 
-    const outcomes = [first, second];
-    const winners = outcomes.filter((r) => r === "ok");
+    const outcomes = [
+      { clone: world.a, result: first },
+      { clone: world.b, result: second },
+    ];
+    const winners = outcomes.filter((o) => o.result === "ok");
+    const losers = outcomes.filter((o) => o.result !== "ok");
 
-    // Exactly one enable wins the lease race; the loser refuses on
-    // the live bootstrap lease. Either clone may win — assert on the
-    // actual winner, whichever clone it was.
-    expect(winners).toHaveLength(1);
-    expect(outcomes.filter((r) => r !== "ok")[0]).toMatch(
-      /another writer holds the lease/,
-    );
+    // At least one enable wins the lease race; either clone may win.
+    // A loser fails closed — refused on the live bootstrap lease, or
+    // rejected non-fast-forward by the fenced finalize after
+    // acquiring a fresh lease in the winner's shadow. A loser whose
+    // pre-acquire stage ran entirely after the winner's finalize
+    // fast-forwards and legally succeeds as a sequential enable.
+    expect(winners.length).toBeGreaterThanOrEqual(1);
 
-    const winnerClone = outcomes[0] === "ok" ? world.a : world.b;
+    for (const loser of losers) {
+      expect(loser.result).toMatch(
+        /another writer holds the lease|non-fast-forward|push .* failed/,
+      );
+      expect(await head0(loser.clone.dir)).toBe(baseHead);
+    }
 
-    // The remote is consistent: no lease, branch = the winner's push.
+    // The remote is consistent: no lease, main = a winner's push.
     const remote = (
       await import("../../src/writer/git-remote.ts")
     ).gitRunnerFor({ dir: world.remoteDir, env: process.env });
@@ -210,8 +221,10 @@ describe("concurrent enablement (test 19)", () => {
       (await remote(["for-each-ref", LEASE_REF])).stdout.trim(),
     ).toBe("");
     expect(
+      await Promise.all(winners.map((o) => head0(o.clone.dir))),
+    ).toContain(
       (await remote(["rev-parse", "refs/heads/main"])).stdout.trim(),
-    ).toBe(await head0(winnerClone.dir));
+    );
   }, 60000);
 
   async function head0(dataRoot: string): Promise<string> {
