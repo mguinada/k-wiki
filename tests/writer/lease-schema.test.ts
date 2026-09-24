@@ -6,6 +6,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { newLeaseBody, serializeLeaseBody } from "../../src/writer/lease.ts";
 import {
   ISO_Z_TIMESTAMP,
   LEASE_FIELDS,
@@ -13,7 +14,6 @@ import {
   parseLeaseBody,
   parseLeaseFields,
 } from "../../src/writer/lease-schema.ts";
-import { newLeaseBody, serializeLeaseBody } from "../../src/writer/lease.ts";
 
 const NOW = () => new Date("2026-01-01T00:00:00Z");
 const HOLDER = "schema-host:3";
