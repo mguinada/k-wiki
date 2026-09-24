@@ -115,6 +115,75 @@ describe("matchReceipt", () => {
       },
     );
   });
+
+  it("rejects a receipt that duplicates one removal and drops another", () => {
+    const plan: VaultRemovalPlan[] = [
+      {
+        vault: "Engineering",
+        removals: ["old-note.md", "spare.md"],
+        renames: [],
+      },
+    ];
+    const padded: VaultRemovalPlan[] = [
+      {
+        vault: "Engineering",
+        removals: ["old-note.md", "old-note.md"],
+        renames: [],
+      },
+    ];
+
+    expect(
+      matchReceipt(buildReceipt(base, padded), base, plan),
+    ).toMatchObject({ ok: false });
+  });
+
+  it("rejects a receipt that duplicates one rename and drops another", () => {
+    const plan: VaultRemovalPlan[] = [
+      {
+        vault: "Engineering",
+        removals: [],
+        renames: [
+          { from: "a.md", to: "b.md" },
+          { from: "c.md", to: "d.md" },
+        ],
+      },
+    ];
+    const padded: VaultRemovalPlan[] = [
+      {
+        vault: "Engineering",
+        removals: [],
+        renames: [
+          { from: "a.md", to: "b.md" },
+          { from: "a.md", to: "b.md" },
+        ],
+      },
+    ];
+
+    expect(
+      matchReceipt(buildReceipt(base, padded), base, plan),
+    ).toMatchObject({ ok: false });
+  });
+
+  it("accepts the same candidate set in a different order", () => {
+    const receiptPlans: VaultRemovalPlan[] = [
+      {
+        vault: "Engineering",
+        removals: ["spare.md", "old-note.md"],
+        renames: [{ from: "a.md", to: "b.md" }],
+      },
+    ];
+    const plan: VaultRemovalPlan[] = [
+      {
+        vault: "Engineering",
+        removals: ["old-note.md", "spare.md"],
+        renames: [{ from: "a.md", to: "b.md" }],
+      },
+    ];
+
+    expect(
+      matchReceipt(buildReceipt(base, receiptPlans), base, plan),
+    ).toEqual({ ok: true });
+  });
 });
 
 describe("receipt file", () => {

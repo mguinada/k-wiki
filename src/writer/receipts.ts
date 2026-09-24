@@ -47,18 +47,35 @@ function samePlan(a: VaultRemovalPlan, b: VaultRemovalPlan): boolean {
     return false;
   }
 
-  const sameSet = (x: readonly string[], y: readonly string[]): boolean =>
-    x.length === y.length && new Set(x).size === new Set([...x, ...y]).size;
+  return samePaths(a.removals, b.removals) && sameRenames(a.renames, b.renames);
+}
 
-  const sameRenames = (): boolean =>
-    a.renames.length === b.renames.length &&
-    a.renames.every((rename) =>
-      b.renames.some(
-        (other) => other.from === rename.from && other.to === rename.to,
-      ),
-    );
+/** Exact multiset equality on path sets, order-insensitive. */
+function samePaths(x: readonly string[], y: readonly string[]): boolean {
+  if (x.length !== y.length) {
+    return false;
+  }
 
-  return sameSet(a.removals, b.removals) && sameRenames();
+  const ys = [...y].sort();
+
+  return [...x].sort().every((path, index) => path === ys[index]);
+}
+
+/** Exact multiset equality on from→to pairs, order-insensitive; the
+ *  NUL separator cannot occur in a path, so the key is collision-free. */
+function sameRenames(
+  x: VaultRemovalPlan["renames"],
+  y: VaultRemovalPlan["renames"],
+): boolean {
+  if (x.length !== y.length) {
+    return false;
+  }
+
+  const keys = (renames: VaultRemovalPlan["renames"]) =>
+    renames.map((rename) => `${rename.from}\u0000${rename.to}`).sort();
+  const ys = keys(y);
+
+  return keys(x).every((key, index) => key === ys[index]);
 }
 
 /** Parse receipt text; throws with the origin on any shape
