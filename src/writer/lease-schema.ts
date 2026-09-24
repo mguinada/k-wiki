@@ -38,9 +38,6 @@ export const LEASE_FIELDS: readonly string[] = [
 export const ISO_Z_TIMESTAMP =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/;
 
-/** Parse the body lines into exactly one entry per known field:
- *  malformed lines, duplicates, unknown fields, and missing fields
- *  all throw — a lease body is exactly the v1 schema, nothing else. */
 export type LeaseFieldsMap = Map<string, string>;
 
 /** Parse the body lines into exactly one entry per known field.
