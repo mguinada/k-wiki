@@ -392,6 +392,8 @@ async function makeWorld(): Promise<World> {
 
   // Writer B clones the canonical state.
   await run("git", ["clone", "-q", remoteDir, b.dataRoot]);
+  await run("git", ["config", "user.email", "t@t"], { cwd: b.dataRoot });
+  await run("git", ["config", "user.name", "t"], { cwd: b.dataRoot });
 
   return { root, remoteDir, env, a, b };
 }
