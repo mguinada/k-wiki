@@ -220,7 +220,7 @@ async function commitMarkerUnderLease(
         leaseOid: outcome.oid,
       });
     } catch (error) {
-      await resetOwnCommit(git, markerHead);
+      await resetOwnCommit(git, markerHead, error);
       throw error;
     }
 
@@ -258,16 +258,19 @@ async function acquireBootstrapLease(
 
 /** Reset the marker commit this command made (never pushed): only
  *  while HEAD still is that exact commit — a commit that landed
- *  meanwhile belongs to another writer and must survive. */
+ *  meanwhile belongs to another writer and must survive. The failed
+ *  finalize's own error rides along as the cause. */
 async function resetOwnCommit(
   git: GitRunner,
   markerHead: string,
+  finalizeError: unknown,
 ): Promise<void> {
   const head = (await git(["rev-parse", "HEAD"])).stdout.trim();
 
   if (head !== markerHead) {
     throw new Error(
       `finalize failed and HEAD is no longer this enable's marker commit (HEAD ${head.slice(0, 8) || "unresolved"}, marker ${markerHead.slice(0, 8)}) — nothing was reset; remove the unpushed marker commit by hand`,
+      { cause: finalizeError },
     );
   }
 

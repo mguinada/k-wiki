@@ -72,15 +72,6 @@ export function serializeLeaseBody(body: LeaseBody): string {
   ].join("\n");
 }
 
-/** Parse and validate a lease commit message; throws with the
- *  origin in the message on unknown protocol, any unknown or
- *  duplicated field, missing fields, or a value that fails its
- *  strict syntax — integers without junk, ISO-8601 Z timestamps,
- *  a 32-hex token, a 40-hex base SHA. A malformed or unknown lease
- *  must be retained and fail closed, never auto-taken-over
- *  (issue #390). */
-
-/** A fresh lease body for this holder: token, TTL, base remote SHA. */
 /** True when the lease's expiry has passed at `now`. */
 export function leaseExpired(body: LeaseBody, now: () => Date): boolean {
   return Date.parse(body.expires) < now().getTime();
