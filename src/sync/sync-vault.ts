@@ -281,6 +281,87 @@ export async function runVaultSync(
   return { sources: reports, prunedNamespaces };
 }
 
+/** One vault's candidate removals/renames, read-only (issue #390):
+ *  the set the shared-writer receipt confirms before `raw/` is
+ *  mutated. */
+export interface VaultRemovalPlan {
+  readonly vault: string;
+  readonly removals: readonly string[];
+  readonly renames: readonly { readonly from: string; readonly to: string }[];
+}
+
+/** Plan one vault: scan and select (no writes), diff the previous
+ *  manifest's paths+hashes, pair vanished entries whose hash
+ *  reappears as renames. */
+async function planVaultNamespace(
+  vault: VaultSourceConfig,
+  previous: VaultNotes,
+  progressEvery: number,
+  onProgress: (message: SyncProgress) => void,
+): Promise<VaultRemovalPlan> {
+  const { selected } = await scanAndSelect(vault, progressEvery, onProgress);
+
+  const selectedPaths = new Set(selected.map((note) => note.relPath));
+  const pathByHash = new Map<string, string>();
+
+  for (const note of selected) {
+    if (!pathByHash.has(note.hash)) {
+      pathByHash.set(note.hash, note.relPath);
+    }
+  }
+
+  const removals: string[] = [];
+  const renames: { from: string; to: string }[] = [];
+
+  for (const [relPath, entry] of Object.entries(previous)) {
+    if (selectedPaths.has(relPath)) {
+      continue;
+    }
+
+    const destination = pathByHash.get(entry.hash);
+
+    if (destination !== undefined) {
+      renames.push({ from: relPath, to: destination });
+    } else {
+      removals.push(relPath);
+    }
+  }
+
+  return { vault: vault.name, removals, renames };
+}
+
+/** Plan every configured vault's removals/renames against the
+ *  current `raw/manifest.json`, writing nothing (issue #390: the
+ *  candidate set is computed before any `raw/` mutation). */
+export async function planVaultRemovals(
+  options: DriverOptions,
+): Promise<readonly VaultRemovalPlan[]> {
+  const home = options.home ?? homedir();
+  const onProgress = options.onProgress ?? (() => {});
+  const config = await resolveDriverConfig(options, home);
+  const vaults = vaultSourcesOnly(config.vaults);
+  const manifestPath = join(options.rawDir, "manifest.json");
+  const previousText = await readTextIfExists(manifestPath);
+  const manifest =
+    previousText === undefined
+      ? emptyManifest()
+      : parseManifest(previousText, manifestPath);
+  const plans: VaultRemovalPlan[] = [];
+
+  for (const vault of vaults) {
+    plans.push(
+      await planVaultNamespace(
+        vault,
+        manifest.vaults[vault.name] ?? {},
+        options.progressEvery ?? PROGRESS_EVERY,
+        onProgress,
+      ),
+    );
+  }
+
+  return plans;
+}
+
 /**
  * List what each vault's exclusion rule would ingest; write nothing
  * (issue #32). The owner reviews this list and blocks private notes

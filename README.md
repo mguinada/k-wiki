@@ -1434,17 +1434,44 @@ Node even starts. `KWIKI_SCHEDULED_LOG` overrides the location.
   so the next tick retries with the tree actionable; divergent
   content is resolved manually.
 
-**Multi-machine rule:** enable the scheduler on exactly one machine
-— the source vault lives in iCloud, so only macOS can run the
-pipeline anyway. Other machines pull read-only (`k-wiki query` on a
-clone of the data repo) or run manual gated `wiki-sync` cycles. The
-lockfile prevents same-machine overlap; cross-machine overlap is made
-recoverable by the pull --rebase + rejected-push sequence, not
-prevented. If a second machine ever needs a scheduled sync, the known
-upgrade is a lease lock as a git ref in the data repo — deliberately
-deferred until then. Linux (systemd timer) and Windows (Task
-Scheduler) backends are follow-up issues: the installer fails loud
-on non-macOS platforms (`--print` still emits the macOS plist
+**Multi-machine rule:** the data repo carries no shared-writer marker
+by default — enable the scheduler on exactly one machine and let
+other machines pull read-only (`k-wiki query` on a clone); the
+source vault lives in iCloud, so only macOS runs the pipeline
+anyway. The lockfile prevents same-machine overlap; cross-machine
+overlap is made recoverable by the pull --rebase + rejected-push
+sequence, not prevented.
+
+**Shared-writer mode (opt-in, multi-machine):** a remote-backed data
+repo can instead opt in through `k-wiki enable-shared-writer`. The
+command probes the remote's live capabilities, then commits and
+pushes a tracked marker — `.k-wiki/shared-writer.json` at the data
+repo root — and from then on every compliant writer on any machine
+(manual `wiki-sync` and `scheduled-run` alike) serializes through
+one remote lease: it refuses a dirty, ahead, or diverged checkout
+before any scan, acquires the lease (taking over only an expired one
+by exact OID), fast-forwards to the canonical remote tree,
+re-baselines the ingest snapshot from that tree, and advances the
+branch and releases the lease in one atomic push. Cross-machine
+overlap is prevented, not merely recovered. Proposed source
+removals/renames stop the cycle until a human confirms a receipt,
+so a stale iCloud view can never become a shared expunge.
+`k-wiki writer-lease status` inspects the lease; `k-wiki writer-lease
+takeover --expected <oid> --confirm` is the human recovery for a
+dead holder. Manual shared cycles push by design — enabling the
+marker is the operator's consent. The full protocol — lease
+lifecycle, failure rules, the cutover procedure, and the honest
+limits (GitHub cannot install custom receive hooks, so the protocol
+binds updated compliant k-wiki writers, not old binaries or raw
+manual git pushes) — is documented in
+[docs/references/shared-writer.md](docs/references/shared-writer.md),
+with the post-cutover acceptance script at
+[docs/references/two-mac-acceptance.sh](docs/references/two-mac-acceptance.sh).
+If a second machine ever needs a scheduled sync without shared mode,
+the known upgrade is a lease lock as a git ref in the data repo —
+now shipped as shared-writer mode. Linux (systemd timer) and Windows
+(Task Scheduler) backends are follow-up issues: the installer fails
+loud on non-macOS platforms (`--print` still emits the macOS plist
 everywhere), and the platform switch keeps them additive.
 
 ### The meta wiki: post-merge auto-sync (git hooks)

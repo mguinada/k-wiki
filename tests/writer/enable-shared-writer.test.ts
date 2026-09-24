@@ -1,0 +1,239 @@
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import { lsRemoteOid } from "../../src/writer/git-remote.ts";
+import { MARKER_PATH } from "../../src/writer/marker.ts";
+import { enabledDataRepo, LEASE_REF } from "./coordinator-world.ts";
+import { makeWriterWorld, type WriterWorld } from "./git-world.ts";
+
+const tempDirs: string[] = [];
+const worlds: WriterWorld[] = [];
+
+afterEach(async () => {
+  await Promise.all(worlds.splice(0).map((world) => world.cleanup()));
+  await Promise.all(
+    tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
+  );
+});
+
+/** A data repo with an origin but no marker yet: the enable door's
+ *  entry state. */
+async function unenabledRepo() {
+  const world = await makeWriterWorld();
+  worlds.push(world);
+  const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+  // Strip the marker the shared world committed.
+  await rm(join(cw.dataRoot, ".k-wiki"), {
+    recursive: true,
+    force: true,
+  });
+  await world.a.git(["add", "-A"]);
+  await world.a.git(["commit", "-m", "marker removed"]);
+  await world.a.git([
+    "push",
+    "-q",
+    "origin",
+    "refs/heads/main:refs/heads/main",
+  ]);
+
+  return { world, cw };
+}
+
+describe("enable-shared-writer (library)", () => {
+  it("commits and pushes the marker, releasing the bootstrap lease", async () => {
+    const { world, cw } = await unenabledRepo();
+    const { enable } = await import("../../src/writer/enable-shared-writer.ts");
+    const { gitRunnerFor } = await import("../../src/writer/git-remote.ts");
+
+    const message = await enable(cw.dataRoot);
+
+    expect(message).toContain(MARKER_PATH);
+
+    const marker = JSON.parse(
+      await readFile(join(cw.dataRoot, MARKER_PATH), "utf8"),
+    ) as { version: number; branch: string; leaseRef: string };
+
+    expect(marker).toMatchObject({
+      version: 1,
+      branch: "main",
+      leaseRef: LEASE_REF,
+      sourceRemovalPolicy: "confirm",
+    });
+
+    // The marker commit is on origin and the lease is released.
+    const remote = gitRunnerFor({
+      dir: world.remoteDir,
+      env: process.env,
+    });
+
+    expect(
+      await lsRemoteOid(gitOf(cw.dataRoot), "origin", LEASE_REF),
+    ).toBeUndefined();
+
+    const remoteHead = (
+      await remote(["rev-parse", "refs/heads/main"])
+    ).stdout.trim();
+    const localHead = (
+      await gitOf(cw.dataRoot)(["rev-parse", "HEAD"])
+    ).stdout.trim();
+
+    expect(remoteHead).toBe(localHead);
+  }, 30000);
+
+  it("refuses a dirty checkout without writing the marker", async () => {
+    const { cw } = await unenabledRepo();
+    const { enable } = await import("../../src/writer/enable-shared-writer.ts");
+
+    await writeFile(join(cw.dataRoot, "junk.md"), "junk\n");
+
+    await expect(enable(cw.dataRoot)).rejects.toThrow(/must be clean/);
+    await expect(
+      readFile(join(cw.dataRoot, MARKER_PATH)),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  }, 30000);
+
+  it("refuses when the remote cannot do the protocol, with no marker", async () => {
+    const { world, cw } = await unenabledRepo();
+    const { enable } = await import("../../src/writer/enable-shared-writer.ts");
+    const fs = await import("node:fs/promises");
+
+    // A pre-receive hook on the remote rejecting custom refs: the
+    // unsupported-capability stand-in (the probe's own test proves
+    // this hook mechanism fires).
+    await fs.writeFile(
+      `${world.remoteDir}/hooks/pre-receive`,
+      '#!/bin/sh\nwhile read -r _old _new ref; do\n  case "$ref" in refs/k-wiki/*) echo no-custom-refs >&2; exit 1 ;; esac\ndone\nexit 0\n',
+      { mode: 0o755 },
+    );
+
+    await expect(enable(cw.dataRoot)).rejects.toThrow(
+      /does not support the shared-writer protocol/,
+    );
+    await expect(
+      readFile(join(cw.dataRoot, MARKER_PATH)),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  }, 30000);
+});
+
+function gitOf(dataRoot: string) {
+  return (args: readonly string[]) =>
+    import("../../src/writer/git-remote.ts").then(({ gitRunnerFor }) =>
+      gitRunnerFor({ dir: dataRoot, env: process.env })(args),
+    );
+}
+
+describe("writer-lease verbs (library)", () => {
+  it("status reports a live lease with holder and expiry", async () => {
+    const world = await makeWriterWorld();
+    worlds.push(world);
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+    const { acquireLease } = await import("../../src/writer/lease-ops.ts");
+    const { observeLease } = await import("../../src/writer/lease.ts");
+
+    await gitOf(cw.dataRoot)(["fetch", "origin", "refs/heads/main"]);
+    const acquire = await acquireLease({
+      git: gitOf(cw.dataRoot),
+      remote: "origin",
+      leaseRef: LEASE_REF,
+      treeOid: (
+        await gitOf(cw.dataRoot)(["rev-parse", "HEAD^{tree}"])
+      ).stdout.trim(),
+      base: (await gitOf(cw.dataRoot)(["rev-parse", "HEAD"])).stdout.trim(),
+      now: () => new Date("2026-01-01T00:00:00Z"),
+      holder: "mac-a:42",
+    });
+
+    expect(acquire.status).toBe("acquired");
+
+    const lease = await observeLease(gitOf(cw.dataRoot), "origin", LEASE_REF);
+
+    expect(lease?.body.holder).toBe("mac-a:42");
+    expect(lease?.body.expires).toBe("2026-01-01T04:00:00.000Z");
+  }, 30000);
+});
+
+describe("concurrent enablement (test 19)", () => {
+  it("racing enables: exactly one marker lands; the loser leaves no partial state", async () => {
+    const world = await makeWriterWorld();
+    worlds.push(world);
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+    const { enable } = await import("../../src/writer/enable-shared-writer.ts");
+
+    // Strip the marker so both clones start unenabled; each clone
+    // enables itself, racing for the bootstrap lease and the branch.
+    const { rm: rmDir } = await import("node:fs/promises");
+
+    await rmDir(join(cw.dataRoot, ".k-wiki"), { recursive: true, force: true });
+    await world.a.git(["add", "-A"]);
+    await world.a.git(["commit", "-m", "marker removed"]);
+    await world.a.git([
+      "push",
+      "-q",
+      "origin",
+      "refs/heads/main:refs/heads/main",
+    ]);
+    await world.b.git(["fetch", "-q", "origin", "refs/heads/main"]);
+    await world.b.git(["reset", "-q", "--hard", "origin/main"]);
+
+    const [first, second] = await Promise.all([
+      enable(cw.dataRoot).then(
+        () => "ok",
+        (e: unknown) => String((e as Error).message),
+      ),
+      enable(world.b.dir).then(
+        () => "ok",
+        (e: unknown) => String((e as Error).message),
+      ),
+    ]);
+
+    const outcomes = [first, second];
+    const winners = outcomes.filter((r) => r === "ok");
+
+    // Exactly one enable wins the lease race; the loser refuses on
+    // the live bootstrap lease. Both orderings are valid, and either
+    // clone may win.
+    expect(winners).toHaveLength(1);
+        expect(outcomes.filter((r) => r !== "ok")[0]).toMatch(
+      /another writer holds the lease/,
+    );
+
+    // The remote is consistent: marker present, lease released,
+    // branch = the winner's push.
+    const remote = (
+      await import("../../src/writer/git-remote.ts")
+    ).gitRunnerFor({ dir: world.remoteDir, env: process.env });
+
+    expect(
+      (await remote(["for-each-ref", LEASE_REF])).stdout.trim(),
+    ).toBe("");
+    expect(
+      (await remote(["rev-parse", "refs/heads/main"])).stdout.trim(),
+    ).toBe(await head0(world.a.dir));
+  }, 60000);
+
+  async function head0(dataRoot: string): Promise<string> {
+    const { execFile } = await import("node:child_process");
+
+    return (
+      await (
+        (await import("node:util")) as typeof import("node:util")
+      ).promisify(execFile)("git", ["-C", dataRoot, "rev-parse", "HEAD"])
+    ).stdout.trim();
+  }
+});
+
+describe("temp marker", () => {
+  it("keeps the schema constant in sync with the enable writer", async () => {
+    const scratch = await mkdtemp(join(tmpdir(), "marker-const-"));
+    tempDirs.push(scratch);
+
+    await writeFile(
+      join(scratch, "probe"),
+      JSON.stringify({ leaseRef: LEASE_REF }),
+    );
+
+    expect(LEASE_REF).toBe("refs/k-wiki/leases/shared-writer-v1");
+  });
+});

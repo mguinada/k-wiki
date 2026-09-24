@@ -42,6 +42,8 @@ import { main as syncRepo } from "../sync/sync-repo.ts";
 import { main as syncVault } from "../sync/sync-vault.ts";
 import { main as wikiLint } from "../sync/wiki-lint.ts";
 import { main as wikiSync } from "../sync/wiki-sync.ts";
+import { main as enableSharedWriter } from "../writer/enable-shared-writer.ts";
+import { main as writerLease } from "../writer/writer-lease.ts";
 import { runCompletionVerb } from "./completion.ts";
 import { main as initDataRepo } from "./init-data-repo.ts";
 
@@ -213,6 +215,28 @@ export function verbTable(): readonly VerbSpec[] {
       wiki: false,
       lines: ["run one unattended cycle (the launchd command)"],
       main: scheduledRun,
+    },
+    {
+      name: "enable-shared-writer",
+      klass: "operator",
+      tier: "operator",
+      wiki: false,
+      lines: [
+        "opt the data repo into shared-writer mode: probe the",
+        "remote, commit the marker, push it under the lease",
+      ],
+      main: enableSharedWriter,
+    },
+    {
+      name: "writer-lease",
+      klass: "operator",
+      tier: "operator",
+      wiki: false,
+      lines: [
+        "inspect the shared-writer lease (status) or recover it by",
+        "exact OID (takeover --expected <oid> --confirm)",
+      ],
+      main: writerLease,
     },
     {
       name: "setup-schedule",

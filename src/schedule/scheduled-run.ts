@@ -56,6 +56,7 @@ import {
 } from "../sync/run-lock.ts";
 import { writeCycleHeartbeat } from "./heartbeat.ts";
 import { notifyUser } from "./notify.ts";
+import { runSharedPipeline, scheduledSharedMode } from "./shared-cycle.ts";
 
 /** The PATH a scheduled run gets: node's bin dir first (the wrapper
  *  and any sibling CLIs), then the standard install locations — the
@@ -209,13 +210,7 @@ export async function runScheduledCycle(
   );
 
   try {
-    await runPipelineStages(options, runGitStep, log);
-  } catch (error) {
-    return await fail(errorMessage(error));
-  }
-
-  try {
-    await pushWithRetry(options.dataRoot, runGitStep, log);
+    await runStage(options, runGitStep, log);
   } catch (error) {
     return await fail(errorMessage(error));
   }
@@ -227,6 +222,13 @@ export async function runScheduledCycle(
   return { status: "ok" };
 }
 
+/** The pre-push stages: verify origin, pull --rebase, the optional
+ *  full-sweep lint, then wiki-sync. Any failure throws — wiki-sync's
+ *  guardrails and verification have already reverted their agent
+ *  runs, so the wiki stays at the last good commit and the next
+ *  interval is the recovery; a failed sweep leaves its own partial,
+ *  guardrail-passed edits uncommitted with the window snapshot
+ *  untouched, so the next sweep retries them (issue #359). */
 /** The busy-lock skip reason, naming the holder when the lockfile
  *  is readable (issue #313 — the manual holder is who the operator
  *  must know about). */
@@ -241,7 +243,7 @@ function skipReason(holder: LockFileData | undefined): string {
  *  when the wrapper was given one, and the instance's raw dir — the
  *  sweep lints the same data repo the cycle syncs, never whatever
  *  the default instance happens to be. */
-function sweepArgsFor(
+export function sweepArgsFor(
   options: ScheduledRunOptions,
   timeoutMs: number,
 ): readonly string[] {
@@ -256,13 +258,31 @@ function sweepArgsFor(
   ];
 }
 
-/** The pre-push stages: verify origin, pull --rebase, the optional
- *  full-sweep lint, then wiki-sync. Any failure throws — wiki-sync's
- *  guardrails and verification have already reverted their agent
- *  runs, so the wiki stays at the last good commit and the next
- *  interval is the recovery; a failed sweep leaves its own partial,
- *  guardrail-passed edits uncommitted with the window snapshot
- *  untouched, so the next sweep retries them (issue #359). */
+/** One cycle's stages: shared mode runs the coordinator (no pull, no
+ *  push — it finalizes remotely); local mode runs the pull → sweep →
+ *  sync sequence and its push-with-retry. */
+async function runStage(
+  options: ScheduledRunOptions,
+  runGitStep: NonNullable<ScheduledRunOptions["runGitStep"]>,
+  log: (line: string) => void,
+): Promise<void> {
+  if (await scheduledSharedMode(options)) {
+    await runSharedPipeline(options, log);
+
+    // The shared coordinator finalized remotely (branch advance and
+    // lease release in one atomic push); a wrapper push here would
+    // race the lease protocol and is never issued in shared mode.
+    log(
+      "scheduled-run: shared-writer cycle complete — remote finalized by the coordinator",
+    );
+
+    return;
+  }
+
+  await runPipelineStages(options, runGitStep, log);
+  await pushWithRetry(options.dataRoot, runGitStep, log);
+}
+
 async function runPipelineStages(
   options: ScheduledRunOptions,
   runGitStep: NonNullable<ScheduledRunOptions["runGitStep"]>,
@@ -448,7 +468,7 @@ export const DEFAULT_LINT_FULL_TIMEOUT_MS = 7_200_000;
 
 /** Run one of the repo's bin/ scripts as a child with the scheduled
  *  env, streaming its stdout and stderr into the log. */
-async function spawnRepoScript(
+export async function spawnRepoScript(
   repoRoot: string,
   name: string,
   args: readonly string[],
@@ -701,7 +721,7 @@ function reportOutcome(outcome: CycleOutcome): void {
  *  cycle stage). */
 export function parseScheduledRunArgs(args: readonly string[]): ParsedCli {
   return parseArgs(args, {
-    value: ["--settings", "--outputs", "--timeout"],
+    value: ["--settings", "--outputs", "--timeout", "--removal-receipt"],
     boolean: ["--lint-full"],
     positionals: {
       max: 2,

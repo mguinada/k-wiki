@@ -277,6 +277,7 @@ async function housekeepingStep(
     dataRoot,
     onProgress,
     hasExplicitSources(inputs.options),
+    env,
   );
 }
 

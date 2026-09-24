@@ -1,0 +1,4 @@
+#!/usr/bin/env node
+import { main } from "../src/writer/writer-lease.ts";
+
+await main();

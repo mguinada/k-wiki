@@ -35,12 +35,22 @@ import { diffManifests, type ManifestDiff } from "./manifest-diff.ts";
  * A scoped `--sources` run (`scoped`) never gets that fallback — the
  * caller rejects instead — so the warning must not promise it
  * (issue #151).
+ *
+ * The committed-head anchor (issue #390): snapshots written in
+ * shared-writer mode (and every new snapshot since) record the data
+ * repo commit their manifest state was captured at. A snapshot whose
+ * anchor is not an ancestor of the current HEAD is foreign history —
+ * the exact incident shape where a reset-away snapshot made a
+ * re-added raw source look already-ingested — and is ignored like a
+ * foreign stamp. An unresolvable anchor fails the same way: the
+ * never-use-it direction is the safe one.
  */
 export async function readSnapshot(
   snapshotPath: string,
   dataRoot: string,
   onProgress: (message: string) => void,
   scoped: boolean,
+  env: NodeJS.ProcessEnv = process.env,
 ): Promise<Manifest | undefined> {
   const text = await readTextIfExists(snapshotPath);
 
@@ -58,29 +68,134 @@ export async function readSnapshot(
     });
   }
 
+  if (
+    !(await snapshotBelongsToRun(
+      parsed,
+      snapshotPath,
+      dataRoot,
+      onProgress,
+      scoped,
+      env,
+    ))
+  ) {
+    return undefined;
+  }
+
+  return parseManifest(text, snapshotPath);
+}
+
+/** The instance-stamp and committed-head-anchor guards: both foreign
+ *  states ignore the snapshot, so a run never diffs against history
+ *  it does not own. False means the snapshot must be ignored. */
+async function snapshotBelongsToRun(
+  parsed: unknown,
+  snapshotPath: string,
+  dataRoot: string,
+  onProgress: (message: string) => void,
+  scoped: boolean,
+  env: NodeJS.ProcessEnv,
+): Promise<boolean> {
+  if (
+    !(await stampedForThisInstance(
+      parsed,
+      snapshotPath,
+      dataRoot,
+      onProgress,
+      scoped,
+    ))
+  ) {
+    return false;
+  }
+
+  return await anchoredInThisHistory(
+    parsed,
+    snapshotPath,
+    dataRoot,
+    onProgress,
+    scoped,
+    env,
+  );
+}
+
+/** The instance-stamp guard (issue #95): a snapshot stamped for
+ *  another instance — or unstamped — is foreign state. */
+async function stampedForThisInstance(
+  parsed: unknown,
+  snapshotPath: string,
+  dataRoot: string,
+  onProgress: (message: string) => void,
+  scoped: boolean,
+): Promise<boolean> {
   const snapshotFor =
     isPlainObject(parsed) && typeof parsed.snapshotFor === "string"
       ? parsed.snapshotFor
       : undefined;
 
-  if (snapshotFor !== dataRoot) {
-    const origin =
-      snapshotFor === undefined
-        ? "has no instance stamp"
-        : `is stamped for ${snapshotFor}`;
-
-    const fallback = scoped
-      ? ""
-      : " and falling back to a full run; the next successful ingest rewrites the snapshot, so this warning will not repeat";
-
-    onProgress(
-      `wiki-ingest: WARNING — snapshot ${snapshotPath} ${origin}, not this instance (${dataRoot}); ignoring it${fallback}`,
-    );
-
-    return undefined;
+  if (snapshotFor === dataRoot) {
+    return true;
   }
 
-  return parseManifest(text, snapshotPath);
+  const origin =
+    snapshotFor === undefined
+      ? "has no instance stamp"
+      : `is stamped for ${snapshotFor}`;
+  const fallback = scoped
+    ? ""
+    : " and falling back to a full run; the next successful ingest rewrites the snapshot, so this warning will not repeat";
+
+  onProgress(
+    `wiki-ingest: WARNING — snapshot ${snapshotPath} ${origin}, not this instance (${dataRoot}); ignoring it${fallback}`,
+  );
+
+  return false;
+}
+
+/** The committed-head-anchor guard (issue #390): a snapshot whose
+ *  anchor left the checkout's history is foreign history — the
+ *  incident invariant. Unanchored (legacy) snapshots pass. */
+async function anchoredInThisHistory(
+  parsed: unknown,
+  snapshotPath: string,
+  dataRoot: string,
+  onProgress: (message: string) => void,
+  scoped: boolean,
+  env: NodeJS.ProcessEnv,
+): Promise<boolean> {
+  const anchor =
+    isPlainObject(parsed) && typeof parsed.committedHead === "string"
+      ? parsed.committedHead
+      : undefined;
+
+  if (anchor === undefined || (await anchorInHistory(dataRoot, anchor, env))) {
+    return true;
+  }
+
+  const fallback = scoped
+    ? ""
+    : "; the next successful run rewrites it — this warning will not repeat";
+
+  onProgress(
+    `wiki-ingest: WARNING — snapshot ${snapshotPath} is anchored to ${anchor.slice(0, 8)}, which is not in this checkout's history; ignoring it${fallback}`,
+  );
+
+  return false;
+}
+
+/** True when the anchor commit is an ancestor of (or equal to) the
+ *  current HEAD. A git failure (unresolvable object after a reset,
+ *  no commits yet) counts as not-in-history — fail closed. */
+async function anchorInHistory(
+  dataRoot: string,
+  anchor: string,
+  env: NodeJS.ProcessEnv,
+): Promise<boolean> {
+  const stdout = await tryGit(
+    dataRoot,
+    ["merge-base", "--is-ancestor", anchor, "HEAD"],
+    env,
+  );
+
+  return stdout !== undefined;
 }
 
 export const SNAPSHOT_FILENAME = "last-ingested-manifest.json";
@@ -144,8 +259,10 @@ export async function ensureHeartbeatIgnored(
  *  already present. An entry is present when some line trim-matches
  *  one of its accepted forms. The one append helper for the data
  *  repo's per-instance ignore files — .gitignore and
- *  .git/info/exclude — so their append semantics cannot drift. */
-async function appendIgnoreEntries(
+ *  .git/info/exclude — so their append semantics cannot drift.
+ *  Exported for the shared-writer receipt's per-machine ignore entry
+ *  (issue #390): same file, same semantics, one implementation. */
+export async function appendIgnoreEntries(
   path: string,
   comment: string,
   entries: readonly (readonly [string, readonly string[]])[],
@@ -214,13 +331,13 @@ export async function ensureDashboardIgnored(
 
   if (
     await appendIgnoreEntries(
-      gitignorePath(dataRoot),
-      "# static dashboard: regenerated per checkout, never committed (issue #73)",
+      join(dataRoot, ".git", "info", "exclude"),
+      "# static dashboard: regenerated per checkout, never committed (issue #73; per-machine exclude — issue #390's shared-writer cycles refuse a dirty tracked .gitignore)",
       [[entry, [entry, `/${entry}`]]],
     )
   ) {
     onProgress(
-      `wiki-ingest: ignoring ${entry} in the data repo (${gitignorePath(dataRoot)})`,
+      `wiki-ingest: ignoring ${entry} in the data repo (${join(dataRoot, ".git", "info", "exclude")})`,
     );
   }
 }
@@ -376,7 +493,13 @@ function heldBackMessage(
  *  snapshot plus the explicit paths' current entries — so its
  *  processing is recorded while pending changes outside the list
  *  survive for the next ordinary run, announced with a held-back
- *  progress line when any are skipped. */
+ *  progress line when any are skipped.
+ *
+ *  Every snapshot is anchored to the data repo's current head
+ *  (issue #390's committed-head anchor): the reader refuses any
+ *  snapshot whose anchor left the checkout's history — the incident
+ *  invariant that a reset-away snapshot can never make a re-added
+ *  source look already-ingested. */
 export async function writeSnapshotIfNeeded(
   run: RunContext,
   explicitDiff: ManifestDiff | undefined,
@@ -386,8 +509,14 @@ export async function writeSnapshotIfNeeded(
 ): Promise<void> {
   await mkdir(dirname(snapshotPath), { recursive: true });
 
+  const head = await tryGit(run.dataRoot, ["rev-parse", "HEAD"], run.env);
+  const extra: Record<string, string> =
+    head === undefined
+      ? { snapshotFor: run.dataRoot }
+      : { snapshotFor: run.dataRoot, committedHead: head.trim() };
+
   if (explicitDiff === undefined) {
-    await writeManifest(snapshotPath, current, { snapshotFor: run.dataRoot });
+    await writeManifest(snapshotPath, current, extra);
 
     return;
   }
@@ -402,6 +531,6 @@ export async function writeSnapshotIfNeeded(
   await writeManifest(
     snapshotPath,
     mergedSnapshot(base, current, explicitDiff),
-    { snapshotFor: run.dataRoot },
+    extra,
   );
 }

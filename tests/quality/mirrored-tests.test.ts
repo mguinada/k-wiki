@@ -23,7 +23,13 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
  *  justification that keeps it out of the scan. An empty or missing
  *  justification string fails the integrity expectation below — an
  *  unjustified gap is exactly what this guard exists to reject. */
-const ALLOWLIST: Readonly<Record<string, string>> = {};
+const ALLOWLIST: Readonly<Record<string, string>> = {
+  // Pure type module (SharedCycleOptions/Outcome/Phase, issue #390):
+  // no runtime members to test; exercised through the coordinator
+  // and leased-cycle suites that consume it.
+  "src/writer/options.ts":
+    "types-only module; its consumers' suites (coordinator, leased-cycle) exercise every field",
+};
 
 /** The mirrored test path of a src module: `src/` → `tests/`, and the
  *  `.ts` suffix becomes `.test.ts`. */

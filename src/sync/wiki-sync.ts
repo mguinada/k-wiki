@@ -117,6 +117,7 @@ import {
   type ProvenanceReport,
   summarizeProvenance,
 } from "../wiki/provenance.ts";
+import { readSharedWriterMarker } from "../writer/marker.ts";
 import {
   expandHome,
   loadSyncConfig,
@@ -146,6 +147,7 @@ import {
 } from "./run-lock.ts";
 import { runRepoSync } from "./sync-repo.ts";
 import { runVaultSync } from "./sync-vault.ts";
+import { HELP } from "./wiki-sync-help.ts";
 
 /** What the crosslink stage reports back to the cycle digest. */
 export interface CrosslinksResult {
@@ -413,6 +415,14 @@ export interface WikiSyncOptions {
   readonly timeoutMs?: number | undefined;
   /** Heartbeat interval while an agent runs; default 60 s. */
   readonly heartbeatMs?: number | undefined;
+  /** The shared-writer coordinator's renewal hook (issue #390):
+   *  invoked before and after each long agent stage so the remote
+   *  lease outlives them. Undefined outside shared mode. A throw
+   *  aborts the cycle before the stage runs (renewal CAS loss must
+   *  abort before the final push). */
+  readonly onAgentBoundary?:
+    | ((stage: "ingest" | "lint", phase: "before" | "after") => Promise<void>)
+    | undefined;
 }
 
 /** Count a sync report's copied and removed notes across every
@@ -701,8 +711,13 @@ export async function runWikiSync(
  *  child (KWIKI_RUN_LOCK_HELD=1: the wrapper holds the tenure around
  *  its pull → sync → push cycle). A fresh foreign lock fails loud
  *  naming the holder — a manual request is never silently dropped;
- *  a stale one (a killed run) is taken over. */
-async function acquireCycleLock(run: RunContext): Promise<() => Promise<void>> {
+ *  a stale one (a killed run) is taken over. The shared-writer
+ *  coordinator acquires the same tenure before its remote steps
+ *  (issue #390's state machine puts the local lock first), so the
+ *  cycle it delegates to skips re-acquisition the same way. */
+export async function acquireCycleLock(
+  run: RunContext,
+): Promise<() => Promise<void>> {
   if (run.env.KWIKI_RUN_LOCK_HELD === "1") {
     return async () => {};
   }
@@ -741,9 +756,11 @@ async function runCycleStages(
   const { env, onProgress, dataRoot } = run;
   const { secondBrainDomains: domains } = settings;
   const stages = stageNames({ domains, publish: config.publish });
+  const boundary = options.onAgentBoundary;
   const sync = await runSyncStage(options, config, stages);
 
   onProgress(stageLine(stages, "ingest"));
+  await boundary?.("ingest", "before");
 
   // The cycle report is promised in the ingest prompt and written at
   // the cycle's end (issue #385): one path, computed once, so a
@@ -783,6 +800,9 @@ async function runCycleStages(
     // pages.
     const preLintSnapshot = await readTextIfExists(lintWindowPath(dataRoot));
 
+    await boundary?.("ingest", "after");
+    await boundary?.("lint", "before");
+
     const lint = await runLintOrSkip(
       options,
       ingest,
@@ -790,6 +810,9 @@ async function runCycleStages(
       preLint,
       settings,
     );
+
+    await boundary?.("lint", "after");
+
     const crosslinks = await runCrosslinksOrSkip(run, domains, stages);
 
     onProgress(stageLine(stages, "citations"));
@@ -945,8 +968,9 @@ async function writeFailureDigest(
 
 /** The one-line digest of a no-op cycle — nothing to commit after
  *  a skipped ingest, and publish (when configured) copied and removed
- *  nothing; undefined whenever the cycle did real work. */
-function nothingToDoLine(result: WikiSyncResult): string | undefined {
+ *  nothing; undefined whenever the cycle did real work. Exported for
+ *  the shared-writer coordinator's no-op lease release (issue #390). */
+export function nothingToDoLine(result: WikiSyncResult): string | undefined {
   const { commit, crosslinks, ingest, publish } = result;
 
   if (commit.status !== "nothing-to-commit" || ingest.status !== "skipped") {
@@ -1052,162 +1076,17 @@ export function formatFinalDigest(result: WikiSyncResult): string {
   return `${lines.join("\n")}\n`;
 }
 
-/** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
-const HELP = `Usage: wiki-sync [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<config>] [<raw-dir>]
-
-Run the whole cycle in one command:
-sync (sync-vault for vault sources, sync-repo for repo sources) →
-wiki-ingest → headless lint (windowed by default:
-prompts/lint-window.md over the pages changed since the last audit
-plus their reverse-link neighbors; a missing snapshot or a first run
-audits everything, prompts/lint.md) →
-crosslink audit (configured second brains) → citation wall
-(one-way sandbox check — rogue edges are path-scoped-reverted,
-never committed) → verification (check-fidelity +
-check-provenance) → one data-repo commit → mirror publish
-(configs with a publish section). Every stage stays independently
-runnable for debugging; this command only chains them.
-
-  --settings <path>  Agent settings file (command, model, provider,
-                     reasoning) for both agent stages — ingest and
-                     lint — and the optional secondBrain.domains list
-                     of the crosslink stage. Provider is optional.
-                     isolate (true by default, false to opt out) adds
-                     the pi isolation flags --no-context-files
-                     --no-extensions --no-skills to both agent runs
-                     so global agent config cannot leak in.
-                     isolate.skills and isolate.extensions
-                     (optional comma-separated lists)
-                     whitelist specific entries back in: one --skill
-                     flag per skill dir (resolved against the
-                     settings file's directory) and one -e flag per
-                     extension source (a path, npm:<package>, or
-                     git:<repo>). A missing entry warns and is
-                     omitted; both keys are ignored with isolate:
-                     false.
-                     Default: the repo's settings.yml.
-  --outputs <dir>    Where the ingest digest (runs/<timestamp>.md) goes.
-                     Default: the repo's outputs/. The manifest snapshot
-                     always lives in the data repo's outputs/ and is not
-                     moved by this switch.
-  --timeout <secs>   Kill either agent run after this many seconds
-                     and fail the cycle. Default: 1800 (30 minutes).
-  -h, --help         Print this help and exit; no side effects.
-  <config>           Path to sync.json (vault sources) or a
-                     repo-sourced config such as sync-meta.json
-                     (source: "repo"). Default: the repo's own
-                     sync.json.
-  <raw-dir>          raw/ directory; its parent is the data repo the
-                     agents run in and the commit lands in. Default:
-                     <dataRoot>/raw from the config, otherwise the
-                     repo's own raw/.
-
-What it does, stage by stage:
-  1. sync — vault configs: sync-vault projects the vaults into raw/
-     (deterministic). Repo-sourced configs (source: "repo", e.g.
-     sync-meta.json) run the sync-repo core instead: the allowlisted
-     files of the committed source tree are projected verbatim into
-     raw/notes/<name>/, stamped with the source HEAD commit; tracked
-     changes or untracked-selectable files fail the cycle (commit
-     first). Mixed vault+repo configs are refused — one instance per config.
-  2. ingest — wiki-ingest: run the wiki agent over the changed
-     sources, guardrail-check it (auto-revert on failure), and write
-     the digest to the code repo's outputs/runs/ (gitignored).
-  3. lint — the windowed quality audit: prompts/
-     lint-window.md over the pages changed since the last successful
-     lint (a missing snapshot means a full audit, prompts/lint.md)
-     plus their one-hop reverse-link neighbors, the deterministic
-     worklists embedded; the report lands in the DATA repo's
-     outputs/ and is committed with the cycle; the
-     outputs/lint-window.json snapshot (excluded via the data
-     repo's .git/info/exclude) advances only after a
-     completed audit, so a failed or timed-out lint retries its
-     window next cycle. Same guardrails and auto-revert as the
-     ingest stage; the weekly whole-wiki sweep (including the
-     global report-only checks) is scheduled by setup-schedule
-     --calendar.
-  4. crosslinks — only for instances whose settings carry a
-     secondBrain.domains list ([<wiki dirs>], comma-separated,
-     brackets optional): run the check-crosslinks audit of the data
-     repo's wiki/ against every listed domain wiki — every cycle,
-     including no-change cycles. One broken or forbidden
-     [[<vault>/<page>]] link fails the cycle before the commit
-     (nothing reverts; the uncommitted diff is the fix surface).
-     Instances without the key skip the stage.
-  5. citation wall — the one-way sandbox audit over the working
-     tree, every cycle: main pages never link, embed, or cite
-     wiki/sandbox/ pages, sandbox pages never carry sources edges
-     or cross-wiki links, and via: agent lives only inside the
-     sandbox. A violation fails the cycle after path-scoped-
-     reverting every offending page (never a whole-repo reset).
-  6. verification — run the deterministic check-fidelity and
-     check-provenance cores over the data
-     repo's wiki/ and raw/ — every cycle, including no-change
-     cycles, no configuration. One problem line per finding fails
-     the cycle before the commit: the lint edits are reverted (the
-     ingest edits stay, uncommitted, as the fix surface), mirroring
-     the lint stage's failure semantics, and the command exits 1.
-  7. commit — stage wiki/, raw/, and outputs/ in the data repo and
-     commit with a message summarizing sources processed and pages
-     touched.
-  8. publish — only for configs whose sync.json carries a publish
-     section: copy the data repo's
-     include-matched files (["wiki/**"] in the shipped config) into the
-     mirror vault — an iCloud-served disposable reading copy for
-     iPhone and iPad. With publish.root set ("wiki" in the shipped
-     config) the top-level segment is stripped from every
-     mirror path, so the wiki tree appears at vault root; without it
-     the copy is verbatim. Deletions included: a page gone from the wiki
-     is removed from the mirror; the mirror's own .obsidian/ device
-     state is never touched; byte-identical files are never
-     rewritten, so a second run over an intact mirror changes
-     nothing (idempotent). Runs after the commit, every cycle —
-     a mirror the transport mangled is healed by the next run. A
-     publish failure fails the cycle (exit 1) after the commit has
-     landed; the next run retries the copy. Instances without the
-     publish section skip the stage.
-
-With no changed sources the agent stages skip (cost scales with
-activity, not the clock), a clean data repo commits nothing, and the
-command exits 0; the citation wall, a configured crosslink audit,
-and the verification checks still run. A failed previous ingest is retried even when sync
-reports no changes — the skip keys on the manifest snapshot, which a
-failed run leaves untouched. A failure at any stage stops the chain
-and exits 1; a tripped guardrail has already reverted its agent run,
-and a verification failure has reverted the lint edits.
-
-Run lock: the cycle acquires the shared run lock —
-<dataRoot>/.scheduled-run.lock, the same lock scheduled-run holds —
-before its first stage and releases it on every exit path (success,
-failure, guardrail revert). When another run holds a fresh lock, the
-command fails loud with one line naming the holder's start time and
-PID — “a run has been in progress since HH:MM (PID N) — retry in a
-few minutes” — instead of colliding at the git layer. A lock older
-than four hours (a killed run) is taken over. The lock lives at the
-data repo root, outside the commit pathspecs, so it is never
-committed; one lock per data repo, so independent instances never
-contend. A scheduled wrapper's child run reuses its parent's tenure
-(KWIKI_RUN_LOCK_HELD) and does not re-acquire.
-
-The final digest on stdout — sync summary, lint summary, the crosslink
-audit (configured second brains), the fidelity and provenance results,
-the commit hash, the publish summary (configured mirror), and the full
-ingest digest — plus git log -1 in the data repo tell the whole story
-of the run. On a cycle that did real work the same digest is committed
-into the data repo as outputs/cycle-<YYYY-MM-DD>.md, in its own commit
-naming the path (a same-day rerun overwrites); no-op cycles write and
-commit nothing. The ingest prompt names that path so the agent's log
-entry can cite it; a cycle failing after ingest still writes the file,
-recording the failure. Live progress goes to stderr. Unattended
-scheduling is setup-schedule.`;
-
 /** Print one CLI usage error red on stderr and set the exit code. */
 function fail(message: string): void {
   cliFail("wiki-sync", message);
 }
 
 /** Run the whole cycle for the parsed arguments and return its
- *  result for the digest. */
+ *  result for the digest. A marker-enabled data repo dispatches to
+ *  the shared-writer coordinator (issue #390): manual wiki-sync and
+ *  scheduled-run exercise the same state machine. A malformed marker
+ *  refuses the run; a refused precondition prints one line and exits
+ *  1. */
 async function runCycle(
   positional: readonly string[],
   runFlags: AgentRunFlags,
@@ -1221,8 +1100,7 @@ async function runCycle(
   // The run context, built once at this CLI boundary from the raw
   // dir it resolved and the sink it derived (issue #257).
   const run = runContext({ rawDir, onProgress });
-
-  return await runWikiSync({
+  const options = {
     configPath,
     config,
     run,
@@ -1231,7 +1109,37 @@ async function runCycle(
     promptsDir: join(repoRoot, "prompts"),
     timeoutMs: runFlags.timeoutMs,
     heartbeatMs: animated ? 100 : undefined,
-  });
+  };
+
+  const marker = await readSharedWriterMarker(run.dataRoot);
+
+  if (marker.kind === "invalid") {
+    throw new Error(
+      `shared-writer marker invalid — failing closed: ${marker.reason}`,
+    );
+  }
+
+  if (marker.kind === "enabled") {
+    const { runSharedCycle } = await import("../writer/coordinator.ts");
+    const outcome = await runSharedCycle({
+      ...options,
+      removalReceiptPath: runFlags.removalReceipt,
+    });
+
+    if (outcome.status === "refused") {
+      throw new Error(outcome.reason);
+    }
+
+    return outcome.result;
+  }
+
+  if (runFlags.removalReceipt !== undefined) {
+    throw new Error(
+      "--removal-receipt requires shared-writer mode — this data repo carries no shared-writer marker",
+    );
+  }
+
+  return await runWikiSync(options);
 }
 
 /** wiki-sync entry point: `wiki-sync [-h | --help] [--settings <path>] [--timeout <secs>] [<config>] [<raw-dir>]`. */

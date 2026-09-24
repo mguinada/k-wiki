@@ -329,7 +329,7 @@ describe("runWikiIngest", () => {
     await runWikiIngest(optionsFor(h));
 
     expect(await readFile(join(h.dataRoot, ".gitignore"), "utf8")).toBe(
-      "scratch/\n# wiki-ingest manifest snapshot: per-instance state, never committed (issue #112)\noutputs/last-ingested-manifest.json\n# static dashboard: regenerated per checkout, never committed (issue #73)\ndashboard.html\n",
+      "scratch/\n# wiki-ingest manifest snapshot: per-instance state, never committed (issue #112)\noutputs/last-ingested-manifest.json\n",
     );
   });
 
@@ -353,7 +353,7 @@ describe("runWikiIngest", () => {
     await runWikiIngest(optionsFor(h));
 
     expect(await readFile(join(h.dataRoot, ".gitignore"), "utf8")).toBe(
-      "scratch/\n# wiki-ingest manifest snapshot: per-instance state, never committed (issue #112)\noutputs/last-ingested-manifest.json\n# static dashboard: regenerated per checkout, never committed (issue #73)\ndashboard.html\n",
+      "scratch/\n# wiki-ingest manifest snapshot: per-instance state, never committed (issue #112)\noutputs/last-ingested-manifest.json\n",
     );
   });
 
@@ -363,7 +363,7 @@ describe("runWikiIngest", () => {
     await runWikiIngest(optionsFor(h));
 
     expect(await readFile(join(h.dataRoot, ".gitignore"), "utf8")).toBe(
-      "# wiki-ingest manifest snapshot: per-instance state, never committed (issue #112)\noutputs/last-ingested-manifest.json\n# static dashboard: regenerated per checkout, never committed (issue #73)\ndashboard.html\n",
+      "# wiki-ingest manifest snapshot: per-instance state, never committed (issue #112)\noutputs/last-ingested-manifest.json\n",
     );
   });
 
@@ -2345,6 +2345,8 @@ describe("runWikiIngest tracked-but-ignored pre-flight (issue #146)", () => {
 
     const warnings = messages.filter((message) => message.includes("WARNING"));
 
+    console.log("DBG-WARN:", JSON.stringify(warnings));
+
     expect(warnings).toHaveLength(2);
   });
 
@@ -3061,14 +3063,22 @@ describe("runWikiIngest --sources", () => {
   it("rewrites the snapshot idempotently when it matches the manifest", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
     await seedSnapshot(h, { "a.md": "a" });
-    const before = await readFile(h.snapshotPath, "utf8");
+
+    // The first run rewrites the legacy-seeded snapshot with the
+    // committed-head anchor (issue #390); the second run's write must
+    // be byte-identical to the first — the idempotency under test.
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md"],
+    });
+    const afterFirst = await readFile(h.snapshotPath, "utf8");
 
     await runWikiIngest({
       ...optionsFor(h),
       sources: ["Engineering/a.md"],
     });
 
-    expect(await readFile(h.snapshotPath, "utf8")).toBe(before);
+    expect(await readFile(h.snapshotPath, "utf8")).toBe(afterFirst);
   });
 
   it("propagates the failing scoped agent error", async () => {
@@ -3833,14 +3843,21 @@ describe("runWikiIngest dashboard hook (issue #73)", () => {
     expect(html).toBe("STALE\n");
   });
 
-  it("adds dashboard.html to the data repo gitignore", async () => {
+  it("excludes dashboard.html via .git/info/exclude, never a dirty tracked .gitignore (issue #390)", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
 
     await runWikiIngest(optionsFor(h));
 
+    const exclude = await readFile(
+      join(h.dataRoot, ".git", "info", "exclude"),
+      "utf8",
+    );
+
+    expect(exclude.split("\n")).toContain("dashboard.html");
+
     const gitignore = await readFile(join(h.dataRoot, ".gitignore"), "utf8");
 
-    expect(gitignore.split("\n")).toContain("dashboard.html");
+    expect(gitignore.split("\n")).not.toContain("dashboard.html");
   });
 
   it("keeps the run successful when the dashboard refresh fails", async () => {
