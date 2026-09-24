@@ -217,17 +217,13 @@ describe("concurrent enablement (test 19)", () => {
     ).stdout.trim();
 
     for (const loser of losers) {
-      expect([baseHead, remoteMain]).toContain(
-        await head0(loser.clone.dir),
-      );
+      expect([baseHead, remoteMain]).toContain(await head0(loser.clone.dir));
     }
 
-    expect(
-      (await remote(["for-each-ref", LEASE_REF])).stdout.trim(),
-    ).toBe("");
-    expect(
-      await Promise.all(winners.map((o) => head0(o.clone.dir))),
-    ).toContain(remoteMain);
+    expect((await remote(["for-each-ref", LEASE_REF])).stdout.trim()).toBe("");
+    expect(await Promise.all(winners.map((o) => head0(o.clone.dir)))).toContain(
+      remoteMain,
+    );
   }, 60000);
 
   async function head0(dataRoot: string): Promise<string> {
