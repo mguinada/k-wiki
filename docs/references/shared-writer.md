@@ -87,7 +87,11 @@ proposed source removal or rename stops the cycle before `raw/` is
 mutated: the coordinator plans the candidate set, anchors it to the
 canonical remote SHA it holds the lease under, writes
 `outputs/shared-writer-receipt.json` (per-machine, git-excluded),
-prints it, and fails. A human reruns the cycle with
+prints it, and fails. The candidate set covers the cycle's whole
+removal surface: per-note removals and renames of configured vaults,
+and the expunge of any stale namespace — a namespace the manifest or
+`raw/notes/` holds that the config no longer lists — planned as the
+individual paths its prune would delete. A human reruns the cycle with
 `wiki-sync --removal-receipt <path>`; the coordinator re-validates —
 the receipt dies if the remote advanced or the candidate set changed.
 Either Mac may confirm once its vault view is current. Scheduled runs

@@ -13,8 +13,10 @@ import {
   formatDryRunReport,
   formatReport,
   listNamespaceDirs,
+  planNamespacePrunes,
   pruneEmptyDirs,
   reportColors,
+  staleNamespaceNames,
   type SyncReport,
   type VaultDryRunReport,
   type VaultSyncReport,
@@ -63,6 +65,71 @@ describe("listNamespaceDirs", () => {
     await expect(listNamespaceDirs(filePath)).rejects.toMatchObject({
       code: "ENOTDIR",
     });
+  });
+});
+
+describe("staleNamespaceNames", () => {
+  it("unions manifest namespaces and notes-root directories minus the configured ones, sorted", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-projection-"));
+
+    tempDirs.push(dir);
+    await mkdir(join(dir, "notes", "Zeta"), { recursive: true });
+    await mkdir(join(dir, "notes", "Alpha"), { recursive: true });
+
+    expect(
+      await staleNamespaceNames(
+        new Set(["Keep"]),
+        { Keep: {}, Zeta: {} },
+        join(dir, "notes"),
+      ),
+    ).toEqual(["Alpha", "Zeta"]);
+  });
+
+  it("computes no stale names when the config lists no namespaces", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-projection-"));
+
+    tempDirs.push(dir);
+    await mkdir(join(dir, "notes", "Zeta"), { recursive: true });
+
+    expect(
+      await staleNamespaceNames(new Set(), { Zeta: {} }, join(dir, "notes")),
+    ).toEqual([]);
+  });
+});
+
+describe("planNamespacePrunes", () => {
+  it("plans every path a stale namespace's prune would delete", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-projection-"));
+
+    tempDirs.push(dir);
+    await mkdir(join(dir, "notes", "Retired", "sub"), { recursive: true });
+    await writeFile(join(dir, "notes", "Retired", "Old.md"), "# old\n");
+    await writeFile(join(dir, "notes", "Retired", "sub", "b.md"), "# b\n");
+
+    expect(
+      await planNamespacePrunes(
+        ["Retired"],
+        {
+          Retired: {
+            "Old.md": { hash: "a".repeat(64), last_synced: "T" },
+            "sub/b.md": { hash: "b".repeat(64), last_synced: "T" },
+          },
+        },
+        join(dir, "notes"),
+      ),
+    ).toEqual([{ vault: "Retired", removals: ["Old.md", "sub/b.md"], renames: [] }]);
+  });
+
+  it("plans a disk-only orphan namespace the manifest does not know", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-projection-"));
+
+    tempDirs.push(dir);
+    await mkdir(join(dir, "notes", "Orphan"), { recursive: true });
+    await writeFile(join(dir, "notes", "Orphan", "Lost.md"), "# lost\n");
+
+    expect(
+      await planNamespacePrunes(["Orphan"], {}, join(dir, "notes")),
+    ).toEqual([{ vault: "Orphan", removals: ["Lost.md"], renames: [] }]);
   });
 });
 

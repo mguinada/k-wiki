@@ -43,16 +43,18 @@ import {
   type DriverOptions,
   formatDryRunReport,
   formatReport,
-  listNamespaceDirs,
+  planNamespacePrunes,
   type ProjectedNote,
   projectNotes,
   pruneNamespaces,
   reportColors,
   resolveDriverConfig,
+  staleNamespaceNames,
   type SyncProgress,
   type SyncReport,
   toAbsolute,
   type VaultDryRunReport,
+  type VaultRemovalPlan,
   type VaultSyncReport,
 } from "./projection.ts";
 import { scanVault } from "./scan.ts";
@@ -242,16 +244,11 @@ export async function runVaultSync(
   const reports: VaultSyncReport[] = [];
   const nextManifest: Manifest = { vaults: { ...manifest.vaults } };
   const notesRoot = join(options.rawDir, "notes");
-  const configuredNames = new Set(vaults.map((vault) => vault.name));
-  const staleNames =
-    vaults.length > 0
-      ? [
-          ...new Set([
-            ...Object.keys(manifest.vaults),
-            ...(await listNamespaceDirs(notesRoot)),
-          ]),
-        ].filter((name) => !configuredNames.has(name))
-      : [];
+  const staleNames = await staleNamespaceNames(
+    new Set(vaults.map((vault) => vault.name)),
+    manifest.vaults,
+    notesRoot,
+  );
   const prunedNamespaces = await pruneNamespaces(
     staleNames,
     nextManifest,
@@ -279,15 +276,6 @@ export async function runVaultSync(
   }
 
   return { sources: reports, prunedNamespaces };
-}
-
-/** One vault's candidate removals/renames, read-only (issue #390):
- *  the set the shared-writer receipt confirms before `raw/` is
- *  mutated. */
-export interface VaultRemovalPlan {
-  readonly vault: string;
-  readonly removals: readonly string[];
-  readonly renames: readonly { readonly from: string; readonly to: string }[];
 }
 
 /** Plan one vault: scan and select (no writes), diff the previous
@@ -330,9 +318,11 @@ async function planVaultNamespace(
   return { vault: vault.name, removals, renames };
 }
 
-/** Plan every configured vault's removals/renames against the
- *  current `raw/manifest.json`, writing nothing (issue #390: the
- *  candidate set is computed before any `raw/` mutation). */
+/** Plan every configured vault's removals/renames plus every
+ *  stale-namespace expunge against the current `raw/manifest.json`,
+ *  writing nothing (issue #390: the candidate set is computed before
+ *  any `raw/` mutation and covers the whole removal surface the pass
+ *  would apply). */
 export async function planVaultRemovals(
   options: DriverOptions,
 ): Promise<readonly VaultRemovalPlan[]> {
@@ -359,7 +349,17 @@ export async function planVaultRemovals(
     );
   }
 
-  return plans;
+  const notesRoot = join(options.rawDir, "notes");
+  const staleNames = await staleNamespaceNames(
+    new Set(vaults.map((vault) => vault.name)),
+    manifest.vaults,
+    notesRoot,
+  );
+
+  return [
+    ...plans,
+    ...(await planNamespacePrunes(staleNames, manifest.vaults, notesRoot)),
+  ];
 }
 
 /**

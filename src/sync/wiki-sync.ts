@@ -137,6 +137,7 @@ import type {
   DriverOptions,
   RepoSyncReport,
   SyncReport,
+  VaultRemovalPlan,
 } from "./projection.ts";
 import { type PublishResult, runPublishStage } from "./publish.ts";
 import {
@@ -146,8 +147,8 @@ import {
   releaseLock,
   runLockPath,
 } from "./run-lock.ts";
-import { runRepoSync } from "./sync-repo.ts";
-import { runVaultSync } from "./sync-vault.ts";
+import { planRepoRemovals, runRepoSync } from "./sync-repo.ts";
+import { planVaultRemovals, runVaultSync } from "./sync-vault.ts";
 import { HELP } from "./wiki-sync-help.ts";
 
 /** What the crosslink stage reports back to the cycle digest. */
@@ -514,6 +515,31 @@ const DRIVERS: Record<
   vault: runVaultSync,
   repo: runRepoSync,
 };
+
+/** The removal planner table (issue #390): one row per source kind,
+ *  beside the driver table — the shared-writer gate plans its
+ *  candidate set through the same kind dispatch the cycle's prune
+ *  will apply, so the gate's candidate set is never narrower than
+ *  the removal surface the pass would apply. */
+const REMOVAL_PLANNERS: Record<
+  SourceConfig["kind"],
+  (options: DriverOptions) => Promise<readonly VaultRemovalPlan[]>
+> = {
+  vault: planVaultRemovals,
+  repo: planRepoRemovals,
+};
+
+/** Plan the cycle's full candidate removal set for one config —
+ *  per-note removals and renames for vault sources plus each kind's
+ *  stale-namespace expunges — read-only, writing nothing (issue
+ *  #390: the shared-writer gate consumes this before `raw/` is
+ *  mutated). */
+export async function planRemovals(
+  config: SyncConfig,
+  options: DriverOptions,
+): Promise<readonly VaultRemovalPlan[]> {
+  return REMOVAL_PLANNERS[syncKindOf(config, options.configPath)](options);
+}
 
 /** The cycle's stage names in run order (the stage table, issue
  *  #250): crosslinks only for instances whose settings carry a

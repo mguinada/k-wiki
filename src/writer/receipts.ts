@@ -15,7 +15,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { isPlainObject, readTextIfExists } from "../cli/shared.ts";
 import { appendIgnoreEntries } from "../ingest/snapshot.ts";
-import type { VaultRemovalPlan } from "../sync/sync-vault.ts";
+import type { VaultRemovalPlan } from "../sync/projection.ts";
 
 /** The per-machine receipt file, under the data repo's outputs/. */
 export const RECEIPT_FILENAME = "outputs/shared-writer-receipt.json";

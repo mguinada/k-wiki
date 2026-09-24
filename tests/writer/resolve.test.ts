@@ -2,6 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { repoRoot } from "../../src/cli/shared.ts";
 import { resolveDataRootFromArgs } from "../../src/writer/resolve.ts";
 
 const tempDirs: string[] = [];
@@ -22,7 +23,7 @@ describe("resolveDataRootFromArgs", () => {
     expect(resolution).toEqual({ dataRoot: "/data" });
   });
 
-  it("reports the config's missing dataRoot as an error", async () => {
+  it("falls back to the repo's own root when the config sets no dataRoot", async () => {
     const dir = await mkdtemp(join(tmpdir(), "resolve-"));
     tempDirs.push(dir);
     const configPath = join(dir, "sync.json");
@@ -31,9 +32,7 @@ describe("resolveDataRootFromArgs", () => {
 
     const resolution = await resolveDataRootFromArgs(configPath, undefined);
 
-    expect(resolution).toMatchObject({
-      error: expect.stringContaining("dataRoot"),
-    });
+    expect(resolution).toEqual({ dataRoot: repoRoot });
   });
 
   it("reports an unreadable config as an error", async () => {

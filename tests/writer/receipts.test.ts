@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { VaultRemovalPlan } from "../../src/sync/sync-vault.ts";
+import type { VaultRemovalPlan } from "../../src/sync/projection.ts";
 import {
   buildReceipt,
   describeReceipt,

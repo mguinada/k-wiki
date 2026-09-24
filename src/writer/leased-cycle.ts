@@ -9,8 +9,7 @@
  * each stay readable; the coordinator owns order and failure rules.
  */
 
-import { planVaultRemovals } from "../sync/sync-vault.ts";
-import { nothingToDoLine, runWikiSync } from "../sync/wiki-sync.ts";
+import { nothingToDoLine, planRemovals, runWikiSync } from "../sync/wiki-sync.ts";
 import {
   baselineSnapshot,
   gateRemovals,
@@ -195,8 +194,9 @@ async function fetchAndFastForward(
 }
 
 /** The gate over the planned candidate removal/rename set, keyed on
- *  the canonical head the lease is held under (vault-kind configs;
- *  repo sources are commit-guarded upstream). */
+ *  the canonical head the lease is held under (every source kind:
+ *  per-note removals and renames for vault configs, stale-namespace
+ *  expunges for both). */
 async function gateRemovalsForCycle(
   options: SharedCycleOptions,
   headOid: string,
@@ -206,11 +206,7 @@ async function gateRemovalsForCycle(
 > {
   const { run, config } = options;
 
-  if (configKind(config) !== "vault") {
-    return { status: "pass" };
-  }
-
-  const plans = await planVaultRemovals({
+  const plans = await planRemovals(config, {
     configPath: options.configPath,
     config,
     rawDir: run.rawDir,
@@ -241,13 +237,6 @@ function isEmptyPlan(plan: {
   readonly renames: readonly unknown[];
 }): boolean {
   return plan.removals.length === 0 && plan.renames.length === 0;
-}
-
-/** The config's single source kind, vault when not a repo config. */
-function configKind(config: SharedCycleOptions["config"]): "repo" | "vault" {
-  return config.vaults.some((source) => source.kind === "repo")
-    ? "repo"
-    : "vault";
 }
 
 /** A renewal step: same token, new expiry, renewals+1, exact-OID

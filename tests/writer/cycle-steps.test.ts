@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { runContext } from "../../src/cli/run-context.ts";
-import type { VaultRemovalPlan } from "../../src/sync/sync-vault.ts";
+import type { VaultRemovalPlan } from "../../src/sync/projection.ts";
 import {
   baselineSnapshot,
   gateRemovals,

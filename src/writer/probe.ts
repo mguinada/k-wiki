@@ -98,13 +98,15 @@ export async function probeRemoteCapabilities(options: {
   try {
     await casPush(git, remote, [{ ref: refs.lease, oid: firstOid }]);
   } catch (error) {
+    retained.push(...(await cleanupOutcome(git, remote, refs, firstOid)));
+
     return {
       ok: false,
       detail: [
         ...detail,
         `custom-ref create refused — ${String((error as Error).message).slice(0, 200)}`,
       ],
-      retained: [],
+      retained,
     };
   }
 

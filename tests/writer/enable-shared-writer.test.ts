@@ -1,5 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { lsRemoteOid } from "../../src/writer/git-remote.ts";
@@ -235,18 +234,4 @@ describe("concurrent enablement (test 19)", () => {
       ).promisify(execFile)("git", ["-C", dataRoot, "rev-parse", "HEAD"])
     ).stdout.trim();
   }
-});
-
-describe("temp marker", () => {
-  it("keeps the schema constant in sync with the enable writer", async () => {
-    const scratch = await mkdtemp(join(tmpdir(), "marker-const-"));
-    tempDirs.push(scratch);
-
-    await writeFile(
-      join(scratch, "probe"),
-      JSON.stringify({ leaseRef: LEASE_REF }),
-    );
-
-    expect(LEASE_REF).toBe("refs/k-wiki/leases/shared-writer-v1");
-  });
 });

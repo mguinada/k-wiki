@@ -2345,8 +2345,6 @@ describe("runWikiIngest tracked-but-ignored pre-flight (issue #146)", () => {
 
     const warnings = messages.filter((message) => message.includes("WARNING"));
 
-    console.log("DBG-WARN:", JSON.stringify(warnings));
-
     expect(warnings).toHaveLength(2);
   });
 

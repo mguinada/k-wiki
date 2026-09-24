@@ -19,6 +19,7 @@ import {
   type SyncReport,
 } from "../../src/sync/projection.ts";
 import {
+  planRepoRemovals,
   repoRowOf,
   runRepoSync,
   selectRepoFiles,
@@ -1640,6 +1641,45 @@ describe("runRepoSync stale namespace pruning", () => {
     expect(messages).toContain(
       `repo "${NAME}": removed stale namespace (not configured)`,
     );
+  });
+});
+
+describe("planRepoRemovals", () => {
+  it("plans a renamed source's namespace expunge path by path", async () => {
+    const ws = await makeWorkspace();
+
+    await runRepoSync({
+      configPath: ws.configPath,
+      rawDir: ws.rawDir,
+      env: GIT_ENV,
+    });
+
+    const renamedConfig = await writeConfig(ws.dir, {
+      source: "repo",
+      name: "kw",
+      root: ws.sourceRoot,
+      include: ALLOWLIST,
+    });
+
+    expect(
+      await planRepoRemovals({
+        configPath: renamedConfig,
+        rawDir: ws.rawDir,
+        env: GIT_ENV,
+      }),
+    ).toEqual([{ vault: NAME, removals: SELECTED, renames: [] }]);
+  });
+
+  it("plans nothing when the manifest holds only the configured source", async () => {
+    const ws = await makeWorkspace();
+
+    expect(
+      await planRepoRemovals({
+        configPath: ws.configPath,
+        rawDir: ws.rawDir,
+        env: GIT_ENV,
+      }),
+    ).toEqual([]);
   });
 });
 

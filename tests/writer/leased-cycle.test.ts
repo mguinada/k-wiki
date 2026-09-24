@@ -152,6 +152,64 @@ describe("gate refusal inside the tenure", () => {
       await observeLeaseOid(gitOf(cw), "origin", LEASE_REF),
     ).toBeUndefined();
   }, 30000);
+
+  it("refuses a stale namespace's expunge like a source removal", async () => {
+    const world = await makeWriterWorld();
+    worlds.push(world);
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+    const vault = cw.config.vaults[0];
+
+    if (vault === undefined) {
+      throw new Error("setup: the world has no vault");
+    }
+    const { mkdir, writeFile: wf } = await import("node:fs/promises");
+
+    // A namespace the config no longer lists, present in the canonical
+    // manifest and on disk — the expunge the cycle's prune would apply.
+    await mkdir(join(cw.dataRoot, "raw", "notes", "Retired"), {
+      recursive: true,
+    });
+    await wf(join(cw.dataRoot, "raw", "notes", "Retired", "Old.md"), "# old\n");
+    await wf(
+      join(cw.dataRoot, "raw", "manifest.json"),
+      `${JSON.stringify(
+        {
+          vaults: {
+            Retired: {
+              "Old.md": {
+                hash: "0".repeat(64),
+                last_synced: "2026-01-01T00:00:00.000Z",
+              },
+            },
+            [vault.name]: {},
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    await world.a.git(["add", "-A"]);
+    await world.a.git(["commit", "-m", "canonical stale namespace"]);
+    await world.a.git([
+      "push",
+      "-q",
+      "origin",
+      "refs/heads/main:refs/heads/main",
+    ]);
+
+    const outcome = await runSharedCycle(options(cw));
+
+    expect(outcome).toMatchObject({
+      status: "refused",
+      reason: expect.stringContaining("--removal-receipt"),
+    });
+    expect((outcome as { reason: string }).reason).toContain("Retired/Old.md");
+
+    // The refusal was a clean pre-write failure: the lease is gone.
+    expect(
+      await observeLeaseOid(gitOf(cw), "origin", LEASE_REF),
+    ).toBeUndefined();
+  }, 30000);
 });
 
 function options(cw: CoordWorld) {

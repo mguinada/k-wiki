@@ -20,6 +20,7 @@ import { parseManifest } from "../../src/sync/manifest.ts";
 import type { SyncProgress } from "../../src/sync/projection.ts";
 import {
   main,
+  planVaultRemovals,
   PROGRESS_EVERY,
   runDryRun,
   runVaultSync,
@@ -998,6 +999,45 @@ describe("runVaultSync stale namespace pruning", () => {
     const { pruned } = await runWithProgress(ws);
 
     expect(pruned).toEqual([]);
+  });
+});
+
+describe("planVaultRemovals", () => {
+  it("plans a stale namespace's expunge after the configured vaults' removals", async () => {
+    const ws = await makeWorkspace();
+
+    await mkdir(join(ws.rawDir, "notes", "Retired"), { recursive: true });
+    await writeFile(join(ws.rawDir, "notes", "Retired", "Old.md"), "# old\n");
+    await writeFile(
+      join(ws.rawDir, "manifest.json"),
+      JSON.stringify({
+        vaults: {
+          Retired: {
+            "Old.md": { hash: "0".repeat(64), last_synced: T1 },
+          },
+          [vaultName()]: {},
+        },
+      }),
+    );
+
+    expect(
+      await planVaultRemovals({ configPath: ws.configPath, rawDir: ws.rawDir }),
+    ).toEqual([
+      { vault: vaultName(), removals: [], renames: [] },
+      { vault: "Retired", removals: ["Old.md"], renames: [] },
+    ]);
+  });
+
+  it("plans no stale namespace when the config lists no vaults", async () => {
+    const ws = await makeWorkspace();
+
+    await mkdir(join(ws.rawDir, "notes", "Retired"), { recursive: true });
+    await writeFile(join(ws.rawDir, "notes", "Retired", "Old.md"), "# old\n");
+    await writeFile(ws.configPath, JSON.stringify({ vaults: [] }));
+
+    expect(
+      await planVaultRemovals({ configPath: ws.configPath, rawDir: ws.rawDir }),
+    ).toEqual([]);
   });
 });
 

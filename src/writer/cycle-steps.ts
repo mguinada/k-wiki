@@ -17,7 +17,7 @@ import { readTextIfExists } from "../cli/shared.ts";
 import { parseStatus, tryGit } from "../data/git.ts";
 import { SNAPSHOT_FILENAME } from "../ingest/snapshot.ts";
 import { parseManifest, writeManifest } from "../sync/manifest.ts";
-import type { VaultRemovalPlan } from "../sync/sync-vault.ts";
+import type { VaultRemovalPlan } from "../sync/projection.ts";
 import type { GitRunner } from "./git-remote.ts";
 import { releaseOwnLease } from "./lease-ops.ts";
 import type { SharedWriterMarker } from "./marker.ts";
