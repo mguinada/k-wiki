@@ -636,7 +636,6 @@ async function successStep(
 
   if (inputs.options.deferSnapshot === true) {
     const advance = buildSnapshotAdvance(
-      inputs.run,
       change.explicitDiff,
       change.previous,
       inputs.current,

@@ -510,7 +510,7 @@ export async function writeSnapshotIfNeeded(
   snapshotPath: string,
   current: Manifest,
 ): Promise<void> {
-  const advance = buildSnapshotAdvance(run, explicitDiff, previous, current);
+  const advance = buildSnapshotAdvance(explicitDiff, previous, current);
 
   if (advance.heldBack !== undefined) {
     run.onProgress(advance.heldBack);
@@ -530,7 +530,6 @@ export interface PendingSnapshotAdvance {
 /** Compute the snapshot's next state without writing it — the pure
  *  half of writeSnapshotIfNeeded, shared by both write paths. */
 export function buildSnapshotAdvance(
-  run: RunContext,
   explicitDiff: ManifestDiff | undefined,
   previous: Manifest | undefined,
   current: Manifest,

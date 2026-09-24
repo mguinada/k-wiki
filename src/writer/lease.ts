@@ -72,13 +72,6 @@ export function serializeLeaseBody(body: LeaseBody): string {
   ].join("\n");
 }
 
-/** Parse one `field: value` body line; undefined when malformed. */
-function parseField(line: string): [string, string] | undefined {
-  const cut = line.indexOf(": ");
-
-  return cut === -1 ? undefined : [line.slice(0, cut), line.slice(cut + 2)];
-}
-
 /** Parse and validate a lease commit message; throws with the
  *  origin in the message on unknown protocol, any unknown or
  *  duplicated field, missing fields, or a value that fails its

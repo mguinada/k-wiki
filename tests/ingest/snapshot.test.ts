@@ -290,7 +290,7 @@ describe("deferred shared-cycle snapshot (issue #390 steering repair 3)", () => 
     });
 
     // Build-only: no file written.
-    const advance = buildSnapshotAdvance(run, undefined, undefined, {
+    const advance = buildSnapshotAdvance(undefined, undefined, {
       vaults: {},
     });
 
