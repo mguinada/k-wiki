@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import {
+  chmod,
   cp,
   mkdir,
   mkdtemp,
@@ -41,6 +42,11 @@ import {
 const run = promisify(execFile);
 
 const NOW = () => new Date("2026-08-20T18:00:00.000Z");
+
+// Root callers bypass file permission checks (CAP_DAC_OVERRIDE), so a
+// chmod-induced EACCES never occurs; skip the affected test there.
+const itRequiresPermissionChecks =
+  process.getuid !== undefined && process.getuid() === 0 ? it.skip : it;
 
 const SETTINGS_YML = "command: pi\nmodel: GLM-5.2\nreasoning: high\n";
 
@@ -3892,6 +3898,64 @@ describe("runWikiSync cycle digest (issue #385)", () => {
     };
 
     await expect(runWikiSync(optionsFor(h))).rejects.toThrow("agent exploded");
+
+    const digest = await readFile(join(h.dataRoot, DIGEST_PATH), "utf8");
+
+    expect(digest).toContain("- **Result:** failed");
+  });
+
+  itRequiresPermissionChecks(
+    "writes the failure digest when a guardrail throw keeps the ingest changes",
+    async () => {
+      const h = await makeHarness({ "AI/RAG.md": "rag body" });
+      const passing = h.ingestAgent;
+
+      h.ingestAgent = async (command, args, options) => {
+        const result = await passing(command, args, options);
+
+        await chmod(join(options.cwd, "wiki", "index.md"), 0o000);
+
+        return result;
+      };
+
+      await expect(runWikiSync(optionsFor(h))).rejects.toThrow();
+
+      const digest = await readFile(join(h.dataRoot, DIGEST_PATH), "utf8");
+
+      expect(digest).toContain("- **Result:** failed");
+    },
+  );
+
+  it("writes the failure digest when the ingest digest path fails", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    await mkdir(h.outputsDir, { recursive: true });
+    await writeFile(join(h.outputsDir, "runs"), "not a directory");
+
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow();
+
+    const digest = await readFile(join(h.dataRoot, DIGEST_PATH), "utf8");
+
+    expect(digest).toContain("- **Result:** failed");
+  });
+
+  it("writes the failure digest when the guardrail revert throws mid-revert", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    h.ingestAgent = async (_command, _args, options) => {
+      await mkdir(join(options.cwd, "wiki", "concepts"), { recursive: true });
+      await writeFile(
+        join(options.cwd, "wiki", "concepts", "broken.md"),
+        "no frontmatter\n",
+      );
+      // Contend the git index so the guardrail revert's reset fails
+      // mid-revert, after the frontmatter check tripped.
+      await writeFile(join(options.cwd, ".git", "index.lock"), "locked");
+
+      return { stdout: "rogue ingest", stderr: "" };
+    };
+
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow();
 
     const digest = await readFile(join(h.dataRoot, DIGEST_PATH), "utf8");
 

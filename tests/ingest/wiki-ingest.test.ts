@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { createAgentProgressSink } from "../../src/cli/progress.ts";
@@ -31,6 +31,11 @@ import {
 const tempDirs: string[] = [];
 
 const track: Track = (dir) => tempDirs.push(dir);
+
+// Root callers bypass file permission checks (CAP_DAC_OVERRIDE), so a
+// chmod-induced EACCES never occurs; skip the affected test there.
+const itRequiresPermissionChecks =
+  process.getuid !== undefined && process.getuid() === 0 ? it.skip : it;
 
 afterAll(async () => {
   await Promise.all(
@@ -3623,6 +3628,80 @@ describe("runWikiIngest failure reporting detail", () => {
     );
 
     expect(ingestEditsKept(error)).toBe(false);
+  });
+
+  itRequiresPermissionChecks(
+    "marks a guardrail throw on an unreadable changed page as edits-kept",
+    async () => {
+      const h = await makeHarness({ "a.md": "a" }, track);
+
+      h.runAgent = async (_command, _args, options) => {
+        const page = join(options.cwd, "wiki", "index.md");
+
+        await writeFile(page, wikiPage("# Index v2"));
+        await chmod(page, 0o000);
+
+        return { stdout: "agent final report", stderr: "" };
+      };
+
+      const error = await runWikiIngest(optionsFor(h)).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+
+      expect(ingestEditsKept(error)).toBe(true);
+    },
+  );
+
+  it("marks a digest-path failure as edits-kept", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    await writeFile(join(h.outputsDir, "runs"), "not a directory");
+
+    const error = await runWikiIngest(optionsFor(h)).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    expect(ingestEditsKept(error)).toBe(true);
+  });
+
+  it("marks a digest-path failure as edits-kept even when guardrails tripped", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    await writeFile(join(h.outputsDir, "runs"), "not a directory");
+
+    const error = await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: frontmatterSaboteur("bad.md"),
+    }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    expect(ingestEditsKept(error)).toBe(true);
+  });
+
+  it("marks a mid-revert throw as edits-kept", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+    const saboteur = frontmatterSaboteur("bad.md");
+
+    h.runAgent = async (command, args, options) => {
+      const result = await saboteur(command, args, options);
+
+      // Contend the git index so the guardrail revert's reset fails
+      // mid-revert, after the frontmatter check tripped.
+      await writeFile(join(options.cwd, ".git", "index.lock"), "locked");
+
+      return result;
+    };
+
+    const error = await runWikiIngest(optionsFor(h)).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    expect(ingestEditsKept(error)).toBe(true);
   });
 });
 

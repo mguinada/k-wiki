@@ -504,21 +504,51 @@ export function ingestEditsKept(error: unknown): boolean {
   return error instanceof Error && (error as MarkedError)[editsKept] === true;
 }
 
+/** The pre-revert prologue: run the post-run guardrails and resolve
+ *  the digest destination. Until the revert completes, the run's
+ *  edits — among them the log entry citing the cycle report — stay
+ *  in the working tree whatever the verdict, so any rejection here
+ *  is marked edits-kept and the cycle still writes the promised
+ *  failure digest (issue #387). */
+async function preRevertChecks(
+  inputs: RunInputs,
+  pre: PreRunState,
+): Promise<CheckedRun> {
+  try {
+    const post = await runGuardrails(inputs.run.dataRoot, inputs.run.env, pre);
+    const startedAt = inputs.run.now();
+
+    return {
+      post,
+      startedAt,
+      digestPath: await runDigestPath(inputs.options.outputsDir, startedAt),
+    };
+  } catch (error) {
+    throw markEditsKept(error);
+  }
+}
+
 /** The guardrail-or-fail step: run the post-run guardrails. A tripped
  *  check reverts the data repo to its pre-run state, writes the
  *  failure digest, and rejects; a passed check with a failed agent
  *  rejects with the agent's error, marked edits-kept — the changes
- *  stay in the working tree, uncommitted. */
+ *  stay in the working tree, uncommitted. Pre-revert rejections (a
+ *  guardrail throw, a digest-path failure, a mid-revert throw) are
+ *  marked edits-kept too — the citing log edit is still in the tree
+ *  (issue #387) — while the final tripped-check throw stays unmarked:
+ *  it follows a completed revert, whose clean tree is the recovery
+ *  contract. */
 async function guardrailStep(
   inputs: RunInputs,
   change: RunChange,
   mode: RunMode,
   agent: AgentRun,
 ): Promise<CheckedRun> {
-  const { dataRoot, env, now, onProgress } = inputs.run;
-  const post = await runGuardrails(dataRoot, env, agent.pre);
-  const startedAt = now();
-  const digestPath = await runDigestPath(inputs.options.outputsDir, startedAt);
+  const { dataRoot, env, onProgress } = inputs.run;
+  const { post, startedAt, digestPath } = await preRevertChecks(
+    inputs,
+    agent.pre,
+  );
   const failure = post.failure;
 
   if (failure === undefined) {
@@ -537,7 +567,14 @@ async function guardrailStep(
     `wiki-ingest: guardrail check ${failure.check} (${failure.name}) failed — reverting to ${agent.pre.commit.slice(0, 8)}`,
   );
 
-  await revertToPreRun(dataRoot, env, agent.pre, post.entries);
+  try {
+    await revertToPreRun(dataRoot, env, agent.pre, post.entries);
+  } catch (error) {
+    // A mid-revert throw leaves the tree ambiguous — and the citing
+    // log edit still in it — so the cycle must still write the digest.
+    throw markEditsKept(error);
+  }
+
   await writeFailureDigest(digestPath, {
     startedAt,
     mode: mode.mode,
