@@ -245,6 +245,26 @@ export async function staleNamespaceNames(
     .sort();
 }
 
+/** Every file under one namespace directory, POSIX-relative; a
+ *  missing directory (or a plain file in its place) contributes
+ *  none — the prune the plan mirrors removes either state without
+ *  error (`rm` --force). Any other read error surfaces. */
+async function listNamespaceFiles(
+  namespaceRoot: string,
+): Promise<readonly string[]> {
+  try {
+    return await listFiles(namespaceRoot);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+
+    if (code === "ENOENT" || code === "ENOTDIR") {
+      return [];
+    }
+
+    throw error;
+  }
+}
+
 /** One stale namespace's expunge as a read-only removal plan entry:
  *  every path the prune would delete — the manifest's projected
  *  notes plus whatever the namespace directory still holds — so a
@@ -260,7 +280,7 @@ export async function planNamespacePrunes(
   for (const name of staleNames) {
     const removals = new Set(Object.keys(manifestVaults[name] ?? {}));
 
-    for (const rel of await listFiles(join(notesRoot, name))) {
+    for (const rel of await listNamespaceFiles(join(notesRoot, name))) {
       removals.add(rel);
     }
 

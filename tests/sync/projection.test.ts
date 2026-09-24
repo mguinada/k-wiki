@@ -131,6 +131,24 @@ describe("planNamespacePrunes", () => {
       await planNamespacePrunes(["Orphan"], {}, join(dir, "notes")),
     ).toEqual([{ vault: "Orphan", removals: ["Lost.md"], renames: [] }]);
   });
+
+  it("plans a manifest-only namespace whose projected tree is already gone", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-projection-"));
+
+    tempDirs.push(dir);
+
+    expect(
+      await planNamespacePrunes(
+        ["Retired"],
+        {
+          Retired: {
+            "Old.md": { hash: "a".repeat(64), last_synced: "T" },
+          },
+        },
+        join(dir, "notes"),
+      ),
+    ).toEqual([{ vault: "Retired", removals: ["Old.md"], renames: [] }]);
+  });
 });
 
 describe("compileIncludePattern", () => {
