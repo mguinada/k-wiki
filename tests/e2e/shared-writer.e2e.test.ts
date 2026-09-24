@@ -397,12 +397,12 @@ async function makeWorld(): Promise<World> {
 }
 
 /** Run one wiki-sync child for a writer. */
-function cycle(
+async function cycle(
   writer: Writer,
   env: NodeJS.ProcessEnv = {},
   extra: readonly string[] = [],
-) {
-  return runCli(
+): Promise<CliResult> {
+  const result = await runCli(
     SYNC_CYCLE_SCRIPT,
     [
       "--settings",
@@ -415,6 +415,16 @@ function cycle(
     ],
     { env },
   );
+
+  if (result.code !== 0) {
+    // The child's stderr is the diagnosis when a cycle fails on a
+    // machine we cannot debug interactively.
+    console.log(
+      `cycle(${writer.name}) failed — stderr tail:\n${result.err.slice(-1500)}`,
+    );
+  }
+
+  return result;
 }
 
 async function remoteHead(remoteDir: string): Promise<string> {

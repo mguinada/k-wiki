@@ -192,15 +192,16 @@ describe("concurrent enablement (test 19)", () => {
     const winners = outcomes.filter((r) => r === "ok");
 
     // Exactly one enable wins the lease race; the loser refuses on
-    // the live bootstrap lease. Both orderings are valid, and either
-    // clone may win.
+    // the live bootstrap lease. Either clone may win — assert on the
+    // actual winner, whichever clone it was.
     expect(winners).toHaveLength(1);
-        expect(outcomes.filter((r) => r !== "ok")[0]).toMatch(
+    expect(outcomes.filter((r) => r !== "ok")[0]).toMatch(
       /another writer holds the lease/,
     );
 
-    // The remote is consistent: marker present, lease released,
-    // branch = the winner's push.
+    const winnerClone = outcomes[0] === "ok" ? world.a : world.b;
+
+    // The remote is consistent: no lease, branch = the winner's push.
     const remote = (
       await import("../../src/writer/git-remote.ts")
     ).gitRunnerFor({ dir: world.remoteDir, env: process.env });
@@ -210,7 +211,7 @@ describe("concurrent enablement (test 19)", () => {
     ).toBe("");
     expect(
       (await remote(["rev-parse", "refs/heads/main"])).stdout.trim(),
-    ).toBe(await head0(world.a.dir));
+    ).toBe(await head0(winnerClone.dir));
   }, 60000);
 
   async function head0(dataRoot: string): Promise<string> {
