@@ -95,7 +95,7 @@ describe("lease body strictness (issue #390 fail-closed)", () => {
 
   it("rejects a duplicated field", () => {
     const body = newLeaseBody(BASE, NOW, HOLDER);
-    const text = serializeLeaseBody(body) + `token: ${body.token}\n`;
+    const text = `${serializeLeaseBody(body)}token: ${body.token}\n`;
 
     expect(() => parseLeaseBody(text, "lease")).toThrow(
       /duplicate lease field/,
@@ -103,7 +103,7 @@ describe("lease body strictness (issue #390 fail-closed)", () => {
   });
 
   it("rejects an unknown field", () => {
-    const text = bodyWith({}) + "ttl: 60\n";
+    const text = `${bodyWith({})}ttl: 60\n`;
 
     expect(() => parseLeaseBody(text, "lease")).toThrow(/unknown lease field/);
   });
