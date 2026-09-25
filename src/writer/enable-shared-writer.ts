@@ -6,11 +6,13 @@
  * switch exists to forget. When no valid marker already exists,
  * enablement is itself serialized: after a live capability probe of
  * the configured remote, it acquires the same bootstrap lease the
- * cycles use, re-fetches and fast-forwards, then publishes the marker
- * commit and deletes the
- * exact lease in one atomic push. A competing enablement or a remote
- * advance fails the whole attempt without a partial marker; the
- * command resets the marker commit it made and never pushes it.
+ * cycles use, re-fetches, and fast-forwards only if that fetch brings
+ * a valid marker; otherwise it publishes the marker commit and deletes
+ * the
+ * exact lease in one atomic push. A competing enablement that adds a
+ * valid marker returns already enabled; another remote advance fails
+ * the attempt without a partial marker. The command resets the marker
+ * commit it made and never pushes it.
  */
 
 import { mkdir, writeFile } from "node:fs/promises";
@@ -62,8 +64,10 @@ the canonical remote tree, and a content commit is pushed before the
 lease is released. The switch is a tracked marker at the data repo
 root, committed and pushed by this command — visible to every
 checkout, never a per-machine setting. A valid marker already present,
-or received when the branch fast-forwards, exits successfully without a
-probe, commit, or lease operation; an invalid marker fails closed.
+or received by the initial pre-probe fast-forward, exits successfully
+without a probe, commit, or lease operation; an invalid marker fails
+closed. A valid marker received during the lease-held re-fetch is
+fast-forwarded and returns already enabled.
 
 Otherwise, it does this in order:
   1. verifies the data repo: a configured origin, a clean checkout
@@ -73,7 +77,8 @@ Otherwise, it does this in order:
      custom refs under refs/k-wiki/, exact-OID compare-and-swap
      replacement, and the conditional atomic finalization — refusing
      without writing anything when the remote cannot do them;
-  3. acquires the bootstrap lease, re-fetches, fast-forwards;
+  3. acquires the bootstrap lease and re-fetches; a valid arriving
+     marker is fast-forwarded and returns already enabled;
   4. commits the marker and pushes it together with the exact lease
      delete in one atomic push, verifying the remote head after.
 
