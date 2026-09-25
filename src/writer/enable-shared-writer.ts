@@ -203,8 +203,12 @@ async function commitMarkerUnderLease(
   const outcome = await acquireBootstrapLease(git, treeOid);
 
   try {
-    await fetchRefspec(git, "origin", `refs/heads/${branch}`);
-    await mergeFfOnly(git, "FETCH_HEAD");
+    await fetchRefspec(
+      git,
+      "origin",
+      `refs/heads/${branch}:refs/remotes/origin/${branch}`,
+    );
+    await mergeFfOnly(git, `origin/${branch}`);
 
     if (await markerIsEnabled(dataRoot)) {
       await releaseIfOwn(git, outcome.oid);

@@ -157,7 +157,7 @@ describe("enable-shared-writer (library)", () => {
     ]);
     const baseHead = (await world.a.git(["rev-parse", "HEAD"])).stdout.trim();
     await writeFile(
-      join(world.remoteDir, "hooks", "pre-receive"),
+      join(world.remoteDir, "hooks", "post-receive"),
       `#!/bin/sh
 while read -r old new ref; do
   if [ "$ref" = "${LEASE_REF}" ] && [ "$old" = "0000000000000000000000000000000000000000" ]; then
