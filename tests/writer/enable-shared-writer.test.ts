@@ -94,6 +94,32 @@ describe("enable-shared-writer (library)", () => {
     );
   }, 30000);
 
+  it("returns success for a valid marker before clean and origin checks", async () => {
+    const { cw } = await unenabledRepo();
+    const { enable } = await import("../../src/writer/enable-shared-writer.ts");
+
+    await enable(cw.dataRoot);
+    await writeFile(join(cw.dataRoot, "junk.md"), "junk\n");
+    await gitOf(cw.dataRoot)(["remote", "remove", "origin"]);
+
+    await expect(enable(cw.dataRoot)).resolves.toBe(
+      `shared-writer mode already enabled (marker at ${MARKER_PATH})`,
+    );
+  }, 30000);
+
+  it("reports git detail when the marker commit fails", async () => {
+    const { cw } = await unenabledRepo();
+    const { enable } = await import("../../src/writer/enable-shared-writer.ts");
+
+    await writeFile(
+      join(cw.dataRoot, ".git", "hooks", "pre-commit"),
+      "#!/bin/sh\necho marker-commit-denied >&2\nexit 1\n",
+      { mode: 0o755 },
+    );
+
+    await expect(enable(cw.dataRoot)).rejects.toThrow(/marker-commit-denied/);
+  }, 30000);
+
   it("fails closed when an existing marker is invalid", async () => {
     const { world, cw } = await unenabledRepo();
     const { enable } = await import("../../src/writer/enable-shared-writer.ts");

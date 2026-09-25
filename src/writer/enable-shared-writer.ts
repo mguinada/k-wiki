@@ -136,13 +136,15 @@ async function cleanCurrentRefusal(
 export async function enable(dataRoot: string): Promise<string> {
   const env = process.env;
   const git = gitRunnerFor({ dir: dataRoot, env });
+
+  if (await markerIsEnabled(dataRoot)) {
+    return `shared-writer mode already enabled (marker at ${MARKER_PATH})`;
+  }
+
   const clean = await cleanCurrentRefusal(git, dataRoot);
 
   if (clean !== undefined) {
     throw new Error(clean);
-  }
-  if (await markerIsEnabled(dataRoot)) {
-    return `shared-writer mode already enabled (marker at ${MARKER_PATH})`;
   }
   const branch = await currentBranch(git);
 
