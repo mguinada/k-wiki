@@ -42,11 +42,7 @@ import {
 const run = promisify(execFile);
 
 /** This repository's root: tests/sync/ sits two levels below it. */
-const repoRoot = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  "..",
-  "..",
-);
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 const NOW = () => new Date("2026-08-20T18:00:00.000Z");
 
