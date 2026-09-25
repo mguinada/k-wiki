@@ -8,7 +8,7 @@
 import { join } from "node:path";
 import { seedDataRepo } from "../data/init-data-repo.ts";
 import { loadSyncConfig } from "../sync/config.ts";
-import { cliFail, errorMessage } from "./colors.ts";
+import { cliFail, errorMessage, terminalColors } from "./colors.ts";
 import { refuseDirectExecution } from "./is-main.ts";
 import { repoRoot } from "./shared.ts";
 import { parseArgs } from "./shell.ts";
@@ -21,7 +21,9 @@ the raw/ and wiki/ skeleton from the code repo, write the standing
 .gitignore (Obsidian UI state and the ingest snapshot — gitignore
 does not apply to tracked files, so the rules must precede the
 files), first commit.
-Idempotent — an already-seeded data repo is left untouched.
+Idempotent — an already-seeded data repo is left untouched. After adding an
+origin, run \`k-wiki enable-shared-writer\` to opt into one remote lease for all
+writers; \`k-wiki enable-shared-writer --help\` explains.
 
   --second-brain  Also write .second-brain, the operator-owned
                   second-brain identity marker, at the data root and
@@ -81,11 +83,19 @@ export async function main(
       meta,
     });
 
-    console.log(
-      result === "seeded"
-        ? `data:init: seeded ${config.dataRoot}`
-        : `data:init: ${config.dataRoot} already seeded`,
-    );
+    if (result === "seeded") {
+      console.log(`data:init: seeded ${config.dataRoot}`);
+      const colors = terminalColors();
+      const command = colors.green(colors.bold("k-wiki enable-shared-writer"));
+
+      console.log(
+        colors.green(
+          `next: this repo is single-writer until you opt in. After adding an origin, run\n      ${command} — every writer then serializes through one\n      remote lease, so two Macs can never conflict. ${colors.bold("k-wiki enable-shared-writer --help")} explains.`,
+        ),
+      );
+    } else {
+      console.log(`data:init: ${config.dataRoot} already seeded`);
+    }
   } catch (error) {
     cliFail("data:init", errorMessage(error));
   }

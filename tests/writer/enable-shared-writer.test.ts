@@ -1,4 +1,4 @@
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { lsRemoteOid } from "../../src/writer/git-remote.ts";
@@ -79,6 +79,52 @@ describe("enable-shared-writer (library)", () => {
     ).stdout.trim();
 
     expect(remoteHead).toBe(localHead);
+  }, 30000);
+
+  it("returns success without probe or lease churn when already enabled", async () => {
+    const { cw } = await unenabledRepo();
+    const { enable } = await import("../../src/writer/enable-shared-writer.ts");
+
+    await enable(cw.dataRoot);
+
+    const message = await enable(cw.dataRoot);
+
+    expect(message).toBe(
+      `shared-writer mode already enabled (marker at ${MARKER_PATH})`,
+    );
+  }, 30000);
+
+  it("fails closed when an existing marker is invalid", async () => {
+    const { world, cw } = await unenabledRepo();
+    const { enable } = await import("../../src/writer/enable-shared-writer.ts");
+
+    await mkdir(join(cw.dataRoot, ".k-wiki"), { recursive: true });
+    await writeFile(join(cw.dataRoot, MARKER_PATH), "{}\n");
+    await world.a.git(["add", "-A"]);
+    await world.a.git(["commit", "-m", "invalid marker"]);
+    await world.a.git([
+      "push",
+      "-q",
+      "origin",
+      "refs/heads/main:refs/heads/main",
+    ]);
+
+    await expect(enable(cw.dataRoot)).rejects.toThrow(
+      /shared-writer marker is invalid/,
+    );
+  }, 30000);
+
+  it("fast-forwards to an existing marker and returns success", async () => {
+    const { world, cw } = await unenabledRepo();
+    const { enable } = await import("../../src/writer/enable-shared-writer.ts");
+
+    await enable(cw.dataRoot);
+
+    const message = await enable(world.b.dir);
+
+    expect(message).toBe(
+      `shared-writer mode already enabled (marker at ${MARKER_PATH})`,
+    );
   }, 30000);
 
   it("refuses a dirty checkout without writing the marker", async () => {
@@ -196,14 +242,11 @@ describe("concurrent enablement (test 19)", () => {
     const winners = outcomes.filter((o) => o.result === "ok");
     const losers = outcomes.filter((o) => o.result !== "ok");
 
-    // At least one enable wins the lease race; either clone may
-    // win. A loser fails closed — refused on the live bootstrap
-    // lease, rejected non-fast-forward by the fenced finalize after
-    // acquiring a fresh lease in the winner's shadow, or finding
-    // nothing to commit after fast-forwarding onto the winner's
-    // marker — and leaves its checkout at the pre-race head or the
-    // winner's pushed head. The state assertions below are the
-    // interleaving-agnostic contract.
+    // At least one enable wins the lease race; either clone may win.
+    // The loser may be lease-refused, finalize-rejected, classify the
+    // remote as diverged, or fast-forward to the winner and take the
+    // idempotent already-enabled path. The state assertions below are
+    // the interleaving-agnostic contract.
     expect(winners.length).toBeGreaterThanOrEqual(1);
 
     // The remote is consistent: main = a winner's push, no lease.

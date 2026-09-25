@@ -36,7 +36,12 @@ import {
   finalizeWithLeaseRelease,
   releaseOwnLease,
 } from "./lease-ops.ts";
-import { LEASE_REF_NAMESPACE, MARKER_PATH, markerPath } from "./marker.ts";
+import {
+  LEASE_REF_NAMESPACE,
+  MARKER_PATH,
+  markerPath,
+  readSharedWriterMarker,
+} from "./marker.ts";
 import { probeRemoteCapabilities, reportProbe } from "./probe.ts";
 import { resolveDataRootFromArgs } from "./resolve.ts";
 
@@ -124,10 +129,16 @@ async function cleanCurrentRefusal(
   return undefined;
 }
 
-/** One enable attempt: returns the exit message or throws with the
- *  failure reason (the lease, if acquired, is released on the way
- *  out). Exported for the test suite; main() is the only production
- *  caller. */
+async function alreadyEnabled(dataRoot: string): Promise<boolean> {
+  const marker = await readSharedWriterMarker(dataRoot);
+  if (marker.kind === "invalid") {
+    throw new Error(
+      `shared-writer marker is invalid — refusing to enable: ${marker.reason}`,
+    );
+  }
+  return marker.kind === "enabled";
+}
+/** One enable attempt; main() is the only production caller. */
 export async function enable(dataRoot: string): Promise<string> {
   const env = process.env;
   const git = gitRunnerFor({ dir: dataRoot, env });
@@ -136,7 +147,9 @@ export async function enable(dataRoot: string): Promise<string> {
   if (clean !== undefined) {
     throw new Error(clean);
   }
-
+  if (await alreadyEnabled(dataRoot)) {
+    return `shared-writer mode already enabled (marker at ${MARKER_PATH})`;
+  }
   const branch = await currentBranch(git);
 
   if (branch === undefined) {
@@ -144,7 +157,6 @@ export async function enable(dataRoot: string): Promise<string> {
   }
 
   await fetchRefspec(git, "origin", `refs/heads/${branch}`);
-
   const remoteOid = await lsRemoteOid(git, "origin", `refs/heads/${branch}`);
 
   if (remoteOid === undefined) {
@@ -184,7 +196,7 @@ export async function enable(dataRoot: string): Promise<string> {
   return await commitMarkerUnderLease(dataRoot, git, branch, treeOid);
 }
 
-/** Steps 3–4: bootstrap lease, marker commit, atomic finalize. */
+/** Bootstrap lease, marker commit, and atomic finalize. */
 async function commitMarkerUnderLease(
   dataRoot: string,
   git: GitRunner,
@@ -198,12 +210,15 @@ async function commitMarkerUnderLease(
     // branch update rejects a remote advance.
     await fetchRefspec(git, "origin", `refs/heads/${branch}`);
 
+    if (await alreadyEnabled(dataRoot)) {
+      return `shared-writer mode already enabled (marker at ${MARKER_PATH})`;
+    }
     const path = markerPath(dataRoot);
 
     await mkdir(join(dataRoot, ".k-wiki"), { recursive: true });
     await writeFile(path, markerDocument(branch));
     await git(["add", "--", MARKER_PATH]);
-    await git(["commit", "--quiet", "-m", "enable shared-writer mode (v1)"]);
+    await git(["commit", "-m", "enable shared-writer mode (v1)"]);
 
     const markerHead = (await git(["rev-parse", "HEAD"])).stdout.trim();
 

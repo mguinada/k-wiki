@@ -80,7 +80,10 @@ async function makeCodeRepoFixture(): Promise<string> {
   return dir;
 }
 
-async function runInitCli(args: string[]): Promise<{
+async function runInitCli(
+  args: string[],
+  env: NodeJS.ProcessEnv = {},
+): Promise<{
   out: string;
   err: string;
 }> {
@@ -88,12 +91,13 @@ async function runInitCli(args: string[]): Promise<{
   const out: string[] = [];
   const err: string[] = [];
 
+  const testEnv = { ...GIT_ENV, ...env };
   const savedEnv = new Map(
-    Object.keys(GIT_ENV).map((key) => [key, process.env[key]]),
+    Object.keys(testEnv).map((key) => [key, process.env[key]]),
   );
 
   process.argv = [...argv.slice(0, 2), ...args];
-  Object.assign(process.env, GIT_ENV);
+  Object.assign(process.env, testEnv);
 
   const logSpy = vi
     .spyOn(console, "log")
@@ -137,6 +141,12 @@ describe("data:init CLI help", () => {
 
   it("documents the -h and --help switches themselves", async () => {
     expect((await runInitCli(["--help"])).out).toContain("-h, --help");
+  });
+
+  it("explains shared-writer opt-in in help", async () => {
+    expect((await runInitCli(["--help"])).out).toContain(
+      "After adding an\norigin",
+    );
   });
 
   it("states the default config path", async () => {
@@ -225,6 +235,36 @@ describe("data:init CLI help", () => {
     await runInitCli([configPath]);
 
     expect(process.exitCode).toBe(1);
+  });
+
+  it("prints the shared-writer hint after fresh creation", async () => {
+    const dataRoot = await makeTempDir();
+    const configPath = await writeConfig(dataRoot);
+
+    const { out } = await runInitCli([configPath], { NO_COLOR: "1" });
+
+    expect(out).toContain(
+      "next: this repo is single-writer until you opt in. After adding an origin",
+    );
+  });
+
+  it("omits the shared-writer hint on an idempotent rerun", async () => {
+    const dataRoot = await makeTempDir();
+    const configPath = await writeConfig(dataRoot);
+
+    await runInitCli([configPath], { NO_COLOR: "1" });
+    const { out } = await runInitCli([configPath], { NO_COLOR: "1" });
+
+    expect(out).not.toContain("next: this repo is single-writer");
+  });
+
+  it("suppresses the shared-writer hint colors under NO_COLOR", async () => {
+    const dataRoot = await makeTempDir();
+    const configPath = await writeConfig(dataRoot);
+
+    const { out } = await runInitCli([configPath], { NO_COLOR: "1" });
+
+    expect(out.includes("\u001b[")).toBe(false);
   });
 
   it("reports an already-seeded data root without reseeding", async () => {
@@ -355,7 +395,7 @@ describe("data:init bin launcher", () => {
 
     const { out } = await importWithArgv(modulePath, []);
 
-    expect(out).toBe(`data:init: seeded ${join(repo, "data")}`);
+    expect(out).toContain(`data:init: seeded ${join(repo, "data")}`);
   });
 
   it("seeds the data root of the config given as an argument, not the default one", async () => {
@@ -371,7 +411,7 @@ describe("data:init bin launcher", () => {
 
     const { out } = await importWithArgv(modulePath, [configPath]);
 
-    expect(out).toBe(`data:init: seeded ${argDataRoot}`);
+    expect(out).toContain(`data:init: seeded ${argDataRoot}`);
   });
 
   it("seeds the second-brain marker when --second-brain is passed", async () => {
@@ -380,7 +420,7 @@ describe("data:init bin launcher", () => {
 
     const { out } = await importWithArgv(modulePath, ["--second-brain"]);
 
-    expect(out).toBe(`data:init: seeded ${join(repo, "data")}`);
+    expect(out).toContain(`data:init: seeded ${join(repo, "data")}`);
   });
 
   it("creates the marker file from the --second-brain flag", async () => {
