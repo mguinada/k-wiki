@@ -787,7 +787,10 @@ export async function main(
 
   await installRegistration(parsed, registration, runLaunchctl);
 
-  console.log(installedMessage(parsed, registration, home));
+  // The uninstall path already printed its own truthful line.
+  if (!parsed.uninstall) {
+    console.log(installedMessage(parsed, registration, home));
+  }
 }
 
 /* v8 ignore next: covered only under direct `node src/schedule/setup-schedule.ts` runs */
