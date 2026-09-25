@@ -39,8 +39,8 @@ import {
 import {
   LEASE_REF_NAMESPACE,
   MARKER_PATH,
+  markerIsEnabled,
   markerPath,
-  readSharedWriterMarker,
 } from "./marker.ts";
 import { probeRemoteCapabilities, reportProbe } from "./probe.ts";
 import { resolveDataRootFromArgs } from "./resolve.ts";
@@ -129,16 +129,7 @@ async function cleanCurrentRefusal(
   return undefined;
 }
 
-async function alreadyEnabled(dataRoot: string): Promise<boolean> {
-  const marker = await readSharedWriterMarker(dataRoot);
-  if (marker.kind === "invalid") {
-    throw new Error(
-      `shared-writer marker is invalid — refusing to enable: ${marker.reason}`,
-    );
-  }
-  return marker.kind === "enabled";
-}
-/** One enable attempt; main() is the only production caller. */
+/** One enable attempt: the lease, if acquired, is released on failure. */
 export async function enable(dataRoot: string): Promise<string> {
   const env = process.env;
   const git = gitRunnerFor({ dir: dataRoot, env });
@@ -147,7 +138,8 @@ export async function enable(dataRoot: string): Promise<string> {
   if (clean !== undefined) {
     throw new Error(clean);
   }
-  if (await alreadyEnabled(dataRoot)) {
+
+  if (await markerIsEnabled(dataRoot)) {
     return `shared-writer mode already enabled (marker at ${MARKER_PATH})`;
   }
   const branch = await currentBranch(git);
@@ -157,6 +149,7 @@ export async function enable(dataRoot: string): Promise<string> {
   }
 
   await fetchRefspec(git, "origin", `refs/heads/${branch}`);
+
   const remoteOid = await lsRemoteOid(git, "origin", `refs/heads/${branch}`);
 
   if (remoteOid === undefined) {
@@ -210,9 +203,10 @@ async function commitMarkerUnderLease(
     // branch update rejects a remote advance.
     await fetchRefspec(git, "origin", `refs/heads/${branch}`);
 
-    if (await alreadyEnabled(dataRoot)) {
+    if (await markerIsEnabled(dataRoot)) {
       return `shared-writer mode already enabled (marker at ${MARKER_PATH})`;
     }
+
     const path = markerPath(dataRoot);
 
     await mkdir(join(dataRoot, ".k-wiki"), { recursive: true });

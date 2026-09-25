@@ -164,3 +164,16 @@ export async function readSharedWriterMarker(
     return { kind: "invalid", reason: (error as Error).message };
   }
 }
+
+/** Return whether the marker enables shared-writer mode, failing closed on invalid data. */
+export async function markerIsEnabled(dataRoot: string): Promise<boolean> {
+  const marker = await readSharedWriterMarker(dataRoot);
+
+  if (marker.kind === "invalid") {
+    throw new Error(
+      `shared-writer marker is invalid — refusing to enable: ${marker.reason}`,
+    );
+  }
+
+  return marker.kind === "enabled";
+}
