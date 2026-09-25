@@ -3,10 +3,11 @@
  * remote-backed data repo into shared-writer mode. The marker it
  * commits — `.k-wiki/shared-writer.json` at the data repo root — is
  * operator-owned and visible to every checkout; no per-machine
- * switch exists to forget. Enablement is itself serialized: after a
- * live capability probe of the configured remote, it acquires the
- * same bootstrap lease the cycles use, re-fetches and
- * fast-forwards, then publishes the marker commit and deletes the
+ * switch exists to forget. When no valid marker already exists,
+ * enablement is itself serialized: after a live capability probe of
+ * the configured remote, it acquires the same bootstrap lease the
+ * cycles use, re-fetches and fast-forwards, then publishes the marker
+ * commit and deletes the
  * exact lease in one atomic push. A competing enablement or a remote
  * advance fails the whole attempt without a partial marker; the
  * command resets the marker commit it made and never pushes it.
@@ -54,9 +55,11 @@ expired lease is taken over by exact OID), every cycle begins from
 the canonical remote tree, and a content commit is pushed before the
 lease is released. The switch is a tracked marker at the data repo
 root, committed and pushed by this command — visible to every
-checkout, never a per-machine setting.
+checkout, never a per-machine setting. A valid marker already present,
+or received when the branch fast-forwards, exits successfully without a
+probe, commit, or lease operation; an invalid marker fails closed.
 
-What it does, in order:
+Otherwise, it does this in order:
   1. verifies the data repo: a configured origin, a clean checkout
      (the run lock is allowed state), on a branch that fast-forwards
      to origin;

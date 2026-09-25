@@ -28,6 +28,11 @@ protocol for manual `wiki-sync` and `scheduled-run` alike. The marker
 contains no hostname, path, or scheduler identity — any current
 checkout can hold the write.
 
+`k-wiki enable-shared-writer` is idempotent: if a valid marker is
+already present, or arrives when the command fast-forwards the branch,
+it exits successfully without a capability probe, commit, or lease
+operation. An invalid marker fails closed.
+
 ## The lease lifecycle
 
 The lease is the ref `refs/k-wiki/leases/shared-writer-v1` on the
