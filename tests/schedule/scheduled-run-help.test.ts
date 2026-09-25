@@ -15,6 +15,21 @@ beforeAll(() => {
   );
 });
 
+/** The help slice between two required anchors; a renamed or
+ *  reordered anchor fails loud instead of yielding an empty slice. */
+function betweenAnchors(text: string, start: string, end: string): string {
+  const from = text.indexOf(start);
+  const to = text.indexOf(end);
+
+  if (from === -1 || to === -1 || to < from) {
+    throw new Error(
+      `help anchors missing or unordered: ${JSON.stringify(start)}, ${JSON.stringify(end)}`,
+    );
+  }
+
+  return text.slice(from, to);
+}
+
 describe("scheduled-run help (printed by the launcher)", () => {
   it("documents the shared-writer delegation", () => {
     expect(help).toContain("shared-writer");
@@ -47,10 +62,7 @@ describe("scheduled-run help (printed by the launcher)", () => {
   });
 
   it("claims no pull --rebase recovery in the shared-writer bullet", () => {
-    const bullet = help.slice(
-      help.indexOf("Shared-writer mode:"),
-      help.indexOf("- No origin:"),
-    );
+    const bullet = betweenAnchors(help, "Shared-writer mode:", "- No origin:");
 
     expect(bullet).not.toContain("pull --rebase");
   });
