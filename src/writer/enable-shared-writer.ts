@@ -1,15 +1,9 @@
 /**
- * enable-shared-writer (issue #390): the human door that opts a
- * remote-backed data repo into shared-writer mode. The marker it
- * commits — `.k-wiki/shared-writer.json` at the data repo root — is
- * operator-owned and visible to every checkout; no per-machine
- * switch exists to forget. Enablement is itself serialized: after a
- * live capability probe of the configured remote, it acquires the
- * same bootstrap lease the cycles use, re-fetches and
- * fast-forwards, then publishes the marker commit and deletes the
- * exact lease in one atomic push. A competing enablement or a remote
- * advance fails the whole attempt without a partial marker; the
- * command resets the marker commit it made and never pushes it.
+ * The human door for remote-backed shared-writer mode. A valid marker
+ * is operator-owned and visible to every checkout. Marker-absent
+ * enablement probes the remote, acquires the bootstrap lease, and
+ * publishes the marker atomically; racing valid markers are accepted
+ * idempotently, while remote advances fail without a partial marker.
  */
 
 import { mkdir, writeFile } from "node:fs/promises";
@@ -36,7 +30,13 @@ import {
   finalizeWithLeaseRelease,
   releaseOwnLease,
 } from "./lease-ops.ts";
-import { LEASE_REF_NAMESPACE, MARKER_PATH, markerPath } from "./marker.ts";
+import {
+  LEASE_REF_NAMESPACE,
+  MARKER_PATH,
+  markerIsEnabled,
+  markerIsEnabledAtRef,
+  markerPath,
+} from "./marker.ts";
 import { probeRemoteCapabilities, reportProbe } from "./probe.ts";
 import { resolveDataRootFromArgs } from "./resolve.ts";
 
@@ -54,9 +54,13 @@ expired lease is taken over by exact OID), every cycle begins from
 the canonical remote tree, and a content commit is pushed before the
 lease is released. The switch is a tracked marker at the data repo
 root, committed and pushed by this command — visible to every
-checkout, never a per-machine setting.
+checkout, never a per-machine setting. A valid marker already present
+or received by the initial pre-probe fast-forward exits successfully
+without probe, commit, or lease operation; an invalid marker fails
+closed. A marker received during the lease-held re-fetch is also
+fast-forwarded and returns already enabled.
 
-What it does, in order:
+Otherwise, it does this in order:
   1. verifies the data repo: a configured origin, a clean checkout
      (the run lock is allowed state), on a branch that fast-forwards
      to origin;
@@ -64,7 +68,8 @@ What it does, in order:
      custom refs under refs/k-wiki/, exact-OID compare-and-swap
      replacement, and the conditional atomic finalization — refusing
      without writing anything when the remote cannot do them;
-  3. acquires the bootstrap lease, re-fetches, fast-forwards;
+  3. acquires the bootstrap lease and re-fetches; a valid arriving
+     marker is fast-forwarded and returns already enabled;
   4. commits the marker and pushes it together with the exact lease
      delete in one atomic push, verifying the remote head after.
 
@@ -124,27 +129,24 @@ async function cleanCurrentRefusal(
   return undefined;
 }
 
-/** One enable attempt: returns the exit message or throws with the
- *  failure reason (the lease, if acquired, is released on the way
- *  out). Exported for the test suite; main() is the only production
- *  caller. */
+/** One enable attempt: the lease, if acquired, is released on failure. */
 export async function enable(dataRoot: string): Promise<string> {
   const env = process.env;
   const git = gitRunnerFor({ dir: dataRoot, env });
-  const clean = await cleanCurrentRefusal(git, dataRoot);
 
+  if (await markerIsEnabled(dataRoot)) {
+    return `shared-writer mode already enabled (marker at ${MARKER_PATH})`;
+  }
+  const clean = await cleanCurrentRefusal(git, dataRoot);
   if (clean !== undefined) {
     throw new Error(clean);
   }
-
   const branch = await currentBranch(git);
 
   if (branch === undefined) {
     throw new Error("the data repo is on a detached HEAD — check out a branch");
   }
-
   await fetchRefspec(git, "origin", `refs/heads/${branch}`);
-
   const remoteOid = await lsRemoteOid(git, "origin", `refs/heads/${branch}`);
 
   if (remoteOid === undefined) {
@@ -162,7 +164,9 @@ export async function enable(dataRoot: string): Promise<string> {
       "the data repo is ahead of or diverged from origin — resolve manually before enabling",
     );
   }
-
+  if (await markerIsEnabled(dataRoot)) {
+    return `shared-writer mode already enabled (marker at ${MARKER_PATH})`;
+  }
   const treeOid = await fetchedTreeOid(git);
   const probe = await probeRemoteCapabilities({
     git,
@@ -184,7 +188,7 @@ export async function enable(dataRoot: string): Promise<string> {
   return await commitMarkerUnderLease(dataRoot, git, branch, treeOid);
 }
 
-/** Steps 3–4: bootstrap lease, marker commit, atomic finalize. */
+/** Bootstrap lease, marker commit, and atomic finalize. */
 async function commitMarkerUnderLease(
   dataRoot: string,
   git: GitRunner,
@@ -194,16 +198,27 @@ async function commitMarkerUnderLease(
   const outcome = await acquireBootstrapLease(git, treeOid);
 
   try {
-    // Re-fetch while holding the lease; the finalize's non-forced
-    // branch update rejects a remote advance.
-    await fetchRefspec(git, "origin", `refs/heads/${branch}`);
+    const fetchedBranch = `origin/${branch}`;
+
+    await fetchRefspec(
+      git,
+      "origin",
+      `refs/heads/${branch}:refs/remotes/${fetchedBranch}`,
+    );
+
+    if (await markerIsEnabledAtRef(git, fetchedBranch)) {
+      await mergeFfOnly(git, fetchedBranch);
+      await releaseIfOwn(git, outcome.oid);
+
+      return `shared-writer mode already enabled (marker at ${MARKER_PATH})`;
+    }
 
     const path = markerPath(dataRoot);
 
     await mkdir(join(dataRoot, ".k-wiki"), { recursive: true });
     await writeFile(path, markerDocument(branch));
     await git(["add", "--", MARKER_PATH]);
-    await git(["commit", "--quiet", "-m", "enable shared-writer mode (v1)"]);
+    await git(["commit", "-m", "enable shared-writer mode (v1)"]);
 
     const markerHead = (await git(["rev-parse", "HEAD"])).stdout.trim();
 

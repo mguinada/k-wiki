@@ -1,4 +1,4 @@
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { lsRemoteOid } from "../../src/writer/git-remote.ts";
@@ -81,6 +81,204 @@ describe("enable-shared-writer (library)", () => {
     expect(remoteHead).toBe(localHead);
   }, 30000);
 
+  it("returns success without probe or lease churn when already enabled", async () => {
+    const { cw } = await unenabledRepo();
+    const { enable } = await import("../../src/writer/enable-shared-writer.ts");
+
+    await enable(cw.dataRoot);
+
+    const message = await enable(cw.dataRoot);
+
+    expect(message).toBe(
+      `shared-writer mode already enabled (marker at ${MARKER_PATH})`,
+    );
+  }, 30000);
+
+  it("returns success for a valid marker before clean and origin checks", async () => {
+    const { cw } = await unenabledRepo();
+    const { enable } = await import("../../src/writer/enable-shared-writer.ts");
+
+    await enable(cw.dataRoot);
+    await writeFile(join(cw.dataRoot, "junk.md"), "junk\n");
+    await gitOf(cw.dataRoot)(["remote", "remove", "origin"]);
+
+    await expect(enable(cw.dataRoot)).resolves.toBe(
+      `shared-writer mode already enabled (marker at ${MARKER_PATH})`,
+    );
+  }, 30000);
+
+  it("reports git detail when the marker commit fails", async () => {
+    const { cw } = await unenabledRepo();
+    const { enable } = await import("../../src/writer/enable-shared-writer.ts");
+
+    await writeFile(
+      join(cw.dataRoot, ".git", "hooks", "pre-commit"),
+      "#!/bin/sh\necho marker-commit-denied >&2\nexit 1\n",
+      { mode: 0o755 },
+    );
+
+    await expect(enable(cw.dataRoot)).rejects.toThrow(/marker-commit-denied/);
+  }, 30000);
+
+  it("fails closed when an existing marker is invalid", async () => {
+    const { world, cw } = await unenabledRepo();
+    const { enable } = await import("../../src/writer/enable-shared-writer.ts");
+
+    await mkdir(join(cw.dataRoot, ".k-wiki"), { recursive: true });
+    await writeFile(join(cw.dataRoot, MARKER_PATH), "{}\n");
+    await world.a.git(["add", "-A"]);
+    await world.a.git(["commit", "-m", "invalid marker"]);
+    await world.a.git([
+      "push",
+      "-q",
+      "origin",
+      "refs/heads/main:refs/heads/main",
+    ]);
+
+    await expect(enable(cw.dataRoot)).rejects.toThrow(
+      /shared-writer marker is invalid/,
+    );
+  }, 30000);
+
+  it("fast-forwards to an existing marker and returns success", async () => {
+    const { world, cw } = await unenabledRepo();
+    const { enable } = await import("../../src/writer/enable-shared-writer.ts");
+
+    await world.b.git(["fetch", "-q", "origin", "refs/heads/main"]);
+    await world.b.git(["reset", "-q", "--hard", "origin/main"]);
+    await enable(cw.dataRoot);
+    await writeFile(
+      join(world.remoteDir, "hooks", "pre-receive"),
+      '#!/bin/sh\nwhile read -r _old _new ref; do\n  case "$ref" in refs/k-wiki/*) exit 1 ;; esac\ndone\nexit 0\n',
+      { mode: 0o755 },
+    );
+
+    const message = await enable(world.b.dir);
+
+    expect(message).toBe(
+      `shared-writer mode already enabled (marker at ${MARKER_PATH})`,
+    );
+  }, 30000);
+
+  it("returns success when the lease-held fetch receives a marker", async () => {
+    const { world, cw } = await unenabledRepo();
+    const { enable } = await import("../../src/writer/enable-shared-writer.ts");
+
+    await world.b.git(["fetch", "-q", "origin", "refs/heads/main"]);
+    await world.b.git(["reset", "-q", "--hard", "origin/main"]);
+    await mkdir(join(world.b.dir, ".k-wiki"), { recursive: true });
+    await writeFile(
+      join(world.b.dir, MARKER_PATH),
+      '{"version":1,"remote":"origin","branch":"main","leaseRef":"refs/k-wiki/leases/shared-writer-v1","sourceRemovalPolicy":"confirm"}\n',
+    );
+    await world.b.git(["add", "-A"]);
+    await world.b.git(["commit", "-m", "marker from another writer"]);
+
+    const markerHead = (await world.b.git(["rev-parse", "HEAD"])).stdout.trim();
+    await world.b.git([
+      "push",
+      "-q",
+      "origin",
+      `${markerHead}:refs/test/marker`,
+    ]);
+    const baseHead = (await world.a.git(["rev-parse", "HEAD"])).stdout.trim();
+    await writeFile(
+      join(world.remoteDir, "hooks", "post-receive"),
+      `#!/bin/sh
+while read -r old new ref; do
+  if [ "$ref" = "${LEASE_REF}" ] && [ "$old" = "0000000000000000000000000000000000000000" ]; then
+    git update-ref refs/heads/main ${markerHead} ${baseHead}
+  fi
+done
+exit 0
+`,
+      { mode: 0o755 },
+    );
+
+    const message = await enable(cw.dataRoot);
+    const remoteHead = (
+      await gitOf(world.remoteDir)(["rev-parse", "refs/heads/main"])
+    ).stdout.trim();
+    const lease = await lsRemoteOid(gitOf(cw.dataRoot), "origin", LEASE_REF);
+
+    expect({
+      message,
+      localHead: await head(cw.dataRoot),
+      remoteHead,
+      lease,
+    }).toEqual({
+      message: `shared-writer mode already enabled (marker at ${MARKER_PATH})`,
+      localHead: markerHead,
+      remoteHead: markerHead,
+      lease: undefined,
+    });
+  }, 30000);
+
+  it("fails closed when the lease-held fetch receives a marker-absent advance", async () => {
+    const { world, cw } = await unenabledRepo();
+    const { enable } = await import("../../src/writer/enable-shared-writer.ts");
+
+    await world.b.git(["fetch", "-q", "origin", "refs/heads/main"]);
+    await world.b.git(["reset", "-q", "--hard", "origin/main"]);
+    await writeFile(join(world.b.dir, "advance.md"), "advance\n");
+    await world.b.git(["add", "-A"]);
+    await world.b.git(["commit", "-m", "remote advance"]);
+
+    const advanceHead = (
+      await world.b.git(["rev-parse", "HEAD"])
+    ).stdout.trim();
+    const baseHead = (await world.a.git(["rev-parse", "HEAD"])).stdout.trim();
+
+    await world.b.git([
+      "push",
+      "-q",
+      "origin",
+      `${advanceHead}:refs/test/advance`,
+    ]);
+    await writeFile(
+      join(world.remoteDir, "hooks", "post-receive"),
+      `#!/bin/sh
+while read -r old new ref; do
+  if [ "$ref" = "${LEASE_REF}" ] && [ "$old" = "0000000000000000000000000000000000000000" ]; then
+    git update-ref refs/heads/main ${advanceHead} ${baseHead}
+  fi
+done
+exit 0
+`,
+      { mode: 0o755 },
+    );
+
+    const result = await enable(cw.dataRoot).then(
+      () => "enabled",
+      () => "refused",
+    );
+    const remoteHead = (
+      await gitOf(world.remoteDir)(["rev-parse", "refs/heads/main"])
+    ).stdout.trim();
+    const lease = await lsRemoteOid(gitOf(cw.dataRoot), "origin", LEASE_REF);
+
+    expect({
+      result,
+      localHead: await head(cw.dataRoot),
+      remoteHead,
+      lease,
+      marker: await gitOf(world.remoteDir)([
+        "cat-file",
+        "-e",
+        `refs/heads/main:${MARKER_PATH}`,
+      ]).then(
+        () => "present",
+        () => "absent",
+      ),
+    }).toEqual({
+      result: "refused",
+      localHead: baseHead,
+      remoteHead: advanceHead,
+      lease: undefined,
+      marker: "absent",
+    });
+  }, 30000);
+
   it("refuses a dirty checkout without writing the marker", async () => {
     const { cw } = await unenabledRepo();
     const { enable } = await import("../../src/writer/enable-shared-writer.ts");
@@ -121,6 +319,10 @@ function gitOf(dataRoot: string) {
     import("../../src/writer/git-remote.ts").then(({ gitRunnerFor }) =>
       gitRunnerFor({ dir: dataRoot, env: process.env })(args),
     );
+}
+
+async function head(dataRoot: string): Promise<string> {
+  return (await gitOf(dataRoot)(["rev-parse", "HEAD"])).stdout.trim();
 }
 
 describe("writer-lease verbs (library)", () => {
@@ -196,14 +398,11 @@ describe("concurrent enablement (test 19)", () => {
     const winners = outcomes.filter((o) => o.result === "ok");
     const losers = outcomes.filter((o) => o.result !== "ok");
 
-    // At least one enable wins the lease race; either clone may
-    // win. A loser fails closed — refused on the live bootstrap
-    // lease, rejected non-fast-forward by the fenced finalize after
-    // acquiring a fresh lease in the winner's shadow, or finding
-    // nothing to commit after fast-forwarding onto the winner's
-    // marker — and leaves its checkout at the pre-race head or the
-    // winner's pushed head. The state assertions below are the
-    // interleaving-agnostic contract.
+    // At least one enable wins the lease race; either clone may win.
+    // The loser may be lease-refused, finalize-rejected, classify the
+    // remote as diverged, or fast-forward to the winner and take the
+    // idempotent already-enabled path. The state assertions below are
+    // the interleaving-agnostic contract.
     expect(winners.length).toBeGreaterThanOrEqual(1);
 
     // The remote is consistent: main = a winner's push, no lease.
