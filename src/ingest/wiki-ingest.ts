@@ -67,8 +67,10 @@ import {
 } from "./prompts.ts";
 import {
   adoptLegacySnapshot,
+  buildSnapshotAdvance,
   ensureDashboardIgnored,
   ensureSnapshotIgnored,
+  type PendingSnapshotAdvance,
   readSnapshot,
   SNAPSHOT_FILENAME,
   warnTrackedIgnored,
@@ -120,6 +122,12 @@ export interface IngestOptions {
    *  entry. Only the wiki-sync cycle sets it, at prompt-composition
    *  time; standalone wiki-ingest runs never do. */
   readonly cycleReportNote?: string | undefined;
+  /** Defer the snapshot write (issue #390): the run computes the
+   *  snapshot's next state and returns it as `pendingSnapshot`
+   *  instead of writing — the shared-writer cycle anchors it to the
+   *  content commit only after that commit exists. Standalone runs
+   *  leave this unset and write immediately. */
+  readonly deferSnapshot?: boolean | undefined;
 }
 
 export type IngestResult =
@@ -133,6 +141,11 @@ export type IngestResult =
       /** The manifest diff the run ingested; feeds the cycle's commit
        *  message (issue #13). */
       readonly diff: ManifestDiff;
+      /** The deferred snapshot state (issue #390): present only when
+       *  the caller set `deferSnapshot`; the caller anchors it to the
+       *  content commit via writeSnapshotAdvance. Undefined on
+       *  standalone runs, which write the snapshot themselves. */
+      readonly pendingSnapshot?: PendingSnapshotAdvance | undefined;
     };
 
 /** Prompt file per mode: first run, later changes, deletions. */
@@ -277,6 +290,7 @@ async function housekeepingStep(
     dataRoot,
     onProgress,
     hasExplicitSources(inputs.options),
+    env,
   );
 }
 
@@ -619,6 +633,29 @@ async function successStep(
   });
 
   await writeFile(checked.digestPath, digest, "utf8");
+
+  if (inputs.options.deferSnapshot === true) {
+    const advance = buildSnapshotAdvance(
+      change.explicitDiff,
+      change.previous,
+      inputs.current,
+    );
+
+    if (advance.heldBack !== undefined) {
+      inputs.run.onProgress(advance.heldBack);
+    }
+
+    return {
+      status: "ran",
+      mode: mode.mode,
+      digestPath: checked.digestPath,
+      digest,
+      pages,
+      diff: change.diff,
+      pendingSnapshot: { manifest: advance.manifest },
+    };
+  }
+
   await writeSnapshotIfNeeded(
     inputs.run,
     change.explicitDiff,

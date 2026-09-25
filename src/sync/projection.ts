@@ -21,7 +21,7 @@ import {
   formatDuration,
   isWarning,
 } from "../cli/progress.ts";
-import { pluralized, statIfExists } from "../cli/shared.ts";
+import { listFiles, pluralized, statIfExists } from "../cli/shared.ts";
 import { loadSyncConfig, type SyncConfig } from "./config.ts";
 import type { Manifest, ManifestEntry, VaultNotes } from "./manifest.ts";
 
@@ -208,6 +208,86 @@ export async function pruneNamespaces(
   }
 
   return prunedNamespaces;
+}
+
+/** One namespace's candidate removals/renames, read-only (issue
+ *  #390): the set the shared-writer receipt confirms before `raw/`
+ *  is mutated. */
+export interface VaultRemovalPlan {
+  readonly vault: string;
+  readonly removals: readonly string[];
+  readonly renames: readonly { readonly from: string; readonly to: string }[];
+}
+
+/** The namespaces the manifest or the notes root holds that the
+ *  config no longer lists — the one staleness computation both the
+ *  cycle's prune and the shared-writer removal plan use, so the
+ *  gate's candidate set can never be narrower than the expunge the
+ *  cycle would apply. Sorted, so a plan's order never depends on
+ *  readdir order. An empty configured set computes no stale names:
+ *  a misconfigured empty config must never expunge everything. */
+export async function staleNamespaceNames(
+  configuredNames: ReadonlySet<string>,
+  manifestVaults: Manifest["vaults"],
+  notesRoot: string,
+): Promise<readonly string[]> {
+  if (configuredNames.size === 0) {
+    return [];
+  }
+
+  return [
+    ...new Set([
+      ...Object.keys(manifestVaults),
+      ...(await listNamespaceDirs(notesRoot)),
+    ]),
+  ]
+    .filter((name) => !configuredNames.has(name))
+    .sort();
+}
+
+/** Every file under one namespace directory, POSIX-relative; a
+ *  missing directory (or a plain file in its place) contributes
+ *  none — the prune the plan mirrors removes either state without
+ *  error (`rm` --force). Any other read error surfaces. */
+async function listNamespaceFiles(
+  namespaceRoot: string,
+): Promise<readonly string[]> {
+  try {
+    return await listFiles(namespaceRoot);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+
+    if (code === "ENOENT" || code === "ENOTDIR") {
+      return [];
+    }
+
+    throw error;
+  }
+}
+
+/** One stale namespace's expunge as a read-only removal plan entry:
+ *  every path the prune would delete — the manifest's projected
+ *  notes plus whatever the namespace directory still holds — so a
+ *  shared-writer cycle cannot expunge it without a matching receipt
+ *  (issue #390). */
+export async function planNamespacePrunes(
+  staleNames: readonly string[],
+  manifestVaults: Manifest["vaults"],
+  notesRoot: string,
+): Promise<readonly VaultRemovalPlan[]> {
+  const plans: VaultRemovalPlan[] = [];
+
+  for (const name of staleNames) {
+    const removals = new Set(Object.keys(manifestVaults[name] ?? {}));
+
+    for (const rel of await listNamespaceFiles(join(notesRoot, name))) {
+      removals.add(rel);
+    }
+
+    plans.push({ vault: name, removals: [...removals].sort(), renames: [] });
+  }
+
+  return plans;
 }
 
 /** The literal leading directory segments of a pattern, before the

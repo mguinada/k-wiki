@@ -72,6 +72,7 @@ exists without a row, or a row names no domain.
 | `sandbox/` | the agent-write sandbox: `wiki/sandbox/` namespace, accept-gate (path-scoped revert of out-of-namespace writes), `via:`/`expires:` stamps, `sandbox: <slug>` atomic commits, `log.md` audit, the `propose` verb (the gate's caller: note body → deterministic template → gated agent run, instance resolved through the verb's own chain), the TTL reaper (wiki-ingest's hygiene epilogue), the `SANDBOX_ROOT` exclusion the wiki walker and the publish denylist consume, the one-way citation wall (the `check-citations` core and the wall's path-scoped revert of offending pages to their last committed state) | ungated agent writes; whole-repo resets (a mid-window wiki-sync commit must survive a gate revert); accepting caller-supplied stamps; judging link resolution (the wall judges direction and placement only) | e2e sandbox suite (gate-revert runs); e2e propose suite (`tests/e2e/propose.e2e.test.ts` — redirect, gate revert, instance resolution); e2e wiki-sync citation-wall run (rogue-merge revert); walker-exclusion guard (`tests/quality/sandbox-exclusion.test.ts`); review-enforced otherwise |
 | `schedule/` | scheduled-run, the run lock, launchd setup (the setup-schedule origin guard: refuse install/uninstall from a Stryker sandbox, linked worktree, or detached HEAD) | re-implementing sync mechanics — import, don't copy | e2e scheduled-run suite (lock runs); e2e setup-schedule suite (origin-guard refusals); review-enforced otherwise |
 | `sync/` | vault→raw projection, sync configs, repo sources, cycle orchestration, instance resolution | LLM/agent concerns anywhere in the deterministic layer | review-enforced only |
+| `writer/` | the shared-writer protocol (issue #390): the marker, remote lease, capability probe, removal receipts, and the cycle coordinator both manual and scheduled writers run | deterministic projection — it orchestrates `sync/`'s cycle, never re-implements it; raw lease commits in branch history | e2e shared-writer suite (lease serialization, fencing, receipts); review-enforced otherwise |
 | `wiki/` | wikilink/crosslink parsing, page walking, wiki-domain reports | pipeline orchestration | review-enforced only |
 | `board/` (dev) | board-triage decisions and the gh/GraphQL infrastructure | runtime surface — `dev/` launchers only | `tests/bin/bin-structure.test.ts` |
 | `fixtures/` (dev) | the synthetic fixture vault | runtime reach — `dev/` launchers only | `tests/bin/bin-structure.test.ts` |
@@ -188,7 +189,7 @@ npm run lint        # gate — always
 npm test            # gate — always (unit only; e2e is NOT included; includes the complexity gate)
 npm run complexity  # gate — fast targeted re-run of the gate when only it matters
 npm run structure   # gate — fast targeted re-run of the gate when only it matters
-npm run e2e         # when the change touches src/sync/, src/ingest/, src/query/, src/data/, src/dashboard/, src/wiki/, src/cli/, src/sandbox/, src/schedule/, src/fixtures/, tests/e2e/, or raw/
+npm run e2e         # when the change touches src/sync/, src/ingest/, src/query/, src/data/, src/dashboard/, src/wiki/, src/cli/, src/sandbox/, src/schedule/, src/writer/, src/fixtures/, tests/e2e/, or raw/
 bin/libexec/check-raw       # same trigger as e2e; also safe to run any time — read-only, no vault access
 ```
 

@@ -43,16 +43,18 @@ import {
   type DriverOptions,
   formatDryRunReport,
   formatReport,
-  listNamespaceDirs,
   type ProjectedNote,
+  planNamespacePrunes,
   projectNotes,
   pruneNamespaces,
   reportColors,
   resolveDriverConfig,
   type SyncProgress,
   type SyncReport,
+  staleNamespaceNames,
   toAbsolute,
   type VaultDryRunReport,
+  type VaultRemovalPlan,
   type VaultSyncReport,
 } from "./projection.ts";
 import { scanVault } from "./scan.ts";
@@ -242,16 +244,11 @@ export async function runVaultSync(
   const reports: VaultSyncReport[] = [];
   const nextManifest: Manifest = { vaults: { ...manifest.vaults } };
   const notesRoot = join(options.rawDir, "notes");
-  const configuredNames = new Set(vaults.map((vault) => vault.name));
-  const staleNames =
-    vaults.length > 0
-      ? [
-          ...new Set([
-            ...Object.keys(manifest.vaults),
-            ...(await listNamespaceDirs(notesRoot)),
-          ]),
-        ].filter((name) => !configuredNames.has(name))
-      : [];
+  const staleNames = await staleNamespaceNames(
+    new Set(vaults.map((vault) => vault.name)),
+    manifest.vaults,
+    notesRoot,
+  );
   const prunedNamespaces = await pruneNamespaces(
     staleNames,
     nextManifest,
@@ -279,6 +276,90 @@ export async function runVaultSync(
   }
 
   return { sources: reports, prunedNamespaces };
+}
+
+/** Plan one vault: scan and select (no writes), diff the previous
+ *  manifest's paths+hashes, pair vanished entries whose hash
+ *  reappears as renames. */
+async function planVaultNamespace(
+  vault: VaultSourceConfig,
+  previous: VaultNotes,
+  progressEvery: number,
+  onProgress: (message: SyncProgress) => void,
+): Promise<VaultRemovalPlan> {
+  const { selected } = await scanAndSelect(vault, progressEvery, onProgress);
+
+  const selectedPaths = new Set(selected.map((note) => note.relPath));
+  const pathByHash = new Map<string, string>();
+
+  for (const note of selected) {
+    if (!pathByHash.has(note.hash)) {
+      pathByHash.set(note.hash, note.relPath);
+    }
+  }
+
+  const removals: string[] = [];
+  const renames: { from: string; to: string }[] = [];
+
+  for (const [relPath, entry] of Object.entries(previous)) {
+    if (selectedPaths.has(relPath)) {
+      continue;
+    }
+
+    const destination = pathByHash.get(entry.hash);
+
+    if (destination !== undefined) {
+      renames.push({ from: relPath, to: destination });
+    } else {
+      removals.push(relPath);
+    }
+  }
+
+  return { vault: vault.name, removals, renames };
+}
+
+/** Plan every configured vault's removals/renames plus every
+ *  stale-namespace expunge against the current `raw/manifest.json`,
+ *  writing nothing (issue #390: the candidate set is computed before
+ *  any `raw/` mutation and covers the whole removal surface the pass
+ *  would apply). */
+export async function planVaultRemovals(
+  options: DriverOptions,
+): Promise<readonly VaultRemovalPlan[]> {
+  const home = options.home ?? homedir();
+  const onProgress = options.onProgress ?? (() => {});
+  const config = await resolveDriverConfig(options, home);
+  const vaults = vaultSourcesOnly(config.vaults);
+  const manifestPath = join(options.rawDir, "manifest.json");
+  const previousText = await readTextIfExists(manifestPath);
+  const manifest =
+    previousText === undefined
+      ? emptyManifest()
+      : parseManifest(previousText, manifestPath);
+  const plans: VaultRemovalPlan[] = [];
+
+  for (const vault of vaults) {
+    plans.push(
+      await planVaultNamespace(
+        vault,
+        manifest.vaults[vault.name] ?? {},
+        options.progressEvery ?? PROGRESS_EVERY,
+        onProgress,
+      ),
+    );
+  }
+
+  const notesRoot = join(options.rawDir, "notes");
+  const staleNames = await staleNamespaceNames(
+    new Set(vaults.map((vault) => vault.name)),
+    manifest.vaults,
+    notesRoot,
+  );
+
+  return [
+    ...plans,
+    ...(await planNamespacePrunes(staleNames, manifest.vaults, notesRoot)),
+  ];
 }
 
 /**

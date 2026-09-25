@@ -67,17 +67,20 @@ export async function writeDashboard(
   const gitignore = await readFile(join(dataRoot, ".gitignore"), "utf8").catch(
     () => "",
   );
+  const exclude = await readFile(
+    join(dataRoot, ".git", "info", "exclude"),
+    "utf8",
+  ).catch(() => "");
+  const ignored = `${gitignore}\n${exclude}`
+    .split("\n")
+    .some(
+      (line) =>
+        line.trim() === OUTPUT_NAME || line.trim() === `/${OUTPUT_NAME}`,
+    );
 
-  if (
-    !gitignore
-      .split("\n")
-      .some(
-        (line) =>
-          line.trim() === OUTPUT_NAME || line.trim() === `/${OUTPUT_NAME}`,
-      )
-  ) {
+  if (!ignored) {
     warn(
-      `dashboard: ${dataRoot}/.gitignore has no ${OUTPUT_NAME} entry — add it (the ingest run does) so a careless git add cannot commit the regenerated file`,
+      `dashboard: ${dataRoot} has no ${OUTPUT_NAME} ignore entry (.gitignore or .git/info/exclude) — add it (the ingest run does) so a careless git add cannot commit the regenerated file`,
     );
   }
 
@@ -103,8 +106,9 @@ snapshot; its absence counts every raw note as un-ingested);
 outputs/last-query.md (the query funnel appears only when it
 exists); and the data repo's git log (run activity, wiki growth,
 HEAD). It writes nothing but dashboard.html — the only caveat is a
-warning when the data repo's .gitignore lacks a dashboard.html
-entry (wiki-ingest adds the entry; a bare git add must never commit
+warning when neither the data repo's .gitignore nor its
+.git/info/exclude ignores dashboard.html (wiki-ingest adds the
+entry to the per-machine exclude; a bare git add must never commit
 the file).
 
 Switches and arguments:

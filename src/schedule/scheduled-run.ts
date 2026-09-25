@@ -15,12 +15,14 @@
  * stage it — same-machine overlap is *prevented*; a lock older than
  * LOCK_STALE_MS is taken over (a killed run must never wedge the
  * schedule). Cross-
- * machine overlap is not prevented but made recoverable: the pre-run
- * `pull --rebase` and the push's rejection → pull --rebase → retry
- * -once → alert sequence keep any slipped-through overlap visible
- * instead of silently diverged (decisions 4–5). A lease lock as a
- * git ref is the known upgrade path if a second machine ever runs
- * scheduled syncs — deferred until then.
+ * machine overlap is prevented when the data repo carries the
+ * shared-writer marker: the coordinator serializes through the
+ * remote lease (issue #390). Without the marker it stays not
+ * prevented but made recoverable: the pre-run `pull --rebase` and
+ * the push's rejection → pull --rebase → retry-once → alert sequence
+ * keep any slipped-through overlap visible instead of silently
+ * diverged (decisions 4–5). The lease-as-git-ref upgrade shipped as
+ * shared-writer mode.
  *
  * `wiki-sync` stays commit-only (decision 5): unattended pushing is
  * consented to here and only here, after wiki-sync's guardrails and
@@ -56,6 +58,8 @@ import {
 } from "../sync/run-lock.ts";
 import { writeCycleHeartbeat } from "./heartbeat.ts";
 import { notifyUser } from "./notify.ts";
+import { HELP } from "./scheduled-run-help.ts";
+import { runSharedPipeline, scheduledSharedMode } from "./shared-cycle.ts";
 
 /** The PATH a scheduled run gets: node's bin dir first (the wrapper
  *  and any sibling CLIs), then the standard install locations — the
@@ -209,13 +213,7 @@ export async function runScheduledCycle(
   );
 
   try {
-    await runPipelineStages(options, runGitStep, log);
-  } catch (error) {
-    return await fail(errorMessage(error));
-  }
-
-  try {
-    await pushWithRetry(options.dataRoot, runGitStep, log);
+    await runStage(options, runGitStep, log);
   } catch (error) {
     return await fail(errorMessage(error));
   }
@@ -227,6 +225,13 @@ export async function runScheduledCycle(
   return { status: "ok" };
 }
 
+/** The pre-push stages: verify origin, pull --rebase, the optional
+ *  full-sweep lint, then wiki-sync. Any failure throws — wiki-sync's
+ *  guardrails and verification have already reverted their agent
+ *  runs, so the wiki stays at the last good commit and the next
+ *  interval is the recovery; a failed sweep leaves its own partial,
+ *  guardrail-passed edits uncommitted with the window snapshot
+ *  untouched, so the next sweep retries them (issue #359). */
 /** The busy-lock skip reason, naming the holder when the lockfile
  *  is readable (issue #313 — the manual holder is who the operator
  *  must know about). */
@@ -241,7 +246,7 @@ function skipReason(holder: LockFileData | undefined): string {
  *  when the wrapper was given one, and the instance's raw dir — the
  *  sweep lints the same data repo the cycle syncs, never whatever
  *  the default instance happens to be. */
-function sweepArgsFor(
+export function sweepArgsFor(
   options: ScheduledRunOptions,
   timeoutMs: number,
 ): readonly string[] {
@@ -256,13 +261,31 @@ function sweepArgsFor(
   ];
 }
 
-/** The pre-push stages: verify origin, pull --rebase, the optional
- *  full-sweep lint, then wiki-sync. Any failure throws — wiki-sync's
- *  guardrails and verification have already reverted their agent
- *  runs, so the wiki stays at the last good commit and the next
- *  interval is the recovery; a failed sweep leaves its own partial,
- *  guardrail-passed edits uncommitted with the window snapshot
- *  untouched, so the next sweep retries them (issue #359). */
+/** One cycle's stages: shared mode runs the coordinator (no pull, no
+ *  push — it finalizes remotely); local mode runs the pull → sweep →
+ *  sync sequence and its push-with-retry. */
+async function runStage(
+  options: ScheduledRunOptions,
+  runGitStep: NonNullable<ScheduledRunOptions["runGitStep"]>,
+  log: (line: string) => void,
+): Promise<void> {
+  if (await scheduledSharedMode(options)) {
+    await runSharedPipeline(options, log);
+
+    // The shared coordinator finalized remotely (branch advance and
+    // lease release in one atomic push); a wrapper push here would
+    // race the lease protocol and is never issued in shared mode.
+    log(
+      "scheduled-run: shared-writer cycle complete — remote finalized by the coordinator",
+    );
+
+    return;
+  }
+
+  await runPipelineStages(options, runGitStep, log);
+  await pushWithRetry(options.dataRoot, runGitStep, log);
+}
+
 async function runPipelineStages(
   options: ScheduledRunOptions,
   runGitStep: NonNullable<ScheduledRunOptions["runGitStep"]>,
@@ -448,7 +471,7 @@ export const DEFAULT_LINT_FULL_TIMEOUT_MS = 7_200_000;
 
 /** Run one of the repo's bin/ scripts as a child with the scheduled
  *  env, streaming its stdout and stderr into the log. */
-async function spawnRepoScript(
+export async function spawnRepoScript(
   repoRoot: string,
   name: string,
   args: readonly string[],
@@ -556,90 +579,6 @@ async function appendFileLine(logPath: string, line: string): Promise<void> {
   await handle.writeFile(`${line}\n`);
   await handle.close();
 }
-
-/** Help text: every switch and default (AGENTS.md CLI rule). */
-const HELP = `Usage: scheduled-run [-h | --help] [--lint-full] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<config>] [<raw-dir>]
-
-Run one unattended pipeline cycle — the command the
-launchd job executes every interval. The wrapper is portable Node:
-lockfile → git pull --rebase → (with --lint-full: wiki-lint --full,
-the weekly quality sweep) → wiki-sync (sync → ingest → lint →
-crosslinks → citation wall → verification → commit) → git push.
-wiki-sync stays commit-only; the push happens here and only here.
-
-  --lint-full         Run the full-lint sweep before the cycle:
-                      wiki-lint --full — every page, the complete
-                      check list — then the ordinary wiki-sync flow
-                      (verification, commit, publish; ingest usually
-                      a no-op). The sweep runs under the same run
-                      lock: a concurrent 30-minute cycle makes this
-                      firing refuse loud naming the holder, and vice
-                      versa. Registered weekly by setup-schedule
-                      --calendar (Sundays 03:00 by default); run it
-                      by hand for one sweep now.
-  --settings <path>  Forwarded to wiki-sync. Default: the repo's
-                     settings.yml.
-  --outputs <dir>    Forwarded to wiki-sync (ingest digest location).
-                     Default: the repo's outputs/.
-  --timeout <secs>   Forwarded to wiki-sync. Default: 1800. With
-                     --lint-full, one explicit value sets both the
-                     cycle's and the sweep's budget; the defaults
-                     stay 1800 (the cycle) and 7200 (the sweep).
-  -h, --help         Print this help and exit; no side effects.
-  <config>           Forwarded to wiki-sync. Default: the repo's
-                     sync.json.
-  <raw-dir>          Forwarded to wiki-sync. Default: <dataRoot>/raw.
-
-Behavior, failure mode by failure mode:
-  - Overlap (same machine): an O_EXCL lockfile at
-    <dataRoot>/.scheduled-run.lock (PID + timestamp) prevents
-    concurrent runs; a lock older than four hours is taken over, so
-    a killed run never wedges the schedule. The lock is shared with
-    manual wiki-sync runs: a manual cycle in progress makes this
-    firing skip — naming the holder's PID and start time —
-    while a scheduled cycle in progress makes a manual wiki-sync
-    fail loud instead of colliding at the git layer. The file lives
-    at the data repo root — outside wiki-sync's wiki/raw/outputs
-    commit pathspecs — so the sync can never commit or stage it.
-  - Overlap (across machines): not prevented — recovered. The pre-run
-    git pull --rebase keeps the run on a fresh base; a push rejection
-    gets one pull --rebase + retry; a second failure logs an ALERT
-    line and exits 1. A conflicted pull --rebase leaves the repo
-    mid-rebase; the next tick aborts it (git rebase --abort before
-    each pull site) and retries with the tree actionable — divergent
-    content stays for the operator to resolve manually.
-  - No origin: the data repo must have an origin remote (the push
-    stage needs one); the wrapper fails loud without running.
-  - wiki-sync failure: the guardrails and verification have already
-    reverted the run — the wiki stays at the last good commit, the
-    error and digest land in the log, exit 1. The next interval is
-    the recovery (no retry/backoff by design). A --lint-full sweep
-    failure fails the same way: its own guardrails have already
-    handled its edits, the lint-window snapshot stays untouched, and
-    the next firing retries the same audit.
-  - Dirty tree: a failed or killed sync leaves its edits uncommitted
-    on purpose (the fix surface). The next tick skips its pre-run
-    pull — a rebase refuses a dirty tree — so that recovery stays
-    reachable; the push-rejection path owns any divergence that
-    follows.
-  - Logs: ~/Library/Logs/k-wiki/scheduled-run.log (rotated at 5 MiB,
-    one previous generation kept); wiki-sync's digest and progress
-    stream into the same file. KWIKI_SCHEDULED_LOG overrides the log
-    path (tests and multi-instance setups).
-  - Heartbeat: every completed cycle (ok or failed) writes the stamp
-    outputs/last-cycle.json in the data repo — timestamp, outcome,
-    holder PID, and the last ok cycle's timestamp — kept out of git
-    via .git/info/exclude. The sync-watchdog door and the dashboard's
-    last-cycle row read it; a skipped tick (lock held) writes
-    nothing, and the stamp never changes the cycle's outcome.
-  - Notifications: an ALERT (cycle failed, push failed after its
-    one retry) also fires a macOS notification (osascript), and the
-    independent com.kwiki.watchdog launchd job (installed by
-    setup-schedule --watchdog) alerts when the heartbeat goes stale,
-    missing, or unreadable — failures reach the screen, not only a
-    log. KWIKI_NOTIFY=0 disables every notification.
-
-Exits 0 on a completed or skipped cycle, 1 on failure.`;
 
 /** Print one usage error red on stderr and set the exit code
  *  (H-5: the shared rendering, like every sibling CLI). */

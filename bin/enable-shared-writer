@@ -1,0 +1,4 @@
+#!/usr/bin/env node
+import { main } from "../src/writer/enable-shared-writer.ts";
+
+await main();

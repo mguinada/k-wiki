@@ -92,6 +92,21 @@ e2e run or diagnosing a failing one.
   exit-0 no-op naming the prior audit entry (idempotent); ambiguous
   dates (out of order in both directions) refuse with exit 1 and
   write nothing; `--write` on a dirty tree refuses with exit 1.
+- **shared-writer** — the two-writer coordination scenarios (issue
+  #390) in temp topologies of one local bare remote plus two
+  independent worktree clones: racing writers prove exactly one
+  reaches the agent boundary while the loser refuses on the live
+  lease before any scan; a behind writer fast-forwards and ingests
+  only its own post-baseline note; two successful writers leave both
+  worktrees at one remote main with no live lease (the issue's
+  verification gate); an agent failure whose edits are kept retains
+  the lease until a manual exact-OID takeover and a resolved fix
+  surface; and a proposed source removal stops the cycle with a
+  receipt before `raw/` is touched, with the confirmed
+  `--removal-receipt` rerun processing it; a scheduled shared-mode
+  run refuses proposed removals before mutation (it can never supply
+  a receipt), and the A→B then B→A scheduler handoff needs no
+  migration while racing writers serialize.
 - **k-wiki** — the front door (issue #337) in temp checkouts, temp
   data repos, and bound temp projects: read verbs on both doors
   (agent door via `.k-wiki.json`, human door from the checkout

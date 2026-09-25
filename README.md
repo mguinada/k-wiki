@@ -596,7 +596,7 @@ every edit. Queries complete the daily loop:
 
 | Command | Tool | Purpose |
 |---|---|---|
-| `bin/k-wiki wiki-sync [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<sync.json>] [<raw-dir>]` | cycle orchestrator | Run the whole cycle — sync (sync-vault for vault sources, sync-repo for repo-sourced configs, [§9](#9-the-meta-wiki-a-repository-as-source)) → ingest → lint → crosslink audit (configured second brains) → citation wall (sandbox one-way audit) → verification (check-fidelity + check-provenance) → the data-repo commit (the cycle digest follows as its own commit on real-work cycles) → mirror publish (configured `publish` section) — and print the digest (reads `settings.yml`, including its optional `secondBrain.domains` list; [details below](#running-the-full-cycle-wiki-sync)) |
+| `bin/k-wiki wiki-sync [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--removal-receipt <path>] [<sync.json>] [<raw-dir>]` | cycle orchestrator | Run the whole cycle — sync (sync-vault for vault sources, sync-repo for repo-sourced configs, [§9](#9-the-meta-wiki-a-repository-as-source)) → ingest → lint → crosslink audit (configured second brains) → citation wall (sandbox one-way audit) → verification (check-fidelity + check-provenance) → the data-repo commit (the cycle digest follows as its own commit on real-work cycles) → mirror publish (configured `publish` section) — and print the digest (reads `settings.yml`, including its optional `secondBrain.domains` list; [details below](#running-the-full-cycle-wiki-sync)); in shared-writer mode (the data repo carries the marker `.k-wiki/shared-writer.json`) the same command serializes through the remote lease and pushes — [shared-writer mode](docs/references/shared-writer.md) |
 | `bin/k-wiki wiki-query [-h \| --help] [--file-last] [--wiki, -w <name>] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>` | query wrapper | Ask the built wiki one question headless: print the answer, save it for review (stage 1, default); `--file-last` files the reviewed answer deterministically (stage 2); `--wiki <name>` selects the instance — aliases then `sync-<name>.json` stems, both stages, derived paths from the resolved config (stage 1 reads the instance's settings; [details below](#running-queries-wiki-query)) |
 | `bin/k-wiki <read verb>` — `query "<question>"`, `status`, `list [<type>]`, `read <slug>`, `health` | read verbs (both doors) | Ask the wiki bound to the current project from any cwd — zero flags once `.k-wiki.json` binds it; `status` (binding + paths), `list` (pages by type), `read` (one page verbatim), `health` (projection check); `-w <name>` selects the instance (aliases then `sync-<name>.json` stems) and overrides the binding's `wiki` key — `k-wiki query -w meta` and `k-wiki -w meta query` are the same command; answer-only, no filing passthrough ([details below](#querying-from-any-project-k-wiki)) |
 | `bin/k-wiki propose [-h \| --help] [-w, --wiki <name>] [--checkout <path>] [--timeout <secs>] [--title <text>] [--type <type>] <slug> [<file>]` | agent write verb (both doors) | File one candidate note for the wiki: the body from `<file>` (or stdin), wrapped in the deterministic template, landed under `wiki/sandbox/` of the resolved instance as one gated run — accept-gate (only sandbox deltas survive; anything else reverts the run and fails it), `via: agent` + `expires:` stamps, one atomic `sandbox: <slug>` commit with a `wiki/log.md` audit entry; `-w <name>` overrides the binding's `wiki` key; a human reviews and promotes the note (filing reviewed pages stays `--file-last`) |
@@ -612,8 +612,10 @@ for the rare direct use:
 | `bin/k-wiki init-data-repo [--second-brain] [--meta] [<sync.json>]` | data repo seeder | Create and seed the data repo at `sync.json`'s `dataRoot`: git init, copy the `raw/`+`wiki/` skeleton from the code repo, write the standing `.gitignore` (Obsidian UI state, ingest snapshot), first commit; idempotent; `--second-brain` also writes the `.second-brain` identity marker ([§5](#5-the-second-brain)); `--meta` seeds the meta contract (`wiki/AGENTS.meta.md`) as the data repo's `wiki/AGENTS.md` ([§9](#9-the-meta-wiki-a-repository-as-source)) |
 | `bin/k-wiki setup-schedule [-h \| --help] [--calendar [--weekly-at <day-HH:MM>]] [--watchdog [--stale-after <duration>]] [--interval <duration>] [--print] [--uninstall]` | launchd installer | Register the pipeline with launchd — three independent registrations, each managed by its own invocation: the default interval job writes `~/Library/LaunchAgents/com.kwiki.scheduled-run.plist` (`StartInterval`, `30minutes` default, `RunAtLoad`); `--calendar` manages the weekly full-lint sweep instead, `~/Library/LaunchAgents/com.kwiki.scheduled-lint.plist` (`StartCalendarInterval`, default Sundays 03:00, `--weekly-at` e.g. `sat-04:30` re-registers, runs `scheduled-run --lint-full`); `--watchdog` manages the hourly heartbeat watchdog, `~/Library/LaunchAgents/com.kwiki.watchdog.plist` (runs `bin/libexec/sync-watchdog --stale-after <duration>`, default `90minutes`); all build absolute node + script paths, explicit `HOME`, minimal `PATH`, then bootstrap and verify with `launchctl print`; `--print` emits the plist without installing (any OS), `--uninstall` boots out and removes the registration the command addresses ([details below](#scheduling-the-pipeline-launchd)) |
 | `bin/k-wiki setup-meta-sync [-h \| --help] [--print] [--uninstall]` | git-hook installer | Install the meta wiki's post-merge auto-sync git hooks (`post-merge` + `post-rewrite`) into the current checkout's shared hooks dir (`git rev-parse --git-path hooks`), baking absolute paths — canonical checkout, node binary, `settings-meta.yml` + `sync-meta.json`, `<dataRoot>/raw`, and the fire log; a merge or rebase-pull landing on `main` in the canonical checkout with a clean `git status --porcelain` (untracked included) fires one detached `bin/scheduled-run` cycle, anything else log-and-skips; idempotent, refuses to touch a foreign hook; `--print` emits the hook without a git repo, `--uninstall` removes exactly what it wrote ([details below](#the-meta-wiki-post-merge-auto-sync-git-hooks)) |
-| `bin/k-wiki scheduled-run [-h \| --help] [--lint-full] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<config>] [<raw-dir>]` | scheduled cycle wrapper | Run one unattended cycle — the command the launchd job executes: O_EXCL lockfile (PID + timestamp, four-hour stale takeover) at `<dataRoot>/.scheduled-run.lock` → `git pull --rebase` → `wiki-sync` (commit-only) → `git push` (one pull --rebase + retry on rejection, then alert); every completed cycle (ok or failed) writes the heartbeat stamp `<dataRoot>/outputs/last-cycle.json` (gitignored via `.git/info/exclude`) and an ALERT also fires a macOS notification (`KWIKI_NOTIFY=0` disables); `--lint-full` runs the weekly full-lint sweep first — `wiki-lint --full` under the same lock (a concurrent 30-minute cycle makes either refuse loud naming the holder), default budget 7200 s (one explicit `--timeout` sets both the cycle's and the sweep's budget; the 1800 s cycle default and the 7200 s sweep default stay); fails loud without an `origin` remote ([details below](#scheduling-the-pipeline-launchd)) |
+| `bin/k-wiki scheduled-run [-h \| --help] [--lint-full] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<config>] [<raw-dir>]` | scheduled cycle wrapper | Run one unattended cycle — the command the launchd job executes: O_EXCL lockfile (PID + timestamp, four-hour stale takeover) at `<dataRoot>/.scheduled-run.lock` → `git pull --rebase` → `wiki-sync` (commit-only) → `git push` (one pull --rebase + retry on rejection, then alert); every completed cycle (ok or failed) writes the heartbeat stamp `<dataRoot>/outputs/last-cycle.json` (gitignored via `.git/info/exclude`) and an ALERT also fires a macOS notification (`KWIKI_NOTIFY=0` disables); `--lint-full` runs the weekly full-lint sweep first — `wiki-lint --full` under the same lock (a concurrent 30-minute cycle makes either refuse loud naming the holder), default budget 7200 s (one explicit `--timeout` sets both the cycle's and the sweep's budget; the 1800 s cycle default and the 7200 s sweep default stay); fails loud without an `origin` remote; in shared-writer mode (marker present) it skips pull and push and delegates the remote work to the lease coordinator — [shared-writer mode](docs/references/shared-writer.md) ([details below](#scheduling-the-pipeline-launchd)) |
 | `bin/k-wiki sync-watchdog [-h \| --help] [--stale-after <duration>] [<config>] [<raw-dir>]` | heartbeat watchdog | The independent observer of the scheduled pipeline: read the data repo's `outputs/last-cycle.json` stamp and classify it — fresh (inside `--stale-after`, default `90minutes` = three run intervals) prints one line naming age and threshold, exit 0; stale, unreadable, or missing past the grace window (anchored on the newest data-repo commit or the installer's `watchdog-since.txt` anchor, so a fresh install stays quiet) prints one line, fires a macOS notification (`KWIKI_NOTIFY=0` disables), exit 1; read-only, never runs the pipeline — the launchd registration `com.kwiki.watchdog` (installed by `setup-schedule --watchdog`) runs it hourly ([details below](#scheduling-the-pipeline-launchd)) |
+| `bin/k-wiki enable-shared-writer [-h \| --help] [<config>] [<raw-dir>]` | shared-writer enabler | Opt the data repo into shared-writer mode: verify the checkout (an `origin` remote, a clean tree — the run lock is allowed state — on a branch that fast-forwards to it), probe the remote's lease capabilities with disposable refs, acquire the bootstrap lease, then commit the tracked marker `.k-wiki/shared-writer.json` at the data repo root and push it together with the exact lease delete in one atomic push (remote head verified); a refused or failed attempt leaves the remote untouched and resets the marker commit it made — manual shared cycles push by design, so enabling is the operator's consent ([shared-writer mode](docs/references/shared-writer.md)) |
+| `bin/k-wiki writer-lease [-h \| --help] status [<config>] [<raw-dir>]` / `bin/k-wiki writer-lease takeover --expected <oid> --confirm [<config>] [<raw-dir>]` | lease inspector / recovery | Inspect or recover the shared-writer lease of a marker-enabled data repo: `status` observes the live lease read-only — lease OID, holder, acquired/expiry timestamps, base commit, renewal count, expired? — and exits 0 when none is held; `takeover` replaces the lease by an exact expected OID with an explicit `--confirm` (no expiry requirement) — the recovery for a holder that died with the lease live; there is no generic force-unlock, and a stale holder's fenced finalize push fails its fence; the observed lease is fetched into the scratch ref `refs/k-wiki/lease-observed` — no working-tree or history changes ([shared-writer mode](docs/references/shared-writer.md)) |
 | `bin/k-wiki dashboard [-h \| --help] [-o \| --open] [<data-repo>]` | KPI dashboard generator | Regenerate the static KPI dashboard: read the data repo's wiki, manifests, and git history — read-only — and write the self-contained `<data-repo>/dashboard.html` (gitignored; opens offline via `file://`) with coverage, structure, activity, and provenance KPIs in dark and light themes; refreshed by every ingest, `-o` also opens it ([above](#the-pipeline)) |
 | `bin/k-wiki sync-vault [--dry-run] [<sync.json>] [<raw-dir>]` | sync CLI | Ingest every note not blocked by the vault's exclusion rule into `raw/notes/` (deterministic, no LLM; [details below](#running-the-sync)) |
 | `bin/k-wiki sync-repo [-h \| --help] [<config>] [<raw-dir>]` | repo sync CLI | Project the allowlisted files of a committed source repository verbatim into `raw/notes/<name>/`, recording the source HEAD commit in the manifest (deterministic, no LLM; the meta-wiki adapter, [§9](#9-the-meta-wiki-a-repository-as-source)) |
@@ -1398,8 +1400,10 @@ operation needs and nothing else:
    fix surface), and a rebase would refuse them; the push-rejection
    path then owns any divergence.
 3. **`wiki-sync`** — unchanged: the full gated cycle ending in a
-   local commit. `wiki-sync` stays commit-only; nothing in an
-   interactive run pushes.
+   local commit. In this local mode `wiki-sync` stays commit-only;
+   nothing in an interactive run pushes (shared-writer mode below is
+   the deliberate exception — a manual shared cycle pushes by
+   design).
 4. **`git push`** — unattended pushing is consented to here and only
    here, after the guardrails and checks have passed. A rejection
    gets one `git pull --rebase` + retry; a second failure logs an
@@ -1434,17 +1438,44 @@ Node even starts. `KWIKI_SCHEDULED_LOG` overrides the location.
   so the next tick retries with the tree actionable; divergent
   content is resolved manually.
 
-**Multi-machine rule:** enable the scheduler on exactly one machine
-— the source vault lives in iCloud, so only macOS can run the
-pipeline anyway. Other machines pull read-only (`k-wiki query` on a
-clone of the data repo) or run manual gated `wiki-sync` cycles. The
-lockfile prevents same-machine overlap; cross-machine overlap is made
-recoverable by the pull --rebase + rejected-push sequence, not
-prevented. If a second machine ever needs a scheduled sync, the known
-upgrade is a lease lock as a git ref in the data repo — deliberately
-deferred until then. Linux (systemd timer) and Windows (Task
-Scheduler) backends are follow-up issues: the installer fails loud
-on non-macOS platforms (`--print` still emits the macOS plist
+**Multi-machine rule:** the data repo carries no shared-writer marker
+by default — enable the scheduler on exactly one machine and let
+other machines pull read-only (`k-wiki query` on a clone); the
+source vault lives in iCloud, so only macOS runs the pipeline
+anyway. The lockfile prevents same-machine overlap; cross-machine
+overlap is made recoverable by the pull --rebase + rejected-push
+sequence, not prevented.
+
+**Shared-writer mode (opt-in, multi-machine):** a remote-backed data
+repo can instead opt in through `k-wiki enable-shared-writer`. The
+command probes the remote's live capabilities, then commits and
+pushes a tracked marker — `.k-wiki/shared-writer.json` at the data
+repo root — and from then on every compliant writer on any machine
+(manual `wiki-sync` and `scheduled-run` alike) serializes through
+one remote lease: it refuses a dirty, ahead, or diverged checkout
+before any scan, acquires the lease (taking over only an expired one
+by exact OID), fast-forwards to the canonical remote tree,
+re-baselines the ingest snapshot from that tree, and advances the
+branch and releases the lease in one atomic push. Cross-machine
+overlap is prevented, not merely recovered. Proposed source
+removals/renames stop the cycle until a human confirms a receipt,
+so a stale iCloud view can never become a shared expunge.
+`k-wiki writer-lease status` inspects the lease; `k-wiki writer-lease
+takeover --expected <oid> --confirm` is the human recovery for a
+dead holder. Manual shared cycles push by design — enabling the
+marker is the operator's consent. The full protocol — lease
+lifecycle, failure rules, the cutover procedure, and the honest
+limits (GitHub cannot install custom receive hooks, so the protocol
+binds updated compliant k-wiki writers, not old binaries or raw
+manual git pushes) — is documented in
+[docs/references/shared-writer.md](docs/references/shared-writer.md),
+with the post-cutover acceptance script at
+[docs/references/two-mac-acceptance.sh](docs/references/two-mac-acceptance.sh).
+If a second machine ever needs a scheduled sync without shared mode,
+the known upgrade is a lease lock as a git ref in the data repo —
+now shipped as shared-writer mode. Linux (systemd timer) and Windows
+(Task Scheduler) backends are follow-up issues: the installer fails
+loud on non-macOS platforms (`--print` still emits the macOS plist
 everywhere), and the platform switch keeps them additive.
 
 ### The meta wiki: post-merge auto-sync (git hooks)

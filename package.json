@@ -51,7 +51,9 @@
     "complexity:full": "COMPLEXITY_FULL=1 vitest run --disableConsoleIntercept tests/quality/complexity.test.ts",
     "structure": "vitest run --disableConsoleIntercept tests/quality/structure.test.ts",
     "refactor-metrics": "node dev/refactor-metrics.ts",
-    "setup-meta-sync": "node bin/setup-meta-sync"
+    "setup-meta-sync": "node bin/setup-meta-sync",
+    "enable-shared-writer": "node bin/enable-shared-writer",
+    "writer-lease": "node bin/writer-lease"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",

@@ -51,9 +51,9 @@ import {
   compileIncludePattern,
   type DriverOptions,
   formatReport,
-  listNamespaceDirs,
   literalPrefix,
   type ProjectedNote,
+  planNamespacePrunes,
   projectNotes,
   pruneNamespaces,
   type RepoSyncReport,
@@ -62,7 +62,9 @@ import {
   SKIPPED_ROOT_DIRS,
   type SyncProgress,
   type SyncReport,
+  staleNamespaceNames,
   toAbsolute,
+  type VaultRemovalPlan,
 } from "./projection.ts";
 
 /** Split the patterns into fully-literal exact files and the
@@ -335,12 +337,11 @@ export async function runRepoSync(options: DriverOptions): Promise<SyncReport> {
       ? emptyManifest()
       : parseManifest(previousText, manifestPath);
   const notesRoot = join(options.rawDir, "notes");
-  const staleNames = [
-    ...new Set([
-      ...Object.keys(manifest.vaults),
-      ...(await listNamespaceDirs(notesRoot)),
-    ]),
-  ].filter((name) => name !== source.name);
+  const staleNames = await staleNamespaceNames(
+    new Set([source.name]),
+    manifest.vaults,
+    notesRoot,
+  );
   const nextManifest: Manifest = { vaults: { ...manifest.vaults } };
   const prunedNamespaces = await pruneNamespaces(
     staleNames,
@@ -370,6 +371,33 @@ export async function runRepoSync(options: DriverOptions): Promise<SyncReport> {
   }
 
   return { sources: [report], prunedNamespaces };
+}
+
+/** Plan the stale-namespace expunges the next pass would apply,
+ *  writing nothing (issue #390): the shared-writer gate's candidate
+ *  set for repo-kind configs. The single repo source's own notes are
+ *  commit-guarded upstream, but any other namespace in the manifest
+ *  or on disk is not — its expunge is receipt-gated like a vault's. */
+export async function planRepoRemovals(
+  options: DriverOptions,
+): Promise<readonly VaultRemovalPlan[]> {
+  const home = options.home ?? homedir();
+  const config = await resolveDriverConfig(options, home);
+  const source = await theRepoSource(config, options.configPath);
+  const manifestPath = join(options.rawDir, "manifest.json");
+  const previousText = await readTextIfExists(manifestPath);
+  const manifest: Manifest =
+    previousText === undefined
+      ? emptyManifest()
+      : parseManifest(previousText, manifestPath);
+  const notesRoot = join(options.rawDir, "notes");
+  const staleNames = await staleNamespaceNames(
+    new Set([source.name]),
+    manifest.vaults,
+    notesRoot,
+  );
+
+  return planNamespacePrunes(staleNames, manifest.vaults, notesRoot);
 }
 
 /** The run's single repo row — the commit line's source; the driver

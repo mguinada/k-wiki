@@ -279,6 +279,10 @@ export interface AgentRunFlags {
   readonly settings: string | undefined;
   readonly outputs: string | undefined;
   readonly timeoutMs: number | undefined;
+  /** The `--removal-receipt <path>` value (issue #390): the
+   *  confirming rerun's source-removal receipt. Parsed by the same
+   *  shell so wiki-sync and scheduled-run share one spec. */
+  readonly removalReceipt: string | undefined;
   /** The first flag-set usage error, undefined when valid. */
   readonly error: string | undefined;
 }
@@ -295,6 +299,7 @@ export function agentRunFlags(
       settings: undefined,
       outputs: undefined,
       timeoutMs: undefined,
+      removalReceipt: undefined,
       error,
     };
   }
@@ -305,6 +310,7 @@ export function agentRunFlags(
     settings: values.get("--settings"),
     outputs: values.get("--outputs"),
     timeoutMs: timeout === undefined ? undefined : Number(timeout) * 1000,
+    removalReceipt: values.get("--removal-receipt"),
     error: undefined,
   };
 }
@@ -317,7 +323,7 @@ export function agentRunFlags(
  *  not one: a wrapper-only flag never reaches wiki-sync's parser. */
 export function parseSyncRunArgs(args: readonly string[]): ParsedCli {
   return parseArgs(args, {
-    value: ["--settings", "--outputs", "--timeout"],
+    value: ["--settings", "--outputs", "--timeout", "--removal-receipt"],
     positionals: {
       max: 2,
       error: (_arg, count) =>
