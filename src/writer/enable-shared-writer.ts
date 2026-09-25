@@ -37,7 +37,12 @@ import {
   finalizeWithLeaseRelease,
   releaseOwnLease,
 } from "./lease-ops.ts";
-import { LEASE_REF_NAMESPACE, MARKER_PATH, markerIsEnabled, markerPath } from "./marker.ts";
+import {
+  LEASE_REF_NAMESPACE,
+  MARKER_PATH,
+  markerIsEnabled,
+  markerPath,
+} from "./marker.ts";
 import { probeRemoteCapabilities, reportProbe } from "./probe.ts";
 import { resolveDataRootFromArgs } from "./resolve.ts";
 

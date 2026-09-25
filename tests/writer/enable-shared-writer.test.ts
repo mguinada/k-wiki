@@ -175,7 +175,12 @@ exit 0
     ).stdout.trim();
     const lease = await lsRemoteOid(gitOf(cw.dataRoot), "origin", LEASE_REF);
 
-    expect({ message, localHead: await head(cw.dataRoot), remoteHead, lease }).toEqual({
+    expect({
+      message,
+      localHead: await head(cw.dataRoot),
+      remoteHead,
+      lease,
+    }).toEqual({
       message: `shared-writer mode already enabled (marker at ${MARKER_PATH})`,
       localHead: markerHead,
       remoteHead: markerHead,
