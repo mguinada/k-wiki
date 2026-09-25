@@ -12,7 +12,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isPlainObject } from "../cli/shared.ts";
-import { gitOk, type GitRunner } from "./git-remote.ts";
+import { type GitRunner, gitOk } from "./git-remote.ts";
 
 /** The marker's repo-relative path inside the data repo. */
 export const MARKER_PATH = ".k-wiki/shared-writer.json";

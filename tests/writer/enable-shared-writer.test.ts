@@ -224,7 +224,9 @@ exit 0
     await world.b.git(["add", "-A"]);
     await world.b.git(["commit", "-m", "remote advance"]);
 
-    const advanceHead = (await world.b.git(["rev-parse", "HEAD"])).stdout.trim();
+    const advanceHead = (
+      await world.b.git(["rev-parse", "HEAD"])
+    ).stdout.trim();
     const baseHead = (await world.a.git(["rev-parse", "HEAD"])).stdout.trim();
 
     await world.b.git([
