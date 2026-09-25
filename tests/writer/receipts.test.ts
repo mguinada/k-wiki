@@ -132,9 +132,9 @@ describe("matchReceipt", () => {
       },
     ];
 
-    expect(
-      matchReceipt(buildReceipt(base, padded), base, plan),
-    ).toMatchObject({ ok: false });
+    expect(matchReceipt(buildReceipt(base, padded), base, plan)).toMatchObject({
+      ok: false,
+    });
   });
 
   it("rejects a receipt that duplicates one rename and drops another", () => {
@@ -159,9 +159,9 @@ describe("matchReceipt", () => {
       },
     ];
 
-    expect(
-      matchReceipt(buildReceipt(base, padded), base, plan),
-    ).toMatchObject({ ok: false });
+    expect(matchReceipt(buildReceipt(base, padded), base, plan)).toMatchObject({
+      ok: false,
+    });
   });
 
   it("accepts the same candidate set in a different order", () => {
@@ -180,9 +180,9 @@ describe("matchReceipt", () => {
       },
     ];
 
-    expect(
-      matchReceipt(buildReceipt(base, receiptPlans), base, plan),
-    ).toEqual({ ok: true });
+    expect(matchReceipt(buildReceipt(base, receiptPlans), base, plan)).toEqual({
+      ok: true,
+    });
   });
 });
 

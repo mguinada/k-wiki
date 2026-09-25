@@ -254,9 +254,7 @@ describe("post-commit failure inside the tenure", () => {
     // The failure came after the content commit: the lease stays
     // held for recovery — manual push or takeover — never released
     // with the commit stranded.
-    expect(
-      await observeLeaseOid(gitOf(cw), "origin", LEASE_REF),
-    ).toBeDefined();
+    expect(await observeLeaseOid(gitOf(cw), "origin", LEASE_REF)).toBeDefined();
   }, 30000);
 });
 

@@ -16,8 +16,8 @@ import {
   planNamespacePrunes,
   pruneEmptyDirs,
   reportColors,
-  staleNamespaceNames,
   type SyncReport,
+  staleNamespaceNames,
   type VaultDryRunReport,
   type VaultSyncReport,
 } from "../../src/sync/projection.ts";
@@ -117,7 +117,9 @@ describe("planNamespacePrunes", () => {
         },
         join(dir, "notes"),
       ),
-    ).toEqual([{ vault: "Retired", removals: ["Old.md", "sub/b.md"], renames: [] }]);
+    ).toEqual([
+      { vault: "Retired", removals: ["Old.md", "sub/b.md"], renames: [] },
+    ]);
   });
 
   it("plans a disk-only orphan namespace the manifest does not know", async () => {

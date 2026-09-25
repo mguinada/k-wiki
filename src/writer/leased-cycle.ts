@@ -9,7 +9,11 @@
  * each stay readable; the coordinator owns order and failure rules.
  */
 
-import { nothingToDoLine, planRemovals, runWikiSync } from "../sync/wiki-sync.ts";
+import {
+  nothingToDoLine,
+  planRemovals,
+  runWikiSync,
+} from "../sync/wiki-sync.ts";
 import {
   baselineSnapshot,
   gateRemovals,

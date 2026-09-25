@@ -20,8 +20,8 @@ import { parseManifest } from "../../src/sync/manifest.ts";
 import type { SyncProgress } from "../../src/sync/projection.ts";
 import {
   main,
-  planVaultRemovals,
   PROGRESS_EVERY,
+  planVaultRemovals,
   runDryRun,
   runVaultSync,
 } from "../../src/sync/sync-vault.ts";
