@@ -53,7 +53,10 @@ Behavior, failure mode by failure mode:
     not prevented — recovered: the pre-run git pull --rebase keeps
     the run on a fresh base; a push rejection
     gets one pull --rebase + retry; a second failure logs an ALERT
-    line and exits 1.
+    line and exits 1. A conflicted pull --rebase leaves the repo
+    mid-rebase; the next tick aborts it (git rebase --abort before
+    each pull site) and retries with the tree actionable — divergent
+    content stays for the operator to resolve manually.
   - Shared-writer mode: the wrapper keeps its schedule, logs,
     heartbeat, and local run lock and delegates the remote work to
     the same coordinator manual wiki-sync runs — no pull, no push.

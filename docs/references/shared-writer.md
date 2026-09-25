@@ -106,6 +106,17 @@ command and never silently expunge.
   `k-wiki` writers; an old binary or a raw manual `git push` to the
   branch bypasses the lease entirely. Server-enforced protection
   needs a later controlled writer or a remote with receive hooks.
+- **The confirm-then-apply window.** The removal-receipt gate
+  validates the candidate set once, at gate time — before the
+  optional `--lint-full` sweep and the sync stage's fresh re-plan. A
+  source removal that lands in that window (a vault edit or another
+  device's iCloud sync) is applied to `raw/` on the same cycle
+  without a new confirmation: the sync stage re-plans from the vault
+  as it finds it. The race is inherent to confirm-then-apply —
+  iCloud offers no subscription a held lease could freeze the view
+  against — so the receipt's guarantee holds at gate time, not at
+  apply time. A cycle that expunges such a removal matched the vault
+  as of its scan; the next cycle re-plans the same way.
 - **Manual shared cycles push by design.** Enabling the marker is the
   operator's consent to unattended-style pushes from manual runs.
 - **Accidental dual scheduling** is safe but inefficient: one

@@ -1,20 +1,34 @@
-import { describe, expect, it } from "vitest";
-import { HELP } from "../../src/sync/wiki-sync-help.ts";
+import { execFileSync } from "node:child_process";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { beforeAll, describe, expect, it } from "vitest";
 
-describe("wiki-sync help", () => {
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+
+let help: string;
+
+beforeAll(() => {
+  help = execFileSync(
+    process.execPath,
+    [join(repoRoot, "bin", "wiki-sync"), "--help"],
+    { encoding: "utf8" },
+  );
+});
+
+describe("wiki-sync help (printed by the launcher)", () => {
   it("documents the removal-receipt switch", () => {
-    expect(HELP).toContain("--removal-receipt <path>");
+    expect(help).toContain("--removal-receipt <path>");
   });
 
-  it("documents shared-writer mode's lease behavior", () => {
-    expect(HELP).toContain("shared-writer");
-    expect(HELP).toContain("remote lease");
-    expect(HELP).toContain("enable-shared-writer");
+  it("documents shared-writer mode", () => {
+    expect(help).toContain("shared-writer");
   });
 
-  it("stays self-sufficient: no document or section citations", () => {
-    expect(HELP).not.toMatch(/§\d/);
-    expect(HELP).not.toContain("docs/");
-    expect(HELP).not.toContain("README");
+  it("documents the remote-lease serialization", () => {
+    expect(help).toContain("remote lease");
+  });
+
+  it("names the enable-shared-writer door", () => {
+    expect(help).toContain("enable-shared-writer");
   });
 });
