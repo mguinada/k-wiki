@@ -10,7 +10,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
@@ -40,6 +40,13 @@ import {
 } from "../../src/sync/wiki-sync.ts";
 
 const run = promisify(execFile);
+
+/** This repository's root: tests/sync/ sits two levels below it. */
+const repoRoot = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+);
 
 const NOW = () => new Date("2026-08-20T18:00:00.000Z");
 
@@ -2402,6 +2409,38 @@ describe("wiki-sync CLI", () => {
     return { out: out.join("\n"), err: err.join("\n") };
   }
 
+  /** Run the launcher as a child process whose HOME is a fresh
+   *  empty dir, returning its stderr and exit code. The
+   *  config-omitted defaults resolve the repo's committed sync.json
+   *  and expand its ~-rooted dataRoot against the run's home;
+   *  anchoring HOME keeps the cycle off whatever data repo the
+   *  machine really carries. A child, not a process.env mutation:
+   *  os.homedir() reads the C environ, which worker threads do not
+   *  share with process.env (see the ~-expansion test above). */
+  async function runCliInSandboxedHome(
+    args: readonly string[],
+  ): Promise<{ err: string; code: number }> {
+    const home = await mkdtemp(join(tmpdir(), "wiki-sync-home-"));
+
+    try {
+      const child: { code?: number; stderr?: string } = await run(
+        process.execPath,
+        [join(repoRoot, "bin", "wiki-sync"), ...args],
+        {
+          env: { ...process.env, HOME: home, NO_COLOR: "1" },
+          timeout: 30_000,
+        },
+      ).catch((error: { code?: number; stderr?: string }) => error);
+
+      return {
+        err: child.stderr ?? "",
+        code: typeof child.code === "number" ? child.code : -1,
+      };
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  }
+
   function cycleArgs(h: Harness): string[] {
     return [
       "--settings",
@@ -2740,8 +2779,8 @@ describe("wiki-sync CLI", () => {
   });
 
   it("names the unread settings file in the error when the config argument is omitted", async () => {
-    const h = await makeCliHarness();
-    const { err } = await runCli([
+    const h = await makeHarness({});
+    const { err } = await runCliInSandboxedHome([
       "--settings",
       "/no/such/settings.yml",
       "--outputs",
@@ -2754,15 +2793,15 @@ describe("wiki-sync CLI", () => {
   });
 
   it("exits 1 when the config argument is omitted and settings cannot be read", async () => {
-    const h = await makeCliHarness();
-    await runCli([
+    const h = await makeHarness({});
+    const { code } = await runCliInSandboxedHome([
       "--settings",
       "/no/such/settings.yml",
       "--outputs",
       h.outputsDir,
     ]);
 
-    expect(process.exitCode).toBe(1);
+    expect(code).toBe(1);
   });
 
   it("names the inaccessible vault root in the error before failing", async () => {
