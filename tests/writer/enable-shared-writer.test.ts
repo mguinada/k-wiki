@@ -118,13 +118,69 @@ describe("enable-shared-writer (library)", () => {
     const { world, cw } = await unenabledRepo();
     const { enable } = await import("../../src/writer/enable-shared-writer.ts");
 
+    await world.b.git(["fetch", "-q", "origin", "refs/heads/main"]);
+    await world.b.git(["reset", "-q", "--hard", "origin/main"]);
     await enable(cw.dataRoot);
+    await writeFile(
+      join(world.remoteDir, "hooks", "pre-receive"),
+      '#!/bin/sh\nwhile read -r _old _new ref; do\n  case "$ref" in refs/k-wiki/*) exit 1 ;; esac\ndone\nexit 0\n',
+      { mode: 0o755 },
+    );
 
     const message = await enable(world.b.dir);
 
     expect(message).toBe(
       `shared-writer mode already enabled (marker at ${MARKER_PATH})`,
     );
+  }, 30000);
+
+  it("returns success when the lease-held fetch receives a marker", async () => {
+    const { world, cw } = await unenabledRepo();
+    const { enable } = await import("../../src/writer/enable-shared-writer.ts");
+
+    await world.b.git(["fetch", "-q", "origin", "refs/heads/main"]);
+    await world.b.git(["reset", "-q", "--hard", "origin/main"]);
+    await mkdir(join(world.b.dir, ".k-wiki"), { recursive: true });
+    await writeFile(
+      join(world.b.dir, MARKER_PATH),
+      '{"version":1,"remote":"origin","branch":"main","leaseRef":"refs/k-wiki/leases/shared-writer-v1","sourceRemovalPolicy":"confirm"}\n',
+    );
+    await world.b.git(["add", "-A"]);
+    await world.b.git(["commit", "-m", "marker from another writer"]);
+
+    const markerHead = (await world.b.git(["rev-parse", "HEAD"])).stdout.trim();
+    await world.b.git([
+      "push",
+      "-q",
+      "origin",
+      `${markerHead}:refs/test/marker`,
+    ]);
+    const baseHead = (await world.a.git(["rev-parse", "HEAD"])).stdout.trim();
+    await writeFile(
+      join(world.remoteDir, "hooks", "pre-receive"),
+      `#!/bin/sh
+while read -r old new ref; do
+  if [ "$ref" = "${LEASE_REF}" ] && [ "$old" = "0000000000000000000000000000000000000000" ]; then
+    git update-ref refs/heads/main ${markerHead} ${baseHead}
+  fi
+done
+exit 0
+`,
+      { mode: 0o755 },
+    );
+
+    const message = await enable(cw.dataRoot);
+    const remoteHead = (
+      await gitOf(world.remoteDir)(["rev-parse", "refs/heads/main"])
+    ).stdout.trim();
+    const lease = await lsRemoteOid(gitOf(cw.dataRoot), "origin", LEASE_REF);
+
+    expect({ message, localHead: await head(cw.dataRoot), remoteHead, lease }).toEqual({
+      message: `shared-writer mode already enabled (marker at ${MARKER_PATH})`,
+      localHead: markerHead,
+      remoteHead: markerHead,
+      lease: undefined,
+    });
   }, 30000);
 
   it("refuses a dirty checkout without writing the marker", async () => {
@@ -167,6 +223,10 @@ function gitOf(dataRoot: string) {
     import("../../src/writer/git-remote.ts").then(({ gitRunnerFor }) =>
       gitRunnerFor({ dir: dataRoot, env: process.env })(args),
     );
+}
+
+async function head(dataRoot: string): Promise<string> {
+  return (await gitOf(dataRoot)(["rev-parse", "HEAD"])).stdout.trim();
 }
 
 describe("writer-lease verbs (library)", () => {

@@ -168,6 +168,10 @@ export async function enable(dataRoot: string): Promise<string> {
     );
   }
 
+  if (await markerIsEnabled(dataRoot)) {
+    return `shared-writer mode already enabled (marker at ${MARKER_PATH})`;
+  }
+
   const treeOid = await fetchedTreeOid(git);
   const probe = await probeRemoteCapabilities({
     git,
@@ -199,11 +203,12 @@ async function commitMarkerUnderLease(
   const outcome = await acquireBootstrapLease(git, treeOid);
 
   try {
-    // Re-fetch while holding the lease; the finalize's non-forced
-    // branch update rejects a remote advance.
     await fetchRefspec(git, "origin", `refs/heads/${branch}`);
+    await mergeFfOnly(git, "FETCH_HEAD");
 
     if (await markerIsEnabled(dataRoot)) {
+      await releaseIfOwn(git, outcome.oid);
+
       return `shared-writer mode already enabled (marker at ${MARKER_PATH})`;
     }
 
