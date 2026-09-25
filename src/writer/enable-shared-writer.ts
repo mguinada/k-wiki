@@ -1,18 +1,9 @@
 /**
- * enable-shared-writer (issue #390): the human door that opts a
- * remote-backed data repo into shared-writer mode. The marker it
- * commits — `.k-wiki/shared-writer.json` at the data repo root — is
- * operator-owned and visible to every checkout; no per-machine
- * switch exists to forget. When no valid marker already exists,
- * enablement is itself serialized: after a live capability probe of
- * the configured remote, it acquires the same bootstrap lease the
- * cycles use, re-fetches, and fast-forwards only if that fetch brings
- * a valid marker; otherwise it publishes the marker commit and deletes
- * the
- * exact lease in one atomic push. A competing enablement that adds a
- * valid marker returns already enabled; another remote advance fails
- * the attempt without a partial marker. The command resets the marker
- * commit it made and never pushes it.
+ * The human door for remote-backed shared-writer mode. A valid marker
+ * is operator-owned and visible to every checkout. Marker-absent
+ * enablement probes the remote, acquires the bootstrap lease, and
+ * publishes the marker atomically; racing valid markers are accepted
+ * idempotently, while remote advances fail without a partial marker.
  */
 
 import { mkdir, writeFile } from "node:fs/promises";
@@ -63,10 +54,10 @@ expired lease is taken over by exact OID), every cycle begins from
 the canonical remote tree, and a content commit is pushed before the
 lease is released. The switch is a tracked marker at the data repo
 root, committed and pushed by this command — visible to every
-checkout, never a per-machine setting. A valid marker already present,
-or received by the initial pre-probe fast-forward, exits successfully
-without a probe, commit, or lease operation; an invalid marker fails
-closed. A valid marker received during the lease-held re-fetch is
+checkout, never a per-machine setting. A valid marker already present
+or received by the initial pre-probe fast-forward exits successfully
+without probe, commit, or lease operation; an invalid marker fails
+closed. A marker received during the lease-held re-fetch is also
 fast-forwarded and returns already enabled.
 
 Otherwise, it does this in order:
@@ -146,9 +137,7 @@ export async function enable(dataRoot: string): Promise<string> {
   if (await markerIsEnabled(dataRoot)) {
     return `shared-writer mode already enabled (marker at ${MARKER_PATH})`;
   }
-
   const clean = await cleanCurrentRefusal(git, dataRoot);
-
   if (clean !== undefined) {
     throw new Error(clean);
   }
@@ -157,7 +146,6 @@ export async function enable(dataRoot: string): Promise<string> {
   if (branch === undefined) {
     throw new Error("the data repo is on a detached HEAD — check out a branch");
   }
-
   await fetchRefspec(git, "origin", `refs/heads/${branch}`);
   const remoteOid = await lsRemoteOid(git, "origin", `refs/heads/${branch}`);
 
