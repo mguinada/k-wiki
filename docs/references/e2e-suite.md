@@ -103,7 +103,10 @@ e2e run or diagnosing a failing one.
   the lease until a manual exact-OID takeover and a resolved fix
   surface; and a proposed source removal stops the cycle with a
   receipt before `raw/` is touched, with the confirmed
-  `--removal-receipt` rerun processing it.
+  `--removal-receipt` rerun processing it; a scheduled shared-mode
+  run refuses proposed removals before mutation (it can never supply
+  a receipt), and the A→B then B→A scheduler handoff needs no
+  migration while racing writers serialize.
 - **k-wiki** — the front door (issue #337) in temp checkouts, temp
   data repos, and bound temp projects: read verbs on both doors
   (agent door via `.k-wiki.json`, human door from the checkout

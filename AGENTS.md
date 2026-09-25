@@ -189,7 +189,7 @@ npm run lint        # gate — always
 npm test            # gate — always (unit only; e2e is NOT included; includes the complexity gate)
 npm run complexity  # gate — fast targeted re-run of the gate when only it matters
 npm run structure   # gate — fast targeted re-run of the gate when only it matters
-npm run e2e         # when the change touches src/sync/, src/ingest/, src/query/, src/data/, src/dashboard/, src/wiki/, src/cli/, src/sandbox/, src/schedule/, src/fixtures/, tests/e2e/, or raw/
+npm run e2e         # when the change touches src/sync/, src/ingest/, src/query/, src/data/, src/dashboard/, src/wiki/, src/cli/, src/sandbox/, src/schedule/, src/writer/, src/fixtures/, tests/e2e/, or raw/
 bin/libexec/check-raw       # same trigger as e2e; also safe to run any time — read-only, no vault access
 ```
 
