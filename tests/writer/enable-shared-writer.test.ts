@@ -214,6 +214,69 @@ exit 0
     });
   }, 30000);
 
+  it("fails closed when the lease-held fetch receives a marker-absent advance", async () => {
+    const { world, cw } = await unenabledRepo();
+    const { enable } = await import("../../src/writer/enable-shared-writer.ts");
+
+    await world.b.git(["fetch", "-q", "origin", "refs/heads/main"]);
+    await world.b.git(["reset", "-q", "--hard", "origin/main"]);
+    await writeFile(join(world.b.dir, "advance.md"), "advance\n");
+    await world.b.git(["add", "-A"]);
+    await world.b.git(["commit", "-m", "remote advance"]);
+
+    const advanceHead = (await world.b.git(["rev-parse", "HEAD"])).stdout.trim();
+    const baseHead = (await world.a.git(["rev-parse", "HEAD"])).stdout.trim();
+
+    await world.b.git([
+      "push",
+      "-q",
+      "origin",
+      `${advanceHead}:refs/test/advance`,
+    ]);
+    await writeFile(
+      join(world.remoteDir, "hooks", "post-receive"),
+      `#!/bin/sh
+while read -r old new ref; do
+  if [ "$ref" = "${LEASE_REF}" ] && [ "$old" = "0000000000000000000000000000000000000000" ]; then
+    git update-ref refs/heads/main ${advanceHead} ${baseHead}
+  fi
+done
+exit 0
+`,
+      { mode: 0o755 },
+    );
+
+    const result = await enable(cw.dataRoot).then(
+      () => "enabled",
+      () => "refused",
+    );
+    const remoteHead = (
+      await gitOf(world.remoteDir)(["rev-parse", "refs/heads/main"])
+    ).stdout.trim();
+    const lease = await lsRemoteOid(gitOf(cw.dataRoot), "origin", LEASE_REF);
+
+    expect({
+      result,
+      localHead: await head(cw.dataRoot),
+      remoteHead,
+      lease,
+      marker: await gitOf(world.remoteDir)([
+        "cat-file",
+        "-e",
+        `refs/heads/main:${MARKER_PATH}`,
+      ]).then(
+        () => "present",
+        () => "absent",
+      ),
+    }).toEqual({
+      result: "refused",
+      localHead: baseHead,
+      remoteHead: advanceHead,
+      lease: undefined,
+      marker: "absent",
+    });
+  }, 30000);
+
   it("refuses a dirty checkout without writing the marker", async () => {
     const { cw } = await unenabledRepo();
     const { enable } = await import("../../src/writer/enable-shared-writer.ts");

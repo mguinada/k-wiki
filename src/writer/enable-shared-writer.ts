@@ -41,6 +41,7 @@ import {
   LEASE_REF_NAMESPACE,
   MARKER_PATH,
   markerIsEnabled,
+  markerIsEnabledAtRef,
   markerPath,
 } from "./marker.ts";
 import { probeRemoteCapabilities, reportProbe } from "./probe.ts";
@@ -204,14 +205,18 @@ async function commitMarkerUnderLease(
   const outcome = await acquireBootstrapLease(git, treeOid);
 
   try {
+    const fetchedBranch = `origin/${branch}`;
+
     await fetchRefspec(
       git,
       "origin",
-      `refs/heads/${branch}:refs/remotes/origin/${branch}`,
+      `refs/heads/${branch}:refs/remotes/${fetchedBranch}`,
     );
-    await mergeFfOnly(git, `origin/${branch}`);
-    if (await markerIsEnabled(dataRoot)) {
+
+    if (await markerIsEnabledAtRef(git, fetchedBranch)) {
+      await mergeFfOnly(git, fetchedBranch);
       await releaseIfOwn(git, outcome.oid);
+
       return `shared-writer mode already enabled (marker at ${MARKER_PATH})`;
     }
 

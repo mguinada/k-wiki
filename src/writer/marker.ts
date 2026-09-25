@@ -12,6 +12,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isPlainObject } from "../cli/shared.ts";
+import { gitOk, type GitRunner } from "./git-remote.ts";
 
 /** The marker's repo-relative path inside the data repo. */
 export const MARKER_PATH = ".k-wiki/shared-writer.json";
@@ -165,10 +166,8 @@ export async function readSharedWriterMarker(
   }
 }
 
-/** Return whether the marker enables shared-writer mode, failing closed on invalid data. */
-export async function markerIsEnabled(dataRoot: string): Promise<boolean> {
-  const marker = await readSharedWriterMarker(dataRoot);
-
+/** Return whether a marker read result enables shared-writer mode, failing closed on invalid data. */
+function isEnabled(marker: MarkerRead): boolean {
   if (marker.kind === "invalid") {
     throw new Error(
       `shared-writer marker is invalid — refusing to enable: ${marker.reason}`,
@@ -176,4 +175,33 @@ export async function markerIsEnabled(dataRoot: string): Promise<boolean> {
   }
 
   return marker.kind === "enabled";
+}
+
+/** Return whether the checked-out data repo has a valid marker. */
+export async function markerIsEnabled(dataRoot: string): Promise<boolean> {
+  return isEnabled(await readSharedWriterMarker(dataRoot));
+}
+
+/** Return whether a fetched Git ref has a valid marker, failing closed on invalid data. */
+export async function markerIsEnabledAtRef(
+  git: GitRunner,
+  refish: string,
+): Promise<boolean> {
+  const file = `${refish}:${MARKER_PATH}`;
+
+  if (!(await gitOk(git, ["cat-file", "-e", file]))) {
+    return false;
+  }
+
+  const text = (await git(["show", file])).stdout;
+  const origin = `${refish}:${MARKER_PATH}`;
+  const marker: MarkerRead = (() => {
+    try {
+      return { kind: "enabled", marker: parseSharedWriterMarker(text, origin) };
+    } catch (error) {
+      return { kind: "invalid", reason: (error as Error).message };
+    }
+  })();
+
+  return isEnabled(marker);
 }
