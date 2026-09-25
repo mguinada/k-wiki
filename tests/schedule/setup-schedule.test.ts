@@ -15,6 +15,7 @@ import { describe, expect, it, vi } from "vitest";
 import { pathExists } from "../../src/cli/shared.ts";
 import {
   LAUNCHD_LABEL,
+  lintPlistPath,
   plistPath,
   WATCHDOG_LAUNCHD_LABEL,
   watchdogPlistPath,
@@ -777,6 +778,78 @@ describe("setup-schedule main: install and uninstall", () => {
     }
 
     expect(outs.join("\n")).toContain("uninstalled");
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("prints exactly the uninstall line for an interval uninstall", async () => {
+    const home = await tempHome();
+    const outs: string[] = [];
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => outs.push(parts.join(" ")));
+
+    try {
+      await main(["--uninstall"], "darwin", async () => {}, home, canonicalGit);
+    } finally {
+      logSpy.mockRestore();
+    }
+
+    expect(outs).toEqual([
+      `setup-schedule: uninstalled — ${plistPath(home)} removed and booted out`,
+    ]);
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("prints exactly the uninstall line for a calendar uninstall", async () => {
+    const home = await tempHome();
+    const outs: string[] = [];
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => outs.push(parts.join(" ")));
+
+    try {
+      await main(
+        ["--calendar", "--uninstall"],
+        "darwin",
+        async () => {},
+        home,
+        canonicalGit,
+      );
+    } finally {
+      logSpy.mockRestore();
+    }
+
+    expect(outs).toEqual([
+      `setup-schedule: uninstalled — ${lintPlistPath(home)} removed and booted out`,
+    ]);
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("prints exactly the uninstall line for a watchdog uninstall", async () => {
+    const home = await tempHome();
+    const outs: string[] = [];
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => outs.push(parts.join(" ")));
+
+    try {
+      await main(
+        ["--watchdog", "--uninstall"],
+        "darwin",
+        async () => {},
+        home,
+        canonicalGit,
+      );
+    } finally {
+      logSpy.mockRestore();
+    }
+
+    expect(outs).toEqual([
+      `setup-schedule: uninstalled — ${watchdogPlistPath(home)} removed and booted out`,
+    ]);
 
     await rm(home, { recursive: true, force: true });
   });
