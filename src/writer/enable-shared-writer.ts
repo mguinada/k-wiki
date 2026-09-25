@@ -141,7 +141,6 @@ export async function enable(dataRoot: string): Promise<string> {
   if (clean !== undefined) {
     throw new Error(clean);
   }
-
   if (await markerIsEnabled(dataRoot)) {
     return `shared-writer mode already enabled (marker at ${MARKER_PATH})`;
   }
@@ -152,7 +151,6 @@ export async function enable(dataRoot: string): Promise<string> {
   }
 
   await fetchRefspec(git, "origin", `refs/heads/${branch}`);
-
   const remoteOid = await lsRemoteOid(git, "origin", `refs/heads/${branch}`);
 
   if (remoteOid === undefined) {
@@ -170,11 +168,9 @@ export async function enable(dataRoot: string): Promise<string> {
       "the data repo is ahead of or diverged from origin — resolve manually before enabling",
     );
   }
-
   if (await markerIsEnabled(dataRoot)) {
     return `shared-writer mode already enabled (marker at ${MARKER_PATH})`;
   }
-
   const treeOid = await fetchedTreeOid(git);
   const probe = await probeRemoteCapabilities({
     git,
@@ -212,10 +208,8 @@ async function commitMarkerUnderLease(
       `refs/heads/${branch}:refs/remotes/origin/${branch}`,
     );
     await mergeFfOnly(git, `origin/${branch}`);
-
     if (await markerIsEnabled(dataRoot)) {
       await releaseIfOwn(git, outcome.oid);
-
       return `shared-writer mode already enabled (marker at ${MARKER_PATH})`;
     }
 
