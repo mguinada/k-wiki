@@ -18,6 +18,7 @@ import { cliFail, errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { repoRoot } from "../cli/shared.ts";
 import { parseArgs } from "../cli/shell.ts";
+import { refuseDirtyWorkingTree } from "./cycle-steps.ts";
 import {
   classifyPosition,
   currentBranch,
@@ -106,14 +107,10 @@ async function cleanCurrentRefusal(
   git: GitRunner,
   dataRoot: string,
 ): Promise<string | undefined> {
-  const { stdout } = await git(["status", "--porcelain"]);
-  const offending = stdout
-    .split("\n")
-    .filter((line) => line !== "")
-    .filter((line) => line.trim() !== "?? .scheduled-run.lock");
+  const dirty = await refuseDirtyWorkingTree(git);
 
-  if (offending.length > 0) {
-    return `the data repo must be clean before enabling — commit or remove: ${offending.slice(0, 5).join(", ")}`;
+  if (dirty !== undefined) {
+    return dirty;
   }
 
   if (!(await gitOk(git, ["remote", "get-url", "origin"]))) {

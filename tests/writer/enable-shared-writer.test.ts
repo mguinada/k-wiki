@@ -87,7 +87,7 @@ describe("enable-shared-writer (library)", () => {
 
     await writeFile(join(cw.dataRoot, "junk.md"), "junk\n");
 
-    await expect(enable(cw.dataRoot)).rejects.toThrow(/must be clean/);
+    await expect(enable(cw.dataRoot)).rejects.toThrow(/dirty/);
     await expect(
       readFile(join(cw.dataRoot, MARKER_PATH)),
     ).rejects.toMatchObject({ code: "ENOENT" });

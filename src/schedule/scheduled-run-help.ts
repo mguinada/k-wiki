@@ -59,9 +59,7 @@ Behavior, failure mode by failure mode:
     the same coordinator manual wiki-sync runs — no pull, no push.
     Proposed removals/renames fail before raw/ is mutated; a
     scheduled run can never supply --removal-receipt (rejected as
-    an unknown flag before any cycle work) and never expunges. A
-    conflicted pull --rebase leaves the repo mid-rebase; the next
-    tick aborts it and retries with the tree actionable.
+    an unknown flag before any cycle work) and never expunges.
   - No origin: the data repo must have an origin remote (the push
     stage needs one); the wrapper fails loud without running.
   - wiki-sync failure: the guardrails and verification have already
