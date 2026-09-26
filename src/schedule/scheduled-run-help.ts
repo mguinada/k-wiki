@@ -106,7 +106,8 @@ Behavior, failure mode by failure mode:
     independent com.kwiki.watchdog launchd job (installed by
     setup-schedule --watchdog) alerts when the heartbeat goes stale,
     missing, or unreadable, and when benign quota-skipped ticks
-    persist past its threshold (that alert names the cause) —
+    persist past its threshold or no successful cycle is on record
+    (those alerts name the cause) —
     failures reach the screen, not only a log. KWIKI_NOTIFY=0
     disables every notification.
 

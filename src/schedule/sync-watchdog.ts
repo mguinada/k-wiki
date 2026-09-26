@@ -18,9 +18,11 @@
  * past the grace window → one line, a macOS notification
  * (osascript; KWIKI_NOTIFY=0 disables), exit 1 — launchd records
  * the non-zero exit too. A skipped stamp is benign while its ticks
- * keep arriving and names its cause; when the last success ages
- * past the threshold the alert names it, and a stamp that itself
- * goes stale — a scheduler that died — alerts like any other. A
+ * keep arriving and names its cause; with no successful cycle on
+ * record it alerts at once naming that cause, when the last success
+ * ages past the threshold the alert names it, and a stamp that
+ * itself goes stale — a scheduler that died — alerts like any
+ * other. A
  * missing stamp inside the grace window is
  * the fresh-install case: the newest of the data-repo commit date
  * and the install anchor is younger than the threshold, so the
@@ -158,11 +160,16 @@ function skippedVerdict(
     };
   }
 
-  const lastOkAgeMs =
-    stamp.lastOk === null
-      ? 0
-      : Math.max(0, now.getTime() - Date.parse(stamp.lastOk));
   const cause = stamp.reason ?? "scheduled cycle skipped";
+
+  if (stamp.lastOk === null) {
+    return {
+      line: `sync-watchdog: ALERT — cycles skipping: ${cause}; no successful cycle on record`,
+      exitCode: 1,
+    };
+  }
+
+  const lastOkAgeMs = Math.max(0, now.getTime() - Date.parse(stamp.lastOk));
 
   return lastOkAgeMs > thresholdMs
     ? {
@@ -301,8 +308,8 @@ com.kwiki.watchdog (setup-schedule --watchdog) runs this door
 hourly.
 
 Exits 0 on a fresh (or in-grace) heartbeat, 1 on stale, unreadable,
-missing-past-grace, or quota-skipped ticks persisting past the
-threshold.`;
+missing-past-grace, quota-skipped ticks persisting past the
+threshold, or skipping with no successful cycle on record.`;
 
 /** sync-watchdog entry point. */
 export async function main(

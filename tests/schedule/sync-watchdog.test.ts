@@ -157,6 +157,50 @@ describe("watchdogVerdict", () => {
     });
   });
 
+  it("fires the never-succeeded alert on a fresh skipped stamp with no success on record", () => {
+    expect(
+      watchdogVerdict({
+        read: {
+          kind: "present",
+          stamp: stamp({
+            outcome: "skipped",
+            reason: "ingest provider zai exhausted until reset",
+            lastOk: null,
+            timestamp: "2026-09-20T11:55:00.000Z",
+          }),
+        },
+        now: NOW,
+        thresholdMs: THRESHOLD,
+        newestCommitAt: undefined,
+      }),
+    ).toEqual({
+      line: "sync-watchdog: ALERT — cycles skipping: ingest provider zai exhausted until reset; no successful cycle on record",
+      exitCode: 1,
+    });
+  });
+
+  it("keeps a fresh skipped stamp benign while a recent success is on record", () => {
+    expect(
+      watchdogVerdict({
+        read: {
+          kind: "present",
+          stamp: stamp({
+            outcome: "skipped",
+            reason: "ingest provider zai exhausted until reset",
+            lastOk: "2026-09-20T11:55:00.000Z",
+            timestamp: "2026-09-20T11:55:00.000Z",
+          }),
+        },
+        now: NOW,
+        thresholdMs: THRESHOLD,
+        newestCommitAt: undefined,
+      }),
+    ).toEqual({
+      line: "sync-watchdog: fresh — cycles skipping: ingest provider zai exhausted until reset",
+      exitCode: 0,
+    });
+  });
+
   it("alerts when skipped ticks stop arriving before any success", () => {
     expect(
       watchdogVerdict({
