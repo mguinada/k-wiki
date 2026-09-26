@@ -29,6 +29,7 @@ import {
 import {
   type AgentSettings,
   agentArgs,
+  agentCommandOverride,
   formatAgentInvocation,
   loadAgentSettings,
 } from "../ingest/agent-settings.ts";
@@ -141,7 +142,7 @@ interface LintAgentRun {
 async function invokeLintAgent(
   run: RunContext,
   options: LintOptions,
-  settings: AgentSettings,
+  command: string,
   args: readonly string[],
 ): Promise<LintAgentRun> {
   const startedAt = run.now().getTime();
@@ -155,15 +156,11 @@ async function invokeLintAgent(
   let error: unknown;
 
   try {
-    ({ stdout } = await (options.runAgent ?? spawnAgent)(
-      settings.command,
-      args,
-      {
-        cwd: run.dataRoot,
-        env: run.env,
-        timeoutMs: options.timeoutMs,
-      },
-    ));
+    ({ stdout } = await (options.runAgent ?? spawnAgent)(command, args, {
+      cwd: run.dataRoot,
+      env: run.env,
+      timeoutMs: options.timeoutMs,
+    }));
   } catch (caught) {
     error = caught;
   } finally {
@@ -351,14 +348,22 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
   const args = agentArgs(settings, promptText);
   const pre = options.pre ?? (await capturePreRunState(dataRoot, env));
 
+  // A launcher that already resolved the agent binary (issue #399)
+  // hands it over through the environment; it wins over the
+  // settings' bare command name the launchd PATH cannot resolve.
+  const command = agentCommandOverride(env) ?? settings.command;
+
   onProgress(
-    `wiki-sync: lint — invoking agent: ${formatAgentInvocation(settings)}`,
+    `wiki-sync: lint — invoking agent: ${formatAgentInvocation({
+      ...settings,
+      command,
+    })}`,
   );
 
   const { stdout, error: agentError } = await invokeLintAgent(
     run,
     options,
-    settings,
+    command,
     args,
   );
 
