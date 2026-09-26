@@ -156,7 +156,7 @@ function resetLabel(
     (exhaustion.length === 1 ? exhaustion[0] : undefined);
   const projected = matched?.projectedExhaustedAt;
 
-  return typeof projected === "string" ? projected : "unknown reset";
+  return typeof projected === "string" ? projected : "unknown";
 }
 
 function skipReason(

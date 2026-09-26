@@ -220,7 +220,7 @@ describe("quotaPreflight", () => {
 
     expect({ status: result.status, line: lines[0] }).toEqual({
       status: "skip",
-      line: "scheduled-run: quota pre-flight skipped — ingest provider zai (model GLM-5.2) exhausted_now, reset unknown reset",
+      line: "scheduled-run: quota pre-flight skipped — ingest provider zai (model GLM-5.2) exhausted_now, reset unknown",
     });
   });
 
