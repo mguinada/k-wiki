@@ -20,7 +20,7 @@ import {
   observeLease,
   observeLeaseOid,
 } from "../../src/writer/lease.ts";
-import { acquireLease, fetchedTreeOid } from "../../src/writer/lease-ops.ts";
+import { acquireLease, fetchedTreeOid, replaceLease } from "../../src/writer/lease-ops.ts";
 import {
   enabledDataRepo,
   LEASE_REF,
@@ -430,6 +430,144 @@ describe("failure-rule lease retention", () => {
       await observeLeaseOid(world.a.git, "origin", LEASE_REF),
     ).toBeUndefined();
   });
+
+  it("logs a lost retention race and never masks the original error", async () => {
+    const world = await makeWriterWorld();
+    worlds.push(world);
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+    const { dataRoot } = cw;
+    const progress: string[] = [];
+    let foreignOid = "";
+
+    const error = await runSharedCycle(
+      optionsFor(cw, dataRoot, {
+        run: runContext({
+          rawDir: join(dataRoot, "raw"),
+          env: process.env,
+          now: NOW,
+          onProgress: (line: string) => progress.push(line),
+        }),
+        runSweep: async () => {
+          await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
+          const live = await observeLease(world.a.git, "origin", LEASE_REF);
+
+          if (live === undefined) {
+            throw new Error("setup: the lease vanished mid-run");
+          }
+
+          // A foreign writer CAS-replaces the live lease out from
+          // under the session: the retention push must lose its
+          // exact-OID race.
+          const foreign = await replaceLease({
+            git: world.b.git,
+            remote: "origin",
+            leaseRef: LEASE_REF,
+            expectedOid: live.oid,
+            previous: live.body,
+            treeOid: await fetchedTreeOid(world.b.git),
+            base: live.body.base,
+            now: NOW,
+            holder: "foreign:9",
+          });
+          foreignOid = foreign.oid;
+
+          throw new Error("agent stage blew up");
+        },
+      }),
+    ).catch((e: unknown) => e);
+
+    // The original failure still propagates — never masked.
+    expect((error as Error).message).toContain("agent stage blew up");
+
+    // The lost retention is logged, and the losing CAS left the
+    // foreign lease untouched.
+    expect(
+      progress.find((line) =>
+        line.includes("failed to shorten retained lease"),
+      ),
+    ).toBeDefined();
+    expect(await observeLeaseOid(world.a.git, "origin", LEASE_REF)).toBe(
+      foreignOid,
+    );
+  }, 30000);
+
+  it("still sees the dirty tree first when the retained lease has expired", async () => {
+    const world = await makeWriterWorld();
+    worlds.push(world);
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+    const { dataRoot } = cw;
+    const progress: string[] = [];
+
+    const error = await runSharedCycle(
+      optionsFor(cw, dataRoot, {
+        run: runContext({
+          rawDir: join(dataRoot, "raw"),
+          env: process.env,
+          now: NOW,
+          onProgress: (line: string) => progress.push(line),
+        }),
+        runSweep: async () => {
+          await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
+
+          throw new Error("agent stage blew up");
+        },
+      }),
+    ).catch((e: unknown) => e);
+
+    expect((error as Error).message).toContain("agent stage blew up");
+    expect(
+      progress.find((line) => line.includes("retained lease expires")),
+    ).toBeDefined();
+
+    // The short window passes: a foreign writer replaces the lease
+    // with an already-expired one — the remote state fifteen
+    // minutes later.
+    const retained = await observeLease(world.a.git, "origin", LEASE_REF);
+
+    if (retained === undefined) {
+      throw new Error("setup: the retained lease is gone");
+    }
+
+    const expired = await replaceLease({
+      git: world.b.git,
+      remote: "origin",
+      leaseRef: LEASE_REF,
+      expectedOid: retained.oid,
+      previous: retained.body,
+      treeOid: await fetchedTreeOid(world.b.git),
+      base: retained.body.base,
+      now: NOW,
+      holder: "expired-fixture:1",
+      ttlMs: -60_000,
+    });
+
+    // The next tick must see the dirty tree first and refuse: no
+    // takeover of the expired lease, no agent work, no ref move.
+    let reachedSweep = false;
+    const outcome = await runSharedCycle(
+      optionsFor(cw, dataRoot, {
+        run: runContext({
+          rawDir: join(dataRoot, "raw"),
+          env: process.env,
+          now: NOW,
+          onProgress: () => {},
+        }),
+        runSweep: async () => {
+          reachedSweep = true;
+        },
+      }),
+    );
+
+    if (outcome.status !== "refused") {
+      throw new Error("expected a refusal, got a completed cycle");
+    }
+
+    expect(outcome.reason).toContain("dirty");
+    expect(reachedSweep).toBe(false);
+    expect(await observeLeaseOid(world.a.git, "origin", LEASE_REF)).toBe(
+      expired.oid,
+    );
+  }, 30000);
 });
 
 describe("ambiguous finalize recovery (test 18)", () => {
