@@ -25,8 +25,17 @@ type QuotaReport = {
   readonly exhaustion?: unknown;
 };
 
+/** How the cycle's quota pre-flight acted: `off` when settings
+ *  disabled the probe, `unavailable` when the probe could not answer;
+ *  absent when the gate was active (it proceeded or skipped). */
+export type PreflightState = "unavailable" | "off";
+
 export type QuotaPreflightResult =
-  | { readonly status: "proceed"; readonly reason?: string }
+  | {
+      readonly status: "proceed";
+      readonly reason?: string;
+      readonly preflight?: PreflightState;
+    }
   | { readonly status: "skip"; readonly reason: string };
 
 export interface QuotaPreflightOptions {
@@ -43,9 +52,18 @@ function commandFor(settings: AgentSettings): string {
     : settings.quotaPreflight;
 }
 
-function unavailable(log: (line: string) => void): QuotaPreflightResult {
+/** Every non-activating outcome speaks the same one dim line, so a
+ *  silent log can never mean the gate ran. */
+export function quotaPreflightUnavailable(
+  log: (line: string) => void,
+): QuotaPreflightResult {
   log("scheduled-run: quota pre-flight unavailable — proceeding");
-  return { status: "proceed", reason: "unavailable" };
+
+  return {
+    status: "proceed",
+    reason: "unavailable",
+    preflight: "unavailable",
+  };
 }
 
 function parseReport(text: string): QuotaReport | undefined {
@@ -91,9 +109,34 @@ function exhaustionForProvider(
   );
 }
 
-function resetLabel(report: QuotaReport, provider: string): string {
-  const exhaustion = exhaustionForProvider(report, provider)[0];
-  const projected = exhaustion?.projectedExhaustedAt;
+/** A row's scope, when the probe named a usable one. */
+function asScope(value: unknown): string | undefined {
+  return typeof value === "string" && value !== "" ? value : undefined;
+}
+
+/** The deciding record's reset time: the row that grounded the skip
+ *  when it carries one, else the provider's exhaustion row for the
+ *  deciding scope, else unknown. */
+function resetLabel(
+  report: QuotaReport,
+  provider: string,
+  scope: string | undefined,
+  deciding: Exhaustion | undefined,
+): string {
+  if (
+    deciding !== undefined &&
+    typeof deciding.projectedExhaustedAt === "string"
+  ) {
+    return deciding.projectedExhaustedAt;
+  }
+
+  const exhaustion = exhaustionForProvider(report, provider);
+  const matched =
+    (scope === undefined
+      ? undefined
+      : exhaustion.find((row) => asScope(row.scope) === scope)) ??
+    exhaustion[0];
+  const projected = matched?.projectedExhaustedAt;
 
   return typeof projected === "string" ? projected : "unknown reset";
 }
@@ -104,23 +147,32 @@ function skipReason(
   model: string,
   estimate: number,
 ): string | undefined {
-  const rows = rowsForProvider(report, provider);
-  const exhausted = rows.some((row) => row.runway === "exhausted_now");
+  const exhaustedRow = rowsForProvider(report, provider).find(
+    (row) => row.runway === "exhausted_now",
+  );
   const finite = exhaustionForProvider(report, provider).find(
     (row) =>
       typeof row.usableRunwaySeconds === "number" &&
       row.usableRunwaySeconds < estimate,
   );
 
-  if (!exhausted && finite === undefined) {
+  if (exhaustedRow === undefined && finite === undefined) {
     return undefined;
   }
 
-  const runway = exhausted
-    ? "exhausted_now"
-    : `${String(finite?.usableRunwaySeconds)}s remaining`;
+  const scope = asScope(exhaustedRow?.scope ?? finite?.scope);
+  const runway =
+    exhaustedRow === undefined
+      ? `${String(finite?.usableRunwaySeconds)}s remaining`
+      : "exhausted_now";
+  const reset = resetLabel(
+    report,
+    provider,
+    scope,
+    exhaustedRow === undefined ? finite : undefined,
+  );
 
-  return `ingest provider ${provider} (model ${model}) ${runway}, reset ${resetLabel(report, provider)}`;
+  return `ingest provider ${provider}${scope === undefined ? "" : ` scope ${scope}`} (model ${model}) ${runway}, reset ${reset}`;
 }
 
 /** Read quota-axi without making it a runtime dependency or a gate. */
@@ -128,13 +180,13 @@ export async function quotaPreflight(
   options: QuotaPreflightOptions,
 ): Promise<QuotaPreflightResult> {
   if (options.settings.quotaPreflight === "off") {
-    return { status: "proceed" };
+    return { status: "proceed", preflight: "off" };
   }
 
   const provider = options.settings.provider;
 
   if (provider === undefined || provider === "") {
-    return unavailable(options.log);
+    return quotaPreflightUnavailable(options.log);
   }
 
   const run =
@@ -153,11 +205,11 @@ export async function quotaPreflight(
   try {
     report = parseReport(await run(commandFor(options.settings)));
   } catch {
-    return unavailable(options.log);
+    return quotaPreflightUnavailable(options.log);
   }
 
   if (report === undefined) {
-    return unavailable(options.log);
+    return quotaPreflightUnavailable(options.log);
   }
 
   const estimate = options.estimateSeconds ?? DEFAULT_CYCLE_ESTIMATE_SECONDS;
@@ -165,7 +217,7 @@ export async function quotaPreflight(
 
   if (reason === undefined) {
     return rowsForProvider(report, provider).length === 0
-      ? unavailable(options.log)
+      ? quotaPreflightUnavailable(options.log)
       : { status: "proceed" };
   }
 

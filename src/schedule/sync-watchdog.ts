@@ -118,19 +118,23 @@ export function watchdogVerdict(input: {
 
   const classified = classifyHeartbeat(read.stamp, now, thresholdMs);
 
-  if (read.stamp.outcome === "skipped") {
-    return skippedVerdict(read.stamp, now, thresholdMs);
-  }
+  const verdict =
+    read.stamp.outcome === "skipped"
+      ? skippedVerdict(read.stamp, now, thresholdMs)
+      : classified.verdict === "fresh"
+        ? {
+            line: `sync-watchdog: fresh — last cycle ${formatAge(classified.ageMs)} ago (threshold ${threshold})`,
+            exitCode: 0 as const,
+          }
+        : {
+            line: `sync-watchdog: ALERT — last cycle ${formatAge(classified.ageMs)} ago, past the ${threshold} threshold`,
+            exitCode: 1 as const,
+          };
 
-  return classified.verdict === "fresh"
-    ? {
-        line: `sync-watchdog: fresh — last cycle ${formatAge(classified.ageMs)} ago (threshold ${threshold})`,
-        exitCode: 0,
-      }
-    : {
-        line: `sync-watchdog: ALERT — last cycle ${formatAge(classified.ageMs)} ago, past the ${threshold} threshold`,
-        exitCode: 1,
-      };
+  return {
+    line: `${verdict.line}${preflightNote(read.stamp)}`,
+    exitCode: verdict.exitCode,
+  };
 }
 
 function skippedVerdict(
@@ -138,6 +142,18 @@ function skippedVerdict(
   now: Date,
   thresholdMs: number,
 ): { readonly line: string; readonly exitCode: 0 | 1 } {
+  const classified = classifyHeartbeat(stamp, now, thresholdMs);
+
+  // Skipping is benign only while its ticks keep arriving: a stamp
+  // that itself went stale means the scheduler died, whatever the
+  // last outcomes said.
+  if (classified.verdict === "stale") {
+    return {
+      line: `sync-watchdog: ALERT — last cycle ${formatAge(classified.ageMs)} ago, past the ${formatAge(thresholdMs)} threshold`,
+      exitCode: 1,
+    };
+  }
+
   const lastOkAgeMs =
     stamp.lastOk === null
       ? 0
@@ -153,6 +169,23 @@ function skippedVerdict(
         line: `sync-watchdog: fresh — cycles skipping: ${cause}`,
         exitCode: 0,
       };
+}
+
+/** The dormant pre-flight note appended to any verdict over a stamp
+ *  whose cycle ran ungated; empty when the gate was active. */
+function preflightNote(
+  stamp: NonNullable<Extract<ReadHeartbeat, { kind: "present" }>["stamp"]>,
+): string {
+  if (stamp.preflight === undefined) {
+    return "";
+  }
+
+  const why =
+    stamp.preflight === "off"
+      ? "disabled by settings"
+      : "quota-axi not configured";
+
+  return `; pre-flight: off — ${why}`;
 }
 
 /** The newest data-repo commit date, the fresh-install grace

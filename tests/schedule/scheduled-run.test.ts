@@ -318,6 +318,59 @@ describe("runScheduledCycle", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
+  it("proceeds with the dim availability line when agent settings cannot load", async () => {
+    const dir = await tempDir();
+    const { git, runGitStep } = fakeGit();
+    const lines: string[] = [];
+
+    const outcome = await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      args: ["--settings", join(dir, "absent-settings.yml")],
+      log: (line) => lines.push(line),
+    });
+
+    expect({
+      status: outcome.status,
+      quotaLines: lines.filter((line) => line.includes("quota")),
+    }).toEqual({
+      status: "ok",
+      quotaLines: ["scheduled-run: quota pre-flight unavailable — proceeding"],
+    });
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("persists a dormant pre-flight state on the ok stamp", async () => {
+    const dir = await tempDir();
+    const { git, runGitStep } = fakeGit();
+
+    const outcome = await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      runQuotaPreflight: async () => ({
+        status: "proceed",
+        preflight: "unavailable",
+      }),
+      log: () => {},
+    });
+
+    expect({
+      outcome,
+      preflight: JSON.parse(
+        await readFile(join(dir, "outputs", "last-cycle.json"), "utf8"),
+      ).preflight,
+    }).toEqual({ outcome: { status: "ok" }, preflight: "unavailable" });
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
   it("locks, verifies origin, pulls, runs wiki-sync, pushes, releases", async () => {
     const dir = await tempDir();
     const { git, runGitStep } = fakeGit();

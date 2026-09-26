@@ -144,6 +144,7 @@ describe("watchdogVerdict", () => {
             outcome: "skipped",
             reason: "ingest provider zai exhausted until reset",
             lastOk: "2026-09-20T10:00:00.000Z",
+            timestamp: "2026-09-20T11:55:00.000Z",
           }),
         },
         now: NOW,
@@ -153,6 +154,90 @@ describe("watchdogVerdict", () => {
     ).toEqual({
       line: "sync-watchdog: ALERT — cycles skipping: ingest provider zai exhausted until reset; last successful cycle 2h ago",
       exitCode: 1,
+    });
+  });
+
+  it("alerts when skipped ticks stop arriving before any success", () => {
+    expect(
+      watchdogVerdict({
+        read: {
+          kind: "present",
+          stamp: stamp({
+            outcome: "skipped",
+            reason: "ingest provider zai exhausted until reset",
+            lastOk: null,
+            timestamp: "2026-09-20T10:00:00.000Z",
+          }),
+        },
+        now: NOW,
+        thresholdMs: THRESHOLD,
+        newestCommitAt: undefined,
+      }),
+    ).toEqual({
+      line: "sync-watchdog: ALERT — last cycle 2h ago, past the 1h 30m threshold",
+      exitCode: 1,
+    });
+  });
+
+  it("alerts when skipped ticks stop arriving after a recent success", () => {
+    expect(
+      watchdogVerdict({
+        read: {
+          kind: "present",
+          stamp: stamp({
+            outcome: "skipped",
+            reason: "ingest provider zai exhausted until reset",
+            lastOk: "2026-09-20T11:55:00.000Z",
+            timestamp: "2026-09-20T10:00:00.000Z",
+          }),
+        },
+        now: NOW,
+        thresholdMs: THRESHOLD,
+        newestCommitAt: undefined,
+      }),
+    ).toEqual({
+      line: "sync-watchdog: ALERT — last cycle 2h ago, past the 1h 30m threshold",
+      exitCode: 1,
+    });
+  });
+
+  it("surfaces a dormant quota pre-flight on the verdict line", () => {
+    expect(
+      watchdogVerdict({
+        read: {
+          kind: "present",
+          stamp: stamp({
+            timestamp: "2026-09-20T11:00:00.000Z",
+            preflight: "unavailable",
+          }),
+        },
+        now: NOW,
+        thresholdMs: THRESHOLD,
+        newestCommitAt: undefined,
+      }),
+    ).toEqual({
+      line: "sync-watchdog: fresh — last cycle 1h ago (threshold 1h 30m); pre-flight: off — quota-axi not configured",
+      exitCode: 0,
+    });
+  });
+
+  it("names settings as the reason when the pre-flight is off", () => {
+    expect(
+      watchdogVerdict({
+        read: {
+          kind: "present",
+          stamp: stamp({
+            timestamp: "2026-09-20T11:00:00.000Z",
+            preflight: "off",
+          }),
+        },
+        now: NOW,
+        thresholdMs: THRESHOLD,
+        newestCommitAt: undefined,
+      }),
+    ).toEqual({
+      line: "sync-watchdog: fresh — last cycle 1h ago (threshold 1h 30m); pre-flight: off — disabled by settings",
+      exitCode: 0,
     });
   });
 

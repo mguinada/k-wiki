@@ -59,7 +59,12 @@ import {
 } from "../sync/run-lock.ts";
 import { writeCycleHeartbeat } from "./heartbeat.ts";
 import { notifyUser } from "./notify.ts";
-import { quotaPreflight } from "./quota-preflight.ts";
+import {
+  type PreflightState,
+  type QuotaPreflightResult,
+  quotaPreflight,
+  quotaPreflightUnavailable,
+} from "./quota-preflight.ts";
 import { HELP } from "./scheduled-run-help.ts";
 import { runSharedPipeline, scheduledSharedMode } from "./shared-cycle.ts";
 
@@ -143,10 +148,7 @@ export interface ScheduledRunOptions {
    *  repo's bin/wiki-sync. Injected in tests. */
   readonly runSync?: (args: readonly string[]) => Promise<void>;
   /** Quota probe; injected in tests and optional on every machine. */
-  readonly runQuotaPreflight?: () => Promise<
-    | { readonly status: "proceed"; readonly reason?: string }
-    | { readonly status: "skip"; readonly reason: string }
-  >;
+  readonly runQuotaPreflight?: () => Promise<QuotaPreflightResult>;
   /** The full-sweep wiki-lint invocation; defaults to spawning node
    *  against the repo's bin/wiki-lint. Injected in tests. */
   readonly runLintFull?: (args: readonly string[]) => Promise<void>;
@@ -181,12 +183,14 @@ export async function runScheduledCycle(
   const stampHeartbeat = async (
     outcome: "ok" | "failed" | "skipped",
     reason?: string,
+    preflight?: PreflightState,
   ): Promise<void> => {
     try {
       await writeCycleHeartbeat({
         dataRoot: options.dataRoot,
         outcome,
         ...(reason === undefined ? {} : { reason }),
+        ...(preflight === undefined ? {} : { preflight }),
         pid,
         now: now(),
         onProgress: log,
@@ -198,10 +202,13 @@ export async function runScheduledCycle(
     }
   };
 
-  const fail = async (error: string): Promise<CycleOutcome> => {
+  const fail = async (
+    error: string,
+    preflight?: PreflightState,
+  ): Promise<CycleOutcome> => {
     log(`scheduled-run: ALERT ${error}`);
 
-    await stampHeartbeat("failed");
+    await stampHeartbeat("failed", undefined, preflight);
     await releaseLock(options.lockPath, pid);
     await notify(error);
 
@@ -225,20 +232,20 @@ export async function runScheduledCycle(
 
   const quota = await runQuotaGate(options, log);
 
-  if (quota !== undefined) {
+  if (quota.skipReason !== undefined) {
     await releaseLock(options.lockPath, pid);
-    await stampHeartbeat("skipped", quota.reason);
-    return { status: "skipped", reason: quota.reason };
+    await stampHeartbeat("skipped", quota.skipReason);
+    return { status: "skipped", reason: quota.skipReason };
   }
 
   try {
     await runStage(options, runGitStep, log);
   } catch (error) {
-    return await fail(errorMessage(error));
+    return await fail(errorMessage(error), quota.preflight);
   }
 
   await releaseLock(options.lockPath, pid);
-  await stampHeartbeat("ok");
+  await stampHeartbeat("ok", undefined, quota.preflight);
   log(`scheduled-run: ${stamp()} — cycle complete`);
 
   return { status: "ok" };
@@ -280,27 +287,33 @@ export function sweepArgsFor(
   ];
 }
 
-/** One cycle's stages: shared mode runs the coordinator (no pull, no
- *  push — it finalizes remotely); local mode runs the pull → sweep →
- *  sync sequence and its push-with-retry. */
+/** The quota gate's effect on the cycle: a skip reason when the
+ *  provider cannot finish the cycle, the dormant pre-flight state
+ *  when the cycle ran ungated. */
+interface QuotaGate {
+  readonly skipReason?: string;
+  readonly preflight?: PreflightState;
+}
+
 async function runQuotaGate(
   options: ScheduledRunOptions,
   log: (line: string) => void,
-): Promise<{ readonly reason: string } | undefined> {
+): Promise<QuotaGate> {
   const result = await (
     options.runQuotaPreflight ?? (() => runQuotaCheck(options, log))
   )();
 
-  return result.status === "skip" ? { reason: result.reason } : undefined;
+  return result.status === "skip"
+    ? { skipReason: result.reason }
+    : result.preflight === undefined
+      ? {}
+      : { preflight: result.preflight };
 }
 
 async function runQuotaCheck(
   options: ScheduledRunOptions,
   log: (line: string) => void,
-): Promise<
-  | { readonly status: "proceed"; readonly reason?: string }
-  | { readonly status: "skip"; readonly reason: string }
-> {
+): Promise<QuotaPreflightResult> {
   const parsed = parseScheduledRunArgs(options.args ?? []);
   const settingsPath =
     parsed.values.get("--settings") ?? join(options.repoRoot, "settings.yml");
@@ -312,13 +325,13 @@ async function runQuotaCheck(
       log,
     });
   } catch {
-    return {
-      status: "proceed",
-      reason: "unavailable",
-    };
+    return quotaPreflightUnavailable(log);
   }
 }
 
+/** One cycle's stages: shared mode runs the coordinator (no pull, no
+ *  push — it finalizes remotely); local mode runs the pull → sweep →
+ *  sync sequence and its push-with-retry. */
 async function runStage(
   options: ScheduledRunOptions,
   runGitStep: NonNullable<ScheduledRunOptions["runGitStep"]>,

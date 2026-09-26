@@ -34,6 +34,10 @@ export interface CycleHeartbeat {
   readonly outcome: "ok" | "failed" | "skipped";
   /** Why a benign skipped tick occurred, when present. */
   readonly reason?: string;
+  /** How the cycle's quota pre-flight acted when it did not gate:
+   *  `off` (disabled in settings) or `unavailable` (probe absent or
+   *  unreadable); absent when the gate was active. */
+  readonly preflight?: "unavailable" | "off";
   /** The PID that ran the cycle. */
   readonly pid: number;
   /** When the last ok cycle finished, carried forward through
@@ -120,6 +124,7 @@ interface StampFields {
   readonly timestamp: string;
   readonly outcome: "ok" | "failed" | "skipped";
   readonly reason?: unknown;
+  readonly preflight?: unknown;
   readonly pid: number;
   readonly lastOk?: unknown;
 }
@@ -160,6 +165,9 @@ export function parseHeartbeat(
     timestamp: parsed.timestamp,
     outcome: parsed.outcome,
     ...(typeof parsed.reason === "string" && { reason: parsed.reason }),
+    ...((parsed.preflight === "unavailable" || parsed.preflight === "off") && {
+      preflight: parsed.preflight,
+    }),
     pid: parsed.pid,
     lastOk: isIsoString(parsed.lastOk) ? parsed.lastOk : null,
   };
@@ -196,6 +204,7 @@ export async function writeCycleHeartbeat(options: {
   readonly dataRoot: string;
   readonly outcome: "ok" | "failed" | "skipped";
   readonly reason?: string;
+  readonly preflight?: "unavailable" | "off";
   readonly pid: number;
   readonly now: Date;
   /** Progress sink for the one-time exclude announcement; default
@@ -214,6 +223,7 @@ export async function writeCycleHeartbeat(options: {
     timestamp: options.now.toISOString(),
     outcome: options.outcome,
     ...(options.reason !== undefined && { reason: options.reason }),
+    ...(options.preflight !== undefined && { preflight: options.preflight }),
     pid: options.pid,
     lastOk,
   };

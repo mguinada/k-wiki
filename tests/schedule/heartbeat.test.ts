@@ -86,6 +86,24 @@ describe("parseHeartbeat", () => {
     expect(parseHeartbeat(JSON.stringify(skipped))).toEqual(skipped);
   });
 
+  it("keeps a known pre-flight state on the stamp", () => {
+    const dormant = { ...stamp(), preflight: "unavailable" } as Record<
+      string,
+      unknown
+    >;
+
+    expect(parseHeartbeat(JSON.stringify(dormant))).toEqual(dormant);
+  });
+
+  it("drops a foreign pre-flight value instead of trusting it", () => {
+    const foreign = { ...stamp(), preflight: "maybe" } as Record<
+      string,
+      unknown
+    >;
+
+    expect(parseHeartbeat(JSON.stringify(foreign))).toEqual(stamp());
+  });
+
   it("drops an unparseable lastOk instead of trusting it", () => {
     const parsed = parseHeartbeat(
       JSON.stringify(stamp({ lastOk: "not a date" })),
@@ -149,6 +167,28 @@ describe("writeCycleHeartbeat", () => {
     ).toEqual({
       timestamp: "2026-09-20T11:00:00.000Z",
       outcome: "ok",
+      pid: 99,
+      lastOk: "2026-09-20T11:00:00.000Z",
+    });
+  });
+
+  it("writes the pre-flight state when the cycle ran ungated", async () => {
+    const dataRoot = await tempDataRoot();
+
+    await writeCycleHeartbeat({
+      dataRoot,
+      outcome: "ok",
+      preflight: "unavailable",
+      pid: 99,
+      now: new Date("2026-09-20T11:00:00.000Z"),
+    });
+
+    expect(
+      JSON.parse(await readFile(cycleHeartbeatPath(dataRoot), "utf8")),
+    ).toEqual({
+      timestamp: "2026-09-20T11:00:00.000Z",
+      outcome: "ok",
+      preflight: "unavailable",
       pid: 99,
       lastOk: "2026-09-20T11:00:00.000Z",
     });
