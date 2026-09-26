@@ -130,7 +130,7 @@ interface StampFields {
 }
 
 /** Whether the parsed JSON carries a complete stamp: a usable
- *  timestamp, an ok|failed outcome, and an integer PID. */
+ *  timestamp, an ok|failed|skipped outcome, and an integer PID. */
 function isStampShape(parsed: unknown): parsed is StampFields {
   return (
     typeof parsed === "object" &&
