@@ -1,6 +1,6 @@
 import { tmpdir } from "node:os";
 import { describe, expect, it, vi } from "vitest";
-import { spawnAgent } from "../../src/ingest/agent-run.ts";
+import { runAgentTargets, spawnAgent } from "../../src/ingest/agent-run.ts";
 
 describe("spawnAgent", () => {
   const noOptions = { cwd: tmpdir(), env: process.env };
@@ -154,5 +154,70 @@ describe("spawnAgent", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("runAgentTargets launcher-provided agent path (issue #399)", () => {
+  const settings = { command: "settings-pi", model: "M", reasoning: "low" };
+  const baseOptions = {
+    root: tmpdir(),
+    timeoutMs: undefined,
+    pre: { commit: "c", status: [], hashes: new Map(), contents: new Map() },
+    onProgress: () => {},
+  };
+
+  it("spawns the launcher-provided absolute path instead of the bare settings command", async () => {
+    const runAgent = vi.fn(
+      async (_command: string, _args: readonly string[]) => ({
+        stdout: "done",
+        stderr: "",
+      }),
+    );
+
+    await runAgentTargets(settings, "prompt", {
+      ...baseOptions,
+      environment: { KWIKI_AGENT_COMMAND: "/abs/resolved/pi" },
+      runAgent,
+    });
+
+    expect(runAgent.mock.calls[0]?.[0]).toBe("/abs/resolved/pi");
+  });
+
+  it("keeps the settings command when the launcher provided no path", async () => {
+    const runAgent = vi.fn(
+      async (_command: string, _args: readonly string[]) => ({
+        stdout: "done",
+        stderr: "",
+      }),
+    );
+
+    await runAgentTargets(settings, "prompt", {
+      ...baseOptions,
+      environment: {},
+      runAgent,
+    });
+
+    expect(runAgent.mock.calls[0]?.[0]).toBe("settings-pi");
+  });
+
+  it("names the absolute path in the invoking-agent progress line", async () => {
+    const lines: string[] = [];
+    const runAgent = vi.fn(
+      async (_command: string, _args: readonly string[]) => ({
+        stdout: "done",
+        stderr: "",
+      }),
+    );
+
+    await runAgentTargets(settings, "prompt", {
+      ...baseOptions,
+      environment: { KWIKI_AGENT_COMMAND: "/abs/resolved/pi" },
+      onProgress: (message: string) => lines.push(message),
+      runAgent,
+    });
+
+    expect(lines.join("\n")).toContain(
+      "invoking agent: /abs/resolved/pi --model M",
+    );
   });
 });

@@ -1,5 +1,13 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -528,5 +536,75 @@ describe("scheduled-run quota pre-flight e2e (issue #396)", () => {
 
     expect(stamp.outcome).toBe("skipped");
     expect(stamp.reason).toContain("zai");
+  });
+});
+
+describe("scheduled-run agent resolution e2e (issue #399)", () => {
+  it("resolves a bare agent name through the login shell and starts it via the absolute path", async () => {
+    const repo = await makeRepo();
+    const agentBin = join(repo.tmp, "agentbin");
+    const home = join(repo.tmp, "home");
+    const agentPath = join(agentBin, "stub-agent");
+
+    // Bare-name settings: the wrapper's minimal PATH lacks the stub.
+    await writeFile(
+      repo.settingsPath,
+      "command: stub-agent\nmodel: E2E-MODEL\nreasoning: low\n",
+    );
+
+    // A temp home whose login-shell profile puts the stub on PATH —
+    // exactly how an operator's interactive PATH stays invisible to
+    // launchd yet reachable through `$SHELL -lc "command -v ..."`.
+    await mkdir(agentBin, { recursive: true });
+    await copyFile(join(repo.dataRoot, "stub-agent.mjs"), agentPath);
+    await chmod(agentPath, 0o755);
+    await mkdir(home, { recursive: true });
+    await writeFile(
+      join(home, ".profile"),
+      `PATH="${agentBin}:$PATH"\nexport PATH\n`,
+    );
+
+    const result = await runScheduled(repo, {
+      HOME: home,
+      SHELL: "/bin/sh",
+    });
+    const log = await readFile(join(repo.tmp, "scheduled-run.log"), "utf8");
+
+    expect(result.code).toBe(0);
+    expect(log).toContain(
+      `scheduled-run: agent stub-agent resolved to ${agentPath}`,
+    );
+    // The spawned wiki-sync invoked exactly the resolved binary.
+    expect(log).toContain(`invoking agent: ${agentPath} --model E2E-MODEL`);
+    expect(log).toContain("cycle complete");
+    expect(await upstreamHead(repo)).toMatch(/^wiki-sync:/);
+  });
+
+  it("alerts and exits 1 before any stage when the agent cannot be resolved", async () => {
+    const repo = await makeRepo();
+    const home = join(repo.tmp, "home");
+
+    await writeFile(
+      repo.settingsPath,
+      "command: no-such-agent-399\nmodel: E2E-MODEL\nreasoning: low\n",
+    );
+    await mkdir(home, { recursive: true });
+
+    const result = await runScheduled(repo, {
+      HOME: home,
+      SHELL: "/bin/sh",
+    });
+    const log = await readFile(join(repo.tmp, "scheduled-run.log"), "utf8");
+
+    expect(result.code).toBe(1);
+    expect(log).toContain("ALERT agent no-such-agent-399");
+    expect(log).not.toContain("wiki-sync starting");
+    expect(await upstreamHead(repo)).toBe("init");
+
+    const stamp = JSON.parse(
+      await readFile(join(repo.dataRoot, "outputs", "last-cycle.json"), "utf8"),
+    );
+
+    expect(stamp.outcome).toBe("failed");
   });
 });

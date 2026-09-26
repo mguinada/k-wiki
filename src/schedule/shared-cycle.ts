@@ -14,12 +14,11 @@ import { repoRoot } from "../cli/shared.ts";
 import { agentRunFlags } from "../cli/shell.ts";
 import { loadSyncConfig } from "../sync/config.ts";
 import { readSharedWriterMarker } from "../writer/marker.ts";
+import { buildScheduledEnv, spawnRepoScript } from "./repo-script.ts";
 import {
-  buildScheduledEnv,
   DEFAULT_LINT_FULL_TIMEOUT_MS,
   parseScheduledRunArgs,
   type ScheduledRunOptions,
-  spawnRepoScript,
   sweepArgsFor,
 } from "./scheduled-run.ts";
 
@@ -46,10 +45,13 @@ export async function scheduledSharedMode(
  *  coordinator (the same state machine manual wiki-sync runs) does
  *  fetch, lease, fast-forward, cycle, and the atomic finalize. The
  *  full-lint sweep runs inside the lease tenure as the coordinator's
- *  runSweep step (its edits ride the cycle's commit). */
+ *  runSweep step (its edits ride the cycle's commit). `agentCommand`
+ *  is the launcher-resolved absolute agent path (issue #399) riding
+ *  the coordinator's environment. */
 export async function runSharedPipeline(
   options: ScheduledRunOptions,
   log: (line: string) => void,
+  agentCommand?: string | undefined,
 ): Promise<void> {
   const args = options.args ?? [];
   const parsed = parseScheduledRunArgs(args);
@@ -74,7 +76,11 @@ export async function runSharedPipeline(
       rawDir,
       env: {
         ...process.env,
-        ...buildScheduledEnv(process.env.HOME ?? homedir(), process.execPath),
+        ...buildScheduledEnv(
+          process.env.HOME ?? homedir(),
+          process.execPath,
+          agentCommand,
+        ),
       },
       onProgress: (message) => log(message),
     }),
@@ -85,7 +91,9 @@ export async function runSharedPipeline(
     promptsDir: join(options.repoRoot, "prompts"),
     timeoutMs: runFlags.timeoutMs,
     runSweep:
-      options.lintFull === true ? () => runSweepStep(options, log) : undefined,
+      options.lintFull === true
+        ? () => runSweepStep(options, log, agentCommand)
+        : undefined,
   });
 
   if (outcome.status === "refused") {
@@ -99,12 +107,19 @@ export async function runSharedPipeline(
 async function runSweepStep(
   options: ScheduledRunOptions,
   log: (line: string) => void,
+  agentCommand: string | undefined,
 ): Promise<void> {
   const timeoutMs = options.lintFullTimeoutMs ?? DEFAULT_LINT_FULL_TIMEOUT_MS;
   const runLintFull =
     options.runLintFull ??
     (async (lintArgs: readonly string[]) => {
-      await spawnRepoScript(options.repoRoot, "wiki-lint", lintArgs, log);
+      await spawnRepoScript(
+        options.repoRoot,
+        "wiki-lint",
+        lintArgs,
+        log,
+        agentCommand,
+      );
     });
 
   log(`scheduled-run: wiki-lint --full starting (budget ${timeoutMs / 1000}s)`);

@@ -9,8 +9,10 @@ const HELP = `Usage: scheduled-run [-h | --help] [--lint-full] [--settings <path
 
 Run one unattended pipeline cycle — the command the
 launchd job executes every interval. The wrapper is portable Node:
-lockfile → quota pre-flight (may skip the tick before any stage) →
-git pull --rebase → (with --lint-full: wiki-lint --full,
+lockfile → agent resolution (the settings' agent command
+resolved to an absolute path; unresolvable fails the tick before
+any stage) → quota pre-flight (may skip the tick before any
+stage) → git pull --rebase → (with --lint-full: wiki-lint --full,
 the weekly quality sweep) → wiki-sync (sync → ingest → lint →
 crosslinks → citation wall → verification → commit) → git push.
 wiki-sync stays commit-only; the push happens here and only here.
@@ -103,8 +105,9 @@ Behavior, failure mode by failure mode:
     .git/info/exclude. The sync-watchdog door and the dashboard's
     last-cycle row read it; a skipped tick (lock held) writes
     nothing, and the stamp never changes the cycle's outcome.
-  - Notifications: an ALERT (cycle failed, push failed after its
-    one retry) also fires a macOS notification (osascript), and the
+  - Notifications: an ALERT (unresolvable agent, cycle failed,
+    push failed after its one retry) also fires a macOS
+    notification (osascript), and the
     independent com.kwiki.watchdog launchd job (installed by
     setup-schedule --watchdog) alerts when the heartbeat goes stale,
     missing, or unreadable, and when benign quota-skipped ticks

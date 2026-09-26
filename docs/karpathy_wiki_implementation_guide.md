@@ -1120,7 +1120,18 @@ Suggested schedule:
 
 Start manually until the pipeline is reliable, then schedule it. The
 shipped scheduler is `setup-schedule` + `scheduled-run` (issue #14):
-launchd runs the wrapper on a fixed interval — lockfile, quota
+launchd runs the wrapper on a fixed interval — lockfile, agent
+resolution (issue #399: launchd's minimal PATH cannot start a bare
+agent command installed outside the standard dirs — the observed
+`spawn pi ENOENT` — so the wrapper resolves the settings' agent
+`command` to an absolute path once per cycle, the scheduled PATH
+first, then the operator's login shell (`command -v`), and hands
+that path to every child through `KWIKI_AGENT_COMMAND`; both agent
+spawn sites — the cycle's ingest run and the lint stage's audit —
+prefer it over the bare name, and an unresolvable command fails the
+tick with one ALERT before any stage, the shared-writer lease
+included; unreadable settings skip the resolution so the stage
+still fails with the precise settings error), quota
 pre-flight (issue #396: an optional `quota-axi` probe, settings key
 `quotaPreflight` — `auto` | `off` | a CLI path, default `auto` — may
 skip the tick before any stage, the shared-writer lease included:

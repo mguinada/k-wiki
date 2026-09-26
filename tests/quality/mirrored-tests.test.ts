@@ -29,6 +29,13 @@ const ALLOWLIST: Readonly<Record<string, string>> = {
   // and leased-cycle suites that consume it.
   "src/writer/options.ts":
     "types-only module; its consumers' suites (coordinator, leased-cycle) exercise every field",
+
+  // One exported env-name constant (issue #399): a value assertion
+  // would only restate the constant's definition; the cross-process
+  // contract is pinned behaviorally by the repo-script child-env
+  // assertion and the scheduled-run e2e suite.
+  "src/cli/env.ts":
+    "single exported constant; its value is pinned behaviorally by the repo-script child-env assertion and the scheduled-run e2e suite",
 };
 
 /** The mirrored test path of a src module: `src/` → `tests/`, and the

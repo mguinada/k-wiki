@@ -555,3 +555,46 @@ describe("writeLintWindowSnapshot foreign-stamp fallback", () => {
     expect(result.mode).toBe("full");
   });
 });
+
+describe("runLintStage launcher-provided agent path (issue #399)", () => {
+  it("spawns the launcher-provided absolute path instead of the settings command", async () => {
+    const h = await makeHarness(BASE_PAGES);
+    const commands: string[] = [];
+
+    const options = optionsFor(h);
+    const withOverride = runContext({
+      rawDir: join(h.dataRoot, "raw"),
+      env: { ...process.env, KWIKI_AGENT_COMMAND: "/abs/resolved/pi" },
+      now: NOW,
+    });
+
+    h.agent = async (command, args, options) => {
+      commands.push(command);
+
+      return lintStub(command, args, options);
+    };
+
+    await runLintStage({ ...options, run: withOverride });
+
+    expect(commands).toEqual(["/abs/resolved/pi"]);
+  });
+
+  it("names the launcher-provided path in the invoking-agent progress line", async () => {
+    const h = await makeHarness(BASE_PAGES);
+    const lines: string[] = [];
+
+    const options = optionsFor(h);
+    const withOverride = runContext({
+      rawDir: join(h.dataRoot, "raw"),
+      env: { ...process.env, KWIKI_AGENT_COMMAND: "/abs/resolved/pi" },
+      now: NOW,
+      onProgress: (message) => lines.push(message),
+    });
+
+    await runLintStage({ ...options, run: withOverride });
+
+    expect(lines.join("\n")).toContain(
+      "lint — invoking agent: /abs/resolved/pi --model",
+    );
+  });
+});

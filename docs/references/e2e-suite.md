@@ -62,7 +62,14 @@ e2e run or diagnosing a failing one.
   by the settings' `quotaPreflight` path reporting the configured
   provider exhausted skips the cycle before any stage — exit 0, one
   skip line in the run log, no upstream movement, and a skipped
-  stamp.
+  stamp; agent resolution (issue #399): settings naming the stub by
+  bare name still run the full cycle when the wrapper's minimal
+  launchd PATH lacks it — the launcher resolves the binary through
+  the login shell (`$SHELL -lc` over a temp home's profile) and both
+  agent spawn sites (the ingest run and the lint stage's audit)
+  start the resolved absolute path — while an agent no mechanism can
+  find fails the tick with one ALERT, exit 1, no upstream movement,
+  and a failed stamp.
 - **sync-watchdog** — the libexec door as a real child process
   against temp data repos (issue #362): `--help` answers with usage
   and exit 0; a fresh stamp exits 0, a stale or unreadable stamp

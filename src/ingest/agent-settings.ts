@@ -9,6 +9,7 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { AGENT_COMMAND_ENV } from "../cli/env.ts";
 import { pathExists, pluralized } from "../cli/shared.ts";
 import { expandHome } from "../sync/config.ts";
 import { unquote } from "../wiki/pages.ts";
@@ -475,6 +476,17 @@ export function agentTargets(settings: AgentSettings): readonly AgentTarget[] {
       },
     ]
   );
+}
+
+/** The spawn command the environment asks for (issue #399): the
+ *  launcher-set absolute path when present, else undefined — the
+ *  settings' own command stands. */
+export function agentCommandOverride(
+  environment: NodeJS.ProcessEnv,
+): string | undefined {
+  const value = environment[AGENT_COMMAND_ENV];
+
+  return value === undefined || value === "" ? undefined : value;
 }
 
 export function agentArgs(settings: AgentSettings, prompt: string): string[] {
