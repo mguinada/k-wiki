@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseSettings } from "../../src/ingest/agent-settings.ts";
 import {
@@ -148,5 +151,61 @@ describe("quotaPreflight", () => {
       status: "skip",
       line: "scheduled-run: quota pre-flight skipped — ingest provider zai scope scope-b (model GLM-5.2) 100s remaining, reset 2026-09-26T06:00:00.000Z",
     });
+  });
+
+  it("anchors scope on the exhausted row alone when it names none", async () => {
+    const lines: string[] = [];
+    const result = await quotaPreflight({
+      settings: settings(),
+      log: (line) => lines.push(line),
+      commandRunner: async () =>
+        JSON.stringify({
+          quota: [{ provider: "zai", runway: "exhausted_now" }],
+          exhaustion: [
+            {
+              provider: "zai",
+              scope: "b",
+              usableRunwaySeconds: 100,
+              projectedExhaustedAt: "2026-09-26T06:00:00.000Z",
+            },
+          ],
+        }),
+    });
+
+    expect({ status: result.status, line: lines[0] }).toEqual({
+      status: "skip",
+      line: "scheduled-run: quota pre-flight skipped — ingest provider zai (model GLM-5.2) exhausted_now, reset 2026-09-26T06:00:00.000Z",
+    });
+  });
+
+  it("resolves the default probe against the provided environment's PATH", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-quota-env-"));
+
+    await writeFile(
+      join(dir, "quota-axi"),
+      `#!/bin/sh\n/bin/cat <<'JSON'\n${JSON.stringify({
+        quota: [
+          { provider: "zai", scope: "all_models", runway: "exhausted_now" },
+        ],
+        exhaustion: [],
+      })}\nJSON\n`,
+      { mode: 0o755 },
+    );
+
+    const lines: string[] = [];
+    const result = await quotaPreflight({
+      settings: settings(),
+      log: (line) => lines.push(line),
+      env: { PATH: dir },
+    });
+
+    expect({ status: result.status, line: lines[0] }).toEqual({
+      status: "skip",
+      line: expect.stringContaining(
+        "ingest provider zai scope all_models (model GLM-5.2) exhausted_now",
+      ),
+    });
+
+    await rm(dir, { recursive: true, force: true });
   });
 });

@@ -43,6 +43,10 @@ export interface QuotaPreflightOptions {
   readonly log: (line: string) => void;
   readonly commandRunner?: (command: string) => Promise<string>;
   readonly estimateSeconds?: number;
+  /** The probe child's environment; default: this process's own. The
+   *  scheduled wrapper passes its extended PATH so a launchd job
+   *  resolves machine-local CLIs the way its child scripts do. */
+  readonly env?: NodeJS.ProcessEnv;
 }
 
 function commandFor(settings: AgentSettings): string {
@@ -160,7 +164,9 @@ function skipReason(
     return undefined;
   }
 
-  const scope = asScope(exhaustedRow?.scope ?? finite?.scope);
+  const scope = asScope(
+    exhaustedRow !== undefined ? exhaustedRow.scope : finite?.scope,
+  );
   const runway =
     exhaustedRow === undefined
       ? `${String(finite?.usableRunwaySeconds)}s remaining`
@@ -195,7 +201,7 @@ export async function quotaPreflight(
       const result = await execFileAsync(
         command,
         ["--json", "--no-credential-refresh"],
-        { maxBuffer: 1024 * 1024, timeout: 5_000 },
+        { env: options.env, maxBuffer: 1024 * 1024, timeout: 5_000 },
       );
       return result.stdout;
     });

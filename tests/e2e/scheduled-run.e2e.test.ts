@@ -484,17 +484,15 @@ describe("scheduled-run heartbeat e2e (issue #362)", () => {
 describe("scheduled-run quota pre-flight e2e (issue #396)", () => {
   it("skips the cycle on a stubbed exhausted quota read without creating a lease", async () => {
     const repo = await makeRepo();
+    const stubQuotaAxi = join(repo.tmp, "stub-quota-axi");
 
     await writeFile(
       repo.settingsPath,
-      `command: ${join(repo.dataRoot, "stub-agent.mjs")}\nmodel: E2E-MODEL\nreasoning: low\nprovider: zai\n`,
+      `command: ${join(repo.dataRoot, "stub-agent.mjs")}\nmodel: E2E-MODEL\nreasoning: low\nprovider: zai\nquotaPreflight: ${stubQuotaAxi}\n`,
     );
 
-    const stubBin = join(repo.tmp, "bin");
-
-    await mkdir(stubBin, { recursive: true });
     await writeFile(
-      join(stubBin, "quota-axi"),
+      stubQuotaAxi,
       `#!/bin/sh\ncat <<'JSON'\n${JSON.stringify({
         quota: [
           { provider: "zai", scope: "all_models", runway: "exhausted_now" },
@@ -511,9 +509,7 @@ describe("scheduled-run quota pre-flight e2e (issue #396)", () => {
       { mode: 0o755 },
     );
 
-    const result = await runScheduled(repo, {
-      PATH: `${stubBin}:/usr/bin:/bin:/usr/sbin:/sbin`,
-    });
+    const result = await runScheduled(repo);
     const log = await readFile(join(repo.tmp, "scheduled-run.log"), "utf8");
 
     expect(result.code).toBe(0);

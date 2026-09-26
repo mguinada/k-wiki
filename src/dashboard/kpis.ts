@@ -72,7 +72,6 @@ export interface DashboardInput {
   readonly lastCycle: {
     readonly timestamp: string;
     readonly outcome: "ok" | "failed" | "skipped";
-    readonly reason?: string;
     readonly lastOk: string | null;
   } | null;
 }

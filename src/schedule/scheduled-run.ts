@@ -323,6 +323,11 @@ async function runQuotaCheck(
     return quotaPreflight({
       settings,
       log,
+      env: {
+        ...process.env,
+        PATH: buildScheduledEnv(process.env.HOME ?? homedir(), process.execPath)
+          .PATH,
+      },
     });
   } catch {
     return quotaPreflightUnavailable(log);
