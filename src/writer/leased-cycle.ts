@@ -77,7 +77,7 @@ export async function leasedCycle(
 
   if (gate.status === "refuse") {
     // A clean pre-write refusal: release only the exact owned lease.
-    await releaseIfClean(options, marker, git, current.oid);
+    await releaseIfClean(options, marker, git, current);
 
     return { status: "refused", reason: gate.reason.join("\n") };
   }

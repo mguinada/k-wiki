@@ -7,6 +7,7 @@ import {
   finalizeWithLeaseRelease,
   releaseOwnLease,
   renewLease,
+  retainFailedCycleLease,
   takeOverExpiredLease,
 } from "../../src/writer/lease-ops.ts";
 import {
@@ -180,6 +181,54 @@ describe("renewLease", () => {
           holder: HOLDER,
         }),
       ).rejects.toThrow(/failed/);
+    } finally {
+      await world.cleanup();
+    }
+  });
+});
+
+describe("retainFailedCycleLease", () => {
+  it("atomically replaces the failed lease with a fifteen-minute expiry", async () => {
+    const world = await makeWriterWorld();
+
+    try {
+      const treeOid = await fetchMain(world.a);
+      const first = await acquireLease({
+        git: world.a.git,
+        remote: "origin",
+        leaseRef: LEASE_REF,
+        treeOid,
+        base: "b".repeat(40),
+        now: NOW,
+        holder: HOLDER,
+      });
+
+      if (first.status !== "acquired") {
+        throw new Error("setup: acquire refused");
+      }
+
+      const retained = await retainFailedCycleLease({
+        git: world.a.git,
+        remote: "origin",
+        leaseRef: LEASE_REF,
+        current: first.lease,
+        treeOid,
+        now: NOW,
+      });
+
+      expect({
+        expires: retained.body.expires,
+        token: retained.body.token,
+        changed: retained.oid !== first.lease.oid,
+        remoteOid: await observeLeaseOid(world.a.git, "origin", LEASE_REF),
+        oid: retained.oid,
+      }).toEqual({
+        expires: "2026-01-01T00:15:00.000Z",
+        token: first.lease.body.token,
+        changed: true,
+        remoteOid: retained.oid,
+        oid: retained.oid,
+      });
     } finally {
       await world.cleanup();
     }
