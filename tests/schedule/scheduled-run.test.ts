@@ -274,6 +274,50 @@ function syncRecorder(
 }
 
 describe("runScheduledCycle", () => {
+  it("skips before pipeline work when quota pre-flight reports exhaustion", async () => {
+    const dir = await tempDir();
+    const lockPath = join(dir, ".scheduled-run.lock");
+    const lines: string[] = [];
+
+    const outcome = await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath,
+      runGitStep: fakeGit().runGitStep,
+      runQuotaPreflight: async () => ({
+        status: "skip",
+        reason:
+          "ingest provider zai exhausted_now, reset 2026-09-26T05:00:00.000Z",
+      }),
+      log: (line) => lines.push(line),
+    });
+
+    expect({
+      outcome,
+      lockExists: await stat(lockPath).then(
+        () => true,
+        () => false,
+      ),
+      heartbeat: JSON.parse(
+        await readFile(join(dir, "outputs", "last-cycle.json"), "utf8"),
+      ).outcome,
+      lines: lines.filter(
+        (line) => line.includes("starting cycle") || line.includes("quota"),
+      ),
+    }).toEqual({
+      outcome: {
+        status: "skipped",
+        reason:
+          "ingest provider zai exhausted_now, reset 2026-09-26T05:00:00.000Z",
+      },
+      lockExists: false,
+      heartbeat: "skipped",
+      lines: [expect.stringContaining("starting cycle")],
+    });
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
   it("locks, verifies origin, pulls, runs wiki-sync, pushes, releases", async () => {
     const dir = await tempDir();
     const { git, runGitStep } = fakeGit();

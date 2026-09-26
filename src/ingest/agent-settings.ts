@@ -22,6 +22,8 @@ export interface AgentSettings {
   readonly reasoning: string;
   /** Passed to the agent as `--provider` when set. */
   readonly provider?: string;
+  /** Quota pre-flight mode for unattended scheduled runs. */
+  readonly quotaPreflight?: "auto" | "off" | string;
   /** False opts out of the pi isolation flags (issue #118);
    *  unset means isolated — the safe default. Agent-agnostic: the
    *  setting becomes flags at the spawn site (agentArgs), so a
@@ -45,7 +47,7 @@ export interface AgentSettings {
 }
 
 const REQUIRED_KEYS = ["command", "model", "reasoning"] as const;
-const OPTIONAL_KEYS = ["provider", "isolate"] as const;
+const OPTIONAL_KEYS = ["provider", "isolate", "quotaPreflight"] as const;
 const DOMAIN_KEY = "secondBrain.domains";
 const SKILLS_KEY = "isolate.skills";
 const EXTENSIONS_KEY = "isolate.extensions";
@@ -229,10 +231,22 @@ function validateSettings(
   }
 
   const isolate = values.get("isolate");
+  const quotaPreflight = values.get("quotaPreflight");
 
   if (isolate !== undefined && isolate !== "true" && isolate !== "false") {
     throw new Error(
       `invalid agent settings at ${origin}: setting ${JSON.stringify("isolate")} must be true or false, got ${JSON.stringify(isolate)}`,
+    );
+  }
+
+  if (
+    quotaPreflight !== undefined &&
+    quotaPreflight !== "auto" &&
+    quotaPreflight !== "off" &&
+    !quotaPreflight.includes("/")
+  ) {
+    throw new Error(
+      `invalid agent settings at ${origin}: setting ${JSON.stringify("quotaPreflight")} must be auto, off, or a CLI path`,
     );
   }
 }
@@ -244,12 +258,14 @@ function finalizeSettings(
 ): AgentSettings {
   const provider = values.get("provider");
   const isolate = values.get("isolate");
+  const quotaPreflight = values.get("quotaPreflight");
 
   return {
     command: values.get("command") ?? "",
     model: values.get("model") ?? "",
     reasoning: values.get("reasoning") ?? "",
     ...(provider !== undefined && { provider }),
+    ...(quotaPreflight !== undefined && { quotaPreflight }),
     ...(isolate !== undefined && { isolate: isolate === "true" }),
     ...(lists[DOMAIN_KEY] !== undefined && {
       secondBrainDomains: lists[DOMAIN_KEY],

@@ -169,6 +169,9 @@ async function collectLastCycle(
     ? {
         timestamp: read.stamp.timestamp,
         outcome: read.stamp.outcome,
+        ...(read.stamp.reason === undefined
+          ? {}
+          : { reason: read.stamp.reason }),
         lastOk: read.stamp.lastOk,
       }
     : null;

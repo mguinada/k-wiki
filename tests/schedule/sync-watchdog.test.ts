@@ -135,6 +135,27 @@ describe("watchdogVerdict", () => {
     });
   });
 
+  it("reports persistent skipped cycles with their cause", () => {
+    expect(
+      watchdogVerdict({
+        read: {
+          kind: "present",
+          stamp: stamp({
+            outcome: "skipped",
+            reason: "ingest provider zai exhausted until reset",
+            lastOk: "2026-09-20T10:00:00.000Z",
+          }),
+        },
+        now: NOW,
+        thresholdMs: THRESHOLD,
+        newestCommitAt: undefined,
+      }),
+    ).toEqual({
+      line: "sync-watchdog: ALERT — cycles skipping: ingest provider zai exhausted until reset; last successful cycle 2h ago",
+      exitCode: 1,
+    });
+  });
+
   it("holds the grace window for a missing stamp inside the threshold", () => {
     expect(
       watchdogVerdict({

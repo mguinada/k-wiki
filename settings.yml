@@ -8,6 +8,10 @@ provider: zai      # passed as --provider; omit to use pi's default
 model: GLM-5.2     # passed as --model
 reasoning: high    # pi thinking level, passed as --thinking
 
+# Optional unattended scheduler optimization: auto probes quota-axi when it
+# is installed, off disables the probe, or an absolute CLI path may be used.
+quotaPreflight: auto
+
 # Second-brain instances only (issue #96): comma-separated domain
 # wiki dirs — the wiki-sync cycle runs the check-crosslinks audit
 # against every listed wiki after lint, before the commit. Leave the

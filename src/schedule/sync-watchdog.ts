@@ -33,6 +33,7 @@ import { runGit } from "../data/git.ts";
 import {
   classifyHeartbeat,
   formatAge,
+  type ReadHeartbeat,
   readCycleHeartbeat,
   readWatchdogSince,
 } from "./heartbeat.ts";
@@ -117,6 +118,10 @@ export function watchdogVerdict(input: {
 
   const classified = classifyHeartbeat(read.stamp, now, thresholdMs);
 
+  if (read.stamp.outcome === "skipped") {
+    return skippedVerdict(read.stamp, now, thresholdMs);
+  }
+
   return classified.verdict === "fresh"
     ? {
         line: `sync-watchdog: fresh — last cycle ${formatAge(classified.ageMs)} ago (threshold ${threshold})`,
@@ -125,6 +130,28 @@ export function watchdogVerdict(input: {
     : {
         line: `sync-watchdog: ALERT — last cycle ${formatAge(classified.ageMs)} ago, past the ${threshold} threshold`,
         exitCode: 1,
+      };
+}
+
+function skippedVerdict(
+  stamp: NonNullable<Extract<ReadHeartbeat, { kind: "present" }>["stamp"]>,
+  now: Date,
+  thresholdMs: number,
+): { readonly line: string; readonly exitCode: 0 | 1 } {
+  const lastOkAgeMs =
+    stamp.lastOk === null
+      ? 0
+      : Math.max(0, now.getTime() - Date.parse(stamp.lastOk));
+  const cause = stamp.reason ?? "scheduled cycle skipped";
+
+  return lastOkAgeMs > thresholdMs
+    ? {
+        line: `sync-watchdog: ALERT — cycles skipping: ${cause}; last successful cycle ${formatAge(lastOkAgeMs)} ago`,
+        exitCode: 1,
+      }
+    : {
+        line: `sync-watchdog: fresh — cycles skipping: ${cause}`,
+        exitCode: 0,
       };
 }
 

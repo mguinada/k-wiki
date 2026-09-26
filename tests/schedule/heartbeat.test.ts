@@ -76,15 +76,14 @@ describe("parseHeartbeat", () => {
     ).toEqual({ reason: "missing or invalid timestamp, outcome, or pid" });
   });
 
-  it("rejects an outcome outside ok|failed", () => {
-    const foreign = { ...stamp(), outcome: "skipped" } as Record<
-      string,
-      unknown
-    >;
+  it("accepts a benign skipped outcome with its reason", () => {
+    const skipped = {
+      ...stamp(),
+      outcome: "skipped",
+      reason: "provider exhausted",
+    } as Record<string, unknown>;
 
-    expect(parseHeartbeat(JSON.stringify(foreign))).toEqual({
-      reason: "missing or invalid timestamp, outcome, or pid",
-    });
+    expect(parseHeartbeat(JSON.stringify(skipped))).toEqual(skipped);
   });
 
   it("drops an unparseable lastOk instead of trusting it", () => {

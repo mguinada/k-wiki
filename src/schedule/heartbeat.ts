@@ -1,9 +1,9 @@
 /**
  * The scheduled cycle's heartbeat (issue #362): one gitignored stamp
  * file in the data repo — `outputs/last-cycle.json` — written on
- * every cycle completion (ok or failed; a skipped tick never
- * acquired the lock, so it writes nothing). The stamp carries this
- * cycle's timestamp, outcome, and holder PID plus the timestamp of
+ * every cycle completion (ok, failed, or a benign quota-skipped tick).
+ * A skipped tick releases its local lock before writing the stamp. The
+ * stamp carries this cycle's timestamp, outcome, and holder PID plus the timestamp of
  * the last ok cycle, carried forward, so "when did the pipeline
  * last succeed" survives failed cycles. The independent watchdog
  * (bin/libexec/sync-watchdog) and the dashboard's last-cycle row
@@ -30,8 +30,10 @@ export const CYCLE_HEARTBEAT_FILENAME = "last-cycle.json";
 export interface CycleHeartbeat {
   /** When this cycle finished, ISO timestamp. */
   readonly timestamp: string;
-  /** `ok` or `failed` — the cycle's outcome. */
-  readonly outcome: "ok" | "failed";
+  /** The cycle's outcome; skipped ticks are benign quota pre-flight ticks. */
+  readonly outcome: "ok" | "failed" | "skipped";
+  /** Why a benign skipped tick occurred, when present. */
+  readonly reason?: string;
   /** The PID that ran the cycle. */
   readonly pid: number;
   /** When the last ok cycle finished, carried forward through
@@ -116,7 +118,8 @@ function isIsoString(value: unknown): value is string {
  *  be trusted (lastOk checked separately — it is optional). */
 interface StampFields {
   readonly timestamp: string;
-  readonly outcome: "ok" | "failed";
+  readonly outcome: "ok" | "failed" | "skipped";
+  readonly reason?: unknown;
   readonly pid: number;
   readonly lastOk?: unknown;
 }
@@ -129,7 +132,8 @@ function isStampShape(parsed: unknown): parsed is StampFields {
     parsed !== null &&
     isIsoString((parsed as Record<string, unknown>).timestamp) &&
     ((parsed as Record<string, unknown>).outcome === "ok" ||
-      (parsed as Record<string, unknown>).outcome === "failed") &&
+      (parsed as Record<string, unknown>).outcome === "failed" ||
+      (parsed as Record<string, unknown>).outcome === "skipped") &&
     Number.isInteger((parsed as Record<string, unknown>).pid)
   );
 }
@@ -155,6 +159,7 @@ export function parseHeartbeat(
   return {
     timestamp: parsed.timestamp,
     outcome: parsed.outcome,
+    ...(typeof parsed.reason === "string" && { reason: parsed.reason }),
     pid: parsed.pid,
     lastOk: isIsoString(parsed.lastOk) ? parsed.lastOk : null,
   };
@@ -181,14 +186,16 @@ export async function readCycleHeartbeat(
 /** Write the stamp for one completed cycle: timestamp, outcome, and
  *  PID, with the last-ok timestamp carried forward from the
  *  previous stamp (a failed cycle keeps the older success on
- *  record; an unreadable previous stamp reads as no success yet).
- *  Atomic (tmp + rename) so a torn write can never masquerade as a
+ *  record; an unreadable previous stamp reads as no success yet). A
+ *  skipped tick preserves the last successful timestamp. Atomic (tmp + rename)
+ *  so a torn write can never masquerade as a
  *  heartbeat, and the stamp is kept out of the data repo's history
  *  via .git/info/exclude, re-applied on every write so fresh
  *  clones self-heal. */
 export async function writeCycleHeartbeat(options: {
   readonly dataRoot: string;
-  readonly outcome: "ok" | "failed";
+  readonly outcome: "ok" | "failed" | "skipped";
+  readonly reason?: string;
   readonly pid: number;
   readonly now: Date;
   /** Progress sink for the one-time exclude announcement; default
@@ -206,6 +213,7 @@ export async function writeCycleHeartbeat(options: {
   const stamp: CycleHeartbeat = {
     timestamp: options.now.toISOString(),
     outcome: options.outcome,
+    ...(options.reason !== undefined && { reason: options.reason }),
     pid: options.pid,
     lastOk,
   };
