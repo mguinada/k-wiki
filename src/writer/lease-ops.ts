@@ -1,8 +1,8 @@
 /**
- * Lease lifecycle operations (issue #390): acquire, renew, take
- * over, finalize, and conditionally release — each a compare-and-swap
- * push over the lease ref, each failing closed when its expected OID
- * no longer matches. Acquire creates the absent ref with a plain
+ * Lease lifecycle operations (issue #390): acquire, renew, retain
+ * a failed cycle's lease, take over, finalize, and conditionally
+ * release — each a compare-and-swap push over the lease ref, each
+ * failing closed when its expected OID no longer matches. Acquire creates the absent ref with a plain
  * push (a racing creator loses the non-fast-forward check); renewal
  * and takeover replace by exact OID; finalize is the single atomic
  * push that advances the branch and deletes the owned lease together;

@@ -13,6 +13,7 @@
  * failure retains it — a bounded availability pause, never a guess.
  */
 
+import { errorMessage } from "../cli/colors.ts";
 import type { RunContext } from "../cli/run-context.ts";
 import { acquireCycleLock } from "../sync/wiki-sync.ts";
 import { refuseDirtyWorkingTree, releaseIfClean } from "./cycle-steps.ts";
@@ -149,7 +150,7 @@ async function runTenure(
           );
         } catch (retentionError) {
           run.onProgress(
-            `shared-writer: failed to shorten retained lease — ${String(retentionError)}`,
+            `shared-writer: failed to shorten retained lease — ${errorMessage(retentionError)}`,
           );
         }
       }
