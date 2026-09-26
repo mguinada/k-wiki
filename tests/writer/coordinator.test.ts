@@ -12,8 +12,10 @@ import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { runContext } from "../../src/cli/run-context.ts";
 import { runSharedCycle } from "../../src/writer/coordinator.ts";
 import { gitRunnerFor, lsRemoteOid } from "../../src/writer/git-remote.ts";
+import { observeLease, observeLeaseOid } from "../../src/writer/lease.ts";
 import { acquireLease, fetchedTreeOid } from "../../src/writer/lease-ops.ts";
 import {
   enabledDataRepo,
@@ -248,6 +250,64 @@ describe("fail-closed states", () => {
     );
 
     expect((error as Error).message).toContain("sneaky:1");
+  });
+});
+
+describe("failure-rule lease retention", () => {
+  it("shortens a retained lease to fifteen minutes when a mid-run failure leaves a dirty surface", async () => {
+    const world = await makeWriterWorld();
+    worlds.push(world);
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+    const { dataRoot } = cw;
+    const progress: string[] = [];
+
+    const before = await observeLeaseOid(world.a.git, "origin", LEASE_REF);
+
+    expect(before).toBeUndefined();
+
+    const error = await runSharedCycle(
+      optionsFor(cw, dataRoot, {
+        run: runContext({
+          rawDir: join(dataRoot, "raw"),
+          env: process.env,
+          now: NOW,
+          onProgress: (line: string) => progress.push(line),
+        }),
+        runSweep: async () => {
+          await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
+          throw new Error("agent stage blew up");
+        },
+      }),
+    ).catch((e: unknown) => e);
+
+    expect((error as Error).message).toContain("agent stage blew up");
+
+    // The lease is retained, but short: ~15 minutes, not the 4-hour TTL.
+    const lease = await observeLease(world.a.git, "origin", LEASE_REF);
+
+    expect(lease).toBeDefined();
+    expect(lease?.body.expires).toBe("2026-01-01T00:15:00.000Z");
+
+    // The retained log line names the shortened expiry.
+    expect(
+      progress.find((line) => line.includes("retained lease expires")),
+    ).toContain("2026-01-01T00:15:00.000Z");
+  }, 30000);
+
+  it("leaves no lease when the failure precedes acquisition", async () => {
+    const world = await makeWriterWorld();
+    worlds.push(world);
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+    const { dataRoot } = cw;
+
+    await writeFile(join(dataRoot, "wiki", "junk.md"), "junk\n");
+
+    const outcome = await runSharedCycle(optionsFor(cw, dataRoot));
+
+    expect(outcome).toMatchObject({ status: "refused" });
+    expect(
+      await observeLeaseOid(world.a.git, "origin", LEASE_REF),
+    ).toBeUndefined();
   });
 });
 
