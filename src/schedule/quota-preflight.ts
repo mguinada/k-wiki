@@ -26,9 +26,10 @@ type QuotaReport = {
 };
 
 /** How the cycle's quota pre-flight acted: `off` when settings
- *  disabled the probe, `unavailable` when the probe could not answer;
- *  absent when the gate was active (it proceeded or skipped). */
-export type PreflightState = "unavailable" | "off";
+ *  disabled the probe, `unavailable` when the probe could not answer,
+ *  `no-provider` when settings name no provider to check; absent when
+ *  the gate was active (it proceeded or skipped). */
+export type PreflightState = "unavailable" | "off" | "no-provider";
 
 export type QuotaPreflightResult =
   | {
@@ -206,7 +207,7 @@ export async function quotaPreflight(
   const provider = options.settings.provider;
 
   if (provider === undefined || provider === "") {
-    return quotaPreflightUnavailable(options.log);
+    return { status: "proceed", preflight: "no-provider" };
   }
 
   const run =

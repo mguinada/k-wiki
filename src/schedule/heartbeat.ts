@@ -22,6 +22,7 @@ import { dirname, join } from "node:path";
 import { errorMessage } from "../cli/colors.ts";
 import { readTextIfExists } from "../cli/shared.ts";
 import { ensureHeartbeatIgnored } from "../ingest/snapshot.ts";
+import type { PreflightState } from "./quota-preflight.ts";
 
 /** The stamp file's name in the data repo's outputs/. */
 export const CYCLE_HEARTBEAT_FILENAME = "last-cycle.json";
@@ -35,9 +36,10 @@ export interface CycleHeartbeat {
   /** Why a benign skipped tick occurred, when present. */
   readonly reason?: string;
   /** How the cycle's quota pre-flight acted when it did not gate:
-   *  `off` (disabled in settings) or `unavailable` (probe absent or
-   *  unreadable); absent when the gate was active. */
-  readonly preflight?: "unavailable" | "off";
+   *  `off` (disabled in settings), `unavailable` (probe absent or
+   *  unreadable), or `no-provider` (settings name no provider);
+   *  absent when the gate was active. */
+  readonly preflight?: PreflightState;
   /** The PID that ran the cycle. */
   readonly pid: number;
   /** When the last ok cycle finished, carried forward through
@@ -167,7 +169,9 @@ export function parseHeartbeat(
     timestamp: parsed.timestamp,
     outcome: parsed.outcome,
     ...(typeof parsed.reason === "string" && { reason: parsed.reason }),
-    ...((parsed.preflight === "unavailable" || parsed.preflight === "off") && {
+    ...((parsed.preflight === "unavailable" ||
+      parsed.preflight === "off" ||
+      parsed.preflight === "no-provider") && {
       preflight: parsed.preflight,
     }),
     pid: parsed.pid,
@@ -206,7 +210,7 @@ export async function writeCycleHeartbeat(options: {
   readonly dataRoot: string;
   readonly outcome: "ok" | "failed" | "skipped";
   readonly reason?: string;
-  readonly preflight?: "unavailable" | "off";
+  readonly preflight?: PreflightState;
   readonly pid: number;
   readonly now: Date;
   /** Progress sink for the one-time exclude announcement; default

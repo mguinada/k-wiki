@@ -285,6 +285,26 @@ describe("watchdogVerdict", () => {
     });
   });
 
+  it("names the missing provider when the stamp records no-provider", () => {
+    expect(
+      watchdogVerdict({
+        read: {
+          kind: "present",
+          stamp: stamp({
+            timestamp: "2026-09-20T11:00:00.000Z",
+            preflight: "no-provider",
+          }),
+        },
+        now: NOW,
+        thresholdMs: THRESHOLD,
+        newestCommitAt: undefined,
+      }),
+    ).toEqual({
+      line: "sync-watchdog: fresh — last cycle 1h ago (threshold 1h 30m); pre-flight: off — no ingest provider configured",
+      exitCode: 0,
+    });
+  });
+
   it("holds the grace window for a missing stamp inside the threshold", () => {
     expect(
       watchdogVerdict({

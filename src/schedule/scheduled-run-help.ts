@@ -68,8 +68,10 @@ Behavior, failure mode by failure mode:
     estimate (30 minutes). Any other probe outcome (quota-axi
     absent, unreadable, or unauthenticated) logs one dim line and
     runs the cycle unchanged: the probe is machine-local tooling,
-    never a dependency. A quota-skipped tick writes a benign
-    skipped stamp (see Heartbeat) so the watchdog can tell
+    never a dependency. Settings without a provider give the probe
+    nothing to check — the tick runs, and the stamp notes
+    "no ingest provider configured". A quota-skipped tick writes a
+    benign skipped stamp (see Heartbeat) so the watchdog can tell
     persistent exhaustion from a dead scheduler.
   - Shared-writer mode: the wrapper keeps its schedule, logs,
     heartbeat, and local run lock and delegates the remote work to

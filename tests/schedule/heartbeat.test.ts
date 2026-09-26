@@ -95,6 +95,15 @@ describe("parseHeartbeat", () => {
     expect(parseHeartbeat(JSON.stringify(dormant))).toEqual(dormant);
   });
 
+  it("keeps a no-provider pre-flight state on the stamp", () => {
+    const dormant = { ...stamp(), preflight: "no-provider" } as Record<
+      string,
+      unknown
+    >;
+
+    expect(parseHeartbeat(JSON.stringify(dormant))).toEqual(dormant);
+  });
+
   it("drops a foreign pre-flight value instead of trusting it", () => {
     const foreign = { ...stamp(), preflight: "maybe" } as Record<
       string,

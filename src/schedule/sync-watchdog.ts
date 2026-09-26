@@ -194,7 +194,9 @@ function preflightNote(
   const why =
     stamp.preflight === "off"
       ? "disabled by settings"
-      : "quota-axi not configured";
+      : stamp.preflight === "no-provider"
+        ? "no ingest provider configured"
+        : "quota-axi not configured";
 
   return `; pre-flight: off — ${why}`;
 }

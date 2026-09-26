@@ -105,6 +105,28 @@ describe("quotaPreflight", () => {
     });
   });
 
+  it("treats settings without a provider as nothing to probe", async () => {
+    let called = false;
+    const lines: string[] = [];
+    const result = await quotaPreflight({
+      settings: parseSettings(
+        "command: pi\nmodel: GLM-5.2\nreasoning: high\n",
+        "settings.yml",
+      ),
+      log: (line) => lines.push(line),
+      commandRunner: async () => {
+        called = true;
+        return "{}";
+      },
+    });
+
+    expect({ called, result, lines }).toEqual({
+      called: false,
+      result: { status: "proceed", preflight: "no-provider" },
+      lines: [],
+    });
+  });
+
   it("uses the conservative cycle estimate for finite runway", async () => {
     const result = await quotaPreflight({
       settings: settings(),
