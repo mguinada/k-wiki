@@ -143,22 +143,24 @@ function isStampShape(parsed: unknown): parsed is StampFields {
   );
 }
 
-/** Parse stamp text into a heartbeat; the reason when it cannot be
- *  trusted (the watchdog alerts on unreadable stamps, so a parse
- *  never silently reads as fresh). */
+/** Parse stamp text into a heartbeat; `parseError` when the text
+ *  cannot be trusted (the watchdog alerts on unreadable stamps, so a
+ *  parse never silently reads as fresh). The dedicated tag — not
+ *  `reason`, which a real stamp itself carries — is what lets the
+ *  caller tell a parse failure from a skipped stamp's cause. */
 export function parseHeartbeat(
   text: string,
-): CycleHeartbeat | { readonly reason: string } {
+): CycleHeartbeat | { readonly parseError: string } {
   let parsed: unknown;
 
   try {
     parsed = JSON.parse(text);
   } catch (cause) {
-    return { reason: `not valid JSON (${errorMessage(cause)})` };
+    return { parseError: `not valid JSON (${errorMessage(cause)})` };
   }
 
   if (!isStampShape(parsed)) {
-    return { reason: "missing or invalid timestamp, outcome, or pid" };
+    return { parseError: "missing or invalid timestamp, outcome, or pid" };
   }
 
   return {
@@ -186,8 +188,8 @@ export async function readCycleHeartbeat(
 
   const parsed = parseHeartbeat(text);
 
-  return "reason" in parsed
-    ? { kind: "unreadable", reason: parsed.reason }
+  return "parseError" in parsed
+    ? { kind: "unreadable", reason: parsed.parseError }
     : { kind: "present", stamp: parsed };
 }
 
