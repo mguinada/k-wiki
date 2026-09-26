@@ -14,13 +14,13 @@ import { repoRoot } from "../cli/shared.ts";
 import { agentRunFlags } from "../cli/shell.ts";
 import { loadSyncConfig } from "../sync/config.ts";
 import { readSharedWriterMarker } from "../writer/marker.ts";
+import { buildScheduledEnv, spawnRepoScript } from "./repo-script.ts";
 import {
   DEFAULT_LINT_FULL_TIMEOUT_MS,
   parseScheduledRunArgs,
   type ScheduledRunOptions,
   sweepArgsFor,
 } from "./scheduled-run.ts";
-import { buildScheduledEnv, spawnRepoScript } from "./repo-script.ts";
 
 /** Whether this cycle runs in shared-writer mode: the data repo
  *  carries a valid marker (issue #390). A malformed marker fails the
