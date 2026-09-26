@@ -20,7 +20,11 @@ import {
   observeLease,
   observeLeaseOid,
 } from "../../src/writer/lease.ts";
-import { acquireLease, fetchedTreeOid, replaceLease } from "../../src/writer/lease-ops.ts";
+import {
+  acquireLease,
+  fetchedTreeOid,
+  replaceLease,
+} from "../../src/writer/lease-ops.ts";
 import {
   enabledDataRepo,
   LEASE_REF,
