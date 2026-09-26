@@ -61,7 +61,14 @@ Lease commits never enter branch history.
 5. **No-op release** — a cycle with nothing to do conditionally
    deletes the exact owned lease after fresh verification.
 
-Default TTL: four hours, matching the local run lock. Observation is
+Default TTL: four hours, matching the local run lock. A failed cycle
+that keeps its lease replaces it by exact-OID CAS — never
+release-then-acquire — with a fifteen-minute one: before the content
+commit exists, only when the tree is left dirty (the fix surface);
+after it exists, always. The short lease is a dead-man window, not a
+work limit — live-cycle renewals stay full-TTL — and the next tick
+after expiry still sees the dirty tree first and refuses. A crash
+skips the graceful path and leaves the full-TTL lease. Observation is
 always `git ls-remote` (or an explicit custom-ref fetch refspec) — a
 default `git fetch` cannot make a live lease invisible, and the
 protocol never relies on it.
@@ -84,8 +91,9 @@ protocol never relies on it.
 | Final push response lost | Recognize success only when the expected branch head is remote and the lease is absent; otherwise retain |
 | Removal/rename without a matching receipt | Fail before `raw/` mutation or expunge |
 
-A retained lease is a bounded availability pause (at most the TTL),
-not a deadlock. Safety wins over premature release.
+A retained lease is a bounded availability pause — fifteen minutes
+after a handled failure, the full TTL only after a crash — not a
+deadlock. Safety wins over premature release.
 
 ## Source-removal receipts
 

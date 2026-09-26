@@ -13,6 +13,7 @@
  * failure retains it — a bounded availability pause, never a guess.
  */
 
+import { errorMessage } from "../cli/colors.ts";
 import type { RunContext } from "../cli/run-context.ts";
 import { acquireCycleLock } from "../sync/wiki-sync.ts";
 import { refuseDirtyWorkingTree, releaseIfClean } from "./cycle-steps.ts";
@@ -34,6 +35,7 @@ import {
 import {
   acquireLease,
   fetchedTreeOid,
+  retainFailedCycleLease,
   takeOverExpiredLease,
 } from "./lease-ops.ts";
 import { leasedCycle } from "./leased-cycle.ts";
@@ -129,8 +131,29 @@ async function runTenure(
       },
     );
   } catch (error) {
-    if (!isFinalizePhase(ctl) && session !== undefined) {
-      await releaseIfClean(options, marker, git, session.oid);
+    if (session !== undefined) {
+      if (!isFinalizePhase(ctl)) {
+        await releaseIfClean(options, marker, git, session);
+      } else {
+        try {
+          const retained = await retainFailedCycleLease({
+            git,
+            remote: marker.remote,
+            leaseRef: marker.leaseRef,
+            current: session,
+            treeOid: await fetchedTreeOid(git),
+            now: run.now,
+          });
+
+          run.onProgress(
+            `shared-writer: cycle failed during finalization — retained lease expires ${retained.body.expires}`,
+          );
+        } catch (retentionError) {
+          run.onProgress(
+            `shared-writer: failed to shorten retained lease — ${errorMessage(retentionError)}`,
+          );
+        }
+      }
     }
 
     throw error;

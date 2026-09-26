@@ -628,16 +628,48 @@ describe("shared-writer e2e", () => {
 
       // The lease stays: a second writer must not start on the
       // uncertain local state.
-      expect(await remoteLeaseOid(world.remoteDir)).toBeDefined();
+      const retainedOid = await remoteLeaseOid(world.remoteDir);
 
-      // Manual early recovery on the exact OID, then the next cycle
-      // succeeds and releases.
+      expect(retainedOid).toBeDefined();
+
+      // Issue #397: the retention is the short dead-man window. The
+      // failing cycle named the shortened expiry on stderr, and the
+      // human door reads it back live: about fifteen minutes out —
+      // not the full four-hour TTL — and still held (live).
+      const loggedExpiry =
+        /retained lease expires (\S+)/.exec(failed.err)?.[1] ?? "";
+
+      expect(loggedExpiry).not.toBe("");
+
       const status = await runCli(
         join(import.meta.dirname ?? ".", "../../bin/writer-lease"),
         ["status", "unused", join(world.a.dataRoot, "raw")],
       );
-      void status;
 
+      expect(status.code).toBe(0);
+
+      const observedExpiry = /expires:\s+(\S+)/.exec(status.out)?.[1] ?? "";
+
+      expect(observedExpiry).toBe(loggedExpiry);
+      expect(status.out).toContain("(live)");
+
+      const remainingMs = Date.parse(observedExpiry) - Date.now();
+
+      expect(remainingMs).toBeGreaterThan(13 * 60 * 1000);
+      expect(remainingMs).toBeLessThan(16 * 60 * 1000);
+
+      // A second writer racing the retained lease is refused before
+      // any agent work and cannot move the ref: no steal, no gap.
+      const bMarker = join(world.root, "invoked-b-retention.log");
+      const steal = await cycle(world.b, { STUB_MARKER: bMarker });
+
+      expect(steal.code).toBe(1);
+      expect(steal.err).toContain("held by");
+      expect(await readFile(bMarker, "utf8").catch(() => "")).toBe("");
+      expect(await remoteLeaseOid(world.remoteDir)).toBe(retainedOid);
+
+      // Manual early recovery on the exact OID, then the next cycle
+      // succeeds and releases.
       const oid = (await remoteLeaseOid(world.remoteDir)) ?? "";
       const takeover = await runCli(
         join(import.meta.dirname ?? ".", "../../bin/writer-lease"),

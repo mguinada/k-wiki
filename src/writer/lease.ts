@@ -32,6 +32,10 @@ import {
  *  cycle with both agent stages stays well inside it. */
 export const LEASE_TTL_MS = 4 * 60 * 60 * 1000;
 
+/** Fifteen minutes gives a failed cycle a short recovery window without
+ *  allowing a dirty fix surface to block the next scheduled tick for hours. */
+export const FAILED_CYCLE_LEASE_TTL_MS = 15 * 60 * 1000;
+
 /** The machine-readable fields of one lease commit's message body. */
 export interface LeaseBody {
   readonly token: string;
@@ -200,7 +204,10 @@ export function newLeaseBody(
   base: string,
   now: () => Date,
   holder: string,
-  options: { readonly token?: string } = {},
+  options: {
+    readonly token?: string;
+    readonly ttlMs?: number;
+  } = {},
 ): LeaseBody {
   const stamp = now().toISOString();
 
@@ -208,7 +215,9 @@ export function newLeaseBody(
     token: options.token ?? randomBytes(16).toString("hex"),
     holder,
     acquired: stamp,
-    expires: new Date(now().getTime() + LEASE_TTL_MS).toISOString(),
+    expires: new Date(
+      now().getTime() + (options.ttlMs ?? LEASE_TTL_MS),
+    ).toISOString(),
     base,
     renewals: 0,
   };
