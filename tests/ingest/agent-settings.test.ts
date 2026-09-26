@@ -49,6 +49,28 @@ describe("parseSettings", () => {
     expect(settings.provider).toBe("zai");
   });
 
+  it("parses ordered provider/model targets", () => {
+    expect(
+      parseSettings(
+        "command: pi\ntargets: [zai/GLM-5.2, openrouter/moonshotai/kimi-k2.6]\nreasoning: h\n",
+        "s",
+      ),
+    ).toMatchObject({
+      model: "GLM-5.2",
+      provider: "zai",
+      targets: [
+        { provider: "zai", model: "GLM-5.2" },
+        { provider: "openrouter", model: "moonshotai/kimi-k2.6" },
+      ],
+    });
+  });
+
+  it("rejects an empty target list", () => {
+    expect(() =>
+      parseSettings("command: pi\ntargets: []\nreasoning: h\n", "s"),
+    ).toThrow('setting "targets" needs at least one target');
+  });
+
   it("parses an explicit isolate: true setting", () => {
     const settings = parseSettings(
       "command: pi\nmodel: m\nreasoning: h\nisolate: true\n",

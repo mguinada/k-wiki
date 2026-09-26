@@ -110,6 +110,75 @@ describe("runWikiIngest", () => {
     expect(args[args.indexOf("--provider") + 1]).toBe("zai");
   });
 
+  it("falls back to the next target after a startup failure", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+    const progress: string[] = [];
+    let attempts = 0;
+
+    await writeFile(
+      h.settingsPath,
+      "command: pi\ntargets: [zai/GLM-5.2, openrouter/moonshotai/kimi-k2.6]\nreasoning: high\n",
+    );
+    await runWikiIngest({
+      ...optionsFor(h, { onProgress: (message) => progress.push(message) }),
+      runAgent: async (_command, _args) => {
+        attempts += 1;
+
+        if (attempts === 1) {
+          throw new Error("provider unavailable");
+        }
+
+        return { stdout: "fallback output", stderr: "" };
+      },
+    });
+
+    expect(attempts).toBe(2);
+  });
+
+  it("does not fall back after a failed target keeps output", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+    let attempts = 0;
+
+    await writeFile(
+      h.settingsPath,
+      "command: pi\ntargets: [zai/GLM-5.2, openrouter/moonshotai/kimi-k2.6]\nreasoning: high\n",
+    );
+    await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: async (_command, _args, options) => {
+        attempts += 1;
+        await writeFile(join(options.cwd, "wiki", "kept.md"), "kept\n");
+        throw new Error("provider failed after output");
+      },
+    }).catch(() => undefined);
+
+    expect(attempts).toBe(1);
+  });
+
+  it("logs the target and reason when falling back", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+    const progress: string[] = [];
+
+    await writeFile(
+      h.settingsPath,
+      "command: pi\ntargets: [zai/GLM-5.2, openrouter/moonshotai/kimi-k2.6]\nreasoning: high\n",
+    );
+    await runWikiIngest({
+      ...optionsFor(h, { onProgress: (message) => progress.push(message) }),
+      runAgent: async (_command, args) => {
+        if (args.includes("GLM-5.2")) {
+          throw new Error("provider unavailable");
+        }
+
+        return { stdout: "fallback output", stderr: "" };
+      },
+    });
+
+    expect(progress).toContain(
+      "wiki-ingest: falling back to openrouter/moonshotai/kimi-k2.6 from zai/GLM-5.2: provider unavailable",
+    );
+  });
+
   it("passes the --model flag from settings", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
 

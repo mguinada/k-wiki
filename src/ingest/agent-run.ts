@@ -9,6 +9,21 @@
 import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { pluralized } from "../cli/shared.ts";
+import {
+  hashMatches,
+  isPreExisting,
+  porcelainStatus,
+  statusIndex,
+} from "../data/git.ts";
+import {
+  type AgentSettings,
+  agentArgs,
+  agentTargets,
+  formatAgentInvocation,
+  settingsForTarget,
+  targetLabel,
+} from "./agent-settings.ts";
+import type { PreRunState } from "./guardrails.ts";
 
 /** How the agent is invoked; injectable for tests. */
 export type AgentRunner = (
@@ -109,6 +124,96 @@ export function spawnAgent(
       reject(new Error(`agent ${why}: ${tail(errText)}`));
     });
   });
+}
+
+async function runProducedOutput(
+  root: string,
+  environment: NodeJS.ProcessEnv,
+  pre: PreRunState,
+): Promise<boolean> {
+  const current = await porcelainStatus(root, environment);
+  const prior = statusIndex(pre.status);
+
+  for (const entry of current) {
+    if (isPreExisting(prior.get(entry.path), entry)) {
+      if (!(await hashMatches(root, entry.path, pre.hashes.get(entry.path)))) {
+        return true;
+      }
+
+      continue;
+    }
+
+    return true;
+  }
+
+  return false;
+}
+
+export async function runAgentTargets(
+  settings: AgentSettings,
+  prompt: string,
+  options: {
+    readonly root: string;
+    readonly environment: NodeJS.ProcessEnv;
+    readonly timeoutMs?: number | undefined;
+    readonly pre: PreRunState;
+    readonly onProgress: (message: string) => void;
+    readonly runAgent: AgentRunner;
+  },
+): Promise<{ stdout: string; agentError: unknown }> {
+  const targets = agentTargets(settings);
+  const failures: string[] = [];
+  let stdout = "";
+  let agentError: unknown;
+
+  for (const [index, target] of targets.entries()) {
+    const targetSettings = settingsForTarget(settings, target);
+
+    options.onProgress(
+      `wiki-ingest: invoking agent: ${formatAgentInvocation(targetSettings)}`,
+    );
+
+    try {
+      ({ stdout } = await options.runAgent(
+        targetSettings.command,
+        agentArgs(targetSettings, prompt),
+        {
+          cwd: options.root,
+          env: options.environment,
+          timeoutMs: options.timeoutMs,
+        },
+      ));
+      agentError = undefined;
+      break;
+    } catch (error) {
+      agentError = error;
+      const reason = error instanceof Error ? error.message : String(error);
+      failures.push(`${targetLabel(target)}: ${reason}`);
+
+      if (
+        index === targets.length - 1 ||
+        (await runProducedOutput(
+          options.root,
+          options.environment,
+          options.pre,
+        ))
+      ) {
+        break;
+      }
+
+      options.onProgress(
+        `wiki-ingest: falling back to ${targetLabel(targets[index + 1] ?? target)} from ${targetLabel(target)}: ${reason}`,
+      );
+    }
+  }
+
+  if (agentError !== undefined && failures.length > 1) {
+    agentError = new Error(`agent targets failed: ${failures.join("; ")}`, {
+      cause: agentError,
+    });
+  }
+
+  return { stdout, agentError };
 }
 
 export async function readPrompt(path: string): Promise<string> {

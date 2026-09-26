@@ -69,9 +69,9 @@ Switches and arguments:
                      derived counterpart. -w is the documented short
                      alias of --wiki.
   --settings <path>  Agent settings file. Default: the instance's
-                     derived settings file — command, model, provider, and reasoning
-                     level, passed to the agent as --model/--thinking;
-                     provider is optional and passed as --provider when set.
+                     derived settings file — command, provider/model target(s), and reasoning
+                     level. A targets list (provider/model pairs) is tried in order for ingest;
+                     the first target is primary, and the legacy provider/model keys remain valid.
                      isolate (true by default, false to opt out) adds the
                      pi isolation flags --no-context-files --no-extensions
                      --no-skills so global agent config cannot leak into
