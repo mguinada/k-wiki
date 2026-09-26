@@ -371,7 +371,7 @@ export function verbTable(): readonly VerbSpec[] {
       wiki: false,
       lines: [
         "heartbeat watchdog — alert when the scheduled cycle's",
-        "stamp goes stale, missing, or unreadable",
+        "stamp goes stale, missing, unreadable, or quota-skips too long",
       ],
       main: syncWatchdog,
     },
