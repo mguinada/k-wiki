@@ -41,6 +41,7 @@ isolate: true
 isolate.skills: [.agents/skills/obsidian-markdown, .agents/skills/obsidian-bases]
 isolate.extensions: [npm:pi-subagents]
 
-# Legacy single-target form remains supported:
+# Legacy single-target form remains supported; comment the targets
+# line out first — the two forms cannot be combined:
 # provider: openrouter
 # model: moonshotai/kimi-k2.6

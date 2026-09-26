@@ -155,6 +155,27 @@ describe("runWikiIngest", () => {
     expect(attempts).toBe(1);
   });
 
+  it("does not fall back when a failed target deletes a pre-run untracked page", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+    let attempts = 0;
+
+    await writeFile(join(h.dataRoot, "wiki", "Kept.md"), "# kept\n");
+    await writeFile(
+      h.settingsPath,
+      "command: pi\ntargets: [zai/GLM-5.2, openrouter/moonshotai/kimi-k2.6]\nreasoning: high\n",
+    );
+    await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: async (_command, _args, options) => {
+        attempts += 1;
+        await rm(join(options.cwd, "wiki", "Kept.md"));
+        throw new Error("deleted pre-run work");
+      },
+    }).catch(() => undefined);
+
+    expect(attempts).toBe(1);
+  });
+
   it("logs the target and reason when falling back", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
     const progress: string[] = [];

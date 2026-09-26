@@ -9,12 +9,7 @@
 import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { pluralized } from "../cli/shared.ts";
-import {
-  hashMatches,
-  isPreExisting,
-  porcelainStatus,
-  statusIndex,
-} from "../data/git.ts";
+import { changedPaths } from "../data/git.ts";
 import {
   type AgentSettings,
   agentArgs,
@@ -126,29 +121,6 @@ export function spawnAgent(
   });
 }
 
-async function runProducedOutput(
-  root: string,
-  environment: NodeJS.ProcessEnv,
-  pre: PreRunState,
-): Promise<boolean> {
-  const current = await porcelainStatus(root, environment);
-  const prior = statusIndex(pre.status);
-
-  for (const entry of current) {
-    if (isPreExisting(prior.get(entry.path), entry)) {
-      if (!(await hashMatches(root, entry.path, pre.hashes.get(entry.path)))) {
-        return true;
-      }
-
-      continue;
-    }
-
-    return true;
-  }
-
-  return false;
-}
-
 export async function runAgentTargets(
   settings: AgentSettings,
   prompt: string,
@@ -192,11 +164,8 @@ export async function runAgentTargets(
 
       if (
         index === targets.length - 1 ||
-        (await runProducedOutput(
-          options.root,
-          options.environment,
-          options.pre,
-        ))
+        (await changedPaths(options.root, options.environment, options.pre))
+          .length > 0
       ) {
         break;
       }

@@ -70,16 +70,17 @@ type ListKey = (typeof LIST_KEYS)[number];
 
 function parseTarget(value: string, origin: string): AgentTarget {
   const separator = value.indexOf("/");
-  const provider = separator < 1 ? undefined : value.slice(0, separator);
-  const model = separator < 1 ? value : value.slice(separator + 1);
 
-  if (model === "" || (provider === undefined && value.includes("/"))) {
+  if (separator < 1 || separator === value.length - 1) {
     throw new Error(
       `invalid agent settings at ${origin}: target ${JSON.stringify(value)} must be provider/model`,
     );
   }
 
-  return { ...(provider !== undefined && { provider }), model };
+  return {
+    provider: value.slice(0, separator),
+    model: value.slice(separator + 1),
+  };
 }
 
 /** The items of a list-valued setting: an optional `[...]` wrapper,
@@ -268,6 +269,15 @@ function validateSettings(
     );
   }
 
+  if (
+    lists[TARGETS_KEY] !== undefined &&
+    (values.has("model") || values.has("provider"))
+  ) {
+    throw new Error(
+      `invalid agent settings at ${origin}: setting ${JSON.stringify(TARGETS_KEY)} cannot be combined with "model"/"provider"`,
+    );
+  }
+
   const isolate = values.get("isolate");
 
   if (isolate !== undefined && isolate !== "true" && isolate !== "false") {
@@ -280,11 +290,12 @@ function validateSettings(
 function targetList(
   values: Map<SettingKey, string>,
   lists: Partial<Record<ListKey, readonly string[]>>,
+  origin: string,
 ): AgentTarget[] {
   const configured = lists[TARGETS_KEY];
 
   if (configured !== undefined) {
-    return configured.map((target) => parseTarget(target, "settings"));
+    return configured.map((target) => parseTarget(target, origin));
   }
 
   const provider = values.get("provider");
@@ -316,9 +327,10 @@ function optionalListSettings(
 function finalizeSettings(
   values: Map<SettingKey, string>,
   lists: Partial<Record<ListKey, readonly string[]>>,
+  origin: string,
 ): AgentSettings {
   const configuredTargets = lists[TARGETS_KEY];
-  const targets = targetList(values, lists);
+  const targets = targetList(values, lists, origin);
   const primary = targets[0];
 
   if (primary === undefined) {
@@ -345,8 +357,9 @@ function finalizeSettings(
  * list-valued keys
  * `secondBrain.domains`, `isolate.skills`, and `isolate.extensions`, plus
  * `targets` as comma-separated provider/model pairs for ingest fallback.
- * Anything else (nesting, other lists) is rejected so a typo cannot
- * silently change the agent configuration.
+ * Anything else (nesting, other lists, legacy `model`/`provider` beside
+ * `targets`) is rejected so a typo cannot silently change the agent
+ * configuration.
  */
 export function parseSettings(text: string, origin: string): AgentSettings {
   const values = new Map<SettingKey, string>();
@@ -368,7 +381,7 @@ export function parseSettings(text: string, origin: string): AgentSettings {
 
   validateSettings(values, lists, origin);
 
-  return finalizeSettings(values, lists);
+  return finalizeSettings(values, lists, origin);
 }
 
 /** The pi isolation flags (issue #118): mechanically disable every
@@ -407,8 +420,10 @@ export function settingsForTarget(
   settings: AgentSettings,
   target: AgentTarget,
 ): AgentSettings {
+  const { provider: _baseProvider, ...rest } = settings;
+
   return {
-    ...settings,
+    ...rest,
     model: target.model,
     ...(target.provider !== undefined && { provider: target.provider }),
   };

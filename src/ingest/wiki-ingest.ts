@@ -430,9 +430,9 @@ interface AgentRun {
 }
 
 /** The spawn step: capture the pre-run state, invoke the agent under
- *  its heartbeat, and hold the outcome for the guardrail step. */
-/** The spawn step retries an ordered target list only when a failed target
- *  left no output or working-tree surface. */
+ *  its heartbeat, and hold the outcome for the guardrail step — an
+ *  ordered target list is retried only while a failed target left no
+ *  output or working-tree surface. */
 async function spawnStep(
   inputs: RunInputs,
   mode: RunMode,
