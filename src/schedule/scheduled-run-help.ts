@@ -63,6 +63,18 @@ Behavior, failure mode by failure mode:
     Proposed removals/renames fail before raw/ is mutated; a
     scheduled run can never supply --removal-receipt (rejected as
     an unknown flag before any cycle work) and never expunges.
+  - Shared-writer failure recovery (fix surface): a mid-run failure
+    leaves its dirty paths recorded with the retained lease, and
+    every tick that stays refused counts toward auto-recovery:
+    after three consecutive refused ticks whose live dirty set still
+    matches the record and whose retained lease has lapsed, the
+    coordinator discards the recorded paths itself and the cycle
+    proceeds — no human input. Any mismatch (a human edit after the
+    failure) aborts auto-recovery permanently with an ALERT naming
+    the paths; the immediate path is the recover-fix-surface verb
+    (show is the default; recover --yes executes). Auto-recovery
+    lines land in this log beside the digest, and the recovering
+    tick stamps the heartbeat like any cycle.
   - No origin: the data repo must have an origin remote (the push
     stage needs one); the wrapper fails loud without running.
   - wiki-sync failure: the guardrails and verification have already

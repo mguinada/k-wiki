@@ -66,4 +66,34 @@ describe("scheduled-run help (printed by the launcher)", () => {
 
     expect(bullet).not.toContain("pull --rebase");
   });
+
+  it("documents the bounded auto-recovery of a recorded fix surface", () => {
+    const bullet = betweenAnchors(
+      help,
+      "Shared-writer failure recovery",
+      "- No origin:",
+    );
+
+    expect(bullet).toContain("three consecutive refused ticks");
+  });
+
+  it("documents the permanent abort of auto-recovery on a mismatch", () => {
+    const bullet = betweenAnchors(
+      help,
+      "Shared-writer failure recovery",
+      "- No origin:",
+    );
+
+    expect(bullet).toContain("aborts auto-recovery permanently");
+  });
+
+  it("documents the recover-fix-surface verb as the immediate path", () => {
+    const bullet = betweenAnchors(
+      help,
+      "Shared-writer failure recovery",
+      "- No origin:",
+    );
+
+    expect(bullet).toContain("recover-fix-surface");
+  });
 });

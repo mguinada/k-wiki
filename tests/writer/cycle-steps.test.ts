@@ -9,6 +9,7 @@ import {
   gateRemovals,
   refuseDirtyWorkingTree,
   snapshotPathFor,
+  surfaceEntries,
   workingTreeClean,
 } from "../../src/writer/cycle-steps.ts";
 import { gitRunnerFor } from "../../src/writer/git-remote.ts";
@@ -75,6 +76,41 @@ describe("refuseDirtyWorkingTree", () => {
 
     expect(refusal).toContain("stray.md");
     expect(refusal).not.toContain("scheduled-run.lock");
+  });
+});
+
+describe("surfaceEntries", () => {
+  it("carries codes and the untracked flag, excluding the run lock", async () => {
+    const dir = await tempGitRepo();
+
+    await writeFile(join(dir, "base.txt"), "changed\n");
+    await writeFile(join(dir, "stray.md"), "stray\n");
+    await writeFile(join(dir, ".scheduled-run.lock"), "{}\n");
+
+    const entries = await surfaceEntries(
+      gitRunnerFor({ dir, env: process.env }),
+    );
+
+    expect(entries).toEqual([
+      { code: " M", path: "base.txt", origin: undefined, untracked: false },
+      { code: "??", path: "stray.md", origin: undefined, untracked: true },
+    ]);
+  });
+
+  it("reports a rename's two paths and its code", async () => {
+    const dir = await tempGitRepo();
+    const git = gitRunnerFor({ dir, env: process.env });
+
+    await writeFile(join(dir, "old.txt"), "content\n");
+    await git(["add", "-A"]);
+    await git(["commit", "-m", "old"]);
+    await git(["mv", "old.txt", "new.txt"]);
+
+    const entries = await surfaceEntries(git);
+
+    expect(entries).toEqual([
+      { code: "R ", path: "new.txt", origin: "old.txt", untracked: false },
+    ]);
   });
 });
 

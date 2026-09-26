@@ -109,7 +109,12 @@ e2e run or diagnosing a failing one.
   `--removal-receipt` rerun processing it; a scheduled shared-mode
   run refuses proposed removals before mutation (it can never supply
   a receipt), and the A→B then B→A scheduler handoff needs no
-  migration while racing writers serialize.
+  migration while racing writers serialize; and a stubbed failed
+  cycle's recorded fix surface converges with no human input
+  (issue #400): two ticks refuse on the dirty surface, the verb
+  refuses on a mismatched (human-edited) surface, and the third
+  tick past the dead-man window auto-recovers the recorded surface
+  and completes, clearing the record and the lease.
 - **k-wiki** — the front door (issue #337) in temp checkouts, temp
   data repos, and bound temp projects: read verbs on both doors
   (agent door via `.k-wiki.json`, human door from the checkout
