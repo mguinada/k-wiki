@@ -1168,9 +1168,16 @@ describe("scheduled-run main: cycle outcomes", () => {
 
     await writeFile(configPath, JSON.stringify({ vaults: [], dataRoot: dir }));
 
-    const { err, exitCode } = await runMain([configPath, join(dir, "raw")], {
-      KWIKI_SCHEDULED_LOG: join(dir, "run.log"),
-    });
+    // Absent settings: agent resolution skips (settings unreadable),
+    // so the origin failure surfaces on every machine — whether or
+    // not the ambient environment can resolve the repo's default
+    // agent command.
+    const { err, exitCode } = await runMain(
+      ["--settings", join(dir, "absent-settings.yml"), configPath, join(dir, "raw")],
+      {
+        KWIKI_SCHEDULED_LOG: join(dir, "run.log"),
+      },
+    );
 
     expect(exitCode).toBe("1");
     expect(err).toContain("origin");
