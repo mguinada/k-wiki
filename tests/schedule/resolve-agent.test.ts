@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -97,6 +97,17 @@ describe("resolveAgentPath", () => {
     await expect(
       resolveAgentPath("pi-stub", dir, undefined),
     ).resolves.toBeUndefined();
+  });
+
+  it("skips a directory shadowing the command's name on the search path", async () => {
+    const shadow = await tempDir();
+    const real = await fakeBin();
+
+    await mkdir(join(shadow, "pi-stub"), { recursive: true });
+
+    await expect(
+      resolveAgentPath("pi-stub", `${shadow}:${real}`, undefined),
+    ).resolves.toBe(join(real, "pi-stub"));
   });
 
   it("resolves a bare name through the login shell when the search path lacks it", async () => {

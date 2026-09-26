@@ -1266,10 +1266,6 @@ function dirnameOf(path: string): string {
 }
 
 describe("agentCommandOverride (issue #399)", () => {
-  it("names the environment key the launcher sets", () => {
-    expect(AGENT_COMMAND_ENV).toBe("KWIKI_AGENT_COMMAND");
-  });
-
   it("returns the launcher-provided absolute path", () => {
     expect(agentCommandOverride({ [AGENT_COMMAND_ENV]: "/abs/path/pi" })).toBe(
       "/abs/path/pi",

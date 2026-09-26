@@ -13,7 +13,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { access, constants } from "node:fs/promises";
+import { access, constants, stat } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { promisify } from "node:util";
 
@@ -38,9 +38,15 @@ export function loginShell(
  *  that consumes the resolved path needs X_OK, so a non-executable
  *  hit is no resolution at all. */
 async function isExecutable(candidate: string): Promise<boolean> {
-  return await access(candidate, constants.X_OK).then(
-    () => true,
-    () => false,
+  return (
+    (await stat(candidate).then(
+      (info) => info.isFile(),
+      () => false,
+    )) &&
+    (await access(candidate, constants.X_OK).then(
+      () => true,
+      () => false,
+    ))
   );
 }
 
