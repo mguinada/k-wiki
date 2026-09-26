@@ -72,6 +72,22 @@ describe("quotaPreflight", () => {
     });
   });
 
+  it("treats an unauthenticated payload without usable runway as absent", async () => {
+    const lines: string[] = [];
+    const result = await quotaPreflight({
+      settings: settings(),
+      log: (line) => lines.push(line),
+      commandRunner: async () =>
+        JSON.stringify({ quota: [{ provider: "zai" }], exhaustion: [] }),
+    });
+
+    expect({ ...result, lines }).toEqual({
+      status: "proceed",
+      preflight: "unavailable",
+      lines: ["scheduled-run: quota pre-flight unavailable — proceeding"],
+    });
+  });
+
   it("allows the explicit off mode without probing", async () => {
     let called = false;
     const result = await quotaPreflight({

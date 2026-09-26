@@ -115,6 +115,22 @@ function asScope(value: unknown): string | undefined {
   return typeof value === "string" && value !== "" ? value : undefined;
 }
 
+/** Whether the provider's rows carry a runway the gate can judge: a
+ *  recognized quota runway or a finite exhaustion estimate. */
+function hasUsableRunway(report: QuotaReport, provider: string): boolean {
+  return (
+    rowsForProvider(report, provider).some(
+      (row) =>
+        row.runway === "exhausted_now" ||
+        row.runway === "through_reset" ||
+        row.runway === "projected_exhaustion",
+    ) ||
+    exhaustionForProvider(report, provider).some(
+      (row) => typeof row.usableRunwaySeconds === "number",
+    )
+  );
+}
+
 /** The deciding record's reset time: the row that grounded the skip
  *  when it carries one, else the provider's exhaustion row for the
  *  deciding scope, else the provider's only exhaustion row, else
@@ -220,9 +236,9 @@ export async function quotaPreflight(
   const reason = skipReason(report, provider, options.settings.model, estimate);
 
   if (reason === undefined) {
-    return rowsForProvider(report, provider).length === 0
-      ? quotaPreflightUnavailable(options.log)
-      : { status: "proceed" };
+    return hasUsableRunway(report, provider)
+      ? { status: "proceed" }
+      : quotaPreflightUnavailable(options.log);
   }
 
   options.log(`scheduled-run: quota pre-flight skipped — ${reason}`);
