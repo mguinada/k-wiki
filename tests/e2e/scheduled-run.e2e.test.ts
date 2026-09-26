@@ -482,7 +482,7 @@ describe("scheduled-run heartbeat e2e (issue #362)", () => {
 });
 
 describe("scheduled-run quota pre-flight e2e (issue #396)", () => {
-  it("skips the cycle on a stubbed exhausted quota read without creating a lease", async () => {
+  it("skips the cycle on a stubbed exhausted quota read before any stage runs", async () => {
     const repo = await makeRepo();
     const stubQuotaAxi = join(repo.tmp, "stub-quota-axi");
 
@@ -518,9 +518,9 @@ describe("scheduled-run quota pre-flight e2e (issue #396)", () => {
     );
     expect(log).not.toContain("wiki-sync starting");
     expect(await upstreamHead(repo)).toBe("init");
-    expect(
-      await git(["for-each-ref", "--format=%(refname)"], repo.upstream),
-    ).not.toContain("refs/k-wiki/");
+    // Gate-before-lease is pinned in tests/schedule/scheduled-run.test.ts
+    // (the gate skips before any pipeline work) and the shared-writer
+    // lease suite (tests/e2e/shared-writer.e2e.test.ts).
 
     const stamp = JSON.parse(
       await readFile(join(repo.dataRoot, "outputs", "last-cycle.json"), "utf8"),
