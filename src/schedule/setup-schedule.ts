@@ -3,28 +3,25 @@
  * scheduler (issue #14). One CLI, per-OS backends: darwin writes a
  * launchd plist to `~/Library/LaunchAgents/` and loads it via
  * `launchctl`; linux (systemd timer) and win32 (Task Scheduler) are
- * follow-up issues — they fail loud, and the platform switch keeps
- * them additive. `--print` emits the artifact without installing.
+ * follow-up issues that fail loud, kept additive by the platform
+ * switch. `--print` emits the artifact without installing.
  *
  * Two independent registrations became three (issue #359, then the
  * watchdog, issue #362): the default interval job (Label
- * com.kwiki.scheduled-run, `StartInterval`, default 30
- * minutes, issue #14 decision 1); — with `--calendar` — the weekly
- * full-lint sweep (Label com.kwiki.scheduled-lint,
- * `StartCalendarInterval`, default Sundays 03:00, running
- * `bin/scheduled-run --lint-full`); and — with `--watchdog` — the
- * hourly heartbeat watchdog (Label com.kwiki.watchdog, running the
- * read-only `bin/libexec/sync-watchdog`). Each is installed, printed,
- * and removed by its own invocation; no command touches another's
- * plist. The plists themselves are pure renderers in
- * launchd-plists.ts; this module keeps the arg parsing, the origin
- * guard, and the launchctl orchestration. The plists run `node
- * bin/scheduled-run` with absolute paths,
- * an explicit HOME, and a minimal PATH — no interactive shell env is
- * assumed; the wrapper builds the rest (see scheduled-run.ts).
- * launchd coalesces missed fires — one run at wake, never a pile-up.
- * Re-running with a new `--interval` or `--weekly-at` replaces the
- * registration.
+ * com.kwiki.scheduled-run, `StartInterval`, default 30 minutes,
+ * issue #14 decision 1); — with `--calendar` — the weekly full-lint
+ * sweep (Label com.kwiki.scheduled-lint, `StartCalendarInterval`,
+ * default Sundays 03:00, running `bin/scheduled-run --lint-full`);
+ * and — with `--watchdog` — the hourly heartbeat watchdog (Label
+ * com.kwiki.watchdog, running the read-only `bin/libexec/sync-watchdog`).
+ * Each invocation installs, prints, or removes exactly one plist.
+ * The plists are pure renderers in launchd-plists.ts; this module
+ * keeps the arg parsing, the origin guard, and the launchctl
+ * orchestration. They run `node bin/scheduled-run` with absolute
+ * paths, an explicit HOME, and a minimal PATH — no interactive
+ * shell env; the wrapper builds the rest (see scheduled-run.ts).
+ * launchd coalesces missed fires into one run at wake; re-running
+ * with a new `--interval` or `--weekly-at` replaces the registration.
  *
  * Origin guard (issue #361): install and uninstall refuse every
  * origin that is temporary — a Stryker sandbox, a linked worktree,
@@ -32,8 +29,7 @@
  * absolute paths into a launchd job that must outlive the checkout;
  * the 2026-08-30 registration from a sandbox copy died 84 fires in a
  * row once Stryker cleaned the sandbox. `--print` is exempt (it
- * writes nothing). No `--force`: every alternative origin is
- * wrong, not merely discouraged.
+ * writes nothing). No `--force`: every alternative origin is wrong, not merely discouraged.
  */
 
 import { execFile } from "node:child_process";
@@ -300,10 +296,13 @@ Register the k-wiki pipeline with the OS scheduler. Three independent
 registrations: the fixed-interval cycle (default), — with --calendar —
 the weekly full-lint sweep, and — with --watchdog — the hourly
 heartbeat watchdog. The scheduled command is node bin/scheduled-run —
-lockfile, git pull --rebase, wiki-sync, git push; the calendar
-registration adds --lint-full (wiki-lint --full first); the watchdog
+lockfile, quota pre-flight, git pull --rebase, wiki-sync, git push;
+the calendar registration adds --lint-full (wiki-lint --full first);
+the watchdog
 registration runs the read-only bin/libexec/sync-watchdog door, which
-alerts when the cycle heartbeat goes stale, missing, or unreadable.
+alerts when the cycle heartbeat goes stale, missing, or unreadable,
+or when benign quota-skipped ticks persist past its threshold or no
+successful cycle is on record.
 macOS only today: the source vault lives in iCloud, so only macOS can
 run the pipeline; other OSs host read-only clones that need no
 scheduler. Linux (systemd timer) and Windows (Task Scheduler) backends
@@ -318,7 +317,11 @@ are follow-up issues and fail loud here.
                          completed cycle writes and alerts (macOS
                          notification, exit 1) when the stamp is
                          stale, unreadable, or missing past the
-                         grace window. Installed, printed, and
+                         grace window, or when benign
+                         quota-skipped ticks persist past its
+                         threshold or no successful cycle is on
+                         record.
+                         Installed, printed, and
                          removed by its own invocation; the other
                          registrations are untouched.
   --stale-after <duration>  The watchdog's staleness threshold,

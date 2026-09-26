@@ -71,7 +71,7 @@ export interface DashboardInput {
    *  null when absent or unreadable. */
   readonly lastCycle: {
     readonly timestamp: string;
-    readonly outcome: "ok" | "failed";
+    readonly outcome: "ok" | "failed" | "skipped";
     readonly lastOk: string | null;
   } | null;
 }

@@ -9,7 +9,8 @@ const HELP = `Usage: scheduled-run [-h | --help] [--lint-full] [--settings <path
 
 Run one unattended pipeline cycle — the command the
 launchd job executes every interval. The wrapper is portable Node:
-lockfile → git pull --rebase → (with --lint-full: wiki-lint --full,
+lockfile → quota pre-flight (may skip the tick before any stage) →
+git pull --rebase → (with --lint-full: wiki-lint --full,
 the weekly quality sweep) → wiki-sync (sync → ingest → lint →
 crosslinks → citation wall → verification → commit) → git push.
 wiki-sync stays commit-only; the push happens here and only here.
@@ -57,6 +58,21 @@ Behavior, failure mode by failure mode:
     mid-rebase; the next tick aborts it (git rebase --abort before
     each pull site) and retries with the tree actionable — divergent
     content stays for the operator to resolve manually.
+  - Quota pre-flight: before any stage (and before the shared-writer
+    coordinator acquires its lease), when agent settings name a
+    provider, an optional quota-axi probe (settings key
+    quotaPreflight: auto | off | <path-to-cli>, default auto) may
+    skip the tick — one dim log line naming provider, scope, runway,
+    and reset time; exit 0, no ALERT — when the provider is
+    exhausted now or its runway is shorter than a conservative cycle
+    estimate (30 minutes). Any other probe outcome (quota-axi
+    absent, unreadable, or unauthenticated) logs one dim line and
+    runs the cycle unchanged: the probe is machine-local tooling,
+    never a dependency. Settings without a provider give the probe
+    nothing to check — the tick runs, and the stamp notes
+    "no ingest provider configured". A quota-skipped tick writes a
+    benign skipped stamp (see Heartbeat) so the watchdog can tell
+    persistent exhaustion from a dead scheduler.
   - Shared-writer mode: the wrapper keeps its schedule, logs,
     heartbeat, and local run lock and delegates the remote work to
     the same coordinator manual wiki-sync runs — no pull, no push.
@@ -79,17 +95,22 @@ Behavior, failure mode by failure mode:
     5 MiB, one previous generation kept); wiki-sync's digest and
     progress stream into the same file. KWIKI_SCHEDULED_LOG overrides
     the log path (tests and multi-instance setups).
-  - Heartbeat: every completed cycle (ok or failed) writes the stamp
-    outputs/last-cycle.json in the data repo — timestamp, outcome,
-    holder PID, and the last ok cycle's timestamp — kept out of git
-    via .git/info/exclude. The sync-watchdog door and the dashboard's
+  - Heartbeat: every completed cycle (ok, failed, or a benign
+    quota-skipped tick) writes the stamp outputs/last-cycle.json in
+    the data repo — timestamp, outcome, holder PID, the last ok
+    cycle's timestamp, plus the skip reason or the quota pre-flight's
+    dormant state when present — kept out of git via
+    .git/info/exclude. The sync-watchdog door and the dashboard's
     last-cycle row read it; a skipped tick (lock held) writes
     nothing, and the stamp never changes the cycle's outcome.
   - Notifications: an ALERT (cycle failed, push failed after its
     one retry) also fires a macOS notification (osascript), and the
     independent com.kwiki.watchdog launchd job (installed by
     setup-schedule --watchdog) alerts when the heartbeat goes stale,
-    missing, or unreadable — failures reach the screen, not only a
-    log. KWIKI_NOTIFY=0 disables every notification.
+    missing, or unreadable, and when benign quota-skipped ticks
+    persist past its threshold or no successful cycle is on record
+    (those alerts name the cause) —
+    failures reach the screen, not only a log. KWIKI_NOTIFY=0
+    disables every notification.
 
 Exits 0 on a completed or skipped cycle, 1 on failure.`;

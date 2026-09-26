@@ -480,3 +480,53 @@ describe("scheduled-run heartbeat e2e (issue #362)", () => {
     expect(after).toBe(before);
   });
 });
+
+describe("scheduled-run quota pre-flight e2e (issue #396)", () => {
+  it("skips the cycle on a stubbed exhausted quota read before any stage runs", async () => {
+    const repo = await makeRepo();
+    const stubQuotaAxi = join(repo.tmp, "stub-quota-axi");
+
+    await writeFile(
+      repo.settingsPath,
+      `command: ${join(repo.dataRoot, "stub-agent.mjs")}\nmodel: E2E-MODEL\nreasoning: low\nprovider: zai\nquotaPreflight: ${stubQuotaAxi}\n`,
+    );
+
+    await writeFile(
+      stubQuotaAxi,
+      `#!/bin/sh\ncat <<'JSON'\n${JSON.stringify({
+        quota: [
+          { provider: "zai", scope: "all_models", runway: "exhausted_now" },
+        ],
+        exhaustion: [
+          {
+            provider: "zai",
+            scope: "all_models",
+            usableRunwaySeconds: 0,
+            projectedExhaustedAt: "2036-01-01T00:00:00.000Z",
+          },
+        ],
+      })}\nJSON\n`,
+      { mode: 0o755 },
+    );
+
+    const result = await runScheduled(repo);
+    const log = await readFile(join(repo.tmp, "scheduled-run.log"), "utf8");
+
+    expect(result.code).toBe(0);
+    expect(log).toContain(
+      "quota pre-flight skipped — ingest provider zai scope all_models",
+    );
+    expect(log).not.toContain("wiki-sync starting");
+    expect(await upstreamHead(repo)).toBe("init");
+    // Gate-before-lease is pinned in tests/schedule/scheduled-run.test.ts
+    // (the gate skips before any pipeline work) and the shared-writer
+    // lease suite (tests/e2e/shared-writer.e2e.test.ts).
+
+    const stamp = JSON.parse(
+      await readFile(join(repo.dataRoot, "outputs", "last-cycle.json"), "utf8"),
+    );
+
+    expect(stamp.outcome).toBe("skipped");
+    expect(stamp.reason).toContain("zai");
+  });
+});

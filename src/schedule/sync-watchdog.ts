@@ -17,8 +17,13 @@
  * Verdicts: fresh → one line, exit 0. Stale, unreadable, or missing
  * past the grace window → one line, a macOS notification
  * (osascript; KWIKI_NOTIFY=0 disables), exit 1 — launchd records
- * the non-zero exit too. A missing stamp inside the grace window is
- * the fresh-install case: the newest of the data-repo commit date
+ * the non-zero exit too. A skipped stamp is benign while its ticks
+ * keep arriving and names its cause; with no successful cycle on
+ * record it alerts at once naming that cause, when the last success
+ * ages past the threshold the alert names it, and a stamp that
+ * itself goes stale — a scheduler that died — alerts like any
+ * other. A missing stamp inside the grace window is the
+ * fresh-install case: the newest of the data-repo commit date
  * and the install anchor is younger than the threshold, so the
  * first cycle has not had its chance yet and the watchdog stays
  * quiet.
@@ -33,6 +38,7 @@ import { runGit } from "../data/git.ts";
 import {
   classifyHeartbeat,
   formatAge,
+  type ReadHeartbeat,
   readCycleHeartbeat,
   readWatchdogSince,
 } from "./heartbeat.ts";
@@ -42,6 +48,7 @@ import {
   DEFAULT_STALE_AFTER_SECONDS,
   parseIntervalDuration,
 } from "./setup-schedule.ts";
+import { HELP } from "./sync-watchdog-help.ts";
 
 /** The watchdog's argv shape: the staleness override plus the same
  *  two positionals scheduled-run takes (config and raw-dir), so an
@@ -117,15 +124,81 @@ export function watchdogVerdict(input: {
 
   const classified = classifyHeartbeat(read.stamp, now, thresholdMs);
 
-  return classified.verdict === "fresh"
+  const verdict =
+    read.stamp.outcome === "skipped"
+      ? skippedVerdict(read.stamp, now, thresholdMs)
+      : classified.verdict === "fresh"
+        ? {
+            line: `sync-watchdog: fresh — last cycle ${formatAge(classified.ageMs)} ago (threshold ${threshold})`,
+            exitCode: 0 as const,
+          }
+        : {
+            line: `sync-watchdog: ALERT — last cycle ${formatAge(classified.ageMs)} ago, past the ${threshold} threshold`,
+            exitCode: 1 as const,
+          };
+
+  return {
+    line: `${verdict.line}${preflightNote(read.stamp)}`,
+    exitCode: verdict.exitCode,
+  };
+}
+
+function skippedVerdict(
+  stamp: NonNullable<Extract<ReadHeartbeat, { kind: "present" }>["stamp"]>,
+  now: Date,
+  thresholdMs: number,
+): { readonly line: string; readonly exitCode: 0 | 1 } {
+  const classified = classifyHeartbeat(stamp, now, thresholdMs);
+
+  // Skipping is benign only while its ticks keep arriving: a stamp
+  // that itself went stale means the scheduler died, whatever the
+  // last outcomes said.
+  if (classified.verdict === "stale") {
+    return {
+      line: `sync-watchdog: ALERT — last cycle ${formatAge(classified.ageMs)} ago, past the ${formatAge(thresholdMs)} threshold`,
+      exitCode: 1,
+    };
+  }
+
+  const cause = stamp.reason ?? "scheduled cycle skipped";
+
+  if (stamp.lastOk === null) {
+    return {
+      line: `sync-watchdog: ALERT — cycles skipping: ${cause}; no successful cycle on record`,
+      exitCode: 1,
+    };
+  }
+
+  const lastOkAgeMs = Math.max(0, now.getTime() - Date.parse(stamp.lastOk));
+
+  return lastOkAgeMs > thresholdMs
     ? {
-        line: `sync-watchdog: fresh — last cycle ${formatAge(classified.ageMs)} ago (threshold ${threshold})`,
-        exitCode: 0,
+        line: `sync-watchdog: ALERT — cycles skipping: ${cause}; last successful cycle ${formatAge(lastOkAgeMs)} ago`,
+        exitCode: 1,
       }
     : {
-        line: `sync-watchdog: ALERT — last cycle ${formatAge(classified.ageMs)} ago, past the ${threshold} threshold`,
-        exitCode: 1,
+        line: `sync-watchdog: fresh — cycles skipping: ${cause}`,
+        exitCode: 0,
       };
+}
+
+/** The dormant pre-flight note appended to any verdict over a stamp
+ *  whose cycle ran ungated; empty when the gate was active. */
+function preflightNote(
+  stamp: NonNullable<Extract<ReadHeartbeat, { kind: "present" }>["stamp"]>,
+): string {
+  if (stamp.preflight === undefined) {
+    return "";
+  }
+
+  const why =
+    stamp.preflight === "off"
+      ? "disabled by settings"
+      : stamp.preflight === "no-provider"
+        ? "no ingest provider configured"
+        : "quota-axi not configured";
+
+  return `; pre-flight: off — ${why}`;
 }
 
 /** The newest data-repo commit date, the fresh-install grace
@@ -187,50 +260,6 @@ export async function runWatchdog(options: {
 
   return verdict.exitCode;
 }
-
-/** Help text: every switch and default (AGENTS.md CLI rule). */
-const HELP = `Usage: sync-watchdog [-h | --help] [--stale-after <duration>] [<config>] [<raw-dir>]
-
-The heartbeat watchdog: read the data repo's outputs/last-cycle.json
-stamp (written by every completed scheduled-run cycle) and report
-whether the pipeline is alive. Fresh — the stamp's age is within the
-threshold — prints one line and exits 0. A stale, unreadable, or
-missing-past-grace stamp prints one line, fires a macOS notification
-(osascript; KWIKI_NOTIFY=0 disables every notification), and exits 1
-(launchd records the failure). The watchdog is independent of the
-monitored pipeline by design: a cycle that never started leaves no
-log line, but a stalling heartbeat is visible from outside.
-
-  --stale-after <duration>  The staleness threshold, e.g. 90minutes
-                            (the default: three 30-minute run
-                            intervals), 3hours, 45minutes. A stamp
-                            at least this old still counts as
-                            fresh; older alerts.
-  -h, --help                Print this help and exit; no side
-                            effects.
-  <config>                  The sync config naming the data repo.
-                            Default: the repo's sync.json.
-  <raw-dir>                 The raw projection directory; its
-                            parent names the data repo. Default:
-                            the config's raw dir.
-
-Grace window: a fresh install has no stamp until the first cycle
-completes. While no stamp exists, the newest of the data-repo
-commit date and the install anchor (the ISO line setup-schedule
-writes when the watchdog registration installs — the upgrade path,
-an existing data repo whose commits are old) holds the grace:
-quiet while inside the threshold, an alert once older. An
-unreadable stamp alerts immediately: torn bytes must never read
-as fresh.
-
-Reads the stamp file and (only when it is missing) the newest git
-commit date and the install anchor; writes nothing. The launchd
-registration
-com.kwiki.watchdog (setup-schedule --watchdog) runs this door
-hourly.
-
-Exits 0 on a fresh (or in-grace) heartbeat, 1 on stale, unreadable,
-or missing-past-grace.`;
 
 /** sync-watchdog entry point. */
 export async function main(

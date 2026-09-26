@@ -58,7 +58,11 @@ e2e run or diagnosing a failing one.
   after a clean push with `lastOk` set, failed when the push fails
   twice), the stamp stays out of git status via
   `.git/info/exclude`, and a lock-skip tick leaves the previous
-  stamp untouched.
+  stamp untouched; quota pre-flight (issue #396): a stub probe named
+  by the settings' `quotaPreflight` path reporting the configured
+  provider exhausted skips the cycle before any stage — exit 0, one
+  skip line in the run log, no upstream movement, and a skipped
+  stamp.
 - **sync-watchdog** — the libexec door as a real child process
   against temp data repos (issue #362): `--help` answers with usage
   and exit 0; a fresh stamp exits 0, a stale or unreadable stamp

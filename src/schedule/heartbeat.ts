@@ -1,9 +1,9 @@
 /**
  * The scheduled cycle's heartbeat (issue #362): one gitignored stamp
  * file in the data repo — `outputs/last-cycle.json` — written on
- * every cycle completion (ok or failed; a skipped tick never
- * acquired the lock, so it writes nothing). The stamp carries this
- * cycle's timestamp, outcome, and holder PID plus the timestamp of
+ * every cycle completion (ok, failed, or a benign quota-skipped tick).
+ * A skipped tick releases its local lock before writing the stamp. The
+ * stamp carries this cycle's timestamp, outcome, and holder PID plus the timestamp of
  * the last ok cycle, carried forward, so "when did the pipeline
  * last succeed" survives failed cycles. The independent watchdog
  * (bin/libexec/sync-watchdog) and the dashboard's last-cycle row
@@ -22,6 +22,7 @@ import { dirname, join } from "node:path";
 import { errorMessage } from "../cli/colors.ts";
 import { readTextIfExists } from "../cli/shared.ts";
 import { ensureHeartbeatIgnored } from "../ingest/snapshot.ts";
+import type { PreflightState } from "./quota-preflight.ts";
 
 /** The stamp file's name in the data repo's outputs/. */
 export const CYCLE_HEARTBEAT_FILENAME = "last-cycle.json";
@@ -30,8 +31,15 @@ export const CYCLE_HEARTBEAT_FILENAME = "last-cycle.json";
 export interface CycleHeartbeat {
   /** When this cycle finished, ISO timestamp. */
   readonly timestamp: string;
-  /** `ok` or `failed` — the cycle's outcome. */
-  readonly outcome: "ok" | "failed";
+  /** The cycle's outcome; skipped ticks are benign quota pre-flight ticks. */
+  readonly outcome: "ok" | "failed" | "skipped";
+  /** Why a benign skipped tick occurred, when present. */
+  readonly reason?: string;
+  /** How the cycle's quota pre-flight acted when it did not gate:
+   *  `off` (disabled in settings), `unavailable` (probe absent or
+   *  unreadable), or `no-provider` (settings name no provider);
+   *  absent when the gate was active. */
+  readonly preflight?: PreflightState;
   /** The PID that ran the cycle. */
   readonly pid: number;
   /** When the last ok cycle finished, carried forward through
@@ -116,45 +124,56 @@ function isIsoString(value: unknown): value is string {
  *  be trusted (lastOk checked separately — it is optional). */
 interface StampFields {
   readonly timestamp: string;
-  readonly outcome: "ok" | "failed";
+  readonly outcome: "ok" | "failed" | "skipped";
+  readonly reason?: unknown;
+  readonly preflight?: unknown;
   readonly pid: number;
   readonly lastOk?: unknown;
 }
 
 /** Whether the parsed JSON carries a complete stamp: a usable
- *  timestamp, an ok|failed outcome, and an integer PID. */
+ *  timestamp, an ok|failed|skipped outcome, and an integer PID. */
 function isStampShape(parsed: unknown): parsed is StampFields {
   return (
     typeof parsed === "object" &&
     parsed !== null &&
     isIsoString((parsed as Record<string, unknown>).timestamp) &&
     ((parsed as Record<string, unknown>).outcome === "ok" ||
-      (parsed as Record<string, unknown>).outcome === "failed") &&
+      (parsed as Record<string, unknown>).outcome === "failed" ||
+      (parsed as Record<string, unknown>).outcome === "skipped") &&
     Number.isInteger((parsed as Record<string, unknown>).pid)
   );
 }
 
-/** Parse stamp text into a heartbeat; the reason when it cannot be
- *  trusted (the watchdog alerts on unreadable stamps, so a parse
- *  never silently reads as fresh). */
+/** Parse stamp text into a heartbeat; `parseError` when the text
+ *  cannot be trusted (the watchdog alerts on unreadable stamps, so a
+ *  parse never silently reads as fresh). The dedicated tag — not
+ *  `reason`, which a real stamp itself carries — is what lets the
+ *  caller tell a parse failure from a skipped stamp's cause. */
 export function parseHeartbeat(
   text: string,
-): CycleHeartbeat | { readonly reason: string } {
+): CycleHeartbeat | { readonly parseError: string } {
   let parsed: unknown;
 
   try {
     parsed = JSON.parse(text);
   } catch (cause) {
-    return { reason: `not valid JSON (${errorMessage(cause)})` };
+    return { parseError: `not valid JSON (${errorMessage(cause)})` };
   }
 
   if (!isStampShape(parsed)) {
-    return { reason: "missing or invalid timestamp, outcome, or pid" };
+    return { parseError: "missing or invalid timestamp, outcome, or pid" };
   }
 
   return {
     timestamp: parsed.timestamp,
     outcome: parsed.outcome,
+    ...(typeof parsed.reason === "string" && { reason: parsed.reason }),
+    ...((parsed.preflight === "unavailable" ||
+      parsed.preflight === "off" ||
+      parsed.preflight === "no-provider") && {
+      preflight: parsed.preflight,
+    }),
     pid: parsed.pid,
     lastOk: isIsoString(parsed.lastOk) ? parsed.lastOk : null,
   };
@@ -173,22 +192,25 @@ export async function readCycleHeartbeat(
 
   const parsed = parseHeartbeat(text);
 
-  return "reason" in parsed
-    ? { kind: "unreadable", reason: parsed.reason }
+  return "parseError" in parsed
+    ? { kind: "unreadable", reason: parsed.parseError }
     : { kind: "present", stamp: parsed };
 }
 
 /** Write the stamp for one completed cycle: timestamp, outcome, and
  *  PID, with the last-ok timestamp carried forward from the
  *  previous stamp (a failed cycle keeps the older success on
- *  record; an unreadable previous stamp reads as no success yet).
- *  Atomic (tmp + rename) so a torn write can never masquerade as a
+ *  record; an unreadable previous stamp reads as no success yet). A
+ *  skipped tick preserves the last successful timestamp. Atomic (tmp + rename)
+ *  so a torn write can never masquerade as a
  *  heartbeat, and the stamp is kept out of the data repo's history
  *  via .git/info/exclude, re-applied on every write so fresh
  *  clones self-heal. */
 export async function writeCycleHeartbeat(options: {
   readonly dataRoot: string;
-  readonly outcome: "ok" | "failed";
+  readonly outcome: "ok" | "failed" | "skipped";
+  readonly reason?: string;
+  readonly preflight?: PreflightState;
   readonly pid: number;
   readonly now: Date;
   /** Progress sink for the one-time exclude announcement; default
@@ -206,6 +228,8 @@ export async function writeCycleHeartbeat(options: {
   const stamp: CycleHeartbeat = {
     timestamp: options.now.toISOString(),
     outcome: options.outcome,
+    ...(options.reason !== undefined && { reason: options.reason }),
+    ...(options.preflight !== undefined && { preflight: options.preflight }),
     pid: options.pid,
     lastOk,
   };

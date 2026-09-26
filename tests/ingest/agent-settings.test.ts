@@ -146,6 +146,42 @@ describe("parseSettings", () => {
     ).toThrow('setting "isolate" must be true or false');
   });
 
+  it("parses the quotaPreflight auto mode", () => {
+    const settings = parseSettings(
+      "command: pi\nmodel: m\nreasoning: h\nquotaPreflight: auto\n",
+      "s",
+    );
+
+    expect(settings.quotaPreflight).toBe("auto");
+  });
+
+  it("parses the quotaPreflight off mode", () => {
+    const settings = parseSettings(
+      "command: pi\nmodel: m\nreasoning: h\nquotaPreflight: off\n",
+      "s",
+    );
+
+    expect(settings.quotaPreflight).toBe("off");
+  });
+
+  it("parses an explicit quotaPreflight CLI path", () => {
+    const settings = parseSettings(
+      "command: pi\nmodel: m\nreasoning: h\nquotaPreflight: /usr/local/bin/quota-axi\n",
+      "s",
+    );
+
+    expect(settings.quotaPreflight).toBe("/usr/local/bin/quota-axi");
+  });
+
+  it("rejects a quotaPreflight value that is not auto, off, or a CLI path", () => {
+    expect(() =>
+      parseSettings(
+        "command: pi\nmodel: m\nreasoning: h\nquotaPreflight: yes\n",
+        "s",
+      ),
+    ).toThrow('setting "quotaPreflight" must be auto, off, or a CLI path');
+  });
+
   it("unquotes single-quoted values", () => {
     const settings = parseSettings(
       "command: pi\nmodel: m\nreasoning: 'high'\n",

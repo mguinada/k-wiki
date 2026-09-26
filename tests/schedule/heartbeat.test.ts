@@ -66,25 +66,51 @@ describe("parseHeartbeat", () => {
 
   it("rejects bytes that are not JSON", () => {
     expect(parseHeartbeat("{oops")).toEqual({
-      reason: expect.stringContaining("not valid JSON"),
+      parseError: expect.stringContaining("not valid JSON"),
     });
   });
 
   it("rejects JSON without a usable timestamp", () => {
     expect(
       parseHeartbeat(JSON.stringify(stamp({ timestamp: "yesterday" }))),
-    ).toEqual({ reason: "missing or invalid timestamp, outcome, or pid" });
+    ).toEqual({ parseError: "missing or invalid timestamp, outcome, or pid" });
   });
 
-  it("rejects an outcome outside ok|failed", () => {
-    const foreign = { ...stamp(), outcome: "skipped" } as Record<
+  it("accepts a benign skipped outcome with its reason", () => {
+    const skipped = {
+      ...stamp(),
+      outcome: "skipped",
+      reason: "provider exhausted",
+    } as Record<string, unknown>;
+
+    expect(parseHeartbeat(JSON.stringify(skipped))).toEqual(skipped);
+  });
+
+  it("keeps a known pre-flight state on the stamp", () => {
+    const dormant = { ...stamp(), preflight: "unavailable" } as Record<
       string,
       unknown
     >;
 
-    expect(parseHeartbeat(JSON.stringify(foreign))).toEqual({
-      reason: "missing or invalid timestamp, outcome, or pid",
-    });
+    expect(parseHeartbeat(JSON.stringify(dormant))).toEqual(dormant);
+  });
+
+  it("keeps a no-provider pre-flight state on the stamp", () => {
+    const dormant = { ...stamp(), preflight: "no-provider" } as Record<
+      string,
+      unknown
+    >;
+
+    expect(parseHeartbeat(JSON.stringify(dormant))).toEqual(dormant);
+  });
+
+  it("drops a foreign pre-flight value instead of trusting it", () => {
+    const foreign = { ...stamp(), preflight: "maybe" } as Record<
+      string,
+      unknown
+    >;
+
+    expect(parseHeartbeat(JSON.stringify(foreign))).toEqual(stamp());
   });
 
   it("drops an unparseable lastOk instead of trusting it", () => {
@@ -92,7 +118,7 @@ describe("parseHeartbeat", () => {
       JSON.stringify(stamp({ lastOk: "not a date" })),
     );
 
-    expect("reason" in parsed).toBe(false);
+    expect("parseError" in parsed).toBe(false);
   });
 
   it("keeps a dropped lastOk readable as null", () => {
@@ -132,6 +158,25 @@ describe("readCycleHeartbeat", () => {
       reason: expect.any(String),
     });
   });
+
+  it("reads a real skipped stamp — reason and all — as present, not unreadable", async () => {
+    const dataRoot = await tempDataRoot();
+    const skipped = {
+      timestamp: "2026-09-20T10:00:00.000Z",
+      outcome: "skipped",
+      reason:
+        "ingest provider zai scope all_models (model E2E-MODEL) exhausted_now, reset 2036-01-01T00:00:00.000Z",
+      pid: 4242,
+      lastOk: "2026-09-20T09:00:00.000Z",
+    };
+
+    await putStamp(dataRoot, skipped);
+
+    expect(await readCycleHeartbeat(dataRoot)).toEqual({
+      kind: "present",
+      stamp: skipped,
+    });
+  });
 });
 
 describe("writeCycleHeartbeat", () => {
@@ -150,6 +195,28 @@ describe("writeCycleHeartbeat", () => {
     ).toEqual({
       timestamp: "2026-09-20T11:00:00.000Z",
       outcome: "ok",
+      pid: 99,
+      lastOk: "2026-09-20T11:00:00.000Z",
+    });
+  });
+
+  it("writes the pre-flight state when the cycle ran ungated", async () => {
+    const dataRoot = await tempDataRoot();
+
+    await writeCycleHeartbeat({
+      dataRoot,
+      outcome: "ok",
+      preflight: "unavailable",
+      pid: 99,
+      now: new Date("2026-09-20T11:00:00.000Z"),
+    });
+
+    expect(
+      JSON.parse(await readFile(cycleHeartbeatPath(dataRoot), "utf8")),
+    ).toEqual({
+      timestamp: "2026-09-20T11:00:00.000Z",
+      outcome: "ok",
+      preflight: "unavailable",
       pid: 99,
       lastOk: "2026-09-20T11:00:00.000Z",
     });
@@ -232,6 +299,42 @@ describe("writeCycleHeartbeat", () => {
         timestamp: "2026-09-20T10:30:00.000Z",
         outcome: "failed",
         pid: 2,
+        lastOk: "2026-09-20T10:00:00.000Z",
+      },
+    });
+  });
+
+  it("preserves the last-ok timestamp across consecutive skipped ticks", async () => {
+    const dataRoot = await tempDataRoot();
+
+    await writeCycleHeartbeat({
+      dataRoot,
+      outcome: "ok",
+      pid: 1,
+      now: new Date("2026-09-20T10:00:00.000Z"),
+    });
+    await writeCycleHeartbeat({
+      dataRoot,
+      outcome: "skipped",
+      reason: "provider exhausted",
+      pid: 2,
+      now: new Date("2026-09-20T10:30:00.000Z"),
+    });
+    await writeCycleHeartbeat({
+      dataRoot,
+      outcome: "skipped",
+      reason: "provider exhausted",
+      pid: 3,
+      now: new Date("2026-09-20T11:00:00.000Z"),
+    });
+
+    expect(await readCycleHeartbeat(dataRoot)).toEqual({
+      kind: "present",
+      stamp: {
+        timestamp: "2026-09-20T11:00:00.000Z",
+        outcome: "skipped",
+        reason: "provider exhausted",
+        pid: 3,
         lastOk: "2026-09-20T10:00:00.000Z",
       },
     });

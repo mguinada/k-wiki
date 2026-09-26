@@ -29,6 +29,8 @@ export interface AgentSettings {
   readonly provider?: string;
   /** Ordered provider/model targets for ingest fallback. */
   readonly targets?: readonly AgentTarget[];
+  /** Quota pre-flight mode for unattended scheduled runs. */
+  readonly quotaPreflight?: "auto" | "off" | string;
   /** False opts out of the pi isolation flags (issue #118);
    *  unset means isolated — the safe default. Agent-agnostic: the
    *  setting becomes flags at the spawn site (agentArgs), so a
@@ -52,7 +54,12 @@ export interface AgentSettings {
 }
 
 const REQUIRED_KEYS = ["command", "reasoning"] as const;
-const OPTIONAL_KEYS = ["provider", "model", "isolate"] as const;
+const OPTIONAL_KEYS = [
+  "provider",
+  "model",
+  "isolate",
+  "quotaPreflight",
+] as const;
 const DOMAIN_KEY = "secondBrain.domains";
 const TARGETS_KEY = "targets";
 const SKILLS_KEY = "isolate.skills";
@@ -289,10 +296,22 @@ function validateSettings(
   validateTargetSettings(values, lists, origin);
 
   const isolate = values.get("isolate");
+  const quotaPreflight = values.get("quotaPreflight");
 
   if (isolate !== undefined && isolate !== "true" && isolate !== "false") {
     throw new Error(
       `invalid agent settings at ${origin}: setting ${JSON.stringify("isolate")} must be true or false, got ${JSON.stringify(isolate)}`,
+    );
+  }
+
+  if (
+    quotaPreflight !== undefined &&
+    quotaPreflight !== "auto" &&
+    quotaPreflight !== "off" &&
+    !quotaPreflight.includes("/")
+  ) {
+    throw new Error(
+      `invalid agent settings at ${origin}: setting ${JSON.stringify("quotaPreflight")} must be auto, off, or a CLI path`,
     );
   }
 }
@@ -348,6 +367,7 @@ function finalizeSettings(
   }
 
   const isolate = values.get("isolate");
+  const quotaPreflight = values.get("quotaPreflight");
 
   return {
     command: values.get("command") ?? "",
@@ -355,6 +375,7 @@ function finalizeSettings(
     reasoning: values.get("reasoning") ?? "",
     ...(primary.provider !== undefined && { provider: primary.provider }),
     ...(configuredTargets !== undefined && { targets }),
+    ...(quotaPreflight !== undefined && { quotaPreflight }),
     ...(isolate !== undefined && { isolate: isolate === "true" }),
     ...optionalListSettings(lists),
   };
