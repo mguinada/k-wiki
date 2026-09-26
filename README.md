@@ -1372,7 +1372,10 @@ anchored on the newest data-repo commit or — over an existing
 `setup-schedule --watchdog` stamps into the data repo
 (`outputs/watchdog-since.txt`) at install, so a fresh install stays
 quiet until the first cycle has had its chance; an unreadable stamp
-alerts immediately. The same notification fires in-process when
+alerts immediately. A quota-skipped stamp is benign while its ticks
+keep arriving — the verdict names the skip's cause — and alerts once
+no successful cycle is on record or the last success ages past the
+threshold. The same notification fires in-process when
 `scheduled-run` logs an `ALERT` (cycle failed, push failed after
 its retry), so failures surface in near-real-time instead of
 waiting for the hourly sweep. `KWIKI_NOTIFY=0` disables every

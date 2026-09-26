@@ -296,8 +296,9 @@ Register the k-wiki pipeline with the OS scheduler. Three independent
 registrations: the fixed-interval cycle (default), — with --calendar —
 the weekly full-lint sweep, and — with --watchdog — the hourly
 heartbeat watchdog. The scheduled command is node bin/scheduled-run —
-lockfile, git pull --rebase, wiki-sync, git push; the calendar
-registration adds --lint-full (wiki-lint --full first); the watchdog
+lockfile, quota pre-flight, git pull --rebase, wiki-sync, git push;
+the calendar registration adds --lint-full (wiki-lint --full first);
+the watchdog
 registration runs the read-only bin/libexec/sync-watchdog door, which
 alerts when the cycle heartbeat goes stale, missing, or unreadable,
 or when benign quota-skipped ticks persist past its threshold or no
@@ -316,9 +317,9 @@ are follow-up issues and fail loud here.
                          completed cycle writes and alerts (macOS
                          notification, exit 1) when the stamp is
                          stale, unreadable, or missing past the
-                         grace window, or records quota-skipped
-                         ticks persisting past the threshold or
-                         skipping with no successful cycle on
+                         grace window, or when benign
+                         quota-skipped ticks persist past its
+                         threshold or no successful cycle is on
                          record.
                          Installed, printed, and
                          removed by its own invocation; the other
