@@ -53,6 +53,7 @@
     "refactor-metrics": "node dev/refactor-metrics.ts",
     "setup-meta-sync": "node bin/setup-meta-sync",
     "enable-shared-writer": "node bin/enable-shared-writer",
+    "recover-fix-surface": "node bin/recover-fix-surface",
     "writer-lease": "node bin/writer-lease"
   },
   "devDependencies": {

@@ -8,7 +8,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
@@ -25,7 +25,9 @@ import {
   fetchedTreeOid,
   replaceLease,
 } from "../../src/writer/lease-ops.ts";
+import { readRecoveryRecord } from "../../src/writer/recovery-record.ts";
 import {
+  type CoordWorld,
   enabledDataRepo,
   LEASE_REF,
   NOW,
@@ -609,6 +611,351 @@ describe("ambiguous finalize recovery (test 18)", () => {
     );
   }, 30000);
 });
+
+/** Five hours past the retention instant — the fifteen-minute
+ *  dead-man window and the four-hour fixture TTL both long passed. */
+const LATER = () => new Date("2026-01-01T05:00:00Z");
+
+describe("fix-surface auto-recovery (issue #400)", () => {
+  it("records the surface at failure time", async () => {
+    const world = await makeWriterWorld();
+    worlds.push(world);
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+    const { dataRoot } = cw;
+
+    await failACycle(cw, dataRoot);
+
+    const record = await readRecoveryRecord(world.a.git);
+
+    expect(record?.paths).toEqual(["raw/stray.md"]);
+  }, 30000);
+
+  it("binds the record to the retained lease", async () => {
+    const world = await makeWriterWorld();
+    worlds.push(world);
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+    const { dataRoot } = cw;
+
+    await failACycle(cw, dataRoot);
+
+    const record = await readRecoveryRecord(world.a.git);
+    const retained = await observeLease(world.a.git, "origin", LEASE_REF);
+
+    expect(record?.lease?.oid).toBe(retained?.oid);
+  }, 30000);
+
+  it("refuses the ticks before the threshold", async () => {
+    const world = await makeWriterWorld();
+    worlds.push(world);
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+    const { dataRoot } = cw;
+
+    await failACycle(cw, dataRoot);
+
+    const outcome = await runSharedCycle(optionsFor(cw, dataRoot));
+
+    expect(outcome.status).toBe("refused");
+  }, 30000);
+
+  it("counts the refused ticks in the record", async () => {
+    const world = await makeWriterWorld();
+    worlds.push(world);
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+    const { dataRoot } = cw;
+
+    await failACycle(cw, dataRoot);
+    await runSharedCycle(optionsFor(cw, dataRoot));
+    await runSharedCycle(optionsFor(cw, dataRoot));
+
+    const record = await readRecoveryRecord(world.a.git);
+
+    expect(record?.refusedTicks).toBe(2);
+  }, 60000);
+
+  it("auto-recovers on the third tick past the dead-man window", async () => {
+    const world = await makeWriterWorld();
+    worlds.push(world);
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+    const { dataRoot } = cw;
+
+    await failACycle(cw, dataRoot);
+    await runSharedCycle(optionsFor(cw, dataRoot));
+    await runSharedCycle(optionsFor(cw, dataRoot));
+
+    const outcome = await runSharedCycle(
+      optionsFor(cw, dataRoot, { run: tickRun(cw, dataRoot, LATER) }),
+    );
+
+    expect(outcome.status).toBe("completed");
+  }, 60000);
+
+  it("logs the auto-recovery line", async () => {
+    const world = await makeWriterWorld();
+    worlds.push(world);
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+    const { dataRoot } = cw;
+    const progress: string[] = [];
+
+    await failACycle(cw, dataRoot);
+    await runSharedCycle(optionsFor(cw, dataRoot));
+    await runSharedCycle(optionsFor(cw, dataRoot));
+    await runSharedCycle(
+      optionsFor(cw, dataRoot, { run: tickRun(cw, dataRoot, LATER, progress) }),
+    );
+
+    expect(
+      progress.find((line) =>
+        line.includes("auto-recovered fix surface from cycle"),
+      ),
+    ).toBeDefined();
+  }, 60000);
+
+  it("names the discarded paths in the auto-recovery line", async () => {
+    const world = await makeWriterWorld();
+    worlds.push(world);
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+    const { dataRoot } = cw;
+    const progress: string[] = [];
+
+    await failACycle(cw, dataRoot);
+    await runSharedCycle(optionsFor(cw, dataRoot));
+    await runSharedCycle(optionsFor(cw, dataRoot));
+    await runSharedCycle(
+      optionsFor(cw, dataRoot, { run: tickRun(cw, dataRoot, LATER, progress) }),
+    );
+
+    const line = progress.find((line) =>
+      line.includes("auto-recovered fix surface from cycle"),
+    );
+
+    expect(line).toContain("raw/stray.md");
+  }, 60000);
+
+  it("clears the record after the auto-recovery", async () => {
+    const world = await makeWriterWorld();
+    worlds.push(world);
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+    const { dataRoot } = cw;
+
+    await failACycle(cw, dataRoot);
+    await runSharedCycle(optionsFor(cw, dataRoot));
+    await runSharedCycle(optionsFor(cw, dataRoot));
+    await runSharedCycle(
+      optionsFor(cw, dataRoot, { run: tickRun(cw, dataRoot, LATER) }),
+    );
+
+    expect(await readRecoveryRecord(world.a.git)).toBeUndefined();
+  }, 60000);
+
+  it("releases the lease after the auto-recovered no-op cycle", async () => {
+    const world = await makeWriterWorld();
+    worlds.push(world);
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+    const { dataRoot } = cw;
+
+    await failACycle(cw, dataRoot);
+    await runSharedCycle(optionsFor(cw, dataRoot));
+    await runSharedCycle(optionsFor(cw, dataRoot));
+    await runSharedCycle(
+      optionsFor(cw, dataRoot, { run: tickRun(cw, dataRoot, LATER) }),
+    );
+
+    expect(
+      await observeLeaseOid(world.a.git, "origin", LEASE_REF),
+    ).toBeUndefined();
+  }, 60000);
+
+  it("refuses the tick with a human edit present", async () => {
+    const world = await makeWriterWorld();
+    worlds.push(world);
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+    const { dataRoot } = cw;
+
+    await failACycle(cw, dataRoot);
+    await writeFile(join(dataRoot, "human.md"), "by hand\n");
+
+    const outcome = await runSharedCycle(optionsFor(cw, dataRoot));
+
+    expect(outcome.status).toBe("refused");
+  }, 30000);
+
+  it("escalates an ALERT naming the human path", async () => {
+    const world = await makeWriterWorld();
+    worlds.push(world);
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+    const { dataRoot } = cw;
+    const progress: string[] = [];
+
+    await failACycle(cw, dataRoot);
+    await writeFile(join(dataRoot, "human.md"), "by hand\n");
+    await runSharedCycle(
+      optionsFor(cw, dataRoot, { run: tickRun(cw, dataRoot, NOW, progress) }),
+    );
+
+    const alert = progress.find((line) => line.includes("ALERT"));
+
+    expect(alert).toContain("human.md");
+  }, 30000);
+
+  it("marks the record auto-disabled after the divergence", async () => {
+    const world = await makeWriterWorld();
+    worlds.push(world);
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+    const { dataRoot } = cw;
+
+    await failACycle(cw, dataRoot);
+    await writeFile(join(dataRoot, "human.md"), "by hand\n");
+    await runSharedCycle(optionsFor(cw, dataRoot));
+
+    const record = await readRecoveryRecord(world.a.git);
+
+    expect(record?.autoDisabled).toBe(true);
+  }, 30000);
+
+  it("stays refused after the abort even with the lease lapsed", async () => {
+    const world = await makeWriterWorld();
+    worlds.push(world);
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+    const { dataRoot } = cw;
+
+    await failACycle(cw, dataRoot);
+    await writeFile(join(dataRoot, "human.md"), "by hand\n");
+    await runSharedCycle(optionsFor(cw, dataRoot));
+
+    const outcome = await runSharedCycle(
+      optionsFor(cw, dataRoot, { run: tickRun(cw, dataRoot, LATER) }),
+    );
+
+    expect(outcome.status).toBe("refused");
+  }, 60000);
+
+  it("stays quiet after the abort", async () => {
+    const world = await makeWriterWorld();
+    worlds.push(world);
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+    const { dataRoot } = cw;
+    const progress: string[] = [];
+
+    await failACycle(cw, dataRoot);
+    await writeFile(join(dataRoot, "human.md"), "by hand\n");
+    await runSharedCycle(optionsFor(cw, dataRoot));
+    await runSharedCycle(
+      optionsFor(cw, dataRoot, { run: tickRun(cw, dataRoot, LATER, progress) }),
+    );
+
+    expect(progress.find((line) => line.includes("ALERT"))).toBeUndefined();
+  }, 60000);
+
+  it("never eats the human edit after the abort", async () => {
+    const world = await makeWriterWorld();
+    worlds.push(world);
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+    const { dataRoot } = cw;
+
+    await failACycle(cw, dataRoot);
+    await writeFile(join(dataRoot, "human.md"), "by hand\n");
+    await runSharedCycle(optionsFor(cw, dataRoot));
+    await runSharedCycle(
+      optionsFor(cw, dataRoot, { run: tickRun(cw, dataRoot, LATER) }),
+    );
+
+    expect(await readFileText(join(dataRoot, "human.md"))).toBe("by hand\n");
+  }, 60000);
+
+  it("never eats the recorded surface after the abort", async () => {
+    const world = await makeWriterWorld();
+    worlds.push(world);
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+    const { dataRoot } = cw;
+
+    await failACycle(cw, dataRoot);
+    await writeFile(join(dataRoot, "human.md"), "by hand\n");
+    await runSharedCycle(optionsFor(cw, dataRoot));
+    await runSharedCycle(
+      optionsFor(cw, dataRoot, { run: tickRun(cw, dataRoot, LATER) }),
+    );
+
+    expect(await readFileText(join(dataRoot, "raw", "stray.md"))).toBe(
+      "partial\n",
+    );
+  }, 60000);
+
+  it("completes the tick when the surface resolved itself", async () => {
+    const world = await makeWriterWorld();
+    worlds.push(world);
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+    const { dataRoot } = cw;
+
+    await failACycle(cw, dataRoot);
+    await rm(join(dataRoot, "raw", "stray.md"));
+
+    const outcome = await runSharedCycle(
+      optionsFor(cw, dataRoot, { run: tickRun(cw, dataRoot, LATER) }),
+    );
+
+    expect(outcome.status).toBe("completed");
+  }, 30000);
+
+  it("clears the stale record when the surface resolved itself", async () => {
+    const world = await makeWriterWorld();
+    worlds.push(world);
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+    const { dataRoot } = cw;
+
+    await failACycle(cw, dataRoot);
+    await rm(join(dataRoot, "raw", "stray.md"));
+    await runSharedCycle(
+      optionsFor(cw, dataRoot, { run: tickRun(cw, dataRoot, LATER) }),
+    );
+
+    expect(await readRecoveryRecord(world.a.git)).toBeUndefined();
+  }, 30000);
+});
+
+/** A refused-tick run context: injectable clock and progress sink. */
+function tickRun(
+  _cw: CoordWorld,
+  dataRoot: string,
+  now: () => Date,
+  progress?: string[],
+) {
+  return runContext({
+    rawDir: join(dataRoot, "raw"),
+    env: process.env,
+    now,
+    onProgress: (line: string) => progress?.push(line),
+  });
+}
+
+/** One failed cycle over the enabled world: the sweep writes a stray
+ *  raw/ file and throws — the retained-lease dirty-surface shape. */
+async function failACycle(
+  cw: Awaited<ReturnType<typeof enabledDataRepo>>,
+  dataRoot: string,
+): Promise<void> {
+  const error = await runSharedCycle(
+    optionsFor(cw, dataRoot, {
+      runSweep: async () => {
+        await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
+
+        throw new Error("agent stage blew up");
+      },
+    }),
+  ).catch((e: unknown) => e);
+
+  if (!((error as Error).message as string).includes("agent stage blew up")) {
+    throw new Error(`setup: the cycle failed another way — ${String(error)}`);
+  }
+}
+
+/** Read a file's text, undefined when absent. */
+async function readFileText(path: string): Promise<string | undefined> {
+  try {
+    return await readFile(path, "utf8");
+  } catch {
+    return undefined;
+  }
+}
 
 async function commitOid(repo: {
   git: (args: string[]) => Promise<{ stdout: string }>;

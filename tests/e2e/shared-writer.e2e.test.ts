@@ -450,8 +450,89 @@ async function remoteLeaseOid(remoteDir: string): Promise<string | undefined> {
     "--format=%(objectname)",
   ]);
   const oid = stdout.trim();
-
   return oid === "" ? undefined : oid;
+}
+
+/** The issue #400 fix-surface record's path under the data repo's
+ *  git dir — the same resolution the recovery module uses. */
+async function recordPath(dataRoot: string): Promise<string> {
+  const { stdout } = await run("git", [
+    "-C",
+    dataRoot,
+    "rev-parse",
+    "--absolute-git-dir",
+  ]);
+
+  return join(stdout.trim(), "k-wiki", "recovery-fix-surface.json");
+}
+
+async function recordExists(dataRoot: string): Promise<boolean> {
+  try {
+    await readFile(await recordPath(dataRoot), "utf8");
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The dead-man window's passage, without waiting fifteen real
+ *  minutes: the retained lease is replaced by an already-expired one
+ *  through the protocol's own exact-OID push, and the record is
+ *  re-bound to the aged OID — the exact remote and record state
+ *  fifteen real minutes would produce. */
+async function ageRetainedLease(dataRoot: string): Promise<void> {
+  const g = async (args: readonly string[]) =>
+    (await run("git", ["-C", dataRoot, ...args])).stdout.trim();
+
+  await g([
+    "fetch",
+    "--force",
+    "origin",
+    `${LEASE_REF}:refs/k-wiki/lease-observed`,
+  ]);
+
+  const tree = await g(["rev-parse", "refs/k-wiki/lease-observed^{tree}"]);
+  const liveOid = await g(["rev-parse", "refs/k-wiki/lease-observed"]);
+  const body = await g([
+    "log",
+    "-1",
+    "--format=%B",
+    "refs/k-wiki/lease-observed",
+  ]);
+  const holder = /^holder: (.*)$/m.exec(body)?.[1] ?? "aged";
+  const base = /^base: (.*)$/m.exec(body)?.[1] ?? "0".repeat(40);
+  const token = /^token: (.*)$/m.exec(body)?.[1] ?? "a".repeat(32);
+  const aged = "2020-01-01T00:00:00.000Z";
+  const message = [
+    "k-wiki shared-writer lease v1",
+    "",
+    "protocol: 1",
+    `token: ${token}`,
+    `holder: ${holder}`,
+    `acquired: ${aged}`,
+    `expires: ${aged}`,
+    `base: ${base}`,
+    "renewals: 1",
+    "",
+  ].join("\n");
+  const agedOid = await g(["commit-tree", tree, "-m", message]);
+
+  await g([
+    "push",
+    `--force-with-lease=${LEASE_REF}:${liveOid}`,
+    "origin",
+    `${agedOid}:${LEASE_REF}`,
+  ]);
+
+  const path = await recordPath(dataRoot);
+  const record = JSON.parse(await readFile(path, "utf8")) as {
+    lease: { oid: string; expires: string };
+  };
+
+  record.lease.oid = agedOid;
+  record.lease.expires = aged;
+  await writeFile(path, `${JSON.stringify(record, null, 2)}\n`, "utf8");
 }
 
 describe("shared-writer e2e", () => {
@@ -885,6 +966,99 @@ describe("shared-writer scheduler e2e (issue #390 tests 21-22)", () => {
 
       expect(await head(world.a.dataRoot)).toBe(final);
       expect(await head(world.b.dataRoot)).toBe(final);
+    } finally {
+      await rm(world.root, { recursive: true, force: true });
+    }
+  }, 300000);
+
+  it("a stubbed failed cycle converges to a completed cycle with no human input (issue #400)", async () => {
+    const world = await makeWorld();
+
+    try {
+      const log = join(world.root, "scheduled-recovery.log");
+      const scheduledTick = () =>
+        runCli(
+          join(import.meta.dirname ?? ".", "../../bin/scheduled-run"),
+          [
+            "--settings",
+            world.a.settingsPath,
+            world.a.configPath,
+            join(world.a.dataRoot, "raw"),
+          ],
+          { env: { KWIKI_SCHEDULED_LOG: log } },
+        );
+
+      // Base cycle: everything ingested and committed.
+      expect(
+        (
+          await cycle(world.a, {
+            STUB_INGEST_MARK: "base",
+            STUB_MARKER: world.env.marker,
+          })
+        ).code,
+      ).toBe(0);
+
+      // The failing cycle: a new vault note gives the ingest stage
+      // real work; the stub writes a fidelity-breaking page during
+      // the lint audit, the fidelity check fails the cycle, and the
+      // ingest edits stay as the fix surface with the lease retained.
+      await writeFile(
+        join(world.a.vaultRoot, "Inbox", "recovery-note.md"),
+        "---\ntitle: Recovery note\n---\n\ncontent\n",
+      );
+
+      const failed = await cycle(world.a, {
+        STUB_MODE: "break-fidelity",
+        STUB_MARKER: world.env.marker,
+      });
+
+      expect(failed.code).toBe(1);
+
+      // Two refused ticks: the recorded surface still matches and
+      // the retained lease is still live.
+      expect((await scheduledTick()).code).toBe(1);
+      expect((await scheduledTick()).code).toBe(1);
+
+      // The verb refuses on a mismatched surface — a human edit is
+      // never eaten.
+      await writeFile(join(world.a.dataRoot, "human.md"), "by hand\n");
+
+      const mismatch = await runCli(
+        join(import.meta.dirname ?? ".", "../../bin/recover-fix-surface"),
+        ["show", world.a.configPath, join(world.a.dataRoot, "raw")],
+      );
+
+      expect(mismatch.code).toBe(1);
+      expect(mismatch.err).toContain("human.md");
+
+      const keep = await runCli(
+        join(import.meta.dirname ?? ".", "../../bin/recover-fix-surface"),
+        ["recover", "--yes", world.a.configPath, join(world.a.dataRoot, "raw")],
+      );
+
+      expect(keep.code).toBe(1);
+      expect(await readFile(join(world.a.dataRoot, "human.md"), "utf8")).toBe(
+        "by hand\n",
+      );
+      await rm(join(world.a.dataRoot, "human.md"));
+
+      // The dead-man window passes: the remote lease replaced by an
+      // already-expired one (exact-OID replace, the protocol's own
+      // mechanics) and the record bound to the aged OID — the state
+      // fifteen real minutes would produce.
+      await ageRetainedLease(world.a.dataRoot);
+
+      // The third refused tick recovers the surface itself and the
+      // cycle completes — no human input.
+      const final = await scheduledTick();
+
+      expect(final.code).toBe(0);
+
+      const logText = await readFile(log, "utf8");
+
+      expect(logText).toContain("auto-recovered fix surface from cycle");
+      expect(await recordExists(world.a.dataRoot)).toBe(false);
+      expect(await remoteLeaseOid(world.remoteDir)).toBeUndefined();
     } finally {
       await rm(world.root, { recursive: true, force: true });
     }
