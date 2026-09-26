@@ -1383,8 +1383,9 @@ alerts immediately. A quota-skipped stamp is benign while its ticks
 keep arriving — the verdict names the skip's cause — and alerts once
 no successful cycle is on record or the last success ages past the
 threshold. The same notification fires in-process when
-`scheduled-run` logs an `ALERT` (cycle failed, push failed after
-its retry), so failures surface in near-real-time instead of
+`scheduled-run` logs an `ALERT` (unresolvable agent, cycle
+failed, push failed after its retry), so failures surface in
+near-real-time instead of
 waiting for the hourly sweep. `KWIKI_NOTIFY=0` disables every
 notification (tests, quiet hosts); the dashboard's coverage section
 also renders "since last successful cycle" from the stamp.

@@ -296,7 +296,8 @@ Register the k-wiki pipeline with the OS scheduler. Three independent
 registrations: the fixed-interval cycle (default), — with --calendar —
 the weekly full-lint sweep, and — with --watchdog — the hourly
 heartbeat watchdog. The scheduled command is node bin/scheduled-run —
-lockfile, quota pre-flight, git pull --rebase, wiki-sync, git push;
+lockfile, agent resolution, quota pre-flight, git pull --rebase,
+wiki-sync, git push;
 the calendar registration adds --lint-full (wiki-lint --full first);
 the watchdog
 registration runs the read-only bin/libexec/sync-watchdog door, which
