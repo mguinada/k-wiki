@@ -45,6 +45,8 @@ import type {
   SharedCycleOptions,
   SharedCycleOutcome,
 } from "./options.ts";
+import { noteRefusedTick } from "./recovery.ts";
+import { recordDirtyFailureSurface } from "./recovery-record.ts";
 
 /** The whole state machine. Unexpected internal failures throw after
  *  the failure-rule lease decision; precondition failures come back
@@ -101,7 +103,13 @@ async function runTenure(
   let session: ObservedLease | undefined;
 
   try {
-    const refused = await preconditionRefusal(options, marker, git, branchRef);
+    const refused = await preconditionRefusal(
+      options,
+      marker,
+      git,
+      branchRef,
+      holder,
+    );
 
     if (refused !== undefined) {
       return { status: "refused", reason: refused };
@@ -134,6 +142,19 @@ async function runTenure(
     if (session !== undefined) {
       if (!isFinalizePhase(ctl)) {
         await releaseIfClean(options, marker, git, session);
+
+        // The dirty fix surface, recorded while it is fresh (issue
+        // #400): the recovery doors — human verb and auto-recovery —
+        // operate on exactly this record. A clean-tree failure
+        // records nothing, and a recording failure never masks the
+        // cycle's own error.
+        try {
+          await recordDirtyFailureSurface({ git, marker });
+        } catch (recordError) {
+          run.onProgress(
+            `shared-writer: failed to record the fix surface — ${errorMessage(recordError)}`,
+          );
+        }
       } else {
         try {
           const retained = await retainFailedCycleLease({
@@ -175,6 +196,7 @@ async function preconditionRefusal(
   marker: SharedWriterMarker,
   git: GitRunner,
   branchRef: string,
+  holder: string,
 ): Promise<string | undefined> {
   const { run } = options;
 
@@ -184,6 +206,24 @@ async function preconditionRefusal(
 
   if (checkedOut !== marker.branch) {
     return `shared-writer mode runs on ${marker.branch} — this checkout is on ${checkedOut ?? "a detached HEAD"}`;
+  }
+
+  // The issue #400 auto-recovery door: count this tick against the
+  // recorded surface and, past the threshold with the lease lapsed,
+  // discard it — the dirty refusal below then passes and the cycle
+  // proceeds as usual. With nothing recorded this is one file read.
+  const recovered = await noteRefusedTick({
+    git,
+    marker,
+    now: run.now,
+    holder,
+    log: run.onProgress,
+  });
+
+  if (recovered) {
+    run.onProgress(
+      "shared-writer: auto-recovery discarded the recorded fix surface — proceeding",
+    );
   }
 
   const dirty = await refuseDirtyWorkingTree(git);

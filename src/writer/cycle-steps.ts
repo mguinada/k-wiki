@@ -41,6 +41,42 @@ import {
  *  pathspec, and is never repo content. */
 const ALLOWED_UNTRACKED = new Set([".scheduled-run.lock"]);
 
+/** One dirty-surface entry the recovery and refusal paths share:
+ *  the porcelain code, the path, a rename's origin, and whether the
+ *  file is untracked on disk (the discard command differs per
+ *  kind). */
+export interface SurfaceEntry {
+  readonly code: string;
+  readonly path: string;
+  readonly origin: string | undefined;
+  readonly untracked: boolean;
+}
+
+/** The offending dirty surface of a data repo: every status entry
+ *  outside the allowed per-machine artifacts, tracked and untracked
+ *  alike, renames carrying both paths. The one parse shared by the
+ *  dirty-tree refusal and the issue #400 fix-surface recovery. */
+export async function surfaceEntries(
+  git: GitRunner,
+): Promise<readonly SurfaceEntry[]> {
+  const { stdout } = await git([
+    "-c",
+    "core.quotePath=false",
+    "status",
+    "--porcelain",
+    "-uall",
+  ]);
+
+  return parseStatus(stdout)
+    .filter((entry) => !ALLOWED_UNTRACKED.has(entry.path))
+    .map((entry) => ({
+      code: entry.code,
+      path: entry.path,
+      origin: entry.origin,
+      untracked: entry.code === "??",
+    }));
+}
+
 /** The first five offending paths — enough to act on, not a wall. */
 function listLimited(entries: readonly string[]): string {
   return entries

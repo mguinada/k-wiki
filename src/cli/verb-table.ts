@@ -43,6 +43,7 @@ import { main as syncVault } from "../sync/sync-vault.ts";
 import { main as wikiLint } from "../sync/wiki-lint.ts";
 import { main as wikiSync } from "../sync/wiki-sync.ts";
 import { main as enableSharedWriter } from "../writer/enable-shared-writer.ts";
+import { main as recoverFixSurface } from "../writer/recover-fix-surface.ts";
 import { main as writerLease } from "../writer/writer-lease.ts";
 import { runCompletionVerb } from "./completion.ts";
 import { main as initDataRepo } from "./init-data-repo.ts";
@@ -237,6 +238,17 @@ export function verbTable(): readonly VerbSpec[] {
         "exact OID (takeover --expected <oid> --confirm)",
       ],
       main: writerLease,
+    },
+    {
+      name: "recover-fix-surface",
+      klass: "operator",
+      tier: "operator",
+      wiki: false,
+      lines: [
+        "show or discard a failed cycle's recorded fix surface",
+        "(show is the default; recover --yes executes)",
+      ],
+      main: recoverFixSurface,
     },
     {
       name: "setup-schedule",
