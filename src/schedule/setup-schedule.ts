@@ -303,7 +303,8 @@ heartbeat watchdog. The scheduled command is node bin/scheduled-run —
 lockfile, git pull --rebase, wiki-sync, git push; the calendar
 registration adds --lint-full (wiki-lint --full first); the watchdog
 registration runs the read-only bin/libexec/sync-watchdog door, which
-alerts when the cycle heartbeat goes stale, missing, or unreadable.
+alerts when the cycle heartbeat goes stale, missing, or unreadable,
+or when benign quota-skipped ticks persist past its threshold.
 macOS only today: the source vault lives in iCloud, so only macOS can
 run the pipeline; other OSs host read-only clones that need no
 scheduler. Linux (systemd timer) and Windows (Task Scheduler) backends
@@ -318,7 +319,9 @@ are follow-up issues and fail loud here.
                          completed cycle writes and alerts (macOS
                          notification, exit 1) when the stamp is
                          stale, unreadable, or missing past the
-                         grace window. Installed, printed, and
+                         grace window, or records quota-skipped
+                         ticks persisting past the threshold.
+                         Installed, printed, and
                          removed by its own invocation; the other
                          registrations are untouched.
   --stale-after <duration>  The watchdog's staleness threshold,

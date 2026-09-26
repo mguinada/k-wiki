@@ -178,6 +178,37 @@ describe("quotaPreflight", () => {
     });
   });
 
+  it("names an unknown reset when a scopeless exhausted row cannot anchor one", async () => {
+    const lines: string[] = [];
+    const result = await quotaPreflight({
+      settings: settings(),
+      log: (line) => lines.push(line),
+      commandRunner: async () =>
+        JSON.stringify({
+          quota: [{ provider: "zai", runway: "exhausted_now" }],
+          exhaustion: [
+            {
+              provider: "zai",
+              scope: "a",
+              usableRunwaySeconds: 4000,
+              projectedExhaustedAt: "2026-09-26T12:00:00.000Z",
+            },
+            {
+              provider: "zai",
+              scope: "b",
+              usableRunwaySeconds: 100,
+              projectedExhaustedAt: "2026-09-26T06:00:00.000Z",
+            },
+          ],
+        }),
+    });
+
+    expect({ status: result.status, line: lines[0] }).toEqual({
+      status: "skip",
+      line: "scheduled-run: quota pre-flight skipped — ingest provider zai (model GLM-5.2) exhausted_now, reset unknown reset",
+    });
+  });
+
   it("resolves the default probe against the provided environment's PATH", async () => {
     const dir = await mkdtemp(join(tmpdir(), "k-wiki-quota-env-"));
 

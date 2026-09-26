@@ -120,7 +120,8 @@ function asScope(value: unknown): string | undefined {
 
 /** The deciding record's reset time: the row that grounded the skip
  *  when it carries one, else the provider's exhaustion row for the
- *  deciding scope, else unknown. */
+ *  deciding scope, else the provider's only exhaustion row, else
+ *  unknown. */
 function resetLabel(
   report: QuotaReport,
   provider: string,
@@ -139,7 +140,7 @@ function resetLabel(
     (scope === undefined
       ? undefined
       : exhaustion.find((row) => asScope(row.scope) === scope)) ??
-    exhaustion[0];
+    (exhaustion.length === 1 ? exhaustion[0] : undefined);
   const projected = matched?.projectedExhaustedAt;
 
   return typeof projected === "string" ? projected : "unknown reset";
