@@ -3,9 +3,10 @@
  * interval (issue #14, guide §18). One portable Node file — identical
  * on macOS/Linux/Windows; only the scheduler registration differs.
  *
- *   lockfile → git pull --rebase → (with --lint-full: wiki-lint --full,
- *   the weekly quality sweep, issue #359) → wiki-sync (gates +
- *   commit) → git push
+ *   lockfile → quota pre-flight (an optional quota-axi probe may
+ *   skip the tick before any stage) → git pull --rebase → (with
+ *   --lint-full: wiki-lint --full, the weekly quality sweep, issue
+ *   #359) → wiki-sync (gates + commit) → git push
  *
  * Overlap guard (issue #14 decision 3; the lock itself now lives in
  * `src/sync/run-lock.ts`, shared with manual wiki-sync runs since

@@ -17,7 +17,11 @@
  * Verdicts: fresh → one line, exit 0. Stale, unreadable, or missing
  * past the grace window → one line, a macOS notification
  * (osascript; KWIKI_NOTIFY=0 disables), exit 1 — launchd records
- * the non-zero exit too. A missing stamp inside the grace window is
+ * the non-zero exit too. A skipped stamp is benign while its ticks
+ * keep arriving and names its cause; when the last success ages
+ * past the threshold the alert names it, and a stamp that itself
+ * goes stale — a scheduler that died — alerts like any other. A
+ * missing stamp inside the grace window is
  * the fresh-install case: the newest of the data-repo commit date
  * and the install anchor is younger than the threshold, so the
  * first cycle has not had its chance yet and the watchdog stays
