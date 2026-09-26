@@ -22,9 +22,8 @@
  * record it alerts at once naming that cause, when the last success
  * ages past the threshold the alert names it, and a stamp that
  * itself goes stale — a scheduler that died — alerts like any
- * other. A
- * missing stamp inside the grace window is
- * the fresh-install case: the newest of the data-repo commit date
+ * other. A missing stamp inside the grace window is the
+ * fresh-install case: the newest of the data-repo commit date
  * and the install anchor is younger than the threshold, so the
  * first cycle has not had its chance yet and the watchdog stays
  * quiet.

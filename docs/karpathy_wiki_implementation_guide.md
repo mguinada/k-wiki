@@ -1120,8 +1120,14 @@ Suggested schedule:
 
 Start manually until the pipeline is reliable, then schedule it. The
 shipped scheduler is `setup-schedule` + `scheduled-run` (issue #14):
-launchd runs the wrapper on a fixed interval — lockfile, pre-run
-pull --rebase, `wiki-sync`, push — and, as a second independent
+launchd runs the wrapper on a fixed interval — lockfile, quota
+pre-flight (issue #396: an optional `quota-axi` probe, settings key
+`quotaPreflight` — `auto` | `off` | a CLI path, default `auto` — may
+skip the tick before any stage, the shared-writer lease included:
+one dim line naming provider, scope, runway, and reset, exit 0, no
+ALERT; an absent, unreadable, or unauthenticated probe proceeds
+unchanged, fail-open), pre-run pull --rebase, `wiki-sync`, push —
+and, as a second independent
 registration (issue #359), a weekly `StartCalendarInterval` job
 (default Sundays 03:00, `setup-schedule --calendar`) running
 `bin/scheduled-run --lint-full`: `wiki-lint --full` (the whole-wiki
@@ -1130,15 +1136,22 @@ lock, then the ordinary cycle, push. A third registration (issue
 #362) watches the pipeline from outside it: `com.kwiki.watchdog`
 (hourly, `setup-schedule --watchdog [--stale-after <duration>]`)
 runs the read-only `bin/libexec/sync-watchdog` door, which reads the
-heartbeat stamp every completed cycle writes
-(`<dataRoot>/outputs/last-cycle.json`, excluded via the data repo's
-`.git/info/exclude`) and alerts — macOS notification + exit 1 —
-when the stamp is stale (default threshold: three run intervals,
-90 minutes), unreadable, or missing past the grace window (the
-newest data-repo commit anchors a fresh install's grace; over an
-existing data repo whose commits are old, the install anchor
-`setup-schedule --watchdog` stamps into the data repo
-(`outputs/watchdog-since.txt`) holds the same grace). The
+heartbeat stamp every completed cycle writes — ok, failed, or a
+benign quota-skipped tick (`<dataRoot>/outputs/last-cycle.json`,
+excluded via the data repo's `.git/info/exclude`; the stamp carries
+the skip's cause, or a "pre-flight: off" note when the cycle ran
+with the pre-flight dormant) — and alerts — macOS notification +
+exit 1 — when the stamp is stale (default threshold: three run
+intervals, 90 minutes), unreadable, or missing past the grace
+window (the newest data-repo commit anchors a fresh install's
+grace; over an existing data repo whose commits are old, the
+install anchor `setup-schedule --watchdog` stamps into the data
+repo (`outputs/watchdog-since.txt`) holds the same grace). A
+quota-skipped stamp is benign while its ticks keep arriving — the
+verdict names the skip's cause — and alerts the same way once no
+successful cycle is on record or the last success ages past the
+threshold; a stamp that itself goes stale (a scheduler that died)
+alerts like any other. The
 watchdog exists because the 2026-09-13 outage failed *before the
 pipeline's process started* — its own ALERT logging never ran, the
 only trace was `launchd-stderr.log`, which nobody reads — so the
