@@ -14,6 +14,7 @@ import { pluralized } from "../cli/shared.ts";
 import { changedPaths } from "../data/git.ts";
 import {
   type AgentSettings,
+  type AgentTarget,
   agentArgs,
   agentTargets,
   formatAgentInvocation,
@@ -123,6 +124,22 @@ export function spawnAgent(
   });
 }
 
+/** The final error of a failed targets-list run: every tried target
+ *  named in order. A legacy single-target run keeps its raw error. */
+function labeledFailure(
+  settings: AgentSettings,
+  failures: readonly string[],
+  cause: unknown,
+): unknown {
+  if (settings.targets === undefined) {
+    return cause;
+  }
+
+  return new Error(`agent targets failed: ${failures.join("; ")}`, {
+    cause,
+  });
+}
+
 export async function runAgentTargets(
   settings: AgentSettings,
   prompt: string,
@@ -134,13 +151,21 @@ export async function runAgentTargets(
     readonly onProgress: (message: string) => void;
     readonly runAgent: AgentRunner;
   },
-): Promise<{ stdout: string; agentError: unknown }> {
+): Promise<{ stdout: string; agentError: unknown; target: AgentTarget }> {
   const targets = agentTargets(settings);
+  const first = targets[0];
+
+  if (first === undefined) {
+    throw new Error("agent settings need at least one target");
+  }
+
   const failures: string[] = [];
   let stdout = "";
   let agentError: unknown;
+  let target = first;
 
-  for (const [index, target] of targets.entries()) {
+  for (const [index, current] of targets.entries()) {
+    target = current;
     const targetSettings = settingsForTarget(settings, target);
 
     options.onProgress(
@@ -178,13 +203,11 @@ export async function runAgentTargets(
     }
   }
 
-  if (agentError !== undefined && failures.length > 1) {
-    agentError = new Error(`agent targets failed: ${failures.join("; ")}`, {
-      cause: agentError,
-    });
+  if (agentError !== undefined) {
+    agentError = labeledFailure(settings, failures, agentError);
   }
 
-  return { stdout, agentError };
+  return { stdout, agentError, target };
 }
 
 export async function readPrompt(path: string): Promise<string> {

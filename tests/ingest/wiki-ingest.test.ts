@@ -200,6 +200,76 @@ describe("runWikiIngest", () => {
     );
   });
 
+  it("names every tried target in order when the target list is exhausted", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    await writeFile(
+      h.settingsPath,
+      "command: pi\ntargets: [zai/GLM-5.2, openrouter/moonshotai/kimi-k2.6]\nreasoning: high\n",
+    );
+
+    await expect(
+      runWikiIngest({
+        ...optionsFor(h),
+        runAgent: async () => {
+          throw new Error("provider unavailable");
+        },
+      }),
+    ).rejects.toThrow(
+      "agent targets failed: zai/GLM-5.2: provider unavailable; openrouter/moonshotai/kimi-k2.6: provider unavailable",
+    );
+  });
+
+  it("names the single tried target when the retry gate blocks the fallback", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    await writeFile(
+      h.settingsPath,
+      "command: pi\ntargets: [zai/GLM-5.2, openrouter/moonshotai/kimi-k2.6]\nreasoning: high\n",
+    );
+
+    await expect(
+      runWikiIngest({
+        ...optionsFor(h),
+        runAgent: async (_command, _args, options) => {
+          await writeFile(
+            join(options.cwd, "wiki", "kept.md"),
+            wikiPage("Kept"),
+          );
+          throw new Error("provider failed after output");
+        },
+      }),
+    ).rejects.toThrow(
+      "agent targets failed: zai/GLM-5.2: provider failed after output",
+    );
+  });
+
+  it("attributes the run digest to the target that produced the output", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    await writeFile(
+      h.settingsPath,
+      "command: pi\ntargets: [zai/GLM-5.2, openrouter/moonshotai/kimi-k2.6]\nreasoning: high\n",
+    );
+
+    const result = await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: async (_command, args) => {
+        if (args.includes("GLM-5.2")) {
+          throw new Error("provider unavailable");
+        }
+
+        return { stdout: "fallback output", stderr: "" };
+      },
+    });
+
+    if (result.status !== "ran") {
+      throw new Error("expected a ran ingest");
+    }
+
+    expect(result.digest).toContain("model `moonshotai/kimi-k2.6`");
+  });
+
   it("passes the --model flag from settings", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
 

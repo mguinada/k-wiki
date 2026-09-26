@@ -40,7 +40,12 @@ import {
   runAgentTargets,
   spawnAgent,
 } from "./agent-run.ts";
-import { type AgentSettings, loadAgentSettings } from "./agent-settings.ts";
+import {
+  type AgentSettings,
+  type AgentTarget,
+  loadAgentSettings,
+  settingsForTarget,
+} from "./agent-settings.ts";
 import { formatDigest, writeFailureDigest } from "./digest.ts";
 import {
   capturePreRunState,
@@ -427,6 +432,7 @@ interface AgentRun {
   readonly pre: PreRunState;
   readonly stdout: string;
   readonly agentError: unknown;
+  readonly target: AgentTarget;
 }
 
 /** The spawn step: capture the pre-run state, invoke the agent under
@@ -449,7 +455,11 @@ async function spawnStep(
     onProgress,
   });
 
-  let result: { stdout: string; agentError: unknown };
+  let result: {
+    stdout: string;
+    agentError: unknown;
+    target: AgentTarget;
+  };
 
   try {
     result = await runAgentTargets(inputs.settings, composed, {
@@ -596,7 +606,7 @@ async function guardrailStep(
     startedAt,
     mode: mode.mode,
     promptFile: `prompts/${mode.promptFile}`,
-    settings: inputs.settings,
+    settings: settingsForTarget(inputs.settings, agent.target),
     diff: change.diff,
     agentOutput: agent.stdout,
     failure,
@@ -626,7 +636,7 @@ async function successStep(
     startedAt: checked.startedAt,
     mode: mode.mode,
     promptFile: `prompts/${mode.promptFile}`,
-    settings: inputs.settings,
+    settings: settingsForTarget(inputs.settings, agent.target),
     diff: change.diff,
     pages,
     directSet: prompt.directSet,
