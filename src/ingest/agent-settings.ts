@@ -249,20 +249,13 @@ function recordSetting(
   values.set(key, value);
 }
 
-/** After the loop: every required key present, isolate a boolean. */
-function validateSettings(
+/** The model/targets contract: exactly one of the two forms, never
+ *  both — a legacy scalar beside the list would be silently inert. */
+function validateTargetSettings(
   values: Map<SettingKey, string>,
   lists: Partial<Record<ListKey, readonly string[]>>,
   origin: string,
 ): void {
-  for (const key of REQUIRED_KEYS) {
-    if (!values.has(key)) {
-      throw new Error(
-        `invalid agent settings at ${origin}: missing setting ${JSON.stringify(key)}`,
-      );
-    }
-  }
-
   if (values.get("model") === undefined && lists[TARGETS_KEY] === undefined) {
     throw new Error(
       `invalid agent settings at ${origin}: missing setting "model" or "targets"`,
@@ -277,6 +270,23 @@ function validateSettings(
       `invalid agent settings at ${origin}: setting ${JSON.stringify(TARGETS_KEY)} cannot be combined with "model"/"provider"`,
     );
   }
+}
+
+/** After the loop: every required key present, isolate a boolean. */
+function validateSettings(
+  values: Map<SettingKey, string>,
+  lists: Partial<Record<ListKey, readonly string[]>>,
+  origin: string,
+): void {
+  for (const key of REQUIRED_KEYS) {
+    if (!values.has(key)) {
+      throw new Error(
+        `invalid agent settings at ${origin}: missing setting ${JSON.stringify(key)}`,
+      );
+    }
+  }
+
+  validateTargetSettings(values, lists, origin);
 
   const isolate = values.get("isolate");
 
