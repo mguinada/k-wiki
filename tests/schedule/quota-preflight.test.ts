@@ -67,7 +67,6 @@ describe("quotaPreflight", () => {
 
     expect({ ...result, lines }).toEqual({
       status: "proceed",
-      reason: "unavailable",
       preflight: "unavailable",
       lines: ["scheduled-run: quota pre-flight unavailable — proceeding"],
     });

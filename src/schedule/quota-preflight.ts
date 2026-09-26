@@ -33,7 +33,6 @@ export type PreflightState = "unavailable" | "off";
 export type QuotaPreflightResult =
   | {
       readonly status: "proceed";
-      readonly reason?: string;
       readonly preflight?: PreflightState;
     }
   | { readonly status: "skip"; readonly reason: string };
@@ -42,7 +41,6 @@ export interface QuotaPreflightOptions {
   readonly settings: AgentSettings;
   readonly log: (line: string) => void;
   readonly commandRunner?: (command: string) => Promise<string>;
-  readonly estimateSeconds?: number;
   /** The probe child's environment; default: this process's own. The
    *  scheduled wrapper passes its extended PATH so a launchd job
    *  resolves machine-local CLIs the way its child scripts do. */
@@ -65,7 +63,6 @@ export function quotaPreflightUnavailable(
 
   return {
     status: "proceed",
-    reason: "unavailable",
     preflight: "unavailable",
   };
 }
@@ -219,7 +216,7 @@ export async function quotaPreflight(
     return quotaPreflightUnavailable(options.log);
   }
 
-  const estimate = options.estimateSeconds ?? DEFAULT_CYCLE_ESTIMATE_SECONDS;
+  const estimate = DEFAULT_CYCLE_ESTIMATE_SECONDS;
   const reason = skipReason(report, provider, options.settings.model, estimate);
 
   if (reason === undefined) {
