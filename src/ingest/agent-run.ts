@@ -1,6 +1,8 @@
 /**
  * The agent run primitives: AgentRunner, spawnAgent (non-interactive
- * child run with timeout and output cap), and readPrompt. Shared by
+ * child run with timeout and output cap), runAgentTargets (the
+ * ordered ingest target list tried in order over spawnAgent, with
+ * the no-kept-output retry gate), and readPrompt. Shared by
  * wiki-ingest, wiki-sync, wiki-query, and k-wiki (extracted from
  * wiki-ingest.ts, issue #129); the stderr progress sink lives in
  * cli/progress.ts.
