@@ -349,6 +349,7 @@ async function resolveCycleAgentCommand(
   const resolved = await (options.resolveAgentPath ?? resolveAgentPath)(
     command,
     buildScheduledEnv(process.env.HOME ?? homedir(), process.execPath).PATH,
+    options.dataRoot,
     shell,
   );
 

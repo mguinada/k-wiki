@@ -96,19 +96,21 @@ async function fromLoginShell(
 /**
  * The absolute path of the agent binary a settings command names, or
  * undefined when nothing resolves it. A command holding a slash is a
- * path — absolute, or relative to the wrapper's cwd — and only gets
- * an executable check; a bare name searches `searchPath`, then asks
- * the login shell (whose profile carries the interactive PATH the
- * launchd env lacks) when `shell` is given. The quoted probe is the
- * only place the command reaches a shell, and it cannot break out.
+ * path — absolute, or relative to `base`, the data repo root the
+ * agent spawn uses as its cwd — and only gets an executable check; a
+ * bare name searches `searchPath`, then asks the login shell (whose
+ * profile carries the interactive PATH the launchd env lacks) when
+ * `shell` is given. The quoted probe is the only place the command
+ * reaches a shell, and it cannot break out.
  */
 export async function resolveAgentPath(
   command: string,
   searchPath: string,
+  base: string,
   shell?: string | undefined,
 ): Promise<string | undefined> {
   if (command.includes("/")) {
-    const candidate = resolve(command);
+    const candidate = resolve(base, command);
 
     return (await isExecutable(candidate)) ? candidate : undefined;
   }

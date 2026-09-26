@@ -65,7 +65,12 @@ async function withEnv(
 describe("resolveAgentPath", () => {
   it("accepts an absolute command whose binary exists as-is", async () => {
     await expect(
-      resolveAgentPath(process.execPath, "/nonexistent-dir", undefined),
+      resolveAgentPath(
+        process.execPath,
+        "/nonexistent-dir",
+        "/nonexistent-base",
+        undefined,
+      ),
     ).resolves.toBe(process.execPath);
   });
 
@@ -76,17 +81,39 @@ describe("resolveAgentPath", () => {
       resolveAgentPath(
         join(dir, "absent-agent"),
         "/nonexistent-dir",
+        "/nonexistent-base",
         undefined,
       ),
+    ).resolves.toBeUndefined();
+  });
+
+  it("resolves a relative slash command against the given base", async () => {
+    const dir = await tempDir();
+
+    await mkdir(join(dir, "tools"), { recursive: true });
+    await writeFile(join(dir, "tools", "agent.sh"), "#!/bin/sh\nexit 0\n", {
+      mode: 0o755,
+    });
+
+    await expect(
+      resolveAgentPath("tools/agent.sh", "/nonexistent-dir", dir, undefined),
+    ).resolves.toBe(join(dir, "tools", "agent.sh"));
+  });
+
+  it("fails a relative slash command absent from the given base", async () => {
+    const dir = await tempDir();
+
+    await expect(
+      resolveAgentPath("tools/absent.sh", "/nonexistent-dir", dir, undefined),
     ).resolves.toBeUndefined();
   });
 
   it("resolves a bare name from the search path", async () => {
     const dir = await fakeBin();
 
-    await expect(resolveAgentPath("pi-stub", dir, undefined)).resolves.toBe(
-      join(dir, "pi-stub"),
-    );
+    await expect(
+      resolveAgentPath("pi-stub", dir, "/nonexistent-base", undefined),
+    ).resolves.toBe(join(dir, "pi-stub"));
   });
 
   it("skips a non-executable search-path hit", async () => {
@@ -95,7 +122,7 @@ describe("resolveAgentPath", () => {
     await writeFile(join(dir, "pi-stub"), "#!/bin/sh\nexit 0\n");
 
     await expect(
-      resolveAgentPath("pi-stub", dir, undefined),
+      resolveAgentPath("pi-stub", dir, "/nonexistent-base", undefined),
     ).resolves.toBeUndefined();
   });
 
@@ -106,7 +133,12 @@ describe("resolveAgentPath", () => {
     await mkdir(join(shadow, "pi-stub"), { recursive: true });
 
     await expect(
-      resolveAgentPath("pi-stub", `${shadow}:${real}`, undefined),
+      resolveAgentPath(
+        "pi-stub",
+        `${shadow}:${real}`,
+        "/nonexistent-base",
+        undefined,
+      ),
     ).resolves.toBe(join(real, "pi-stub"));
   });
 
@@ -115,7 +147,12 @@ describe("resolveAgentPath", () => {
 
     await expect(
       withEnv(`${dir}:/usr/bin:/bin`, "/bin/sh", () =>
-        resolveAgentPath("pi-stub", "/nonexistent-dir", "/bin/sh"),
+        resolveAgentPath(
+          "pi-stub",
+          "/nonexistent-dir",
+          "/nonexistent-base",
+          "/bin/sh",
+        ),
       ),
     ).resolves.toBe(join(dir, "pi-stub"));
   });
@@ -126,6 +163,7 @@ describe("resolveAgentPath", () => {
         resolveAgentPath(
           "no-such-agent-anywhere-399",
           "/nonexistent-dir",
+          "/nonexistent-base",
           "/bin/sh",
         ),
       ),
@@ -137,20 +175,35 @@ describe("resolveAgentPath", () => {
 
     await expect(
       withEnv(`${dir}:/usr/bin:/bin`, "/bin/sh", () =>
-        resolveAgentPath("pi-stub", "/nonexistent-dir", undefined),
+        resolveAgentPath(
+          "pi-stub",
+          "/nonexistent-dir",
+          "/nonexistent-base",
+          undefined,
+        ),
       ),
     ).resolves.toBeUndefined();
   });
 
   it("does not accept a shell builtin name as a resolved path", async () => {
     await expect(
-      resolveAgentPath("cd", "/nonexistent-dir", "/bin/sh"),
+      resolveAgentPath(
+        "cd",
+        "/nonexistent-dir",
+        "/nonexistent-base",
+        "/bin/sh",
+      ),
     ).resolves.toBeUndefined();
   });
 
   it("survives a command holding a quote that would break the shell probe", async () => {
     await expect(
-      resolveAgentPath("o'agent", "/nonexistent-dir", "/bin/sh"),
+      resolveAgentPath(
+        "o'agent",
+        "/nonexistent-dir",
+        "/nonexistent-base",
+        "/bin/sh",
+      ),
     ).resolves.toBeUndefined();
   });
 });
