@@ -19,7 +19,12 @@ import { SNAPSHOT_FILENAME } from "../ingest/snapshot.ts";
 import { parseManifest, writeManifest } from "../sync/manifest.ts";
 import type { VaultRemovalPlan } from "../sync/projection.ts";
 import type { GitRunner } from "./git-remote.ts";
-import { releaseOwnLease } from "./lease-ops.ts";
+import type { ObservedLease } from "./lease.ts";
+import {
+  fetchedTreeOid,
+  releaseOwnLease,
+  retainFailedCycleLease,
+} from "./lease-ops.ts";
 import type { SharedWriterMarker } from "./marker.ts";
 import type { SharedCycleOptions } from "./options.ts";
 import {
@@ -192,14 +197,29 @@ export async function releaseIfClean(
   options: SharedCycleOptions,
   marker: SharedWriterMarker,
   git: GitRunner,
-  ownOid: string,
+  current: ObservedLease,
 ): Promise<void> {
   const { run } = options;
 
   if (!(await workingTreeClean(run.dataRoot, run.env))) {
-    run.onProgress(
-      "shared-writer: failure left a dirty fix surface — retaining the lease until expiry or writer-lease takeover",
-    );
+    try {
+      const retained = await retainFailedCycleLease({
+        git,
+        remote: marker.remote,
+        leaseRef: marker.leaseRef,
+        current,
+        treeOid: await fetchedTreeOid(git),
+        now: run.now,
+      });
+
+      run.onProgress(
+        `shared-writer: failure left a dirty fix surface — retained lease expires ${retained.body.expires}`,
+      );
+    } catch (retentionError) {
+      run.onProgress(
+        `shared-writer: failed to shorten retained lease — ${errorMessage(retentionError)}`,
+      );
+    }
 
     return;
   }
@@ -210,7 +230,7 @@ export async function releaseIfClean(
         git,
         remote: marker.remote,
         leaseRef: marker.leaseRef,
-        ownOid,
+        ownOid: current.oid,
       }),
     );
   } catch (releaseError) {

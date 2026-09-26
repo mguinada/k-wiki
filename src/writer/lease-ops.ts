@@ -1,8 +1,8 @@
 /**
- * Lease lifecycle operations (issue #390): acquire, renew, take
- * over, finalize, and conditionally release — each a compare-and-swap
- * push over the lease ref, each failing closed when its expected OID
- * no longer matches. Acquire creates the absent ref with a plain
+ * Lease lifecycle operations (issue #390): acquire, renew, retain
+ * a failed cycle's lease, take over, finalize, and conditionally
+ * release — each a compare-and-swap push over the lease ref, each
+ * failing closed when its expected OID no longer matches. Acquire creates the absent ref with a plain
  * push (a racing creator loses the non-fast-forward check); renewal
  * and takeover replace by exact OID; finalize is the single atomic
  * push that advances the branch and deletes the owned lease together;
@@ -17,6 +17,7 @@ import {
   casPush,
   createLeaseCommit,
   describeLease,
+  FAILED_CYCLE_LEASE_TTL_MS,
   type LeaseBody,
   leaseExpired,
   newLeaseBody,
@@ -81,8 +82,14 @@ function replacementBody(
   base: string,
   now: () => Date,
   holder: string,
+  ttlMs?: number,
 ): LeaseBody {
-  const fresh = newLeaseBody(base, now, holder);
+  const fresh = newLeaseBody(
+    base,
+    now,
+    holder,
+    ttlMs === undefined ? {} : { ttlMs },
+  );
 
   if (previous === undefined) {
     return fresh;
@@ -110,6 +117,8 @@ export async function replaceLease(options: {
   readonly base: string;
   readonly now: () => Date;
   readonly holder: string;
+  /** Override the normal lease TTL for terminal-failure retention. */
+  readonly ttlMs?: number;
 }): Promise<ObservedLease> {
   const { git, remote, leaseRef, expectedOid, previous } = options;
   const body = replacementBody(
@@ -117,6 +126,7 @@ export async function replaceLease(options: {
     options.base,
     options.now,
     options.holder,
+    options.ttlMs,
   );
   const oid = await createLeaseCommit(git, options.treeOid, body);
 
@@ -142,6 +152,30 @@ export async function renewLease(options: {
     ...options,
     expectedOid: options.current.oid,
     previous: options.current.body,
+  });
+}
+
+/** Replace a failed cycle's lease with the short dead-man window. The
+ *  exact current OID remains the fence, so there is no release gap. */
+export async function retainFailedCycleLease(options: {
+  readonly git: GitRunner;
+  readonly remote: string;
+  readonly leaseRef: string;
+  readonly current: ObservedLease;
+  readonly treeOid: string;
+  readonly now: () => Date;
+}): Promise<ObservedLease> {
+  return await replaceLease({
+    git: options.git,
+    remote: options.remote,
+    leaseRef: options.leaseRef,
+    expectedOid: options.current.oid,
+    previous: options.current.body,
+    treeOid: options.treeOid,
+    base: options.current.body.base,
+    now: options.now,
+    holder: options.current.body.holder,
+    ttlMs: FAILED_CYCLE_LEASE_TTL_MS,
   });
 }
 

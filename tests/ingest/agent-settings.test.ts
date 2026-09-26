@@ -8,6 +8,7 @@ import {
   isolationLabel,
   loadAgentSettings,
   parseSettings,
+  settingsForTarget,
 } from "../../src/ingest/agent-settings.ts";
 
 const SETTINGS_YML = `# Agent configuration (issue #11).
@@ -47,6 +48,66 @@ describe("parseSettings", () => {
     );
 
     expect(settings.provider).toBe("zai");
+  });
+
+  it("parses ordered provider/model targets", () => {
+    expect(
+      parseSettings(
+        "command: pi\ntargets: [zai/GLM-5.2, openrouter/moonshotai/kimi-k2.6]\nreasoning: h\n",
+        "s",
+      ),
+    ).toMatchObject({
+      model: "GLM-5.2",
+      provider: "zai",
+      targets: [
+        { provider: "zai", model: "GLM-5.2" },
+        { provider: "openrouter", model: "moonshotai/kimi-k2.6" },
+      ],
+    });
+  });
+
+  it("rejects an empty target list", () => {
+    expect(() =>
+      parseSettings("command: pi\ntargets: []\nreasoning: h\n", "s"),
+    ).toThrow('setting "targets" needs at least one target');
+  });
+
+  it("rejects a target without a provider", () => {
+    expect(() =>
+      parseSettings("command: pi\ntargets: [GLM-5.2]\nreasoning: h\n", "s"),
+    ).toThrow('target "GLM-5.2" must be provider/model');
+  });
+
+  it("rejects a target without a model", () => {
+    expect(() =>
+      parseSettings("command: pi\ntargets: [zai/]\nreasoning: h\n", "s"),
+    ).toThrow('target "zai/" must be provider/model');
+  });
+
+  it("rejects the legacy model key beside the targets list", () => {
+    expect(() =>
+      parseSettings(
+        "command: pi\ntargets: [zai/GLM-5.2]\nmodel: m\nreasoning: h\n",
+        "s",
+      ),
+    ).toThrow('setting "targets" cannot be combined with "model"/"provider"');
+  });
+
+  it("rejects the legacy provider key beside the targets list", () => {
+    expect(() =>
+      parseSettings(
+        "command: pi\ntargets: [zai/GLM-5.2]\nprovider: or\nreasoning: h\n",
+        "s",
+      ),
+    ).toThrow('setting "targets" cannot be combined with "model"/"provider"');
+  });
+
+  it("names the settings file in a malformed-target error", () => {
+    expect(() =>
+      parseSettings("command: pi\ntargets: [broken]\nreasoning: h\n", "my.yml"),
+    ).toThrow(
+      'invalid agent settings at my.yml: target "broken" must be provider/model',
+    );
   });
 
   it("parses an explicit isolate: true setting", () => {
@@ -635,6 +696,34 @@ describe("agentArgs", () => {
       "--print",
       "PROMPT",
     ]);
+  });
+});
+
+describe("settingsForTarget", () => {
+  it("passes the target's own provider to the argv", () => {
+    const settings = parseSettings(
+      "command: pi\nmodel: m\nprovider: zai\nreasoning: h\n",
+      "s",
+    );
+    const args = agentArgs(
+      settingsForTarget(settings, { provider: "or", model: "m2" }),
+      "PROMPT",
+    );
+
+    expect(args[args.indexOf("--provider") + 1]).toBe("or");
+  });
+
+  it("omits the provider flag for a target without one", () => {
+    const settings = parseSettings(
+      "command: pi\nmodel: m\nprovider: zai\nreasoning: h\n",
+      "s",
+    );
+    const args = agentArgs(
+      settingsForTarget(settings, { model: "m2" }),
+      "PROMPT",
+    );
+
+    expect(args).not.toContain("--provider");
   });
 });
 

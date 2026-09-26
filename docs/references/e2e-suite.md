@@ -104,8 +104,11 @@ e2e run or diagnosing a failing one.
   only its own post-baseline note; two successful writers leave both
   worktrees at one remote main with no live lease (the issue's
   verification gate); an agent failure whose edits are kept retains
-  the lease until a manual exact-OID takeover and a resolved fix
-  surface; and a proposed source removal stops the cycle with a
+  the lease as the fifteen-minute dead-man window (issue #397) —
+  the logged expiry reads back live through `writer-lease status`,
+  and a racing second writer is refused without moving the ref —
+  until a manual exact-OID takeover and a resolved fix surface; and
+  a proposed source removal stops the cycle with a
   receipt before `raw/` is touched, with the confirmed
   `--removal-receipt` rerun processing it; a scheduled shared-mode
   run refuses proposed removals before mutation (it can never supply

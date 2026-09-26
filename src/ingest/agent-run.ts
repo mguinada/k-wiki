@@ -1,6 +1,8 @@
 /**
  * The agent run primitives: AgentRunner, spawnAgent (non-interactive
- * child run with timeout and output cap), and readPrompt. Shared by
+ * child run with timeout and output cap), runAgentTargets (the
+ * ordered ingest target list tried in order over spawnAgent, with
+ * the no-kept-output retry gate), and readPrompt. Shared by
  * wiki-ingest, wiki-sync, wiki-query, and k-wiki (extracted from
  * wiki-ingest.ts, issue #129); the stderr progress sink lives in
  * cli/progress.ts.
@@ -9,6 +11,17 @@
 import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { pluralized } from "../cli/shared.ts";
+import { changedPaths } from "../data/git.ts";
+import {
+  type AgentSettings,
+  type AgentTarget,
+  agentArgs,
+  agentTargets,
+  formatAgentInvocation,
+  settingsForTarget,
+  targetLabel,
+} from "./agent-settings.ts";
+import type { PreRunState } from "./guardrails.ts";
 
 /** How the agent is invoked; injectable for tests. */
 export type AgentRunner = (
@@ -109,6 +122,92 @@ export function spawnAgent(
       reject(new Error(`agent ${why}: ${tail(errText)}`));
     });
   });
+}
+
+/** The final error of a failed targets-list run: every tried target
+ *  named in order. A legacy single-target run keeps its raw error. */
+function labeledFailure(
+  settings: AgentSettings,
+  failures: readonly string[],
+  cause: unknown,
+): unknown {
+  if (settings.targets === undefined) {
+    return cause;
+  }
+
+  return new Error(`agent targets failed: ${failures.join("; ")}`, {
+    cause,
+  });
+}
+
+export async function runAgentTargets(
+  settings: AgentSettings,
+  prompt: string,
+  options: {
+    readonly root: string;
+    readonly environment: NodeJS.ProcessEnv;
+    readonly timeoutMs?: number | undefined;
+    readonly pre: PreRunState;
+    readonly onProgress: (message: string) => void;
+    readonly runAgent: AgentRunner;
+  },
+): Promise<{ stdout: string; agentError: unknown; target: AgentTarget }> {
+  const targets = agentTargets(settings);
+  const first = targets[0];
+
+  if (first === undefined) {
+    throw new Error("agent settings need at least one target");
+  }
+
+  const failures: string[] = [];
+  let stdout = "";
+  let agentError: unknown;
+  let target = first;
+
+  for (const [index, current] of targets.entries()) {
+    target = current;
+    const targetSettings = settingsForTarget(settings, target);
+
+    options.onProgress(
+      `wiki-ingest: invoking agent: ${formatAgentInvocation(targetSettings)}`,
+    );
+
+    try {
+      ({ stdout } = await options.runAgent(
+        targetSettings.command,
+        agentArgs(targetSettings, prompt),
+        {
+          cwd: options.root,
+          env: options.environment,
+          timeoutMs: options.timeoutMs,
+        },
+      ));
+      agentError = undefined;
+      break;
+    } catch (error) {
+      agentError = error;
+      const reason = error instanceof Error ? error.message : String(error);
+      failures.push(`${targetLabel(target)}: ${reason}`);
+
+      if (
+        index === targets.length - 1 ||
+        (await changedPaths(options.root, options.environment, options.pre))
+          .length > 0
+      ) {
+        break;
+      }
+
+      options.onProgress(
+        `wiki-ingest: falling back to ${targetLabel(targets[index + 1] ?? target)} from ${targetLabel(target)}: ${reason}`,
+      );
+    }
+  }
+
+  if (agentError !== undefined) {
+    agentError = labeledFailure(settings, failures, agentError);
+  }
+
+  return { stdout, agentError, target };
 }
 
 export async function readPrompt(path: string): Promise<string> {
