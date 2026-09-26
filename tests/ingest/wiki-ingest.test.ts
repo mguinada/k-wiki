@@ -110,6 +110,166 @@ describe("runWikiIngest", () => {
     expect(args[args.indexOf("--provider") + 1]).toBe("zai");
   });
 
+  it("falls back to the next target after a startup failure", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+    const progress: string[] = [];
+    let attempts = 0;
+
+    await writeFile(
+      h.settingsPath,
+      "command: pi\ntargets: [zai/GLM-5.2, openrouter/moonshotai/kimi-k2.6]\nreasoning: high\n",
+    );
+    await runWikiIngest({
+      ...optionsFor(h, { onProgress: (message) => progress.push(message) }),
+      runAgent: async (_command, _args) => {
+        attempts += 1;
+
+        if (attempts === 1) {
+          throw new Error("provider unavailable");
+        }
+
+        return { stdout: "fallback output", stderr: "" };
+      },
+    });
+
+    expect(attempts).toBe(2);
+  });
+
+  it("does not fall back after a failed target keeps output", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+    let attempts = 0;
+
+    await writeFile(
+      h.settingsPath,
+      "command: pi\ntargets: [zai/GLM-5.2, openrouter/moonshotai/kimi-k2.6]\nreasoning: high\n",
+    );
+    await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: async (_command, _args, options) => {
+        attempts += 1;
+        await writeFile(join(options.cwd, "wiki", "kept.md"), "kept\n");
+        throw new Error("provider failed after output");
+      },
+    }).catch(() => undefined);
+
+    expect(attempts).toBe(1);
+  });
+
+  it("does not fall back when a failed target deletes a pre-run untracked page", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+    let attempts = 0;
+
+    await writeFile(join(h.dataRoot, "wiki", "Kept.md"), "# kept\n");
+    await writeFile(
+      h.settingsPath,
+      "command: pi\ntargets: [zai/GLM-5.2, openrouter/moonshotai/kimi-k2.6]\nreasoning: high\n",
+    );
+    await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: async (_command, _args, options) => {
+        attempts += 1;
+        await rm(join(options.cwd, "wiki", "Kept.md"));
+        throw new Error("deleted pre-run work");
+      },
+    }).catch(() => undefined);
+
+    expect(attempts).toBe(1);
+  });
+
+  it("logs the target and reason when falling back", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+    const progress: string[] = [];
+
+    await writeFile(
+      h.settingsPath,
+      "command: pi\ntargets: [zai/GLM-5.2, openrouter/moonshotai/kimi-k2.6]\nreasoning: high\n",
+    );
+    await runWikiIngest({
+      ...optionsFor(h, { onProgress: (message) => progress.push(message) }),
+      runAgent: async (_command, args) => {
+        if (args.includes("GLM-5.2")) {
+          throw new Error("provider unavailable");
+        }
+
+        return { stdout: "fallback output", stderr: "" };
+      },
+    });
+
+    expect(progress).toContain(
+      "wiki-ingest: falling back to openrouter/moonshotai/kimi-k2.6 from zai/GLM-5.2: provider unavailable",
+    );
+  });
+
+  it("names every tried target in order when the target list is exhausted", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    await writeFile(
+      h.settingsPath,
+      "command: pi\ntargets: [zai/GLM-5.2, openrouter/moonshotai/kimi-k2.6]\nreasoning: high\n",
+    );
+
+    await expect(
+      runWikiIngest({
+        ...optionsFor(h),
+        runAgent: async () => {
+          throw new Error("provider unavailable");
+        },
+      }),
+    ).rejects.toThrow(
+      "agent targets failed: zai/GLM-5.2: provider unavailable; openrouter/moonshotai/kimi-k2.6: provider unavailable",
+    );
+  });
+
+  it("names the single tried target when the retry gate blocks the fallback", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    await writeFile(
+      h.settingsPath,
+      "command: pi\ntargets: [zai/GLM-5.2, openrouter/moonshotai/kimi-k2.6]\nreasoning: high\n",
+    );
+
+    await expect(
+      runWikiIngest({
+        ...optionsFor(h),
+        runAgent: async (_command, _args, options) => {
+          await writeFile(
+            join(options.cwd, "wiki", "kept.md"),
+            wikiPage("Kept"),
+          );
+          throw new Error("provider failed after output");
+        },
+      }),
+    ).rejects.toThrow(
+      "agent targets failed: zai/GLM-5.2: provider failed after output",
+    );
+  });
+
+  it("attributes the run digest to the target that produced the output", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    await writeFile(
+      h.settingsPath,
+      "command: pi\ntargets: [zai/GLM-5.2, openrouter/moonshotai/kimi-k2.6]\nreasoning: high\n",
+    );
+
+    const result = await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: async (_command, args) => {
+        if (args.includes("GLM-5.2")) {
+          throw new Error("provider unavailable");
+        }
+
+        return { stdout: "fallback output", stderr: "" };
+      },
+    });
+
+    if (result.status !== "ran") {
+      throw new Error("expected a ran ingest");
+    }
+
+    expect(result.digest).toContain("model `moonshotai/kimi-k2.6`");
+  });
+
   it("passes the --model flag from settings", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
 

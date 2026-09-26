@@ -34,12 +34,17 @@ import {
   type Manifest,
   parseManifest,
 } from "../sync/manifest.ts";
-import { type AgentRunner, readPrompt, spawnAgent } from "./agent-run.ts";
+import {
+  type AgentRunner,
+  readPrompt,
+  runAgentTargets,
+  spawnAgent,
+} from "./agent-run.ts";
 import {
   type AgentSettings,
-  agentArgs,
-  formatAgentInvocation,
+  type AgentTarget,
   loadAgentSettings,
+  settingsForTarget,
 } from "./agent-settings.ts";
 import { formatDigest, writeFailureDigest } from "./digest.ts";
 import {
@@ -427,23 +432,21 @@ interface AgentRun {
   readonly pre: PreRunState;
   readonly stdout: string;
   readonly agentError: unknown;
+  readonly target: AgentTarget;
 }
 
 /** The spawn step: capture the pre-run state, invoke the agent under
- *  its heartbeat, and hold the outcome for the guardrail step. */
+ *  its heartbeat, and hold the outcome for the guardrail step — an
+ *  ordered target list is retried only while a failed target left no
+ *  output or working-tree surface. */
 async function spawnStep(
   inputs: RunInputs,
   mode: RunMode,
   composed: string,
 ): Promise<AgentRun> {
   const { dataRoot, env, now, onProgress } = inputs.run;
-  const args = agentArgs(inputs.settings, composed);
   const runAgent = inputs.options.runAgent ?? spawnAgent;
   const pre = await capturePreRunState(dataRoot, env);
-
-  onProgress(
-    `wiki-ingest: mode ${mode.mode}, invoking agent: ${formatAgentInvocation(inputs.settings)}`,
-  );
 
   const heartbeat = startHeartbeat({
     mode: mode.mode,
@@ -452,26 +455,36 @@ async function spawnStep(
     onProgress,
   });
 
-  let stdout = "";
-  let agentError: unknown;
+  let result: {
+    stdout: string;
+    agentError: unknown;
+    target: AgentTarget;
+  };
 
   try {
-    ({ stdout } = await runAgent(inputs.settings.command, args, {
-      cwd: dataRoot,
-      env,
+    result = await runAgentTargets(inputs.settings, composed, {
+      root: dataRoot,
+      environment: env,
       timeoutMs: inputs.options.timeoutMs,
-    }));
-  } catch (error) {
-    agentError = error;
+      pre,
+      onProgress: (message) =>
+        onProgress(
+          message.replace(
+            "wiki-ingest: invoking agent:",
+            `wiki-ingest: mode ${mode.mode}, invoking agent:`,
+          ),
+        ),
+      runAgent,
+    });
   } finally {
     clearInterval(heartbeat);
   }
 
-  if (agentError === undefined) {
+  if (result.agentError === undefined) {
     onProgress("wiki-ingest: agent finished");
   }
 
-  return { pre, stdout, agentError };
+  return { pre, ...result };
 }
 
 /** The digest destination of this run, under the outputs dir. */
@@ -593,7 +606,7 @@ async function guardrailStep(
     startedAt,
     mode: mode.mode,
     promptFile: `prompts/${mode.promptFile}`,
-    settings: inputs.settings,
+    settings: settingsForTarget(inputs.settings, agent.target),
     diff: change.diff,
     agentOutput: agent.stdout,
     failure,
@@ -623,7 +636,7 @@ async function successStep(
     startedAt: checked.startedAt,
     mode: mode.mode,
     promptFile: `prompts/${mode.promptFile}`,
-    settings: inputs.settings,
+    settings: settingsForTarget(inputs.settings, agent.target),
     diff: change.diff,
     pages,
     directSet: prompt.directSet,

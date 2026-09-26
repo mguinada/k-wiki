@@ -13,15 +13,22 @@ import { pathExists, pluralized } from "../cli/shared.ts";
 import { expandHome } from "../sync/config.ts";
 import { unquote } from "../wiki/pages.ts";
 
+export interface AgentTarget {
+  readonly provider?: string;
+  readonly model: string;
+}
+
 export interface AgentSettings {
   /** Agent CLI command; run non-interactively in the data repo root. */
   readonly command: string;
-  /** Passed to the agent as `--model`. */
+  /** Passed to the agent as `--model`; the first target's model. */
   readonly model: string;
   /** Reasoning level; passed to the agent as `--thinking`. */
   readonly reasoning: string;
-  /** Passed to the agent as `--provider` when set. */
+  /** Passed to the agent as `--provider` when set; the first target's provider. */
   readonly provider?: string;
+  /** Ordered provider/model targets for ingest fallback. */
+  readonly targets?: readonly AgentTarget[];
   /** False opts out of the pi isolation flags (issue #118);
    *  unset means isolated — the safe default. Agent-agnostic: the
    *  setting becomes flags at the spawn site (agentArgs), so a
@@ -44,16 +51,37 @@ export interface AgentSettings {
   readonly secondBrainDomains?: readonly string[];
 }
 
-const REQUIRED_KEYS = ["command", "model", "reasoning"] as const;
-const OPTIONAL_KEYS = ["provider", "isolate"] as const;
+const REQUIRED_KEYS = ["command", "reasoning"] as const;
+const OPTIONAL_KEYS = ["provider", "model", "isolate"] as const;
 const DOMAIN_KEY = "secondBrain.domains";
+const TARGETS_KEY = "targets";
 const SKILLS_KEY = "isolate.skills";
 const EXTENSIONS_KEY = "isolate.extensions";
-const LIST_KEYS = [DOMAIN_KEY, SKILLS_KEY, EXTENSIONS_KEY] as const;
+const LIST_KEYS = [
+  DOMAIN_KEY,
+  SKILLS_KEY,
+  EXTENSIONS_KEY,
+  TARGETS_KEY,
+] as const;
 const SETTING_KEYS = [...REQUIRED_KEYS, ...OPTIONAL_KEYS] as const;
 
 type SettingKey = (typeof SETTING_KEYS)[number];
 type ListKey = (typeof LIST_KEYS)[number];
+
+function parseTarget(value: string, origin: string): AgentTarget {
+  const separator = value.indexOf("/");
+
+  if (separator < 1 || separator === value.length - 1) {
+    throw new Error(
+      `invalid agent settings at ${origin}: target ${JSON.stringify(value)} must be provider/model`,
+    );
+  }
+
+  return {
+    provider: value.slice(0, separator),
+    model: value.slice(separator + 1),
+  };
+}
 
 /** The items of a list-valued setting: an optional `[...]` wrapper,
  *  then comma-separated values (each optionally quoted). Empty
@@ -190,6 +218,12 @@ function recordList(
     );
   }
 
+  if (key === TARGETS_KEY && items.length === 0) {
+    throw new Error(
+      `invalid agent settings at ${origin}: setting ${JSON.stringify(TARGETS_KEY)} needs at least one target`,
+    );
+  }
+
   return items;
 }
 
@@ -215,9 +249,33 @@ function recordSetting(
   values.set(key, value);
 }
 
+/** The model/targets contract: exactly one of the two forms, never
+ *  both — a legacy scalar beside the list would be silently inert. */
+function validateTargetSettings(
+  values: Map<SettingKey, string>,
+  lists: Partial<Record<ListKey, readonly string[]>>,
+  origin: string,
+): void {
+  if (values.get("model") === undefined && lists[TARGETS_KEY] === undefined) {
+    throw new Error(
+      `invalid agent settings at ${origin}: missing setting "model" or "targets"`,
+    );
+  }
+
+  if (
+    lists[TARGETS_KEY] !== undefined &&
+    (values.has("model") || values.has("provider"))
+  ) {
+    throw new Error(
+      `invalid agent settings at ${origin}: setting ${JSON.stringify(TARGETS_KEY)} cannot be combined with "model"/"provider"`,
+    );
+  }
+}
+
 /** After the loop: every required key present, isolate a boolean. */
 function validateSettings(
   values: Map<SettingKey, string>,
+  lists: Partial<Record<ListKey, readonly string[]>>,
   origin: string,
 ): void {
   for (const key of REQUIRED_KEYS) {
@@ -228,6 +286,8 @@ function validateSettings(
     }
   }
 
+  validateTargetSettings(values, lists, origin);
+
   const isolate = values.get("isolate");
 
   if (isolate !== undefined && isolate !== "true" && isolate !== "false") {
@@ -237,20 +297,30 @@ function validateSettings(
   }
 }
 
-/** The AgentSettings the parsed map and lists describe. */
-function finalizeSettings(
+function targetList(
   values: Map<SettingKey, string>,
   lists: Partial<Record<ListKey, readonly string[]>>,
-): AgentSettings {
-  const provider = values.get("provider");
-  const isolate = values.get("isolate");
+  origin: string,
+): AgentTarget[] {
+  const configured = lists[TARGETS_KEY];
 
+  if (configured !== undefined) {
+    return configured.map((target) => parseTarget(target, origin));
+  }
+
+  const provider = values.get("provider");
+  const model = values.get("model") ?? "";
+
+  return provider === undefined ? [{ model }] : [{ provider, model }];
+}
+
+function optionalListSettings(
+  lists: Partial<Record<ListKey, readonly string[]>>,
+): Pick<
+  AgentSettings,
+  "secondBrainDomains" | "isolateSkills" | "isolateExtensions"
+> {
   return {
-    command: values.get("command") ?? "",
-    model: values.get("model") ?? "",
-    reasoning: values.get("reasoning") ?? "",
-    ...(provider !== undefined && { provider }),
-    ...(isolate !== undefined && { isolate: isolate === "true" }),
     ...(lists[DOMAIN_KEY] !== undefined && {
       secondBrainDomains: lists[DOMAIN_KEY],
     }),
@@ -263,14 +333,43 @@ function finalizeSettings(
   };
 }
 
+/** The AgentSettings the parsed map and lists describe. */
+function finalizeSettings(
+  values: Map<SettingKey, string>,
+  lists: Partial<Record<ListKey, readonly string[]>>,
+  origin: string,
+): AgentSettings {
+  const configuredTargets = lists[TARGETS_KEY];
+  const targets = targetList(values, lists, origin);
+  const primary = targets[0];
+
+  if (primary === undefined) {
+    throw new Error("agent settings need at least one target");
+  }
+
+  const isolate = values.get("isolate");
+
+  return {
+    command: values.get("command") ?? "",
+    model: primary.model,
+    reasoning: values.get("reasoning") ?? "",
+    ...(primary.provider !== undefined && { provider: primary.provider }),
+    ...(configuredTargets !== undefined && { targets }),
+    ...(isolate !== undefined && { isolate: isolate === "true" }),
+    ...optionalListSettings(lists),
+  };
+}
+
 /**
  * Parse the settings file: a YAML subset of top-level `key: value`
  * scalars, `#` comments on their own line or trailing the value
  * (outside quotes), and optionally quoted values — plus the
  * list-valued keys
- * `secondBrain.domains`, `isolate.skills`, and `isolate.extensions`.
- * Anything else (nesting, other lists) is rejected so a typo cannot
- * silently change the agent configuration.
+ * `secondBrain.domains`, `isolate.skills`, and `isolate.extensions`, plus
+ * `targets` as comma-separated provider/model pairs for ingest fallback.
+ * Anything else (nesting, other lists, legacy `model`/`provider` beside
+ * `targets`) is rejected so a typo cannot silently change the agent
+ * configuration.
  */
 export function parseSettings(text: string, origin: string): AgentSettings {
   const values = new Map<SettingKey, string>();
@@ -290,9 +389,9 @@ export function parseSettings(text: string, origin: string): AgentSettings {
     }
   }
 
-  validateSettings(values, origin);
+  validateSettings(values, lists, origin);
 
-  return finalizeSettings(values, lists);
+  return finalizeSettings(values, lists, origin);
 }
 
 /** The pi isolation flags (issue #118): mechanically disable every
@@ -327,6 +426,36 @@ function whitelistFlags(settings: AgentSettings): string[] {
  *  `--print` payload. With `isolate: false` the argv is
  *  byte-identical to the pre-isolation one — whitelist keys
  *  ignored. */
+export function settingsForTarget(
+  settings: AgentSettings,
+  target: AgentTarget,
+): AgentSettings {
+  const { provider: _baseProvider, ...rest } = settings;
+
+  return {
+    ...rest,
+    model: target.model,
+    ...(target.provider !== undefined && { provider: target.provider }),
+  };
+}
+
+export function targetLabel(target: AgentTarget): string {
+  return target.provider === undefined
+    ? target.model
+    : `${target.provider}/${target.model}`;
+}
+
+export function agentTargets(settings: AgentSettings): readonly AgentTarget[] {
+  return (
+    settings.targets ?? [
+      {
+        ...(settings.provider !== undefined && { provider: settings.provider }),
+        model: settings.model,
+      },
+    ]
+  );
+}
+
 export function agentArgs(settings: AgentSettings, prompt: string): string[] {
   return [
     ...(settings.isolate === false

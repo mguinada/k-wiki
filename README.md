@@ -982,9 +982,16 @@ hardcoded:
 
 ```yaml
 command: pi        # agent CLI, run non-interactively in the data repo
-model: GLM-5.2     # passed as --model
+targets: [zai/GLM-5.2, openrouter/moonshotai/kimi-k2.6]
 reasoning: high    # pi thinking level, passed as --thinking
 ```
+
+`targets` is an ordered provider/model list: the first entry is the
+primary target, and when a target fails before producing any kept
+output the next entry is tried — once a target keeps output the run is
+never retried, and each tried target gets the full `--timeout` budget.
+The single-target legacy form (`provider:` and `model:` scalars, as in
+the instances above) remains valid; the two forms cannot be combined.
 
 Unless `isolate: false` opts out, every spawned ingest and lint run
 is isolated from the host's global agent setup: the
