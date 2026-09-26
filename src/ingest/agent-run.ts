@@ -16,6 +16,7 @@ import {
   type AgentSettings,
   type AgentTarget,
   agentArgs,
+  agentCommandOverride,
   agentTargets,
   formatAgentInvocation,
   settingsForTarget,
@@ -164,17 +165,27 @@ export async function runAgentTargets(
   let agentError: unknown;
   let target = first;
 
+  // A launcher that already resolved the agent binary to an absolute
+  // path (the scheduled wrapper, issue #399) hands it over through
+  // the environment; it wins over the settings' bare command name,
+  // which the launchd PATH cannot resolve.
+  const override = agentCommandOverride(options.environment);
+
   for (const [index, current] of targets.entries()) {
     target = current;
     const targetSettings = settingsForTarget(settings, target);
+    const command = override ?? targetSettings.command;
 
     options.onProgress(
-      `wiki-ingest: invoking agent: ${formatAgentInvocation(targetSettings)}`,
+      `wiki-ingest: invoking agent: ${formatAgentInvocation({
+        ...targetSettings,
+        command,
+      })}`,
     );
 
     try {
       ({ stdout } = await options.runAgent(
-        targetSettings.command,
+        command,
         agentArgs(targetSettings, prompt),
         {
           cwd: options.root,

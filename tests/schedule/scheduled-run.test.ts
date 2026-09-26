@@ -11,17 +11,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it, vi } from "vitest";
+import { AGENT_COMMAND_ENV } from "../../src/cli/env.ts";
+import { buildScheduledEnv } from "../../src/schedule/repo-script.ts";
 import {
-  appendLog,
-  buildScheduledEnv,
-  createRunLog,
   main,
   parseScheduledRunArgs,
   resolveDataRoot,
-  rotateLogIfNeeded,
   runScheduledCycle,
   type ScheduledRunOptions,
-  scheduledLogPath,
 } from "../../src/schedule/scheduled-run.ts";
 import { acquireLock, releaseLock } from "../../src/sync/run-lock.ts";
 
@@ -787,74 +784,6 @@ describe("resolveDataRoot", () => {
   });
 });
 
-describe("appendLog", () => {
-  it("never rejects when the log path is unwritable", async () => {
-    const dir = await tempDir();
-    const blocker = join(dir, "blocker");
-    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
-
-    await writeFile(blocker, "not a dir");
-
-    try {
-      await expect(
-        appendLog(join(blocker, "nested", "run.log"), "line"),
-      ).resolves.toBeUndefined();
-    } finally {
-      errors.mockRestore();
-      await rm(dir, { recursive: true, force: true });
-    }
-  });
-
-  it("rotates a log that has reached 5 MiB to .1 before appending", async () => {
-    const dir = await tempDir();
-    const logPath = join(dir, "scheduled-run.log");
-
-    await writeFile(logPath, "x".repeat(5 * 1024 * 1024 + 1));
-    await appendLog(logPath, "fresh line");
-
-    const [rotated, fresh] = await Promise.all([
-      readFile(`${logPath}.1`, "utf8"),
-      readFile(logPath, "utf8"),
-    ]);
-
-    expect([rotated.length, fresh]).toEqual([
-      5 * 1024 * 1024 + 1,
-      "fresh line\n",
-    ]);
-
-    await rm(dir, { recursive: true, force: true });
-  });
-});
-
-describe("scheduledLogPath", () => {
-  it("logs to ~/Library/Logs/k-wiki on macOS", () => {
-    expect(scheduledLogPath("/Users/me", "darwin")).toBe(
-      "/Users/me/Library/Logs/k-wiki/scheduled-run.log",
-    );
-  });
-
-  it("logs to the XDG state dir elsewhere", () => {
-    expect(scheduledLogPath("/home/me", "linux")).toBe(
-      "/home/me/.local/state/k-wiki/logs/scheduled-run.log",
-    );
-  });
-});
-
-describe("rotateLogIfNeeded", () => {
-  it("keeps a log below the rotation threshold in place", async () => {
-    const dir = await tempDir();
-    const logPath = join(dir, "scheduled-run.log");
-
-    await writeFile(logPath, "small");
-    await rotateLogIfNeeded(logPath, 1024);
-
-    await expect(readFile(logPath, "utf8")).resolves.toBe("small");
-    await expect(readFile(`${logPath}.1`, "utf8")).rejects.toThrow();
-
-    await rm(dir, { recursive: true, force: true });
-  });
-});
-
 describe("runScheduledCycle with the real wiki-sync spawner", () => {
   it("streams the child's stdout and stderr into the log on success", async () => {
     const dir = await tempDir();
@@ -1393,145 +1322,6 @@ describe("gitStdout defensiveness", () => {
   });
 });
 
-describe("createRunLog", () => {
-  it("holds the next line back while one append is in flight", async () => {
-    let releaseFirst: () => void = () => {};
-    const gate = new Promise<void>((resolveGate) => {
-      releaseFirst = resolveGate;
-    });
-    const started: string[] = [];
-    const append = async (_logPath: string, line: string): Promise<void> => {
-      started.push(line);
-
-      if (line === "first") {
-        await gate;
-      }
-    };
-    const runLog = createRunLog("/tmp/unused.log", append);
-
-    runLog.log("first");
-    runLog.log("second");
-    await new Promise((resolve) => setTimeout(resolve, 20));
-
-    expect(started).toEqual(["first"]);
-
-    releaseFirst();
-    await runLog.flush();
-  });
-
-  it("records queued lines in arrival order once the gate opens", async () => {
-    let releaseFirst: () => void = () => {};
-    const gate = new Promise<void>((resolveGate) => {
-      releaseFirst = resolveGate;
-    });
-    const appended: string[] = [];
-    const append = async (_logPath: string, line: string): Promise<void> => {
-      if (line === "first") {
-        await gate;
-      }
-
-      appended.push(line);
-    };
-    const runLog = createRunLog("/tmp/unused.log", append);
-
-    runLog.log("first");
-    runLog.log("second");
-    runLog.log("third");
-    releaseFirst();
-    await runLog.flush();
-
-    expect(appended).toEqual(["first", "second", "third"]);
-  });
-
-  it("writes every queued line through appendLog into the file", async () => {
-    const dir = await tempDir();
-    const logPath = join(dir, "run.log");
-    const lines = Array.from({ length: 50 }, (_, index) => `line-${index}`);
-    const runLog = createRunLog(logPath);
-
-    for (const line of lines) {
-      runLog.log(line);
-    }
-
-    await runLog.flush();
-
-    expect(
-      (await readFile(logPath, "utf8")).split("\n").filter(Boolean),
-    ).toEqual(lines);
-
-    await rm(dir, { recursive: true, force: true });
-  });
-
-  it("resolves flush immediately when nothing was logged", async () => {
-    const runLog = createRunLog("/tmp/unused.log");
-
-    await expect(runLog.flush()).resolves.toBeUndefined();
-  });
-});
-
-describe("appendLog failure reporting", () => {
-  it("reports a failed log write to stderr", async () => {
-    const dir = await tempDir();
-    const errors: string[] = [];
-    const spy = vi
-      .spyOn(console, "error")
-      .mockImplementation((...parts: unknown[]) =>
-        errors.push(parts.join(" ")),
-      );
-
-    try {
-      await appendLog(dir, "a line that cannot be written");
-    } finally {
-      spy.mockRestore();
-    }
-
-    expect(errors.join("\n")).toContain("log write failed");
-
-    await rm(dir, { recursive: true, force: true });
-  });
-});
-
-describe("rotateLogIfNeeded default threshold", () => {
-  it("keeps a one-byte log in place", async () => {
-    const dir = await tempDir();
-    const logPath = join(dir, "scheduled-run.log");
-
-    await writeFile(logPath, "x");
-    await rotateLogIfNeeded(logPath);
-
-    await expect(readFile(logPath, "utf8")).resolves.toBe("x");
-    await expect(readFile(`${logPath}.1`, "utf8")).rejects.toThrow();
-
-    await rm(dir, { recursive: true, force: true });
-  });
-
-  it("keeps a six-kilobyte log in place", async () => {
-    const dir = await tempDir();
-    const logPath = join(dir, "scheduled-run.log");
-
-    await writeFile(logPath, "x".repeat(6 * 1024));
-    await rotateLogIfNeeded(logPath);
-
-    await expect(readFile(`${logPath}.1`, "utf8")).rejects.toThrow();
-
-    await rm(dir, { recursive: true, force: true });
-  });
-
-  it("rotates a log of exactly five MiB", async () => {
-    const dir = await tempDir();
-    const logPath = join(dir, "scheduled-run.log");
-
-    await writeFile(logPath, "x".repeat(5 * 1024 * 1024));
-    await rotateLogIfNeeded(logPath);
-
-    await expect(readFile(`${logPath}.1`, "utf8")).resolves.toBe(
-      "x".repeat(5 * 1024 * 1024),
-    );
-
-    await rm(dir, { recursive: true, force: true });
-  });
-});
-
 describe("runScheduledCycle streamed output hygiene", () => {
   it("drops blank lines from the streamed child output", async () => {
     const dir = await tempDir();
@@ -1840,5 +1630,179 @@ describe("runScheduledCycle heartbeat (issue #362)", () => {
     );
 
     await rm(dir, { recursive: true, force: true });
+  });
+});
+
+describe("runScheduledCycle agent resolution (issue #399)", () => {
+  it("alerts and runs no stage when the agent binary cannot be resolved", async () => {
+    const dir = await tempDir();
+    const { git, runGitStep } = fakeGit();
+    const lines: string[] = [];
+
+    await writeFile(
+      join(dir, "settings.yml"),
+      "command: missing-agent-399\nmodel: M\nreasoning: low\n",
+    );
+
+    const outcome = await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      args: ["--settings", join(dir, "settings.yml")],
+      log: (line) => lines.push(line),
+    });
+
+    const text = lines.join("\n");
+
+    expect({
+      outcome,
+      gitCalls: git.calls,
+      lockExists: await stat(join(dir, ".scheduled-run.lock")).then(
+        () => true,
+        () => false,
+      ),
+      heartbeat: JSON.parse(
+        await readFile(join(dir, "outputs", "last-cycle.json"), "utf8"),
+      ).outcome,
+      alertedCommand: text.includes("ALERT agent missing-agent-399"),
+      namedLookup: text.includes("login shell"),
+    }).toEqual({
+      outcome: {
+        status: "failed",
+        error: expect.stringContaining("missing-agent-399"),
+      },
+      gitCalls: [],
+      lockExists: false,
+      heartbeat: "failed",
+      alertedCommand: true,
+      namedLookup: true,
+    });
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("resolves the agent before the quota gate is consulted", async () => {
+    const dir = await tempDir();
+    const quota = vi.fn(async () => ({ status: "proceed" as const }));
+
+    await writeFile(
+      join(dir, "settings.yml"),
+      "command: missing-agent-399\nmodel: M\nreasoning: low\n",
+    );
+
+    const outcome = await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep: fakeGit().runGitStep,
+      runQuotaPreflight: quota,
+      args: ["--settings", join(dir, "settings.yml")],
+      log: () => {},
+    });
+
+    expect({ outcome, quotaRuns: quota.mock.calls.length }).toEqual({
+      outcome: { status: "failed", error: expect.any(String) },
+      quotaRuns: 0,
+    });
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("hands the resolved absolute path to the spawned child environment", async () => {
+    const dir = await tempDir();
+    const repoRoot = join(dir, "repo");
+    const agentPath = join(repoRoot, "bin", "fake-agent");
+    const { runGitStep } = fakeGit();
+    const lines: string[] = [];
+
+    await mkdir(join(repoRoot, "bin"), { recursive: true });
+    await writeFile(agentPath, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    await writeFile(
+      join(repoRoot, "settings.yml"),
+      `command: ${agentPath}\nmodel: M\nreasoning: low\n`,
+    );
+    await writeFile(
+      join(repoRoot, "bin", "wiki-sync"),
+      'console.log("KWIKI_AGENT_COMMAND=" + process.env.KWIKI_AGENT_COMMAND);',
+    );
+
+    const outcome = await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      args: [],
+      log: (line) => lines.push(line),
+    });
+
+    const text = lines.join("\n");
+
+    expect({
+      outcome,
+      resolutionLine: text.includes(
+        `scheduled-run: agent ${agentPath} resolved to ${agentPath}`,
+      ),
+      childEnv: text.includes(`KWIKI_AGENT_COMMAND=${agentPath}`),
+    }).toEqual({
+      outcome: { status: "ok" },
+      resolutionLine: true,
+      childEnv: true,
+    });
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("proceeds without an override when agent settings cannot load", async () => {
+    const dir = await tempDir();
+    const { git, runGitStep } = fakeGit();
+    const lines: string[] = [];
+
+    const outcome = await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      args: ["--settings", join(dir, "absent-settings.yml")],
+      log: (line) => lines.push(line),
+    });
+
+    const text = lines.join("\n");
+
+    expect({
+      outcome,
+      gitCalls: git.calls,
+      skippedLine: text.includes("agent resolution skipped"),
+    }).toEqual({
+      outcome: { status: "ok" },
+      gitCalls: [
+        ["remote", "get-url", "origin"],
+        ["status", "--porcelain", "--untracked-files=no"],
+        ["pull", "--rebase"],
+        ["wiki-sync", "--settings", join(dir, "absent-settings.yml")],
+        ["push"],
+      ],
+      skippedLine: true,
+    });
+
+    await rm(dir, { recursive: true, force: true });
+  });
+});
+
+describe("buildScheduledEnv agent path (issue #399)", () => {
+  it("carries the launcher-resolved absolute path for spawned children", () => {
+    expect(
+      buildScheduledEnv("/home/me", "/node/bin/node", "/abs/pi")[
+        AGENT_COMMAND_ENV
+      ],
+    ).toBe("/abs/pi");
+  });
+
+  it("omits the agent key when the cycle resolved nothing", () => {
+    expect(
+      buildScheduledEnv("/home/me", "/node/bin/node")[AGENT_COMMAND_ENV],
+    ).toBeUndefined();
   });
 });

@@ -2,8 +2,10 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
+import { AGENT_COMMAND_ENV } from "../../src/cli/env.ts";
 import {
   agentArgs,
+  agentCommandOverride,
   formatAgentInvocation,
   isolationLabel,
   loadAgentSettings,
@@ -1262,3 +1264,23 @@ function dirnameOf(path: string): string {
 
   return separator === -1 ? "." : path.slice(0, separator) || "/";
 }
+
+describe("agentCommandOverride (issue #399)", () => {
+  it("names the environment key the launcher sets", () => {
+    expect(AGENT_COMMAND_ENV).toBe("KWIKI_AGENT_COMMAND");
+  });
+
+  it("returns the launcher-provided absolute path", () => {
+    expect(agentCommandOverride({ [AGENT_COMMAND_ENV]: "/abs/path/pi" })).toBe(
+      "/abs/path/pi",
+    );
+  });
+
+  it("returns undefined when the launcher provided nothing", () => {
+    expect(agentCommandOverride({})).toBeUndefined();
+  });
+
+  it("treats an empty value as no override", () => {
+    expect(agentCommandOverride({ [AGENT_COMMAND_ENV]: "" })).toBeUndefined();
+  });
+});

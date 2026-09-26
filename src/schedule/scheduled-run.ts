@@ -3,10 +3,13 @@
  * interval (issue #14, guide §18). One portable Node file — identical
  * on macOS/Linux/Windows; only the scheduler registration differs.
  *
- *   lockfile → quota pre-flight (an optional quota-axi probe may
- *   skip the tick before any stage) → git pull --rebase → (with
- *   --lint-full: wiki-lint --full, the weekly quality sweep, issue
- *   #359) → wiki-sync (gates + commit) → git push
+ *   lockfile → agent resolution (the settings' agent command
+ *   resolved to an absolute path, issue #399; unresolvable fails
+ *   the tick before any stage) → quota pre-flight (an optional
+ *   quota-axi probe may skip the tick before any stage) →
+ *   git pull --rebase → (with --lint-full: wiki-lint --full, the
+ *   weekly quality sweep, issue #359) → wiki-sync (gates + commit)
+ *   → git push
  *
  * Overlap guard (issue #14 decision 3; the lock itself now lives in
  * `src/sync/run-lock.ts`, shared with manual wiki-sync runs since
@@ -34,15 +37,16 @@
  *
  * Environment (issue #14, plist scope): launchd runs the job with an
  * explicit HOME and a minimal PATH; the wrapper extends PATH with the
- * node bin dir and the standard CLI install locations so the agent
- * CLI resolves without an interactive shell env.
+ * node bin dir and the standard CLI install locations so its own CLIs
+ * resolve, and resolves the agent binary to an absolute path (issue
+ * #399) — a bare agent name outside those dirs can never start, so
+ * the launcher finds it once (scheduled PATH, then the login shell)
+ * and hands the absolute path to every child through the environment.
  */
 
-import { spawn } from "node:child_process";
-import { mkdir, open, rename, stat } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import type { Readable } from "node:stream";
 import { cliFail, errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { pathExists, repoRoot } from "../cli/shared.ts";
@@ -66,37 +70,11 @@ import {
   quotaPreflight,
   quotaPreflightUnavailable,
 } from "./quota-preflight.ts";
+import { buildScheduledEnv, spawnRepoScript } from "./repo-script.ts";
+import { loginShell, resolveAgentPath } from "./resolve-agent.ts";
+import { createRunLog, scheduledLogPath } from "./run-log.ts";
 import { HELP } from "./scheduled-run-help.ts";
 import { runSharedPipeline, scheduledSharedMode } from "./shared-cycle.ts";
-
-/** The PATH a scheduled run gets: node's bin dir first (the wrapper
- *  and any sibling CLIs), then the standard install locations — the
- *  agent CLI resolves with no interactive shell env (issue #14).
- *  It also carries `KWIKI_RUN_LOCK_HELD=1`: this wrapper already
- *  holds the run lock across the whole cycle, so the spawned
- *  wiki-sync child must not re-acquire it (issue #313).
- *  ponytail: unix PATH layout; revisit when a Windows scheduler
- *  backend lands (issue #14 follow-up) — delimiter and dirs differ. */
-export function buildScheduledEnv(
-  home: string,
-  execPath: string,
-): NodeJS.ProcessEnv {
-  const nodeBin = dirname(execPath);
-
-  return {
-    HOME: home,
-    KWIKI_RUN_LOCK_HELD: "1",
-    PATH: [
-      nodeBin,
-      "/opt/homebrew/bin",
-      "/usr/local/bin",
-      "/usr/bin",
-      "/bin",
-      "/usr/sbin",
-      "/sbin",
-    ].join(":"),
-  };
-}
 
 /** The cycle's outcome. */
 export type CycleOutcome =
@@ -153,6 +131,9 @@ export interface ScheduledRunOptions {
   /** The full-sweep wiki-lint invocation; defaults to spawning node
    *  against the repo's bin/wiki-lint. Injected in tests. */
   readonly runLintFull?: (args: readonly string[]) => Promise<void>;
+  /** The agent-binary path probe (issue #399); defaults to the real
+   *  resolveAgentPath. Injected in tests. */
+  readonly resolveAgentPath?: typeof resolveAgentPath | undefined;
 }
 
 /**
@@ -228,10 +209,15 @@ export async function runScheduledCycle(
     };
   }
 
-  log(
-    `scheduled-run: ${stamp()} — ${lock === "took-over" ? "took over a stale lock; " : ""}starting cycle`,
-  );
+  log(`scheduled-run: ${stamp()} — ${cycleStartNote(lock)}`);
 
+  const agentStep = await resolveCycleAgentOrOutcome(options, fail, log);
+
+  if ("status" in agentStep) {
+    return agentStep;
+  }
+
+  const agentCommand = agentStep.agentCommand;
   const quota = await runQuotaGate(options, log);
 
   if (quota.skipReason !== undefined) {
@@ -241,7 +227,7 @@ export async function runScheduledCycle(
   }
 
   try {
-    await runStage(options, runGitStep, log);
+    await runStage(options, runGitStep, log, agentCommand);
   } catch (error) {
     return await fail(errorMessage(error), quota.preflight);
   }
@@ -297,6 +283,98 @@ interface QuotaGate {
   readonly preflight?: PreflightState;
 }
 
+/** The cycle's agent-resolution outcome (issue #399): resolved to an
+ *  absolute path, skipped (settings unreadable — the stage surfaces
+ *  the precise settings error), or unresolved (the cycle fails
+ *  before any stage, the shared-writer lease included). */
+type AgentResolution =
+  | { readonly kind: "resolved"; readonly command: string }
+  | { readonly kind: "skipped" }
+  | { readonly kind: "unresolved"; readonly error: string };
+
+/** The cycle's agent resolution (issue #399), folded to one decision
+ *  for the cycle: a failed outcome when the binary cannot be resolved
+ *  — the ALERT before any stage, lease included — else the absolute
+ *  command to hand the children, undefined when unreadable settings
+ *  defer the failure to the stage's settings error. */
+async function resolveCycleAgentOrOutcome(
+  options: ScheduledRunOptions,
+  fail: (error: string) => Promise<CycleOutcome>,
+  log: (line: string) => void,
+): Promise<CycleOutcome | { readonly agentCommand: string | undefined }> {
+  const agent = await resolveCycleAgentCommand(options, log);
+
+  if (agent.kind === "unresolved") {
+    return await fail(agent.error);
+  }
+
+  return {
+    agentCommand: agent.kind === "resolved" ? agent.command : undefined,
+  };
+}
+
+/** The cycle-start log line: names a stale-lock takeover, plain
+ *  start otherwise. */
+function cycleStartNote(lock: "busy" | "took-over" | "acquired"): string {
+  return lock === "took-over"
+    ? "took over a stale lock; starting cycle"
+    : "starting cycle";
+}
+
+/** The cycle's agent command, resolved to an absolute path
+ *  before any stage runs (issue #399): the launchd PATH cannot start
+ *  a bare agent name the standard dirs lack, so the launcher
+ *  resolves the settings' command once — scheduled PATH, then the
+ *  login shell — and hands the absolute path to every child through
+ *  the environment. Settings that cannot load skip the resolution:
+ *  the stage fails with the settings error, as before. */
+async function resolveCycleAgentCommand(
+  options: ScheduledRunOptions,
+  log: (line: string) => void,
+): Promise<AgentResolution> {
+  const shell = loginShell(process.env, process.platform);
+
+  let command: string;
+
+  try {
+    command = (await loadAgentSettings(settingsPathFor(options))).command;
+  } catch {
+    log(
+      "scheduled-run: agent settings unreadable — agent resolution skipped (the stage will surface the settings error)",
+    );
+
+    return { kind: "skipped" };
+  }
+
+  const resolved = await (options.resolveAgentPath ?? resolveAgentPath)(
+    command,
+    buildScheduledEnv(process.env.HOME ?? homedir(), process.execPath).PATH,
+    shell,
+  );
+
+  if (resolved === undefined) {
+    return {
+      kind: "unresolved",
+      error: `agent ${command} could not be resolved to an absolute path — looked in the scheduled PATH and via the ${shell} login shell; an unstartable agent never runs the cycle`,
+    };
+  }
+
+  log(`scheduled-run: agent ${command} resolved to ${resolved}`);
+
+  return { kind: "resolved", command: resolved };
+}
+
+/** The agent-settings path this cycle's children will load: the
+ *  --settings value the wrapper forwards, else the repo's default —
+ *  the same resolution the quota pre-flight uses. */
+function settingsPathFor(options: ScheduledRunOptions): string {
+  const parsed = parseScheduledRunArgs(options.args ?? []);
+
+  return (
+    parsed.values.get("--settings") ?? join(options.repoRoot, "settings.yml")
+  );
+}
+
 async function runQuotaGate(
   options: ScheduledRunOptions,
   log: (line: string) => void,
@@ -316,9 +394,7 @@ async function runQuotaCheck(
   options: ScheduledRunOptions,
   log: (line: string) => void,
 ): Promise<QuotaPreflightResult> {
-  const parsed = parseScheduledRunArgs(options.args ?? []);
-  const settingsPath =
-    parsed.values.get("--settings") ?? join(options.repoRoot, "settings.yml");
+  const settingsPath = settingsPathFor(options);
 
   try {
     const settings = await loadAgentSettings(settingsPath);
@@ -338,14 +414,17 @@ async function runQuotaCheck(
 
 /** One cycle's stages: shared mode runs the coordinator (no pull, no
  *  push — it finalizes remotely); local mode runs the pull → sweep →
- *  sync sequence and its push-with-retry. */
+ *  sync sequence and its push-with-retry. `agentCommand` is the
+ *  launcher-resolved absolute agent path (issue #399) handed to
+ *  every spawned child through the environment. */
 async function runStage(
   options: ScheduledRunOptions,
   runGitStep: NonNullable<ScheduledRunOptions["runGitStep"]>,
   log: (line: string) => void,
+  agentCommand: string | undefined,
 ): Promise<void> {
   if (await scheduledSharedMode(options)) {
-    await runSharedPipeline(options, log);
+    await runSharedPipeline(options, log, agentCommand);
 
     // The shared coordinator finalized remotely (branch advance and
     // lease release in one atomic push); a wrapper push here would
@@ -357,7 +436,7 @@ async function runStage(
     return;
   }
 
-  await runPipelineStages(options, runGitStep, log);
+  await runPipelineStages(options, runGitStep, log, agentCommand);
   await pushWithRetry(options.dataRoot, runGitStep, log);
 }
 
@@ -365,6 +444,7 @@ async function runPipelineStages(
   options: ScheduledRunOptions,
   runGitStep: NonNullable<ScheduledRunOptions["runGitStep"]>,
   log: (line: string) => void,
+  agentCommand: string | undefined,
 ): Promise<void> {
   await runGitStep(options.dataRoot, ["remote", "get-url", "origin"]);
   await pullWhenClean(options.dataRoot, runGitStep, log);
@@ -374,7 +454,13 @@ async function runPipelineStages(
     const runLintFull =
       options.runLintFull ??
       (async (lintArgs: readonly string[]) => {
-        await spawnRepoScript(options.repoRoot, "wiki-lint", lintArgs, log);
+        await spawnRepoScript(
+          options.repoRoot,
+          "wiki-lint",
+          lintArgs,
+          log,
+          agentCommand,
+        );
       });
 
     log(
@@ -389,7 +475,13 @@ async function runPipelineStages(
   const runSync =
     options.runSync ??
     (async (syncArgs: readonly string[]) => {
-      await spawnRepoScript(options.repoRoot, "wiki-sync", syncArgs, log);
+      await spawnRepoScript(
+        options.repoRoot,
+        "wiki-sync",
+        syncArgs,
+        log,
+        agentCommand,
+      );
     });
 
   await runSync(options.args ?? []);
@@ -506,154 +598,10 @@ async function pushWithRetry(
   }
 }
 
-/** Stream one child pipe into the log without tearing lines
- *  (issue #244): a chunk can end mid-line, so each pipe
- *  buffers its own tail and only complete `\n`-terminated lines are
- *  recorded; a final fragment without a newline is flushed at end. */
-function streamChildLines(source: Readable, log: (line: string) => void): void {
-  let pending = "";
-
-  source.setEncoding("utf8");
-  source.on("data", (chunk: string) => {
-    pending += chunk;
-    const cut = pending.lastIndexOf("\n");
-
-    if (cut === -1) {
-      return;
-    }
-
-    const complete = pending.slice(0, cut);
-    pending = pending.slice(cut + 1);
-
-    for (const line of complete.split("\n")) {
-      if (line !== "") {
-        log(line);
-      }
-    }
-  });
-  source.on("end", () => {
-    if (pending !== "") {
-      log(pending);
-      pending = "";
-    }
-  });
-}
-
 /** The weekly full sweep's default budget (issue #359): two hours,
  *  a per-invocation override — the cycles' 1800 s default never
  *  moves. */
 export const DEFAULT_LINT_FULL_TIMEOUT_MS = 7_200_000;
-
-/** Run one of the repo's bin/ scripts as a child with the scheduled
- *  env, streaming its stdout and stderr into the log. */
-export async function spawnRepoScript(
-  repoRoot: string,
-  name: string,
-  args: readonly string[],
-  log: (line: string) => void,
-): Promise<void> {
-  const env = buildScheduledEnv(
-    process.env.HOME ?? homedir(),
-    process.execPath,
-  );
-  const child = spawn(
-    process.execPath,
-    [join(repoRoot, "bin", name), ...args],
-    { env, stdio: ["ignore", "pipe", "pipe"] },
-  );
-
-  streamChildLines(child.stdout, log);
-  streamChildLines(child.stderr, log);
-
-  const code = await new Promise<number | null>((resolveCode, reject) => {
-    child.on("error", reject);
-    child.on("close", resolveCode);
-  });
-
-  if (code !== 0) {
-    // code is null exactly when a signal killed the child — name it
-    // instead of reporting "exited null" (issue #244).
-    throw new Error(
-      child.signalCode === null
-        ? `${name} exited ${code}`
-        : `${name} exited by signal ${child.signalCode}`,
-    );
-  }
-}
-
-/** The log file for this machine: `~/Library/Logs/k-wiki/` on macOS
- *  (the only scheduled platform today), the XDG state dir elsewhere. */
-export function scheduledLogPath(
-  home = homedir(),
-  platform: NodeJS.Platform = process.platform,
-): string {
-  return platform === "darwin"
-    ? join(home, "Library", "Logs", "k-wiki", "scheduled-run.log")
-    : join(home, ".local", "state", "k-wiki", "logs", "scheduled-run.log");
-}
-
-/** Rotate the log at 5 MiB: one previous generation (`.1`) is kept,
- *  older ones dropped — enough history for a personal wiki, no growth
- *  beyond ~10 MiB. */
-export async function rotateLogIfNeeded(
-  logPath: string,
-  maxBytes = 5 * 1024 * 1024,
-): Promise<void> {
-  const size = await stat(logPath).then(
-    (info) => info.size,
-    () => 0,
-  );
-
-  if (size >= maxBytes) {
-    await rename(logPath, `${logPath}.1`).catch(() => {});
-  }
-}
-
-/** Append one line to the run log, rotating first. Best-effort: a
- *  failed log write reports to stderr and never fails the cycle. */
-export async function appendLog(logPath: string, line: string): Promise<void> {
-  try {
-    await rotateLogIfNeeded(logPath);
-    await mkdir(dirname(logPath), { recursive: true });
-    await appendFileLine(logPath, line);
-  } catch (error) {
-    console.error(`scheduled-run: log write failed — ${errorMessage(error)}`);
-  }
-}
-
-/** The run's serialized log writer (issue #244): one append in
- *  flight, every line recorded in arrival order. */
-export interface RunLogWriter {
-  readonly log: (line: string) => void;
-  readonly flush: () => Promise<void>;
-}
-
-/** Serialize log appends through one queue: fire-and-forget appends
- *  raced each other and the rotation (two concurrent appends can both
- *  pass the 5 MiB check and both rename — one generation is lost),
- *  and interleaved opens recorded lines out of order. The queue
- *  keeps exactly one appendLog in flight and orders the rest; flush
- *  settles when the last line is on disk. */
-export function createRunLog(
-  logPath: string,
-  append: (logPath: string, line: string) => Promise<void> = appendLog,
-): RunLogWriter {
-  let tail: Promise<void> = Promise.resolve();
-
-  return {
-    log: (line: string): void => {
-      tail = tail.then(() => append(logPath, line));
-    },
-    flush: (): Promise<void> => tail,
-  };
-}
-
-async function appendFileLine(logPath: string, line: string): Promise<void> {
-  const handle = await open(logPath, "a");
-
-  await handle.writeFile(`${line}\n`);
-  await handle.close();
-}
 
 /** Print one usage error red on stderr and set the exit code
  *  (H-5: the shared rendering, like every sibling CLI). */
