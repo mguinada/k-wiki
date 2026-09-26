@@ -8,14 +8,18 @@
  */
 
 import { execFile } from "node:child_process";
-import { rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { runContext } from "../../src/cli/run-context.ts";
 import { runSharedCycle } from "../../src/writer/coordinator.ts";
 import { gitRunnerFor, lsRemoteOid } from "../../src/writer/git-remote.ts";
-import { observeLease, observeLeaseOid } from "../../src/writer/lease.ts";
+import {
+  type ObservedLease,
+  observeLease,
+  observeLeaseOid,
+} from "../../src/writer/lease.ts";
 import { acquireLease, fetchedTreeOid } from "../../src/writer/lease-ops.ts";
 import {
   enabledDataRepo,
@@ -291,6 +295,123 @@ describe("failure-rule lease retention", () => {
     // The retained log line names the shortened expiry.
     expect(
       progress.find((line) => line.includes("retained lease expires")),
+    ).toContain("2026-01-01T00:15:00.000Z");
+  }, 30000);
+
+  it("replaces the retained lease by exact OID, continuing the acquired token", async () => {
+    const world = await makeWriterWorld();
+    worlds.push(world);
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+    const { dataRoot } = cw;
+    const progress: string[] = [];
+    let observedMidRun: ObservedLease | undefined;
+
+    const error = await runSharedCycle(
+      optionsFor(cw, dataRoot, {
+        run: runContext({
+          rawDir: join(dataRoot, "raw"),
+          env: process.env,
+          now: NOW,
+          onProgress: (line: string) => progress.push(line),
+        }),
+        runSweep: async () => {
+          await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
+          observedMidRun = await observeLease(world.a.git, "origin", LEASE_REF);
+          throw new Error("agent stage blew up");
+        },
+      }),
+    ).catch((e: unknown) => e);
+
+    expect((error as Error).message).toContain("agent stage blew up");
+
+    const acquired = progress
+      .map((line) => /lease ([0-9a-f]{8}) acquired/.exec(line))
+      .find((match) => match !== null);
+
+    expect(observedMidRun).toBeDefined();
+
+    const retained = await observeLease(world.a.git, "origin", LEASE_REF);
+
+    expect(acquired).not.toBeNull();
+    expect(retained).toBeDefined();
+
+    // The ref moved off the observed lease commit and off the
+    // acquired one, yet kept the token and the renewal sequence —
+    // a CAS replacement, never release-then-re-acquire.
+    expect(retained?.oid).not.toBe(observedMidRun?.oid);
+    expect(retained?.oid.slice(0, 8)).not.toBe(acquired?.[1]);
+    expect(retained?.body.token).toBe(observedMidRun?.body.token);
+    expect(retained?.body.renewals).toBe(
+      (observedMidRun?.body.renewals ?? 0) + 1,
+    );
+    expect(retained?.body.expires).toBe("2026-01-01T00:15:00.000Z");
+  }, 30000);
+
+  it("shortens the retained lease when the cycle fails during finalization", async () => {
+    const world = await makeWriterWorld();
+    worlds.push(world);
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+    const { dataRoot } = cw;
+    const vault = cw.config.vaults[0];
+
+    if (vault === undefined) {
+      throw new Error("setup: the world has no vault");
+    }
+
+    // One new vault note: the sync stage projects it, so the cycle
+    // makes a content commit and enters the finalize phase. The
+    // stub prompts let the ingest agent stage complete.
+    await mkdir(join(vault.root, "Inbox"), { recursive: true });
+    await writeFile(
+      join(vault.root, "Inbox", "finalize-failure-note.md"),
+      "---\ntitle: Finalize failure\n---\n\ncontent\n",
+    );
+    await mkdir(join(cw.scratch, "prompts"), { recursive: true });
+    await writeFile(join(cw.scratch, "prompts", "ingest.md"), "FULL PROMPT");
+    await writeFile(
+      join(cw.scratch, "prompts", "incremental.md"),
+      "INCREMENTAL PROMPT",
+    );
+    await writeFile(join(cw.scratch, "prompts", "lint.md"), "LINT PROMPT");
+
+    // A publish mirror whose parent is a file: publish fails after
+    // the content commit exists, on a clean tree.
+    const blocker = join(cw.scratch, "blocker");
+    await writeFile(blocker, "not a directory\n");
+
+    const progress: string[] = [];
+
+    await expect(
+      runSharedCycle(
+        optionsFor(cw, dataRoot, {
+          config: {
+            ...cw.config,
+            publish: {
+              mirror: join(blocker, "mirror"),
+              include: ["**/*.md"],
+              root: undefined,
+            },
+          },
+          run: runContext({
+            rawDir: join(dataRoot, "raw"),
+            env: process.env,
+            now: NOW,
+            onProgress: (line: string) => progress.push(line),
+          }),
+        }),
+      ),
+    ).rejects.toThrow();
+
+    // The finalize-phase retention also shortens: the full-TTL lease
+    // became the fifteen-minute dead-man window, not a release.
+    const lease = await observeLease(world.a.git, "origin", LEASE_REF);
+
+    expect(lease).toBeDefined();
+    expect(lease?.body.expires).toBe("2026-01-01T00:15:00.000Z");
+    expect(
+      progress.find((line) =>
+        line.includes("cycle failed during finalization"),
+      ),
     ).toContain("2026-01-01T00:15:00.000Z");
   }, 30000);
 
