@@ -45,8 +45,8 @@ import {
 } from "../ingest/agent-settings.ts";
 import {
   type CycleOutcome,
-  type ScheduledRunOptions,
   resolveCycleAgentCommand,
+  type ScheduledRunOptions,
 } from "./scheduled-run.ts";
 import { scheduledSharedMode } from "./shared-cycle.ts";
 
