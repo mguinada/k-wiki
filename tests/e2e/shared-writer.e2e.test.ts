@@ -1064,3 +1064,116 @@ describe("shared-writer scheduler e2e (issue #390 tests 21-22)", () => {
     }
   }, 300000);
 });
+
+describe("scheduled-run credential pre-flight in shared-writer mode (issue #409)", () => {
+  /** A shared-mode world whose agent settings name a zai target and
+   *  keep the quota probe off (the credential gate is independent of
+   *  the quota gate), judged against a temp HOME whose pi auth store
+   *  is absent — so the env-var clause is the target's only route. */
+  async function makeZaiWorld(): Promise<World> {
+    const world = await makeWorld();
+    const home = join(world.root, "home");
+
+    await mkdir(home, { recursive: true });
+    await writeFile(
+      world.a.settingsPath,
+      `command: ${join(world.a.dataRoot, "stub-agent.mjs")}\nmodel: E2E-MODEL\nreasoning: low\nprovider: zai\nquotaPreflight: off\n`,
+    );
+
+    return world;
+  }
+
+  it("green-lights an env-var-only target — the wrapper env reaches the shared coordinator — and completes the cycle", async () => {
+    const world = await makeZaiWorld();
+
+    try {
+      const log = join(world.root, "scheduled-cred-env.log");
+      const result = await runCli(
+        join(import.meta.dirname ?? ".", "../../bin/scheduled-run"),
+        [
+          "--settings",
+          world.a.settingsPath,
+          world.a.configPath,
+          join(world.a.dataRoot, "raw"),
+        ],
+        {
+          env: {
+            HOME: join(world.root, "home"),
+            ZAI_API_KEY: "stub-key",
+            KWIKI_SCHEDULED_LOG: log,
+          },
+        },
+      );
+
+      expect(result.code).toBe(0);
+
+      const logText = await readFile(log, "utf8");
+
+      expect(logText).not.toContain("credential pre-flight skipped");
+      expect(logText).toContain(
+        "shared-writer mode — delegating to the coordinator",
+      );
+      expect(logText).toContain("shared-writer cycle complete");
+      expect(await remoteLeaseOid(world.remoteDir)).toBeUndefined();
+
+      const stamp = JSON.parse(
+        await readFile(
+          join(world.a.dataRoot, "outputs", "last-cycle.json"),
+          "utf8",
+        ),
+      );
+
+      expect(stamp.outcome).toBe("ok");
+    } finally {
+      await rm(world.root, { recursive: true, force: true });
+    }
+  }, 180000);
+
+  it("skips a credential-less shared-writer tick before the lease with the named reason", async () => {
+    const world = await makeZaiWorld();
+
+    try {
+      const before = await remoteHead(world.remoteDir);
+      const log = join(world.root, "scheduled-cred-skip.log");
+      const result = await runCli(
+        join(import.meta.dirname ?? ".", "../../bin/scheduled-run"),
+        [
+          "--settings",
+          world.a.settingsPath,
+          world.a.configPath,
+          join(world.a.dataRoot, "raw"),
+        ],
+        {
+          env: {
+            HOME: join(world.root, "home"),
+            ZAI_API_KEY: "",
+            KWIKI_SCHEDULED_LOG: log,
+          },
+        },
+      );
+
+      expect(result.code).toBe(0);
+
+      const logText = await readFile(log, "utf8");
+
+      expect(logText).toContain(
+        "credential pre-flight skipped — no authenticatable agent target — zai/E2E-MODEL: no ZAI_API_KEY in cycle env, no auth.json entry",
+      );
+      expect(logText).not.toContain("delegating to the coordinator");
+      expect(await remoteLeaseOid(world.remoteDir)).toBeUndefined();
+      expect(await remoteHead(world.remoteDir)).toBe(before);
+
+      const stamp = JSON.parse(
+        await readFile(
+          join(world.a.dataRoot, "outputs", "last-cycle.json"),
+          "utf8",
+        ),
+      );
+
+      expect(stamp.outcome).toBe("skipped");
+      expect(stamp.reason).toContain("ZAI_API_KEY");
+    } finally {
+      await rm(world.root, { recursive: true, force: true });
+    }
+  }, 120000);
+});

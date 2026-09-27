@@ -70,8 +70,10 @@ import {
   runLockPath,
 } from "../sync/run-lock.ts";
 import {
+  type AgentResolution,
   type CredentialPreflightResult,
   credentialGate,
+  resolveCycleInputsOrOutcome,
 } from "./credential-preflight.ts";
 import { writeCycleHeartbeat } from "./heartbeat.ts";
 import { notifyUser } from "./notify.ts";
@@ -85,7 +87,7 @@ import { buildScheduledEnv, spawnRepoScript } from "./repo-script.ts";
 import { loginShell, resolveAgentPath } from "./resolve-agent.ts";
 import { createRunLog, scheduledLogPath } from "./run-log.ts";
 import { HELP } from "./scheduled-run-help.ts";
-import { runSharedPipeline, scheduledSharedMode } from "./shared-cycle.ts";
+import { runSharedPipeline } from "./shared-cycle.ts";
 
 /** The cycle's outcome. */
 export type CycleOutcome =
@@ -301,50 +303,6 @@ interface QuotaGate {
   readonly preflight?: PreflightState;
 }
 
-/** The cycle's agent-resolution outcome (issue #399): resolved to an
- *  absolute path, skipped (settings unreadable — the stage surfaces
- *  the precise settings error), or unresolved (the cycle fails
- *  before any stage, the shared-writer lease included). */
-type AgentResolution =
-  | { readonly kind: "resolved"; readonly command: string }
-  | { readonly kind: "skipped" }
-  | { readonly kind: "unresolved"; readonly error: string };
-
-/** The cycle's inputs (issues #399, #409), folded to one decision:
- *  a failed outcome when the agent binary cannot be resolved (the
- *  ALERT before any stage, lease included) or the shared-writer
- *  marker is invalid (fail closed before any gate) — else the
- *  absolute command to hand the children (undefined when unreadable
- *  settings defer the failure to the stage's settings error) and
- *  the resolved mode, one marker read that also scopes the
- *  credential gate's env-var clause. */
-async function resolveCycleInputsOrOutcome(
-  options: ScheduledRunOptions,
-  fail: (error: string) => Promise<CycleOutcome>,
-  log: (line: string) => void,
-): Promise<
-  | CycleOutcome
-  | {
-      readonly agentCommand: string | undefined;
-      readonly sharedMode: boolean;
-    }
-> {
-  const agent = await resolveCycleAgentCommand(options, log);
-
-  if (agent.kind === "unresolved") {
-    return await fail(agent.error);
-  }
-
-  try {
-    return {
-      agentCommand: agent.kind === "resolved" ? agent.command : undefined,
-      sharedMode: await scheduledSharedMode(options),
-    };
-  } catch (error) {
-    return await fail(errorMessage(error));
-  }
-}
-
 /** The cycle-start log line: names a stale-lock takeover, plain
  *  start otherwise. */
 function cycleStartNote(lock: "busy" | "took-over" | "acquired"): string {
@@ -359,8 +317,10 @@ function cycleStartNote(lock: "busy" | "took-over" | "acquired"): string {
  *  resolves the settings' command once — scheduled PATH, then the
  *  login shell — and hands the absolute path to every child through
  *  the environment. Settings that cannot load skip the resolution:
- *  the stage fails with the settings error, as before. */
-async function resolveCycleAgentCommand(
+ *  the stage fails with the settings error, as before. Consumed by
+ *  the cycle-inputs fold, which lives beside the credential gate it
+ *  scopes (src/schedule/credential-preflight.ts). */
+export async function resolveCycleAgentCommand(
   options: ScheduledRunOptions,
   log: (line: string) => void,
 ): Promise<AgentResolution> {

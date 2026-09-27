@@ -25,10 +25,16 @@
  * pre-flight's so a semantically stronger probe (an upstream pi
  * auth check, a quota-axi credential report) can replace the
  * heuristic behind the same interface.
+ *
+ * The module also carries the scheduled cycle's pre-gate input
+ * resolution (`resolveCycleInputsOrOutcome`): the folded
+ * agent-and-mode lookup whose shared-writer result scopes this
+ * gate's env-var clause.
  */
 
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { errorMessage } from "../cli/colors.ts";
 import { readTextIfExists } from "../cli/shared.ts";
 import {
   type AgentSettings,
@@ -37,6 +43,12 @@ import {
   loadAgentSettings,
   targetLabel,
 } from "../ingest/agent-settings.ts";
+import {
+  type CycleOutcome,
+  type ScheduledRunOptions,
+  resolveCycleAgentCommand,
+} from "./scheduled-run.ts";
+import { scheduledSharedMode } from "./shared-cycle.ts";
 
 /** How the credential pre-flight acted: a skip names every
  *  unauthenticatable target; proceed means at least one target is
@@ -265,5 +277,49 @@ export async function credentialGate(
     );
 
     return { status: "proceed" };
+  }
+}
+
+/** The cycle's agent-resolution outcome (issue #399): resolved to an
+ *  absolute path, skipped (settings unreadable — the stage surfaces
+ *  the precise settings error), or unresolved (the cycle fails
+ *  before any stage, the shared-writer lease included). */
+export type AgentResolution =
+  | { readonly kind: "resolved"; readonly command: string }
+  | { readonly kind: "skipped" }
+  | { readonly kind: "unresolved"; readonly error: string };
+
+/** The cycle's inputs (issues #399, #409), folded to one decision:
+ *  a failed outcome when the agent binary cannot be resolved (the
+ *  ALERT before any stage, lease included) or the shared-writer
+ *  marker is invalid (fail closed before any gate) — else the
+ *  absolute command to hand the children (undefined when unreadable
+ *  settings defer the failure to the stage's settings error) and
+ *  the resolved mode, one marker read that also scopes the
+ *  credential gate's env-var clause. */
+export async function resolveCycleInputsOrOutcome(
+  options: ScheduledRunOptions,
+  fail: (error: string) => Promise<CycleOutcome>,
+  log: (line: string) => void,
+): Promise<
+  | CycleOutcome
+  | {
+      readonly agentCommand: string | undefined;
+      readonly sharedMode: boolean;
+    }
+> {
+  const agent = await resolveCycleAgentCommand(options, log);
+
+  if (agent.kind === "unresolved") {
+    return await fail(agent.error);
+  }
+
+  try {
+    return {
+      agentCommand: agent.kind === "resolved" ? agent.command : undefined,
+      sharedMode: await scheduledSharedMode(options),
+    };
+  } catch (error) {
+    return await fail(errorMessage(error));
   }
 }
