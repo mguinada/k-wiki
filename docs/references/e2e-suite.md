@@ -69,7 +69,13 @@ e2e run or diagnosing a failing one.
   agent spawn sites (the ingest run and the lint stage's audit)
   start the resolved absolute path — while an agent no mechanism can
   find fails the tick with one ALERT, exit 1, no upstream movement,
-  and a failed stamp.
+  and a failed stamp; quota-axi resolution (issue #406): with the
+  default `auto` probe and a stub `quota-axi` reachable only
+  through the login shell's profile (invisible to the launchd-grade
+  PATH), the cycle still activates the pre-flight — the run log
+  names the resolved absolute path, the exhausted provider skips
+  the tick before any stage (exit 0, skipped stamp, no upstream
+  movement).
 - **sync-watchdog** — the libexec door as a real child process
   against temp data repos (issue #362): `--help` answers with usage
   and exit 0; a fresh stamp exits 0, a stale or unreadable stamp

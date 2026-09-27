@@ -1818,3 +1818,147 @@ describe("buildScheduledEnv agent path (issue #399)", () => {
     ).toBeUndefined();
   });
 });
+
+describe("runScheduledCycle quota-axi resolution (issue #406)", () => {
+  async function writeStub(path: string, runway: string): Promise<void> {
+    await writeFile(
+      path,
+      `#!/bin/sh\ncat <<'JSON'\n${JSON.stringify({
+        quota: [{ provider: "zai", scope: "all_models", runway }],
+        exhaustion: [],
+      })}\nJSON\n`,
+      { mode: 0o755 },
+    );
+  }
+
+  async function writeSettings(
+    dir: string,
+    agentPath: string,
+    quotaLine: string,
+  ): Promise<string> {
+    const settingsPath = join(dir, "settings.yml");
+
+    await writeFile(
+      settingsPath,
+      `command: ${agentPath}\nmodel: E2E-MODEL\nreasoning: low\nprovider: zai\n${quotaLine}`,
+    );
+
+    return settingsPath;
+  }
+
+  it("resolves quota-axi to an absolute path and the gate proceeds", async () => {
+    const dir = await tempDir();
+    const { git, runGitStep } = fakeGit();
+    const lines: string[] = [];
+    const agentPath = join(dir, "stub-agent");
+    const quotaStub = join(dir, "quota-bin", "quota-axi");
+
+    await writeFile(agentPath, "#!/bin/sh\n", { mode: 0o755 });
+    await mkdir(join(dir, "quota-bin"), { recursive: true });
+    await writeStub(quotaStub, "through_reset");
+
+    const settingsPath = await writeSettings(dir, agentPath, "");
+    const outcome = await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      args: ["--settings", settingsPath],
+      resolveAgentPath: async (command) =>
+        command === "quota-axi" ? quotaStub : command,
+      log: (line) => lines.push(line),
+    });
+
+    expect({
+      outcome,
+      quotaLines: lines.filter((line) => line.includes("quota")),
+      synced: git.calls.some((call) => call[0] === "wiki-sync"),
+    }).toEqual({
+      outcome: { status: "ok" },
+      quotaLines: [`scheduled-run: quota-axi resolved to ${quotaStub}`],
+      synced: true,
+    });
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("logs the dim unavailable line and proceeds when quota-axi cannot resolve", async () => {
+    const dir = await tempDir();
+    const { git, runGitStep } = fakeGit();
+    const lines: string[] = [];
+    const agentPath = join(dir, "stub-agent");
+
+    await writeFile(agentPath, "#!/bin/sh\n", { mode: 0o755 });
+
+    const settingsPath = await writeSettings(dir, agentPath, "");
+    const outcome = await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      args: ["--settings", settingsPath],
+      resolveAgentPath: async (command) =>
+        command === "quota-axi" ? undefined : command,
+      log: (line) => lines.push(line),
+    });
+
+    expect({
+      outcome,
+      quotaLines: lines.filter((line) => line.includes("quota")),
+    }).toEqual({
+      outcome: { status: "ok" },
+      quotaLines: ["scheduled-run: quota pre-flight unavailable — proceeding"],
+    });
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("bypasses resolution when settings name an explicit quotaPreflight path", async () => {
+    const dir = await tempDir();
+    const { git, runGitStep } = fakeGit();
+    const lines: string[] = [];
+    const agentPath = join(dir, "stub-agent");
+    const quotaStub = join(dir, "explicit-quota-axi");
+
+    await writeFile(agentPath, "#!/bin/sh\n", { mode: 0o755 });
+    await writeStub(quotaStub, "exhausted_now");
+
+    const settingsPath = await writeSettings(
+      dir,
+      agentPath,
+      `quotaPreflight: ${quotaStub}\n`,
+    );
+    const resolve = vi.fn(async (command: string) =>
+      command === "quota-axi" ? quotaStub : command,
+    );
+    const outcome = await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      args: ["--settings", settingsPath],
+      resolveAgentPath: resolve,
+      log: (line) => lines.push(line),
+    });
+
+    expect({
+      outcome,
+      quotaAsked: resolve.mock.calls.some(
+        ([command]) => command === "quota-axi",
+      ),
+      quotaLines: lines.filter((line) => line.includes("quota")),
+    }).toEqual({
+      outcome: {
+        status: "skipped",
+        reason: expect.stringContaining("ingest provider zai"),
+      },
+      quotaAsked: false,
+      quotaLines: [expect.stringContaining("quota pre-flight skipped")],
+    });
+
+    await rm(dir, { recursive: true, force: true });
+  });
+});

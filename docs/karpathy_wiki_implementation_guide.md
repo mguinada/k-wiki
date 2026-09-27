@@ -1136,8 +1136,13 @@ pre-flight (issue #396: an optional `quota-axi` probe, settings key
 `quotaPreflight` — `auto` | `off` | a CLI path, default `auto` — may
 skip the tick before any stage, the shared-writer lease included:
 one dim line naming provider, scope, runway, and reset, exit 0, no
-ALERT; an absent, unreadable, or unauthenticated probe proceeds
-unchanged, fail-open), pre-run pull --rebase, `wiki-sync`, push —
+ALERT; issue #406: launchd's minimal PATH cannot find a user-local
+`quota-axi` either, so the wrapper resolves the probe to an
+absolute path at run start the way it resolves the agent command —
+the scheduled PATH first, then the login shell — and hands that
+path to the probe, while an explicit `quotaPreflight` path
+bypasses the resolution entirely; an absent, unreadable, or
+unauthenticated probe proceeds unchanged, fail-open), pre-run pull --rebase, `wiki-sync`, push —
 and, as a second independent
 registration (issue #359), a weekly `StartCalendarInterval` job
 (default Sundays 03:00, `setup-schedule --calendar`) running

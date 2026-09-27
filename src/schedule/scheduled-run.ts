@@ -6,7 +6,8 @@
  *   lockfile → agent resolution (the settings' agent command
  *   resolved to an absolute path, issue #399; unresolvable fails
  *   the tick before any stage) → quota pre-flight (an optional
- *   quota-axi probe may skip the tick before any stage) →
+ *   quota-axi probe may skip the tick before any stage; its binary
+ *   is resolved to an absolute path the same way, issue #406) →
  *   git pull --rebase → (with --lint-full: wiki-lint --full, the
  *   weekly quality sweep, issue #359) → wiki-sync (gates + commit)
  *   → git push
@@ -52,7 +53,10 @@ import { refuseDirectExecution } from "../cli/is-main.ts";
 import { pathExists, repoRoot } from "../cli/shared.ts";
 import { agentRunFlags, type ParsedCli, parseArgs } from "../cli/shell.ts";
 import { runGit } from "../data/git.ts";
-import { loadAgentSettings } from "../ingest/agent-settings.ts";
+import {
+  type AgentSettings,
+  loadAgentSettings,
+} from "../ingest/agent-settings.ts";
 import { loadSyncConfig } from "../sync/config.ts";
 import {
   acquireLock,
@@ -399,9 +403,11 @@ async function runQuotaCheck(
 
   try {
     const settings = await loadAgentSettings(settingsPath);
+
     return quotaPreflight({
       settings,
       log,
+      command: await resolveQuotaProbeCommand(options, settings, log),
       env: {
         ...process.env,
         PATH: buildScheduledEnv(process.env.HOME ?? homedir(), process.execPath)
@@ -411,6 +417,40 @@ async function runQuotaCheck(
   } catch {
     return quotaPreflightUnavailable(log);
   }
+}
+
+/** The absolute `quota-axi` path the launcher resolved for the gate
+ *  (issue #406), mirroring the #399 agent resolution: launchd's PATH
+ *  never sees user-local binaries, so the launcher locates the probe
+ *  once — scheduled PATH, then the login shell — and hands the
+ *  absolute path to the pre-flight. An explicit `quotaPreflight`
+ *  settings value bypasses resolution entirely, and an unresolvable
+ *  probe falls through to the bare name, whose failure is the
+ *  existing fail-open dim line. */
+async function resolveQuotaProbeCommand(
+  options: ScheduledRunOptions,
+  settings: AgentSettings,
+  log: (line: string) => void,
+): Promise<string | undefined> {
+  if (
+    settings.quotaPreflight !== undefined &&
+    settings.quotaPreflight !== "auto"
+  ) {
+    return undefined;
+  }
+
+  const resolved = await (options.resolveAgentPath ?? resolveAgentPath)(
+    "quota-axi",
+    buildScheduledEnv(process.env.HOME ?? homedir(), process.execPath).PATH,
+    options.dataRoot,
+    loginShell(process.env, process.platform),
+  );
+
+  if (resolved !== undefined) {
+    log(`scheduled-run: quota-axi resolved to ${resolved}`);
+  }
+
+  return resolved;
 }
 
 /** One cycle's stages: shared mode runs the coordinator (no pull, no
