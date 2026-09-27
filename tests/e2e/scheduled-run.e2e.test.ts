@@ -583,6 +583,33 @@ describe("scheduled-run credential pre-flight e2e (issue #409)", () => {
     expect(stamp.reason).toContain("ZAI_API_KEY");
   });
 
+  it("skips an env-var-only target in local mode even when the wrapper env carries the var", async () => {
+    const { repo, home } = await makeZaiRepo();
+
+    // The plist-hardening shape: the wrapper's env carries the var,
+    // but the local-mode cycle env is the scratch scheduled env —
+    // pi never sees the var, so the gate must not green-light it.
+    const result = await runScheduled(repo, {
+      HOME: home,
+      ZAI_API_KEY: "plist-key",
+    });
+    const log = await readFile(join(repo.tmp, "scheduled-run.log"), "utf8");
+
+    expect(result.code).toBe(0);
+    expect(log).toContain(
+      "credential pre-flight skipped — no authenticatable agent target — zai/E2E-MODEL: no ZAI_API_KEY in cycle env, no auth.json entry",
+    );
+    expect(log).not.toContain("wiki-sync starting");
+    expect(await upstreamHead(repo)).toBe("init");
+
+    const stamp = JSON.parse(
+      await readFile(join(repo.dataRoot, "outputs", "last-cycle.json"), "utf8"),
+    );
+
+    expect(stamp.outcome).toBe("skipped");
+    expect(stamp.reason).toContain("ZAI_API_KEY");
+  });
+
   it("runs the cycle when the target is authenticatable via the auth store", async () => {
     const { repo, home } = await makeZaiRepo();
 

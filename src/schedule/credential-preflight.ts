@@ -10,10 +10,11 @@
  * feeding the dirty-repo refusal loop; this gate names the problem
  * instead: before any stage (the shared-writer lease included),
  * every configured target must be plausibly authenticatable in the
- * cycle's own environment — the provider's credential env var
- * present, or an entry for the provider in pi's on-disk auth store
- * — or the tick skips with a named reason on the quota-skip's
- * heartbeat surface.
+ * cycle's own environment — an entry for the provider in pi's
+ * on-disk auth store, or, only where the caller's env provably
+ * reaches the cycle (shared-writer mode spreads it into the
+ * coordinator's), the provider's credential env var — or the tick
+ * skips with a named reason on the quota-skip's heartbeat surface.
  *
  * A deliberately local, fail-open heuristic: the env-var name is
  * the canonical upper-snake `_API_KEY` rendering of the provider
@@ -31,6 +32,7 @@ import { join } from "node:path";
 import { readTextIfExists } from "../cli/shared.ts";
 import {
   type AgentSettings,
+  type AgentTarget,
   agentTargets,
   loadAgentSettings,
   targetLabel,
@@ -46,9 +48,18 @@ export type CredentialPreflightResult =
 export interface CredentialPreflightOptions {
   readonly settings: AgentSettings;
   readonly log: (line: string) => void;
-  /** The cycle's own environment — the env the spawned agent
-   *  inherits; default: this process's own. */
-  readonly env?: NodeJS.ProcessEnv;
+  /** The environment the env-var clause judges; the caller asserts
+   *  it is the cycle's own; default: this process's own. */
+  readonly env?: NodeJS.ProcessEnv | undefined;
+  /** Whether `env` provably reaches the spawned agent chain —
+   *  shared-writer mode spreads this process's env into the
+   *  coordinator's; local mode's children run with the scratch
+   *  scheduled env (HOME, PATH, the lock marker, the agent path)
+   *  and never see this process's other vars, so there the clause
+   *  would green-light a target pi cannot authenticate. Default:
+   *  false — an env-var-only target then counts as
+   *  unauthenticatable. */
+  readonly envReachesCycle?: boolean | undefined;
   /** pi's auth store; default: the default resolution against this
    *  process's HOME (<home>/.pi/agent/auth.json). */
   readonly authStorePath?: string | undefined;
@@ -139,6 +150,27 @@ function hasStoreCredential(
   return storeProviders.includes(provider);
 }
 
+/** Whether the target is unauthenticatable in the judged
+ *  environment: the auth store lacks the provider, and the env-var
+ *  clause cannot rescue it — either the env does not reach the
+ *  cycle (local mode's scratch scheduled env never carries
+ *  credential vars) or the var reads absent there. */
+function targetUnauthenticatable(
+  target: AgentTarget,
+  storeProviders: readonly string[],
+  cycleEnv: NodeJS.ProcessEnv,
+  envReachesCycle: boolean,
+): boolean {
+  if (hasStoreCredential(storeProviders, target.provider ?? "")) {
+    return false;
+  }
+
+  return (
+    !envReachesCycle ||
+    envCredentialAbsent(cycleEnv[providerEnvVar(target.provider ?? "")])
+  );
+}
+
 /** The probe (issue #409): skip with a named reason when every
  *  configured target is implausibly authenticatable in the cycle's
  *  own environment; proceed when one target passes, when no target
@@ -170,10 +202,13 @@ export async function credentialPreflight(
   const cycleEnv = options.env ?? process.env;
   const storeProviders = store.kind === "entries" ? store.providers : [];
   const misses = targets
-    .filter(
-      (target) =>
-        envCredentialAbsent(cycleEnv[providerEnvVar(target.provider ?? "")]) &&
-        !hasStoreCredential(storeProviders, target.provider ?? ""),
+    .filter((target) =>
+      targetUnauthenticatable(
+        target,
+        storeProviders,
+        cycleEnv,
+        options.envReachesCycle === true,
+      ),
     )
     .map(
       (target) =>
@@ -191,26 +226,38 @@ export async function credentialPreflight(
   return { status: "skip", reason };
 }
 
+/** The gate's injectables: the env the env-var clause judges (only
+ *  meaningful together with `envReachesCycle`), the auth-store
+ *  path, and whether the judged env reaches the spawned agent
+ *  chain — true exactly where the cycle provably inherits or
+ *  spreads this env (shared-writer mode), false in local mode. */
+export interface CredentialGateOptions {
+  readonly cycleEnv?: NodeJS.ProcessEnv | undefined;
+  readonly authStorePath?: string | undefined;
+  readonly envReachesCycle?: boolean | undefined;
+}
+
 /** The gate as the scheduled cycle consumes it: load the settings
  *  (the same resolution the quota pre-flight uses), then probe.
  *  Unreadable settings proceed — the stage surfaces the settings
  *  error, as before — and an unexpected probe failure proceeds too:
  *  the gate is fail-open by construction, like its quota sibling.
- *  The cycle env and auth-store path default to this process's own
- *  resolution (the launchd process env is the cycle env) and stay
- *  injectable for tests. */
+ *  The env-var clause is scoped by `envReachesCycle` — the cycle
+ *  mode resolves it, because the launchd process env alone proves
+ *  nothing in local mode; cycleEnv defaults to this process's own
+ *  and all three stay injectable for tests. */
 export async function credentialGate(
   settingsPath: string,
   log: (line: string) => void,
-  cycleEnv: NodeJS.ProcessEnv = process.env,
-  authStorePath: string = defaultAuthStorePath(),
+  gate: CredentialGateOptions = {},
 ): Promise<CredentialPreflightResult> {
   try {
     return await credentialPreflight({
       settings: await loadAgentSettings(settingsPath),
       log,
-      env: cycleEnv,
-      authStorePath,
+      env: gate.cycleEnv,
+      authStorePath: gate.authStorePath,
+      envReachesCycle: gate.envReachesCycle,
     });
   } catch {
     log(

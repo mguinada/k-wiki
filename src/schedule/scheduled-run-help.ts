@@ -80,11 +80,17 @@ Behavior, failure mode by failure mode:
     shared-writer coordinator acquires its lease), when agent
     settings name at least one provider, every configured target
     must be plausibly authenticatable in the cycle's own
-    environment: the provider's <PROVIDER>_API_KEY env var present
-    (e.g. ZAI_API_KEY), or an entry for the provider in pi's
-    on-disk auth store (~/.pi/agent/auth.json). When no target
-    passes — the tick skips before any mutation, exit 0, no ALERT —
-    with one named reason listing every unauthenticatable
+    environment: an entry for the provider in pi's on-disk auth
+    store (~/.pi/agent/auth.json), or — shared-writer mode only —
+    the provider's <PROVIDER>_API_KEY env var (e.g. ZAI_API_KEY)
+    present in the wrapper's own environment, which the
+    coordinator inherits. Local-mode children run with a scratch
+    environment (HOME, an extended PATH, the run-lock marker, the
+    agent path) that carries no credential env vars, so there a
+    var set in the wrapper's environment proves nothing: without
+    an auth-store entry the target is unauthenticatable. When no
+    target passes — the tick skips before any mutation, exit 0, no
+    ALERT — with one named reason listing every unauthenticatable
     provider/model and the env var it looked for, e.g. "no
     authenticatable agent target — zai/GLM-5.2: no ZAI_API_KEY in
     cycle env, no auth.json entry". The check is local and

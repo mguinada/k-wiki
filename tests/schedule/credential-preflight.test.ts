@@ -78,12 +78,24 @@ describe("credentialPreflight", () => {
     });
   });
 
-  it("proceeds when the provider's credential env var is present", async () => {
+  it("proceeds when the provider's credential env var is present in a mode the env reaches", async () => {
+    const result = await credentialPreflight(
+      options({ env: { ZAI_API_KEY: "k" }, envReachesCycle: true }),
+    );
+
+    expect(result).toEqual({ status: "proceed" });
+  });
+
+  it("skips an env-var-only target when the env does not reach the cycle", async () => {
     const result = await credentialPreflight(
       options({ env: { ZAI_API_KEY: "k" } }),
     );
 
-    expect(result).toEqual({ status: "proceed" });
+    expect(result).toEqual({
+      status: "skip",
+      reason:
+        "no authenticatable agent target — zai/GLM-5.2: no ZAI_API_KEY in cycle env, no auth.json entry",
+    });
   });
 
   it("proceeds on an auth-store entry alone", async () => {
@@ -98,7 +110,7 @@ describe("credentialPreflight", () => {
 
   it("treats an empty env var value as absent", async () => {
     const result = await credentialPreflight(
-      options({ env: { ZAI_API_KEY: "" } }),
+      options({ env: { ZAI_API_KEY: "" }, envReachesCycle: true }),
     );
 
     expect(result).toEqual({
@@ -112,6 +124,7 @@ describe("credentialPreflight", () => {
       options({
         settings: targetsSettings(),
         env: { OPENROUTER_API_KEY: "k" },
+        envReachesCycle: true,
       }),
     );
 
@@ -186,6 +199,7 @@ describe("credentialPreflight", () => {
     const result = await credentialPreflight(
       options({
         env: { ZAI_API_KEY: "k" },
+        envReachesCycle: true,
         readAuthStore: async (path) => {
           asked = path;
 
@@ -302,8 +316,7 @@ describe("credentialGate", () => {
     const result = await credentialGate(
       settingsPath,
       (line) => lines.push(line),
-      {},
-      join(dir, "absent-auth.json"),
+      { cycleEnv: {}, authStorePath: join(dir, "absent-auth.json") },
     );
 
     await rm(dir, { recursive: true, force: true });
@@ -333,15 +346,44 @@ describe("credentialGate", () => {
 
     await writeFile(settingsPath, "command: pi\nmodel: M\nreasoning: low\n");
 
-    const result = await credentialGate(
-      settingsPath,
-      () => {},
-      {},
-      join(dir, "absent-auth.json"),
-    );
+    const result = await credentialGate(settingsPath, () => {}, {
+      cycleEnv: {},
+      authStorePath: join(dir, "absent-auth.json"),
+    });
 
     await rm(dir, { recursive: true, force: true });
 
     expect(result).toEqual({ status: "proceed" });
+  });
+
+  it("passes the env-var clause through scoped by envReachesCycle", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kw409-gate-"));
+    const settingsPath = join(dir, "settings.yml");
+
+    await writeFile(
+      settingsPath,
+      "command: pi\nprovider: zai\nmodel: GLM-5.2\nreasoning: high\n",
+    );
+
+    const scoped = await credentialGate(settingsPath, () => {}, {
+      cycleEnv: { ZAI_API_KEY: "k" },
+      authStorePath: join(dir, "absent-auth.json"),
+    });
+    const reaching = await credentialGate(settingsPath, () => {}, {
+      cycleEnv: { ZAI_API_KEY: "k" },
+      authStorePath: join(dir, "absent-auth.json"),
+      envReachesCycle: true,
+    });
+
+    await rm(dir, { recursive: true, force: true });
+
+    expect({ scoped, reaching }).toEqual({
+      scoped: {
+        status: "skip",
+        reason:
+          "no authenticatable agent target — zai/GLM-5.2: no ZAI_API_KEY in cycle env, no auth.json entry",
+      },
+      reaching: { status: "proceed" },
+    });
   });
 });

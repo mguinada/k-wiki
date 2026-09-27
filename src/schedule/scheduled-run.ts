@@ -8,8 +8,10 @@
  *   the tick before any stage) → quota pre-flight (an optional
  *   quota-axi probe may skip the tick, its binary resolved like
  *   the agent's, issue #406) → credential pre-flight (every target
- *   plausibly authenticatable in the cycle env — env var or pi's
- *   auth store — else a named skip, issue #409) → git pull
+ *   plausibly authenticatable in the cycle env — an auth-store
+ *   entry, or the provider's env var where the wrapper env reaches
+ *   the cycle, i.e. shared-writer mode — else a named skip, issue
+ *   #409) → git pull
  *   --rebase → (with --lint-full: wiki-lint --full, the weekly
  *   sweep, issue #359) → wiki-sync (gates + commit) → git push
  *
@@ -222,14 +224,13 @@ export async function runScheduledCycle(
 
   log(`scheduled-run: ${stamp()} — ${cycleStartNote(lock)}`);
 
-  const agentStep = await resolveCycleAgentOrOutcome(options, fail, log);
+  const inputs = await resolveCycleInputsOrOutcome(options, fail, log);
 
-  if ("status" in agentStep) {
-    return agentStep;
+  if ("status" in inputs) {
+    return inputs;
   }
 
-  const agentCommand = agentStep.agentCommand;
-  const gates = await runPreStageGates(options, log);
+  const gates = await runPreStageGates(options, log, inputs.sharedMode);
 
   if (gates.skipReason !== undefined) {
     await releaseLock(options.lockPath, pid);
@@ -238,7 +239,13 @@ export async function runScheduledCycle(
   }
 
   try {
-    await runStage(options, runGitStep, log, agentCommand);
+    await runStage(
+      options,
+      runGitStep,
+      log,
+      inputs.agentCommand,
+      inputs.sharedMode,
+    );
   } catch (error) {
     return await fail(errorMessage(error), gates.preflight);
   }
@@ -303,25 +310,39 @@ type AgentResolution =
   | { readonly kind: "skipped" }
   | { readonly kind: "unresolved"; readonly error: string };
 
-/** The cycle's agent resolution (issue #399), folded to one decision
- *  for the cycle: a failed outcome when the binary cannot be resolved
- *  — the ALERT before any stage, lease included — else the absolute
- *  command to hand the children, undefined when unreadable settings
- *  defer the failure to the stage's settings error. */
-async function resolveCycleAgentOrOutcome(
+/** The cycle's inputs (issues #399, #409), folded to one decision:
+ *  a failed outcome when the agent binary cannot be resolved (the
+ *  ALERT before any stage, lease included) or the shared-writer
+ *  marker is invalid (fail closed before any gate) — else the
+ *  absolute command to hand the children (undefined when unreadable
+ *  settings defer the failure to the stage's settings error) and
+ *  the resolved mode, one marker read that also scopes the
+ *  credential gate's env-var clause. */
+async function resolveCycleInputsOrOutcome(
   options: ScheduledRunOptions,
   fail: (error: string) => Promise<CycleOutcome>,
   log: (line: string) => void,
-): Promise<CycleOutcome | { readonly agentCommand: string | undefined }> {
+): Promise<
+  | CycleOutcome
+  | {
+      readonly agentCommand: string | undefined;
+      readonly sharedMode: boolean;
+    }
+> {
   const agent = await resolveCycleAgentCommand(options, log);
 
   if (agent.kind === "unresolved") {
     return await fail(agent.error);
   }
 
-  return {
-    agentCommand: agent.kind === "resolved" ? agent.command : undefined,
-  };
+  try {
+    return {
+      agentCommand: agent.kind === "resolved" ? agent.command : undefined,
+      sharedMode: await scheduledSharedMode(options),
+    };
+  } catch (error) {
+    return await fail(errorMessage(error));
+  }
 }
 
 /** The cycle-start log line: names a stale-lock takeover, plain
@@ -389,10 +410,14 @@ function settingsPathFor(options: ScheduledRunOptions): string {
 
 /** The pre-stage gates, in order (issues #401, #409): quota
  *  first — its reason stands — then credential; the first skip
- *  reason wins and the quota gate's dormant state rides along. */
+ *  reason wins and the quota gate's dormant state rides along.
+ *  `sharedMode` scopes the credential gate's env-var clause: only
+ *  in shared-writer mode does the wrapper's env reach the cycle
+ *  the agent chain inherits. */
 async function runPreStageGates(
   options: ScheduledRunOptions,
   log: (line: string) => void,
+  sharedMode: boolean,
 ): Promise<QuotaGate> {
   const result = await (
     options.runQuotaPreflight ?? (() => runQuotaCheck(options, log))
@@ -404,7 +429,10 @@ async function runPreStageGates(
 
   const credential = await (
     options.runCredentialPreflight ??
-    (() => credentialGate(settingsPathFor(options), log))
+    (() =>
+      credentialGate(settingsPathFor(options), log, {
+        envReachesCycle: sharedMode,
+      }))
   )();
 
   if (credential.status === "skip") {
@@ -476,14 +504,18 @@ async function resolveQuotaProbeCommand(
  *  push — it finalizes remotely); local mode runs the pull → sweep →
  *  sync sequence and its push-with-retry. `agentCommand` is the
  *  launcher-resolved absolute agent path (issue #399) handed to
- *  every spawned child through the environment. */
+ *  every spawned child through the environment. `sharedMode` is the
+ *  cycle's resolved mode — one marker read before the pre-stage
+ *  gates, where the same resolution scopes the credential gate's
+ *  env-var clause. */
 async function runStage(
   options: ScheduledRunOptions,
   runGitStep: NonNullable<ScheduledRunOptions["runGitStep"]>,
   log: (line: string) => void,
   agentCommand: string | undefined,
+  sharedMode: boolean,
 ): Promise<void> {
-  if (await scheduledSharedMode(options)) {
+  if (sharedMode) {
     await runSharedPipeline(options, log, agentCommand);
 
     // The shared coordinator finalized remotely (branch advance and

@@ -111,4 +111,24 @@ describe("scheduled-run help (printed by the launcher)", () => {
 
     expect(bullet).toContain("never skips a tick");
   });
+
+  it("scopes the credential env-var clause to shared-writer mode", () => {
+    const bullet = betweenAnchors(
+      help,
+      "Credential pre-flight:",
+      "- Shared-writer mode:",
+    );
+
+    expect(bullet).toContain("shared-writer mode only");
+  });
+
+  it("documents why local mode cannot trust the wrapper's env vars", () => {
+    const bullet = betweenAnchors(
+      help,
+      "Credential pre-flight:",
+      "- Shared-writer mode:",
+    );
+
+    expect(bullet).toContain("carries no credential env vars");
+  });
 });
