@@ -96,4 +96,39 @@ describe("scheduled-run help (printed by the launcher)", () => {
 
     expect(bullet).toContain("recover-fix-surface");
   });
+
+  it("documents the credential pre-flight's named skip reason", () => {
+    expect(help).toContain("Credential pre-flight:");
+    expect(help).toContain("authenticatable agent target — zai/GLM-5.2");
+  });
+
+  it("documents the credential pre-flight's fail-open bias", () => {
+    const bullet = betweenAnchors(
+      help,
+      "Credential pre-flight:",
+      "- Shared-writer mode:",
+    );
+
+    expect(bullet).toContain("never skips a tick");
+  });
+
+  it("scopes the credential env-var clause to shared-writer mode", () => {
+    const bullet = betweenAnchors(
+      help,
+      "Credential pre-flight:",
+      "- Shared-writer mode:",
+    );
+
+    expect(bullet).toContain("shared-writer mode only");
+  });
+
+  it("documents why local mode cannot trust the wrapper's env vars", () => {
+    const bullet = betweenAnchors(
+      help,
+      "Credential pre-flight:",
+      "- Shared-writer mode:",
+    );
+
+    expect(bullet).toContain("carries no credential env vars");
+  });
 });

@@ -9,15 +9,17 @@ const HELP = `Usage: sync-watchdog [-h | --help] [--stale-after <duration>] [<co
 
 The heartbeat watchdog: read the data repo's outputs/last-cycle.json
 stamp (written by every completed scheduled-run cycle — ok, failed,
-or a benign quota-skipped tick) and report whether the pipeline is
-alive. The stamp's age is the verdict: within the threshold prints
-one line and exits 0; past it — or unreadable, or missing past the
-grace window — prints one line, fires a macOS notification
-(osascript; KWIKI_NOTIFY=0 disables every notification), and exits 1
-(launchd records the failure). A quota-skipped stamp is benign while
-its ticks keep arriving and names its cause; when the last
-successful cycle ages past the threshold the watchdog alerts naming
-that cause, and a stamp that itself goes stale — a scheduler that
+or a benign quota- or credential-skipped tick) and report whether
+the pipeline is alive. The stamp's age is the verdict: within the
+threshold prints one line and exits 0; past it — or unreadable, or
+missing past the grace window — prints one line, fires a macOS
+notification (osascript; KWIKI_NOTIFY=0 disables every
+notification), and exits 1 (launchd records the failure). A
+quota-skipped stamp is benign while its ticks keep arriving and
+names its cause; a credential-skipped stamp (no authenticatable
+agent target) is benign the same way. When the last successful
+cycle ages past the threshold the watchdog alerts naming that
+cause, and a stamp that itself goes stale — a scheduler that
 died — alerts like any other. A stamp whose cycle ran with the
 quota pre-flight dormant carries a "pre-flight: off" note. The
 watchdog is independent of the monitored pipeline by design: a
@@ -53,5 +55,5 @@ com.kwiki.watchdog (setup-schedule --watchdog) runs this door
 hourly.
 
 Exits 0 on a fresh (or in-grace) heartbeat, 1 on stale, unreadable,
-missing-past-grace, quota-skipped ticks persisting past the
+missing-past-grace, pre-flight-skipped ticks persisting past the
 threshold, or skipping with no successful cycle on record.`;

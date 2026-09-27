@@ -6,11 +6,14 @@
  *   lockfile → agent resolution (the settings' agent command
  *   resolved to an absolute path, issue #399; unresolvable fails
  *   the tick before any stage) → quota pre-flight (an optional
- *   quota-axi probe may skip the tick before any stage; its binary
- *   is resolved to an absolute path the same way, issue #406) →
- *   git pull --rebase → (with --lint-full: wiki-lint --full, the
- *   weekly quality sweep, issue #359) → wiki-sync (gates + commit)
- *   → git push
+ *   quota-axi probe may skip the tick, its binary resolved like
+ *   the agent's, issue #406) → credential pre-flight (every target
+ *   plausibly authenticatable in the cycle env — an auth-store
+ *   entry, or the provider's env var where the wrapper env reaches
+ *   the cycle, i.e. shared-writer mode — else a named skip, issue
+ *   #409) → git pull
+ *   --rebase → (with --lint-full: wiki-lint --full, the weekly
+ *   sweep, issue #359) → wiki-sync (gates + commit) → git push
  *
  * Overlap guard (issue #14 decision 3; the lock itself now lives in
  * `src/sync/run-lock.ts`, shared with manual wiki-sync runs since
@@ -66,6 +69,12 @@ import {
   releaseLock,
   runLockPath,
 } from "../sync/run-lock.ts";
+import {
+  type AgentResolution,
+  type CredentialPreflightResult,
+  credentialGate,
+  resolveCycleInputsOrOutcome,
+} from "./credential-preflight.ts";
 import { writeCycleHeartbeat } from "./heartbeat.ts";
 import { notifyUser } from "./notify.ts";
 import {
@@ -78,7 +87,7 @@ import { buildScheduledEnv, spawnRepoScript } from "./repo-script.ts";
 import { loginShell, resolveAgentPath } from "./resolve-agent.ts";
 import { createRunLog, scheduledLogPath } from "./run-log.ts";
 import { HELP } from "./scheduled-run-help.ts";
-import { runSharedPipeline, scheduledSharedMode } from "./shared-cycle.ts";
+import { runSharedPipeline } from "./shared-cycle.ts";
 
 /** The cycle's outcome. */
 export type CycleOutcome =
@@ -132,6 +141,8 @@ export interface ScheduledRunOptions {
   readonly runSync?: (args: readonly string[]) => Promise<void>;
   /** Quota probe; injected in tests and optional on every machine. */
   readonly runQuotaPreflight?: () => Promise<QuotaPreflightResult>;
+  /** Credential probe (issue #409); injected in tests. */
+  readonly runCredentialPreflight?: () => Promise<CredentialPreflightResult>;
   /** The full-sweep wiki-lint invocation; defaults to spawning node
    *  against the repo's bin/wiki-lint. Injected in tests. */
   readonly runLintFull?: (args: readonly string[]) => Promise<void>;
@@ -162,7 +173,8 @@ export async function runScheduledCycle(
   const notify = options.notify ?? (() => {});
 
   /** Best-effort heartbeat write: the stamp records that this cycle
-   *  reached its end (ok, failed, or a benign quota-skipped tick) so
+   *  reached its end (ok, failed, or a benign quota- or
+   *  credential-skipped tick) so
    *  the independent watchdog can see a pipeline that stops
    *  completing cycles — including one that never starts again. A
    *  failed write warns in the log and never changes the cycle's
@@ -215,29 +227,34 @@ export async function runScheduledCycle(
 
   log(`scheduled-run: ${stamp()} — ${cycleStartNote(lock)}`);
 
-  const agentStep = await resolveCycleAgentOrOutcome(options, fail, log);
+  const inputs = await resolveCycleInputsOrOutcome(options, fail, log);
 
-  if ("status" in agentStep) {
-    return agentStep;
+  if ("status" in inputs) {
+    return inputs;
   }
 
-  const agentCommand = agentStep.agentCommand;
-  const quota = await runQuotaGate(options, log);
+  const gates = await runPreStageGates(options, log, inputs.sharedMode);
 
-  if (quota.skipReason !== undefined) {
+  if (gates.skipReason !== undefined) {
     await releaseLock(options.lockPath, pid);
-    await stampHeartbeat("skipped", quota.skipReason);
-    return { status: "skipped", reason: quota.skipReason };
+    await stampHeartbeat("skipped", gates.skipReason);
+    return { status: "skipped", reason: gates.skipReason };
   }
 
   try {
-    await runStage(options, runGitStep, log, agentCommand);
+    await runStage(
+      options,
+      runGitStep,
+      log,
+      inputs.agentCommand,
+      inputs.sharedMode,
+    );
   } catch (error) {
-    return await fail(errorMessage(error), quota.preflight);
+    return await fail(errorMessage(error), gates.preflight);
   }
 
   await releaseLock(options.lockPath, pid);
-  await stampHeartbeat("ok", undefined, quota.preflight);
+  await stampHeartbeat("ok", undefined, gates.preflight);
   log(`scheduled-run: ${stamp()} — cycle complete`);
 
   return { status: "ok" };
@@ -279,42 +296,12 @@ export function sweepArgsFor(
   ];
 }
 
-/** The quota gate's effect on the cycle: a skip reason when the
- *  provider cannot finish the cycle, the dormant pre-flight state
- *  when the cycle ran ungated. */
+/** The pre-stage gates' effect on the cycle: a skip reason when a
+ *  gate stops the tick, plus the dormant pre-flight state when the
+ *  cycle ran ungated. */
 interface QuotaGate {
   readonly skipReason?: string;
   readonly preflight?: PreflightState;
-}
-
-/** The cycle's agent-resolution outcome (issue #399): resolved to an
- *  absolute path, skipped (settings unreadable — the stage surfaces
- *  the precise settings error), or unresolved (the cycle fails
- *  before any stage, the shared-writer lease included). */
-type AgentResolution =
-  | { readonly kind: "resolved"; readonly command: string }
-  | { readonly kind: "skipped" }
-  | { readonly kind: "unresolved"; readonly error: string };
-
-/** The cycle's agent resolution (issue #399), folded to one decision
- *  for the cycle: a failed outcome when the binary cannot be resolved
- *  — the ALERT before any stage, lease included — else the absolute
- *  command to hand the children, undefined when unreadable settings
- *  defer the failure to the stage's settings error. */
-async function resolveCycleAgentOrOutcome(
-  options: ScheduledRunOptions,
-  fail: (error: string) => Promise<CycleOutcome>,
-  log: (line: string) => void,
-): Promise<CycleOutcome | { readonly agentCommand: string | undefined }> {
-  const agent = await resolveCycleAgentCommand(options, log);
-
-  if (agent.kind === "unresolved") {
-    return await fail(agent.error);
-  }
-
-  return {
-    agentCommand: agent.kind === "resolved" ? agent.command : undefined,
-  };
 }
 
 /** The cycle-start log line: names a stale-lock takeover, plain
@@ -331,8 +318,10 @@ function cycleStartNote(lock: "busy" | "took-over" | "acquired"): string {
  *  resolves the settings' command once — scheduled PATH, then the
  *  login shell — and hands the absolute path to every child through
  *  the environment. Settings that cannot load skip the resolution:
- *  the stage fails with the settings error, as before. */
-async function resolveCycleAgentCommand(
+ *  the stage fails with the settings error, as before. Consumed by
+ *  the cycle-inputs fold, which lives beside the credential gate it
+ *  scopes (src/schedule/credential-preflight.ts). */
+export async function resolveCycleAgentCommand(
   options: ScheduledRunOptions,
   log: (line: string) => void,
 ): Promise<AgentResolution> {
@@ -380,19 +369,38 @@ function settingsPathFor(options: ScheduledRunOptions): string {
   );
 }
 
-async function runQuotaGate(
+/** The pre-stage gates, in order (issues #401, #409): quota
+ *  first — its reason stands — then credential; the first skip
+ *  reason wins and the quota gate's dormant state rides along.
+ *  `sharedMode` scopes the credential gate's env-var clause: only
+ *  in shared-writer mode does the wrapper's env reach the cycle
+ *  the agent chain inherits. */
+async function runPreStageGates(
   options: ScheduledRunOptions,
   log: (line: string) => void,
+  sharedMode: boolean,
 ): Promise<QuotaGate> {
   const result = await (
     options.runQuotaPreflight ?? (() => runQuotaCheck(options, log))
   )();
 
-  return result.status === "skip"
-    ? { skipReason: result.reason }
-    : result.preflight === undefined
-      ? {}
-      : { preflight: result.preflight };
+  if (result.status === "skip") {
+    return { skipReason: result.reason };
+  }
+
+  const credential = await (
+    options.runCredentialPreflight ??
+    (() =>
+      credentialGate(settingsPathFor(options), log, {
+        envReachesCycle: sharedMode,
+      }))
+  )();
+
+  if (credential.status === "skip") {
+    return { skipReason: credential.reason };
+  }
+
+  return result.preflight === undefined ? {} : { preflight: result.preflight };
 }
 
 async function runQuotaCheck(
@@ -457,14 +465,18 @@ async function resolveQuotaProbeCommand(
  *  push — it finalizes remotely); local mode runs the pull → sweep →
  *  sync sequence and its push-with-retry. `agentCommand` is the
  *  launcher-resolved absolute agent path (issue #399) handed to
- *  every spawned child through the environment. */
+ *  every spawned child through the environment. `sharedMode` is the
+ *  cycle's resolved mode — one marker read before the pre-stage
+ *  gates, where the same resolution scopes the credential gate's
+ *  env-var clause. */
 async function runStage(
   options: ScheduledRunOptions,
   runGitStep: NonNullable<ScheduledRunOptions["runGitStep"]>,
   log: (line: string) => void,
   agentCommand: string | undefined,
+  sharedMode: boolean,
 ): Promise<void> {
-  if (await scheduledSharedMode(options)) {
+  if (sharedMode) {
     await runSharedPipeline(options, log, agentCommand);
 
     // The shared coordinator finalized remotely (branch advance and

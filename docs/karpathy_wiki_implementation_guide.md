@@ -1142,7 +1142,22 @@ absolute path at run start the way it resolves the agent command —
 the scheduled PATH first, then the login shell — and hands that
 path to the probe, while an explicit `quotaPreflight` path
 bypasses the resolution entirely; an absent, unreadable, or
-unauthenticated probe proceeds unchanged, fail-open), pre-run pull --rebase, `wiki-sync`, push —
+unauthenticated probe proceeds unchanged, fail-open), credential
+pre-flight (issue #409: before any stage — the shared-writer lease
+included — when agent settings name a provider, every configured
+target must be plausibly authenticatable in the cycle's own
+environment: an entry for the provider in pi's on-disk auth store
+(`~/.pi/agent/auth.json`), or — shared-writer mode only, where the
+wrapper's environment reaches the lease coordinator — the
+provider's canonical `<PROVIDER>_API_KEY` env var; local-mode
+children run on the scratch scheduled environment, which carries no
+credential vars, so there an env-var-only target is
+unauthenticatable; when no target passes, the tick skips before any
+mutation — exit 0, no ALERT — with one named reason listing every
+unauthenticatable provider/model and the env var it looked for; a
+deliberately local, fail-open heuristic: an unreadable auth store
+or unreadable settings proceed, and settings without a provider
+give the check nothing to judge), pre-run pull --rebase, `wiki-sync`, push —
 and, as a second independent
 registration (issue #359), a weekly `StartCalendarInterval` job
 (default Sundays 03:00, `setup-schedule --calendar`) running
@@ -1153,7 +1168,7 @@ lock, then the ordinary cycle, push. A third registration (issue
 (hourly, `setup-schedule --watchdog [--stale-after <duration>]`)
 runs the read-only `bin/libexec/sync-watchdog` door, which reads the
 heartbeat stamp every completed cycle writes — ok, failed, or a
-benign quota-skipped tick (`<dataRoot>/outputs/last-cycle.json`,
+benign quota- or credential-skipped tick (`<dataRoot>/outputs/last-cycle.json`,
 excluded via the data repo's `.git/info/exclude`; the stamp carries
 the skip's cause, or a "pre-flight: off" note when the cycle ran
 with the pre-flight dormant) — and alerts — macOS notification +
@@ -1163,11 +1178,11 @@ window (the newest data-repo commit anchors a fresh install's
 grace; over an existing data repo whose commits are old, the
 install anchor `setup-schedule --watchdog` stamps into the data
 repo (`outputs/watchdog-since.txt`) holds the same grace). A
-quota-skipped stamp is benign while its ticks keep arriving — the
-verdict names the skip's cause — and alerts the same way once no
-successful cycle is on record or the last success ages past the
-threshold; a stamp that itself goes stale (a scheduler that died)
-alerts like any other. The
+quota- or credential-skipped stamp is benign while its ticks keep
+arriving — the verdict names the skip's cause — and alerts the same
+way once no successful cycle is on record or the last success ages
+past the threshold; a stamp that itself goes stale (a scheduler
+that died) alerts like any other. The
 watchdog exists because the 2026-09-13 outage failed *before the
 pipeline's process started* — its own ALERT logging never ran, the
 only trace was `launchd-stderr.log`, which nobody reads — so the

@@ -1,7 +1,8 @@
 /**
  * The scheduled cycle's heartbeat (issue #362): one gitignored stamp
  * file in the data repo — `outputs/last-cycle.json` — written on
- * every cycle completion (ok, failed, or a benign quota-skipped tick).
+ * every cycle completion (ok, failed, or a benign quota- or
+ * credential-skipped tick).
  * A skipped tick releases its local lock before writing the stamp. The
  * stamp carries this cycle's timestamp, outcome, and holder PID plus the timestamp of
  * the last ok cycle, carried forward, so "when did the pipeline
@@ -31,7 +32,8 @@ export const CYCLE_HEARTBEAT_FILENAME = "last-cycle.json";
 export interface CycleHeartbeat {
   /** When this cycle finished, ISO timestamp. */
   readonly timestamp: string;
-  /** The cycle's outcome; skipped ticks are benign quota pre-flight ticks. */
+  /** The cycle's outcome; skipped ticks are benign pre-flight
+   *  ticks (quota or credential). */
   readonly outcome: "ok" | "failed" | "skipped";
   /** Why a benign skipped tick occurred, when present. */
   readonly reason?: string;

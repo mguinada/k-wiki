@@ -75,7 +75,15 @@ e2e run or diagnosing a failing one.
   PATH), the cycle still activates the pre-flight — the run log
   names the resolved absolute path, the exhausted provider skips
   the tick before any stage (exit 0, skipped stamp, no upstream
-  movement).
+  movement); credential pre-flight (issue #409): a zai target with
+  no ZAI_API_KEY in the cycle env and no auth.json entry in the
+  cycle's HOME skips the tick before any stage — exit 0, the named
+  skip reason in the run log, no upstream movement, a skipped
+  stamp; an env-var-only target skips in local mode even when the
+  wrapper's env carries the var (the scratch scheduled env the
+  children inherit never does), and a target with the provider in
+  the temp HOME's auth store runs the full cycle to a completed
+  push.
 - **sync-watchdog** — the libexec door as a real child process
   against temp data repos (issue #362): `--help` answers with usage
   and exit 0; a fresh stamp exits 0, a stale or unreadable stamp
@@ -131,7 +139,13 @@ e2e run or diagnosing a failing one.
   (issue #400): two ticks refuse on the dirty surface, the verb
   refuses on a mismatched (human-edited) surface, and the third
   tick past the dead-man window auto-recovers the recorded surface
-  and completes, clearing the record and the lease.
+  and completes, clearing the record and the lease; the credential
+  pre-flight in shared-writer mode (issue #409): an env-var-only
+  zai target green-lights — the wrapper env reaches the lease
+  coordinator — and the shared cycle completes, while a
+  credential-less tick skips with the named reason before the
+  lease (no lease materializes, the remote ref stands still, a
+  skipped stamp).
 - **k-wiki** — the front door (issue #337) in temp checkouts, temp
   data repos, and bound temp projects: read verbs on both doors
   (agent door via `.k-wiki.json`, human door from the checkout
