@@ -173,7 +173,8 @@ export async function runScheduledCycle(
   const notify = options.notify ?? (() => {});
 
   /** Best-effort heartbeat write: the stamp records that this cycle
-   *  reached its end (ok, failed, or a benign quota-skipped tick) so
+   *  reached its end (ok, failed, or a benign quota- or
+   *  credential-skipped tick) so
    *  the independent watchdog can see a pipeline that stops
    *  completing cycles — including one that never starts again. A
    *  failed write warns in the log and never changes the cycle's
