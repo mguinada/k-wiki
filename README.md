@@ -1423,7 +1423,12 @@ operation needs and nothing else:
    optional `quota-axi` probe (settings key `quotaPreflight`:
    `auto` | `off` | a CLI path, default `auto`) may skip the tick
    before any stage: one dim log line naming provider, scope,
-   runway, and reset time, exit 0, no ALERT. Any other probe
+   runway, and reset time, exit 0, no ALERT. The launchd PATH
+   cannot find a user-local `quota-axi` either, so the launcher
+   resolves the probe the way it resolves the agent command —
+   scheduled PATH first, then the login shell — and hands the
+   absolute path to the probe; an explicit `quotaPreflight` path
+   skips that resolution. Any other probe
    outcome (absent, unreadable, unauthenticated) logs one dim line
    and runs the cycle unchanged — the probe is machine-local
    tooling, never a dependency. A quota-skipped tick writes a
