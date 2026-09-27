@@ -608,3 +608,66 @@ describe("scheduled-run agent resolution e2e (issue #399)", () => {
     expect(stamp.outcome).toBe("failed");
   });
 });
+
+describe("scheduled-run quota-axi resolution e2e (issue #406)", () => {
+  it("activates the pre-flight under launchd's minimal PATH by resolving quota-axi via the login shell", async () => {
+    const repo = await makeRepo();
+    const home = join(repo.tmp, "home");
+    const quotaBin = join(repo.tmp, "quotabin");
+    const quotaAxi = join(quotaBin, "quota-axi");
+
+    // Default probe (no quotaPreflight key) with a provider to check:
+    // the launchd-grade PATH below cannot find quota-axi anywhere.
+    await writeFile(
+      repo.settingsPath,
+      `command: ${join(repo.dataRoot, "stub-agent.mjs")}\nmodel: E2E-MODEL\nreasoning: low\nprovider: zai\n`,
+    );
+
+    // A stub quota-axi reachable only through the login-shell profile
+    // — exactly how ~/.local/bin stays invisible to launchd.
+    await mkdir(quotaBin, { recursive: true });
+    await writeFile(
+      quotaAxi,
+      `#!/bin/sh\ncat <<'JSON'\n${JSON.stringify({
+        quota: [
+          { provider: "zai", scope: "all_models", runway: "exhausted_now" },
+        ],
+        exhaustion: [
+          {
+            provider: "zai",
+            scope: "all_models",
+            usableRunwaySeconds: 0,
+            projectedExhaustedAt: "2036-01-01T00:00:00.000Z",
+          },
+        ],
+      })}\nJSON\n`,
+      { mode: 0o755 },
+    );
+    await mkdir(home, { recursive: true });
+    await writeFile(
+      join(home, ".profile"),
+      `PATH="${quotaBin}:$PATH"\nexport PATH\n`,
+    );
+
+    const result = await runScheduled(repo, {
+      HOME: home,
+      SHELL: "/bin/sh",
+    });
+    const log = await readFile(join(repo.tmp, "scheduled-run.log"), "utf8");
+
+    expect(result.code).toBe(0);
+    expect(log).toContain(`scheduled-run: quota-axi resolved to ${quotaAxi}`);
+    expect(log).toContain(
+      "quota pre-flight skipped — ingest provider zai scope all_models",
+    );
+    expect(log).not.toContain("wiki-sync starting");
+    expect(await upstreamHead(repo)).toBe("init");
+
+    const stamp = JSON.parse(
+      await readFile(join(repo.dataRoot, "outputs", "last-cycle.json"), "utf8"),
+    );
+
+    expect(stamp.outcome).toBe("skipped");
+    expect(stamp.reason).toContain("zai");
+  });
+});

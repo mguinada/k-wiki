@@ -42,17 +42,29 @@ export interface QuotaPreflightOptions {
   readonly settings: AgentSettings;
   readonly log: (line: string) => void;
   readonly commandRunner?: (command: string) => Promise<string>;
+  /** The probe command the launcher resolved to an absolute path
+   *  (issue #406): the launchd PATH cannot find a user-local binary,
+   *  so the launcher locates `quota-axi` the way it locates the agent
+   *  binary and hands the absolute path here. When absent, the probe
+   *  command comes from settings (the `quotaPreflight` value, else
+   *  the bare name). */
+  readonly command?: string | undefined;
   /** The probe child's environment; default: this process's own. The
    *  scheduled wrapper passes its extended PATH so a launchd job
    *  resolves machine-local CLIs the way its child scripts do. */
   readonly env?: NodeJS.ProcessEnv;
 }
 
-function commandFor(settings: AgentSettings): string {
-  return settings.quotaPreflight === undefined ||
-    settings.quotaPreflight === "auto"
-    ? "quota-axi"
-    : settings.quotaPreflight;
+function commandFor(
+  settings: AgentSettings,
+  resolved: string | undefined,
+): string {
+  return (
+    resolved ??
+    (settings.quotaPreflight === undefined || settings.quotaPreflight === "auto"
+      ? "quota-axi"
+      : settings.quotaPreflight)
+  );
 }
 
 /** Every non-activating outcome speaks the same one dim line, so a
@@ -224,7 +236,9 @@ export async function quotaPreflight(
   let report: QuotaReport | undefined;
 
   try {
-    report = parseReport(await run(commandFor(options.settings)));
+    report = parseReport(
+      await run(commandFor(options.settings, options.command)),
+    );
   } catch {
     return quotaPreflightUnavailable(options.log);
   }
