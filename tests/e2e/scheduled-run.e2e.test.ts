@@ -26,8 +26,9 @@ const SCHEDULED_RUN_SCRIPT = join(repoRoot, "bin", "scheduled-run");
  * shell env — against a temp data repo wired to a bare upstream
  * origin through a stub agent. Covers the full lock → pull →
  * wiki-sync → push cycle, the busy-lock skip, the push-rejection
- * retry (a pre-receive hook that rejects once), and the alert after a
- * second rejection. A real LLM run stays a human check.
+ * retry (a pre-receive hook that rejects once), the alert after a
+ * second rejection, and the credential pre-flight's named skip. A
+ * real LLM run stays a human check.
  */
 
 const run = promisify(execFile);
@@ -536,6 +537,79 @@ describe("scheduled-run quota pre-flight e2e (issue #396)", () => {
 
     expect(stamp.outcome).toBe("skipped");
     expect(stamp.reason).toContain("zai");
+  });
+});
+
+describe("scheduled-run credential pre-flight e2e (issue #409)", () => {
+  /** The incident shape: a zai target, no ZAI_API_KEY in the cycle
+   *  env (the launchd plist never had it), no auth.json entry in the
+   *  cycle's HOME. quotaPreflight: off keeps the probe hermetic —
+   *  the credential gate is independent of the quota gate. */
+  async function makeZaiRepo(): Promise<{ repo: Repo; home: string }> {
+    const repo = await makeRepo();
+    const home = join(repo.tmp, "home");
+
+    await mkdir(home, { recursive: true });
+    await writeFile(
+      repo.settingsPath,
+      `command: ${join(repo.dataRoot, "stub-agent.mjs")}\nmodel: E2E-MODEL\nreasoning: low\nprovider: zai\nquotaPreflight: off\n`,
+    );
+
+    return { repo, home };
+  }
+
+  it("skips the tick with the named reason when no target is authenticatable", async () => {
+    const { repo, home } = await makeZaiRepo();
+
+    const result = await runScheduled(repo, {
+      HOME: home,
+      ZAI_API_KEY: "",
+    });
+    const log = await readFile(join(repo.tmp, "scheduled-run.log"), "utf8");
+
+    expect(result.code).toBe(0);
+    expect(log).toContain(
+      "credential pre-flight skipped — no authenticatable agent target — zai/E2E-MODEL: no ZAI_API_KEY in cycle env, no auth.json entry",
+    );
+    expect(log).not.toContain("wiki-sync starting");
+    expect(await upstreamHead(repo)).toBe("init");
+
+    const stamp = JSON.parse(
+      await readFile(join(repo.dataRoot, "outputs", "last-cycle.json"), "utf8"),
+    );
+
+    expect(stamp.outcome).toBe("skipped");
+    expect(stamp.reason).toContain("zai/E2E-MODEL");
+    expect(stamp.reason).toContain("ZAI_API_KEY");
+  });
+
+  it("runs the cycle when the target is authenticatable via the auth store", async () => {
+    const { repo, home } = await makeZaiRepo();
+
+    // The incident's resolution: the credential moved into pi's
+    // on-disk auth store, so both contexts authenticate.
+    await mkdir(join(home, ".pi", "agent"), { recursive: true });
+    await writeFile(
+      join(home, ".pi", "agent", "auth.json"),
+      JSON.stringify({ zai: { type: "api", key: "stub-key" } }),
+    );
+
+    const result = await runScheduled(repo, {
+      HOME: home,
+      ZAI_API_KEY: "",
+    });
+    const log = await readFile(join(repo.tmp, "scheduled-run.log"), "utf8");
+
+    expect(result.code).toBe(0);
+    expect(log).toContain("cycle complete");
+    expect(log).not.toContain("credential pre-flight skipped");
+    expect(await upstreamHead(repo)).toMatch(/^wiki-sync:/);
+
+    const stamp = JSON.parse(
+      await readFile(join(repo.dataRoot, "outputs", "last-cycle.json"), "utf8"),
+    );
+
+    expect(stamp.outcome).toBe("ok");
   });
 });
 

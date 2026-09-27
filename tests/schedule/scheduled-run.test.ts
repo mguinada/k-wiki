@@ -315,6 +315,102 @@ describe("runScheduledCycle", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
+  it("skips before pipeline work when no agent target is authenticatable", async () => {
+    const dir = await tempDir();
+    const lockPath = join(dir, ".scheduled-run.lock");
+    const reason =
+      "no authenticatable agent target — zai/GLM-5.2: no ZAI_API_KEY in cycle env, no auth.json entry";
+
+    const outcome = await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath,
+      runGitStep: fakeGit().runGitStep,
+      runCredentialPreflight: async () => ({ status: "skip", reason }),
+      log: () => {},
+    });
+
+    expect({
+      outcome,
+      lockExists: await stat(lockPath).then(
+        () => true,
+        () => false,
+      ),
+      heartbeat: JSON.parse(
+        await readFile(join(dir, "outputs", "last-cycle.json"), "utf8"),
+      ),
+    }).toEqual({
+      outcome: { status: "skipped", reason },
+      lockExists: false,
+      heartbeat: {
+        outcome: "skipped",
+        reason,
+        pid: expect.any(Number),
+        timestamp: expect.any(String),
+        lastOk: null,
+      },
+    });
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("keeps the quota skip ahead of the credential gate", async () => {
+    const dir = await tempDir();
+    const credential = vi.fn(async () => {
+      throw new Error("credential gate must not run after a quota skip");
+    });
+
+    const outcome = await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep: fakeGit().runGitStep,
+      runQuotaPreflight: async () => ({
+        status: "skip",
+        reason:
+          "ingest provider zai exhausted_now, reset 2026-09-26T05:00:00.000Z",
+      }),
+      runCredentialPreflight: credential,
+      log: () => {},
+    });
+
+    expect({ outcome, credentialRuns: credential.mock.calls.length }).toEqual({
+      outcome: {
+        status: "skipped",
+        reason:
+          "ingest provider zai exhausted_now, reset 2026-09-26T05:00:00.000Z",
+      },
+      credentialRuns: 0,
+    });
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("runs the cycle when the credential gate judges a target authenticatable", async () => {
+    const dir = await tempDir();
+    const { git, runGitStep } = fakeGit();
+
+    const outcome = await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      runCredentialPreflight: async () => ({ status: "proceed" }),
+      log: () => {},
+    });
+
+    expect({
+      outcome,
+      synced: git.calls.some((call) => call[0] === "wiki-sync"),
+    }).toEqual({
+      outcome: { status: "ok" },
+      synced: true,
+    });
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
   it("proceeds with the dim availability line when agent settings cannot load", async () => {
     const dir = await tempDir();
     const { git, runGitStep } = fakeGit();
@@ -1864,6 +1960,7 @@ describe("runScheduledCycle quota-axi resolution (issue #406)", () => {
       lockPath: join(dir, ".scheduled-run.lock"),
       runGitStep,
       runSync: syncRecorder(git),
+      runCredentialPreflight: async () => ({ status: "proceed" as const }),
       args: ["--settings", settingsPath],
       resolveAgentPath: async (command) =>
         command === "quota-axi" ? quotaStub : command,
@@ -1898,6 +1995,7 @@ describe("runScheduledCycle quota-axi resolution (issue #406)", () => {
       lockPath: join(dir, ".scheduled-run.lock"),
       runGitStep,
       runSync: syncRecorder(git),
+      runCredentialPreflight: async () => ({ status: "proceed" as const }),
       args: ["--settings", settingsPath],
       resolveAgentPath: async (command) =>
         command === "quota-axi" ? undefined : command,

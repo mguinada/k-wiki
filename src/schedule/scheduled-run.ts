@@ -6,11 +6,12 @@
  *   lockfile → agent resolution (the settings' agent command
  *   resolved to an absolute path, issue #399; unresolvable fails
  *   the tick before any stage) → quota pre-flight (an optional
- *   quota-axi probe may skip the tick before any stage; its binary
- *   is resolved to an absolute path the same way, issue #406) →
- *   git pull --rebase → (with --lint-full: wiki-lint --full, the
- *   weekly quality sweep, issue #359) → wiki-sync (gates + commit)
- *   → git push
+ *   quota-axi probe may skip the tick, its binary resolved like
+ *   the agent's, issue #406) → credential pre-flight (every target
+ *   plausibly authenticatable in the cycle env — env var or pi's
+ *   auth store — else a named skip, issue #409) → git pull
+ *   --rebase → (with --lint-full: wiki-lint --full, the weekly
+ *   sweep, issue #359) → wiki-sync (gates + commit) → git push
  *
  * Overlap guard (issue #14 decision 3; the lock itself now lives in
  * `src/sync/run-lock.ts`, shared with manual wiki-sync runs since
@@ -66,6 +67,10 @@ import {
   releaseLock,
   runLockPath,
 } from "../sync/run-lock.ts";
+import {
+  type CredentialPreflightResult,
+  credentialGate,
+} from "./credential-preflight.ts";
 import { writeCycleHeartbeat } from "./heartbeat.ts";
 import { notifyUser } from "./notify.ts";
 import {
@@ -132,6 +137,8 @@ export interface ScheduledRunOptions {
   readonly runSync?: (args: readonly string[]) => Promise<void>;
   /** Quota probe; injected in tests and optional on every machine. */
   readonly runQuotaPreflight?: () => Promise<QuotaPreflightResult>;
+  /** Credential probe (issue #409); injected in tests. */
+  readonly runCredentialPreflight?: () => Promise<CredentialPreflightResult>;
   /** The full-sweep wiki-lint invocation; defaults to spawning node
    *  against the repo's bin/wiki-lint. Injected in tests. */
   readonly runLintFull?: (args: readonly string[]) => Promise<void>;
@@ -222,22 +229,22 @@ export async function runScheduledCycle(
   }
 
   const agentCommand = agentStep.agentCommand;
-  const quota = await runQuotaGate(options, log);
+  const gates = await runPreStageGates(options, log);
 
-  if (quota.skipReason !== undefined) {
+  if (gates.skipReason !== undefined) {
     await releaseLock(options.lockPath, pid);
-    await stampHeartbeat("skipped", quota.skipReason);
-    return { status: "skipped", reason: quota.skipReason };
+    await stampHeartbeat("skipped", gates.skipReason);
+    return { status: "skipped", reason: gates.skipReason };
   }
 
   try {
     await runStage(options, runGitStep, log, agentCommand);
   } catch (error) {
-    return await fail(errorMessage(error), quota.preflight);
+    return await fail(errorMessage(error), gates.preflight);
   }
 
   await releaseLock(options.lockPath, pid);
-  await stampHeartbeat("ok", undefined, quota.preflight);
+  await stampHeartbeat("ok", undefined, gates.preflight);
   log(`scheduled-run: ${stamp()} — cycle complete`);
 
   return { status: "ok" };
@@ -279,9 +286,9 @@ export function sweepArgsFor(
   ];
 }
 
-/** The quota gate's effect on the cycle: a skip reason when the
- *  provider cannot finish the cycle, the dormant pre-flight state
- *  when the cycle ran ungated. */
+/** The pre-stage gates' effect on the cycle: a skip reason when a
+ *  gate stops the tick, plus the dormant pre-flight state when the
+ *  cycle ran ungated. */
 interface QuotaGate {
   readonly skipReason?: string;
   readonly preflight?: PreflightState;
@@ -380,7 +387,10 @@ function settingsPathFor(options: ScheduledRunOptions): string {
   );
 }
 
-async function runQuotaGate(
+/** The pre-stage gates, in order (issues #401, #409): quota
+ *  first — its reason stands — then credential; the first skip
+ *  reason wins and the quota gate's dormant state rides along. */
+async function runPreStageGates(
   options: ScheduledRunOptions,
   log: (line: string) => void,
 ): Promise<QuotaGate> {
@@ -388,11 +398,20 @@ async function runQuotaGate(
     options.runQuotaPreflight ?? (() => runQuotaCheck(options, log))
   )();
 
-  return result.status === "skip"
-    ? { skipReason: result.reason }
-    : result.preflight === undefined
-      ? {}
-      : { preflight: result.preflight };
+  if (result.status === "skip") {
+    return { skipReason: result.reason };
+  }
+
+  const credential = await (
+    options.runCredentialPreflight ??
+    (() => credentialGate(settingsPathFor(options), log))
+  )();
+
+  if (credential.status === "skip") {
+    return { skipReason: credential.reason };
+  }
+
+  return result.preflight === undefined ? {} : { preflight: result.preflight };
 }
 
 async function runQuotaCheck(
