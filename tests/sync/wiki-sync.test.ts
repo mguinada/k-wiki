@@ -538,7 +538,7 @@ describe("runWikiSync", () => {
 
     expect(h.invocations).toHaveLength(2);
     expect(h.invocations[0]).toBe(
-      "FULL PROMPT\n\nThis cycle's full report will be committed at `outputs/cycle-2026-08-20.md`; cite it in your log entry.",
+      "FULL PROMPT\n\nThis cycle's full report will be committed at `outputs/cycle-2026-08-20.md`; cite it in your log entry as a plain path (no [[brackets]]).",
     );
     expect(h.invocations[1]).toContain(
       "AUDIT THE WIKI PROMPT\n\nSave the report to `outputs/lint-2026-08-20-full.md`.",
@@ -3893,7 +3893,7 @@ describe("runWikiSync cycle digest (issue #385)", () => {
     await runWikiSync(optionsFor(h));
 
     expect(h.invocations[0]).toContain(
-      "This cycle's full report will be committed at `outputs/cycle-2026-08-20.md`; cite it in your log entry.",
+      "This cycle's full report will be committed at `outputs/cycle-2026-08-20.md`; cite it in your log entry as a plain path (no [[brackets]]).",
     );
   });
 

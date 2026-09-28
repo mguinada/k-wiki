@@ -928,9 +928,7 @@ describe("runGuardrails — check 3, wikilinks", () => {
     const post = await guardedRun(dataRoot, async (root) => {
       await writeFile(
         join(root, "wiki", "log.md"),
-        page(
-          "Cited: [[outputs/cycle-2026-09-27.md]]. See [[ByteByteGo]].",
-        ),
+        page("Cited: [[outputs/cycle-2026-09-27.md]]. See [[ByteByteGo]]."),
       );
     });
 

@@ -2740,13 +2740,13 @@ describe("runWikiIngest --sources", () => {
     await runWikiIngest({
       ...optionsFor(h),
       cycleReportNote:
-        "This cycle's full report will be committed at `outputs/cycle-2026-08-20.md`; cite it in your log entry.",
+        "This cycle's full report will be committed at `outputs/cycle-2026-08-20.md`; cite it in your log entry as a plain path (no [[brackets]]).",
     });
 
     const prompt = invocation(h, 0).args.at(-1) ?? "";
 
     expect(prompt).toContain(
-      "This cycle's full report will be committed at `outputs/cycle-2026-08-20.md`; cite it in your log entry.",
+      "This cycle's full report will be committed at `outputs/cycle-2026-08-20.md`; cite it in your log entry as a plain path (no [[brackets]]).",
     );
     expect(prompt.indexOf("+ Engineering/b.md")).toBeLessThan(
       prompt.indexOf("This cycle's full report will be committed"),
@@ -2759,13 +2759,13 @@ describe("runWikiIngest --sources", () => {
     await runWikiIngest({
       ...optionsFor(h),
       cycleReportNote:
-        "This cycle's full report will be committed at `outputs/cycle-2026-08-20.md`; cite it in your log entry.",
+        "This cycle's full report will be committed at `outputs/cycle-2026-08-20.md`; cite it in your log entry as a plain path (no [[brackets]]).",
     });
 
     const prompt = invocation(h, 0).args.at(-1) ?? "";
 
     expect(prompt).toContain(
-      "This cycle's full report will be committed at `outputs/cycle-2026-08-20.md`; cite it in your log entry.",
+      "This cycle's full report will be committed at `outputs/cycle-2026-08-20.md`; cite it in your log entry as a plain path (no [[brackets]]).",
     );
   });
 
