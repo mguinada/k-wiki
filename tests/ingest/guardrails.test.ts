@@ -911,8 +911,15 @@ describe("runGuardrails — check 3, wikilinks", () => {
     expect(post.failure?.check).toBe(3);
   });
 
-  it("accepts an outputs-namespace cycle-report citation whether or not the digest exists yet", async () => {
+  it("accepts an outputs citation whose file exists under the data root's outputs/", async () => {
     const dataRoot = await makeRepo();
+
+    await mkdir(join(dataRoot, "outputs"), { recursive: true });
+    await writeFile(
+      join(dataRoot, "outputs", "cycle-2026-09-27.md"),
+      "# Cycle\n",
+    );
+
     const post = await guardedRun(dataRoot, async (root) => {
       await writeFile(
         join(root, "wiki", "log.md"),
@@ -923,8 +930,82 @@ describe("runGuardrails — check 3, wikilinks", () => {
     expect(post.failure).toBeUndefined();
   });
 
-  it("still trips on a broken wikilink to a wiki page beside an outputs citation", async () => {
+  it("trips on an outputs citation whose file is missing, naming the path", async () => {
     const dataRoot = await makeRepo();
+    const post = await guardedRun(dataRoot, async (root) => {
+      await writeFile(
+        join(root, "wiki", "log.md"),
+        page("Cited: [[outputs/cycle-2026-09-27.md]]."),
+      );
+    });
+
+    expect(post.failure).toMatchObject({
+      check: 3,
+      name: "wikilinks",
+      problems: expect.arrayContaining([
+        expect.stringMatching(
+          /^wiki\/log\.md:\d+ -> \[\[outputs\/cycle-2026-09-27\.md\]\] \(no outputs file "cycle-2026-09-27\.md"\)$/,
+        ),
+      ]),
+    });
+  });
+
+  it("trips on an outputs citation that escapes the outputs directory", async () => {
+    const dataRoot = await makeRepo();
+    const post = await guardedRun(dataRoot, async (root) => {
+      await writeFile(
+        join(root, "wiki", "log.md"),
+        page("Cited: [[outputs/../raw/manifest.json]]."),
+      );
+    });
+
+    expect(post.failure).toMatchObject({
+      check: 3,
+      name: "wikilinks",
+      problems: expect.arrayContaining([
+        expect.stringMatching(
+          /^wiki\/log\.md:\d+ -> \[\[outputs\/\.\.\/raw\/manifest\.json\]\] \(escapes the outputs\/ directory\)$/,
+        ),
+      ]),
+    });
+  });
+
+  it("trips on an outputs citation with an empty page segment", async () => {
+    const dataRoot = await makeRepo();
+    const post = await guardedRun(dataRoot, async (root) => {
+      await writeFile(
+        join(root, "wiki", "log.md"),
+        page("Cited: [[outputs/]]."),
+      );
+    });
+
+    expect(post.failure?.check).toBe(3);
+  });
+
+  it("still trips on a broken wikilink whose target merely starts with outputs", async () => {
+    const dataRoot = await makeRepo();
+    const post = await guardedRun(dataRoot, async (root) => {
+      await writeFile(join(root, "wiki", "log.md"), page("See [[outputsX]]."));
+    });
+
+    expect(post.failure).toMatchObject({
+      check: 3,
+      name: "wikilinks",
+      problems: expect.arrayContaining([
+        expect.stringMatching(/^wiki\/log\.md:\d+ -> \[\[outputsX\]\]$/),
+      ]),
+    });
+  });
+
+  it("still trips on a broken wikilink to a wiki page beside a resolved outputs citation", async () => {
+    const dataRoot = await makeRepo();
+
+    await mkdir(join(dataRoot, "outputs"), { recursive: true });
+    await writeFile(
+      join(dataRoot, "outputs", "cycle-2026-09-27.md"),
+      "# Cycle\n",
+    );
+
     const post = await guardedRun(dataRoot, async (root) => {
       await writeFile(
         join(root, "wiki", "log.md"),
@@ -935,7 +1016,26 @@ describe("runGuardrails — check 3, wikilinks", () => {
     expect(post.failure).toMatchObject({
       check: 3,
       name: "wikilinks",
+      problems: expect.arrayContaining([
+        expect.stringMatching(/^wiki\/log\.md:\d+ -> \[\[ByteByteGo\]\]$/),
+      ]),
     });
+  });
+
+  it("trips on a missing outputs citation inside a second brain, not read as cross-wiki", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(join(dataRoot, ".second-brain"), "");
+    await commit(dataRoot, "mark second brain");
+
+    const post = await guardedRun(dataRoot, async (root) => {
+      await writeFile(
+        join(root, "wiki", "log.md"),
+        page("Cited: [[outputs/cycle-2026-09-27.md]]."),
+      );
+    });
+
+    expect(post.failure?.check).toBe(3);
   });
 
   it("trips on a cross-wiki link in a wiki that is not a second brain", async () => {

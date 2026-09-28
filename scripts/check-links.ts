@@ -5,6 +5,13 @@ import { terminalColors as colors, errorMessage } from "../src/cli/colors.ts";
 import { refuseDirectExecution } from "../src/cli/is-main.ts";
 import { anchorResolves } from "../src/wiki/chapter-headings.ts";
 import {
+  isOutputsTarget,
+  OUTPUTS_DIR,
+  outputsFileProbe,
+  outputsLinkProblem,
+  outputsProblemReason,
+} from "../src/wiki/outputs-links.ts";
+import {
   closingFence,
   FRONTMATTER_FENCE,
   listSandboxPages,
@@ -14,6 +21,7 @@ import {
   buildPageIndex,
   crossWikiTarget,
   extractWikilinks,
+  type Wikilink,
 } from "../src/wiki/wiki-links.ts";
 
 /**
@@ -33,7 +41,11 @@ import {
  * check-provenance's domain — and are not double-reported here.
  * `#^block-id` references are blocks, not headings, and are skipped;
  * a `[[page#A#B]]` multi-level anchor resolves against its final
- * heading segment. Cross-wiki `[[<vault>/<page>]]` links are
+ * heading segment. Outputs-namespace `[[outputs/…]]` citations
+ * (issue #410) resolve against the data root's outputs/ directory —
+ * the wiki dir's sibling — and must name an existing file there;
+ * a missing file or a traversal escaping the directory is broken
+ * (issue #414). Cross-wiki `[[<vault>/<page>]]` links are
  * external to this wiki and are skipped (issue #81);
  * `check-crosslinks` validates them against the domain wikis
  * themselves. Prints one `file:line -> [[link]]` line per broken
@@ -52,6 +64,60 @@ export interface LinkReport {
 }
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+/** One link's verdict: an external cross-wiki link, a broken line
+ *  (`where` plus the reason), or resolved. Outputs-namespace citations
+ *  resolve against the data root's outputs/ directory (issue #414)
+ *  and are never cross-wiki; a cross-wiki target is external
+ *  (issue #81); anything else must hit the page index, and a
+ *  body-text anchor must match the target's headings. */
+type LinkVerdict =
+  | { readonly kind: "external" }
+  | { readonly kind: "ok" }
+  | { readonly kind: "broken"; readonly line: string };
+
+function linkVerdict(
+  link: Wikilink,
+  where: string,
+  index: ReadonlyMap<string, string>,
+  texts: ReadonlyMap<string, string>,
+  bodyFrom: number,
+  outputs: (relative: string) => boolean,
+): LinkVerdict {
+  if (isOutputsTarget(link.target)) {
+    const problem = outputsLinkProblem(link.target, outputs);
+
+    return problem === undefined
+      ? { kind: "ok" }
+      : {
+          kind: "broken",
+          line: `${where} (${outputsProblemReason(link.target, problem)})`,
+        };
+  }
+
+  if (crossWikiTarget(link.target) !== undefined) {
+    return { kind: "external" };
+  }
+
+  const targetFile = index.get(link.target);
+
+  if (targetFile === undefined) {
+    return { kind: "broken", line: where };
+  }
+
+  if (
+    link.anchor !== undefined &&
+    link.line >= bodyFrom &&
+    !anchorResolves(texts.get(targetFile) ?? "", link.anchor)
+  ) {
+    return {
+      kind: "broken",
+      line: `${where} (target has no heading "${link.anchor}")`,
+    };
+  }
+
+  return { kind: "ok" };
+}
 
 /**
  * Check every wikilink under `wikiDirInput`, reporting broken links
@@ -76,6 +142,7 @@ export async function checkWikiLinks(
   const broken: string[] = [];
   let links = 0;
   let external = 0;
+  const outputs = outputsFileProbe(join(wikiDir, "..", OUTPUTS_DIR));
 
   for (const file of files) {
     texts.set(file, await readFile(join(wikiDir, file), "utf8"));
@@ -97,28 +164,23 @@ export async function checkWikiLinks(
     for (const link of extractWikilinks(text)) {
       links++;
 
-      if (crossWikiTarget(link.target) !== undefined) {
+      const verdict = linkVerdict(
+        link,
+        `${reportPath}:${link.line} -> ${link.raw}`,
+        index,
+        texts,
+        bodyFrom,
+        outputs,
+      );
+
+      if (verdict.kind === "external") {
         external++;
 
         continue;
       }
 
-      const targetFile = index.get(link.target);
-
-      if (targetFile === undefined) {
-        broken.push(`${reportPath}:${link.line} -> ${link.raw}`);
-
-        continue;
-      }
-
-      if (
-        link.anchor !== undefined &&
-        link.line >= bodyFrom &&
-        !anchorResolves(texts.get(targetFile) ?? "", link.anchor)
-      ) {
-        broken.push(
-          `${reportPath}:${link.line} -> ${link.raw} (target has no heading "${link.anchor}")`,
-        );
+      if (verdict.kind === "broken") {
+        broken.push(verdict.line);
       }
     }
   }
@@ -133,8 +195,11 @@ Check that every [[wikilink]] under a wiki resolves: the target page
 must exist by file name, and a body-text heading anchor
 ([[page#Chapter]]) must match a heading in the target page
 byte-identically — no case or punctuation tolerance, because wiki
-anchors are generated, not typed. The sandbox namespace
-(wiki/sandbox/) is scanned too: links from sandbox pages are
+anchors are generated, not typed. Outputs-namespace [[outputs/…]]
+citations resolve against the data root's outputs/ directory (the
+wiki dir's sibling) and must name an existing file there — a missing
+file or a traversal escaping the directory is broken. The sandbox
+namespace (wiki/sandbox/) is scanned too: links from sandbox pages are
 validated exactly like main-page links, and links into the sandbox
 resolve silently — direction violations (main pages citing sandbox
 notes) are check-citations' business, never this tool's. Anchored

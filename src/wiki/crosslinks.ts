@@ -9,7 +9,10 @@
  *     case-insensitively against each domain repo's
  *     `raw/manifest.json`) and resolve to an existing page of that
  *     wiki — second-brain notes may reference domain knowledge, and
- *     the reference must be alive;
+ *     the reference must be alive; outputs-namespace `[[outputs/…]]`
+ *     citations are not cross-wiki: they resolve against the data
+ *     root's outputs/ directory — the wiki dir's sibling — and must
+ *     name an existing file there (issue #414);
  *  2. the domain wikis themselves must contain no cross-wiki links —
  *     they are link sinks and never point at second-brain material;
  *  3. the audited wiki's sandbox namespace contains no cross-wiki
@@ -22,6 +25,13 @@ import { readFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { readTextIfExists } from "../cli/shared.ts";
 import { parseManifest } from "../sync/manifest.ts";
+import {
+  isOutputsTarget,
+  OUTPUTS_DIR,
+  outputsFileProbe,
+  outputsLinkProblem,
+  outputsProblemReason,
+} from "./outputs-links.ts";
 import { listSandboxPages, listWikiPages, pageReportPath } from "./pages.ts";
 import {
   buildPageIndex,
@@ -80,7 +90,10 @@ async function loadDomainWiki(dirInput: string): Promise<DomainWiki> {
 }
 
 /** Audit the audited wiki's outgoing links: every cross-wiki link
- *  must name a known domain vault and resolve to that domain's page. */
+ *  must name a known domain vault and resolve to that domain's page;
+ *  an outputs-namespace citation instead resolves against the data
+ *  root's outputs/ directory — the wiki dir's sibling — and must
+ *  name an existing file there (issue #414). */
 async function auditWikiLinks(
   wikiDir: string,
   files: readonly string[],
@@ -88,11 +101,29 @@ async function auditWikiLinks(
 ): Promise<{ problems: string[]; external: number }> {
   const problems: string[] = [];
   let external = 0;
+  const outputs = outputsFileProbe(join(wikiDir, "..", OUTPUTS_DIR));
 
   for (const file of files) {
     const text = await readFile(join(wikiDir, file), "utf8");
 
     for (const link of extractWikilinks(text)) {
+      const where = `${pageReportPath(wikiDir, file)}:${link.line} -> ${link.raw}`;
+
+      // Outputs-namespace citations (issue #410) are not cross-wiki:
+      // they resolve against this data root's outputs/ directory,
+      // before any slashed-target reading (issue #414).
+      if (isOutputsTarget(link.target)) {
+        const problem = outputsLinkProblem(link.target, outputs);
+
+        if (problem !== undefined) {
+          problems.push(
+            `${where} (${outputsProblemReason(link.target, problem)})`,
+          );
+        }
+
+        continue;
+      }
+
       const target = crossWikiTarget(link.target);
 
       if (target === undefined) {
@@ -101,7 +132,6 @@ async function auditWikiLinks(
 
       external++;
 
-      const where = `${pageReportPath(wikiDir, file)}:${link.line} -> ${link.raw}`;
       const domain = domains.find((wiki) =>
         wiki.vaults.has(target.vault.toLowerCase()),
       );

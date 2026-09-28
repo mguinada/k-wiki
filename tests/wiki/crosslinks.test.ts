@@ -132,6 +132,88 @@ describe("checkCrossWikiLinks", () => {
     expect(report.external).toBe(1);
   });
 
+  it("does not audit an outputs citation to an existing file as cross-wiki", async () => {
+    const brain = await makeWiki("brain", {
+      "log.md": "Cited: [[outputs/cycle-2026-09-27.md]].\n",
+    });
+    const engineering = await makeWiki(
+      "engineering",
+      { "concepts/stub.md": "# Stub\n" },
+      "Engineering",
+    );
+
+    await mkdir(join(brain, "outputs"), { recursive: true });
+    await writeFile(join(brain, "outputs", "cycle-2026-09-27.md"), "# Cycle\n");
+
+    const report = await checkCrossWikiLinks(
+      join(brain, "brain"),
+      join(engineering, "engineering"),
+    );
+
+    expect(report.problems).toEqual([]);
+  });
+
+  it("reports an outputs citation whose file is missing", async () => {
+    const brain = await makeWiki("brain", {
+      "log.md": "Cited: [[outputs/cycle-2026-09-27.md]].\n",
+    });
+    const engineering = await makeWiki(
+      "engineering",
+      { "concepts/stub.md": "# Stub\n" },
+      "Engineering",
+    );
+
+    const report = await checkCrossWikiLinks(
+      join(brain, "brain"),
+      join(engineering, "engineering"),
+    );
+
+    expect(report.problems).toEqual([
+      'brain/log.md:1 -> [[outputs/cycle-2026-09-27.md]] (no outputs file "cycle-2026-09-27.md")',
+    ]);
+  });
+
+  it("reports an outputs citation escaping the outputs directory", async () => {
+    const brain = await makeWiki("brain", {
+      "log.md": "Cited: [[outputs/../raw/manifest.json]].\n",
+    });
+    const engineering = await makeWiki(
+      "engineering",
+      { "concepts/stub.md": "# Stub\n" },
+      "Engineering",
+    );
+
+    const report = await checkCrossWikiLinks(
+      join(brain, "brain"),
+      join(engineering, "engineering"),
+    );
+
+    expect(report.problems).toEqual([
+      "brain/log.md:1 -> [[outputs/../raw/manifest.json]] (escapes the outputs/ directory)",
+    ]);
+  });
+
+  it("does not count a resolved outputs citation as external", async () => {
+    const brain = await makeWiki("brain", {
+      "log.md": "Cited: [[outputs/cycle-2026-09-27.md]].\n",
+    });
+    const engineering = await makeWiki(
+      "engineering",
+      { "concepts/stub.md": "# Stub\n" },
+      "Engineering",
+    );
+
+    await mkdir(join(brain, "outputs"), { recursive: true });
+    await writeFile(join(brain, "outputs", "cycle-2026-09-27.md"), "# Cycle\n");
+
+    const report = await checkCrossWikiLinks(
+      join(brain, "brain"),
+      join(engineering, "engineering"),
+    );
+
+    expect(report.external).toBe(0);
+  });
+
   it("resolves a link whose vault name case differs", async () => {
     const brain = await makeWiki("brain", {
       "index.md": "See [[Engineering/stub]].\n",

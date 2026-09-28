@@ -161,6 +161,7 @@ describe("computeKpis link graph", () => {
       ],
       rawNoteKeys: [],
       ingestedKeys: [],
+      outputsFiles: [],
       lastSync: null,
       rawNoteSyncDates: [],
       statusFlips: [],
@@ -183,6 +184,7 @@ describe("computeKpis link graph", () => {
       ],
       rawNoteKeys: [],
       ingestedKeys: [],
+      outputsFiles: [],
       lastSync: null,
       rawNoteSyncDates: [],
       statusFlips: [],
@@ -202,6 +204,7 @@ describe("computeKpis link graph", () => {
       pages: [page({ path: "a.md", outbound: ["Missing"] })],
       rawNoteKeys: [],
       ingestedKeys: [],
+      outputsFiles: [],
       lastSync: null,
       rawNoteSyncDates: [],
       statusFlips: [],
@@ -214,6 +217,96 @@ describe("computeKpis link graph", () => {
     expect(kpis.deadLinks).toEqual([{ source: "a.md", target: "Missing" }]);
   });
 
+  it("does not count an outputs citation to an existing file as dead", () => {
+    const kpis = computeKpis({
+      now: NOW,
+      head: "abc1234",
+      pages: [
+        page({ path: "a.md", outbound: ["outputs/cycle-2026-09-27.md"] }),
+      ],
+      rawNoteKeys: [],
+      ingestedKeys: [],
+      outputsFiles: ["cycle-2026-09-27.md"],
+      lastSync: null,
+      rawNoteSyncDates: [],
+      statusFlips: [],
+      commits: [],
+      firstAdded: [],
+      lastQuery: null,
+      lastCycle: null,
+    });
+
+    expect(kpis.deadLinks).toEqual([]);
+  });
+
+  it("counts an outputs citation to a missing file as dead", () => {
+    const kpis = computeKpis({
+      now: NOW,
+      head: "abc1234",
+      pages: [
+        page({ path: "a.md", outbound: ["outputs/cycle-2026-09-27.md"] }),
+      ],
+      rawNoteKeys: [],
+      ingestedKeys: [],
+      outputsFiles: [],
+      lastSync: null,
+      rawNoteSyncDates: [],
+      statusFlips: [],
+      commits: [],
+      firstAdded: [],
+      lastQuery: null,
+      lastCycle: null,
+    });
+
+    expect(kpis.deadLinks).toEqual([
+      { source: "a.md", target: "outputs/cycle-2026-09-27.md" },
+    ]);
+  });
+
+  it("counts an escaping outputs citation as dead", () => {
+    const kpis = computeKpis({
+      now: NOW,
+      head: "abc1234",
+      pages: [
+        page({ path: "a.md", outbound: ["outputs/../raw/manifest.json"] }),
+      ],
+      rawNoteKeys: [],
+      ingestedKeys: [],
+      outputsFiles: ["raw/manifest.json"],
+      lastSync: null,
+      rawNoteSyncDates: [],
+      statusFlips: [],
+      commits: [],
+      firstAdded: [],
+      lastQuery: null,
+      lastCycle: null,
+    });
+
+    expect(kpis.deadLinks).toEqual([
+      { source: "a.md", target: "outputs/../raw/manifest.json" },
+    ]);
+  });
+
+  it("resolves a longer name that merely starts with outputs as an ordinary page", () => {
+    const kpis = computeKpis({
+      now: NOW,
+      head: "abc1234",
+      pages: [page({ path: "a.md", outbound: ["outputsX"] })],
+      rawNoteKeys: [],
+      ingestedKeys: [],
+      outputsFiles: [],
+      lastSync: null,
+      rawNoteSyncDates: [],
+      statusFlips: [],
+      commits: [],
+      firstAdded: [],
+      lastQuery: null,
+      lastCycle: null,
+    });
+
+    expect(kpis.deadLinks).toEqual([{ source: "a.md", target: "outputsX" }]);
+  });
+
   it("resolves a link to a nested page by its page name", () => {
     const kpis = computeKpis({
       now: NOW,
@@ -224,6 +317,7 @@ describe("computeKpis link graph", () => {
       ],
       rawNoteKeys: [],
       ingestedKeys: [],
+      outputsFiles: [],
       lastSync: null,
       rawNoteSyncDates: [],
       statusFlips: [],
@@ -246,6 +340,7 @@ describe("computeKpis link graph", () => {
       ],
       rawNoteKeys: [],
       ingestedKeys: [],
+      outputsFiles: [],
       lastSync: null,
       rawNoteSyncDates: [],
       statusFlips: [],
@@ -268,6 +363,7 @@ describe("computeKpis link graph", () => {
       ],
       rawNoteKeys: [],
       ingestedKeys: [],
+      outputsFiles: [],
       lastSync: null,
       rawNoteSyncDates: [],
       statusFlips: [],
@@ -287,6 +383,7 @@ describe("computeKpis link graph", () => {
       pages: [page({ path: "a.md", outbound: ["Other/elsewhere"] })],
       rawNoteKeys: [],
       ingestedKeys: [],
+      outputsFiles: [],
       lastSync: null,
       rawNoteSyncDates: [],
       statusFlips: [],
@@ -311,6 +408,7 @@ describe("computeKpis link graph", () => {
       ],
       rawNoteKeys: [],
       ingestedKeys: [],
+      outputsFiles: [],
       lastSync: null,
       rawNoteSyncDates: [],
       statusFlips: [],
@@ -341,6 +439,7 @@ describe("computeKpis link graph", () => {
       ],
       rawNoteKeys: [],
       ingestedKeys: [],
+      outputsFiles: [],
       lastSync: null,
       rawNoteSyncDates: [],
       statusFlips: [],
@@ -364,6 +463,7 @@ describe("computeKpis link graph", () => {
       ],
       rawNoteKeys: [],
       ingestedKeys: [],
+      outputsFiles: [],
       lastSync: null,
       rawNoteSyncDates: [],
       statusFlips: [],
@@ -544,6 +644,7 @@ describe("computeKpis totals", () => {
       pages: [page(), page({ path: "b.md" })],
       rawNoteKeys: [],
       ingestedKeys: [],
+      outputsFiles: [],
       lastSync: null,
       rawNoteSyncDates: [],
       statusFlips: [],
@@ -563,6 +664,7 @@ describe("computeKpis totals", () => {
       pages: [],
       rawNoteKeys: [],
       ingestedKeys: [],
+      outputsFiles: [],
       lastSync: "2026-08-30T00:00:00.000Z",
       rawNoteSyncDates: [],
       statusFlips: [],
@@ -582,6 +684,7 @@ describe("computeKpis totals", () => {
       pages: [],
       rawNoteKeys: [],
       ingestedKeys: [],
+      outputsFiles: [],
       lastSync: null,
       rawNoteSyncDates: [],
       statusFlips: [],
@@ -601,6 +704,7 @@ describe("computeKpis totals", () => {
       pages: [],
       rawNoteKeys: [],
       ingestedKeys: [],
+      outputsFiles: [],
       lastSync: "banana",
       rawNoteSyncDates: [],
       statusFlips: [],
@@ -626,6 +730,7 @@ describe("missingPages", () => {
       ],
       rawNoteKeys: [],
       ingestedKeys: [],
+      outputsFiles: [],
       lastSync: null,
       rawNoteSyncDates: [],
       statusFlips: [],
@@ -650,6 +755,7 @@ describe("missingPages", () => {
       ),
       rawNoteKeys: [],
       ingestedKeys: [],
+      outputsFiles: [],
       lastSync: null,
       rawNoteSyncDates: [],
       statusFlips: [],
@@ -669,6 +775,7 @@ describe("missingPages", () => {
       pages: [page({ path: "a.md", outbound: [] })],
       rawNoteKeys: [],
       ingestedKeys: [],
+      outputsFiles: [],
       lastSync: null,
       rawNoteSyncDates: [],
       statusFlips: [],
@@ -974,6 +1081,7 @@ describe("computeKpis last ok cycle (issue #362)", () => {
       pages: [],
       rawNoteKeys: [],
       ingestedKeys: [],
+      outputsFiles: [],
       lastSync: null,
       rawNoteSyncDates: [],
       statusFlips: [],

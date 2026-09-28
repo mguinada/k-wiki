@@ -5,6 +5,7 @@
  * in collect.ts; the HTML template lives in render.ts.
  */
 
+import { isOutputsTarget, outputsLinkProblem } from "../wiki/outputs-links.ts";
 import { buildPageIndex, crossWikiTarget } from "../wiki/wiki-links.ts";
 
 /** One wiki page as the dashboard sees it. */
@@ -58,6 +59,10 @@ export interface DashboardInput {
     readonly key: string;
     readonly lastSynced: string;
   }[];
+  /** Outputs-relative paths of every file in the data repo's
+   *  outputs/ directory (issue #414): the existence set an
+   *  `outputs/…` dead-link check resolves against. */
+  readonly outputsFiles: readonly string[];
   /** Data-repo commits, newest first, subjects included. */
   readonly commits: readonly CommitFact[];
   /** Commits that changed a `status: needs-review` line in wiki/,
@@ -167,8 +172,10 @@ export function backlogFrom(
   };
 }
 
-// computeKpis: the page-name index reuses buildPageIndex, so link
-// resolution matches check-links exactly.
+// computeKpis: the page-name index reuses buildPageIndex and the
+// outputs-namespace check reuses the shared resolver
+// (src/wiki/outputs-links.ts), so link resolution matches check-links
+// exactly (issue #414).
 
 /** Sort (key, count) entries by count desc, then key asc — the
  *  deterministic order — keeping the top N. */
@@ -522,9 +529,42 @@ export interface DashboardKpis {
  *  signal on it is noise, so it is exempt (issue #73 review). */
 const NAVIGATION_ROOT = "index.md";
 
+/** One outbound link target's class: external (cross-wiki or a live
+ *  outputs citation — never counted), dead (reported), or the page
+ *  path it resolves to. Outputs citations resolve against the data
+ *  root's outputs/ file set — before any cross-wiki reading of a
+ *  slashed target — through the shared resolver (issue #414). */
+type TargetResolution =
+  | { readonly kind: "external" }
+  | { readonly kind: "dead" }
+  | { readonly kind: "page"; readonly path: string };
+
+function resolveOutboundTarget(
+  target: string,
+  nameToPath: ReadonlyMap<string, string>,
+  outputsFiles: ReadonlySet<string>,
+): TargetResolution {
+  if (isOutputsTarget(target)) {
+    return outputsLinkProblem(target, (relative) =>
+      outputsFiles.has(relative),
+    ) === undefined
+      ? { kind: "external" }
+      : { kind: "dead" };
+  }
+
+  if (crossWikiTarget(target) !== undefined) {
+    return { kind: "external" };
+  }
+
+  const path = nameToPath.get(target);
+
+  return path === undefined ? { kind: "dead" } : { kind: "page", path };
+}
+
 /** Compute every KPI from one input (issue #73's KPI menu). */
 export function computeKpis(input: DashboardInput): DashboardKpis {
   const nameToPath = buildPageIndex(input.pages.map((page) => page.path));
+  const outputsFiles = new Set(input.outputsFiles);
   const inbound = new Map<string, number>(
     input.pages.map((page) => [page.path, 0] as const),
   );
@@ -532,19 +572,15 @@ export function computeKpis(input: DashboardInput): DashboardKpis {
 
   for (const page of input.pages) {
     for (const target of page.outbound) {
-      if (crossWikiTarget(target) !== undefined) {
-        continue;
-      }
+      const resolved = resolveOutboundTarget(target, nameToPath, outputsFiles);
 
-      const resolved = nameToPath.get(target);
-
-      if (resolved === undefined) {
+      if (resolved.kind === "dead") {
         deadLinks.push({ source: page.path, target });
-
-        continue;
       }
 
-      inbound.set(resolved, (inbound.get(resolved) ?? 0) + 1);
+      if (resolved.kind === "page") {
+        inbound.set(resolved.path, (inbound.get(resolved.path) ?? 0) + 1);
+      }
     }
   }
 

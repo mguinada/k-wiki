@@ -67,6 +67,7 @@ export function fixtureKpis(): DashboardKpis {
       { key: "Engineering/a.md", lastSynced: "2026-08-30T00:00:00.000Z" },
       { key: "Engineering/b.md", lastSynced: "2026-05-01T00:00:00.000Z" },
     ],
+    outputsFiles: [],
     statusFlips: [{ date: "2026-08-20", subject: "ingest" }],
     commits: [
       { date: "2026-08-25", subject: "wiki-sync: 9 sources processed" },

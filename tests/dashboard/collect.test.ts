@@ -255,6 +255,11 @@ describe("collectData", () => {
         { key: "Engineering/b.md", lastSynced: "2026-08-25T00:00:00.000Z" },
         { key: "Engineering/a.md", lastSynced: "2026-08-10T00:00:00.000Z" },
       ],
+      outputsFiles: [
+        "last-cycle.json",
+        "last-ingested-manifest.json",
+        "last-query.md",
+      ],
       statusFlips: [
         { date: "2026-08-20", subject: "flip a page to needs-review" },
       ],
@@ -320,6 +325,7 @@ describe("collectData", () => {
       ingestedKeys: null,
       lastSync: null,
       rawNoteSyncDates: [],
+      outputsFiles: [],
       statusFlips: [],
       commits: [],
       firstAdded: [],
