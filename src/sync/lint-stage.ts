@@ -476,11 +476,7 @@ export async function runCycleLint(
     return undefined;
   }
 
-  const lintSettings = lintSettingsForCycle(
-    settings,
-    excluded,
-    run.onProgress,
-  );
+  const lintSettings = lintSettingsForCycle(settings, excluded, run.onProgress);
 
   run.onProgress(stageLabel);
 
