@@ -1180,8 +1180,11 @@ It chains the proven pieces and adds no capability of its own:
    `check-crosslinks` audit run over its wiki against every listed
    domain wiki — every cycle, including no-change cycles, after lint
    and before the commit. One broken or forbidden `[[<vault>/<page>]]`
-   link fails the cycle (exit 1, one `file:line -> [[link]]` line per
-   problem, no commit — the uncommitted diff is the fix surface), so
+   link — or an `[[outputs/…]]` citation that names no existing file
+   under the citing wiki dir's sibling `outputs/` directory (it is
+   not cross-wiki) — fails the cycle (exit 1, one `file:line ->
+   [[link]]` line per problem, no commit — the uncommitted diff is
+   the fix surface), so
    the wiki/AGENTS.md "after every run" contract is enforced, not
    prose. Instances without the key skip the stage; the default
    instance is unchanged.
@@ -1190,8 +1193,11 @@ It chains the proven pieces and adds no capability of its own:
    the data repo's working tree after the crosslink audit and before
    verification. Main pages must never link, embed, or cite sandbox
    pages; sandbox pages must never carry `sources` edges,
-   sandbox-peer links, or cross-wiki links; the `via: agent` stamp
-   lives only inside `wiki/sandbox/`. One violation line fails the
+   sandbox-peer links, or cross-wiki links (an `[[outputs/…]]`
+   citation is not one — it must name an existing file under the data
+   repo's `outputs/` directory; a missing or escaping target is a
+   violation); the `via: agent` stamp lives only inside
+   `wiki/sandbox/`. One violation line fails the
    cycle before the commit — after path-scoped-reverting every
    offending page to its last committed state (never a whole-repo
    reset), so a rogue edge never rides the cycle's commit. A wiki

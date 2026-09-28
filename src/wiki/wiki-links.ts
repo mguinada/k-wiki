@@ -178,13 +178,16 @@ export function inboundLinkIndex(
 }
 
 /** A wikilink target naming a page of another wiki instance (issue
- *  #81): any target containing a `/` is cross-wiki — `[[<vault>/<page>]]`,
- *  where `<vault>` is a domain wiki's vault name. Bare targets are
- *  internal: page names come from file names, which cannot contain a
- *  slash. A vault segment carrying a protocol (`http:`, `file:`, …) is
- *  a URL, not a vault name. The internal checkers skip cross-wiki
- *  targets and `scripts/check-crosslinks.ts` validates them against
- *  the named domain wiki. */
+ *  #81): a target containing a `/` is cross-wiki — `[[<vault>/<page>]]`,
+ *  where `<vault>` is a domain wiki's vault name. The one exception is
+ *  an `[[outputs/…]]` citation (issue #414): not cross-wiki, every
+ *  consumer routes it through the shared outputs resolver
+ *  (src/wiki/outputs-links.ts) before consulting this classifier.
+ *  Bare targets are internal: page names come from file names, which
+ *  cannot contain a slash. A vault segment carrying a protocol
+ *  (`http:`, `file:`, …) is a URL, not a vault name. The internal
+ *  checkers skip cross-wiki targets and `scripts/check-crosslinks.ts`
+ *  validates them against the named domain wiki. */
 export interface CrossWikiTarget {
   /** The vault segment before the first slash, case as written. */
   readonly vault: string;
