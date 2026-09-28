@@ -28,7 +28,9 @@ export interface AgentSettings {
   readonly reasoning: string;
   /** Passed to the agent as `--provider` when set; the first target's provider. */
   readonly provider?: string;
-  /** Ordered provider/model targets for ingest fallback. */
+  /** Ordered provider/model targets for ingest fallback; the
+   *  wiki-sync cycle's lint stage also serves from it via the
+   *  per-cycle affordability memory (issue #408). */
   readonly targets?: readonly AgentTarget[];
   /** Quota pre-flight mode for unattended scheduled runs. */
   readonly quotaPreflight?: "auto" | "off" | string;
