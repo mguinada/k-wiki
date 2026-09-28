@@ -911,6 +911,35 @@ describe("runGuardrails — check 3, wikilinks", () => {
     expect(post.failure?.check).toBe(3);
   });
 
+  it("accepts an outputs-namespace cycle-report citation whether or not the digest exists yet", async () => {
+    const dataRoot = await makeRepo();
+    const post = await guardedRun(dataRoot, async (root) => {
+      await writeFile(
+        join(root, "wiki", "log.md"),
+        page("Cited: [[outputs/cycle-2026-09-27.md]]."),
+      );
+    });
+
+    expect(post.failure).toBeUndefined();
+  });
+
+  it("still trips on a broken wikilink to a wiki page beside an outputs citation", async () => {
+    const dataRoot = await makeRepo();
+    const post = await guardedRun(dataRoot, async (root) => {
+      await writeFile(
+        join(root, "wiki", "log.md"),
+        page(
+          "Cited: [[outputs/cycle-2026-09-27.md]]. See [[ByteByteGo]].",
+        ),
+      );
+    });
+
+    expect(post.failure).toMatchObject({
+      check: 3,
+      name: "wikilinks",
+    });
+  });
+
   it("trips on a cross-wiki link in a wiki that is not a second brain", async () => {
     const dataRoot = await makeRepo();
     const post = await guardedRun(dataRoot, async (root) => {
