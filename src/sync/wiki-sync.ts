@@ -128,9 +128,10 @@ import {
   type SyncConfig,
 } from "./config.ts";
 import {
+  affordabilityExclusion,
   LINT_HEARTBEAT_PREFIX,
   type LintResult,
-  runLintStage,
+  runCycleLint,
 } from "./lint-stage.ts";
 import { lintWindowPath, restoreLintWindowSnapshot } from "./lint-window.ts";
 import type {
@@ -598,37 +599,6 @@ async function runSyncStage(
   });
 }
 
-/** Stage 3: lint what the ingest agent produced, or skip the lint
- *  stage with it when no ingest ran. */
-async function runLintOrSkip(
-  options: WikiSyncOptions,
-  ingest: IngestResult,
-  stages: readonly string[],
-  preLint: PreRunState,
-  settings: AgentSettings,
-): Promise<LintResult | undefined> {
-  const { run } = options;
-
-  if (ingest.status !== "ran") {
-    run.onProgress(`${stageLine(stages, "lint")} skipped (no ingest ran)`);
-
-    return undefined;
-  }
-
-  run.onProgress(stageLine(stages, "lint"));
-
-  return await runLintStage({
-    settingsPath: options.settingsPath,
-    settings,
-    run,
-    promptsDir: options.promptsDir,
-    runAgent: options.runAgent,
-    timeoutMs: options.timeoutMs,
-    heartbeatMs: options.heartbeatMs,
-    pre: preLint,
-  });
-}
-
 /** Stage 4: the configured crosslink audit; skipped outright when
  *  the instance carries no `secondBrain.domains` key. */
 async function runCrosslinksOrSkip(
@@ -813,6 +783,14 @@ async function runCycleStages(
   // Ingest-stage failures write it only when the ingest stage kept
   // the run's edits; a guardrail-reverted failure leaves nothing
   // citing and the clean tree the scheduled wrapper's recovery owns.
+  // Per-cycle affordability memory (issue #408): a target attempt
+  // whose agent request fails with a 402/credits-class error cannot
+  // fund the lint request later in the same cycle, so the lint
+  // stage skips that attempt and serves from the next target in the
+  // order. The set lives only for this cycle — a fresh runWikiSync
+  // call starts empty, so a provider whose credit resets is
+  // eligible again.
+  const excludedTargets = new Set<number>();
   let ingest: IngestResult | undefined;
 
   try {
@@ -827,6 +805,7 @@ async function runCycleStages(
       heartbeatMs: options.heartbeatMs,
       cycleReportNote: cycleReportPromise(cyclePath),
       deferSnapshot: options.deferIngestSnapshot === true,
+      onTargetFailure: affordabilityExclusion(excludedTargets),
     });
 
     // The verification stage's revert target: everything the ingest
@@ -842,12 +821,13 @@ async function runCycleStages(
     await boundary?.("ingest", "after");
     await boundary?.("lint", "before");
 
-    const lint = await runLintOrSkip(
+    const lint = await runCycleLint(
       options,
       ingest,
-      stages,
+      stageLine(stages, "lint"),
       preLint,
       settings,
+      excludedTargets,
     );
 
     await boundary?.("lint", "after");

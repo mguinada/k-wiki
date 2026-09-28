@@ -991,8 +991,17 @@ reasoning: high    # pi thinking level, passed as --thinking
 primary target, and when a target fails before producing any kept
 output the next entry is tried — once a target keeps output the run is
 never retried, and each tried target gets the full `--timeout` budget.
-The single-target legacy form (`provider:` and `model:` scalars, as in
-the instances above) remains valid; the two forms cannot be combined.
+Within a [`wiki-sync`](#running-the-full-cycle-wiki-sync) cycle the
+memory crosses the two agent stages: when a target's ingest request
+fails with an affordability-class error — the provider cannot fund the
+request (HTTP 402, out-of-credits wording) — the cycle's lint stage
+skips that target and serves from the first one the memory still
+allows, announcing the switch with one progress line; the memory dies
+with the cycle, so the next cycle starts from the primary target
+again. An unrelated failure (crash, timeout) says nothing about the
+target's balance and carries nothing over. The single-target legacy
+form (`provider:` and `model:` scalars, as in the instances above)
+remains valid; the two forms cannot be combined.
 
 Unless `isolate: false` opts out, every spawned ingest and lint run
 is isolated from the host's global agent setup: the

@@ -1,6 +1,11 @@
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { runAgentTargets, spawnAgent } from "../../src/ingest/agent-run.ts";
+import {
+  isAffordabilityError,
+  runAgentTargets,
+  spawnAgent,
+} from "../../src/ingest/agent-run.ts";
 
 describe("spawnAgent", () => {
   const noOptions = { cwd: tmpdir(), env: process.env };
@@ -219,5 +224,100 @@ describe("runAgentTargets launcher-provided agent path (issue #399)", () => {
     expect(lines.join("\n")).toContain(
       "invoking agent: /abs/resolved/pi --model M",
     );
+  });
+});
+
+describe("isAffordabilityError", () => {
+  it("matches the observed requires-more-credits rejection", () => {
+    expect(
+      isAffordabilityError(
+        new Error(
+          "agent pi exited with code 1: This request requires more credits … You requested up to 231240 tokens, but can only afford 82166",
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it("matches an HTTP 402 rejection", () => {
+    expect(
+      isAffordabilityError(
+        new Error("agent exited with code 1: 402 Payment Required"),
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects an unrelated failure", () => {
+    expect(
+      isAffordabilityError(new Error("agent pi timed out after 1800 seconds")),
+    ).toBe(false);
+  });
+});
+
+describe("runAgentTargets onTargetFailure (issue #408)", () => {
+  const settings = {
+    command: "settings-pi",
+    model: "M",
+    reasoning: "low",
+    targets: [
+      { provider: "openrouter", model: "kimi" },
+      { provider: "anthropic", model: "opus" },
+    ],
+  };
+  const baseOptions = {
+    root: tmpdir(),
+    timeoutMs: undefined,
+    pre: { commit: "c", status: [], hashes: new Map(), contents: new Map() },
+    onProgress: () => {},
+    environment: {},
+  };
+
+  it("reports each failed target attempt with its raw error and index before the fallback", async () => {
+    const failures: unknown[] = [];
+    const runAgent = vi.fn(async (_command, args) => {
+      if (args.includes("kimi")) {
+        throw new Error("This request requires more credits");
+      }
+
+      return { stdout: "done", stderr: "" };
+    });
+
+    const { mkdtemp } = await import("node:fs/promises");
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const root = await mkdtemp(join(tmpdir(), "k-wiki-targets-"));
+
+    await promisify(execFile)("git", ["init", "--quiet"], { cwd: root });
+
+    await runAgentTargets(settings, "prompt", {
+      ...baseOptions,
+      root,
+      runAgent,
+      onTargetFailure: (target, error, index) => {
+        failures.push([target, error, index]);
+      },
+    });
+
+    expect(failures).toEqual([
+      [
+        { provider: "openrouter", model: "kimi" },
+        new Error("This request requires more credits"),
+        0,
+      ],
+    ]);
+  });
+
+  it("reports nothing when the first target succeeds", async () => {
+    const failures: unknown[] = [];
+    const runAgent = vi.fn(async () => ({ stdout: "done", stderr: "" }));
+
+    await runAgentTargets(settings, "prompt", {
+      ...baseOptions,
+      runAgent,
+      onTargetFailure: (target, error) => {
+        failures.push([target, error]);
+      },
+    });
+
+    expect(failures).toEqual([]);
   });
 });

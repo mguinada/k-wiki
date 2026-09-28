@@ -133,6 +133,13 @@ export interface IngestOptions {
    *  content commit only after that commit exists. Standalone runs
    *  leave this unset and write immediately. */
   readonly deferSnapshot?: boolean | undefined;
+  /** Per-failure callback (issue #408), forwarded to the ordered
+   *  target run: the wiki-sync cycle records affordability-class
+   *  failures with their attempt index so the lint stage skips that
+   *  attempt in the same cycle. Standalone runs leave it unset. */
+  readonly onTargetFailure?:
+    | ((target: AgentTarget, error: unknown, index: number) => void)
+    | undefined;
 }
 
 export type IngestResult =
@@ -475,6 +482,7 @@ async function spawnStep(
           ),
         ),
       runAgent,
+      onTargetFailure: inputs.options.onTargetFailure,
     });
   } finally {
     clearInterval(heartbeat);

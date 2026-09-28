@@ -4019,3 +4019,146 @@ describe("runWikiSync cycle digest (issue #385)", () => {
     ).rejects.toThrow();
   });
 });
+
+describe("runWikiSync per-cycle affordability memory (issue #408)", () => {
+  const TARGET_SETTINGS =
+    "command: pi\nreasoning: high\ntargets: openrouter/kimi-k2.6, anthropic/claude-opus-4\n";
+  const CREDITS_ERROR =
+    "agent pi exited with code 1: This request requires more credits. You requested up to 231240 tokens, but can only afford 82166";
+
+  /** The settings file a targets-form test needs (the harness default
+   *  is a legacy single `model`). */
+  async function useTargetSettings(h: Harness): Promise<void> {
+    await writeFile(h.settingsPath, TARGET_SETTINGS);
+  }
+
+  /** The provider/model of the latest lint invocation. */
+  function lintTargetOf(h: Harness): string {
+    const lintRecord = h.argRecords
+      .filter((args) => args.some((arg) => arg.includes("AUDIT THE WIKI")))
+      .at(-1);
+
+    if (lintRecord === undefined) {
+      return "no lint invocation";
+    }
+
+    const provider =
+      lintRecord[lintRecord.indexOf("--provider") + 1] ?? "no-provider";
+    const model = lintRecord[lintRecord.indexOf("--model") + 1] ?? "";
+
+    return `${provider}/${model}`;
+  }
+
+  /** An ingest agent that 402s on the first target and runs the
+   *  standard ingest stub on any other. */
+  const kimi402IngestAgent: AgentRunner = async (command, args, options) => {
+    if (args.includes("kimi-k2.6")) {
+      throw new Error(CREDITS_ERROR);
+    }
+
+    return ingestStub(command, args, options);
+  };
+
+  it("serves lint from the next target when the first 402s on ingest", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    await useTargetSettings(h);
+    h.ingestAgent = kimi402IngestAgent;
+
+    await runWikiSync(optionsFor(h));
+
+    expect(lintTargetOf(h)).toBe("anthropic/claude-opus-4");
+  });
+
+  it("audits the full wiki when reassigned", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    await useTargetSettings(h);
+    h.ingestAgent = kimi402IngestAgent;
+
+    const result = await runWikiSync(optionsFor(h));
+
+    expect(result.lint?.mode).toBe("full");
+  });
+
+  it("keeps the first target for lint when it served ingest affordably", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    await useTargetSettings(h);
+
+    await runWikiSync(optionsFor(h));
+
+    expect(lintTargetOf(h)).toBe("openrouter/kimi-k2.6");
+  });
+
+  it("runs lint again in the next cycle", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    await useTargetSettings(h);
+    h.ingestAgent = kimi402IngestAgent;
+
+    await runWikiSync(optionsFor(h));
+
+    await writeFile(join(h.vaultRoot, "AI", "second.md"), "more body");
+
+    // Force a full audit in cycle 2: the first cycle's lint snapshot
+    // leaves the derived window empty, and the lint stage's own
+    // empty-window skip precedes any target choice.
+    await rm(join(h.dataRoot, "outputs", "lint-window.json"));
+    h.ingestAgent = ingestStub;
+
+    await runWikiSync(optionsFor(h));
+
+    const lintInvocations = h.argRecords.filter((args) =>
+      args.some((arg) => arg.includes("AUDIT THE WIKI")),
+    );
+
+    expect(lintInvocations).toHaveLength(2);
+  });
+
+  it("serves lint from the first target again next cycle", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    await useTargetSettings(h);
+    h.ingestAgent = kimi402IngestAgent;
+
+    await runWikiSync(optionsFor(h));
+
+    await writeFile(join(h.vaultRoot, "AI", "second.md"), "more body");
+
+    // Force a full audit in cycle 2: the first cycle's lint snapshot
+    // leaves the derived window empty, and the lint stage's own
+    // empty-window skip precedes any target choice.
+    await rm(join(h.dataRoot, "outputs", "lint-window.json"));
+    h.ingestAgent = ingestStub;
+
+    await runWikiSync(optionsFor(h));
+
+    expect(lintTargetOf(h)).toBe("openrouter/kimi-k2.6");
+  });
+
+  it("serves lint from the repeated target when the first attempt 402s", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    await writeFile(
+      h.settingsPath,
+      "command: pi\nreasoning: high\ntargets: openrouter/kimi-k2.6, openrouter/kimi-k2.6\n",
+    );
+
+    let attempts = 0;
+
+    h.ingestAgent = async (command, args, options) => {
+      attempts += 1;
+
+      if (attempts === 1) {
+        throw new Error(CREDITS_ERROR);
+      }
+
+      return ingestStub(command, args, options);
+    };
+
+    await runWikiSync(optionsFor(h));
+
+    expect(lintTargetOf(h)).toBe("openrouter/kimi-k2.6");
+  });
+});
