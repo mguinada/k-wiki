@@ -455,7 +455,11 @@ A second brain may reference domain wikis, never the reverse:
 - A wikilink target containing a `/` is a cross-wiki link —
   `[[<vault>/<page>]]` — where `<vault>` is a domain wiki's vault name
   (matched case-insensitively against that wiki's `raw/manifest.json`)
-  and `<page>` a page of that wiki. Bare targets are internal;
+  and `<page>` a page of that wiki. The one exception is an
+  `[[outputs/…]]` citation — the cycle-report citation the Log
+  section mandates: it is not cross-wiki; the checkers resolve it
+  against the data repo's `outputs/` directory and require the cited
+  file to exist. Bare targets are internal;
   internal links never contain a slash. Several domain wikis may be
   linked from the same second brain.
 - The link never resolves in this wiki; `check-crosslinks` validates
@@ -469,4 +473,4 @@ A second brain may reference domain wikis, never the reverse:
   page of any other wiki may link here, and this wiki's material
   never leaves this data repo.
 - Only a second brain may use cross-wiki links; in any other wiki a
-  slashed target is unresolvable and trips the ingest guardrails.
+  cross-wiki target is unresolvable and trips the ingest guardrails.
