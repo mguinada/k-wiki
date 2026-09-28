@@ -1400,3 +1400,126 @@ describe("wiki-ingest expunge e2e (sync-driven)", () => {
     expect(result.err).toContain("wiki-ingest: mode incremental");
   });
 });
+
+/** The stub agent for the outputs-citation cases (issue #414): it
+ *  edits the wiki exactly like the standard stub, and the changed
+ *  page cites the cycle report `[[outputs/cycle-2026-09-27.md]]`.
+ *  With `withFile` it also writes that report under the data root's
+ *  outputs/ — the stub's cwd is the data root, so this proves the
+ *  guardrail resolves the citation against the real data root, the
+ *  one thing unit resolver tests cannot prove. */
+function outputsStubAgent(withFile: boolean): string {
+  return `#!/usr/bin/env node
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+
+await mkdir(join(process.cwd(), "wiki", "concepts"), { recursive: true });
+await mkdir(join(process.cwd(), "wiki", "sources"), { recursive: true });
+await writeFile(
+  join(process.cwd(), "wiki", "sources", "stub-source.md"),
+  [
+    "---",
+    'title: "Stub source"',
+    "type: source",
+    "created: 2026-08-20",
+    "updated: 2026-08-20",
+    "tags:",
+    "  - llm",
+    "origin: raw/notes/Engineering/AI/RAG.md",
+    "sources:",
+    '  - "[[stub-source]]"',
+    "---",
+    "",
+    "hub body",
+    "",
+  ].join("\\n"),
+);
+await writeFile(
+  join(process.cwd(), "wiki", "concepts", "cites-outputs.md"),
+  [
+    "---",
+    'title: "Cites outputs"',
+    "type: concept",
+    "created: 2026-08-20",
+    "updated: 2026-08-20",
+    "tags:",
+    "  - llm",
+    "sources:",
+    '  - "[[stub-source]]"',
+    "---",
+    "",
+    "Cited: [[outputs/cycle-2026-09-27.md]].",
+    "",
+  ].join("\\n"),
+);${
+    withFile
+      ? `
+await mkdir(join(process.cwd(), "outputs"), { recursive: true });
+await writeFile(
+  join(process.cwd(), "outputs", "cycle-2026-09-27.md"),
+  "# Cycle report\\n",
+);`
+      : ""
+  }
+console.log("stub agent: sources processed; no contradictions; no unresolved questions");
+`;
+}
+
+describe("wiki-ingest outputs-citation e2e (issue #414)", () => {
+  it("passes check 3 when the cited outputs report exists under the data root's outputs/", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag" });
+
+    await writeFile(
+      join(repo.dataRoot, "stub-agent.mjs"),
+      outputsStubAgent(true),
+      {
+        mode: 0o755,
+      },
+    );
+
+    const result = await ingest(repo);
+
+    expect(result.code).toBe(0);
+    expect(result.err).not.toContain("guardrail check 3");
+    expect(
+      await readFile(
+        join(repo.dataRoot, "outputs", "cycle-2026-09-27.md"),
+        "utf8",
+      ),
+    ).toContain("Cycle report");
+  });
+
+  it("trips check 3 naming the path when the cited outputs report is missing, and reverts", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag" });
+
+    await writeFile(
+      join(repo.dataRoot, "stub-agent.mjs"),
+      outputsStubAgent(false),
+      {
+        mode: 0o755,
+      },
+    );
+
+    const result = await ingest(repo);
+    const runsDir = join(repo.outputsDir, "runs");
+    const { readdir } = await import("node:fs/promises");
+    const digests = (await readdir(runsDir)).filter((name) =>
+      name.endsWith(".md"),
+    );
+    const digest =
+      digests.length === 1
+        ? await readFile(join(runsDir, digests[0] ?? ""), "utf8")
+        : undefined;
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("guardrail check 3 (wikilinks)");
+    expect(digest ?? "").toContain('no outputs file "cycle-2026-09-27.md"');
+
+    await expect(
+      readFile(
+        join(repo.dataRoot, "wiki", "concepts", "cites-outputs.md"),
+        "utf8",
+      ),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+});
