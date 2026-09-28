@@ -495,7 +495,9 @@ export interface DashboardKpis {
   readonly deadLinks: readonly { source: string; target: string }[];
   readonly hubs: readonly { path: string; inbound: number }[];
   readonly statusCounts: readonly KpiBar[];
-  /** Dead-link targets ranked by demand; the next pages to write. */
+  /** Dead-link targets ranked by demand; the next pages to write —
+   *  outputs citations excluded, since no page write resolves them
+   *  (issue #414). */
   readonly missingPages: readonly { target: string; wantedBy: number }[];
   /** Raw notes by content age: fresh ≤ 30d, aging 31–90d, stale > 90d. */
   readonly sourceRot: { fresh: number; aging: number; stale: number };
@@ -617,7 +619,9 @@ export function computeKpis(input: DashboardInput): DashboardKpis {
       )
       .slice(0, 5),
     statusCounts: statusCounts(input.pages),
-    missingPages: missingPages(deadLinks),
+    missingPages: missingPages(
+      deadLinks.filter(({ target }) => !isOutputsTarget(target)),
+    ),
     sourceRot: sourceRotBuckets(input.rawNoteSyncDates, input.now),
     mostCited: mostCitedSources(input.pages),
     cadenceDays: ingestCadence(input.commits),

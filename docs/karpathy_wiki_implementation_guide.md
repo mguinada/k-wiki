@@ -2005,7 +2005,11 @@ mechanically enforced:
   sandbox page carries no wikilink `sources` entries at all.
 - **Cross-wiki `[[<vault>/<page>]]` links from sandbox pages are
   forbidden**: sandbox notes are agent scratch inside one instance,
-  and a slashed link from them is a cross-instance leak.
+  and a slashed link from them is a cross-instance leak — an
+  `[[outputs/…]]` citation is not cross-wiki: same-instance data, it
+  must name an existing file under the data root's `outputs/`
+  directory (issue #414), through the shared resolver every other
+  surface calls.
 - **The `via: agent` stamp lives only under `wiki/sandbox/`**: a
   main page carrying it is a forged or misplaced stamp.
 
@@ -2022,7 +2026,10 @@ four surfaces, deliberately redundant:
    and links *into* the sandbox resolve silently; direction
    violations are never check-links' business.
 3. **`check-crosslinks` extension:** no slashed cross-wiki links
-   from sandbox pages, forbidden outright, validity aside.
+   from sandbox pages, forbidden outright, validity aside — an
+   `[[outputs/…]]` citation excepted: not cross-wiki, it resolves
+   against the data root's `outputs/` directory like any other
+   page's (issue #414).
 4. **The standing lint (wiki-sync cycle):** the audit runs every
    cycle after the crosslink stage and before verification. A
    violation fails the cycle and **path-scoped-reverts every

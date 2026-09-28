@@ -768,6 +768,28 @@ describe("missingPages", () => {
     expect(kpis.missingPages).toHaveLength(5);
   });
 
+  it("excludes an outputs citation no page write can resolve", () => {
+    const kpis = computeKpis({
+      now: NOW,
+      head: "abc1234",
+      pages: [
+        page({ path: "a.md", outbound: ["outputs/cycle-2026-09-27.md"] }),
+      ],
+      rawNoteKeys: [],
+      ingestedKeys: [],
+      outputsFiles: [],
+      lastSync: null,
+      rawNoteSyncDates: [],
+      statusFlips: [],
+      commits: [],
+      firstAdded: [],
+      lastQuery: null,
+      lastCycle: null,
+    });
+
+    expect(kpis.missingPages).toEqual([]);
+  });
+
   it("is empty when every link resolves", () => {
     const kpis = computeKpis({
       now: NOW,

@@ -28,7 +28,10 @@ sinks and never reference second-brain material. The sandbox
 namespace (wiki/sandbox/) must contain no cross-wiki links either,
 from either side of the wall: sandbox notes are agent scratch inside
 one instance, and a slashed link from them is a cross-instance leak,
-forbidden outright.
+forbidden outright. An [[outputs/…]] citation is never cross-wiki —
+from the audited wiki, a domain wiki, or the sandbox it resolves
+against the citing wiki dir's sibling outputs/ directory and must
+name an existing file there.
 
   <wiki-dir>         Wiki root to audit (a second brain). Required.
   <domain-wiki-dir>  A domain wiki's wiki/ dir, inside its data repo

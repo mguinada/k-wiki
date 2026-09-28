@@ -214,6 +214,87 @@ describe("checkCrossWikiLinks", () => {
     expect(report.external).toBe(0);
   });
 
+  it("resolves a domain wiki's outputs citation against that domain repo's outputs directory", async () => {
+    const brain = await makeWiki("brain", { "index.md": "# Brain\n" });
+    const engineering = await makeWiki(
+      "engineering",
+      { "index.md": "Cited: [[outputs/cycle-2026-09-27.md]].\n" },
+      "Engineering",
+    );
+
+    await mkdir(join(engineering, "outputs"), { recursive: true });
+    await writeFile(
+      join(engineering, "outputs", "cycle-2026-09-27.md"),
+      "# Cycle\n",
+    );
+
+    const report = await checkCrossWikiLinks(
+      join(brain, "brain"),
+      join(engineering, "engineering"),
+    );
+
+    expect(report.problems).toEqual([]);
+  });
+
+  it("reports a domain wiki's outputs citation whose file is missing", async () => {
+    const brain = await makeWiki("brain", { "index.md": "# Brain\n" });
+    const engineering = await makeWiki(
+      "engineering",
+      { "index.md": "Cited: [[outputs/cycle-2026-09-27.md]].\n" },
+      "Engineering",
+    );
+
+    const report = await checkCrossWikiLinks(
+      join(brain, "brain"),
+      join(engineering, "engineering"),
+    );
+
+    expect(report.problems).toEqual([
+      'engineering/index.md:1 -> [[outputs/cycle-2026-09-27.md]] (no outputs file "cycle-2026-09-27.md")',
+    ]);
+  });
+
+  it("resolves a sandbox page's outputs citation like any other page's", async () => {
+    const brain = await makeWiki("brain", {
+      "sandbox/proposal.md": "Cited: [[outputs/cycle-2026-09-27.md]].\n",
+    });
+    const engineering = await makeWiki(
+      "engineering",
+      { "concepts/stub.md": "# Stub\n" },
+      "Engineering",
+    );
+
+    await mkdir(join(brain, "outputs"), { recursive: true });
+    await writeFile(join(brain, "outputs", "cycle-2026-09-27.md"), "# Cycle\n");
+
+    const report = await checkCrossWikiLinks(
+      join(brain, "brain"),
+      join(engineering, "engineering"),
+    );
+
+    expect(report.problems).toEqual([]);
+  });
+
+  it("reports a sandbox page's outputs citation whose file is missing", async () => {
+    const brain = await makeWiki("brain", {
+      "sandbox/proposal.md": "Cited: [[outputs/cycle-2026-09-27.md]].\n",
+    });
+    const engineering = await makeWiki(
+      "engineering",
+      { "concepts/stub.md": "# Stub\n" },
+      "Engineering",
+    );
+
+    const report = await checkCrossWikiLinks(
+      join(brain, "brain"),
+      join(engineering, "engineering"),
+    );
+
+    expect(report.problems).toEqual([
+      'brain/sandbox/proposal.md:1 -> [[outputs/cycle-2026-09-27.md]] (no outputs file "cycle-2026-09-27.md")',
+    ]);
+  });
+
   it("resolves a link whose vault name case differs", async () => {
     const brain = await makeWiki("brain", {
       "index.md": "See [[Engineering/stub]].\n",

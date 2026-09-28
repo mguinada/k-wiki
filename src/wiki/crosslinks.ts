@@ -15,10 +15,16 @@
  *     name an existing file there (issue #414);
  *  2. the domain wikis themselves must contain no cross-wiki links —
  *     they are link sinks and never point at second-brain material;
+ *     an `[[outputs/…]]` citation is not cross-wiki there either: it
+ *     resolves against that domain repo's outputs/ directory (issue
+ *     #414);
  *  3. the audited wiki's sandbox namespace contains no cross-wiki
  *     links at all (issue #339) — sandbox notes are agent scratch
  *     inside one instance, and a slashed link from them is a
- *     cross-instance leak, forbidden outright, validity aside.
+ *     cross-instance leak, forbidden outright, validity aside — an
+ *     `[[outputs/…]]` citation excepted: same-instance data,
+ *     resolved against the data root's outputs/ directory like any
+ *     other page's (issue #414).
  */
 
 import { readFile } from "node:fs/promises";
@@ -148,7 +154,10 @@ async function auditWikiLinks(
 }
 
 /** Audit the domain wikis: they are link sinks, so any cross-wiki
- *  link inside them is forbidden. */
+ *  link inside them is forbidden; an outputs citation instead
+ *  resolves against the domain repo's outputs/ directory — the
+ *  domain wiki dir's sibling — and must name an existing file there
+ *  (issue #414). */
 async function auditDomainLinks(
   domains: readonly DomainWiki[],
 ): Promise<string[]> {
@@ -156,14 +165,29 @@ async function auditDomainLinks(
 
   for (const domain of domains) {
     const domainDisplayRoot = resolve(domain.dir, "..");
+    const outputs = outputsFileProbe(join(domain.dir, "..", OUTPUTS_DIR));
 
     for (const file of domain.files) {
       const text = await readFile(join(domain.dir, file), "utf8");
 
       for (const link of extractWikilinks(text)) {
+        const where = `${relative(domainDisplayRoot, join(domain.dir, file))}:${link.line} -> ${link.raw}`;
+
+        if (isOutputsTarget(link.target)) {
+          const problem = outputsLinkProblem(link.target, outputs);
+
+          if (problem !== undefined) {
+            problems.push(
+              `${where} (${outputsProblemReason(link.target, problem)})`,
+            );
+          }
+
+          continue;
+        }
+
         if (crossWikiTarget(link.target) !== undefined) {
           problems.push(
-            `${relative(domainDisplayRoot, join(domain.dir, file))}:${link.line} -> ${link.raw} (domain wikis must not use cross-wiki links)`,
+            `${where} (domain wikis must not use cross-wiki links)`,
           );
         }
       }
@@ -178,18 +202,33 @@ async function auditDomainLinks(
  *  `[[<vault>/<page>]]` link from them is a cross-instance leak, so
  *  every one is forbidden outright, validity aside. Plain internal
  *  links from sandbox pages are the citation wall's business, not
- *  this audit's. */
+ *  this audit's. An outputs citation is same-instance data, not a
+ *  leak: it resolves against the data root's outputs/ directory —
+ *  the wiki dir's sibling — like any other page's (issue #414). */
 async function auditSandboxLinks(wikiDir: string): Promise<string[]> {
   const problems: string[] = [];
+  const outputs = outputsFileProbe(join(wikiDir, "..", OUTPUTS_DIR));
 
   for (const file of await listSandboxPages(wikiDir)) {
     const text = await readFile(join(wikiDir, file), "utf8");
 
     for (const link of extractWikilinks(text)) {
+      const where = `${pageReportPath(wikiDir, file)}:${link.line} -> ${link.raw}`;
+
+      if (isOutputsTarget(link.target)) {
+        const problem = outputsLinkProblem(link.target, outputs);
+
+        if (problem !== undefined) {
+          problems.push(
+            `${where} (${outputsProblemReason(link.target, problem)})`,
+          );
+        }
+
+        continue;
+      }
+
       if (crossWikiTarget(link.target) !== undefined) {
-        problems.push(
-          `${pageReportPath(wikiDir, file)}:${link.line} -> ${link.raw} (sandbox pages must not use cross-wiki links)`,
-        );
+        problems.push(`${where} (sandbox pages must not use cross-wiki links)`);
       }
     }
   }
