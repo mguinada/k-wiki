@@ -423,24 +423,22 @@ export function affordabilityExclusion(
 }
 
 /** The settings the cycle's lint stage runs with (issue #408): the
- *  first target the memory still allows, or undefined when every
- *  target failed and the stage must skip. Emits the reassignment
- *  and skip progress lines. */
+ *  first target the memory still allows. Ingest's success on some
+ *  target guarantees the exclusion set never covers every target —
+ *  an all-excluded set here is a broken-caller invariant, not a
+ *  skip. Emits the reassignment progress line. */
 function lintSettingsForCycle(
   settings: AgentSettings,
   excluded: ReadonlySet<string>,
   onProgress: (message: string) => void,
-  stageLabel: string,
-): AgentSettings | undefined {
+): AgentSettings {
   const targets = agentTargets(settings);
   const eligible = targets.find((target) => !excluded.has(targetLabel(target)));
 
   if (eligible === undefined) {
-    onProgress(
-      `${stageLabel} skipped (every agent target failed an affordability error earlier in this cycle)`,
+    throw new Error(
+      "lint stage invariant broken: every agent target is excluded while ingest ran",
     );
-
-    return undefined;
   }
 
   if (eligible !== targets[0]) {
@@ -455,10 +453,11 @@ function lintSettingsForCycle(
 /** Stage 3 of the wiki-sync cycle: lint what the ingest agent
  *  produced, or skip with it when no ingest ran. The lint request
  *  serves the cycle's affordability memory (issue #408): a target
- *  that 402'd on ingest is skipped, the first still-affordable
- *  target serves lint, and when every target failed the stage skips
- *  with the agent never invoked. The memory lives only for one
- *  cycle — the caller builds the exclusion set fresh per run. */
+ *  that 402'd on ingest is skipped and the first still-affordable
+ *  target serves lint — ingest's success on some target keeps one
+ *  target affordable, so the stage never skips for affordability.
+ *  The memory lives only for one cycle — the caller builds the
+ *  exclusion set fresh per run. */
 export async function runCycleLint(
   options: WikiSyncOptions,
   ingest: { readonly status: "ran" | "skipped" },
@@ -479,12 +478,8 @@ export async function runCycleLint(
     settings,
     excluded,
     run.onProgress,
-    stageLabel,
   );
 
-  if (lintSettings === undefined) {
-    return undefined;
-  }
   run.onProgress(stageLabel);
 
   return runLintStage({
