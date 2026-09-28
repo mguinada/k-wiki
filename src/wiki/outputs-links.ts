@@ -6,8 +6,9 @@
  * log entry that cites it, so the link class lives outside any page
  * index. One classifier for every consumer — the ingest guardrails'
  * check 3, `scripts/check-links.ts`, the dashboard KPIs' dead-link
- * count, `check-crosslinks`' audited-wiki pass, and the sandbox
- * citation wall (src/sandbox/citations.ts) — so the resolvers
+ * count, `check-crosslinks`' three audit passes (audited wiki,
+ * domain wikis, sandbox namespace), and the sandbox citation wall
+ * (src/sandbox/citations.ts) — so the resolvers
  * cannot disagree about which outputs citations are alive: a citation
  * resolves only when its target names an existing regular file under
  * outputs/, by exact directory-entry name, and a traversal escaping
