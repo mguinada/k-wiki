@@ -409,31 +409,35 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
 }
 
 /** The per-failure callback the ingest stage reports through (issue
- *  #408): only affordability/402-class failures enter the exclusion
- *  set — a crash or timeout says nothing about the target's balance
- *  a few minutes later. */
+ *  #408): records the failing attempt's index — attempt-keyed, so a
+ *  repeated target label is a distinct attempt — and only
+ *  affordability/402-class failures enter the exclusion set; a
+ *  crash or timeout says nothing about the target's balance a few
+ *  minutes later. */
 export function affordabilityExclusion(
-  excluded: Set<string>,
-): (target: AgentTarget, error: unknown) => void {
-  return (target, error) => {
+  excluded: Set<number>,
+): (target: AgentTarget, error: unknown, index: number) => void {
+  return (_target, error, index) => {
     if (isAffordabilityError(error)) {
-      excluded.add(targetLabel(target));
+      excluded.add(index);
     }
   };
 }
 
 /** The settings the cycle's lint stage runs with (issue #408): the
- *  first target the memory still allows. Ingest's success on some
- *  target guarantees the exclusion set never covers every target —
- *  an all-excluded set here is a broken-caller invariant, not a
- *  skip. Emits the reassignment progress line. */
+ *  first attempt the memory still allows. A cycle reaches this
+ *  point only after an ingest attempt succeeded, and a succeeded
+ *  attempt is never recorded, so the exclusion set never covers
+ *  every attempt — an all-excluded set here is a broken-caller
+ *  invariant, not a skip. Emits the reassignment progress line. */
 function lintSettingsForCycle(
   settings: AgentSettings,
-  excluded: ReadonlySet<string>,
+  excluded: ReadonlySet<number>,
   onProgress: (message: string) => void,
 ): AgentSettings {
   const targets = agentTargets(settings);
-  const eligible = targets.find((target) => !excluded.has(targetLabel(target)));
+  const eligibleIndex = targets.findIndex((_, index) => !excluded.has(index));
+  const eligible = targets[eligibleIndex];
 
   if (eligible === undefined) {
     throw new Error(
@@ -441,9 +445,13 @@ function lintSettingsForCycle(
     );
   }
 
-  if (eligible !== targets[0]) {
+  if (eligibleIndex !== 0) {
+    const unaffordable = targets
+      .filter((_, index) => excluded.has(index))
+      .map(targetLabel);
+
     onProgress(
-      `wiki-sync: lint — target ${targetLabel(eligible)} (earlier target(s) unaffordable this cycle: ${[...excluded].join(", ")})`,
+      `wiki-sync: lint — target ${targetLabel(eligible)} (earlier target(s) unaffordable this cycle: ${unaffordable.join(", ")})`,
     );
   }
 
@@ -453,10 +461,10 @@ function lintSettingsForCycle(
 /** Stage 3 of the wiki-sync cycle: lint what the ingest agent
  *  produced, or skip with it when no ingest ran. The lint request
  *  serves the cycle's affordability memory (issue #408): a target
- *  that 402'd on ingest is skipped and the first still-affordable
- *  target serves lint — ingest's success on some target keeps one
- *  target affordable, so the stage never skips for affordability.
- *  The memory lives only for one cycle — the caller builds the
+ *  attempt that 402'd on ingest is skipped and the first
+ *  still-affordable attempt serves lint — the succeeding attempt is
+ *  never recorded, so the stage never skips for affordability. The
+ *  memory lives only for one cycle — the caller builds the
  *  exclusion set fresh per run. */
 export async function runCycleLint(
   options: WikiSyncOptions,
@@ -464,7 +472,7 @@ export async function runCycleLint(
   stageLabel: string,
   preLint: PreRunState,
   settings: AgentSettings,
-  excluded: ReadonlySet<string>,
+  excluded: ReadonlySet<number>,
 ): Promise<LintResult | undefined> {
   const { run } = options;
 

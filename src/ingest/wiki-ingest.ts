@@ -135,10 +135,10 @@ export interface IngestOptions {
   readonly deferSnapshot?: boolean | undefined;
   /** Per-failure callback (issue #408), forwarded to the ordered
    *  target run: the wiki-sync cycle records affordability-class
-   *  failures so the lint stage skips the target in the same cycle.
-   *  Standalone runs leave it unset. */
+   *  failures with their attempt index so the lint stage skips that
+   *  attempt in the same cycle. Standalone runs leave it unset. */
   readonly onTargetFailure?:
-    | ((target: AgentTarget, error: unknown) => void)
+    | ((target: AgentTarget, error: unknown, index: number) => void)
     | undefined;
 }
 

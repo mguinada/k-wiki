@@ -4136,4 +4136,29 @@ describe("runWikiSync per-cycle affordability memory (issue #408)", () => {
 
     expect(lintTargetOf(h)).toBe("openrouter/kimi-k2.6");
   });
+
+  it("serves lint from the repeated target when the first attempt 402s", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    await writeFile(
+      h.settingsPath,
+      "command: pi\nreasoning: high\ntargets: openrouter/kimi-k2.6, openrouter/kimi-k2.6\n",
+    );
+
+    let attempts = 0;
+
+    h.ingestAgent = async (command, args, options) => {
+      attempts += 1;
+
+      if (attempts === 1) {
+        throw new Error(CREDITS_ERROR);
+      }
+
+      return ingestStub(command, args, options);
+    };
+
+    await runWikiSync(optionsFor(h));
+
+    expect(lintTargetOf(h)).toBe("openrouter/kimi-k2.6");
+  });
 });

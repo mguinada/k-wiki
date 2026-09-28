@@ -783,13 +783,14 @@ async function runCycleStages(
   // Ingest-stage failures write it only when the ingest stage kept
   // the run's edits; a guardrail-reverted failure leaves nothing
   // citing and the clean tree the scheduled wrapper's recovery owns.
-  // Per-cycle affordability memory (issue #408): a target whose
-  // agent request fails with a 402/credits-class error cannot fund
-  // the lint request later in the same cycle, so the lint stage
-  // skips it and serves from the next target in the order. The set
-  // lives only for this cycle — a fresh runWikiSync call starts
-  // empty, so a provider whose credit resets is eligible again.
-  const excludedTargets = new Set<string>();
+  // Per-cycle affordability memory (issue #408): a target attempt
+  // whose agent request fails with a 402/credits-class error cannot
+  // fund the lint request later in the same cycle, so the lint
+  // stage skips that attempt and serves from the next target in the
+  // order. The set lives only for this cycle — a fresh runWikiSync
+  // call starts empty, so a provider whose credit resets is
+  // eligible again.
+  const excludedTargets = new Set<number>();
   let ingest: IngestResult | undefined;
 
   try {

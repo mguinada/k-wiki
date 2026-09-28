@@ -271,7 +271,7 @@ describe("runAgentTargets onTargetFailure (issue #408)", () => {
     environment: {},
   };
 
-  it("reports each failed target with its raw error before the fallback", async () => {
+  it("reports each failed target attempt with its raw error and index before the fallback", async () => {
     const failures: unknown[] = [];
     const runAgent = vi.fn(async (_command, args) => {
       if (args.includes("kimi")) {
@@ -292,8 +292,8 @@ describe("runAgentTargets onTargetFailure (issue #408)", () => {
       ...baseOptions,
       root,
       runAgent,
-      onTargetFailure: (target, error) => {
-        failures.push([target, error]);
+      onTargetFailure: (target, error, index) => {
+        failures.push([target, error, index]);
       },
     });
 
@@ -301,6 +301,7 @@ describe("runAgentTargets onTargetFailure (issue #408)", () => {
       [
         { provider: "openrouter", model: "kimi" },
         new Error("This request requires more credits"),
+        0,
       ],
     ]);
   });

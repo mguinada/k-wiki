@@ -231,11 +231,12 @@ export async function runAgentTargets(
     readonly onProgress: (message: string) => void;
     readonly runAgent: AgentRunner;
     /** Per-failure callback (issue #408): invoked once per failed
-     *  target with the raw error, before the fallback decision —
-     *  the cycle's affordability memory records 402-class failures
-     *  so later stages skip the target. */
+     *  target attempt with the raw error and the attempt's index,
+     *  before the fallback decision — the cycle's affordability
+     *  memory records 402-class attempts so later stages skip
+     *  them. */
     readonly onTargetFailure?:
-      | ((target: AgentTarget, error: unknown) => void)
+      | ((target: AgentTarget, error: unknown, index: number) => void)
       | undefined;
   },
 ): Promise<{ stdout: string; agentError: unknown; target: AgentTarget }> {
@@ -283,7 +284,7 @@ export async function runAgentTargets(
     }
 
     agentError = attempt.error;
-    options.onTargetFailure?.(current, attempt.error);
+    options.onTargetFailure?.(current, attempt.error, index);
     const reason = failureReason(attempt.error);
     failures.push(`${targetLabel(target)}: ${reason}`);
 

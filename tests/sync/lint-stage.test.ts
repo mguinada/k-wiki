@@ -603,23 +603,25 @@ describe("runLintStage launcher-provided agent path (issue #399)", () => {
 });
 
 describe("affordabilityExclusion (issue #408)", () => {
-  it("records the target of an affordability-class failure", () => {
-    const excluded = new Set<string>();
+  it("records the attempt index of an affordability-class failure", () => {
+    const excluded = new Set<number>();
 
     affordabilityExclusion(excluded)(
       { provider: "openrouter", model: "kimi-k2.6" },
       new Error("This request requires more credits"),
+      1,
     );
 
-    expect([...excluded]).toEqual(["openrouter/kimi-k2.6"]);
+    expect([...excluded]).toEqual([1]);
   });
 
   it("ignores a failure that says nothing about the target's balance", () => {
-    const excluded = new Set<string>();
+    const excluded = new Set<number>();
 
     affordabilityExclusion(excluded)(
       { provider: "openrouter", model: "kimi-k2.6" },
       new Error("agent pi timed out after 1800 seconds"),
+      0,
     );
 
     expect(excluded.size).toBe(0);
