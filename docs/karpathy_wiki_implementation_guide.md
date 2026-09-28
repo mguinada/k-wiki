@@ -887,7 +887,9 @@ its file name under the shared page-slug rule — kebab-case capped
 at the 80-character file-name budget, or the uncapped kebab for
 longer names — with query filing's collision counter (`-2` … `-999`)
 accepted between rule and stem, the counter itself un-verified), the body-text anchor lint
-(`bin/libexec/check-links`: every `[[wikilink]]` resolves to an existing page, and
+(`bin/libexec/check-links`: every `[[wikilink]]` resolves to an existing page —
+an `[[outputs/…]]` citation instead to an existing file under the
+data repo's `outputs/` directory (issue #414) — and
 a body-text heading anchor `[[page#Chapter]]` lands on a target
 heading byte-identical to the anchor — the same rule
 `check-provenance` applies to `sources` citations, shared through
