@@ -409,11 +409,10 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
 }
 
 /** The per-failure callback the ingest stage reports through (issue
- *  #408): records the failing attempt's index — attempt-keyed, so a
- *  repeated target label is a distinct attempt — and only
- *  affordability/402-class failures enter the exclusion set; a
- *  crash or timeout says nothing about the target's balance a few
- *  minutes later. */
+ *  #408): records a failed attempt's index when its error is
+ *  affordability/402-class — attempt-keyed, so a repeated target
+ *  label is a distinct attempt; a crash or timeout says nothing
+ *  about the target's balance a few minutes later. */
 export function affordabilityExclusion(
   excluded: Set<number>,
 ): (target: AgentTarget, error: unknown, index: number) => void {
@@ -425,11 +424,10 @@ export function affordabilityExclusion(
 }
 
 /** The settings the cycle's lint stage runs with (issue #408): the
- *  first attempt the memory still allows. A cycle reaches this
- *  point only after an ingest attempt succeeded, and a succeeded
- *  attempt is never recorded, so the exclusion set never covers
- *  every attempt — an all-excluded set here is a broken-caller
- *  invariant, not a skip. Emits the reassignment progress line. */
+ *  first attempt the memory still allows; emits the reassignment
+ *  progress line. Ingest ran, and a succeeded attempt is never
+ *  recorded, so an all-excluded set here is a broken-caller
+ *  invariant — the throw, not a skip. */
 function lintSettingsForCycle(
   settings: AgentSettings,
   excluded: ReadonlySet<number>,
@@ -459,13 +457,9 @@ function lintSettingsForCycle(
 }
 
 /** Stage 3 of the wiki-sync cycle: lint what the ingest agent
- *  produced, or skip with it when no ingest ran. The lint request
- *  serves the cycle's affordability memory (issue #408): a target
- *  attempt that 402'd on ingest is skipped and the first
- *  still-affordable attempt serves lint — the succeeding attempt is
- *  never recorded, so the stage never skips for affordability. The
- *  memory lives only for one cycle — the caller builds the
- *  exclusion set fresh per run. */
+ *  produced, or skip with it when no ingest ran. Runs with the
+ *  cycle's affordability memory (issue #408): an attempt that 402'd
+ *  on ingest is skipped; the memory dies with the cycle. */
 export async function runCycleLint(
   options: WikiSyncOptions,
   ingest: { readonly status: "ran" | "skipped" },
