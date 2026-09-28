@@ -201,7 +201,7 @@ function structureSection(kpis: DashboardKpis): string {
             `<li>${esc(hub.path)} <span class="count">${hub.inbound}</span></li>`,
         )
         .join("")}</ul></div>` +
-      `<div class="card">${cardTitle("Missing pages — most wanted", "Dead-link targets ranked by how many pages cite them: the next pages to write, by demand.")}${missingList}</div>` +
+      `<div class="card">${cardTitle("Missing pages — most wanted", "Dead internal wiki-page targets ranked by how many pages cite them: the next pages to write, by demand. Outputs-citation targets are excluded from this ranking — they are instance-data references surfaced under dead links, not pages to write.")}${missingList}</div>` +
       `<div class="card">${cardTitle("needs-review flips per week", "Commits that changed a status: needs-review line (either direction) — review-debt churn; steady zeros mean a stable review queue.")}${sparkline(kpis.needsReviewChurn)}</div>` +
       `<div class="card wide"><div class="cols"><div>${cardTitle("Orphans")}${orphansList}</div><div>${cardTitle("Dead links")}${deadList}</div></div></div>`,
   );
