@@ -23,15 +23,20 @@ import { pathExists } from "../cli/shared.ts";
 import type { StatusEntry } from "../data/git.ts";
 import {
   type AgentRunner,
+  isAffordabilityError,
   readPrompt,
   spawnAgent,
 } from "../ingest/agent-run.ts";
 import {
   type AgentSettings,
+  type AgentTarget,
   agentArgs,
   agentCommandOverride,
+  agentTargets,
   formatAgentInvocation,
   loadAgentSettings,
+  settingsForTarget,
+  targetLabel,
 } from "../ingest/agent-settings.ts";
 import {
   capturePreRunState,
@@ -53,6 +58,7 @@ import {
   writeLintWindowSnapshot,
 } from "./lint-window.ts";
 import { toAbsolute } from "./projection.ts";
+import type { WikiSyncOptions } from "./wiki-sync.ts";
 
 /** Liveness line while the lint agent runs (one animated line on a TTY). */
 export const LINT_HEARTBEAT_PREFIX = "wiki-sync: lint agent still running";
@@ -400,4 +406,95 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
     entries: post.entries,
     windowPages,
   };
+}
+
+/** The per-failure callback the ingest stage reports through (issue
+ *  #408): only affordability/402-class failures enter the exclusion
+ *  set — a crash or timeout says nothing about the target's balance
+ *  a few minutes later. */
+export function affordabilityExclusion(
+  excluded: Set<string>,
+): (target: AgentTarget, error: unknown) => void {
+  return (target, error) => {
+    if (isAffordabilityError(error)) {
+      excluded.add(targetLabel(target));
+    }
+  };
+}
+
+/** The settings the cycle's lint stage runs with (issue #408): the
+ *  first target the memory still allows, or undefined when every
+ *  target failed and the stage must skip. Emits the reassignment
+ *  and skip progress lines. */
+function lintSettingsForCycle(
+  settings: AgentSettings,
+  excluded: ReadonlySet<string>,
+  onProgress: (message: string) => void,
+  stageLabel: string,
+): AgentSettings | undefined {
+  const targets = agentTargets(settings);
+  const eligible = targets.find((target) => !excluded.has(targetLabel(target)));
+
+  if (eligible === undefined) {
+    onProgress(
+      `${stageLabel} skipped (every agent target failed an affordability error earlier in this cycle)`,
+    );
+
+    return undefined;
+  }
+
+  if (eligible !== targets[0]) {
+    onProgress(
+      `wiki-sync: lint — target ${targetLabel(eligible)} (earlier target(s) unaffordable this cycle: ${[...excluded].join(", ")})`,
+    );
+  }
+
+  return settingsForTarget(settings, eligible);
+}
+
+/** Stage 3 of the wiki-sync cycle: lint what the ingest agent
+ *  produced, or skip with it when no ingest ran. The lint request
+ *  serves the cycle's affordability memory (issue #408): a target
+ *  that 402'd on ingest is skipped, the first still-affordable
+ *  target serves lint, and when every target failed the stage skips
+ *  with the agent never invoked. The memory lives only for one
+ *  cycle — the caller builds the exclusion set fresh per run. */
+export async function runCycleLint(
+  options: WikiSyncOptions,
+  ingest: { readonly status: "ran" | "skipped" },
+  stageLabel: string,
+  preLint: PreRunState,
+  settings: AgentSettings,
+  excluded: ReadonlySet<string>,
+): Promise<LintResult | undefined> {
+  const { run } = options;
+
+  if (ingest.status !== "ran") {
+    run.onProgress(`${stageLabel} skipped (no ingest ran)`);
+
+    return undefined;
+  }
+
+  const lintSettings = lintSettingsForCycle(
+    settings,
+    excluded,
+    run.onProgress,
+    stageLabel,
+  );
+
+  if (lintSettings === undefined) {
+    return undefined;
+  }
+  run.onProgress(stageLabel);
+
+  return runLintStage({
+    settingsPath: options.settingsPath,
+    settings: lintSettings,
+    run,
+    promptsDir: options.promptsDir,
+    runAgent: options.runAgent,
+    timeoutMs: options.timeoutMs,
+    heartbeatMs: options.heartbeatMs,
+    pre: preLint,
+  });
 }

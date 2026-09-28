@@ -141,6 +141,85 @@ function labeledFailure(
   });
 }
 
+/** Whether an agent-run failure is an affordability/402-class
+ *  rejection — the provider could not fund the request (issue #408):
+ *  the observed openrouter shape ("This request requires more credits
+ *  … but can only afford …") plus the HTTP 402 marker and the
+ *  generic insufficient-credits/quota-exceeded wordings. Only these
+ *  disqualify a target for the rest of the cycle: an unrelated
+ *  failure (crash, timeout, bad model) says nothing about the
+ *  target's balance a few minutes later. */
+const AFFORDABILITY_MARKERS = [
+  "402",
+  "requires more credits",
+  "insufficient credits",
+  "can only afford",
+  "quota exceeded",
+] as const;
+
+export function isAffordabilityError(error: unknown): boolean {
+  const message = failureReason(error).toLowerCase();
+
+  return AFFORDABILITY_MARKERS.some((marker) => message.includes(marker));
+}
+
+/** The failure text a target's error contributes to the labeled
+ *  run failure. */
+function failureReason(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** One target's spawn attempt: its stdout, or the captured failure
+ *  the caller's fallback decision needs. */
+async function attemptTarget(
+  options: {
+    readonly root: string;
+    readonly environment: NodeJS.ProcessEnv;
+    readonly timeoutMs?: number | undefined;
+    readonly runAgent: AgentRunner;
+  },
+  command: string,
+  targetSettings: AgentSettings,
+  prompt: string,
+): Promise<{ stdout: string; error: unknown }> {
+  try {
+    const { stdout } = await options.runAgent(
+      command,
+      agentArgs(targetSettings, prompt),
+      {
+        cwd: options.root,
+        env: options.environment,
+        timeoutMs: options.timeoutMs,
+      },
+    );
+
+    return { stdout, error: undefined };
+  } catch (error) {
+    return { stdout: "", error };
+  }
+}
+
+/** Whether the ordered run must stop after a failed target: the
+ *  list is exhausted, or the target left output or working-tree
+ *  surface the next target must not build on. */
+async function stopAfterFailure(
+  options: {
+    readonly root: string;
+    readonly environment: NodeJS.ProcessEnv;
+    readonly pre: PreRunState;
+  },
+  last: boolean,
+): Promise<boolean> {
+  if (last) {
+    return true;
+  }
+
+  return (
+    (await changedPaths(options.root, options.environment, options.pre))
+      .length > 0
+  );
+}
+
 export async function runAgentTargets(
   settings: AgentSettings,
   prompt: string,
@@ -151,6 +230,13 @@ export async function runAgentTargets(
     readonly pre: PreRunState;
     readonly onProgress: (message: string) => void;
     readonly runAgent: AgentRunner;
+    /** Per-failure callback (issue #408): invoked once per failed
+     *  target with the raw error, before the fallback decision —
+     *  the cycle's affordability memory records 402-class failures
+     *  so later stages skip the target. */
+    readonly onTargetFailure?:
+      | ((target: AgentTarget, error: unknown) => void)
+      | undefined;
   },
 ): Promise<{ stdout: string; agentError: unknown; target: AgentTarget }> {
   const targets = agentTargets(settings);
@@ -183,35 +269,31 @@ export async function runAgentTargets(
       })}`,
     );
 
-    try {
-      ({ stdout } = await options.runAgent(
-        command,
-        agentArgs(targetSettings, prompt),
-        {
-          cwd: options.root,
-          env: options.environment,
-          timeoutMs: options.timeoutMs,
-        },
-      ));
+    const attempt = await attemptTarget(
+      options,
+      command,
+      targetSettings,
+      prompt,
+    );
+
+    if (attempt.error === undefined) {
+      ({ stdout } = attempt);
       agentError = undefined;
       break;
-    } catch (error) {
-      agentError = error;
-      const reason = error instanceof Error ? error.message : String(error);
-      failures.push(`${targetLabel(target)}: ${reason}`);
-
-      if (
-        index === targets.length - 1 ||
-        (await changedPaths(options.root, options.environment, options.pre))
-          .length > 0
-      ) {
-        break;
-      }
-
-      options.onProgress(
-        `wiki-ingest: falling back to ${targetLabel(targets[index + 1] ?? target)} from ${targetLabel(target)}: ${reason}`,
-      );
     }
+
+    agentError = attempt.error;
+    options.onTargetFailure?.(current, attempt.error);
+    const reason = failureReason(attempt.error);
+    failures.push(`${targetLabel(target)}: ${reason}`);
+
+    if (await stopAfterFailure(options, index === targets.length - 1)) {
+      break;
+    }
+
+    options.onProgress(
+      `wiki-ingest: falling back to ${targetLabel(targets[index + 1] ?? target)} from ${targetLabel(target)}: ${reason}`,
+    );
   }
 
   if (agentError !== undefined) {

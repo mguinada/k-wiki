@@ -6,7 +6,10 @@ import { promisify } from "node:util";
 import { afterAll, describe, expect, it } from "vitest";
 import { runContext } from "../../src/cli/run-context.ts";
 import type { AgentRunner } from "../../src/ingest/agent-run.ts";
-import { runLintStage } from "../../src/sync/lint-stage.ts";
+import {
+  affordabilityExclusion,
+  runLintStage,
+} from "../../src/sync/lint-stage.ts";
 import {
   lintWindowPath,
   writeLintWindowSnapshot,
@@ -596,5 +599,29 @@ describe("runLintStage launcher-provided agent path (issue #399)", () => {
     expect(lines.join("\n")).toContain(
       "lint — invoking agent: /abs/resolved/pi --model",
     );
+  });
+});
+
+describe("affordabilityExclusion (issue #408)", () => {
+  it("records the target of an affordability-class failure", () => {
+    const excluded = new Set<string>();
+
+    affordabilityExclusion(excluded)(
+      { provider: "openrouter", model: "kimi-k2.6" },
+      new Error("This request requires more credits"),
+    );
+
+    expect([...excluded]).toEqual(["openrouter/kimi-k2.6"]);
+  });
+
+  it("ignores a failure that says nothing about the target's balance", () => {
+    const excluded = new Set<string>();
+
+    affordabilityExclusion(excluded)(
+      { provider: "openrouter", model: "kimi-k2.6" },
+      new Error("agent pi timed out after 1800 seconds"),
+    );
+
+    expect(excluded.size).toBe(0);
   });
 });
