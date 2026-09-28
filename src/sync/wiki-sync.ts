@@ -1021,9 +1021,9 @@ export function cycleReportPath(now: () => Date): string {
 
 /** The ingest-prompt line promising the cycle report (issue #385):
  *  the agent writes its log entry during stage 2, before the digest
- *  exists, and cites this exact path. */
+ *  exists, and cites this exact path — as a plain path (issue #410). */
 function cycleReportPromise(path: string): string {
-  return `This cycle's full report will be committed at \`${path}\`; cite it in your log entry.`;
+  return `This cycle's full report will be committed at \`${path}\`; cite it in your log entry as a plain path (no [[brackets]]).`;
 }
 
 /** Write the finished digest beside the lint reports and commit it in

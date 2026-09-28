@@ -575,7 +575,7 @@ describe("wiki-sync e2e", () => {
     const captured = await readFile(capture, "utf8");
 
     expect(captured).toMatch(
-      /This cycle's full report will be committed at `outputs\/cycle-\d{4}-\d{2}-\d{2}\.md`; cite it in your log entry\./,
+      /This cycle's full report will be committed at `outputs\/cycle-\d{4}-\d{2}-\d{2}\.md`; cite it in your log entry as a plain path \(no \[\[brackets\]\]\)\./,
     );
   });
 

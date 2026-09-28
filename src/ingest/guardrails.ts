@@ -580,9 +580,19 @@ async function isSecondBrain(dataRoot: string): Promise<boolean> {
   }
 }
 
+/** The outputs namespace (issue #410): an `outputs/…` wikilink target
+ *  resolves against the data root's outputs/ directory, never the wiki
+ *  page index — the cycle report the ingest prompt promises (issue
+ *  #385) is written after the log entry that cites it, so the link
+ *  is by design outside any page index. */
+export function isOutputsTarget(target: string): boolean {
+  return target.startsWith("outputs/");
+}
+
 /** Unresolved-link problems in the pages this run changed: every
  *  wikilink must resolve to an existing wiki file — except
- *  cross-wiki targets, external by design in a second brain. */
+ *  cross-wiki targets, external by design in a second brain, and
+ *  outputs-namespace citations (issue #410). */
 function changedPageLinkProblems(
   texts: ReadonlyMap<string, string>,
   index: ReadonlyMap<string, string>,
@@ -592,6 +602,13 @@ function changedPageLinkProblems(
 
   for (const [path, text] of texts) {
     for (const link of extractWikilinks(text)) {
+      // Outputs-namespace citations (issue #410) resolve against the
+      // data root's outputs/ directory, not the wiki page index — in
+      // every wiki, before the cross-wiki reading of a slashed target.
+      if (isOutputsTarget(link.target)) {
+        continue;
+      }
+
       // Cross-wiki links (issue #81) are external by design — but
       // only in a second brain; elsewhere they never resolve.
       if (secondBrain && crossWikiTarget(link.target) !== undefined) {
