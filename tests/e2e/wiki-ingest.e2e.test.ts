@@ -780,31 +780,31 @@ describe("wiki-ingest e2e", () => {
       'import { mkdir, writeFile } from "node:fs/promises";',
       'import { join } from "node:path";',
       "const page = (body) => [",
-      "  \"---\",",
+      '  "---",',
       "  'title: \"Stub\"',",
-      "  \"type: concept\",",
-      "  \"created: 2026-08-20\",",
-      "  \"updated: 2026-08-20\",",
-      "  \"tags:\",",
-      "  \"  - llm\",",
-      "  \"sources:\",",
+      '  "type: concept",',
+      '  "created: 2026-08-20",',
+      '  "updated: 2026-08-20",',
+      '  "tags:",',
+      '  "  - llm",',
+      '  "sources:",',
       "  '  - \"[[stub-source]]\"',",
-      "  \"---\",",
-      "  \"\",",
+      '  "---",',
+      '  "",',
       "  body,",
-      "  \"\",",
-      "].join(\"\\n\");",
+      '  "",',
+      '].join("\\n");',
       'await mkdir(join(process.cwd(), "wiki", "sources"), { recursive: true });',
       'await mkdir(join(process.cwd(), "wiki", "concepts"), { recursive: true });',
       "await writeFile(",
       '  join(process.cwd(), "wiki", "sources", "stub-source.md"),',
-      "  page(\"hub body\")",
+      '  page("hub body")',
       '    .replace("type: concept", "type: source")',
       '    .replace("sources:", "origin: raw/notes/Engineering/AI/RAG.md\\nsources:"),',
       ");",
       "await writeFile(",
       '  join(process.cwd(), "wiki", "concepts", "stub.md"),',
-      `  page(${JSON.stringify("Cited: " + citation + ".")}),`,
+      `  page(${JSON.stringify(`Cited: ${citation}.`)}),`,
       ");",
       'console.log("stub agent: outputs citation written");',
       "",
@@ -833,11 +833,14 @@ describe("wiki-ingest e2e", () => {
     expect(result.code).toBe(0);
     expect(result.out).toContain("Wiki ingest digest");
     expect(
-      await readFile(join(repo.dataRoot, "wiki", "concepts", "stub.md"), "utf8"),
+      await readFile(
+        join(repo.dataRoot, "wiki", "concepts", "stub.md"),
+        "utf8",
+      ),
     ).toContain("[[outputs/cycle-2026-09-27.md]]");
-    await expect(readFile(snapshotAt(repo.dataRoot), "utf8")).resolves.toContain(
-      "Engineering",
-    );
+    await expect(
+      readFile(snapshotAt(repo.dataRoot), "utf8"),
+    ).resolves.toContain("Engineering");
   });
 
   it("auto-reverts a run whose changed page cites a missing outputs file, naming the path", async () => {
@@ -864,9 +867,7 @@ describe("wiki-ingest e2e", () => {
     expect(result.err).toContain("guardrail check 3 (wikilinks)");
     expect(result.err).toContain('no outputs file "cycle-2026-09-27.md"');
     expect(digest ?? "").toContain("Check 3 (wikilinks)");
-    expect(digest ?? "").toContain(
-      'no outputs file "cycle-2026-09-27.md"',
-    );
+    expect(digest ?? "").toContain('no outputs file "cycle-2026-09-27.md"');
 
     await expect(
       readFile(join(repo.dataRoot, "wiki", "concepts", "stub.md"), "utf8"),
