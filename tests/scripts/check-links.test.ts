@@ -413,6 +413,56 @@ describe("checkWikiLinks", () => {
     expect(`${report.external}/${report.links}`).toBe("1/2");
   });
 
+  it("resolves an outputs citation to an existing file in the sibling outputs directory", async () => {
+    const root = await makeWiki({
+      "log.md": "Cited: [[outputs/cycle-2026-09-27.md]].\n",
+    });
+
+    await mkdir(join(root, "outputs"), { recursive: true });
+    await writeFile(join(root, "outputs", "cycle-2026-09-27.md"), "# Cycle\n");
+
+    const report = await checkWikiLinks(join(root, "wiki"));
+
+    expect(report.broken).toEqual([]);
+  });
+
+  it("reports an outputs citation whose file is missing, naming the path", async () => {
+    const root = await makeWiki({
+      "log.md": "Cited: [[outputs/cycle-2026-09-27.md]].\n",
+    });
+
+    const report = await checkWikiLinks(join(root, "wiki"));
+
+    expect(report.broken).toEqual([
+      'wiki/log.md:1 -> [[outputs/cycle-2026-09-27.md]] (no outputs file "cycle-2026-09-27.md")',
+    ]);
+  });
+
+  it("reports an outputs citation escaping the outputs directory", async () => {
+    const root = await makeWiki({
+      "log.md": "Cited: [[outputs/../raw/manifest.json]].\n",
+    });
+
+    const report = await checkWikiLinks(join(root, "wiki"));
+
+    expect(report.broken).toEqual([
+      "wiki/log.md:1 -> [[outputs/../raw/manifest.json]] (escapes the outputs/ directory)",
+    ]);
+  });
+
+  it("does not count an outputs citation as an external cross-wiki link", async () => {
+    const root = await makeWiki({
+      "log.md": "Cited: [[outputs/cycle-2026-09-27.md]].\n",
+    });
+
+    await mkdir(join(root, "outputs"), { recursive: true });
+    await writeFile(join(root, "outputs", "cycle-2026-09-27.md"), "# Cycle\n");
+
+    const report = await checkWikiLinks(join(root, "wiki"));
+
+    expect(`${report.external}/${report.links}`).toBe("0/1");
+  });
+
   it("reports a body-text anchored link whose target lacks the heading", async () => {
     const root = await makeWiki({
       "index.md": "See [[vector-database#Vendors]].\n",

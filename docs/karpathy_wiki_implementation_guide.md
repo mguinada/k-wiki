@@ -887,7 +887,9 @@ its file name under the shared page-slug rule — kebab-case capped
 at the 80-character file-name budget, or the uncapped kebab for
 longer names — with query filing's collision counter (`-2` … `-999`)
 accepted between rule and stem, the counter itself un-verified), the body-text anchor lint
-(`bin/libexec/check-links`: every `[[wikilink]]` resolves to an existing page, and
+(`bin/libexec/check-links`: every `[[wikilink]]` resolves to an existing page —
+an `[[outputs/…]]` citation instead to an existing file under the
+data repo's `outputs/` directory (issue #414) — and
 a body-text heading anchor `[[page#Chapter]]` lands on a target
 heading byte-identical to the anchor — the same rule
 `check-provenance` applies to `sources` citations, shared through
@@ -1628,11 +1630,14 @@ data repo, and config, each free to link into the same domain wikis:
 3. **One-way cross-wiki links.** A wikilink target containing a `/`
    is a cross-wiki link — `[[<vault>/<page>]]` — referencing a page
    of a **domain wiki** (any wiki compiled from domain material;
-   several may be linked from the same second brain). The vault
-   segment is the domain wiki's vault name, matched
+   several may be linked from the same second brain); the one
+   exception is an `[[outputs/…]]` citation (issue #410, #414),
+   which is not cross-wiki: it resolves against the data root's
+   `outputs/` directory and must name an existing file there. The
+   vault segment is the domain wiki's vault name, matched
    case-insensitively against that wiki's `raw/manifest.json`; the
    page segment must resolve in that wiki. Such links never resolve
-   inside the second brain — the internal checkers skip slashed
+   inside the second brain — the internal checkers skip cross-wiki
    targets — and `check-crosslinks <wiki-dir> <domain-wiki-dir>…`
    enforces the discipline: unknown vaults, dead pages, and any
    cross-wiki link inside a domain wiki are problems. The
@@ -1644,8 +1649,8 @@ data repo, and config, each free to link into the same domain wikis:
    is deliberate: domain wikis are link sinks — they may be pointed
    at, never point out — so second-brain material can never leak
    into a publishable wiki. Only a second brain may use cross-wiki
-   links at all; in any other wiki a slashed target is unresolvable
-   and trips the ingest guardrails.
+   links at all; in any other wiki a cross-wiki target is
+   unresolvable and trips the ingest guardrails.
 
 The plumbing is ordinary Scenario B: its own vault, its own data repo,
 its own sync config and settings file, drivable from a single checkout
@@ -2002,7 +2007,11 @@ mechanically enforced:
   sandbox page carries no wikilink `sources` entries at all.
 - **Cross-wiki `[[<vault>/<page>]]` links from sandbox pages are
   forbidden**: sandbox notes are agent scratch inside one instance,
-  and a slashed link from them is a cross-instance leak.
+  and a slashed link from them is a cross-instance leak — an
+  `[[outputs/…]]` citation is not cross-wiki: same-instance data, it
+  must name an existing file under the data root's `outputs/`
+  directory (issue #414), through the shared resolver every other
+  surface calls.
 - **The `via: agent` stamp lives only under `wiki/sandbox/`**: a
   main page carrying it is a forged or misplaced stamp.
 
@@ -2019,7 +2028,10 @@ four surfaces, deliberately redundant:
    and links *into* the sandbox resolve silently; direction
    violations are never check-links' business.
 3. **`check-crosslinks` extension:** no slashed cross-wiki links
-   from sandbox pages, forbidden outright, validity aside.
+   from sandbox pages, forbidden outright, validity aside — an
+   `[[outputs/…]]` citation excepted: not cross-wiki, it resolves
+   against the data root's `outputs/` directory like any other
+   page's (issue #414).
 4. **The standing lint (wiki-sync cycle):** the audit runs every
    cycle after the crosslink stage and before verification. A
    violation fails the cycle and **path-scoped-reverts every

@@ -1,5 +1,5 @@
 import { execFile as execFileCb } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -255,6 +255,11 @@ describe("collectData", () => {
         { key: "Engineering/b.md", lastSynced: "2026-08-25T00:00:00.000Z" },
         { key: "Engineering/a.md", lastSynced: "2026-08-10T00:00:00.000Z" },
       ],
+      outputsFiles: [
+        "last-cycle.json",
+        "last-ingested-manifest.json",
+        "last-query.md",
+      ],
       statusFlips: [
         { date: "2026-08-20", subject: "flip a page to needs-review" },
       ],
@@ -276,6 +281,23 @@ describe("collectData", () => {
         lastOk: "2026-08-30T09:00:00.000Z",
       },
     });
+  });
+
+  it("collects only regular outputs files, so a symlink never answers a citation", async () => {
+    const { dataRoot } = await makeRichRepo();
+
+    await symlink(
+      join(dataRoot, "outputs", "last-query.md"),
+      join(dataRoot, "outputs", "cycle-2026-09-27.md"),
+    );
+
+    const input = await collectData(dataRoot, { now: () => NOW });
+
+    expect(input.outputsFiles).toEqual([
+      "last-cycle.json",
+      "last-ingested-manifest.json",
+      "last-query.md",
+    ]);
   });
 
   it("rejects when the raw manifest is malformed instead of emptying the dashboard", async () => {
@@ -320,6 +342,7 @@ describe("collectData", () => {
       ingestedKeys: null,
       lastSync: null,
       rawNoteSyncDates: [],
+      outputsFiles: [],
       statusFlips: [],
       commits: [],
       firstAdded: [],

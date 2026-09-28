@@ -13,7 +13,10 @@ e2e run or diagnosing a failing one.
   issue #144; sandbox-hygiene runs included: the TTL reaper deletes
   an expired `wiki/sandbox/` note on the next run while a live one
   survives, and a sandbox-less repo stays byte-identical on the skip
-  path, issue #338).
+  path, issue #338; outputs-resolution runs (issue #414): a changed
+  page's `[[outputs/…]]` citation resolves against the data root's
+  `outputs/` directory — an existing target commits, a missing target
+  and a `../` escape auto-revert the run naming the path).
 - **sync-repo** — repo-as-source projection runs in temp source repos
   (verbatim copy, commit stamping, untracked scratch proceeds and
   untracked-selectable refuses, gitignored allowlisted files skipped

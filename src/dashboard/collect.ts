@@ -287,6 +287,22 @@ async function collectFirstAdded(
   return log === undefined ? [] : parseAdditionLog(log);
 }
 
+/** Outputs-relative paths of every regular file in the data repo's
+ *  outputs/ directory — exact entry names, the same listing the
+ *  resolvers' probe answers from (issue #414); empty when outputs/
+ *  is missing. */
+async function collectOutputsFiles(dataRoot: string): Promise<string[]> {
+  try {
+    return (
+      await listFiles(join(dataRoot, "outputs"), "", {
+        regularFilesOnly: true,
+      })
+    ).sort();
+  } catch {
+    return [];
+  }
+}
+
 /** Read every artifact the dashboard consumes into one pure input. */
 export async function collectData(
   dataRoot: string,
@@ -308,6 +324,7 @@ export async function collectData(
     ingestedKeys: await collectIngestedKeys(dataRoot),
     lastSync: manifest.newest,
     rawNoteSyncDates: manifest.notes,
+    outputsFiles: await collectOutputsFiles(dataRoot),
     statusFlips: await collectStatusFlips(dataRoot, env),
     commits: await collectCommits(dataRoot, env),
     firstAdded: await collectFirstAdded(dataRoot, env),

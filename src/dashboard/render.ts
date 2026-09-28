@@ -192,7 +192,7 @@ function structureSection(kpis: DashboardKpis): string {
     "structure",
     "Structure quality",
     `${stat(String(kpis.orphans.length), "orphan pages", kpis.orphans.length > 0, "Pages no other page links to (the navigation root index.md is exempt). Candidates for integration or deletion.")}` +
-      `${stat(String(kpis.deadLinks.length), "dead links", kpis.deadLinks.length > 0, "[[wikilinks]] that resolve to no page — internal only; cross-wiki targets are validated by check-crosslinks.")}` +
+      `${stat(String(kpis.deadLinks.length), "dead links", kpis.deadLinks.length > 0, "[[wikilinks]] that resolve to no page, plus [[outputs/…]] citations whose target is missing or escapes the outputs/ directory; cross-wiki targets are validated by check-crosslinks.")}` +
       `${stat(kpis.hubs[0] ? String(kpis.hubs[0].inbound) : "0", "top in-degree", false, "Inbound links of the most-linked page — the wiki's gravitational center.")}` +
       `<div class="card">${cardTitle("Status", "Frontmatter status of each page: ingested, stable, filed, needs-review (accent). needs-review is unresolved review debt.")}${barTable(kpis.statusCounts, { accentLabel: "needs-review" })}</div>` +
       `<div class="card">${cardTitle("Hubs — most linked pages", "Top five pages by inbound [[wikilinks]].")}<ul class="ticks">${kpis.hubs
@@ -201,7 +201,7 @@ function structureSection(kpis: DashboardKpis): string {
             `<li>${esc(hub.path)} <span class="count">${hub.inbound}</span></li>`,
         )
         .join("")}</ul></div>` +
-      `<div class="card">${cardTitle("Missing pages — most wanted", "Dead-link targets ranked by how many pages cite them: the next pages to write, by demand.")}${missingList}</div>` +
+      `<div class="card">${cardTitle("Missing pages — most wanted", "Dead internal wiki-page targets ranked by how many pages cite them: the next pages to write, by demand. Outputs-citation targets are excluded from this ranking — they are instance-data references surfaced under dead links, not pages to write.")}${missingList}</div>` +
       `<div class="card">${cardTitle("needs-review flips per week", "Commits that changed a status: needs-review line (either direction) — review-debt churn; steady zeros mean a stable review queue.")}${sparkline(kpis.needsReviewChurn)}</div>` +
       `<div class="card wide"><div class="cols"><div>${cardTitle("Orphans")}${orphansList}</div><div>${cardTitle("Dead links")}${deadList}</div></div></div>`,
   );

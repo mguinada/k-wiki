@@ -18,15 +18,20 @@
  *     legacy raw-path entry fails only when a hub covers the path
  *     ("cited a path that has a hub — use the wikilink"), so raw
  *     paths with no source page — repo-as-source code files in a
- *     second brain — stay legal; a slashed target is a cross-wiki
- *     link, never allowed in `sources`;
+ *     second brain — stay legal; a cross-wiki target fails outright
+ *     and an `[[outputs/…]]` citation fails too (never a source page);
  *  3. wikilinks — every `[[wikilink]]` in a changed page resolves to
  *     an existing wiki file, and no remaining page keeps a link to a
- *     page the run deleted; cross-wiki `[[<vault>/<page>]]` targets
- *     (issue #81) are external only in a second brain — identified by
- *     the operator-owned `.second-brain` marker at the data root
- *     (issue #94), never by the agent-writable profile — and in every
- *     other wiki they are unresolvable and trip the check.
+ *     page the run deleted; outputs-namespace `[[outputs/…]]`
+ *     citations (issue #410) resolve against the data root's
+ *     outputs/ directory instead and must name an existing file
+ *     there — a missing file or a traversal escaping the directory
+ *     trips the check (issue #414); cross-wiki `[[<vault>/<page>]]`
+ *     targets (issue #81) are external only in a second brain —
+ *     identified by the operator-owned `.second-brain` marker at the
+ *     data root (issue #94), never by the agent-writable profile —
+ *     and in every other wiki they are unresolvable and trip the
+ *     check.
  */
 
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -44,6 +49,14 @@ import {
   statusIndex,
 } from "../data/git.ts";
 import {
+  isOutputsTarget,
+  OUTPUTS_DIR,
+  type OutputsLinkProblem,
+  outputsFileProbe,
+  outputsLinkProblem,
+  outputsProblemReason,
+} from "../wiki/outputs-links.ts";
+import {
   isWikilinkEntry,
   listWikiPages,
   parsePageFields,
@@ -59,6 +72,7 @@ import {
   buildPageIndex,
   crossWikiTarget,
   extractWikilinks,
+  type Wikilink,
 } from "../wiki/wiki-links.ts";
 
 /** Paths only these guardrails may see changed after a run. */
@@ -327,10 +341,11 @@ const EMPTY_HUBS: SourceHubIndex = {
  * #126). Source pages are exempt — their own `sources` lists cite
  * raw paths, the hub pattern. Every other page's entries must be
  * wikilinks to an existing `type: source` page: a cross-wiki
- * (`[[vault/page]]`) target fails outright, and a legacy raw-path
- * entry fails only when a hub covers the path — the multi-instance
- * rule (second brains cite repo-as-source code files that have no
- * hub, and those stay legal).
+ * (`[[vault/page]]`) target fails outright, an `[[outputs/…]]`
+ * citation fails too (never a source page, issue #414), and a
+ * legacy raw-path entry fails only when a hub covers the path — the
+ * multi-instance rule (second brains cite repo-as-source code files
+ * that have no hub, and those stay legal).
  */
 function checkSourcesEntries(text: string, hubs: SourceHubIndex): string[] {
   const fields = parsePageFields(text);
@@ -351,7 +366,7 @@ function checkSourcesEntries(text: string, hubs: SourceHubIndex): string[] {
         continue;
       }
 
-      if (crossWikiTarget(target) !== undefined) {
+      if (!isOutputsTarget(target) && crossWikiTarget(target) !== undefined) {
         problems.push(`sources entry ${entry} is a cross-wiki target`);
 
         continue;
@@ -567,9 +582,11 @@ async function deletedWikiPageNames(
  *  operator-owned `.second-brain` marker at the data root (guide
  *  §25, Scenario D; issue #94), written by `data:init
  *  --second-brain` or by hand, never by the agent. Only a second
- *  brain may use cross-wiki links; in every other wiki a slashed
- *  target is simply unresolvable, so the privacy direction (domain
- *  wikis never reference second-brain material) is enforced per-run. */
+ *  brain may use cross-wiki links; in every other wiki a cross-wiki
+ *  target is simply unresolvable (an `[[outputs/…]]` citation is
+ *  not cross-wiki: it resolves through the shared outputs resolver,
+ *  issue #414), so the privacy direction (domain wikis never
+ *  reference second-brain material) is enforced per-run. */
 async function isSecondBrain(dataRoot: string): Promise<boolean> {
   try {
     await readFile(join(dataRoot, SECOND_BRAIN_MARKER));
@@ -580,32 +597,34 @@ async function isSecondBrain(dataRoot: string): Promise<boolean> {
   }
 }
 
-/** The outputs namespace (issue #410): an `outputs/…` wikilink target
- *  resolves against the data root's outputs/ directory, never the wiki
- *  page index — the cycle report the ingest prompt promises (issue
- *  #385) is written after the log entry that cites it, so the link
- *  is by design outside any page index. */
-export function isOutputsTarget(target: string): boolean {
-  return target.startsWith("outputs/");
-}
-
 /** Unresolved-link problems in the pages this run changed: every
  *  wikilink must resolve to an existing wiki file — except
  *  cross-wiki targets, external by design in a second brain, and
- *  outputs-namespace citations (issue #410). */
-function changedPageLinkProblems(
+ *  outputs-namespace citations, which resolve against the data
+ *  root's outputs/ directory and must name an existing file there
+ *  (issue #414). */
+async function changedPageLinkProblems(
+  dataRoot: string,
   texts: ReadonlyMap<string, string>,
   index: ReadonlyMap<string, string>,
   secondBrain: boolean,
-): string[] {
+): Promise<string[]> {
   const problems: string[] = [];
+  const outputs = await outputsFileProbe(join(dataRoot, OUTPUTS_DIR));
 
   for (const [path, text] of texts) {
     for (const link of extractWikilinks(text)) {
       // Outputs-namespace citations (issue #410) resolve against the
-      // data root's outputs/ directory, not the wiki page index — in
-      // every wiki, before the cross-wiki reading of a slashed target.
+      // data root's outputs/ directory, not the wiki page index —
+      // in every wiki, before the cross-wiki reading of a slashed
+      // target (issue #414).
       if (isOutputsTarget(link.target)) {
+        const problem = outputsLinkProblem(link.target, outputs);
+
+        if (problem !== undefined) {
+          problems.push(outputsProblemLine(path, link, problem));
+        }
+
         continue;
       }
 
@@ -622,6 +641,16 @@ function changedPageLinkProblems(
   }
 
   return problems;
+}
+
+/** One check-3 problem line for a failing outputs citation, carrying
+ *  the shared reason text (issue #414). */
+function outputsProblemLine(
+  path: string,
+  link: Wikilink,
+  problem: OutputsLinkProblem,
+): string {
+  return `${path}:${link.line} -> ${link.raw} (${outputsProblemReason(link.target, problem)})`;
 }
 
 /** Dangling-link problems in the pages this run did not change: a
@@ -671,7 +700,7 @@ async function checkChangedWikilinks(
   const index = buildPageIndex(files);
   const secondBrain = await isSecondBrain(dataRoot);
   const problems = [
-    ...changedPageLinkProblems(texts, index, secondBrain),
+    ...(await changedPageLinkProblems(dataRoot, texts, index, secondBrain)),
     ...(deletedNames.size > 0
       ? await danglingLinkProblems(dataRoot, files, texts, index, deletedNames)
       : []),

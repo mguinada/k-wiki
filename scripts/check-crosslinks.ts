@@ -19,12 +19,19 @@ Check the one-way cross-wiki link discipline between a wiki and its
 domain wikis: every [[<vault>/<page>]] link in <wiki-dir>
 must name a vault of a passed domain wiki — validated
 case-insensitively against each domain repo's raw/manifest.json — and
-resolve to an existing page of that wiki. The domain wikis themselves
-must contain no cross-wiki links: they are link sinks and never
-reference second-brain material. The sandbox namespace (wiki/sandbox/)
-must contain no cross-wiki links either, from either side of the wall:
-sandbox notes are agent scratch inside one instance, and a slashed
-link from them is a cross-instance leak, forbidden outright.
+resolve to an existing page of that wiki. An [[outputs/…]] citation
+is not cross-wiki: it instead resolves against <wiki-dir>'s sibling
+outputs/ directory and must name an existing file there — a missing
+file or a traversal escaping the directory is a problem. The domain
+wikis themselves must contain no cross-wiki links: they are link
+sinks and never reference second-brain material. The sandbox
+namespace (wiki/sandbox/) must contain no cross-wiki links either,
+from either side of the wall: sandbox notes are agent scratch inside
+one instance, and a slashed link from them is a cross-instance leak,
+forbidden outright. An [[outputs/…]] citation is never cross-wiki —
+from the audited wiki, a domain wiki, or the sandbox it resolves
+against the citing wiki dir's sibling outputs/ directory and must
+name an existing file there.
 
   <wiki-dir>         Wiki root to audit (a second brain). Required.
   <domain-wiki-dir>  A domain wiki's wiki/ dir, inside its data repo
@@ -35,8 +42,8 @@ link from them is a cross-instance leak, forbidden outright.
 Writes nothing. Prints one \`file:line -> [[link]]\` line per problem
 (red) to stderr and exits 1; prints an ok summary (green) and exits 0
 when the discipline holds. Internal [[wikilinks]] are check-links'
-business; this tool only audits cross-wiki links. NO_COLOR disables
-color.`;
+business; this tool audits cross-wiki links and [[outputs/…]]
+citations. NO_COLOR disables color.`;
 
 /** check-crosslinks entry point: `check-crosslinks [-h | --help] <wiki-dir> <domain-wiki-dir> [<domain-wiki-dir>...]`. */
 export async function main(

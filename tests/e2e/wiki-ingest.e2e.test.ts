@@ -771,6 +771,137 @@ describe("wiki-ingest e2e", () => {
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  /** A stub agent writing the default pages plus a changed concept
+   *  page whose body carries one outputs citation — the citation
+   *  check-3 must resolve against the data root's outputs/ dir. */
+  const outputsCitationAgent = (citation: string) =>
+    [
+      "#!/usr/bin/env node",
+      'import { mkdir, writeFile } from "node:fs/promises";',
+      'import { join } from "node:path";',
+      "const page = (body) => [",
+      '  "---",',
+      "  'title: \"Stub\"',",
+      '  "type: concept",',
+      '  "created: 2026-08-20",',
+      '  "updated: 2026-08-20",',
+      '  "tags:",',
+      '  "  - llm",',
+      '  "sources:",',
+      "  '  - \"[[stub-source]]\"',",
+      '  "---",',
+      '  "",',
+      "  body,",
+      '  "",',
+      '].join("\\n");',
+      'await mkdir(join(process.cwd(), "wiki", "sources"), { recursive: true });',
+      'await mkdir(join(process.cwd(), "wiki", "concepts"), { recursive: true });',
+      "await writeFile(",
+      '  join(process.cwd(), "wiki", "sources", "stub-source.md"),',
+      '  page("hub body")',
+      '    .replace("type: concept", "type: source")',
+      '    .replace("sources:", "origin: raw/notes/Engineering/AI/RAG.md\\nsources:"),',
+      ");",
+      "await writeFile(",
+      '  join(process.cwd(), "wiki", "concepts", "stub.md"),',
+      `  page(${JSON.stringify(`Cited: ${citation}.`)}),`,
+      ");",
+      'console.log("stub agent: outputs citation written");',
+      "",
+    ].join("\n");
+
+  it("commits a run whose changed page cites an outputs file under the data root's outputs/", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag" });
+
+    // The report exists only under <dataRoot>/outputs/ — the wrapper's
+    // --outputs dir is a separate temp dir — so a pass proves check 3
+    // resolved the citation against the data root's outputs/ dir.
+    await mkdir(join(repo.dataRoot, "outputs"), { recursive: true });
+    await writeFile(
+      join(repo.dataRoot, "outputs", "cycle-2026-09-27.md"),
+      "# Cycle report\n",
+    );
+
+    await writeFile(
+      join(repo.dataRoot, "stub-agent.mjs"),
+      outputsCitationAgent("[[outputs/cycle-2026-09-27.md]]"),
+      { mode: 0o755 },
+    );
+
+    const result = await ingest(repo);
+
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("Wiki ingest digest");
+    expect(
+      await readFile(
+        join(repo.dataRoot, "wiki", "concepts", "stub.md"),
+        "utf8",
+      ),
+    ).toContain("[[outputs/cycle-2026-09-27.md]]");
+    await expect(
+      readFile(snapshotAt(repo.dataRoot), "utf8"),
+    ).resolves.toContain("Engineering");
+  });
+
+  it("auto-reverts a run whose changed page cites a missing outputs file, naming the path", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag" });
+
+    await writeFile(
+      join(repo.dataRoot, "stub-agent.mjs"),
+      outputsCitationAgent("[[outputs/cycle-2026-09-27.md]]"),
+      { mode: 0o755 },
+    );
+
+    const result = await ingest(repo);
+    const runsDir = join(repo.outputsDir, "runs");
+    const { readdir } = await import("node:fs/promises");
+    const digests = (await readdir(runsDir)).filter((name) =>
+      name.endsWith(".md"),
+    );
+    const digest =
+      digests.length === 1
+        ? await readFile(join(runsDir, digests[0] ?? ""), "utf8")
+        : undefined;
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("guardrail check 3 (wikilinks)");
+    expect(result.err).toContain('no outputs file "cycle-2026-09-27.md"');
+    expect(digest ?? "").toContain("Check 3 (wikilinks)");
+    expect(digest ?? "").toContain('no outputs file "cycle-2026-09-27.md"');
+
+    await expect(
+      readFile(join(repo.dataRoot, "wiki", "concepts", "stub.md"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+
+    await expect(
+      readFile(snapshotAt(repo.dataRoot), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("auto-reverts a run whose outputs citation escapes the outputs directory", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag" });
+
+    await writeFile(
+      join(repo.dataRoot, "stub-agent.mjs"),
+      outputsCitationAgent("[[outputs/../raw/manifest.json]]"),
+      { mode: 0o755 },
+    );
+
+    const result = await ingest(repo);
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain("guardrail check 3 (wikilinks)");
+    expect(result.err).toContain("escapes the outputs/ directory");
+
+    await expect(
+      readFile(join(repo.dataRoot, "wiki", "concepts", "stub.md"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+
+    await expect(
+      readFile(snapshotAt(repo.dataRoot), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("warns pre-flight on tracked-but-ignored files and still succeeds", async () => {
     const repo = await makeRepo({ "AI/RAG.md": "rag" });
 

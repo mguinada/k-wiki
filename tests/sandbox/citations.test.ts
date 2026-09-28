@@ -12,8 +12,9 @@ import { checkCitationWall } from "../../src/sandbox/citations.ts";
  * they did not earn. Every violation class is first-class here:
  * main→sandbox body links and embeds, sandbox→sandbox body links,
  * `sources` edges touching the sandbox in either direction,
- * cross-wiki links from sandbox pages, and `via: agent` stamps
- * outside the namespace.
+ * cross-wiki links from sandbox pages (an `[[outputs/…]]` citation
+ * instead must name an existing outputs file, issue #414), and
+ * `via: agent` stamps outside the namespace.
  */
 
 const tempDirs: string[] = [];
@@ -241,6 +242,66 @@ describe("checkCitationWall", () => {
     expect(report.problems).toEqual([
       "wiki/sandbox/proposal.md:6 -> [[engineering/note-a]] (sandbox pages must not use cross-wiki links)",
     ]);
+  });
+
+  it("allows a sandbox page's outputs citation to an existing file", async () => {
+    const wikiDir = await makeWiki({
+      "note-a.md": mainPage("Body."),
+      "sandbox/proposal.md": sandboxPage(
+        "Cited: [[outputs/cycle-2026-09-27.md]].",
+      ),
+    });
+
+    await mkdir(join(wikiDir, "..", "outputs"), { recursive: true });
+    await writeFile(
+      join(wikiDir, "..", "outputs", "cycle-2026-09-27.md"),
+      "# Cycle\n",
+    );
+
+    const report = await checkCitationWall(wikiDir);
+
+    expect(report.problems).toEqual([]);
+  });
+
+  it("flags a sandbox page's outputs citation whose file is missing", async () => {
+    const wikiDir = await makeWiki({
+      "note-a.md": mainPage("Body."),
+      "sandbox/proposal.md": sandboxPage(
+        "Cited: [[outputs/cycle-2026-09-27.md]].",
+      ),
+    });
+
+    const report = await checkCitationWall(wikiDir);
+
+    expect(report.problems).toEqual([
+      'wiki/sandbox/proposal.md:6 -> [[outputs/cycle-2026-09-27.md]] (no outputs file "cycle-2026-09-27.md")',
+    ]);
+  });
+
+  it("flags a sandbox page's outputs citation escaping the outputs directory", async () => {
+    const wikiDir = await makeWiki({
+      "note-a.md": mainPage("Body."),
+      "sandbox/proposal.md": sandboxPage(
+        "See [[outputs/../raw/manifest.json]].",
+      ),
+    });
+
+    const report = await checkCitationWall(wikiDir);
+
+    expect(report.problems).toEqual([
+      "wiki/sandbox/proposal.md:6 -> [[outputs/../raw/manifest.json]] (escapes the outputs/ directory)",
+    ]);
+  });
+
+  it("leaves a main page's outputs citation to check-links", async () => {
+    const wikiDir = await makeWiki({
+      "note-a.md": mainPage("Cited: [[outputs/cycle-2026-09-27.md]]."),
+      "sandbox/proposal.md": sandboxPage("Body."),
+    });
+
+    const report = await checkCitationWall(wikiDir);
+
+    expect(report.problems).toEqual([]);
   });
 
   it("attributes a sandbox page's slashed same-namespace peer link to the sandbox-peers rule", async () => {

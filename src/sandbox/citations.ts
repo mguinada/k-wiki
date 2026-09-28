@@ -25,9 +25,10 @@
  * Link *resolution* is never judged here: a sandbox link to a
  * renamed-away main page is check-links' business (targets must
  * resolve, same as main-page links); this core judges direction and
- * placement only. The standing-lint driver lives beside the audit
- * (`runCitationWallStage`): the wiki-sync cycle calls it as its
- * citations stage, and it path-scoped-reverts the offending pages
+ * placement only — an `[[outputs/…]]` citation from a sandbox page
+ * is the one exception: the shared resolver judges its existence
+ * (issue #414). The standing lint (`runCitationWallStage`, the
+ * cycle's citations stage) path-scoped-reverts the offending pages
  * through the sandbox-run primitive.
  */
 
@@ -35,6 +36,13 @@ import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { RunContext } from "../cli/run-context.ts";
 import { pluralized } from "../cli/shared.ts";
+import {
+  isOutputsTarget,
+  OUTPUTS_DIR,
+  outputsFileProbe,
+  outputsLinkProblem,
+  outputsProblemReason,
+} from "../wiki/outputs-links.ts";
 import {
   closingFence,
   FRONTMATTER_FENCE,
@@ -45,7 +53,12 @@ import {
   unquote,
   wikilinkTarget,
 } from "../wiki/pages.ts";
-import { crossWikiTarget, extractWikilinks, stem } from "../wiki/wiki-links.ts";
+import {
+  crossWikiTarget,
+  extractWikilinks,
+  stem,
+  type Wikilink,
+} from "../wiki/wiki-links.ts";
 import { revertPathsToLastCommit } from "./sandbox-run.ts";
 import { SANDBOX_ROOT, SANDBOX_VIA } from "./stamps.ts";
 
@@ -115,6 +128,32 @@ function agentStampLine(text: string): number | undefined {
   return undefined;
 }
 
+/** Sandbox violations for one outputs citation: it resolves through
+ *  the shared outputs resolver — missing or escaping trips, an
+ *  existing one passes (issue #414); main pages are out of scope. */
+function outputsCitationViolations(
+  path: string,
+  link: Wikilink,
+  fromSandbox: boolean,
+  outputs: (relative: string) => boolean,
+): Violation[] {
+  if (!fromSandbox) {
+    return [];
+  }
+
+  const problem = outputsLinkProblem(link.target, outputs);
+
+  return problem === undefined
+    ? []
+    : [
+        {
+          path,
+          line: link.line,
+          message: `${link.raw} (${outputsProblemReason(link.target, problem)})`,
+        },
+      ];
+}
+
 /** Body-link violations of one page: links into the sandbox (either
  *  side) and cross-wiki links from sandbox pages. Embeds are links —
  *  the extractor sees `![[x]]` as `[[x]]`. Anchored links inside the
@@ -125,6 +164,7 @@ function bodyViolations(
   text: string,
   namesSandbox: (target: string) => boolean,
   fromSandbox: boolean,
+  outputs: (relative: string) => boolean,
 ): Violation[] {
   const lines = text.split("\n");
   const bodyFrom = lines[0] === FRONTMATTER_FENCE ? closingFence(lines) + 2 : 1;
@@ -132,6 +172,14 @@ function bodyViolations(
 
   for (const link of extractWikilinks(text)) {
     if (link.line < bodyFrom) {
+      continue;
+    }
+
+    if (isOutputsTarget(link.target)) {
+      violations.push(
+        ...outputsCitationViolations(path, link, fromSandbox, outputs),
+      );
+
       continue;
     }
 
@@ -218,13 +266,16 @@ export async function checkCitationWall(
   const sandboxPages = await listSandboxPages(wikiDirInput);
   const namesSandbox = sandboxNamer(sandboxPages);
   const sandboxPrefix = `${SANDBOX_ROOT}/`;
+  const outputs = await outputsFileProbe(join(wikiDir, "..", OUTPUTS_DIR));
   const violations: Violation[] = [];
 
   for (const path of [...pages, ...sandboxPages]) {
     const text = await readFile(join(wikiDir, path), "utf8");
     const fromSandbox = path.startsWith(sandboxPrefix);
 
-    violations.push(...bodyViolations(path, text, namesSandbox, fromSandbox));
+    violations.push(
+      ...bodyViolations(path, text, namesSandbox, fromSandbox, outputs),
+    );
 
     if (fromSandbox) {
       violations.push(...sourcesViolations(path, text, namesSandbox, true));

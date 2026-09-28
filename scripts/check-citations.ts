@@ -25,8 +25,12 @@ surfaces: main pages linking or embedding sandbox pages (embeds
 count as links), sandbox pages linking sandbox peers, sources
 entries touching a sandbox page in either direction, cross-wiki
 [[<vault>/<page>]] links from sandbox pages, and the via: agent
-stamp outside the sandbox. Link resolution itself is check-links'
-business; this tool judges direction and placement only.
+stamp outside the sandbox. An [[outputs/…]] citation is not
+cross-wiki: from a sandbox page it must name an existing file under
+the data root's outputs/ directory — a missing file or a traversal
+escaping the directory is a violation. Other link resolution is
+check-links' business; this tool judges direction and placement
+only.
 
   <wiki-dir>    Wiki root to scan. Default: the repo's own wiki/.
   -h, --help    Print this help and exit; no side effects.
