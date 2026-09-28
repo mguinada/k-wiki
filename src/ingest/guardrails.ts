@@ -18,8 +18,8 @@
  *     legacy raw-path entry fails only when a hub covers the path
  *     ("cited a path that has a hub — use the wikilink"), so raw
  *     paths with no source page — repo-as-source code files in a
- *     second brain — stay legal; a slashed target is a cross-wiki
- *     link, never allowed in `sources`;
+ *     second brain — stay legal; a cross-wiki target fails outright
+ *     and an `[[outputs/…]]` citation fails too (never a source page);
  *  3. wikilinks — every `[[wikilink]]` in a changed page resolves to
  *     an existing wiki file, and no remaining page keeps a link to a
  *     page the run deleted; outputs-namespace `[[outputs/…]]`
@@ -341,10 +341,11 @@ const EMPTY_HUBS: SourceHubIndex = {
  * #126). Source pages are exempt — their own `sources` lists cite
  * raw paths, the hub pattern. Every other page's entries must be
  * wikilinks to an existing `type: source` page: a cross-wiki
- * (`[[vault/page]]`) target fails outright, and a legacy raw-path
- * entry fails only when a hub covers the path — the multi-instance
- * rule (second brains cite repo-as-source code files that have no
- * hub, and those stay legal).
+ * (`[[vault/page]]`) target fails outright, an `[[outputs/…]]`
+ * citation fails too (never a source page, issue #414), and a
+ * legacy raw-path entry fails only when a hub covers the path — the
+ * multi-instance rule (second brains cite repo-as-source code files
+ * that have no hub, and those stay legal).
  */
 function checkSourcesEntries(text: string, hubs: SourceHubIndex): string[] {
   const fields = parsePageFields(text);
@@ -365,7 +366,7 @@ function checkSourcesEntries(text: string, hubs: SourceHubIndex): string[] {
         continue;
       }
 
-      if (crossWikiTarget(target) !== undefined) {
+      if (!isOutputsTarget(target) && crossWikiTarget(target) !== undefined) {
         problems.push(`sources entry ${entry} is a cross-wiki target`);
 
         continue;
@@ -581,9 +582,11 @@ async function deletedWikiPageNames(
  *  operator-owned `.second-brain` marker at the data root (guide
  *  §25, Scenario D; issue #94), written by `data:init
  *  --second-brain` or by hand, never by the agent. Only a second
- *  brain may use cross-wiki links; in every other wiki a slashed
- *  target is simply unresolvable, so the privacy direction (domain
- *  wikis never reference second-brain material) is enforced per-run. */
+ *  brain may use cross-wiki links; in every other wiki a cross-wiki
+ *  target is simply unresolvable (an `[[outputs/…]]` citation is
+ *  not cross-wiki: it resolves through the shared outputs resolver,
+ *  issue #414), so the privacy direction (domain wikis never
+ *  reference second-brain material) is enforced per-run. */
 async function isSecondBrain(dataRoot: string): Promise<boolean> {
   try {
     await readFile(join(dataRoot, SECOND_BRAIN_MARKER));

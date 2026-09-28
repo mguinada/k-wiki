@@ -843,6 +843,25 @@ describe("runGuardrails — check 2, sources entry format", () => {
     });
   });
 
+  it("rejects an outputs sources citation as a non-source page, not cross-wiki", async () => {
+    const dataRoot = await makeRepo();
+    const post = await guardedRun(dataRoot, async (root) => {
+      await writeFile(
+        join(root, "wiki", "cites.md"),
+        page().replace('"[[src]]"', '"[[outputs/cycle-2026-09-27.md]]"'),
+      );
+    });
+
+    expect(post.failure).toMatchObject({
+      check: 2,
+      problems: expect.arrayContaining([
+        expect.stringContaining(
+          "sources entry [[outputs/cycle-2026-09-27.md]] does not cite a type: source page",
+        ),
+      ]),
+    });
+  });
+
   it("trips when a sources wikilink has no page target", async () => {
     const dataRoot = await makeRepo();
     const post = await guardedRun(dataRoot, async (root) => {
