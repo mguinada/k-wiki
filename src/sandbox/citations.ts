@@ -266,7 +266,7 @@ export async function checkCitationWall(
   const sandboxPages = await listSandboxPages(wikiDirInput);
   const namesSandbox = sandboxNamer(sandboxPages);
   const sandboxPrefix = `${SANDBOX_ROOT}/`;
-  const outputs = outputsFileProbe(join(wikiDir, "..", OUTPUTS_DIR));
+  const outputs = await outputsFileProbe(join(wikiDir, "..", OUTPUTS_DIR));
   const violations: Violation[] = [];
 
   for (const path of [...pages, ...sandboxPages]) {

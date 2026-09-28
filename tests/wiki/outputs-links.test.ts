@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -85,7 +85,7 @@ describe("outputsLinkProblem", () => {
     expect(
       outputsLinkProblem(
         "outputs/cycle-2026-09-27.md",
-        outputsFileProbe(join(root, "outputs")),
+        await outputsFileProbe(join(root, "outputs")),
       ),
     ).toBeUndefined();
   });
@@ -109,15 +109,49 @@ describe("outputsFileProbe", () => {
       "cycle-2026-09-27.md": "# Cycle\n",
       "runs/inner.md": "# Inner\n",
     });
-    const probe = outputsFileProbe(join(root, "outputs"));
+    const probe = await outputsFileProbe(join(root, "outputs"));
 
     expect(probe("cycle-2026-09-27.md")).toBe(true);
   });
 
+  it("answers false for a wrong-case path on any filesystem", async () => {
+    const root = await makeOutputs({ "cycle-2026-09-27.md": "# Cycle\n" });
+    const probe = await outputsFileProbe(join(root, "outputs"));
+
+    expect(probe("Cycle-2026-09-27.md")).toBe(false);
+  });
+
+  it("answers false for a symlink, even one naming an existing file", async () => {
+    const root = await makeOutputs({ "cycle-2026-09-27.md": "# Cycle\n" });
+
+    await symlink(
+      join(root, "outputs", "cycle-2026-09-27.md"),
+      join(root, "outputs", "linked.md"),
+    );
+
+    const probe = await outputsFileProbe(join(root, "outputs"));
+
+    expect(probe("linked.md")).toBe(false);
+  });
+
+  it("answers false for a broken symlink", async () => {
+    const root = await makeOutputs({ "real.md": "# Real\n" });
+
+    await symlink(
+      join(root, "outputs", "gone.md"),
+      join(root, "outputs", "dangling.md"),
+    );
+
+    const probe = await outputsFileProbe(join(root, "outputs"));
+
+    expect(probe("dangling.md")).toBe(false);
+  });
+
   it("answers false for a path that resolves to a directory", async () => {
     const root = await makeOutputs({ "runs/inner.md": "# Inner\n" });
+    const probe = await outputsFileProbe(join(root, "outputs"));
 
-    expect(outputsFileProbe(join(root, "outputs"))("runs")).toBe(false);
+    expect(probe("runs")).toBe(false);
   });
 
   it("answers false when the directory itself is absent", async () => {
@@ -125,6 +159,8 @@ describe("outputsFileProbe", () => {
 
     tempDirs.push(root);
 
-    expect(outputsFileProbe(join(root, "outputs"))("a.md")).toBe(false);
+    const probe = await outputsFileProbe(join(root, "outputs"));
+
+    expect(probe("a.md")).toBe(false);
   });
 });

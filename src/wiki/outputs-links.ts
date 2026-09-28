@@ -9,13 +9,13 @@
  * count, `check-crosslinks`' audited-wiki pass, and the sandbox
  * citation wall (src/sandbox/citations.ts) — so the resolvers
  * cannot disagree about which outputs citations are alive: a citation
- * resolves only when its target names an existing file under
- * outputs/, and a traversal escaping the directory is its own
- * failure, never a silent pass.
+ * resolves only when its target names an existing regular file under
+ * outputs/, by exact directory-entry name, and a traversal escaping
+ * the directory is its own failure, never a silent pass.
  */
 
-import { statSync } from "node:fs";
-import { join, posix } from "node:path";
+import { posix } from "node:path";
+import { listFiles } from "../cli/shared.ts";
 
 /** The data-root directory an `outputs/…` citation resolves against. */
 export const OUTPUTS_DIR = "outputs";
@@ -57,9 +57,11 @@ export type OutputsLinkProblem = "escape" | "missing";
 
 /** The shared classification every resolver calls (issue #414):
  *  undefined when the citation resolves, else why it fails. `exists`
- *  answers for one normalized outputs-relative path — the filesystem
- *  probe (outputsFileProbe) for the guardrails, check-links, and
- *  check-crosslinks; set membership for the pure dashboard KPIs. */
+ *  answers for one normalized outputs-relative path, from the same
+ *  exact-name regular-file listing on every surface — the probe
+ *  (outputsFileProbe) for the guardrails, check-links,
+ *  check-crosslinks, and the sandbox wall; the same listing's set
+ *  membership for the dashboard KPIs. */
 export function outputsLinkProblem(
   target: string,
   exists: (relative: string) => boolean,
@@ -86,16 +88,22 @@ export function outputsProblemReason(
 }
 
 /** A filesystem probe over one outputs directory: true only when the
- *  outputs-relative path names an existing regular file — a directory
- *  (or anything else) does not resolve a citation. */
-export function outputsFileProbe(
+ *  outputs-relative path names an existing regular file by exact
+ *  directory-entry name — the one directory walker's listing,
+ *  compared case-sensitively — so a wrong-case path, a symlink, or a
+ *  directory never resolves a citation, on any platform. */
+export async function outputsFileProbe(
   outputsDir: string,
-): (relative: string) => boolean {
-  return (relative) => {
-    try {
-      return statSync(join(outputsDir, relative)).isFile();
-    } catch {
-      return false;
-    }
-  };
+): Promise<(relative: string) => boolean> {
+  let names: string[] = [];
+
+  try {
+    names = await listFiles(outputsDir, "", { regularFilesOnly: true });
+  } catch {
+    names = [];
+  }
+
+  const files = new Set(names);
+
+  return (relative) => files.has(relative);
 }

@@ -1,5 +1,5 @@
 import { execFile as execFileCb } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -281,6 +281,23 @@ describe("collectData", () => {
         lastOk: "2026-08-30T09:00:00.000Z",
       },
     });
+  });
+
+  it("collects only regular outputs files, so a symlink never answers a citation", async () => {
+    const { dataRoot } = await makeRichRepo();
+
+    await symlink(
+      join(dataRoot, "outputs", "last-query.md"),
+      join(dataRoot, "outputs", "cycle-2026-09-27.md"),
+    );
+
+    const input = await collectData(dataRoot, { now: () => NOW });
+
+    expect(input.outputsFiles).toEqual([
+      "last-cycle.json",
+      "last-ingested-manifest.json",
+      "last-query.md",
+    ]);
   });
 
   it("rejects when the raw manifest is malformed instead of emptying the dashboard", async () => {

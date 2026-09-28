@@ -142,7 +142,7 @@ export async function checkWikiLinks(
   const broken: string[] = [];
   let links = 0;
   let external = 0;
-  const outputs = outputsFileProbe(join(wikiDir, "..", OUTPUTS_DIR));
+  const outputs = await outputsFileProbe(join(wikiDir, "..", OUTPUTS_DIR));
 
   for (const file of files) {
     texts.set(file, await readFile(join(wikiDir, file), "utf8"));

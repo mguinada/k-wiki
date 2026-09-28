@@ -610,7 +610,7 @@ async function changedPageLinkProblems(
   secondBrain: boolean,
 ): Promise<string[]> {
   const problems: string[] = [];
-  const outputs = outputsFileProbe(join(dataRoot, OUTPUTS_DIR));
+  const outputs = await outputsFileProbe(join(dataRoot, OUTPUTS_DIR));
 
   for (const [path, text] of texts) {
     for (const link of extractWikilinks(text)) {

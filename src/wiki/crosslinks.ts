@@ -107,7 +107,7 @@ async function auditWikiLinks(
 ): Promise<{ problems: string[]; external: number }> {
   const problems: string[] = [];
   let external = 0;
-  const outputs = outputsFileProbe(join(wikiDir, "..", OUTPUTS_DIR));
+  const outputs = await outputsFileProbe(join(wikiDir, "..", OUTPUTS_DIR));
 
   for (const file of files) {
     const text = await readFile(join(wikiDir, file), "utf8");
@@ -165,7 +165,7 @@ async function auditDomainLinks(
 
   for (const domain of domains) {
     const domainDisplayRoot = resolve(domain.dir, "..");
-    const outputs = outputsFileProbe(join(domain.dir, "..", OUTPUTS_DIR));
+    const outputs = await outputsFileProbe(join(domain.dir, "..", OUTPUTS_DIR));
 
     for (const file of domain.files) {
       const text = await readFile(join(domain.dir, file), "utf8");
@@ -207,7 +207,7 @@ async function auditDomainLinks(
  *  the wiki dir's sibling — like any other page's (issue #414). */
 async function auditSandboxLinks(wikiDir: string): Promise<string[]> {
   const problems: string[] = [];
-  const outputs = outputsFileProbe(join(wikiDir, "..", OUTPUTS_DIR));
+  const outputs = await outputsFileProbe(join(wikiDir, "..", OUTPUTS_DIR));
 
   for (const file of await listSandboxPages(wikiDir)) {
     const text = await readFile(join(wikiDir, file), "utf8");
