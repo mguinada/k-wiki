@@ -4065,9 +4065,19 @@ describe("runWikiSync per-cycle affordability memory (issue #408)", () => {
     await useTargetSettings(h);
     h.ingestAgent = kimi402IngestAgent;
 
-    const result = await runWikiSync(optionsFor(h));
+    await runWikiSync(optionsFor(h));
 
     expect(lintTargetOf(h)).toBe("anthropic/claude-opus-4");
+  });
+
+  it("audits the full wiki when reassigned", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    await useTargetSettings(h);
+    h.ingestAgent = kimi402IngestAgent;
+
+    const result = await runWikiSync(optionsFor(h));
+
     expect(result.lint?.mode).toBe("full");
   });
 
@@ -4081,7 +4091,7 @@ describe("runWikiSync per-cycle affordability memory (issue #408)", () => {
     expect(lintTargetOf(h)).toBe("openrouter/kimi-k2.6");
   });
 
-  it("makes the excluded target eligible again in the next cycle", async () => {
+  it("runs lint again in the next cycle", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 
     await useTargetSettings(h);
@@ -4097,15 +4107,33 @@ describe("runWikiSync per-cycle affordability memory (issue #408)", () => {
     await rm(join(h.dataRoot, "outputs", "lint-window.json"));
     h.ingestAgent = ingestStub;
 
-    const lines: string[] = [];
-
-    await runWikiSync(optionsFor(h, { onProgress: (m) => lines.push(m) }));
+    await runWikiSync(optionsFor(h));
 
     const lintInvocations = h.argRecords.filter((args) =>
       args.some((arg) => arg.includes("AUDIT THE WIKI")),
     );
 
     expect(lintInvocations).toHaveLength(2);
+  });
+
+  it("serves lint from the first target again next cycle", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    await useTargetSettings(h);
+    h.ingestAgent = kimi402IngestAgent;
+
+    await runWikiSync(optionsFor(h));
+
+    await writeFile(join(h.vaultRoot, "AI", "second.md"), "more body");
+
+    // Force a full audit in cycle 2: the first cycle's lint snapshot
+    // leaves the derived window empty, and the lint stage's own
+    // empty-window skip precedes any target choice.
+    await rm(join(h.dataRoot, "outputs", "lint-window.json"));
+    h.ingestAgent = ingestStub;
+
+    await runWikiSync(optionsFor(h));
+
     expect(lintTargetOf(h)).toBe("openrouter/kimi-k2.6");
   });
 });
