@@ -192,7 +192,7 @@ function structureSection(kpis: DashboardKpis): string {
     "structure",
     "Structure quality",
     `${stat(String(kpis.orphans.length), "orphan pages", kpis.orphans.length > 0, "Pages no other page links to (the navigation root index.md is exempt). Candidates for integration or deletion.")}` +
-      `${stat(String(kpis.deadLinks.length), "dead links", kpis.deadLinks.length > 0, "[[wikilinks]] that resolve to no page — internal only; cross-wiki targets are validated by check-crosslinks.")}` +
+      `${stat(String(kpis.deadLinks.length), "dead links", kpis.deadLinks.length > 0, "[[wikilinks]] that resolve to no page, plus [[outputs/…]] citations whose target is missing or escapes the outputs/ directory; cross-wiki targets are validated by check-crosslinks.")}` +
       `${stat(kpis.hubs[0] ? String(kpis.hubs[0].inbound) : "0", "top in-degree", false, "Inbound links of the most-linked page — the wiki's gravitational center.")}` +
       `<div class="card">${cardTitle("Status", "Frontmatter status of each page: ingested, stable, filed, needs-review (accent). needs-review is unresolved review debt.")}${barTable(kpis.statusCounts, { accentLabel: "needs-review" })}</div>` +
       `<div class="card">${cardTitle("Hubs — most linked pages", "Top five pages by inbound [[wikilinks]].")}<ul class="ticks">${kpis.hubs
