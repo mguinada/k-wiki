@@ -110,7 +110,10 @@ and the expunge of any stale namespace — a namespace the manifest or
 individual paths its prune would delete. A human reruns the cycle with
 `wiki-sync --removal-receipt <path>`; the coordinator re-validates —
 the receipt dies if the remote advanced or the candidate set changed.
-Either Mac may confirm once its vault view is current. Scheduled runs
+The receipt is per-machine and never committed: either Mac may
+confirm once its vault view is current — a Mac that holds no receipt
+reruns once without `--removal-receipt` first, which rewrites an
+equivalent receipt there, then confirms with it. Scheduled runs
 cannot supply a receipt: they fail loud naming the confirmation
 command and never silently expunge.
 
