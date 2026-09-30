@@ -1407,7 +1407,8 @@ failed, push failed after its retry), so failures surface in
 near-real-time instead of
 waiting for the hourly sweep. `KWIKI_NOTIFY=0` disables every
 notification (tests, quiet hosts); the dashboard's coverage section
-also renders "since last successful cycle" from the stamp.
+also renders "since last successful cycle" from the stamp, naming
+the last failed cycle's cause when the last cycle failed.
 
 `scheduled-run` wraps the manual cycle with exactly what unattended
 operation needs and nothing else:

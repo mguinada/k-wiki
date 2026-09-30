@@ -1172,8 +1172,9 @@ runs the read-only `bin/libexec/sync-watchdog` door, which reads the
 heartbeat stamp every completed cycle writes — ok, failed, or a
 benign quota- or credential-skipped tick (`<dataRoot>/outputs/last-cycle.json`,
 excluded via the data repo's `.git/info/exclude`; the stamp carries
-the skip's cause, or a "pre-flight: off" note when the cycle ran
-with the pre-flight dormant) — and alerts — macOS notification +
+the skip's cause, a failed cycle's one-line distilled error (issue
+#418), or a "pre-flight: off" note when the cycle ran with the
+pre-flight dormant) — and alerts — macOS notification +
 exit 1 — when the stamp is stale (default threshold: three run
 intervals, 90 minutes), unreadable, or missing past the grace
 window (the newest data-repo commit anchors a fresh install's
@@ -1183,8 +1184,12 @@ repo (`outputs/watchdog-since.txt`) holds the same grace). A
 quota- or credential-skipped stamp is benign while its ticks keep
 arriving — the verdict names the skip's cause — and alerts the same
 way once no successful cycle is on record or the last success ages
-past the threshold; a stamp that itself goes stale (a scheduler
-that died) alerts like any other. The
+past the threshold; a failed stamp gets the same tolerance (issue
+#418): one transient failure with a recent success stays quiet,
+while failed cycles persisting past the threshold — or no success
+on record — alert, naming the stamp's one-line failure reason. A
+stamp that itself goes stale (a scheduler that died) alerts like
+any other. The
 watchdog exists because the 2026-09-13 outage failed *before the
 pipeline's process started* — its own ALERT logging never ran, the
 only trace was `launchd-stderr.log`, which nobody reads — so the
@@ -1193,8 +1198,10 @@ in-cycle failures and process-never-started failures alike. The
 wrapper's ALERT path fires the same notification in-process
 (near-real-time failures; `KWIKI_NOTIFY=0` disables every
 notification), and the dashboard's coverage section renders
-"since last successful cycle" from the stamp (failed cycles keep
-the older success on record — the stamp carries `lastOk` forward).
+"since last successful cycle" from the stamp — naming the last
+failed cycle's cause on the same line when the last cycle failed
+(failed cycles keep the older success on record — the stamp
+carries `lastOk` forward).
 The run lock is shared protocol,
 not wrapper-private (issue #313): a manual `wiki-sync` acquires the
 same `<dataRoot>/.scheduled-run.lock` for its cycle, so a manual run
