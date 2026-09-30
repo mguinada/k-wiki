@@ -19,7 +19,11 @@ quota-skipped stamp is benign while its ticks keep arriving and
 names its cause; a credential-skipped stamp (no authenticatable
 agent target) is benign the same way. When the last successful
 cycle ages past the threshold the watchdog alerts naming that
-cause, and a stamp that itself goes stale — a scheduler that
+cause. A failed stamp gets the same tolerance: a single failure
+stays quiet while the last success is inside the threshold, but
+cycles failing on every tick — a fresh stamp, a stale lastOk —
+alert, naming the stamp's one-line failure reason when the stamp
+carries one. A stamp that itself goes stale — a scheduler that
 died — alerts like any other. A stamp whose cycle ran with the
 quota pre-flight dormant carries a "pre-flight: off" note. The
 watchdog is independent of the monitored pipeline by design: a
@@ -55,5 +59,6 @@ com.kwiki.watchdog (setup-schedule --watchdog) runs this door
 hourly.
 
 Exits 0 on a fresh (or in-grace) heartbeat, 1 on stale, unreadable,
-missing-past-grace, pre-flight-skipped ticks persisting past the
-threshold, or skipping with no successful cycle on record.`;
+missing-past-grace, pre-flight-skipped ticks or failed cycles
+persisting past the threshold, or skipping or failing with no
+successful cycle on record.`;

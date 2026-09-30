@@ -128,6 +128,30 @@ describe("sync-watchdog e2e", () => {
     );
   });
 
+  it("exits 1 on a fresh failed stamp whose last success aged past the threshold", async () => {
+    const repo = await makeRepo();
+
+    await mkdir(join(repo.dataRoot, "outputs"), { recursive: true });
+    await writeFile(
+      join(repo.dataRoot, "outputs", "last-cycle.json"),
+      JSON.stringify({
+        timestamp: new Date().toISOString(),
+        outcome: "failed",
+        reason: "wiki-sync: proposed removals need a receipt",
+        pid: 1,
+        lastOk: new Date(Date.now() - 4 * 3_600_000).toISOString(),
+      }),
+      "utf8",
+    );
+
+    const result = await runWatchdog(repo);
+
+    expect(result.code).toBe(1);
+    expect(result.out).toMatch(
+      /ALERT — cycles failing: wiki-sync: proposed removals need a receipt; last successful cycle 4h ago/,
+    );
+  });
+
   it("exits 1 on an unreadable heartbeat", async () => {
     const repo = await makeRepo();
 

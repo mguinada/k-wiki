@@ -1166,3 +1166,66 @@ describe("computeKpis last ok cycle (issue #362)", () => {
     expect(kpis.lastOkCycleAgeMs).toBe(0);
   });
 });
+
+describe("computeKpis last cycle failure (issue #418)", () => {
+  function input(lastCycle: Parameters<typeof computeKpis>[0]["lastCycle"]) {
+    return {
+      now: NOW,
+      head: "abc1234",
+      pages: [],
+      rawNoteKeys: [],
+      ingestedKeys: [],
+      outputsFiles: [],
+      lastSync: null,
+      rawNoteSyncDates: [],
+      statusFlips: [],
+      commits: [],
+      firstAdded: [],
+      lastQuery: null,
+      lastCycle,
+    };
+  }
+
+  it("carries a failed stamp's reason", () => {
+    const kpis = computeKpis(
+      input({
+        timestamp: "2026-09-01T11:00:00.000Z",
+        outcome: "failed",
+        reason: "wiki-sync: proposed removals need a receipt",
+        lastOk: "2026-09-01T09:00:00.000Z",
+      }),
+    );
+
+    expect(kpis.lastCycleFailure).toBe(
+      "wiki-sync: proposed removals need a receipt",
+    );
+  });
+
+  it("reports null for an ok stamp", () => {
+    const kpis = computeKpis(
+      input({
+        timestamp: "2026-09-01T09:00:00.000Z",
+        outcome: "ok",
+        lastOk: null,
+      }),
+    );
+
+    expect(kpis.lastCycleFailure).toBeNull();
+  });
+
+  it("reports null for a failed stamp without a reason", () => {
+    const kpis = computeKpis(
+      input({
+        timestamp: "2026-09-01T11:00:00.000Z",
+        outcome: "failed",
+        lastOk: "2026-09-01T09:00:00.000Z",
+      }),
+    );
+
+    expect(kpis.lastCycleFailure).toBeNull();
+  });
+
+  it("reports null without a stamp", () => {
+    expect(computeKpis(input(null)).lastCycleFailure).toBeNull();
+  });
+});

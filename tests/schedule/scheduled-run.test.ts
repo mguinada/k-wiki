@@ -615,6 +615,49 @@ describe("runScheduledCycle", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
+  it("stamps a failed cycle with the error's first line as the reason", async () => {
+    const dir = await tempDir();
+    const { runGitStep } = fakeGit();
+    const lockPath = join(dir, ".scheduled-run.lock");
+
+    const outcome = await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath,
+      runGitStep,
+      runSync: () =>
+        Promise.reject(
+          new Error(
+            "wiki-sync: proposed removals need a receipt\n  wiki/a.md\n  wiki/b.md",
+          ),
+        ),
+      log: () => {},
+    });
+
+    expect({
+      outcome,
+      stamp: JSON.parse(
+        await readFile(join(dir, "outputs", "last-cycle.json"), "utf8"),
+      ),
+    }).toEqual({
+      outcome: {
+        status: "failed",
+        error:
+          "wiki-sync: proposed removals need a receipt\n  wiki/a.md\n  wiki/b.md",
+      },
+      stamp: {
+        outcome: "failed",
+        reason: "wiki-sync: proposed removals need a receipt",
+        preflight: "unavailable",
+        pid: expect.any(Number),
+        lastOk: null,
+        timestamp: expect.any(String),
+      },
+    });
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
   it("recovers a push rejection with pull --rebase and one retry", async () => {
     const dir = await tempDir();
     const { git, runGitStep } = fakeGit((args, calls) => {

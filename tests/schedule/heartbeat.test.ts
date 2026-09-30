@@ -86,6 +86,25 @@ describe("parseHeartbeat", () => {
     expect(parseHeartbeat(JSON.stringify(skipped))).toEqual(skipped);
   });
 
+  it("accepts a failed outcome with its one-line reason", () => {
+    const failed = {
+      ...stamp(),
+      outcome: "failed",
+      reason: "wiki-sync: proposed removals need a receipt",
+    } as Record<string, unknown>;
+
+    expect(parseHeartbeat(JSON.stringify(failed))).toEqual(failed);
+  });
+
+  it("parses a failed stamp with no reason field", () => {
+    const failed = {
+      ...stamp(),
+      outcome: "failed",
+    } as Record<string, unknown>;
+
+    expect(parseHeartbeat(JSON.stringify(failed))).toEqual(failed);
+  });
+
   it("keeps a known pre-flight state on the stamp", () => {
     const dormant = { ...stamp(), preflight: "unavailable" } as Record<
       string,
@@ -300,6 +319,31 @@ describe("writeCycleHeartbeat", () => {
         outcome: "failed",
         pid: 2,
         lastOk: "2026-09-20T10:00:00.000Z",
+      },
+    });
+  });
+
+  it("carries a failed cycle's one-line reason on the stamp", async () => {
+    const dataRoot = await tempDataRoot();
+
+    await writeCycleHeartbeat({
+      dataRoot,
+      outcome: "failed",
+      reason: "wiki-sync: proposed removals need a receipt",
+      pid: 2,
+      now: new Date("2026-09-20T10:30:00.000Z"),
+    });
+
+    const read = await readCycleHeartbeat(dataRoot);
+
+    expect(read).toEqual({
+      kind: "present",
+      stamp: {
+        timestamp: "2026-09-20T10:30:00.000Z",
+        outcome: "failed",
+        reason: "wiki-sync: proposed removals need a receipt",
+        pid: 2,
+        lastOk: null,
       },
     });
   });

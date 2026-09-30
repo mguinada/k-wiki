@@ -462,6 +462,7 @@ describe("scheduled-run heartbeat e2e (issue #362)", () => {
     );
 
     expect(stamp.outcome).toBe("failed");
+    expect(stamp.reason).toEqual(expect.stringMatching(/^[^\n]+$/));
   });
 
   it("does not touch the stamp when the tick skips on a held lock", async () => {

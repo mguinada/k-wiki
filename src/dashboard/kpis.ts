@@ -73,10 +73,12 @@ export interface DashboardInput {
   /** Timestamp recorded in outputs/last-query.md; null when absent. */
   readonly lastQuery: string | null;
   /** The scheduled cycle's heartbeat stamp (outputs/last-cycle.json);
-   *  null when absent or unreadable. */
+   *  null when absent or unreadable; a failed cycle's one-line
+   *  reason rides along when the stamp carries one. */
   readonly lastCycle: {
     readonly timestamp: string;
     readonly outcome: "ok" | "failed" | "skipped";
+    readonly reason?: string;
     readonly lastOk: string | null;
   } | null;
 }
@@ -480,6 +482,19 @@ export function lastOkCycleAgeMs(
   return Number.isFinite(ageMs) ? Math.max(0, ageMs) : null;
 }
 
+/** The last failed cycle's one-line cause from the heartbeat stamp;
+ *  null when the last cycle is ok or skipped, failed without a
+ *  reason (older stamps tolerate a missing one), or absent. */
+export function lastCycleFailure(
+  lastCycle: DashboardInput["lastCycle"],
+): string | null {
+  if (lastCycle === null || lastCycle.outcome !== "failed") {
+    return null;
+  }
+
+  return lastCycle.reason ?? null;
+}
+
 /** Every KPI the dashboard renders, from one input. */
 export interface DashboardKpis {
   readonly totalPages: number;
@@ -524,6 +539,10 @@ export interface DashboardKpis {
   /** Age of the last ok scheduled cycle, from the heartbeat stamp;
    *  null when no ok cycle is on record. */
   readonly lastOkCycleAgeMs: number | null;
+  /** The last failed cycle's one-line cause, from the heartbeat
+   *  stamp; null when the last cycle is ok or skipped, failed
+   *  without a reason, or no stamp is on record. */
+  readonly lastCycleFailure: string | null;
 }
 
 /** The wiki's navigation root: linked structurally (the file list,
@@ -632,5 +651,6 @@ export function computeKpis(input: DashboardInput): DashboardKpis {
     provenance: provenanceBuckets(input.pages),
     funnel: funnelFrom(input.pages, input.lastQuery),
     lastOkCycleAgeMs: lastOkCycleAgeMs(input.lastCycle, input.now),
+    lastCycleFailure: lastCycleFailure(input.lastCycle),
   };
 }
