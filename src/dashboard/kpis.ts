@@ -73,10 +73,12 @@ export interface DashboardInput {
   /** Timestamp recorded in outputs/last-query.md; null when absent. */
   readonly lastQuery: string | null;
   /** The scheduled cycle's heartbeat stamp (outputs/last-cycle.json);
-   *  null when absent or unreadable. */
+   *  null when absent or unreadable; a failed cycle's one-line
+   *  reason rides along when the stamp carries one. */
   readonly lastCycle: {
     readonly timestamp: string;
     readonly outcome: "ok" | "failed" | "skipped";
+    readonly reason?: string;
     readonly lastOk: string | null;
   } | null;
 }

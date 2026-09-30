@@ -14,14 +14,15 @@
  * installed — the upgrade path, an existing data repo whose commits
  * are old, would otherwise alert before its first cycle completes.
  *
- * Verdicts: fresh → one line, exit 0. Stale, unreadable, or missing
- * past the grace window → one line, a macOS notification
+ * Verdicts (classified in ./watchdog-verdict.ts, the pure layer
+ * this door runs): fresh → one line, exit 0. Stale, unreadable, or
+ * missing past the grace window → one line, a macOS notification
  * (osascript; KWIKI_NOTIFY=0 disables), exit 1 — launchd records
  * the non-zero exit too. A skipped stamp is benign while its ticks
- * keep arriving and names its cause; with no successful cycle on
- * record it alerts at once naming that cause, when the last success
- * ages past the threshold the alert names it, and a stamp that
- * itself goes stale — a scheduler that died — alerts like any
+ * keep arriving; a failed stamp gets the same tolerance — one
+ * transient failure stays quiet while the last success is inside
+ * the threshold, but cycles failing on every tick alert. A stamp
+ * that itself goes stale — a scheduler that died — alerts like any
  * other. A missing stamp inside the grace window is the
  * fresh-install case: the newest of the data-repo commit date
  * and the install anchor is younger than the threshold, so the
@@ -35,13 +36,7 @@ import { refuseDirectExecution } from "../cli/is-main.ts";
 import { repoRoot } from "../cli/shared.ts";
 import { parseArgs } from "../cli/shell.ts";
 import { runGit } from "../data/git.ts";
-import {
-  classifyHeartbeat,
-  formatAge,
-  type ReadHeartbeat,
-  readCycleHeartbeat,
-  readWatchdogSince,
-} from "./heartbeat.ts";
+import { readCycleHeartbeat, readWatchdogSince } from "./heartbeat.ts";
 import { notifyUser } from "./notify.ts";
 import { resolveDataRoot } from "./scheduled-run.ts";
 import {
@@ -49,6 +44,7 @@ import {
   parseIntervalDuration,
 } from "./setup-schedule.ts";
 import { HELP } from "./sync-watchdog-help.ts";
+import { watchdogVerdict } from "./watchdog-verdict.ts";
 
 /** The watchdog's argv shape: the staleness override plus the same
  *  two positionals scheduled-run takes (config and raw-dir), so an
@@ -63,142 +59,6 @@ export function parseWatchdogArgs(args: readonly string[]) {
         `expected at most two arguments (<config> and <raw-dir>), got ${count}`,
     },
   });
-}
-
-/** One watchdog verdict: the exit line and code. Pure classification
- *  over the already-read heartbeat and the grace reference. */
-export function watchdogVerdict(input: {
-  readonly read: Awaited<ReturnType<typeof readCycleHeartbeat>>;
-  readonly now: Date;
-  readonly thresholdMs: number;
-  /** The newest data-repo commit date, one grace reference when no
-   *  stamp exists; undefined when git could not answer. */
-  readonly newestCommitAt: Date | undefined;
-  /** The install anchor setup-schedule wrote at watchdog install,
-   *  the other grace reference; optional. */
-  readonly installedAt?: Date | undefined;
-}): { readonly line: string; readonly exitCode: 0 | 1 } {
-  const { now, thresholdMs, read } = input;
-  const threshold = formatAge(thresholdMs);
-
-  if (read.kind === "missing") {
-    /** The grace references available, newest wins: the install
-     *  anchor (the upgrade path) and the newest commit date (the
-     *  fresh-init fallback when no anchor was stamped). */
-    const refs: readonly (readonly [string, Date])[] = [
-      ...(input.newestCommitAt === undefined
-        ? []
-        : [["newest data-repo commit", input.newestCommitAt] as const]),
-      ...(input.installedAt === undefined
-        ? []
-        : [["watchdog install", input.installedAt] as const]),
-    ];
-
-    if (refs.length === 0) {
-      return {
-        line: `sync-watchdog: ALERT — no heartbeat and no data-repo git history or install anchor to hold the grace window (threshold ${threshold})`,
-        exitCode: 1,
-      };
-    }
-
-    const [label, refAt] = refs.reduce((a, b) => (b[1] > a[1] ? b : a));
-    const refAgeMs = Math.max(0, now.getTime() - refAt.getTime());
-
-    return refAgeMs <= thresholdMs
-      ? {
-          line: `sync-watchdog: no heartbeat yet — ${label} ${formatAge(refAgeMs)} old, inside the ${threshold} grace window`,
-          exitCode: 0,
-        }
-      : {
-          line: `sync-watchdog: ALERT — no heartbeat; ${label} ${formatAge(refAgeMs)} old, past the ${threshold} threshold`,
-          exitCode: 1,
-        };
-  }
-
-  if (read.kind === "unreadable") {
-    return {
-      line: `sync-watchdog: ALERT — heartbeat unreadable (${read.reason}); expected a stamp at outputs/last-cycle.json`,
-      exitCode: 1,
-    };
-  }
-
-  const classified = classifyHeartbeat(read.stamp, now, thresholdMs);
-
-  const verdict =
-    read.stamp.outcome === "skipped"
-      ? skippedVerdict(read.stamp, now, thresholdMs)
-      : classified.verdict === "fresh"
-        ? {
-            line: `sync-watchdog: fresh — last cycle ${formatAge(classified.ageMs)} ago (threshold ${threshold})`,
-            exitCode: 0 as const,
-          }
-        : {
-            line: `sync-watchdog: ALERT — last cycle ${formatAge(classified.ageMs)} ago, past the ${threshold} threshold`,
-            exitCode: 1 as const,
-          };
-
-  return {
-    line: `${verdict.line}${preflightNote(read.stamp)}`,
-    exitCode: verdict.exitCode,
-  };
-}
-
-function skippedVerdict(
-  stamp: NonNullable<Extract<ReadHeartbeat, { kind: "present" }>["stamp"]>,
-  now: Date,
-  thresholdMs: number,
-): { readonly line: string; readonly exitCode: 0 | 1 } {
-  const classified = classifyHeartbeat(stamp, now, thresholdMs);
-
-  // Skipping is benign only while its ticks keep arriving: a stamp
-  // that itself went stale means the scheduler died, whatever the
-  // last outcomes said.
-  if (classified.verdict === "stale") {
-    return {
-      line: `sync-watchdog: ALERT — last cycle ${formatAge(classified.ageMs)} ago, past the ${formatAge(thresholdMs)} threshold`,
-      exitCode: 1,
-    };
-  }
-
-  const cause = stamp.reason ?? "scheduled cycle skipped";
-
-  if (stamp.lastOk === null) {
-    return {
-      line: `sync-watchdog: ALERT — cycles skipping: ${cause}; no successful cycle on record`,
-      exitCode: 1,
-    };
-  }
-
-  const lastOkAgeMs = Math.max(0, now.getTime() - Date.parse(stamp.lastOk));
-
-  return lastOkAgeMs > thresholdMs
-    ? {
-        line: `sync-watchdog: ALERT — cycles skipping: ${cause}; last successful cycle ${formatAge(lastOkAgeMs)} ago`,
-        exitCode: 1,
-      }
-    : {
-        line: `sync-watchdog: fresh — cycles skipping: ${cause}`,
-        exitCode: 0,
-      };
-}
-
-/** The dormant pre-flight note appended to any verdict over a stamp
- *  whose cycle ran ungated; empty when the gate was active. */
-function preflightNote(
-  stamp: NonNullable<Extract<ReadHeartbeat, { kind: "present" }>["stamp"]>,
-): string {
-  if (stamp.preflight === undefined) {
-    return "";
-  }
-
-  const why =
-    stamp.preflight === "off"
-      ? "disabled by settings"
-      : stamp.preflight === "no-provider"
-        ? "no ingest provider configured"
-        : "quota-axi not configured";
-
-  return `; pre-flight: off — ${why}`;
 }
 
 /** The newest data-repo commit date, the fresh-install grace

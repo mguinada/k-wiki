@@ -59,7 +59,8 @@ e2e run or diagnosing a failing one.
   the cycle, all under the shared run lock; heartbeat (issue #362):
   a completed cycle writes the `outputs/last-cycle.json` stamp (ok
   after a clean push with `lastOk` set, failed when the push fails
-  twice), the stamp stays out of git status via
+  twice, the failed stamp's one-line reason naming the failure's
+  first line), the stamp stays out of git status via
   `.git/info/exclude`, and a lock-skip tick leaves the previous
   stamp untouched; quota pre-flight (issue #396): a stub probe named
   by the settings' `quotaPreflight` path reporting the configured
@@ -96,7 +97,8 @@ e2e run or diagnosing a failing one.
   installer's `watchdog-since.txt` anchor holds the same grace over
   old commits; an explicit `--stale-after` overrides the default;
   and the stamp a scheduled-run cycle wrote is read back correctly
-  end to end.
+  end to end; a fresh failed stamp whose last success ages past the
+  threshold alerts naming the stamp's failure reason (exit 1).
 - **setup-schedule** — the plist emitters as real child processes:
   `--print` (interval registration) and `--print --calendar` (the
   weekly `com.kwiki.scheduled-lint` sweep, `StartCalendarInterval`,

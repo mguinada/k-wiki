@@ -35,7 +35,8 @@ export interface CycleHeartbeat {
   /** The cycle's outcome; skipped ticks are benign pre-flight
    *  ticks (quota or credential). */
   readonly outcome: "ok" | "failed" | "skipped";
-  /** Why a benign skipped tick occurred, when present. */
+  /** Why the tick is not ok, when present: a benign skipped tick's
+   *  cause, or a failed cycle's one-line distilled error. */
   readonly reason?: string;
   /** How the cycle's quota pre-flight acted when it did not gate:
    *  `off` (disabled in settings), `unavailable` (probe absent or

@@ -151,6 +151,13 @@ export interface ScheduledRunOptions {
   readonly resolveAgentPath?: typeof resolveAgentPath | undefined;
 }
 
+/** The error's first line: a failed stamp's one-line reason — the
+ *  stamp names the cause without the multi-line detail (a refusal's
+ *  full text must not bloat it). */
+function firstLine(text: string): string {
+  return text.trim().split("\n", 1)[0] ?? text.trim();
+}
+
 /**
  * One scheduled cycle. Every step logs; any failure releases the lock
  * and returns a failed outcome naming the error (the CLI exits 1 so
@@ -207,7 +214,7 @@ export async function runScheduledCycle(
   ): Promise<CycleOutcome> => {
     log(`scheduled-run: ALERT ${error}`);
 
-    await stampHeartbeat("failed", undefined, preflight);
+    await stampHeartbeat("failed", firstLine(error), preflight);
     await releaseLock(options.lockPath, pid);
     await notify(error);
 

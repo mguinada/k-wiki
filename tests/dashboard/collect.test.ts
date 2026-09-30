@@ -557,6 +557,32 @@ describe("collectData heartbeat (issue #362)", () => {
     );
   });
 
+  it("carries a failed cycle's reason on the last-cycle row", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "k-wiki-collect-hb-"));
+
+    tempDirs.push(dataRoot);
+    await mkdir(join(dataRoot, "outputs"), { recursive: true });
+    await writeFile(
+      join(dataRoot, "outputs", "last-cycle.json"),
+      JSON.stringify({
+        timestamp: "2026-09-20T10:00:00.000Z",
+        outcome: "failed",
+        reason: "wiki-sync: proposed removals need a receipt",
+        pid: 9,
+        lastOk: "2026-09-19T10:00:00.000Z",
+      }),
+    );
+
+    expect((await collectData(dataRoot, { now: () => NOW })).lastCycle).toEqual(
+      {
+        timestamp: "2026-09-20T10:00:00.000Z",
+        outcome: "failed",
+        reason: "wiki-sync: proposed removals need a receipt",
+        lastOk: "2026-09-19T10:00:00.000Z",
+      },
+    );
+  });
+
   it("degrades to null on an unreadable heartbeat", async () => {
     const dataRoot = await mkdtemp(join(tmpdir(), "k-wiki-collect-hb-"));
 

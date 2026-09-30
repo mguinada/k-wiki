@@ -135,8 +135,9 @@ Behavior, failure mode by failure mode:
   - Heartbeat: every completed cycle (ok, failed, or a benign
     quota- or credential-skipped tick) writes the stamp
     outputs/last-cycle.json in the data repo — timestamp, outcome,
-    holder PID, the last ok cycle's timestamp, plus the skip reason
-    or the quota pre-flight's dormant state when present — kept out
+    holder PID, the last ok cycle's timestamp, plus the skip
+    reason, a failed cycle's one-line cause, or the quota
+    pre-flight's dormant state when present — kept out
     of git via .git/info/exclude. The sync-watchdog door and the
     dashboard's last-cycle row read it; a skipped tick (lock held)
     writes nothing, and the stamp never changes the cycle's
@@ -147,8 +148,9 @@ Behavior, failure mode by failure mode:
     independent com.kwiki.watchdog launchd job (installed by
     setup-schedule --watchdog) alerts when the heartbeat goes stale,
     missing, or unreadable, and when benign quota- or
-    credential-skipped ticks persist past its threshold or no
-    successful cycle is on record (those alerts name the cause) —
+    credential-skipped ticks or failed cycles persist past its
+    threshold, or no successful cycle is on record (those alerts
+    name the cause) —
     failures reach the screen, not only a log. KWIKI_NOTIFY=0
     disables every notification.
 
