@@ -218,7 +218,8 @@ export async function readReceipt(path: string): Promise<RemovalReceipt> {
 }
 
 /** The human-readable listing a refusal prints: exact paths, the
- *  anchor SHA, and the confirmation command shape. */
+ *  anchor SHA, the cross-machine regeneration note, and the
+ *  confirmation command shape. */
 export function describeReceipt(receipt: RemovalReceipt): readonly string[] {
   const lines = [
     `proposed source removals/renames — base ${receipt.base.slice(0, 8)}:`,
@@ -235,6 +236,7 @@ export function describeReceipt(receipt: RemovalReceipt): readonly string[] {
   }
 
   lines.push(
+    "the receipt is per-machine and never committed — on another Mac, rerun without --removal-receipt first: that rewrites an equivalent receipt there, then confirm with it",
     `rerun with --removal-receipt <path to ${RECEIPT_FILENAME}> to confirm`,
   );
 

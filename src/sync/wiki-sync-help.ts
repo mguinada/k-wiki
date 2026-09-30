@@ -144,8 +144,11 @@ remote tree, re-baselines the ingest snapshot from that tree, and —
 after the stages and the content commit — advances the branch and
 releases the lease in one atomic push. Proposed source removals or
 renames stop the cycle with a receipt file before raw/ is touched;
-rerun with --removal-receipt to confirm. k-wiki writer-lease status
-and k-wiki enable-shared-writer are the operator doors.
+rerun with --removal-receipt to confirm. The receipt is per-machine
+and never committed — on another Mac, rerun without --removal-receipt
+first: that rewrites an equivalent receipt there, then confirm with
+it. k-wiki writer-lease status and k-wiki enable-shared-writer are
+the operator doors.
 
 Run lock: the cycle acquires the shared run lock —
 <dataRoot>/.scheduled-run.lock, the same lock scheduled-run holds —

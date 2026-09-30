@@ -31,4 +31,8 @@ describe("wiki-sync help (printed by the launcher)", () => {
   it("names the enable-shared-writer door", () => {
     expect(help).toContain("enable-shared-writer");
   });
+
+  it("tells an operator on another Mac to regenerate the receipt first", () => {
+    expect(help).toContain("on another Mac, rerun without --removal-receipt");
+  });
 });
