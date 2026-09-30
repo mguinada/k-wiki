@@ -151,6 +151,69 @@ describe("renderDashboard", () => {
     );
   });
 
+  it("names a failed cycle's cause on the last-cycle stat", () => {
+    const html = renderDashboard(
+      {
+        ...fixtureKpis(),
+        lastCycleFailure: "wiki-sync: proposed removals need a receipt",
+      },
+      {
+        generatedAt: NOW,
+        head: "abee7c4",
+        dataRoot: "~/Lab/k-wiki-data",
+      },
+    );
+
+    expect(html).toContain(
+      "since last successful cycle — last failed: wiki-sync: proposed removals need a receipt",
+    );
+  });
+
+  it("accents the last-cycle stat while the last cycle failed", () => {
+    const html = renderDashboard(
+      {
+        ...fixtureKpis(),
+        lastCycleFailure: "wiki-sync: proposed removals need a receipt",
+      },
+      {
+        generatedAt: NOW,
+        head: "abee7c4",
+        dataRoot: "~/Lab/k-wiki-data",
+      },
+    );
+
+    expect(html).toContain(
+      '<div class="stat stat-accent"><span class="stat-value">3h</span><span class="stat-label">since last successful cycle — last failed:',
+    );
+  });
+
+  it("keeps the last-cycle stat quiet without a failure", () => {
+    const html = renderDashboard(fixtureKpis(), {
+      generatedAt: NOW,
+      head: "abee7c4",
+      dataRoot: "~/Lab/k-wiki-data",
+    });
+
+    expect(html).toContain(
+      '<span class="stat-value">3h</span><span class="stat-label">since last successful cycle<span class="info"',
+    );
+  });
+
+  it("escapes HTML-special characters in a failed cycle's cause", () => {
+    const html = renderDashboard(
+      { ...fixtureKpis(), lastCycleFailure: "removal refused: <wiki/Foo.md>" },
+      {
+        generatedAt: NOW,
+        head: "abee7c4",
+        dataRoot: "~/Lab/k-wiki-data",
+      },
+    );
+
+    expect(html).toContain(
+      "since last successful cycle — last failed: removal refused: &lt;wiki/Foo.md&gt;",
+    );
+  });
+
   it("marks KPIs that need review", () => {
     const html = renderDashboard(fixtureKpis(), {
       generatedAt: NOW,

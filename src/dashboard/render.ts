@@ -115,6 +115,22 @@ function cardTitle(title: string, tip = ""): string {
   return `<h3>${esc(title)}${tip === "" ? "" : infoTip(tip)}</h3>`;
 }
 
+/** The last-cycle stat: age since the last ok cycle; a failed
+ *  cycle's collected reason names the cause on the same line. */
+function lastCycleStat(kpis: DashboardKpis): string {
+  const failing =
+    kpis.lastCycleFailure === null
+      ? ""
+      : ` — last failed: ${kpis.lastCycleFailure}`;
+
+  return stat(
+    kpis.lastOkCycleAgeMs === null ? "—" : formatAge(kpis.lastOkCycleAgeMs),
+    `since last successful cycle${failing}`,
+    kpis.lastCycleFailure !== null,
+    "Age of the last scheduled cycle that completed ok, from the data repo's outputs/last-cycle.json heartbeat — failed cycles keep the older success on record.",
+  );
+}
+
 function section(id: string, title: string, body: string, note = ""): string {
   return `<section id="${id}"><h2>${esc(title)}</h2>${body}${note === "" ? "" : `<p class="note">${esc(note)}</p>`}</section>`;
 }
@@ -127,7 +143,7 @@ function coverageSection(kpis: DashboardKpis): string {
     `${stat(String(kpis.totalPages), "wiki pages", false, "Every content page under wiki/ (AGENTS.md and its meta template excluded).")}` +
       `${stat(String(kpis.backlog.count), "un-ingested sources", kpis.backlog.count > 0, "Raw notes present in raw/ but absent from the last ingest snapshot — waiting for the next wiki-ingest run.")}` +
       `${stat(kpis.syncLagDays === null ? "—" : `${kpis.syncLagDays}d`, "since last sync", false, "Days since the newest last_synced stamp in raw/manifest.json — how far the projection trails the vault.")}` +
-      `${stat(kpis.lastOkCycleAgeMs === null ? "—" : formatAge(kpis.lastOkCycleAgeMs), "since last successful cycle", false, "Age of the last scheduled cycle that completed ok, from the data repo's outputs/last-cycle.json heartbeat — failed cycles keep the older success on record.")}` +
+      `${lastCycleStat(kpis)}` +
       `<div class="card wide">${cardTitle("Pages by type", "Frontmatter type of each page: source (one per raw note), concept, entity, comparison, query, topic.")}${barTable(kpis.typeCounts)}</div>` +
       `<div class="card wide">${cardTitle("Staleness — pages by age since update", "Days since each page's frontmatter updated date. > 90 days (accent) means the page has not been touched in a quarter.")}` +
       barTable(

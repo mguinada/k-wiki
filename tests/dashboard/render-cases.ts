@@ -170,6 +170,7 @@ export function goldenCases(): RenderCase[] {
     provenance: { zero: 0, single: 0, twoThree: 0, fourPlus: 0 },
     funnel: { present: false, filedCount: 0, lastRunAt: null },
     lastOkCycleAgeMs: null,
+    lastCycleFailure: null,
   };
 
   return [
