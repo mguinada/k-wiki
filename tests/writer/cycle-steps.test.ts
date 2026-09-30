@@ -253,6 +253,27 @@ describe("gateRemovals", () => {
     expect(receipt.plans).toEqual(PLANS);
   });
 
+  it("refuses with the cross-machine regeneration note", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "gate-"));
+    tempDirs.push(dataRoot);
+    const run = runContext({ rawDir: join(dataRoot, "raw"), now: NOW });
+
+    const gate = await gateRemovals({
+      run,
+      base: "a".repeat(40),
+      plans: PLANS,
+      receipt: undefined,
+    });
+
+    if (gate.status !== "refuse") {
+      throw new Error("expected a refusal");
+    }
+
+    expect(gate.reason.join("\n")).toContain(
+      "on another Mac, rerun without --removal-receipt first",
+    );
+  });
+
   it("passes with a matching receipt and refuses a stale base", async () => {
     const dataRoot = await mkdtemp(join(tmpdir(), "gate-"));
     tempDirs.push(dataRoot);

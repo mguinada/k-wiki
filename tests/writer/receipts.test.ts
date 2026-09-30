@@ -225,4 +225,13 @@ describe("describeReceipt", () => {
     expect(text).toContain("rename   Engineering/a.md → b/a.md");
     expect(text).toContain("--removal-receipt");
   });
+
+  it("tells an operator on another Mac to regenerate the receipt first", () => {
+    const lines = describeReceipt(buildReceipt("a".repeat(40), PLAN));
+    const text = lines.join("\n");
+
+    expect(text).toContain(
+      "on another Mac, rerun without --removal-receipt first",
+    );
+  });
 });
