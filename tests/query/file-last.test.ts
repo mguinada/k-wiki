@@ -1601,3 +1601,143 @@ describe("readHeaders order and shape", () => {
     );
   });
 });
+
+describe("partitioned --web artifacts", () => {
+  const WEB_ARTIFACT: QueryArtifact = {
+    question: QUESTION,
+    timestamp: "2026-10-03T21:00:00.000Z",
+    pages: ["retrieval-augmented-generation"],
+    answer: ANSWER,
+    mode: "query (--web)",
+    webSources: 1,
+    webRetrieved: "2026-10-03T21:00:05.000Z",
+    web: {
+      enrichment: [
+        "## Web enrichment",
+        "",
+        "_Independent of the answer above; not part of wiki provenance._",
+        "",
+        "- [Example](https://example.com/a) reinforces the topic (retrieved 2026-10-03).",
+      ].join("\n"),
+      sources: [
+        "## Web sources",
+        "",
+        "- https://example.com/a — retrieved 2026-10-03",
+      ].join("\n"),
+      audit: [
+        "## Web calls audit",
+        "",
+        "| # | tool | target | results | timestamp |",
+        "|---|------|--------|---------|-----------|",
+        "| 1 | web_search | rag | 4 | 2026-10-03T21:00:01.000Z |",
+      ].join("\n"),
+    },
+  };
+
+  it("round-trips the partitioned artifact byte-exactly", () => {
+    const text = renderQueryArtifact(WEB_ARTIFACT);
+
+    expect(parseQueryArtifact(text)).toEqual(WEB_ARTIFACT);
+    expect(
+      parseQueryArtifact(renderQueryArtifact(parseQueryArtifact(text))),
+    ).toEqual(WEB_ARTIFACT);
+  });
+
+  it("keeps the core answer separate from the web sections on parse", () => {
+    const parsed = parseQueryArtifact(renderQueryArtifact(WEB_ARTIFACT));
+
+    expect(parsed.answer).toBe(ANSWER);
+    expect(parsed.web?.enrichment).toContain("## Web enrichment");
+    expect(parsed.web?.sources).toContain("## Web sources");
+    expect(parsed.web?.audit).toContain("| 1 | web_search | rag | 4 |");
+  });
+
+  it("rejects a partitioned body missing its mode, webSources, or webRetrieved header", () => {
+    const text = renderQueryArtifact(WEB_ARTIFACT).replace(
+      'mode: "query (--web)"\n',
+      "",
+    );
+
+    expect(() => parseQueryArtifact(text)).toThrow(
+      "partitioned web body needs the mode, webSources, and webRetrieved headers",
+    );
+  });
+
+  it("rejects a partitioned body missing one of the three web sections", () => {
+    const text = renderQueryArtifact(WEB_ARTIFACT).replace(
+      /## Web sources[\s\S]*?(?=## Web calls audit)/,
+      "",
+    );
+
+    expect(() => parseQueryArtifact(text)).toThrow("not a wiki-query artifact");
+  });
+
+  it("files the core answer only — no web section enters the wiki", async () => {
+    const dataRoot = await makeCommittedRepo();
+    const artifactPath = join(dataRoot, "outputs", "last-query.md");
+
+    await mkdir(join(dataRoot, "outputs"), { recursive: true });
+    await writeFile(artifactPath, renderQueryArtifact(WEB_ARTIFACT), "utf8");
+
+    const result = await fileLastQuery({
+      artifactPath,
+      dataRoot,
+      now: () => new Date("2026-10-04T09:00:00Z"),
+    });
+    const page = await readFile(join(dataRoot, result.pagePath), "utf8");
+
+    expect(page).toContain(ANSWER);
+    expect(page).not.toContain("https://example.com/a");
+    expect(page).not.toContain("## Web enrichment");
+    expect(page).not.toContain("## Web sources");
+    expect(page).not.toContain("## Web calls audit");
+    expect(page).not.toContain(
+      "──────────────────── web enrichment boundary ────────────────────",
+    );
+  });
+});
+
+describe("degraded --web artifacts", () => {
+  const DEGRADED: QueryArtifact = {
+    question: QUESTION,
+    timestamp: "2026-10-03T21:00:00.000Z",
+    pages: [],
+    answer: ANSWER,
+    webWarning:
+      "WARNING — `--web` requested, but the pi-web-access plugin is not available — continuing in wiki-only mode.",
+  };
+
+  it("round-trips the degraded artifact byte-exactly", () => {
+    const text = renderQueryArtifact(DEGRADED);
+
+    expect(parseQueryArtifact(text)).toEqual(DEGRADED);
+  });
+
+  it("persists the warning line below the header, outside the answer", () => {
+    const text = renderQueryArtifact(DEGRADED);
+    const lines = text.split("\n");
+    const warning = DEGRADED.webWarning ?? "";
+
+    expect(lines[lines.indexOf(warning) - 1]).toBe("");
+    expect(lines[lines.indexOf(warning) - 2]).toBe("---");
+    expect(parseQueryArtifact(text).answer).toBe(ANSWER);
+  });
+
+  it("files the answer without the warning line", async () => {
+    const dataRoot = await makeCommittedRepo();
+    const artifactPath = join(dataRoot, "outputs", "last-query.md");
+
+    await mkdir(join(dataRoot, "outputs"), { recursive: true });
+    await writeFile(artifactPath, renderQueryArtifact(DEGRADED), "utf8");
+
+    const result = await fileLastQuery({
+      artifactPath,
+      dataRoot,
+      now: () => new Date("2026-10-04T09:00:00Z"),
+    });
+    const page = await readFile(join(dataRoot, result.pagePath), "utf8");
+
+    expect(page).toContain(ANSWER);
+    expect(page).not.toContain("WARNING");
+  });
+});

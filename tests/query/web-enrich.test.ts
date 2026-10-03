@@ -1,0 +1,273 @@
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, describe, expect, it } from "vitest";
+import { runContext } from "../../src/cli/run-context.ts";
+import {
+  type AgentSettings,
+  ISOLATION_FLAGS,
+} from "../../src/ingest/agent-settings.ts";
+import {
+  composeEnrichmentPrompt,
+  runWebEnrichment,
+  WEB_ENRICH_PROMPT_FILE,
+  WEB_EXTENSION_SOURCE,
+  WEB_TOOL_ALLOWLIST,
+  webEnrichAgentArgs,
+  withGapHint,
+} from "../../src/query/web-enrich.ts";
+import { assistantTextLine, toolCallLine, toolResultLine } from "./helpers.ts";
+
+const SETTINGS: AgentSettings = {
+  command: "pi",
+  model: "GLM-5.2",
+  reasoning: "high",
+};
+
+const tempDirs: string[] = [];
+
+afterAll(async () => {
+  await Promise.all(
+    tempDirs.map((dir) => rm(dir, { recursive: true, force: true })),
+  );
+});
+
+describe("webEnrichAgentArgs", () => {
+  it("keeps the ambient isolation flags ahead of the grant", () => {
+    const args = webEnrichAgentArgs(SETTINGS, [...ISOLATION_FLAGS], "PROMPT");
+    const grant = args.indexOf("-e");
+
+    expect(args.slice(0, 3)).toEqual([
+      "--no-context-files",
+      "--no-extensions",
+      "--no-skills",
+    ]);
+    expect(grant).toBeGreaterThan(2);
+  });
+
+  it("grants exactly the pi-web-access extension and the search+fetch allowlist", () => {
+    const args = webEnrichAgentArgs(SETTINGS, [...ISOLATION_FLAGS], "PROMPT");
+
+    expect(args[args.indexOf("-e") + 1]).toBe(WEB_EXTENSION_SOURCE);
+    expect(args[args.indexOf("--tools") + 1]).toBe(WEB_TOOL_ALLOWLIST);
+  });
+
+  it("exposes no other extension tool than the allowlist names", () => {
+    const args = webEnrichAgentArgs(
+      SETTINGS,
+      [...ISOLATION_FLAGS],
+      "PROMPT",
+    ).join(" ");
+
+    expect(args).not.toContain("get_search_content");
+  });
+
+  it("runs the enrichment in the machine-readable json output mode", () => {
+    const args = webEnrichAgentArgs(SETTINGS, [...ISOLATION_FLAGS], "PROMPT");
+
+    expect(args[args.indexOf("--mode") + 1]).toBe("json");
+    expect(args[args.indexOf("--print") + 1]).toBe("PROMPT");
+  });
+
+  it("honors the operator's isolate: false opt-out for the isolation flags", () => {
+    const args = webEnrichAgentArgs(
+      { ...SETTINGS, isolate: false },
+      [...ISOLATION_FLAGS],
+      "PROMPT",
+    );
+
+    expect(args).not.toContain("--no-extensions");
+    expect(args).toContain("-e");
+  });
+
+  it("keeps the provider flag when the settings carry one", () => {
+    const args = webEnrichAgentArgs(
+      { ...SETTINGS, provider: "zai" },
+      [...ISOLATION_FLAGS],
+      "PROMPT",
+    );
+
+    expect(args[args.indexOf("--provider") + 1]).toBe("zai");
+  });
+});
+
+describe("composeEnrichmentPrompt", () => {
+  it("carries the policy text, question, and core answer verbatim", () => {
+    const composed = composeEnrichmentPrompt(
+      "POLICY",
+      "What is X?",
+      "CORE ANSWER",
+      "2026-10-03",
+    );
+
+    expect(composed).toContain("POLICY");
+    expect(composed).toContain("Question: What is X?");
+    expect(composed).toContain("CORE ANSWER");
+    expect(composed).toContain("Today's date is 2026-10-03");
+  });
+
+  it("tells the enrichment it may not rewrite the core document", () => {
+    const composed = composeEnrichmentPrompt("POLICY", "Q", "CORE", "2026");
+
+    expect(composed).toContain("read-only");
+    expect(composed).toContain("never rewrite");
+  });
+});
+
+describe("withGapHint", () => {
+  it("appends the rerun hint to a gap answer", () => {
+    const hinted = withGapHint("The wiki cannot answer this question.");
+
+    expect(hinted).toContain("rerunning with `--web` may enrich the topic");
+  });
+
+  it("leaves an answerable question untouched", () => {
+    const answer = "See [[retrieval-augmented-generation]].";
+
+    expect(withGapHint(answer)).toBe(answer);
+  });
+});
+
+describe("runWebEnrichment", () => {
+  /** The read enrichment prompt text, as the caller passes it. */
+  async function makePromptsDir(): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-web-prompts-"));
+
+    tempDirs.push(dir);
+
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      join(dir, WEB_ENRICH_PROMPT_FILE),
+      "Enrich the topic from the web.",
+    );
+
+    return "Enrich the topic from the web.";
+  }
+
+  /** A runner returning one canned stdout payload. */
+  const canned = (stdout: string) => async () => ({ stdout, stderr: "" });
+
+  const okStream = [
+    toolCallLine("c1", { query: "topic" }),
+    toolResultLine("c1", "https://example.com/a", { totalResults: 3 }),
+    toolCallLine("c2", { url: "https://example.com/a" }),
+    toolResultLine("c2", "page text"),
+    assistantTextLine(
+      "- [a](https://example.com/a) confirms the topic (retrieved 2026-10-03).",
+    ),
+  ].join("\n");
+
+  it("renders the three machine-owned sections from the recorded audit", async () => {
+    const outcome = await runWebEnrichment({
+      identity: SETTINGS,
+      isolationFlags: [...ISOLATION_FLAGS],
+      question: "Q",
+      coreAnswer: "CORE",
+      promptText: await makePromptsDir(),
+      run: runContext({ rawDir: join(tmpdir(), "k-wiki-web-run-raw") }),
+      runAgent: canned(okStream),
+    });
+
+    expect(outcome.kind).toBe("ok");
+
+    if (outcome.kind !== "ok") {
+      return;
+    }
+
+    expect(outcome.enrichmentSection).toContain(
+      "- [a](https://example.com/a) confirms the topic",
+    );
+    expect(outcome.sourcesSection).toContain(
+      "- https://example.com/a — retrieved",
+    );
+    expect(outcome.auditSection).toContain("| 1 | web_search | topic | 3 |");
+    expect(outcome.auditSection).toContain(
+      "| 2 | web_search | https://example.com/a |",
+    );
+    expect(outcome.sources).toEqual([
+      { url: "https://example.com/a", retrieved: "2026-10-03" },
+    ]);
+  });
+
+  it("degrades when the enrichment run fails to spawn", async () => {
+    const outcome = await runWebEnrichment({
+      identity: SETTINGS,
+      isolationFlags: [...ISOLATION_FLAGS],
+      question: "Q",
+      coreAnswer: "CORE",
+      promptText: await makePromptsDir(),
+      run: runContext({ rawDir: join(tmpdir(), "k-wiki-web-run-raw") }),
+      runAgent: async () => {
+        throw new Error("agent timed out after 1800 seconds");
+      },
+    });
+
+    expect(outcome).toEqual({
+      kind: "failed",
+      reason: "agent timed out after 1800 seconds",
+    });
+  });
+
+  it("degrades when the enrichment run produces no output", async () => {
+    const outcome = await runWebEnrichment({
+      identity: SETTINGS,
+      isolationFlags: [...ISOLATION_FLAGS],
+      question: "Q",
+      coreAnswer: "CORE",
+      promptText: await makePromptsDir(),
+      run: runContext({ rawDir: join(tmpdir(), "k-wiki-web-run-raw") }),
+      runAgent: canned(assistantTextLine("").replace("- done", "")),
+    });
+
+    expect(outcome.kind).toBe("failed");
+  });
+
+  it("degrades when the audit does not reconcile", async () => {
+    const hallucinated = [
+      toolCallLine("c1", { query: "topic" }),
+      toolResultLine("c1", "https://example.com/a", { totalResults: 1 }),
+      assistantTextLine(
+        "- [x](https://example.com/not-in-audit) (retrieved 2026-10-03).",
+      ),
+    ].join("\n");
+    const outcome = await runWebEnrichment({
+      identity: SETTINGS,
+      isolationFlags: [...ISOLATION_FLAGS],
+      question: "Q",
+      coreAnswer: "CORE",
+      promptText: await makePromptsDir(),
+      run: runContext({ rawDir: join(tmpdir(), "k-wiki-web-run-raw") }),
+      runAgent: canned(hallucinated),
+    });
+
+    expect(outcome).toEqual({
+      kind: "failed",
+      reason:
+        "cited URL absent from the audit table: https://example.com/not-in-audit",
+    });
+  });
+
+  it("sends the composed prompt through the enrichment argv", async () => {
+    const invocations: { command: string; args: readonly string[] }[] = [];
+
+    await runWebEnrichment({
+      identity: SETTINGS,
+      isolationFlags: [...ISOLATION_FLAGS],
+      question: "Q",
+      coreAnswer: "CORE",
+      promptText: await makePromptsDir(),
+      run: runContext({ rawDir: join(tmpdir(), "k-wiki-web-run-raw") }),
+      runAgent: async (command, args) => {
+        invocations.push({ command, args });
+
+        return { stdout: okStream, stderr: "" };
+      },
+    });
+
+    const invocation = invocations[0];
+
+    expect(invocation?.command).toBe("pi");
+    expect(invocation?.args.at(-1)).toContain("Enrich the topic from the web.");
+    expect(invocation?.args.at(-1)).toContain("CORE");
+  });
+});

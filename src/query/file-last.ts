@@ -2,14 +2,13 @@
  * wiki-query stage 2 (issue #72): deterministic filing of the saved
  * stage-1 answer. No LLM is involved — TypeScript reads
  * `outputs/last-query.md`, templates the answer byte-exactly into
- * `wiki/queries/<slug>.md`, and appends the `index.md` entry and
- * prepends the `log.md` entry. Stage 1's answer is the single source; this module only
+ * `wiki/queries/<slug>.md`, and appends the `index.md` and `log.md`
+ * entries. Stage 1's answer is the single source; this module only
  * wraps it. A drift warning fires when the data repo's `raw/` or
- * `wiki/` moved after the saved timestamp — the answer cites pages
- * that may have changed. The one-unit write-with-rollback machinery
- * (pre-state capture, restore, rm-if-created) and the index-entry
- * insertion are the shared filing shape wiki-promote copies verbatim
- * (issue #341, decision 7).
+ * `wiki/` moved after the saved timestamp. The one-unit
+ * write-with-rollback machinery and the index-entry insertion are
+ * the shared filing shape wiki-promote copies verbatim (issue #341,
+ * decision 7).
  */
 
 import { lstat, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
@@ -25,6 +24,12 @@ import {
 } from "../wiki/pages.ts";
 import { buildPageIndex, extractWikilinks } from "../wiki/wiki-links.ts";
 import { prependWikiLog } from "../wiki/wiki-log.ts";
+import {
+  parseWebArtifactBody,
+  renderWebArtifactBody,
+  WEB_PARTITION_SEPARATOR,
+  type WebArtifactSections,
+} from "./web-artifact.ts";
 
 /** What stage 1 persisted to outputs/last-query.md. */
 export interface QueryArtifact {
@@ -34,8 +39,22 @@ export interface QueryArtifact {
   readonly timestamp: string;
   /** The wikilink page names the answer cites, sorted. */
   readonly pages: readonly string[];
-  /** The answer, byte-exact. */
+  /** The answer, byte-exact. For a `--web` artifact: the core
+   *  answer only — the enrichment is partitioned after it and never
+   *  enters the filed page. */
   readonly answer: string;
+  /** The run mode of a `--web` artifact (`query (--web)`). */
+  readonly mode?: string;
+  /** Web reference count of a `--web` artifact. */
+  readonly webSources?: number;
+  /** Web retrieval timestamp of a `--web` artifact, ISO 8601. */
+  readonly webRetrieved?: string;
+  /** A degraded `--web` run's warning line, persisted below the
+   *  header and excluded from the answer (never filed). */
+  readonly webWarning?: string;
+  /** The machine-owned web sections of a `--web` artifact, in
+   *  artifact order, each including its heading. */
+  readonly web?: WebArtifactSections;
 }
 
 const BAD_ARTIFACT = "not a wiki-query artifact";
@@ -44,27 +63,157 @@ const BAD_ARTIFACT = "not a wiki-query artifact";
 function headerError(why: string): Error {
   return new Error(`${BAD_ARTIFACT}: ${why}`);
 }
+/** The frontmatter block's close index; throws for a missing or
+ *  unterminated block. */
+function frontmatterRange(lines: readonly string[]): number {
+  if (lines[0] !== "---") {
+    throw headerError("no frontmatter block");
+  }
+
+  const close = lines.indexOf("---", 1);
+
+  if (close === -1) {
+    throw headerError("unterminated frontmatter block");
+  }
+
+  return close;
+}
+
+/** The validated core headers every artifact shape needs. */
+interface CoreHeaders {
+  question: string;
+  timestamp: string;
+  pages: readonly string[];
+}
+
+/** Validate the three headers every shape requires. */
+function coreHeaders(bag: HeaderBag): CoreHeaders {
+  if (
+    bag.question === undefined ||
+    bag.timestamp === undefined ||
+    bag.pages === undefined
+  ) {
+    throw headerError("missing question, timestamp, or pages header");
+  }
+
+  if (Number.isNaN(Date.parse(bag.timestamp))) {
+    throw headerError(
+      `timestamp ${JSON.stringify(bag.timestamp)} is not a date`,
+    );
+  }
+
+  return { question: bag.question, timestamp: bag.timestamp, pages: bag.pages };
+}
+
+/** The body text after the frontmatter block: one leading blank and
+ *  one trailing newline stripped, exactly as the writer emitted. */
+function bodyAfter(lines: readonly string[], close: number): string {
+  return lines
+    .slice(close + 1)
+    .join("\n")
+    .replace(/^\n/, "")
+    .replace(/\n$/, "");
+}
+
+/** The partitioned `--web` artifact: validate its extra headers and
+ *  assemble the typed result. */
+function webArtifact(
+  core: CoreHeaders,
+  bag: HeaderBag,
+  parsed: { answer: string; web: WebArtifactSections },
+): QueryArtifact {
+  if (
+    bag.mode === undefined ||
+    bag.webSources === undefined ||
+    bag.webRetrieved === undefined ||
+    Number.isNaN(Date.parse(bag.webRetrieved))
+  ) {
+    throw headerError(
+      "partitioned web body needs the mode, webSources, and webRetrieved headers",
+    );
+  }
+
+  return {
+    ...core,
+    answer: parsed.answer,
+    mode: bag.mode,
+    webSources: bag.webSources,
+    webRetrieved: bag.webRetrieved,
+    web: parsed.web,
+  };
+}
+
+/** The plain or degraded body: a WARNING line below the header is
+ *  the degraded run's warning, kept out of the answer. */
+function plainArtifact(
+  core: CoreHeaders,
+  bodyLines: readonly string[],
+  body: string,
+): QueryArtifact {
+  if (bodyLines[0]?.startsWith("WARNING — ")) {
+    const answer = bodyLines
+      .slice(1)
+      .join("\n")
+      .replace(/^\n/, "")
+      .replace(/\n$/, "");
+
+    return { ...core, answer, webWarning: bodyLines[0] };
+  }
+
+  return { ...core, answer: body };
+}
 
 /**
  * Render the artifact: a frontmatter block (single-line JSON values,
- * so any question round-trips) and the answer as the body.
+ * so any question round-trips) and the body — the partitioned `--web`
+ * structure with its extra header keys, else the degraded warning
+ * line, else the plain answer.
  */
 export function renderQueryArtifact(artifact: QueryArtifact): string {
   return [
     "---",
     `question: ${JSON.stringify(artifact.question)}`,
+    ...(artifact.mode === undefined
+      ? []
+      : [`mode: ${JSON.stringify(artifact.mode)}`]),
     `timestamp: ${JSON.stringify(artifact.timestamp)}`,
     `pages: ${JSON.stringify(artifact.pages)}`,
+    ...(artifact.webSources === undefined
+      ? []
+      : [`webSources: ${artifact.webSources}`]),
+    ...(artifact.webRetrieved === undefined
+      ? []
+      : [`webRetrieved: ${JSON.stringify(artifact.webRetrieved)}`]),
     "---",
     "",
-    artifact.answer,
+    artifactBody(artifact),
     "",
   ].join("\n");
 }
 
+/** The artifact body: the partitioned `--web` shape, else the
+ *  degraded warning line above the answer, else the answer alone —
+ *  exactly the shape the plain render has always produced. */
+export function artifactBody(artifact: QueryArtifact): string {
+  const web = artifact.web;
+
+  if (web !== undefined) {
+    return renderWebArtifactBody(artifact.answer, web);
+  }
+
+  if (artifact.webWarning !== undefined) {
+    return [artifact.webWarning, "", artifact.answer].join("\n");
+  }
+
+  return artifact.answer;
+}
+
 /** One frontmatter header line split into its key and JSON value. */
 function parseHeaderLine(line: string): { key: string; value: string } {
-  const match = /^(question|timestamp|pages): (.+)$/.exec(line);
+  const match =
+    /^(question|mode|timestamp|pages|webSources|webRetrieved): (.+)$/.exec(
+      line,
+    );
 
   if (match === null) {
     throw headerError(`malformed header line ${JSON.stringify(line)}`);
@@ -82,76 +231,100 @@ function parseHeaderValue(line: string, value: string): unknown {
   }
 }
 
-/** The three header values found in the frontmatter block, if any. */
-function readHeaders(lines: readonly string[]): {
-  question: string | undefined;
-  timestamp: string | undefined;
-  pages: readonly string[] | undefined;
-} {
-  let question: string | undefined;
-  let timestamp: string | undefined;
-  let pages: readonly string[] | undefined;
+/** The header values found in a frontmatter block, as written. */
+interface HeaderBag {
+  question?: string;
+  mode?: string;
+  timestamp?: string;
+  pages?: readonly string[];
+  webSources?: number;
+  webRetrieved?: string;
+}
+
+type HeaderBagKey = keyof HeaderBag;
+
+const HEADER_KEYS: readonly HeaderBagKey[] = [
+  "question",
+  "mode",
+  "timestamp",
+  "pages",
+  "webSources",
+  "webRetrieved",
+];
+
+/** Assign one header line's parsed value into the bag when the key
+ *  is known and the value fits the key's type; anything else is
+ *  skipped (the required-fields check reports what is missing). */
+function assignHeader(bag: HeaderBag, key: string, value: unknown): void {
+  if (!(HEADER_KEYS as readonly string[]).includes(key)) {
+    return;
+  }
+
+  const bagKey = key as HeaderBagKey;
+
+  if (
+    bagKey === "pages" &&
+    Array.isArray(value) &&
+    value.every((page) => typeof page === "string")
+  ) {
+    bag.pages = value;
+
+    return;
+  }
+
+  if (bagKey === "webSources" && typeof value === "number") {
+    bag.webSources = value;
+
+    return;
+  }
+
+  if (
+    bagKey !== "pages" &&
+    bagKey !== "webSources" &&
+    typeof value === "string"
+  ) {
+    bag[bagKey] = value;
+  }
+}
+
+/** The header values found in the frontmatter block, if any. */
+function readHeaders(lines: readonly string[]): HeaderBag {
+  const bag: HeaderBag = {};
 
   for (const line of lines) {
     const { key, value } = parseHeaderLine(line);
-    const parsed = parseHeaderValue(line, value);
 
-    if (key === "question" && typeof parsed === "string") {
-      question = parsed;
-    } else if (key === "timestamp" && typeof parsed === "string") {
-      timestamp = parsed;
-    } else if (
-      key === "pages" &&
-      Array.isArray(parsed) &&
-      parsed.every((page) => typeof page === "string")
-    ) {
-      pages = parsed;
-    }
+    assignHeader(bag, key, parseHeaderValue(line, value));
   }
 
-  return { question, timestamp, pages };
+  return bag;
 }
 
 /**
- * Parse the artifact text. Strict: exactly the three header keys with
- * JSON values, a closed frontmatter block, and the answer as the body
- * (one blank line stripped after the block, one trailing newline
- * stripped). Everything else is `not a wiki-query artifact`.
+ * Parse the artifact text. Strict: exactly the header keys with
+ * JSON values, a closed frontmatter block, and one of three body
+ * shapes — the plain answer, the partitioned `--web` structure (all
+ * three web sections required), or the degraded warning line above
+ * a plain answer. Everything else is `not a wiki-query artifact`.
  */
 export function parseQueryArtifact(text: string): QueryArtifact {
   const lines = text.split("\n");
+  const close = frontmatterRange(lines);
+  const bag = readHeaders(lines.slice(1, close));
+  const core = coreHeaders(bag);
+  const body = bodyAfter(lines, close);
+  const bodyLines = body.split("\n");
+  const web = parseWebArtifactBody(bodyLines);
 
-  if (lines[0] !== "---") {
-    throw headerError("no frontmatter block");
+  if (web !== undefined) {
+    return webArtifact(core, bag, web);
   }
 
-  const close = lines.indexOf("---", 1);
-
-  if (close === -1) {
-    throw headerError("unterminated frontmatter block");
+  if (bodyLines.includes(WEB_PARTITION_SEPARATOR)) {
+    throw headerError("malformed partitioned web body");
   }
 
-  const { question, timestamp, pages } = readHeaders(lines.slice(1, close));
-
-  if (
-    question === undefined ||
-    timestamp === undefined ||
-    pages === undefined
-  ) {
-    throw headerError("missing question, timestamp, or pages header");
-  }
-
-  if (Number.isNaN(Date.parse(timestamp))) {
-    throw headerError(`timestamp ${JSON.stringify(timestamp)} is not a date`);
-  }
-
-  const answer = lines
-    .slice(close + 1)
-    .join("\n")
-    .replace(/^\n/, "")
-    .replace(/\n$/, "");
-
-  return { question, timestamp, pages, answer };
+  return plainArtifact(core, bodyLines, body);
 }
 
 /** Read and parse the artifact; missing file names the remedy. */

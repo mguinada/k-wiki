@@ -30,6 +30,8 @@ export interface QueryCliOptions {
   readonly timeoutMs?: number | undefined;
   /** The dim stderr hint printed after the answer. */
   readonly hint: string;
+  /** Opt-in web enrichment (`--web`); default off. */
+  readonly web?: boolean;
 }
 
 /** Run one answer-only query: print the answer and the filing hint;
@@ -54,12 +56,18 @@ export async function runQueryCli(options: QueryCliOptions): Promise<void> {
       question: options.question,
       timeoutMs: options.timeoutMs,
       heartbeatMs: animated ? 100 : undefined,
+      ...(options.web !== undefined && { web: options.web }),
     });
 
     sink.end();
 
     console.log(result.answer);
     console.error();
+
+    if (result.warning !== undefined) {
+      console.error(colors.yellow(result.warning));
+    }
+
     console.error(colors.dim(options.hint));
   } catch (error) {
     sink.end();

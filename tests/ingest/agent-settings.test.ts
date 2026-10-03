@@ -637,7 +637,7 @@ describe("agentArgs", () => {
         model: "m",
         reasoning: "h",
         isolateSkills: ["/repo/.agents/skills/a"],
-        isolateExtensions: ["npm:pi-web-access", "npm:pi-subagents"],
+        isolateExtensions: ["npm:pi-context-view", "npm:pi-subagents"],
       },
       "PROMPT",
     );
@@ -646,10 +646,51 @@ describe("agentArgs", () => {
       "--skill",
       "/repo/.agents/skills/a",
       "-e",
-      "npm:pi-web-access",
+      "npm:pi-context-view",
       "-e",
       "npm:pi-subagents",
     ]);
+  });
+
+  it("drops the query-only web grant from a whitelisted isolate.extensions entry", () => {
+    const args = agentArgs(
+      {
+        command: "pi",
+        model: "m",
+        reasoning: "h",
+        isolateExtensions: ["npm:pi-web-access", "npm:pi-subagents"],
+      },
+      "PROMPT",
+    );
+
+    expect(args).toEqual([
+      "--no-context-files",
+      "--no-extensions",
+      "--no-skills",
+      "-e",
+      "npm:pi-subagents",
+      "--model",
+      "m",
+      "--thinking",
+      "h",
+      "--print",
+      "PROMPT",
+    ]);
+  });
+
+  it("drops a path-spelled pi-web-access whitelist entry too", () => {
+    const args = agentArgs(
+      {
+        command: "pi",
+        model: "m",
+        reasoning: "h",
+        isolateExtensions: ["/opt/pi/npm/node_modules/pi-web-access/index.ts"],
+      },
+      "PROMPT",
+    );
+
+    expect(args.join("\u0000")).not.toContain("pi-web-access");
+    expect(args).not.toContain("-e");
   });
 
   it("keeps the whitelist flags ahead of the provider flag", () => {
@@ -1279,4 +1320,57 @@ describe("agentCommandOverride (issue #399)", () => {
   it("treats an empty value as no override", () => {
     expect(agentCommandOverride({ [AGENT_COMMAND_ENV]: "" })).toBeUndefined();
   });
+});
+
+describe("agentArgs web-grant isolation", () => {
+  const CONFIGURATIONS = [
+    {
+      name: "default",
+      settings: { command: "pi", model: "GLM-5.2", reasoning: "high" },
+    },
+    {
+      name: "isolate true",
+      settings: {
+        command: "pi",
+        model: "GLM-5.2",
+        reasoning: "high",
+        isolate: true,
+      },
+    },
+    {
+      name: "isolate false",
+      settings: {
+        command: "pi",
+        model: "GLM-5.2",
+        reasoning: "high",
+        isolate: false,
+      },
+    },
+    {
+      name: "extension whitelist present",
+      settings: {
+        command: "pi",
+        model: "GLM-5.2",
+        reasoning: "high",
+        isolateExtensions: ["npm:some-extension"],
+      },
+    },
+    {
+      name: "web extension whitelisted by the operator",
+      settings: {
+        command: "pi",
+        model: "GLM-5.2",
+        reasoning: "high",
+        isolateExtensions: ["npm:pi-web-access"],
+      },
+    },
+  ] as const;
+
+  for (const { name, settings } of CONFIGURATIONS) {
+    it(`keeps pi-web-access out of the ingest/lint/scoped argv (${name})`, () => {
+      expect(agentArgs(settings, "PROMPT").join("\u0000")).not.toContain(
+        "pi-web-access",
+      );
+    });
+  }
 });

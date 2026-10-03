@@ -422,16 +422,25 @@ export function parseSettings(text: string, origin: string): AgentSettings {
  *  ambient configuration source — context files (AGENTS.md/CLAUDE.md
  *  discovery), extensions, skills — so a spawned run cannot inherit
  *  globally installed persona, tools, or prompts. Available since
- *  pi 0.67.4. */
-const ISOLATION_FLAGS = [
+ *  pi 0.67.4. Shared by every spawn site that must close the ambient
+ *  hole, wiki-query's included. */
+export const ISOLATION_FLAGS = [
   "--no-context-files",
   "--no-extensions",
   "--no-skills",
 ] as const;
 
+/** The web extension's grant is a query-only, per-run argv injection
+ *  (`--web`): the shared whitelist never carries it into ingest,
+ *  lint, or scoped re-ingest argv — an operator settings entry for
+ *  it is dropped here, whatever its spelling. */
+const WEB_GRANT_SOURCE = "pi-web-access";
+
 /** The whitelisted `--skill`/`-e` flags of an isolated run
  *  (issue #144): additive even under the `--no-*` flags, so exactly
- *  the named entries load. Empty with `isolate: false`. */
+ *  the named entries load — minus the query-only web grant, which
+ *  never reaches these argv (the `--web` design). Empty with
+ *  `isolate: false`. */
 function whitelistFlags(settings: AgentSettings): string[] {
   if (settings.isolate === false) {
     return [];
@@ -439,7 +448,9 @@ function whitelistFlags(settings: AgentSettings): string[] {
 
   return [
     ...(settings.isolateSkills ?? []).flatMap((skill) => ["--skill", skill]),
-    ...(settings.isolateExtensions ?? []).flatMap((source) => ["-e", source]),
+    ...(settings.isolateExtensions ?? [])
+      .filter((source) => !source.includes(WEB_GRANT_SOURCE))
+      .flatMap((source) => ["-e", source]),
   ];
 }
 
@@ -515,7 +526,10 @@ export function isolationLabel(settings: AgentSettings): string {
   }
 
   const skills = settings.isolateSkills?.length ?? 0;
-  const extensions = settings.isolateExtensions?.length ?? 0;
+  const extensions =
+    settings.isolateExtensions?.filter(
+      (source) => !source.includes(WEB_GRANT_SOURCE),
+    ).length ?? 0;
   const parts = [
     ...(skills > 0 ? [`+${pluralized(skills, "skill")}`] : []),
     ...(extensions > 0 ? [`+${pluralized(extensions, "extension")}`] : []),
@@ -547,10 +561,20 @@ export interface LoadAgentSettingsContext {
   readonly piInstallRoot?: string | undefined;
 }
 
+/** pi's install root for `npm:` extension resolution: the
+ *  `PI_CODING_AGENT_DIR` override when set (pi's own override),
+ *  else ~/.pi/agent (issue #144). Shared with spawn sites that must
+ *  pre-flight an `npm:` extension source themselves. */
+export function piInstallRootFromEnv(environment: NodeJS.ProcessEnv): string {
+  return expandHome(
+    environment.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent"),
+  );
+}
+
 /** The `npm:<package>` dir under pi's install root; pi installs
  *  under the bare package name, so any `@version` suffix in the
  *  spec is stripped (parseNpmSpec). */
-function npmExtensionDir(source: string, piInstallRoot: string): string {
+export function npmExtensionDir(source: string, piInstallRoot: string): string {
   const spec = source.slice(4);
   const name = /^(@?[^@]+(?:\/[^@]+)?)(?:@(.+))?$/.exec(spec)?.[1] ?? spec;
 
@@ -690,10 +714,7 @@ async function preflightWhitelist(
 
   const warn = context.onProgress ?? (() => {});
   const piInstallRoot =
-    context.piInstallRoot ??
-    expandHome(
-      process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent"),
-    );
+    context.piInstallRoot ?? piInstallRootFromEnv(process.env);
   const skills = await preflightSkills(settings.isolateSkills ?? [], warn);
   const extensions = await preflightExtensions(
     settings.isolateExtensions ?? [],
