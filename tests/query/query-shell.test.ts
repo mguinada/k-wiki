@@ -49,6 +49,10 @@ console.error("boom");
 process.exit(1);
 `;
 
+const GAP_AGENT = `#!/usr/bin/env node
+console.log("The wiki cannot answer this question. Suggested sources: nodejs.org.");
+`;
+
 interface Harness {
   readonly dataRoot: string;
   readonly promptsDir: string;
@@ -118,7 +122,11 @@ async function makeHarness(agent: string): Promise<Harness> {
 /** Run the CLI shell in-process, capturing the console. */
 async function runShell(
   h: Harness,
-  extra: { readonly prefix?: string; readonly hint?: string } = {},
+  extra: {
+    readonly prefix?: string;
+    readonly hint?: string;
+    readonly gapHint?: string;
+  } = {},
 ): Promise<{ out: string; err: string }> {
   const out: string[] = [];
   const err: string[] = [];
@@ -138,6 +146,7 @@ async function runShell(
       outputsDir: h.outputsDir,
       question: "When should I prefer RAG?",
       hint: extra.hint ?? "To file this answer: k-wiki wiki-query --file-last",
+      ...(extra.gapHint !== undefined && { gapHint: extra.gapHint }),
     });
   } finally {
     logSpy.mockRestore();
@@ -174,6 +183,17 @@ describe("runQueryCli", () => {
         process.env.NO_COLOR = prior;
       }
     }
+  });
+
+  it("appends the caller's gap hint to a gap answer", async () => {
+    const h = await makeHarness(GAP_AGENT);
+    const { out } = await runShell(h, {
+      gapHint: "To enrich from the web (human step): wiki-query --web",
+    });
+
+    expect(out).toContain(
+      "To enrich from the web (human step): wiki-query --web",
+    );
   });
 
   it("saves the run to the outputs dir's last-query.md", async () => {

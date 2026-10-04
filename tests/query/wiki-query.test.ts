@@ -212,6 +212,45 @@ describe("runWikiQuery", () => {
     expect(result.artifactPath).toBe(join(h.outputsDir, "last-query.md"));
   });
 
+  it("appends the wiki-query rerun hint to a saved gap answer", async () => {
+    const h = await makeHarness();
+
+    await runWikiQuery({
+      ...optionsFor(h),
+      runAgent: async () => ({
+        stdout:
+          "The wiki cannot answer this question. Suggested sources: nodejs.org.",
+        stderr: "",
+      }),
+    });
+
+    const saved = await readQueryArtifact(join(h.outputsDir, "last-query.md"));
+
+    expect(saved.answer).toContain(
+      "rerunning with `--web` may enrich the topic from the web",
+    );
+  });
+
+  it("appends the caller's gap hint to a saved gap answer", async () => {
+    const h = await makeHarness();
+
+    await runWikiQuery({
+      ...optionsFor(h),
+      gapHint: "To enrich from the web (human step): wiki-query --web",
+      runAgent: async () => ({
+        stdout:
+          "The wiki cannot answer this question. Suggested sources: nodejs.org.",
+        stderr: "",
+      }),
+    });
+
+    const saved = await readQueryArtifact(join(h.outputsDir, "last-query.md"));
+
+    expect(saved.answer).toContain(
+      "To enrich from the web (human step): wiki-query --web",
+    );
+  });
+
   it("records the question in the saved artifact", async () => {
     const h = await makeHarness();
     const result = await runWikiQuery({

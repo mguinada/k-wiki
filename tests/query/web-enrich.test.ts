@@ -177,14 +177,14 @@ describe("runWebEnrichment", () => {
       return;
     }
 
-    expect(outcome.enrichmentSection).toContain(
+    expect(outcome.web.enrichment).toContain(
       "- [a](https://example.com/a) confirms the topic",
     );
-    expect(outcome.sourcesSection).toContain(
+    expect(outcome.web.sources).toContain(
       "- https://example.com/a — retrieved",
     );
-    expect(outcome.auditSection).toContain("| 1 | web_search | topic | 3 |");
-    expect(outcome.auditSection).toContain(
+    expect(outcome.web.audit).toContain("| 1 | web_search | topic | 3 |");
+    expect(outcome.web.audit).toContain(
       "| 2 | web_search | https://example.com/a |",
     );
     expect(outcome.sources).toEqual([
@@ -278,7 +278,7 @@ describe("runWebEnrichment", () => {
       return;
     }
 
-    expect(outcome.enrichmentSection).not.toContain("model-written");
+    expect(outcome.web.enrichment).not.toContain("model-written");
     expect(outcome.sources).toEqual([
       { url: "https://example.com/a", retrieved: "2026-10-03" },
     ]);

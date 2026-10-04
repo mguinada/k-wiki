@@ -45,6 +45,7 @@ import {
 } from "./file-last.ts";
 import {
   enrichmentArtifact,
+  GAP_HINT_LINE,
   WEB_ENRICH_PROMPT_FILE,
   WEB_EXTENSION_SOURCE,
   WEB_UNAVAILABLE_WARNING,
@@ -105,6 +106,10 @@ export interface QueryOptions {
    *  answer stays web-blind and whose enrichment is partitioned,
    *  audited, and machine-assembled after it. Default: off. */
   readonly web?: boolean;
+  /** The rerun hint appended to a gap answer; the wiki-query CLI's
+   *  own `--web` line by default. A surface that cannot serve the
+   *  flag passes its own. */
+  readonly gapHint?: string;
 }
 
 export interface QueryResult {
@@ -276,7 +281,10 @@ export async function runWikiQuery(
 
   const runAgent = options.runAgent ?? spawnAgent;
   const pre = await capturePreRunState(dataRoot, env);
-  const coreAnswer = withGapHint(await corePhase(options, settings, runAgent));
+  const coreAnswer = withGapHint(
+    await corePhase(options, settings, runAgent),
+    options.gapHint ?? GAP_HINT_LINE,
+  );
 
   await assertWikiUnchanged(dataRoot, env, pre, onProgress);
 

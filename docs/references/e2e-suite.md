@@ -154,8 +154,10 @@ e2e run or diagnosing a failing one.
 - **k-wiki** — the front door (issue #337) in temp checkouts, temp
   data repos, and bound temp projects: read verbs on both doors
   (agent door via `.k-wiki.json`, human door from the checkout
-  cwd), the guardrail revert for a rogue agent, binding-key and
-  alias instance resolution, the leading-global reordering
+  cwd), the guardrail revert for a rogue agent, a gap answer
+  through the agent door carrying the enrichment hint that names
+  the wiki-query CLI (the door parses no `--web` itself),
+  binding-key and alias instance resolution, the leading-global reordering
   (`k-wiki -w meta <verb>` ≡ `k-wiki <verb> -w meta` for every
   verb that takes it — the read verbs plus the verbatim-argv
   handoff to `wiki-query` and `wiki-ingest`), operator-verb

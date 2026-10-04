@@ -32,6 +32,8 @@ export interface QueryCliOptions {
   readonly hint: string;
   /** Opt-in web enrichment (`--web`); default off. */
   readonly web?: boolean;
+  /** The rerun hint appended to a gap answer; forwarded to the run. */
+  readonly gapHint?: string;
 }
 
 /** Run one answer-only query: print the answer and the filing hint;
@@ -57,6 +59,7 @@ export async function runQueryCli(options: QueryCliOptions): Promise<void> {
       timeoutMs: options.timeoutMs,
       heartbeatMs: animated ? 100 : undefined,
       ...(options.web !== undefined && { web: options.web }),
+      ...(options.gapHint !== undefined && { gapHint: options.gapHint }),
     });
 
     sink.end();

@@ -57,9 +57,15 @@ export function isGapAnswer(answer: string): boolean {
   return GAP_MARKER.test(answer);
 }
 
-/** The core answer with the gap hint appended when it is one. */
-export function withGapHint(answer: string): string {
-  return isGapAnswer(answer) ? `${answer}\n\n${GAP_HINT_LINE}` : answer;
+/** The core answer with the gap hint appended when it is one. The
+ *  hint is the caller surface's own: the wiki-query CLI names its
+ *  own `--web` flag; a surface that cannot serve the flag names the
+ *  CLI that can. */
+export function withGapHint(
+  answer: string,
+  hint: string = GAP_HINT_LINE,
+): string {
+  return isGapAnswer(answer) ? `${answer}\n\n${hint}` : answer;
 }
 
 /** The agent identity the enrichment run spawns with, structurally:
@@ -142,12 +148,6 @@ export function composeEnrichmentPrompt(
 /** The ok outcome of one enrichment run. */
 export interface WebEnrichmentOk {
   readonly kind: "ok";
-  /** The `## Web enrichment` section text, machine-headed. */
-  readonly enrichmentSection: string;
-  /** The `## Web sources` section text, machine-computed. */
-  readonly sourcesSection: string;
-  /** The `## Web calls audit` section text, machine-recorded. */
-  readonly auditSection: string;
   /** The consolidated sources, for the artifact header's count. */
   readonly sources: readonly WebSource[];
   /** The recorded calls, in order. */
@@ -257,9 +257,6 @@ export async function runWebEnrichment(
   return {
     kind: "ok",
     web,
-    enrichmentSection: web.enrichment,
-    sourcesSection: web.sources,
-    auditSection: web.audit,
     sources: reconciliation.sources,
     calls: parsed.calls,
     retrieved: newestCallIso(parsed.calls, run.now),
