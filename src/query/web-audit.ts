@@ -399,8 +399,8 @@ export interface WebReconciliation {
 }
 
 /** Reconcile the enrichment against the audit: every surviving
- *  citation must trace to a recorded call. A line citing a URL the
- *  audit cannot account for is pruned whole with its citations
+ *  citation must trace to a recorded call. A bullet citing a URL
+ *  the audit cannot account for is pruned whole with its citations
  *  recorded; the strict case survives in exactly one place — a
  *  pruning that empties the enrichment is the typed failure. */
 export function reconcileWebSources(
