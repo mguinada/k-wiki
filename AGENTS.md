@@ -125,6 +125,11 @@ until all three pass. Run them before every handoff.
 - `npm run lint` — lint and format verification (`biome check .`).
 - `npm test` — unit tests (`vitest run`). Includes the complexity
   gate test (`tests/quality/complexity.test.ts`).
+- `npm run check:test-structure` — one-expectation-per-test-block
+  gate (blocking): every `it`/`test` callback holds at most one
+  `expect(...)` chain across unit tests (`tests/`, `tests/e2e/`
+  exempt). Exit 0 clean, 1 violations (fix the tests), 2 the gate
+  itself failed (fix the gate).
 - `npm run complexity` — cyclomatic complexity gate (blocking,
   changed mode): every `src/` function whose line extent intersects a
   hunk changed vs `origin/main` (uncommitted work included; new files
@@ -179,6 +184,22 @@ red PR check; the test job enforces the 90% coverage floor. The `e2e`
 job runs `npm run e2e` and `bin/libexec/check-raw` on every PR and `main`
 push — blocking, like the gates.
 
+### Testing practices
+
+- **One expectation per test block.** A failing block names one bug.
+  `npm run check:test-structure` enforces it across unit tests (e2e
+  is exempt).
+- **Test behavior, not implementation.** Titles and assertions speak
+  in observable outcomes — "rejects a malformed invoice", never
+  "calls parser.validate". Implementation-coupled tests break on
+  refactors that preserve behavior.
+- **Nest as little as the structure needs.** Sibling `it` blocks,
+  nested `describe` per shared context, shared setup via `beforeEach`
+  — nesting is a tool, not a default. Nested `it` and nested
+  `describe` layouts are both viable when they read better.
+- **Titles state the expected outcome.** A test communicates when its
+  name alone describes the behavior it verifies.
+
 ### End-to-end verification run order
 
 Run order from the repo root, before declaring work complete:
@@ -187,6 +208,7 @@ Run order from the repo root, before declaring work complete:
 npm run typecheck   # gate — always
 npm run lint        # gate — always
 npm test            # gate — always (unit only; e2e is NOT included; includes the complexity gate)
+npm run check:test-structure  # gate — always (one expectation per test block, unit tests)
 npm run complexity  # gate — fast targeted re-run of the gate when only it matters
 npm run structure   # gate — fast targeted re-run of the gate when only it matters
 npm run e2e         # when the change touches src/sync/, src/ingest/, src/query/, src/data/, src/dashboard/, src/wiki/, src/cli/, src/sandbox/, src/schedule/, src/writer/, src/fixtures/, tests/e2e/, or raw/
@@ -268,7 +290,6 @@ infrastructure, free to use for any unit or e2e work; the snapshot at
 - **No re-export shims.** One canonical import path per symbol:
   `src/` and `scripts/` modules never re-export another module's
   exports; enforced by `tests/quality/no-reexport-shims.test.ts`.
-- Put exactly one expectation in each `it` block.
 - Name each `it` block after the fact that its expectation verifies.
 - Test code never calls `process.chdir()`: Stryker's dry run executes
   the suite in worker threads, where `chdir` throws and kills every

@@ -169,6 +169,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm run check:test-structure
       - run: npm run test:coverage
 
   e2e:

@@ -254,15 +254,28 @@ describe("mutation-report CLI", () => {
     );
 
     expect(result.code).toBe(0);
+  });
+
+  it("prints help with nothing on stderr", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-"));
+
+    tempDirs.push(dir);
+
+    const result = await runNode(
+      ["--help", join(dir, "does-not-exist.json")],
+      dir,
+    );
+
     expect(result.err).toBe("");
   });
 
-  it("prints the rendered body to stdout for a report file", async () => {
+  it("exits 0 rendering a report file", async () => {
     const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-"));
 
     tempDirs.push(dir);
 
     const reportPath = await writeReport(dir, report);
+
     const result = await runNode([
       reportPath,
       "--run-url",
@@ -272,13 +285,47 @@ describe("mutation-report CLI", () => {
     ]);
 
     expect(result.code).toBe(0);
+  });
+
+  it("prints the rendered survivor line to stdout", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-"));
+
+    tempDirs.push(dir);
+
+    const reportPath = await writeReport(dir, report);
+
+    const result = await runNode([
+      reportPath,
+      "--run-url",
+      RUN_URL,
+      "--html-url",
+      HTML_URL,
+    ]);
+
     expect(result.out).toContain(
       "Survived  src/sync/config.ts:42  StringLiteral",
     );
+  });
+
+  it("links the survivor's PR in the body", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-"));
+
+    tempDirs.push(dir);
+
+    const reportPath = await writeReport(dir, report);
+
+    const result = await runNode([
+      reportPath,
+      "--run-url",
+      RUN_URL,
+      "--html-url",
+      HTML_URL,
+    ]);
+
     expect(result.out).toContain(meta.htmlUrl);
   });
 
-  it("exits 1 naming the report when the path is unreadable", async () => {
+  it("exits 1 when the report path is unreadable", async () => {
     const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-"));
 
     tempDirs.push(dir);
@@ -286,15 +333,25 @@ describe("mutation-report CLI", () => {
     const result = await runNode([join(dir, "missing.json")], dir);
 
     expect(result.code).toBe(1);
+  });
+
+  it("names the missing report path", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-"));
+
+    tempDirs.push(dir);
+
+    const result = await runNode([join(dir, "missing.json")], dir);
+
     expect(result.err).toContain("missing.json");
   });
 
-  it("exits 1 naming the drifted shape for a non-report JSON file", async () => {
+  it("exits 1 for a non-report JSON file", async () => {
     const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-"));
 
     tempDirs.push(dir);
 
     const reportPath = await writeReport(dir, { config: {} });
+
     const result = await runNode([
       reportPath,
       "--run-url",
@@ -304,6 +361,23 @@ describe("mutation-report CLI", () => {
     ]);
 
     expect(result.code).toBe(1);
+  });
+
+  it("names the drifted shape on stderr", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-"));
+
+    tempDirs.push(dir);
+
+    const reportPath = await writeReport(dir, { config: {} });
+
+    const result = await runNode([
+      reportPath,
+      "--run-url",
+      "u",
+      "--html-url",
+      "h",
+    ]);
+
     expect(result.err).toContain("unexpected shape");
   });
 });
@@ -332,27 +406,51 @@ describe("mutation-report merge CLI", () => {
     return { reportPath, priorPath };
   }
 
-  it("merges a prior body: out-of-scope survivor stays listed", async () => {
+  it("exits 0 merging a prior body", async () => {
     const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-"));
 
     tempDirs.push(dir);
 
     const { reportPath, priorPath } = await writeMergeInputs(dir);
+
     const result = await runNode([reportPath, "--prior-body", priorPath]);
 
     expect(result.code).toBe(0);
+  });
+
+  it("keeps the out-of-scope survivor listed", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-"));
+
+    tempDirs.push(dir);
+
+    const { reportPath, priorPath } = await writeMergeInputs(dir);
+
+    const result = await runNode([reportPath, "--prior-body", priorPath]);
+
     expect(result.out).toContain("Survived  src/old-window.ts:9  OldSurvivor");
+  });
+
+  it("lists this run's survivor beside the merged one", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-"));
+
+    tempDirs.push(dir);
+
+    const { reportPath, priorPath } = await writeMergeInputs(dir);
+
+    const result = await runNode([reportPath, "--prior-body", priorPath]);
+
     expect(result.out).toContain(
       "Survived  src/sync/config.ts:7  ConditionalExpression",
     );
   });
 
-  it("drops out-of-scope survivors with --absence-kills", async () => {
+  it("exits 0 with --absence-kills", async () => {
     const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-"));
 
     tempDirs.push(dir);
 
     const { reportPath, priorPath } = await writeMergeInputs(dir);
+
     const result = await runNode([
       reportPath,
       "--prior-body",
@@ -361,6 +459,22 @@ describe("mutation-report merge CLI", () => {
     ]);
 
     expect(result.code).toBe(0);
+  });
+
+  it("drops out-of-scope survivors with --absence-kills", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-"));
+
+    tempDirs.push(dir);
+
+    const { reportPath, priorPath } = await writeMergeInputs(dir);
+
+    const result = await runNode([
+      reportPath,
+      "--prior-body",
+      priorPath,
+      "--absence-kills",
+    ]);
+
     expect(result.out).not.toContain("OldSurvivor");
   });
 
@@ -370,11 +484,25 @@ describe("mutation-report merge CLI", () => {
     tempDirs.push(dir);
 
     const { reportPath, priorPath } = await writeMergeInputs(dir);
+
     const result = await runNode([reportPath, "--prior-body", priorPath]);
 
     const body = result.out;
 
     expect(body).toContain("<!-- k-wiki-mutants-ledger: ");
+  });
+
+  it("carries every entry into the embedded ledger", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-"));
+
+    tempDirs.push(dir);
+
+    const { reportPath, priorPath } = await writeMergeInputs(dir);
+
+    const result = await runNode([reportPath, "--prior-body", priorPath]);
+
+    const body = result.out;
+
     expect(ledgerFromBody(body).entries.length).toBe(4);
   });
 
@@ -382,15 +510,21 @@ describe("mutation-report merge CLI", () => {
     const result = await runNode(["report.json", "--prior-body"]);
 
     expect(result.code).toBe(1);
+  });
+
+  it("exits 1 naming --prior-body when its value is absent", async () => {
+    const result = await runNode(["report.json", "--prior-body"]);
+
     expect(result.err).toContain("--prior-body requires a value");
   });
 
-  it("exits 1 naming the prior-body path when it is unreadable", async () => {
+  it("exits 1 when the prior-body path is unreadable", async () => {
     const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-"));
 
     tempDirs.push(dir);
 
     const reportPath = await writeReport(dir, report);
+
     const result = await runNode([
       reportPath,
       "--prior-body",
@@ -398,6 +532,21 @@ describe("mutation-report merge CLI", () => {
     ]);
 
     expect(result.code).toBe(1);
+  });
+
+  it("names the unreadable prior-body path", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-"));
+
+    tempDirs.push(dir);
+
+    const reportPath = await writeReport(dir, report);
+
+    const result = await runNode([
+      reportPath,
+      "--prior-body",
+      join(dir, "no-such-body.md"),
+    ]);
+
     expect(result.err).toContain("no-such-body.md");
   });
 });
@@ -750,7 +899,7 @@ describe("renderIssueBody with a populated registry", () => {
     ],
   };
 
-  it("splits the counts: the recorded equivalent leaves the untriaged list, the recorded line carries it", () => {
+  it("moves the recorded equivalent out of the untriaged list", () => {
     const body = renderIssueBody(
       ledger,
       registryWith(equivalentId, "equivalent"),
@@ -759,10 +908,34 @@ describe("renderIssueBody with a populated registry", () => {
     expect(body).toContain(
       "Untriaged mutants (1) — kill or record as adjudicated:",
     );
+  });
+
+  it("opens a recorded-adjudications section", () => {
+    const body = renderIssueBody(
+      ledger,
+      registryWith(equivalentId, "equivalent"),
+    );
+
     expect(body).toContain(
       "Recorded adjudications (1) — filtered from the list above: 1 equivalent, 0 artifact (.mutants-registry.json).",
     );
+  });
+
+  it("keeps the unrecorded survivor listed", () => {
+    const body = renderIssueBody(
+      ledger,
+      registryWith(equivalentId, "equivalent"),
+    );
+
     expect(body).toContain("Survived  src/math.ts:3  StringLiteral");
+  });
+
+  it("hides the recorded mutant from the untriaged list", () => {
+    const body = renderIssueBody(
+      ledger,
+      registryWith(equivalentId, "equivalent"),
+    );
+
     expect(body).not.toContain("Survived  src/math.ts:2  ArithmeticOperator");
   });
 
@@ -774,7 +947,7 @@ describe("renderIssueBody with a populated registry", () => {
     ).toEqual(ledger);
   });
 
-  it("renders an artifact entry in its own section, distinct from equivalents", () => {
+  it("opens an artifact-mutants section", () => {
     const body = renderIssueBody(
       ledger,
       registryWith(equivalentId, "artifact"),
@@ -783,9 +956,25 @@ describe("renderIssueBody with a populated registry", () => {
     expect(body).toContain(
       "Artifact mutants (1) — measurement artifacts, plausibly killable, kept visible:",
     );
+  });
+
+  it("renders the artifact entry with its receipt", () => {
+    const body = renderIssueBody(
+      ledger,
+      registryWith(equivalentId, "artifact"),
+    );
+
     expect(body).toContain(
       "- Survived  src/math.ts:2  ArithmeticOperator — Comparator ties are impossible (distinct paths). (https://github.com/mguinada/k-wiki/pull/237)",
     );
+  });
+
+  it("counts the artifact entry", () => {
+    const body = renderIssueBody(
+      ledger,
+      registryWith(equivalentId, "artifact"),
+    );
+
     expect(body).toContain("1 artifact");
   });
 
@@ -805,7 +994,7 @@ describe("renderIssueBody with a populated registry", () => {
     );
   });
 
-  it("renders prune candidates as their own section", () => {
+  it("opens a registry-prune-candidates section", () => {
     const body = renderIssueBody(
       { entries: [] },
       registryWith(equivalentId, "equivalent"),
@@ -827,6 +1016,27 @@ describe("renderIssueBody with a populated registry", () => {
     expect(body).toContain(
       "Registry prune candidates (1) — not generated by this full run; remove from .mutants-registry.json in a PR:",
     );
+  });
+
+  it("lists the prune candidate with its receipt", () => {
+    const body = renderIssueBody(
+      { entries: [] },
+      registryWith(equivalentId, "equivalent"),
+      {
+        prune: [
+          {
+            id: equivalentId,
+            record: {
+              bucket: "equivalent",
+              justification: "Comparator ties are impossible (distinct paths).",
+              pr: "https://github.com/mguinada/k-wiki/pull/237",
+              date: "2026-08-31",
+            },
+          },
+        ],
+      },
+    );
+
     expect(body).toContain(
       `- ${equivalentId} recorded 2026-08-31 (https://github.com/mguinada/k-wiki/pull/237)`,
     );
@@ -880,17 +1090,51 @@ describe("mutation-report CLI with a registry on disk", () => {
       },
     });
 
-  it("filters the recorded mutant from the filing and keeps its unrecorded sibling listed", async () => {
+  it("exits 0 filtering recorded mutants", async () => {
     const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-reg-"));
 
     tempDirs.push(dir);
 
     const reportPath = await writeRegistryRepo(dir, populated());
+
     const result = await runNode([reportPath], dir);
 
     expect(result.code).toBe(0);
+  });
+
+  it("filters the recorded mutant from the filing", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-reg-"));
+
+    tempDirs.push(dir);
+
+    const reportPath = await writeRegistryRepo(dir, populated());
+
+    const result = await runNode([reportPath], dir);
+
     expect(result.out).not.toContain("src/math.ts:2  ArithmeticOperator");
+  });
+
+  it("keeps the unrecorded sibling listed", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-reg-"));
+
+    tempDirs.push(dir);
+
+    const reportPath = await writeRegistryRepo(dir, populated());
+
+    const result = await runNode([reportPath], dir);
+
     expect(result.out).toContain("src/math.ts:2  OptionalChaining");
+  });
+
+  it("reports the recorded count", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-reg-"));
+
+    tempDirs.push(dir);
+
+    const reportPath = await writeRegistryRepo(dir, populated());
+
+    const result = await runNode([reportPath], dir);
+
     expect(result.out).toContain("Recorded adjudications (1)");
   });
 
@@ -916,19 +1160,31 @@ describe("mutation-report CLI with a registry on disk", () => {
     expect(ledgerFromBody(result.out).entries).toHaveLength(3);
   });
 
-  it("exits 1 naming the registry when it is present but corrupt", async () => {
+  it("exits 1 for a corrupt registry", async () => {
     const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-reg-"));
 
     tempDirs.push(dir);
 
     const reportPath = await writeRegistryRepo(dir, "{not json");
+
     const result = await runNode([reportPath], dir);
 
     expect(result.code).toBe(1);
+  });
+
+  it("names the registry file", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-reg-"));
+
+    tempDirs.push(dir);
+
+    const reportPath = await writeRegistryRepo(dir, "{not json");
+
+    const result = await runNode([reportPath], dir);
+
     expect(result.err).toContain(REGISTRY_FILENAME);
   });
 
-  it("exits 1 naming the registry when an entry lacks its receipt", async () => {
+  it("exits 1 for an entry without its receipt", async () => {
     const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-reg-"));
 
     tempDirs.push(dir);
@@ -940,9 +1196,27 @@ describe("mutation-report CLI with a registry on disk", () => {
         entries: { [equivalentId()]: { bucket: "equivalent" } },
       }),
     );
+
     const result = await runNode([reportPath], dir);
 
     expect(result.code).toBe(1);
+  });
+
+  it("names the missing justification", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-mutrep-reg-"));
+
+    tempDirs.push(dir);
+
+    const reportPath = await writeRegistryRepo(
+      dir,
+      JSON.stringify({
+        schema: 1,
+        entries: { [equivalentId()]: { bucket: "equivalent" } },
+      }),
+    );
+
+    const result = await runNode([reportPath], dir);
+
     expect(result.err).toContain("justification");
   });
 });
