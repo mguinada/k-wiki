@@ -151,6 +151,24 @@ e2e run or diagnosing a failing one.
   credential-less tick skips with the named reason before the
   lease (no lease materializes, the remote ref stands still, a
   skipped stamp).
+- **wiki-query** — the query wrapper against a stub agent in temp
+  data repos: `--help` answers with usage and exit 0 (the removed
+  `--no-filing` switch stays refused); stage 1 answers answer-only —
+  nothing under `wiki/`, the artifact saved, the composed prompt
+  carrying the answer-only mode — and echoes `--wiki` in the filing
+  hint under both spellings, stage 2 files byte-exactly with the
+  `index.md` and `log.md` entries, prints nothing to stderr when
+  nothing drifted, and warns-but-files on drift; the guardrail
+  revert for a rogue stub, unknown and invalid `--wiki` names
+  (exit 1 listing the known names), the missing saved answer, and
+  the agent failure; and `--web` (issue #422): the two-phase run —
+  the core argv carries the isolation flags and never the web grant,
+  the enrichment argv carries `-e npm:pi-web-access` restricted by
+  pi's `--tools` allowlist — partitions the artifact (mode,
+  `webSources`, the three machine sections, the audit table),
+  `--file-last` on it files the core answer only, and a missing
+  pi-web-access install degrades to the wiki-only run with the
+  warning.
 - **k-wiki** — the front door (issue #337) in temp checkouts, temp
   data repos, and bound temp projects: read verbs on both doors
   (agent door via `.k-wiki.json`, human door from the checkout

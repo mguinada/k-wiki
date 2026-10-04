@@ -1008,15 +1008,22 @@ is isolated from the host's global agent setup: the
 wrapper prepends `--no-context-files --no-extensions --no-skills`, so
 installed context files (AGENTS.md discovery), extensions, and skills
 cannot leak into headless runs. Set `false` only to debug with the
-ambient global setup. Query runs are not isolated. Under isolation,
-two optional list keys whitelist named entries back in:
+ambient global setup. Query runs are isolated the same way — both
+phases of a `--web` run included — and honor the same opt-out, but
+they take no whitelist entries: the only extension a query spawn can
+load is the `wiki-query --web` enrichment grant. Under isolation,
+two optional list keys whitelist named entries back in for ingest
+and lint:
 `isolate.skills` (paths, resolved against the settings file's
 directory, `~` allowed) and `isolate.extensions` (pi `-e` sources —
 a path, `npm:<package>`, or `git:<repo>`); the wrapper appends one
 `--skill`/`-e` flag per entry after the `--no-*` flags, so exactly
 the named entries load — each one a deliberate trust grant. A missing
-entry warns and is omitted; the run proceeds. Both keys are ignored
-with `isolate: false`.
+entry warns and is omitted; the run proceeds. One entry never
+whitelists: an `isolate.extensions` source naming `pi-web-access` is
+dropped whatever its spelling — the web grant is `wiki-query --web`'s
+per-run argv injection, never an ingest or lint trust grant. Both
+keys are ignored with `isolate: false`.
 
 The per-run digest — the human's review surface while runs are
 unsupervised — is written to `outputs/runs/<timestamp>.md` (gitignored
@@ -1649,7 +1656,9 @@ omitted flag can never produce wiki writes:
   pre-run git state, and any change under `wiki/` during the run,
   whatever the agent claims, reverts the data repo to that state and
   exits 1 with nothing saved. A question the wiki cannot answer
-  prints plainly with suggested sources and exits 0.
+  prints plainly with suggested sources and exits 0, the answer
+  ending with a hint that rerunning with `--web` may enrich the
+  topic from the web.
 - **Stage 1 with web enrichment (`--web`)** opts the run into two
   agent passes. The first is the ordinary wiki-only core run: the
   spawn path isolates the agent from ambient extensions, so no web
@@ -1667,8 +1676,10 @@ omitted flag can never produce wiki writes:
   disclosure first, and its degradations never fail the query: with
   the plugin unavailable the run continues as a normal wiki-only run
   with the warning persisted in the artifact header; when the
-  enrichment's web calls fail or the audit does not reconcile, the
-  artifact keeps the wiki-only core answer with the failure warning.
+  enrichment fails — the agent run, a web call, the audit
+  reconciliation, or the missing `prompts/web-enrich.md` prompt —
+  the artifact keeps the wiki-only core answer with the failure
+  warning.
   `--file-last` on a `--web` artifact files the core answer only —
   the web sections never enter the wiki.
 - **Stage 2 (`--file-last`, human-only)** is deterministic code, no
