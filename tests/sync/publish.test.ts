@@ -310,13 +310,7 @@ describe("runPublishStage", () => {
 
     await runPublishStage(optionsFor(tree));
 
-    const index = join(tree.mirror, "wiki", "index.md");
-
-    await stat(index);
-
     const result = await runPublishStage(optionsFor(tree));
-
-    await stat(index);
 
     expect(result).toEqual({ copied: 0, removed: 0 });
   });
@@ -604,13 +598,7 @@ describe("runPublishStage", () => {
 
     await runPublishStage({ ...optionsFor(tree), root: "wiki" });
 
-    const index = join(tree.mirror, "index.md");
-
-    await stat(index);
-
     const result = await runPublishStage({ ...optionsFor(tree), root: "wiki" });
-
-    await stat(index);
 
     expect(result).toEqual({ copied: 0, removed: 0 });
   });

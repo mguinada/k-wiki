@@ -189,14 +189,6 @@ describe("runSandboxRun", () => {
     });
 
     expect(result.status).toBe("committed");
-
-    await run("git", ["log", "--format=%s", "-1"], {
-      cwd: dataRoot,
-    });
-
-    await readFile(join(dataRoot, "wiki", "sandbox", "note-slug.md"), "utf8");
-
-    await readFile(join(dataRoot, "wiki", "log.md"), "utf8");
   });
 
   it("logs the sandbox commit in the audit log", async () => {
@@ -213,10 +205,6 @@ describe("runSandboxRun", () => {
     });
 
     expect(log.trim()).toBe("sandbox: note-slug");
-
-    await readFile(join(dataRoot, "wiki", "sandbox", "note-slug.md"), "utf8");
-
-    await readFile(join(dataRoot, "wiki", "log.md"), "utf8");
   });
 
   it("stamps the committed note with the agent via stamp", async () => {
@@ -228,18 +216,12 @@ describe("runSandboxRun", () => {
       }),
     });
 
-    await run("git", ["log", "--format=%s", "-1"], {
-      cwd: dataRoot,
-    });
-
     const note = await readFile(
       join(dataRoot, "wiki", "sandbox", "note-slug.md"),
       "utf8",
     );
 
     expect(note).toContain("via: agent");
-
-    await readFile(join(dataRoot, "wiki", "log.md"), "utf8");
   });
 
   it("stamps the committed note with the expiry date", async () => {
@@ -251,18 +233,12 @@ describe("runSandboxRun", () => {
       }),
     });
 
-    await run("git", ["log", "--format=%s", "-1"], {
-      cwd: dataRoot,
-    });
-
     const note = await readFile(
       join(dataRoot, "wiki", "sandbox", "note-slug.md"),
       "utf8",
     );
 
     expect(note).toContain("expires: 2026-08-27");
-
-    await readFile(join(dataRoot, "wiki", "log.md"), "utf8");
   });
 
   it("records the run in log.md", async () => {
@@ -273,12 +249,6 @@ describe("runSandboxRun", () => {
         "wiki/sandbox/note-slug.md": '---\ntitle: "Note"\n---\nBody.\n',
       }),
     });
-
-    await run("git", ["log", "--format=%s", "-1"], {
-      cwd: dataRoot,
-    });
-
-    await readFile(join(dataRoot, "wiki", "sandbox", "note-slug.md"), "utf8");
 
     const logMd = await readFile(join(dataRoot, "wiki", "log.md"), "utf8");
 
@@ -293,14 +263,6 @@ describe("runSandboxRun", () => {
         "wiki/sandbox/note-slug.md": '---\ntitle: "Note"\n---\nBody.\n',
       }),
     });
-
-    await run("git", ["log", "--format=%s", "-1"], {
-      cwd: dataRoot,
-    });
-
-    await readFile(join(dataRoot, "wiki", "sandbox", "note-slug.md"), "utf8");
-
-    await readFile(join(dataRoot, "wiki", "log.md"), "utf8");
 
     expect(await statusOf(dataRoot)).toBe("");
   });
@@ -380,17 +342,9 @@ describe("runSandboxRun", () => {
   it("reports empty for a run that wrote nothing", async () => {
     const dataRoot = await makeRepo();
 
-    await run("git", ["rev-parse", "HEAD"], {
-      cwd: dataRoot,
-    });
-
     const result = await sandboxRun(dataRoot, { runAgent: agentWriting({}) });
 
     expect(result).toEqual({ status: "empty" });
-
-    await run("git", ["rev-parse", "HEAD"], {
-      cwd: dataRoot,
-    });
   });
 
   it("leaves the tree untouched when nothing was written", async () => {
@@ -412,15 +366,7 @@ describe("runSandboxRun", () => {
   it("keeps the tree clean after an empty run", async () => {
     const dataRoot = await makeRepo();
 
-    await run("git", ["rev-parse", "HEAD"], {
-      cwd: dataRoot,
-    });
-
     await sandboxRun(dataRoot, { runAgent: agentWriting({}) });
-
-    await run("git", ["rev-parse", "HEAD"], {
-      cwd: dataRoot,
-    });
 
     expect(await statusOf(dataRoot)).toBe("");
   });
@@ -428,15 +374,7 @@ describe("runSandboxRun", () => {
   it("writes no log entry for an empty run", async () => {
     const dataRoot = await makeRepo();
 
-    await run("git", ["rev-parse", "HEAD"], {
-      cwd: dataRoot,
-    });
-
     await sandboxRun(dataRoot, { runAgent: agentWriting({}) });
-
-    await run("git", ["rev-parse", "HEAD"], {
-      cwd: dataRoot,
-    });
 
     await expect(readFile(join(dataRoot, "wiki", "log.md"))).rejects.toThrow();
   });
@@ -459,10 +397,6 @@ describe("runSandboxRun", () => {
     await expect(promise).rejects.toThrow(
       /accept-gate failed.*wiki\/index\.md/s,
     );
-
-    await run("git", ["log", "--format=%s"], {
-      cwd: dataRoot,
-    });
   });
 
   it("restores the touched main page", async () => {
@@ -485,10 +419,6 @@ describe("runSandboxRun", () => {
     expect(await readFile(join(dataRoot, "wiki", "index.md"), "utf8")).toBe(
       "# Index\n",
     );
-
-    await run("git", ["log", "--format=%s"], {
-      cwd: dataRoot,
-    });
   });
 
   it("keeps the pre-run dirty bytes of a tracked page", async () => {
@@ -511,10 +441,6 @@ describe("runSandboxRun", () => {
     expect(
       await readFile(join(dataRoot, "wiki", "dirty-page.md"), "utf8"),
     ).toBe("pre-run dirty work\n");
-
-    await run("git", ["log", "--format=%s"], {
-      cwd: dataRoot,
-    });
   });
 
   it("reverts the run's sandbox page too", async () => {
@@ -537,10 +463,6 @@ describe("runSandboxRun", () => {
     await expect(
       readFile(join(dataRoot, "wiki", "sandbox", "note-slug.md")),
     ).rejects.toThrow();
-
-    await run("git", ["log", "--format=%s"], {
-      cwd: dataRoot,
-    });
   });
 
   it("keeps the pre-run audit log on violation", async () => {
@@ -592,10 +514,6 @@ describe("runSandboxRun", () => {
     await expect(sandboxRun(dataRoot, { runAgent: agent })).rejects.toThrow(
       /accept-gate failed/,
     );
-
-    await run("git", ["log", "--format=%s"], {
-      cwd: dataRoot,
-    });
   });
 
   it("keeps a wiki-sync-era commit that landed mid-window", async () => {

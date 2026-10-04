@@ -1424,8 +1424,6 @@ describe("revertToPreRun", () => {
 
     await revertToPreRun(dataRoot, process.env, pre, post.entries);
 
-    await run("git", ["rev-parse", "HEAD"], { cwd: dataRoot });
-
     expect(await readFile(join(dataRoot, "wiki", "index.md"), "utf8")).toBe(
       page("# Index\n"),
     );

@@ -262,12 +262,6 @@ describe("writer-lease takeover", () => {
       logSpy.mock.calls.map((call) => String(call[0])).join("\n"),
     ).toContain("lease taken over");
 
-    await (await import("../../src/writer/lease.ts")).observeLease(
-      git,
-      "origin",
-      LEASE_REF,
-    );
-
     process.exitCode = undefined;
   }, 30000);
 

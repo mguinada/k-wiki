@@ -406,8 +406,6 @@ describe("writer-lease verbs (library)", () => {
 
     const { acquireLease } = await import("../../src/writer/lease-ops.ts");
 
-    const { observeLease } = await import("../../src/writer/lease.ts");
-
     await gitOf(cw.dataRoot)(["fetch", "origin", "refs/heads/main"]);
 
     const acquire = await acquireLease({
@@ -423,8 +421,6 @@ describe("writer-lease verbs (library)", () => {
     });
 
     expect(acquire.status).toBe("acquired");
-
-    await observeLease(gitOf(cw.dataRoot), "origin", LEASE_REF);
   }, 30000);
 
   it("reports the live lease's holder", async () => {

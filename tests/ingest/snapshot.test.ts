@@ -155,8 +155,6 @@ describe("gitignore guards (issue #240 kill batch)", () => {
     await ensureDashboardIgnored(dir, (m) => messages.push(m));
 
     expect(messages[0]).toContain(`${join(dir, ".git", "info", "exclude")}`);
-
-    await readFile(join(dir, ".git", "info", "exclude"), "utf8");
   });
 
   it("excludes dashboard.html via .git/info/exclude", async () => {

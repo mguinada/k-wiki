@@ -433,8 +433,6 @@ describe("copyFileTolerant", () => {
 
     await copyFileTolerant(source, target);
 
-    await readFile(target, "utf8");
-
     expect(copyFile).toHaveBeenCalledTimes(1);
   });
 
@@ -479,8 +477,6 @@ describe("copyFileTolerant", () => {
 
     await copyFileTolerant(source, target, 0);
 
-    await readFile(target, "utf8");
-
     expect(copyFile).toHaveBeenCalledTimes(2);
   });
 
@@ -502,8 +498,6 @@ describe("copyFileTolerant", () => {
     );
 
     await copyFileTolerant(source, target, 0);
-
-    await readFile(target, "utf8");
 
     expect(rm).toHaveBeenCalledWith(target, { force: true });
   });
@@ -548,8 +542,6 @@ describe("copyFileTolerant", () => {
     }
 
     await copyFileTolerant(source, target, 0, 10_000);
-
-    await readFile(target, "utf8");
 
     expect(copyFile).toHaveBeenCalledTimes(3);
   });
@@ -825,8 +817,6 @@ describe("runPublishStage EAGAIN surface", () => {
     });
 
     expect(result.copied).toBe(1);
-
-    await readFile(target, "utf8");
   });
 
   it("lands the mirror copy after the EAGAIN retry", async () => {

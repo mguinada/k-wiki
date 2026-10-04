@@ -774,8 +774,6 @@ describe("runWikiSync run lock (issue #313)", () => {
 
     await writeFreshLock(h);
 
-    await headOf(h.dataRoot);
-
     await expect(runWikiSync(optionsFor(h))).rejects.toThrow(
       "retry in a few minutes",
     );
@@ -1727,8 +1725,6 @@ describe("runWikiSync crosslinks stage", () => {
 
     h.ingestAgent = crosslinkAgent("[[engineering/missing]]");
 
-    await headOf(h.dataRoot);
-
     await expect(runWikiSync(optionsFor(h))).rejects.toThrow();
   });
 
@@ -1890,8 +1886,6 @@ describe("runWikiSync citation wall stage (issue #339)", () => {
   it("fails the cycle when a rogue main-to-sandbox edge trips the wall", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 
-    await headOf(h.dataRoot);
-
     await seedSandboxNote(h);
 
     const committed = await readFile(
@@ -1911,8 +1905,6 @@ describe("runWikiSync citation wall stage (issue #339)", () => {
 
   it("restores the offending page to its committed bytes", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
-
-    await headOf(h.dataRoot);
 
     await seedSandboxNote(h);
 
@@ -1958,8 +1950,6 @@ describe("runWikiSync citation wall stage (issue #339)", () => {
   it("keeps the sandbox page that only read main pages", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 
-    await headOf(h.dataRoot);
-
     await seedSandboxNote(h);
 
     const committed = await readFile(
@@ -1982,8 +1972,6 @@ describe("runWikiSync citation wall stage (issue #339)", () => {
   it("fails the cycle when a via stamp lands on a main page", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 
-    await headOf(h.dataRoot);
-
     const committed = await readFile(
       join(h.dataRoot, "wiki", "sources", "src.md"),
       "utf8",
@@ -2001,8 +1989,6 @@ describe("runWikiSync citation wall stage (issue #339)", () => {
 
   it("restores the stamped page to its committed bytes", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
-
-    await headOf(h.dataRoot);
 
     const committed = await readFile(
       join(h.dataRoot, "wiki", "sources", "src.md"),
@@ -2435,8 +2421,6 @@ describe("runWikiSync verification stage", () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 
     await runWikiSync(optionsFor(h));
-
-    await readFile(join(h.dataRoot, "outputs", "lint-window.json"), "utf8");
 
     await writeFile(join(h.vaultRoot, "AI", "Second.md"), "second source body");
 
@@ -4286,16 +4270,12 @@ describe("runWikiSync cycle digest (issue #385)", () => {
     await runWikiSync(optionsFor(h));
 
     expect(await headOf(h.dataRoot)).toBe(headAfterRealWork);
-
-    await runGit(h.dataRoot, ["status", "--porcelain"], process.env);
   });
 
   it("prints nothing when a no-op cycle follows real work", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 
     await runWikiSync(optionsFor(h));
-
-    await headOf(h.dataRoot);
 
     await runWikiSync(optionsFor(h));
 
@@ -4326,8 +4306,6 @@ describe("runWikiSync cycle digest (issue #385)", () => {
     await expect(runWikiSync(optionsFor(h))).rejects.toThrow(
       "guardrail check 2 (frontmatter)",
     );
-
-    await readFile(join(h.dataRoot, DIGEST_PATH), "utf8");
   });
 
   it("writes the failure digest when the cycle fails after ingest", async () => {
@@ -4362,8 +4340,6 @@ describe("runWikiSync cycle digest (issue #385)", () => {
     };
 
     await expect(runWikiSync(optionsFor(h))).rejects.toThrow("agent exploded");
-
-    await readFile(join(h.dataRoot, DIGEST_PATH), "utf8");
   });
 
   it("writes the failure digest when the ingest agent fails", async () => {
@@ -4410,8 +4386,6 @@ describe("runWikiSync cycle digest (issue #385)", () => {
     await writeFile(join(h.outputsDir, "runs"), "not a directory");
 
     await expect(runWikiSync(optionsFor(h))).rejects.toThrow();
-
-    await readFile(join(h.dataRoot, DIGEST_PATH), "utf8");
   });
 
   it("writes the failure digest when the ingest digest path fails", async () => {
@@ -4445,8 +4419,6 @@ describe("runWikiSync cycle digest (issue #385)", () => {
     };
 
     await expect(runWikiSync(optionsFor(h))).rejects.toThrow();
-
-    await readFile(join(h.dataRoot, DIGEST_PATH), "utf8");
   });
 
   it("writes the failure digest when the revert throws", async () => {

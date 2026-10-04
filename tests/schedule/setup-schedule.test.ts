@@ -979,11 +979,6 @@ describe("setup-schedule main: install and uninstall", () => {
       return { out: out.join("\n"), exitCode: "0" };
     })();
 
-    await readFile(
-      join(home, "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`),
-      "utf8",
-    );
-
     const _domain = `gui/${process.getuid?.() ?? 501}`;
 
     expect(out).toContain("installed");
@@ -1020,11 +1015,6 @@ describe("setup-schedule main: install and uninstall", () => {
 
       return { out: out.join("\n"), exitCode: "0" };
     })();
-
-    await readFile(
-      join(home, "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`),
-      "utf8",
-    );
 
     const _domain = `gui/${process.getuid?.() ?? 501}`;
 

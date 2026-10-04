@@ -394,7 +394,7 @@ describe("fixtures CLI unknown-arg policy", () => {
     expect(err[0]).toContain('fixtures: unknown option "--nope"');
   });
 
-  it("exits 1", async () => {
+  it("exits 1 on an unknown option", async () => {
     const err: string[] = [];
 
     const errorSpy = vi
@@ -440,7 +440,7 @@ describe("fixtures CLI unknown-arg policy", () => {
     expect(err[0]).toContain("expected at most one <target-dir> argument");
   });
 
-  it("exits 1", async () => {
+  it("exits 1 on a second positional", async () => {
     const err: string[] = [];
 
     const errorSpy = vi

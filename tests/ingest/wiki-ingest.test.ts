@@ -2966,11 +2966,6 @@ describe("runWikiIngest --sources", () => {
         runAgent: frontmatterSaboteur("bad.md"),
       }),
     ).rejects.toThrow("guardrail check 2 (frontmatter)");
-
-    await readFile(
-      join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"),
-      "utf8",
-    );
   });
 
   it("omits the sources-selected marker from an ordinary failure digest", async () => {
@@ -3382,11 +3377,6 @@ describe("runWikiIngest --sources", () => {
         runAgent: frontmatterSaboteur("bad.md"),
       }),
     ).rejects.toThrow("guardrail check 2 (frontmatter)");
-
-    await readFile(
-      join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"),
-      "utf8",
-    );
   });
 
   it("records sources selected explicitly on the reverted run's failure digest", async () => {
@@ -3510,8 +3500,6 @@ describe("runWikiIngest --sources", () => {
     const h = await makeHarness({ "a.md": "a" }, track);
 
     await seedSnapshot(h, { "a.md": "a" });
-
-    await readFile(h.snapshotPath, "utf8");
 
     const failing: AgentRunner = async () => {
       throw new Error("agent exited with code 1");
@@ -4376,16 +4364,12 @@ describe("runWikiIngest dashboard hook (issue #73)", () => {
     );
 
     expect(exclude.split("\n")).toContain("dashboard.html");
-
-    await readFile(join(h.dataRoot, ".gitignore"), "utf8");
   });
 
   it("keeps dashboard.html out of the tracked .gitignore (issue #390)", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
 
     await runWikiIngest(optionsFor(h));
-
-    await readFile(join(h.dataRoot, ".git", "info", "exclude"), "utf8");
 
     const gitignore = await readFile(join(h.dataRoot, ".gitignore"), "utf8");
 

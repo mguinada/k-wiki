@@ -351,24 +351,12 @@ describe("promoteSandboxNote", () => {
       "promote: attention-notes",
       "init",
     ]);
-
-    await run(
-      "git",
-      ["show", "--name-only", "--no-renames", "--format=", "HEAD"],
-      { cwd: dataRoot },
-    );
-
-    await run("git", ["status", "--porcelain", "-uall"], { cwd: dataRoot });
   });
 
   it("touches exactly the promoted page, index, log, and sandbox note", async () => {
     const dataRoot = await makeRepo();
 
     await promote(dataRoot);
-
-    await run("git", ["log", "--format=%s"], {
-      cwd: dataRoot,
-    });
 
     const { stdout: files } = await run(
       "git",
@@ -382,24 +370,12 @@ describe("promoteSandboxNote", () => {
       "wiki/log.md",
       "wiki/sandbox/attention-notes.md",
     ]);
-
-    await run("git", ["status", "--porcelain", "-uall"], { cwd: dataRoot });
   });
 
   it("leaves a clean tree after a successful promote", async () => {
     const dataRoot = await makeRepo();
 
     await promote(dataRoot);
-
-    await run("git", ["log", "--format=%s"], {
-      cwd: dataRoot,
-    });
-
-    await run(
-      "git",
-      ["show", "--name-only", "--no-renames", "--format=", "HEAD"],
-      { cwd: dataRoot },
-    );
 
     const { stdout: status } = await run(
       "git",
@@ -414,18 +390,6 @@ describe("promoteSandboxNote", () => {
     const dataRoot = await makeRepo();
 
     const result = await promote(dataRoot);
-
-    await run("git", ["log", "--format=%s"], {
-      cwd: dataRoot,
-    });
-
-    await run(
-      "git",
-      ["show", "--name-only", "--no-renames", "--format=", "HEAD"],
-      { cwd: dataRoot },
-    );
-
-    await run("git", ["status", "--porcelain", "-uall"], { cwd: dataRoot });
 
     expect(result.commit).toMatch(/^[0-9a-f]{40}$/);
   });
@@ -574,8 +538,6 @@ describe("promoteSandboxNote", () => {
     );
 
     expect(failure?.message).toContain("rolled back");
-
-    await run("git", ["status", "--porcelain", "-uall"], { cwd: dataRoot });
   });
 
   it("restores the sandbox note", async () => {
@@ -594,8 +556,6 @@ describe("promoteSandboxNote", () => {
         "utf8",
       ),
     ).toBe(NOTE_TEXT);
-
-    await run("git", ["status", "--porcelain", "-uall"], { cwd: dataRoot });
   });
 
   it("restores the index after the failed-commit rollback", async () => {
@@ -611,8 +571,6 @@ describe("promoteSandboxNote", () => {
     expect(await readFile(join(dataRoot, "wiki", "index.md"), "utf8")).toBe(
       INDEX_TEXT,
     );
-
-    await run("git", ["status", "--porcelain", "-uall"], { cwd: dataRoot });
   });
 
   it("leaves a clean tree after the failed-commit rollback", async () => {
@@ -657,8 +615,6 @@ describe("promoteSandboxNote", () => {
     );
 
     expect(failure?.message).toContain("citation wall");
-
-    await run("git", ["status", "--porcelain", "-uall"], { cwd: dataRoot });
   });
 
   it("names the offending peer note", async () => {
@@ -676,8 +632,6 @@ describe("promoteSandboxNote", () => {
     );
 
     expect(failure?.message).toContain("peer-note");
-
-    await run("git", ["status", "--porcelain", "-uall"], { cwd: dataRoot });
   });
 
   it("keeps the sandbox note with its link", async () => {
@@ -700,8 +654,6 @@ describe("promoteSandboxNote", () => {
         "utf8",
       ),
     ).toContain("peer-note");
-
-    await run("git", ["status", "--porcelain", "-uall"], { cwd: dataRoot });
   });
 
   it("restores the index after the citation-wall rollback", async () => {
@@ -721,8 +673,6 @@ describe("promoteSandboxNote", () => {
     expect(await readFile(join(dataRoot, "wiki", "index.md"), "utf8")).toBe(
       INDEX_TEXT,
     );
-
-    await run("git", ["status", "--porcelain", "-uall"], { cwd: dataRoot });
   });
 
   it("restores the log", async () => {
@@ -742,8 +692,6 @@ describe("promoteSandboxNote", () => {
     expect(await readFile(join(dataRoot, "wiki", "log.md"), "utf8")).toBe(
       "# Wiki Log\n",
     );
-
-    await run("git", ["status", "--porcelain", "-uall"], { cwd: dataRoot });
   });
 
   it("leaves a clean tree after the citation-wall rollback", async () => {

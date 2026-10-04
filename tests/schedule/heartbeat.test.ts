@@ -490,8 +490,6 @@ describe("watchdog grace anchor", () => {
     await writeWatchdogSince({ dataRoot, now });
 
     expect((await readWatchdogSince(dataRoot))?.getTime()).toBe(now.getTime());
-
-    await readFile(watchdogSincePath(dataRoot), "utf8");
   });
 
   it("stores the anchor as one ISO line", async () => {

@@ -508,8 +508,6 @@ describe("failure-rule lease retention", () => {
         },
       }),
     ).catch((e: unknown) => e);
-
-    await observeLease(world.a.git, "origin", LEASE_REF);
   }, 30000);
 
   it("fails mid-run naming the agent stage", async () => {
@@ -522,8 +520,6 @@ describe("failure-rule lease retention", () => {
     const { dataRoot } = cw;
 
     const progress: string[] = [];
-
-    await observeLeaseOid(world.a.git, "origin", LEASE_REF);
 
     const error = await runSharedCycle(
       optionsFor(cw, dataRoot, {
@@ -541,8 +537,6 @@ describe("failure-rule lease retention", () => {
     ).catch((e: unknown) => e);
 
     expect((error as Error).message).toContain("agent stage blew up");
-
-    await observeLease(world.a.git, "origin", LEASE_REF);
   }, 30000);
 
   it("retains a lease after the mid-run failure", async () => {
@@ -555,8 +549,6 @@ describe("failure-rule lease retention", () => {
     const { dataRoot } = cw;
 
     const progress: string[] = [];
-
-    await observeLeaseOid(world.a.git, "origin", LEASE_REF);
 
     await runSharedCycle(
       optionsFor(cw, dataRoot, {
@@ -589,8 +581,6 @@ describe("failure-rule lease retention", () => {
 
     const progress: string[] = [];
 
-    await observeLeaseOid(world.a.git, "origin", LEASE_REF);
-
     await runSharedCycle(
       optionsFor(cw, dataRoot, {
         run: runContext({
@@ -622,8 +612,6 @@ describe("failure-rule lease retention", () => {
 
     const progress: string[] = [];
 
-    await observeLeaseOid(world.a.git, "origin", LEASE_REF);
-
     await runSharedCycle(
       optionsFor(cw, dataRoot, {
         run: runContext({
@@ -638,8 +626,6 @@ describe("failure-rule lease retention", () => {
         },
       }),
     ).catch((e: unknown) => e);
-
-    await observeLease(world.a.git, "origin", LEASE_REF);
 
     expect(
       progress.find((line) => line.includes("retained lease expires")),
@@ -673,12 +659,6 @@ describe("failure-rule lease retention", () => {
     ).catch((e: unknown) => e);
 
     expect((error as Error).message).toContain("agent stage blew up");
-
-    progress
-      .map((line) => /lease ([0-9a-f]{8}) acquired/.exec(line))
-      .find((match) => match !== null);
-
-    await observeLease(world.a.git, "origin", LEASE_REF);
   }, 30000);
 
   it("observes the lease mid-run", async () => {
@@ -710,13 +690,7 @@ describe("failure-rule lease retention", () => {
       }),
     ).catch((e: unknown) => e);
 
-    progress
-      .map((line) => /lease ([0-9a-f]{8}) acquired/.exec(line))
-      .find((match) => match !== null);
-
     expect(observedMidRun).toBeDefined();
-
-    await observeLease(world.a.git, "origin", LEASE_REF);
   }, 30000);
 
   it("re-acquires the retained lease", async () => {
@@ -749,8 +723,6 @@ describe("failure-rule lease retention", () => {
       .map((line) => /lease ([0-9a-f]{8}) acquired/.exec(line))
       .find((match) => match !== null);
 
-    await observeLease(world.a.git, "origin", LEASE_REF);
-
     expect(acquired).not.toBeNull();
   }, 30000);
 
@@ -779,10 +751,6 @@ describe("failure-rule lease retention", () => {
         },
       }),
     ).catch((e: unknown) => e);
-
-    progress
-      .map((line) => /lease ([0-9a-f]{8}) acquired/.exec(line))
-      .find((match) => match !== null);
 
     const retained = await observeLease(world.a.git, "origin", LEASE_REF);
 
@@ -817,10 +785,6 @@ describe("failure-rule lease retention", () => {
         },
       }),
     ).catch((e: unknown) => e);
-
-    progress
-      .map((line) => /lease ([0-9a-f]{8}) acquired/.exec(line))
-      .find((match) => match !== null);
 
     const retained = await observeLease(world.a.git, "origin", LEASE_REF);
 
@@ -891,10 +855,6 @@ describe("failure-rule lease retention", () => {
       }),
     ).catch((e: unknown) => e);
 
-    progress
-      .map((line) => /lease ([0-9a-f]{8}) acquired/.exec(line))
-      .find((match) => match !== null);
-
     const retained = await observeLease(world.a.git, "origin", LEASE_REF);
 
     expect(retained?.body.token).toBe(observedMidRun?.body.token);
@@ -929,10 +889,6 @@ describe("failure-rule lease retention", () => {
       }),
     ).catch((e: unknown) => e);
 
-    progress
-      .map((line) => /lease ([0-9a-f]{8}) acquired/.exec(line))
-      .find((match) => match !== null);
-
     const retained = await observeLease(world.a.git, "origin", LEASE_REF);
 
     expect(retained?.body.renewals).toBe(
@@ -965,10 +921,6 @@ describe("failure-rule lease retention", () => {
         },
       }),
     ).catch((e: unknown) => e);
-
-    progress
-      .map((line) => /lease ([0-9a-f]{8}) acquired/.exec(line))
-      .find((match) => match !== null);
 
     const retained = await observeLease(world.a.git, "origin", LEASE_REF);
 
@@ -1034,8 +986,6 @@ describe("failure-rule lease retention", () => {
         }),
       ),
     ).rejects.toThrow();
-
-    await observeLease(world.a.git, "origin", LEASE_REF);
   }, 30000);
 
   it("retains a lease after a finalization failure", async () => {
@@ -1221,8 +1171,6 @@ describe("failure-rule lease retention", () => {
         }),
       }),
     ).catch(() => undefined);
-
-    await observeLease(world.a.git, "origin", LEASE_REF);
 
     expect(
       progress.find((line) =>
