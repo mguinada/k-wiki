@@ -161,16 +161,25 @@ describe("slugError", () => {
     expect(slugError("attention-notes-2")).toBeUndefined();
   });
 
-  it("rejects separators, case, and empty slugs", () => {
+  it("rejects a slash in a slug", () => {
     expect(slugError("a/b")).toBeDefined();
+  });
+
+  it("rejects uppercase in a slug", () => {
     expect(slugError("Note")).toBeDefined();
+  });
+
+  it("rejects an empty slug", () => {
     expect(slugError("")).toBeDefined();
+  });
+
+  it("rejects a leading dash in a slug", () => {
     expect(slugError("-a")).toBeDefined();
   });
 });
 
 describe("runSandboxRun", () => {
-  it("commits a sandbox-only run atomically with stamps and audit entry", async () => {
+  it("commits a sandbox-only run", async () => {
     const dataRoot = await makeRepo();
 
     const result = await sandboxRun(dataRoot, {
@@ -180,11 +189,48 @@ describe("runSandboxRun", () => {
     });
 
     expect(result.status).toBe("committed");
+
+    await run("git", ["log", "--format=%s", "-1"], {
+      cwd: dataRoot,
+    });
+
+    await readFile(join(dataRoot, "wiki", "sandbox", "note-slug.md"), "utf8");
+
+    await readFile(join(dataRoot, "wiki", "log.md"), "utf8");
+  });
+
+  it("logs the sandbox commit in the audit log", async () => {
+    const dataRoot = await makeRepo();
+
+    await sandboxRun(dataRoot, {
+      runAgent: agentWriting({
+        "wiki/sandbox/note-slug.md": '---\ntitle: "Note"\n---\nBody.\n',
+      }),
+    });
+
     const { stdout: log } = await run("git", ["log", "--format=%s", "-1"], {
       cwd: dataRoot,
     });
 
     expect(log.trim()).toBe("sandbox: note-slug");
+
+    await readFile(join(dataRoot, "wiki", "sandbox", "note-slug.md"), "utf8");
+
+    await readFile(join(dataRoot, "wiki", "log.md"), "utf8");
+  });
+
+  it("stamps the committed note with the agent via stamp", async () => {
+    const dataRoot = await makeRepo();
+
+    await sandboxRun(dataRoot, {
+      runAgent: agentWriting({
+        "wiki/sandbox/note-slug.md": '---\ntitle: "Note"\n---\nBody.\n',
+      }),
+    });
+
+    await run("git", ["log", "--format=%s", "-1"], {
+      cwd: dataRoot,
+    });
 
     const note = await readFile(
       join(dataRoot, "wiki", "sandbox", "note-slug.md"),
@@ -192,16 +238,74 @@ describe("runSandboxRun", () => {
     );
 
     expect(note).toContain("via: agent");
+
+    await readFile(join(dataRoot, "wiki", "log.md"), "utf8");
+  });
+
+  it("stamps the committed note with the expiry date", async () => {
+    const dataRoot = await makeRepo();
+
+    await sandboxRun(dataRoot, {
+      runAgent: agentWriting({
+        "wiki/sandbox/note-slug.md": '---\ntitle: "Note"\n---\nBody.\n',
+      }),
+    });
+
+    await run("git", ["log", "--format=%s", "-1"], {
+      cwd: dataRoot,
+    });
+
+    const note = await readFile(
+      join(dataRoot, "wiki", "sandbox", "note-slug.md"),
+      "utf8",
+    );
+
     expect(note).toContain("expires: 2026-08-27");
+
+    await readFile(join(dataRoot, "wiki", "log.md"), "utf8");
+  });
+
+  it("records the run in log.md", async () => {
+    const dataRoot = await makeRepo();
+
+    await sandboxRun(dataRoot, {
+      runAgent: agentWriting({
+        "wiki/sandbox/note-slug.md": '---\ntitle: "Note"\n---\nBody.\n',
+      }),
+    });
+
+    await run("git", ["log", "--format=%s", "-1"], {
+      cwd: dataRoot,
+    });
+
+    await readFile(join(dataRoot, "wiki", "sandbox", "note-slug.md"), "utf8");
 
     const logMd = await readFile(join(dataRoot, "wiki", "log.md"), "utf8");
 
     expect(logMd).toContain("## [2026-08-20] sandbox | note-slug");
+  });
+
+  it("leaves a clean tree after the sandbox commit", async () => {
+    const dataRoot = await makeRepo();
+
+    await sandboxRun(dataRoot, {
+      runAgent: agentWriting({
+        "wiki/sandbox/note-slug.md": '---\ntitle: "Note"\n---\nBody.\n',
+      }),
+    });
+
+    await run("git", ["log", "--format=%s", "-1"], {
+      cwd: dataRoot,
+    });
+
+    await readFile(join(dataRoot, "wiki", "sandbox", "note-slug.md"), "utf8");
+
+    await readFile(join(dataRoot, "wiki", "log.md"), "utf8");
 
     expect(await statusOf(dataRoot)).toBe("");
   });
 
-  it("overwrites caller-supplied via and expires stamps", async () => {
+  it("drops a caller-supplied via stamp", async () => {
     const dataRoot = await makeRepo();
 
     await sandboxRun(dataRoot, {
@@ -217,14 +321,66 @@ describe("runSandboxRun", () => {
     );
 
     expect(note).not.toContain("via: human");
+  });
+
+  it("drops a caller-supplied expiry stamp", async () => {
+    const dataRoot = await makeRepo();
+
+    await sandboxRun(dataRoot, {
+      runAgent: agentWriting({
+        "wiki/sandbox/note-slug.md":
+          '---\ntitle: "Note"\nvia: human\nexpires: 1999-01-01\n---\nBody.\n',
+      }),
+    });
+
+    const note = await readFile(
+      join(dataRoot, "wiki", "sandbox", "note-slug.md"),
+      "utf8",
+    );
+
     expect(note).not.toContain("1999-01-01");
+  });
+
+  it("stamps the note with the agent via stamp", async () => {
+    const dataRoot = await makeRepo();
+
+    await sandboxRun(dataRoot, {
+      runAgent: agentWriting({
+        "wiki/sandbox/note-slug.md":
+          '---\ntitle: "Note"\nvia: human\nexpires: 1999-01-01\n---\nBody.\n',
+      }),
+    });
+
+    const note = await readFile(
+      join(dataRoot, "wiki", "sandbox", "note-slug.md"),
+      "utf8",
+    );
+
     expect(note).toContain("via: agent");
+  });
+
+  it("stamps the note with the expiry date", async () => {
+    const dataRoot = await makeRepo();
+
+    await sandboxRun(dataRoot, {
+      runAgent: agentWriting({
+        "wiki/sandbox/note-slug.md":
+          '---\ntitle: "Note"\nvia: human\nexpires: 1999-01-01\n---\nBody.\n',
+      }),
+    });
+
+    const note = await readFile(
+      join(dataRoot, "wiki", "sandbox", "note-slug.md"),
+      "utf8",
+    );
+
     expect(note).toContain("expires: 2026-08-27");
   });
 
-  it("commits nothing and reports empty for a run that wrote nothing", async () => {
+  it("reports empty for a run that wrote nothing", async () => {
     const dataRoot = await makeRepo();
-    const { stdout: before } = await run("git", ["rev-parse", "HEAD"], {
+
+    await run("git", ["rev-parse", "HEAD"], {
       cwd: dataRoot,
     });
 
@@ -232,20 +388,68 @@ describe("runSandboxRun", () => {
 
     expect(result).toEqual({ status: "empty" });
 
+    await run("git", ["rev-parse", "HEAD"], {
+      cwd: dataRoot,
+    });
+
+    await readFile(join(dataRoot, "wiki", "log.md")).catch(() => undefined);
+  });
+
+  it("leaves the tree untouched when nothing was written", async () => {
+    const dataRoot = await makeRepo();
+
+    const { stdout: before } = await run("git", ["rev-parse", "HEAD"], {
+      cwd: dataRoot,
+    });
+
+    await sandboxRun(dataRoot, { runAgent: agentWriting({}) });
+
     const { stdout: after } = await run("git", ["rev-parse", "HEAD"], {
       cwd: dataRoot,
     });
 
     expect(after).toBe(before);
+
+    await readFile(join(dataRoot, "wiki", "log.md")).catch(() => undefined);
+  });
+
+  it("keeps the tree clean after an empty run", async () => {
+    const dataRoot = await makeRepo();
+
+    await run("git", ["rev-parse", "HEAD"], {
+      cwd: dataRoot,
+    });
+
+    await sandboxRun(dataRoot, { runAgent: agentWriting({}) });
+
+    await run("git", ["rev-parse", "HEAD"], {
+      cwd: dataRoot,
+    });
+
     expect(await statusOf(dataRoot)).toBe("");
+
+    await readFile(join(dataRoot, "wiki", "log.md")).catch(() => undefined);
+  });
+
+  it("writes no log entry for an empty run", async () => {
+    const dataRoot = await makeRepo();
+
+    await run("git", ["rev-parse", "HEAD"], {
+      cwd: dataRoot,
+    });
+
+    await sandboxRun(dataRoot, { runAgent: agentWriting({}) });
+
+    await run("git", ["rev-parse", "HEAD"], {
+      cwd: dataRoot,
+    });
+
     await expect(readFile(join(dataRoot, "wiki", "log.md"))).rejects.toThrow();
   });
 
-  it("reverts a main-tree-touching run path-scoped and fails loudly", async () => {
+  it("fails the run naming the touched main page", async () => {
     const dataRoot = await makeRepo();
 
-    // A pre-existing dirty page outside the sandbox: the revert must
-    // preserve it (no whole-repo reset), and the run must not touch it.
     await writeFile(
       join(dataRoot, "wiki", "dirty-page.md"),
       "pre-run dirty work\n",
@@ -262,15 +466,121 @@ describe("runSandboxRun", () => {
       /accept-gate failed.*wiki\/index\.md/s,
     );
 
+    await readFile(join(dataRoot, "wiki", "sandbox", "note-slug.md")).catch(
+      () => undefined,
+    );
+
+    await run("git", ["log", "--format=%s"], {
+      cwd: dataRoot,
+    });
+  });
+
+  it("restores the touched main page", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(
+      join(dataRoot, "wiki", "dirty-page.md"),
+      "pre-run dirty work\n",
+    );
+
+    const promise = sandboxRun(dataRoot, {
+      runAgent: agentWriting({
+        "wiki/sandbox/note-slug.md": "sandbox note\n",
+        "wiki/index.md": "# Index (mangled)\n",
+      }),
+    });
+
+    await promise.catch(() => undefined);
+
     expect(await readFile(join(dataRoot, "wiki", "index.md"), "utf8")).toBe(
       "# Index\n",
     );
+
+    await readFile(join(dataRoot, "wiki", "sandbox", "note-slug.md")).catch(
+      () => undefined,
+    );
+
+    await run("git", ["log", "--format=%s"], {
+      cwd: dataRoot,
+    });
+  });
+
+  it("keeps the pre-run dirty bytes of a tracked page", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(
+      join(dataRoot, "wiki", "dirty-page.md"),
+      "pre-run dirty work\n",
+    );
+
+    const promise = sandboxRun(dataRoot, {
+      runAgent: agentWriting({
+        "wiki/sandbox/note-slug.md": "sandbox note\n",
+        "wiki/index.md": "# Index (mangled)\n",
+      }),
+    });
+
+    await promise.catch(() => undefined);
+
     expect(
       await readFile(join(dataRoot, "wiki", "dirty-page.md"), "utf8"),
     ).toBe("pre-run dirty work\n");
+
+    await readFile(join(dataRoot, "wiki", "sandbox", "note-slug.md")).catch(
+      () => undefined,
+    );
+
+    await run("git", ["log", "--format=%s"], {
+      cwd: dataRoot,
+    });
+  });
+
+  it("reverts the run's sandbox page too", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(
+      join(dataRoot, "wiki", "dirty-page.md"),
+      "pre-run dirty work\n",
+    );
+
+    const promise = sandboxRun(dataRoot, {
+      runAgent: agentWriting({
+        "wiki/sandbox/note-slug.md": "sandbox note\n",
+        "wiki/index.md": "# Index (mangled)\n",
+      }),
+    });
+
+    await promise.catch(() => undefined);
+
     await expect(
       readFile(join(dataRoot, "wiki", "sandbox", "note-slug.md")),
     ).rejects.toThrow();
+
+    await run("git", ["log", "--format=%s"], {
+      cwd: dataRoot,
+    });
+  });
+
+  it("keeps the pre-run audit log on violation", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(
+      join(dataRoot, "wiki", "dirty-page.md"),
+      "pre-run dirty work\n",
+    );
+
+    const promise = sandboxRun(dataRoot, {
+      runAgent: agentWriting({
+        "wiki/sandbox/note-slug.md": "sandbox note\n",
+        "wiki/index.md": "# Index (mangled)\n",
+      }),
+    });
+
+    await promise.catch(() => undefined);
+
+    await readFile(join(dataRoot, "wiki", "sandbox", "note-slug.md")).catch(
+      () => undefined,
+    );
 
     const { stdout: log } = await run("git", ["log", "--format=%s"], {
       cwd: dataRoot,
@@ -279,8 +589,9 @@ describe("runSandboxRun", () => {
     expect(log.trim().split("\n")).toEqual(["init"]);
   });
 
-  it("keeps a wiki-sync-era commit that landed mid-window (no whole-repo reset)", async () => {
+  it("fails the run whose agent touches the main tree", async () => {
     const dataRoot = await makeRepo();
+
     const agent = async (
       _command: string,
       _args: readonly string[],
@@ -304,28 +615,110 @@ describe("runSandboxRun", () => {
       /accept-gate failed/,
     );
 
+    await run("git", ["log", "--format=%s"], {
+      cwd: dataRoot,
+    });
+  });
+
+  it("keeps a wiki-sync-era commit that landed mid-window", async () => {
+    const dataRoot = await makeRepo();
+
+    const agent = async (
+      _command: string,
+      _args: readonly string[],
+      options: { cwd: string },
+    ) => {
+      // A wiki-sync cycle commits mid-window, then the agent writes.
+      await writeFile(join(options.cwd, "wiki", "synced.md"), "synced\n");
+      await gitCommitAll(options.cwd, "wiki-sync: cycle");
+
+      await mkdir(join(options.cwd, "wiki", "sandbox"), { recursive: true });
+      await writeFile(
+        join(options.cwd, "wiki", "sandbox", "note-slug.md"),
+        "sandbox note\n",
+      );
+      await writeFile(join(options.cwd, "wiki", "index.md"), "# Mangled\n");
+
+      return { stdout: "", stderr: "" };
+    };
+
+    await sandboxRun(dataRoot, { runAgent: agent }).catch(() => undefined);
+
     const { stdout: log } = await run("git", ["log", "--format=%s"], {
       cwd: dataRoot,
     });
 
     expect(log.trim().split("\n")).toEqual(["wiki-sync: cycle", "init"]);
+  });
+
+  it("keeps the mid-window synced page", async () => {
+    const dataRoot = await makeRepo();
+
+    const agent = async (
+      _command: string,
+      _args: readonly string[],
+      options: { cwd: string },
+    ) => {
+      // A wiki-sync cycle commits mid-window, then the agent writes.
+      await writeFile(join(options.cwd, "wiki", "synced.md"), "synced\n");
+      await gitCommitAll(options.cwd, "wiki-sync: cycle");
+
+      await mkdir(join(options.cwd, "wiki", "sandbox"), { recursive: true });
+      await writeFile(
+        join(options.cwd, "wiki", "sandbox", "note-slug.md"),
+        "sandbox note\n",
+      );
+      await writeFile(join(options.cwd, "wiki", "index.md"), "# Mangled\n");
+
+      return { stdout: "", stderr: "" };
+    };
+
+    await sandboxRun(dataRoot, { runAgent: agent }).catch(() => undefined);
+
     expect(await readFile(join(dataRoot, "wiki", "synced.md"), "utf8")).toBe(
       "synced\n",
     );
+  });
+
+  it("restores the main page the run dirtied", async () => {
+    const dataRoot = await makeRepo();
+
+    const agent = async (
+      _command: string,
+      _args: readonly string[],
+      options: { cwd: string },
+    ) => {
+      // A wiki-sync cycle commits mid-window, then the agent writes.
+      await writeFile(join(options.cwd, "wiki", "synced.md"), "synced\n");
+      await gitCommitAll(options.cwd, "wiki-sync: cycle");
+
+      await mkdir(join(options.cwd, "wiki", "sandbox"), { recursive: true });
+      await writeFile(
+        join(options.cwd, "wiki", "sandbox", "note-slug.md"),
+        "sandbox note\n",
+      );
+      await writeFile(join(options.cwd, "wiki", "index.md"), "# Mangled\n");
+
+      return { stdout: "", stderr: "" };
+    };
+
+    await sandboxRun(dataRoot, { runAgent: agent }).catch(() => undefined);
+
     expect(await readFile(join(dataRoot, "wiki", "index.md"), "utf8")).toBe(
       "# Index\n",
     );
   });
 
-  it("refuses before any write when the sandbox namespace is already dirty", async () => {
+  it("refuses to run when the sandbox namespace is already dirty", async () => {
     const dataRoot = await makeRepo();
+
     await mkdir(join(dataRoot, "wiki", "sandbox"), { recursive: true });
+
     await writeFile(
       join(dataRoot, "wiki", "sandbox", "other-note.md"),
       "uncommitted earlier work\n",
     );
 
-    let invoked = false;
     const agent: AgentRunner = async () => {
       invoked = true;
 
@@ -335,8 +728,49 @@ describe("runSandboxRun", () => {
     await expect(sandboxRun(dataRoot, { runAgent: agent })).rejects.toThrow(
       /sandbox namespace is already dirty.*wiki\/sandbox\/other-note\.md/s,
     );
+  });
+
+  it("runs no agent when the sandbox namespace is dirty", async () => {
+    const dataRoot = await makeRepo();
+
+    await mkdir(join(dataRoot, "wiki", "sandbox"), { recursive: true });
+
+    await writeFile(
+      join(dataRoot, "wiki", "sandbox", "other-note.md"),
+      "uncommitted earlier work\n",
+    );
+
+    let invoked = false;
+
+    const agent: AgentRunner = async () => {
+      invoked = true;
+
+      return { stdout: "", stderr: "" };
+    };
+
+    await sandboxRun(dataRoot, { runAgent: agent }).catch(() => undefined);
 
     expect(invoked).toBe(false);
+  });
+
+  it("keeps the earlier uncommitted sandbox work intact", async () => {
+    const dataRoot = await makeRepo();
+
+    await mkdir(join(dataRoot, "wiki", "sandbox"), { recursive: true });
+
+    await writeFile(
+      join(dataRoot, "wiki", "sandbox", "other-note.md"),
+      "uncommitted earlier work\n",
+    );
+
+    const agent: AgentRunner = async () => {
+      invoked = true;
+
+      return { stdout: "", stderr: "" };
+    };
+
+    await sandboxRun(dataRoot, { runAgent: agent }).catch(() => undefined);
+
     expect(
       await readFile(
         join(dataRoot, "wiki", "sandbox", "other-note.md"),
@@ -345,11 +779,11 @@ describe("runSandboxRun", () => {
     ).toBe("uncommitted earlier work\n");
   });
 
-  it("refuses before any write when wiki/log.md is already dirty", async () => {
+  it("refuses to run when wiki/log.md is already dirty", async () => {
     const dataRoot = await makeRepo();
+
     await writeFile(join(dataRoot, "wiki", "log.md"), "## stale audit entry\n");
 
-    let invoked = false;
     const agent: AgentRunner = async () => {
       invoked = true;
 
@@ -359,30 +793,79 @@ describe("runSandboxRun", () => {
     await expect(sandboxRun(dataRoot, { runAgent: agent })).rejects.toThrow(
       /wiki\/log\.md is already dirty.*must not absorb/s,
     );
+  });
+
+  it("runs no agent when the audit log is dirty", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(join(dataRoot, "wiki", "log.md"), "## stale audit entry\n");
+
+    let invoked = false;
+
+    const agent: AgentRunner = async () => {
+      invoked = true;
+
+      return { stdout: "", stderr: "" };
+    };
+
+    await sandboxRun(dataRoot, { runAgent: agent }).catch(() => undefined);
 
     expect(invoked).toBe(false);
+  });
+
+  it("keeps the stale audit entry intact", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(join(dataRoot, "wiki", "log.md"), "## stale audit entry\n");
+
+    const agent: AgentRunner = async () => {
+      invoked = true;
+
+      return { stdout: "", stderr: "" };
+    };
+
+    await sandboxRun(dataRoot, { runAgent: agent }).catch(() => undefined);
+
     expect(await readFile(join(dataRoot, "wiki", "log.md"), "utf8")).toBe(
       "## stale audit entry\n",
     );
   });
 
-  it("refuses a colliding slug without overwriting", async () => {
+  it("refuses a colliding slug", async () => {
     const dataRoot = await makeRepo();
+
     await mkdir(join(dataRoot, "wiki", "sandbox"), { recursive: true });
+
     await writeFile(join(dataRoot, "wiki", "sandbox", "note-slug.md"), "old\n");
+
     await gitCommitAll(dataRoot, "seed sandbox note");
 
     await expect(
       sandboxRun(dataRoot, { runAgent: agentWriting({}) }),
     ).rejects.toThrow(/already exists.*identity/s);
+  });
+
+  it("leaves the existing sandbox page untouched", async () => {
+    const dataRoot = await makeRepo();
+
+    await mkdir(join(dataRoot, "wiki", "sandbox"), { recursive: true });
+
+    await writeFile(join(dataRoot, "wiki", "sandbox", "note-slug.md"), "old\n");
+
+    await gitCommitAll(dataRoot, "seed sandbox note");
+
+    await sandboxRun(dataRoot, { runAgent: agentWriting({}) }).catch(
+      () => undefined,
+    );
 
     expect(
       await readFile(join(dataRoot, "wiki", "sandbox", "note-slug.md"), "utf8"),
     ).toBe("old\n");
   });
 
-  it("refuses a run whose instance and context name different data repos", async () => {
+  it("refuses a run whose instance points at another data repo", async () => {
     const dataRoot = await makeRepo();
+
     const otherRoot = await makeRepo();
 
     await expect(
@@ -391,12 +874,24 @@ describe("runSandboxRun", () => {
         runAgent: agentWriting({ "wiki/sandbox/note-slug.md": "x\n" }),
       }),
     ).rejects.toThrow(/wrong-repo accept-gate/);
+  });
+
+  it("leaves the other data repo's tree clean", async () => {
+    const dataRoot = await makeRepo();
+
+    const otherRoot = await makeRepo();
+
+    await sandboxRun(dataRoot, {
+      instance: instanceAt(otherRoot),
+      runAgent: agentWriting({ "wiki/sandbox/note-slug.md": "x\n" }),
+    }).catch(() => undefined);
 
     expect(await statusOf(otherRoot)).toBe("");
   });
 
-  it("reverts the run's sandbox writes when the agent itself fails", async () => {
+  it("fails the run reporting the reverted writes", async () => {
     const dataRoot = await makeRepo();
+
     const agent: AgentRunner = async (_c, _a, options) => {
       await mkdir(join(options.cwd, "wiki", "sandbox"), { recursive: true });
       await writeFile(
@@ -417,12 +912,59 @@ describe("runSandboxRun", () => {
     }
 
     expect(failure.message).toMatch(/agent run failed.*were reverted/s);
+  });
+
+  it("names the agent's own failure as the cause", async () => {
+    const dataRoot = await makeRepo();
+
+    const agent: AgentRunner = async (_c, _a, options) => {
+      await mkdir(join(options.cwd, "wiki", "sandbox"), { recursive: true });
+      await writeFile(
+        join(options.cwd, "wiki", "sandbox", "note-slug.md"),
+        "half-written\n",
+      );
+
+      throw new Error("agent died mid-run");
+    };
+
+    const failure = await sandboxRun(dataRoot, { runAgent: agent }).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    if (failure === undefined) {
+      throw new Error("expected the agent run to fail");
+    }
+
     expect((failure.cause as Error).message).toBe("agent died mid-run");
+  });
+
+  it("reverts the sandbox writes when the agent fails", async () => {
+    const dataRoot = await makeRepo();
+
+    const agent: AgentRunner = async (_c, _a, options) => {
+      await mkdir(join(options.cwd, "wiki", "sandbox"), { recursive: true });
+      await writeFile(
+        join(options.cwd, "wiki", "sandbox", "note-slug.md"),
+        "half-written\n",
+      );
+
+      throw new Error("agent died mid-run");
+    };
+
+    const failure = await sandboxRun(dataRoot, { runAgent: agent }).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    if (failure === undefined) {
+      throw new Error("expected the agent run to fail");
+    }
 
     expect(await statusOf(dataRoot)).toBe("");
   });
 
-  it("surfaces a failing agent error even when nothing was written", async () => {
+  it("fails the run when nothing was written", async () => {
     const dataRoot = await makeRepo();
 
     const failure = await sandboxRun(dataRoot, {
@@ -437,6 +979,22 @@ describe("runSandboxRun", () => {
     }
 
     expect(failure.message).toMatch(/agent run failed/);
+  });
+
+  it("names the agent's explosion as the cause", async () => {
+    const dataRoot = await makeRepo();
+
+    const failure = await sandboxRun(dataRoot, {
+      runAgent: failingAgent,
+    }).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    if (failure === undefined) {
+      throw new Error("expected the agent run to fail");
+    }
+
     expect((failure.cause as Error).message).toBe("stub agent exploded");
   });
 
@@ -448,7 +1006,7 @@ describe("runSandboxRun", () => {
     );
   });
 
-  it("stamps and commits multiple sandbox pages of one run", async () => {
+  it("commits a multi-page sandbox run", async () => {
     const dataRoot = await makeRepo();
 
     const result = await sandboxRun(dataRoot, {
@@ -459,9 +1017,32 @@ describe("runSandboxRun", () => {
     });
 
     expect(result.status).toBe("committed");
+  });
+
+  it("reports the committed pages", async () => {
+    const dataRoot = await makeRepo();
+
+    const result = await sandboxRun(dataRoot, {
+      runAgent: agentWriting({
+        "wiki/sandbox/note-slug.md": '---\ntitle: "A"\n---\nA.\n',
+        "wiki/sandbox/note-slug-annex.md": "B.\n",
+      }),
+    });
+
     expect(
       result.status === "committed" ? [...result.pages].sort() : [],
     ).toEqual(["wiki/sandbox/note-slug-annex.md", "wiki/sandbox/note-slug.md"]);
+  });
+
+  it("commits exactly the sandbox pages and the audit log", async () => {
+    const dataRoot = await makeRepo();
+
+    await sandboxRun(dataRoot, {
+      runAgent: agentWriting({
+        "wiki/sandbox/note-slug.md": '---\ntitle: "A"\n---\nA.\n',
+        "wiki/sandbox/note-slug-annex.md": "B.\n",
+      }),
+    });
 
     const { stdout: names } = await run(
       "git",
@@ -476,22 +1057,35 @@ describe("runSandboxRun", () => {
     ]);
   });
 
-  it("restores a re-edited pre-dirty page to its pre-run bytes on violation", async () => {
+  it("fails the run when the agent re-edits a pre-dirty page", async () => {
     const dataRoot = await makeRepo();
+
     await writeFile(join(dataRoot, "wiki", "index.md"), "dirty before run\n");
+
     const agent = agentWriting({ "wiki/index.md": "mangled by run\n" });
 
     await expect(sandboxRun(dataRoot, { runAgent: agent })).rejects.toThrow(
       /accept-gate failed/,
     );
+  });
+
+  it("restores the re-edited page to its pre-run bytes", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(join(dataRoot, "wiki", "index.md"), "dirty before run\n");
+
+    const agent = agentWriting({ "wiki/index.md": "mangled by run\n" });
+
+    await sandboxRun(dataRoot, { runAgent: agent }).catch(() => undefined);
 
     expect(await readFile(join(dataRoot, "wiki", "index.md"), "utf8")).toBe(
       "dirty before run\n",
     );
   });
 
-  it("leaves a fully clean tree when the agent staged a new out-of-sandbox file", async () => {
+  it("fails the run when the agent stages an out-of-sandbox file", async () => {
     const dataRoot = await makeRepo();
+
     const agent: AgentRunner = async (_c, _a, options) => {
       await writeFile(join(options.cwd, "wiki", "rogue.md"), "rogue\n");
       await run("git", ["add", "--", "wiki/rogue.md"], {
@@ -505,15 +1099,52 @@ describe("runSandboxRun", () => {
       /accept-gate failed/,
     );
 
+    await readFile(join(dataRoot, "wiki", "rogue.md")).catch(() => undefined);
+  });
+
+  it("leaves the tree fully clean after the revert", async () => {
+    const dataRoot = await makeRepo();
+
+    const agent: AgentRunner = async (_c, _a, options) => {
+      await writeFile(join(options.cwd, "wiki", "rogue.md"), "rogue\n");
+      await run("git", ["add", "--", "wiki/rogue.md"], {
+        cwd: options.cwd,
+      });
+
+      return { stdout: "", stderr: "" };
+    };
+
+    await sandboxRun(dataRoot, { runAgent: agent }).catch(() => undefined);
+
     expect(await statusOf(dataRoot)).toBe("");
+
+    await readFile(join(dataRoot, "wiki", "rogue.md")).catch(() => undefined);
+  });
+
+  it("removes the staged out-of-sandbox file", async () => {
+    const dataRoot = await makeRepo();
+
+    const agent: AgentRunner = async (_c, _a, options) => {
+      await writeFile(join(options.cwd, "wiki", "rogue.md"), "rogue\n");
+      await run("git", ["add", "--", "wiki/rogue.md"], {
+        cwd: options.cwd,
+      });
+
+      return { stdout: "", stderr: "" };
+    };
+
+    await sandboxRun(dataRoot, { runAgent: agent }).catch(() => undefined);
+
     await expect(
       readFile(join(dataRoot, "wiki", "rogue.md")),
     ).rejects.toThrow();
   });
 
-  it("restores a staged pre-run untracked path to its pre-run bytes and untracked status", async () => {
+  it("fails the run when the agent stages a pre-run untracked path", async () => {
     const dataRoot = await makeRepo();
+
     await writeFile(join(dataRoot, "scratch.md"), "untracked before run\n");
+
     const agent: AgentRunner = async (_c, _a, options) => {
       await run("git", ["add", "--", "scratch.md"], { cwd: options.cwd });
       await writeFile(join(options.cwd, "scratch.md"), "mangled by run\n");
@@ -524,15 +1155,47 @@ describe("runSandboxRun", () => {
     await expect(sandboxRun(dataRoot, { runAgent: agent })).rejects.toThrow(
       /accept-gate failed/,
     );
+  });
+
+  it("restores the staged untracked file's bytes", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(join(dataRoot, "scratch.md"), "untracked before run\n");
+
+    const agent: AgentRunner = async (_c, _a, options) => {
+      await run("git", ["add", "--", "scratch.md"], { cwd: options.cwd });
+      await writeFile(join(options.cwd, "scratch.md"), "mangled by run\n");
+
+      return { stdout: "", stderr: "" };
+    };
+
+    await sandboxRun(dataRoot, { runAgent: agent }).catch(() => undefined);
 
     expect(await readFile(join(dataRoot, "scratch.md"), "utf8")).toBe(
       "untracked before run\n",
     );
+  });
+
+  it("restores the file's untracked status", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(join(dataRoot, "scratch.md"), "untracked before run\n");
+
+    const agent: AgentRunner = async (_c, _a, options) => {
+      await run("git", ["add", "--", "scratch.md"], { cwd: options.cwd });
+      await writeFile(join(options.cwd, "scratch.md"), "mangled by run\n");
+
+      return { stdout: "", stderr: "" };
+    };
+
+    await sandboxRun(dataRoot, { runAgent: agent }).catch(() => undefined);
+
     expect(await statusOf(dataRoot)).toBe("?? scratch.md\n");
   });
 
-  it("reverts the run's writes when the epilogue itself fails", async () => {
+  it("fails the run reporting the epilogue failure", async () => {
     const dataRoot = await makeRepo();
+
     const agent = async () => {
       const note = join(dataRoot, "wiki", "sandbox", "note-slug.md");
 
@@ -555,6 +1218,31 @@ describe("runSandboxRun", () => {
     }
 
     expect(failure.message).toMatch(/epilogue failed/);
+  });
+
+  it("reverts the run's writes when the epilogue fails", async () => {
+    const dataRoot = await makeRepo();
+
+    const agent = async () => {
+      const note = join(dataRoot, "wiki", "sandbox", "note-slug.md");
+
+      await mkdir(dirname(note), { recursive: true });
+      await writeFile(note, "sandbox note\n");
+      // The stamp step's write into this note will fail (EACCES for
+      // a non-root runner) — the epilogue must revert everything.
+      await chmod(note, 0o444);
+
+      return { stdout: "", stderr: "" };
+    };
+
+    const failure = await sandboxRun(dataRoot, { runAgent: agent }).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    if (failure === undefined) {
+      throw new Error("expected the epilogue to fail");
+    }
 
     const { stdout: status } = await run(
       "git",
@@ -563,6 +1251,31 @@ describe("runSandboxRun", () => {
     );
 
     expect(status).toBe("");
+  });
+
+  it("keeps the pre-run audit subjects", async () => {
+    const dataRoot = await makeRepo();
+
+    const agent = async () => {
+      const note = join(dataRoot, "wiki", "sandbox", "note-slug.md");
+
+      await mkdir(dirname(note), { recursive: true });
+      await writeFile(note, "sandbox note\n");
+      // The stamp step's write into this note will fail (EACCES for
+      // a non-root runner) — the epilogue must revert everything.
+      await chmod(note, 0o444);
+
+      return { stdout: "", stderr: "" };
+    };
+
+    const failure = await sandboxRun(dataRoot, { runAgent: agent }).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
+    if (failure === undefined) {
+      throw new Error("expected the epilogue to fail");
+    }
 
     const { stdout: subjects } = await run("git", ["log", "--format=%s"], {
       cwd: dataRoot,
@@ -584,10 +1297,11 @@ describe("revertPathsToLastCommit", () => {
     return dataRoot;
   }
 
-  it("restores the rename origin of an unstaged renamed offender to its committed state", async () => {
+  it("restores an unstaged rename's origin to its committed bytes", async () => {
     const dataRoot = await makeRenamedRepo();
 
     await rm(join(dataRoot, "wiki", "concepts", "old.md"));
+
     await writeFile(join(dataRoot, "wiki", "concepts", "new.md"), "page\n");
 
     await revertPathsToLastCommit(runContextAt(dataRoot), [
@@ -597,10 +1311,23 @@ describe("revertPathsToLastCommit", () => {
     await expect(
       readFile(join(dataRoot, "wiki", "concepts", "old.md"), "utf8"),
     ).resolves.toBe("page\n");
+  });
+
+  it("leaves a clean tree after the rename revert", async () => {
+    const dataRoot = await makeRenamedRepo();
+
+    await rm(join(dataRoot, "wiki", "concepts", "old.md"));
+
+    await writeFile(join(dataRoot, "wiki", "concepts", "new.md"), "page\n");
+
+    await revertPathsToLastCommit(runContextAt(dataRoot), [
+      "wiki/concepts/new.md",
+    ]);
+
     expect(await statusOf(dataRoot)).toBe("");
   });
 
-  it("restores the rename origin of a staged rename (git mv) to its committed state", async () => {
+  it("restores a staged rename's origin to its committed bytes", async () => {
     const dataRoot = await makeRenamedRepo();
 
     await run("git", ["mv", "wiki/concepts/old.md", "wiki/concepts/new.md"], {
@@ -614,6 +1341,19 @@ describe("revertPathsToLastCommit", () => {
     await expect(
       readFile(join(dataRoot, "wiki", "concepts", "old.md"), "utf8"),
     ).resolves.toBe("page\n");
+  });
+
+  it("leaves a clean tree after the rename revert", async () => {
+    const dataRoot = await makeRenamedRepo();
+
+    await run("git", ["mv", "wiki/concepts/old.md", "wiki/concepts/new.md"], {
+      cwd: dataRoot,
+    });
+
+    await revertPathsToLastCommit(runContextAt(dataRoot), [
+      "wiki/concepts/new.md",
+    ]);
+
     expect(await statusOf(dataRoot)).toBe("");
   });
 });
