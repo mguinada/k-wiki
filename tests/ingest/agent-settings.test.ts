@@ -1274,7 +1274,7 @@ describe("loadAgentSettings whitelist resolution (issue #144)", () => {
     process.env.PI_CODING_AGENT_DIR = agentDir;
 
     try {
-      const settings = await loadAgentSettings(settingsPath, {
+      await loadAgentSettings(settingsPath, {
         onProgress: (message) => warnings.push(message),
       });
 
