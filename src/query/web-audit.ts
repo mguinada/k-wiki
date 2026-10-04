@@ -1,10 +1,9 @@
 /**
  * The `--web` run's machine audit: every web tool call parsed from
  * the enrichment run's `--mode json` event stream, the cited-URL
- * extraction, and the reconciliation that fails a citation the
- * audit cannot account for. Pure query-domain code: the audit is
- * text in, data out; the artifact shape it feeds lives in
- * web-artifact.ts.
+ * extraction, and the reconciliation that fails a citation the audit
+ * cannot account for. Pure query-domain code — text in, data out; the
+ * artifact shape it feeds lives in web-artifact.ts.
  */
 
 /** One recorded web tool call: the audit row's machine data. */
@@ -17,8 +16,7 @@ export interface WebCall {
   readonly results: number;
   /** When the call ran, epoch milliseconds. */
   readonly timestamp: number;
-  /** Every URL the call exposed: fetch targets plus URLs found in
-   *  the recorded result text. */
+  /** Every URL the call exposed: fetch targets plus result-text URLs. */
   readonly urls: readonly string[];
   /** True when the tool result was an error. */
   readonly failed: boolean;
@@ -32,16 +30,33 @@ export interface WebSource {
   readonly retrieved: string;
 }
 
-/** URLs mentioned in free text, in first-appearance order: markdown
- *  link targets and bare URLs alike. A parenthesized segment joins
- *  the URL only when balanced (GFM autolink style): the `(planet)`
- *  of "Mercury_(planet)" stays; a sentence's wrapping closer does
- *  not. Trailing sentence punctuation is stripped. */
-export function extractUrls(text: string): string[] {
-  const matches =
-    text.match(/https?:\/\/(?:[^\s()<>[\]{}"'`]|\([^()\s]*\))+/g) ?? [];
+/** One matched URL as the text cites it: closing parentheses the
+ *  URL did not open (a sentence's wrapping closer, GFM-autolink
+ *  style) and trailing sentence punctuation never join it. */
+function citedUrl(url: string): string {
+  let end = url.length;
+  let excess = url.split(")").length - url.split("(").length;
 
-  return [...new Set(matches.map((url) => url.replace(/[.,;:!?'"]+$/, "")))];
+  while (end > 0) {
+    const ch = url.charAt(end - 1);
+
+    if (/[.,;:!?'"]/.test(ch) || (ch === ")" && excess > 0)) {
+      end -= 1;
+      excess -= ch === ")" ? 1 : 0;
+    } else {
+      break;
+    }
+  }
+
+  return url.slice(0, end);
+}
+
+/** URLs mentioned in free text, in first-appearance order: markdown
+ *  link targets and bare URLs alike. */
+export function extractUrls(text: string): string[] {
+  const matches = text.match(/https?:\/\/[^\s<>[\]{}"'`]+/g) ?? [];
+
+  return [...new Set(matches.map(citedUrl))];
 }
 
 /** The call arguments' URL targets, if any. */
@@ -281,25 +296,13 @@ function consolidatedSources(
   cited: readonly string[],
   calls: readonly WebCall[],
 ): WebSource[] {
-  const sources: WebSource[] = [];
+  return cited.flatMap((url) => {
+    const call = calls.find((entry) => entry.urls.includes(url));
 
-  for (const url of cited) {
-    let retrieved: string | undefined;
-
-    for (const call of calls) {
-      if (call.urls.includes(url)) {
-        retrieved = dateOnly(call.timestamp);
-
-        break;
-      }
-    }
-
-    if (retrieved !== undefined) {
-      sources.push({ url, retrieved });
-    }
-  }
-
-  return sources;
+    return call === undefined
+      ? []
+      : [{ url, retrieved: dateOnly(call.timestamp) }];
+  });
 }
 
 /** What the sources reconciliation decided for one enrichment. */

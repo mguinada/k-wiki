@@ -126,6 +126,18 @@ describe("reconcileWebSources", () => {
     expect(reconciliation.sources).toEqual([{ url, retrieved: "2026-10-03" }]);
   });
 
+  it("reconciles a cited URL with nested balanced parentheses", () => {
+    const url = "https://en.wikipedia.org/wiki/Foo_(bar_(baz))";
+    const fetch: WebCall = { ...fetchCall, target: url, urls: [url] };
+    const reconciliation = reconcileWebSources(
+      `- [Foo](${url}) confirms the topic (retrieved 2026-10-03).`,
+      [fetch],
+    );
+
+    expect(reconciliation.failure).toBeUndefined();
+    expect(reconciliation.sources).toEqual([{ url, retrieved: "2026-10-03" }]);
+  });
+
   it("exempts a failed fetch from the uncited-call rule", () => {
     const reconciliation = reconcileWebSources("- nothing cited.", [
       { ...fetchCall, failed: true },
@@ -169,6 +181,12 @@ describe("extractUrls", () => {
     expect(
       extractUrls("see https://en.wikipedia.org/wiki/Mercury_(planet) today"),
     ).toEqual(["https://en.wikipedia.org/wiki/Mercury_(planet)"]);
+  });
+
+  it("keeps nested balanced parentheses inside a URL", () => {
+    expect(
+      extractUrls("see https://en.wikipedia.org/wiki/Foo_(bar_(baz)) today"),
+    ).toEqual(["https://en.wikipedia.org/wiki/Foo_(bar_(baz))"]);
   });
 
   it("leaves a sentence's wrapping closing parenthesis out of the URL", () => {
