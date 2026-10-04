@@ -324,7 +324,7 @@ describe("checkWikiLinks", () => {
     expect(report.broken).toEqual([]);
   });
 
-  it("scans the sandbox namespace and validates its links to main pages", async () => {
+  it("scans the sandbox namespace", async () => {
     const root = await makeWiki({
       "concepts/vector-database.md": "# Vector Database\n",
       "sandbox/proposal.md": "Discusses [[vector-database]].\n",
@@ -333,6 +333,16 @@ describe("checkWikiLinks", () => {
     const report = await checkWikiLinks(join(root, "wiki"));
 
     expect(report.broken).toEqual([]);
+  });
+
+  it("validates the sandbox page's links to main pages", async () => {
+    const root = await makeWiki({
+      "concepts/vector-database.md": "# Vector Database\n",
+      "sandbox/proposal.md": "Discusses [[vector-database]].\n",
+    });
+
+    const report = await checkWikiLinks(join(root, "wiki"));
+
     expect(report.pages).toBe(2);
   });
 

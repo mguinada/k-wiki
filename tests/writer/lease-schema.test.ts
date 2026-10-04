@@ -35,10 +35,19 @@ describe("lease schema", () => {
     expect(LEASE_SUBJECT).toBe("k-wiki shared-writer lease v1");
   });
 
-  it("matches real UTC timestamps and rejects look-alikes", () => {
+  it("accepts real UTC Z timestamps", () => {
     expect(ISO_Z_TIMESTAMP.test("2026-01-01T00:00:00Z")).toBe(true);
+  });
+
+  it("accepts fractional-second Z timestamps", () => {
     expect(ISO_Z_TIMESTAMP.test("2026-01-01T00:00:00.123Z")).toBe(true);
+  });
+
+  it("rejects a space-separated timestamp", () => {
     expect(ISO_Z_TIMESTAMP.test("2026-01-01 00:00:00Z")).toBe(false);
+  });
+
+  it("rejects a timestamp without the Z", () => {
     expect(ISO_Z_TIMESTAMP.test("2026-01-01T00:00:00")).toBe(false);
   });
 

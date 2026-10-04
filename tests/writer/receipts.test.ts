@@ -46,14 +46,20 @@ describe("receipt shape", () => {
     expect(parseReceipt(text, "receipt.json")).toEqual(receipt);
   });
 
-  it("rejects malformed JSON and wrong versions", () => {
+  it("rejects malformed receipt JSON", () => {
     expect(() => parseReceipt("{", "r")).toThrow(/not valid JSON/);
+  });
+
+  it("rejects a wrong receipt version", () => {
     expect(() =>
       parseReceipt(
         JSON.stringify({ ...buildReceipt("a".repeat(40), PLAN), version: 2 }),
         "r",
       ),
     ).toThrow(/version-1/);
+  });
+
+  it("rejects an empty receipt", () => {
     expect(() => parseReceipt("{}", "r")).toThrow(/version-1/);
   });
 
@@ -77,10 +83,15 @@ describe("matchReceipt", () => {
     });
   });
 
-  it("rejects a receipt planned against an older remote SHA", () => {
+  it("fails the match against an older remote SHA", () => {
     const match = matchReceipt(buildReceipt("b".repeat(40), PLAN), base, PLAN);
 
     expect(match).toMatchObject({ ok: false });
+  });
+
+  it("names the moved canonical head as the reason", () => {
+    const match = matchReceipt(buildReceipt("b".repeat(40), PLAN), base, PLAN);
+
     expect((match as { reason: string }).reason).toContain("canonical is now");
   });
 
@@ -187,12 +198,27 @@ describe("matchReceipt", () => {
 });
 
 describe("receipt file", () => {
-  it("writes and reads back at the per-machine path", async () => {
+  it("writes the receipt at the per-machine path", async () => {
     const dataRoot = await tempDataRoot();
+
     const path = await writeReceipt(dataRoot, buildReceipt(base0(), PLAN));
+
     const loaded = await readReceipt(path);
 
     expect(loaded.plans).toEqual(PLAN);
+
+    function base0(): string {
+      return "a".repeat(40);
+    }
+  });
+
+  it("reads the receipt back with its plans", async () => {
+    const dataRoot = await tempDataRoot();
+
+    const path = await writeReceipt(dataRoot, buildReceipt(base0(), PLAN));
+
+    await readReceipt(path);
+
     expect(path).toContain(RECEIPT_FILENAME);
 
     function base0(): string {
@@ -200,10 +226,11 @@ describe("receipt file", () => {
     }
   });
 
-  it("keeps the receipt out of git via .git/info/exclude", async () => {
+  it("excludes the receipt from git", async () => {
     const dataRoot = await tempDataRoot();
 
     await ensureReceiptIgnored(dataRoot, () => {});
+
     await ensureReceiptIgnored(dataRoot, () => {});
 
     const exclude = await readFile(
@@ -212,17 +239,46 @@ describe("receipt file", () => {
     );
 
     expect(exclude).toContain(RECEIPT_FILENAME);
+  });
+
+  it("excludes the receipt exactly once", async () => {
+    const dataRoot = await tempDataRoot();
+
+    await ensureReceiptIgnored(dataRoot, () => {});
+
+    await ensureReceiptIgnored(dataRoot, () => {});
+
+    const exclude = await readFile(
+      join(dataRoot, ".git", "info", "exclude"),
+      "utf8",
+    );
+
     expect(exclude.match(new RegExp(RECEIPT_FILENAME, "g"))).toHaveLength(1);
   });
 });
 
 describe("describeReceipt", () => {
-  it("lists exact paths and the confirmation command", () => {
+  it("lists the removal in the confirmation text", () => {
     const lines = describeReceipt(buildReceipt("a".repeat(40), PLAN));
+
     const text = lines.join("\n");
 
     expect(text).toContain("removal  Engineering/old-note.md");
+  });
+
+  it("lists the rename in the confirmation text", () => {
+    const lines = describeReceipt(buildReceipt("a".repeat(40), PLAN));
+
+    const text = lines.join("\n");
+
     expect(text).toContain("rename   Engineering/a.md → b/a.md");
+  });
+
+  it("names the confirmation flag", () => {
+    const lines = describeReceipt(buildReceipt("a".repeat(40), PLAN));
+
+    const text = lines.join("\n");
+
     expect(text).toContain("--removal-receipt");
   });
 

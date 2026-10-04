@@ -84,8 +84,11 @@ describe("migrateLogHeader", () => {
     );
   });
 
-  it("leaves a header without the legacy comment byte-identical", () => {
+  it("leaves a header without the comment untouched", () => {
     expect(migrateLogHeader("# Wiki Log\n\n")).toBe("# Wiki Log\n\n");
+  });
+
+  it("leaves a frontmatter header untouched", () => {
     expect(migrateLogHeader("---\ntitle: X\n---\n\n")).toBe(
       "---\ntitle: X\n---\n\n",
     );
@@ -172,7 +175,7 @@ describe("logDirection", () => {
 });
 
 describe("invertLog", () => {
-  it("refuses an ambiguous log without writing", async () => {
+  it("refuses an ambiguous log", async () => {
     const wikiDir = await makeWiki(
       [
         "# Wiki Log",
@@ -189,6 +192,25 @@ describe("invertLog", () => {
     await expect(
       invertLog(wikiDir, { date: "2026-09-01", write: true }),
     ).rejects.toThrow(/ambiguous/);
+  });
+
+  it("writes nothing on the refusal", async () => {
+    const wikiDir = await makeWiki(
+      [
+        "# Wiki Log",
+        "",
+        "## [2026-07-01] a | x",
+        "",
+        "## [2026-08-01] b | y",
+        "",
+        "## [2026-07-15] c | z",
+        "",
+      ].join("\n"),
+    );
+
+    await invertLog(wikiDir, { date: "2026-09-01", write: true }).catch(
+      () => undefined,
+    );
 
     expect(await readLog(wikiDir)).toContain("## [2026-07-15] c | z");
   });
@@ -224,7 +246,7 @@ describe("invertLog", () => {
     ).resolves.toMatchObject({ outcome: "no-op", reason: "log-inversion" });
   });
 
-  it("exits as a no-op when the dates already run newest-first", async () => {
+  it("reports a no-op for a newest-first log", async () => {
     const log = [
       "# Wiki Log",
       "",
@@ -233,16 +255,32 @@ describe("invertLog", () => {
       "## [2026-07-01] ingest | Old",
       "",
     ].join("\n");
+
     const wikiDir = await makeWiki(log);
 
     await expect(
       invertLog(wikiDir, { date: "2026-09-01", write: true }),
     ).resolves.toMatchObject({ outcome: "no-op", reason: "newest-first" });
+  });
+
+  it("leaves the log byte-identical", async () => {
+    const log = [
+      "# Wiki Log",
+      "",
+      "## [2026-08-01] ingest | New",
+      "",
+      "## [2026-07-01] ingest | Old",
+      "",
+    ].join("\n");
+
+    const wikiDir = await makeWiki(log);
+
+    await invertLog(wikiDir, { date: "2026-09-01", write: true });
 
     expect(await readLog(wikiDir)).toBe(log);
   });
 
-  it("writes nothing on the dry-run default", async () => {
+  it("reports an unwritten inversion on the dry-run default", async () => {
     const wikiDir = await makeWiki(OLDEST_FIRST);
 
     const report = await invertLog(wikiDir, { date: "2026-09-01" });
@@ -253,11 +291,17 @@ describe("invertLog", () => {
       written: false,
       commentMigrated: false,
     });
+  });
+
+  it("leaves the log in oldest-first order", async () => {
+    const wikiDir = await makeWiki(OLDEST_FIRST);
+
+    await invertLog(wikiDir, { date: "2026-09-01" });
 
     expect(await readLog(wikiDir)).toBe(OLDEST_FIRST);
   });
 
-  it("inverts the entries losslessly with the audit entry on top", async () => {
+  it("reports the inversion with its entry count", async () => {
     const wikiDir = await makeRepo(OLDEST_FIRST);
 
     const report = await invertLog(wikiDir, {
@@ -270,6 +314,15 @@ describe("invertLog", () => {
       entries: 2,
       written: true,
       commentMigrated: false,
+    });
+  });
+
+  it("writes the inverted log with the audit entry on top", async () => {
+    const wikiDir = await makeRepo(OLDEST_FIRST);
+
+    await invertLog(wikiDir, {
+      date: "2026-09-01",
+      write: true,
     });
 
     expect(await readLog(wikiDir)).toBe(
@@ -290,7 +343,7 @@ describe("invertLog", () => {
     );
   });
 
-  it("migrates the legacy standing comment while inverting", async () => {
+  it("reports the migrated comment", async () => {
     const wikiDir = await makeRepo(
       [
         "# Wiki Log",
@@ -319,6 +372,30 @@ describe("invertLog", () => {
       written: true,
       commentMigrated: true,
     });
+  });
+
+  it("writes the migrated header into the inverted log", async () => {
+    const wikiDir = await makeRepo(
+      [
+        "# Wiki Log",
+        "",
+        '<!-- Append-only. Every entry starts with "## [YYYY-MM-DD] <operation> | <title>" so the log stays parseable with standard tools (guide §12). -->',
+        "",
+        "## [2026-07-01] ingest | Old",
+        "",
+        "Old.",
+        "",
+        "## [2026-08-01] ingest | New",
+        "",
+        "New.",
+        "",
+      ].join("\n"),
+    );
+
+    await invertLog(wikiDir, {
+      date: "2026-09-01",
+      write: true,
+    });
 
     expect(await readLog(wikiDir)).toBe(
       [
@@ -340,21 +417,31 @@ describe("invertLog", () => {
     );
   });
 
-  it("is idempotent: a re-run is a no-op", async () => {
+  it("reports a re-run as a no-op", async () => {
+    const wikiDir = await makeRepo(OLDEST_FIRST);
+
+    await invertLog(wikiDir, { date: "2026-09-01", write: true });
+
+    await readLog(wikiDir);
+
+    await expect(
+      invertLog(wikiDir, { date: "2026-09-02", write: true }),
+    ).resolves.toMatchObject({ outcome: "no-op" });
+  });
+
+  it("leaves the log byte-identical on the re-run", async () => {
     const wikiDir = await makeRepo(OLDEST_FIRST);
 
     await invertLog(wikiDir, { date: "2026-09-01", write: true });
 
     const before = await readLog(wikiDir);
 
-    await expect(
-      invertLog(wikiDir, { date: "2026-09-02", write: true }),
-    ).resolves.toMatchObject({ outcome: "no-op" });
+    await invertLog(wikiDir, { date: "2026-09-02", write: true });
 
     expect(await readLog(wikiDir)).toBe(before);
   });
 
-  it("inverts a headerless legacy log without inventing a header", async () => {
+  it("reports the headerless inversion", async () => {
     const wikiDir = await makeRepo(
       "## [2026-07-01] sandbox | old\n\nPages; expires X.\n## [2026-08-01] sandbox | new\n\nPages; expires Y.\n",
     );
@@ -369,6 +456,17 @@ describe("invertLog", () => {
       entries: 2,
       written: true,
       commentMigrated: false,
+    });
+  });
+
+  it("invents no header for a headerless log", async () => {
+    const wikiDir = await makeRepo(
+      "## [2026-07-01] sandbox | old\n\nPages; expires X.\n## [2026-08-01] sandbox | new\n\nPages; expires Y.\n",
+    );
+
+    await invertLog(wikiDir, {
+      date: "2026-09-01",
+      write: true,
     });
 
     expect(await readLog(wikiDir)).toBe(
@@ -398,7 +496,7 @@ describe("invertLog", () => {
     );
   });
 
-  it("inverts a header missing its blank line without tripping the post-write gate", async () => {
+  it("inverts a header missing its blank line", async () => {
     const wikiDir = await makeRepo(
       "# Wiki Log\n## [2026-07-01] a | x\n\nOld.\n## [2026-08-01] b | y\n\nNew.\n",
     );
@@ -411,13 +509,21 @@ describe("invertLog", () => {
       written: true,
       commentMigrated: false,
     });
+  });
+
+  it("keeps the missing blank line out of the result", async () => {
+    const wikiDir = await makeRepo(
+      "# Wiki Log\n## [2026-07-01] a | x\n\nOld.\n## [2026-08-01] b | y\n\nNew.\n",
+    );
+
+    await invertLog(wikiDir, { date: "2026-09-01", write: true });
 
     expect(await readLog(wikiDir)).toBe(
       "# Wiki Log\n## [2026-09-01] log-inversion | 2 entries\n\n## [2026-08-01] b | y\n\nNew.\n## [2026-07-01] a | x\n\nOld.\n",
     );
   });
 
-  it("inverts a log missing its trailing newline without tripping the post-write gate", async () => {
+  it("inverts a log missing its trailing newline", async () => {
     const wikiDir = await makeRepo(
       "# Wiki Log\n\n## [2026-07-01] a | x\n\nOld.\n\n## [2026-08-01] b | y\n\nNew.",
     );
@@ -430,6 +536,14 @@ describe("invertLog", () => {
       written: true,
       commentMigrated: false,
     });
+  });
+
+  it("writes the normalized trailing newline", async () => {
+    const wikiDir = await makeRepo(
+      "# Wiki Log\n\n## [2026-07-01] a | x\n\nOld.\n\n## [2026-08-01] b | y\n\nNew.",
+    );
+
+    await invertLog(wikiDir, { date: "2026-09-01", write: true });
 
     expect(await readLog(wikiDir)).toBe(
       "# Wiki Log\n\n## [2026-09-01] log-inversion | 2 entries\n\n## [2026-08-01] b | y\n\nNew.\n\n## [2026-07-01] a | x\n\nOld.\n",
@@ -446,13 +560,21 @@ describe("invertLog", () => {
     ).rejects.toThrow(/uncommitted changes/);
   });
 
-  it("refuses an audit date older than the post-inversion top entry", async () => {
+  it("refuses an audit date older than the top entry", async () => {
     const wikiDir = await makeRepo(OLDEST_FIRST);
 
     await expect(
       invertLog(wikiDir, { date: "2026-07-15", write: true }),
     ).rejects.toThrow(
       /audit date 2026-07-15 sorts before the newest entry 2026-08-01/,
+    );
+  });
+
+  it("leaves the log untouched on the refusal", async () => {
+    const wikiDir = await makeRepo(OLDEST_FIRST);
+
+    await invertLog(wikiDir, { date: "2026-07-15", write: true }).catch(
+      () => undefined,
     );
 
     expect(await readLog(wikiDir)).toBe(OLDEST_FIRST);

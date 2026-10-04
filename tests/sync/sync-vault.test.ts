@@ -1266,17 +1266,41 @@ describe("sync-vault CLI", () => {
     }
   });
 
-  it("renders a removal run line for line", async () => {
+  it("renders the removal summary line", async () => {
     const ws = await makeWorkspace();
 
     await runCli([ws.configPath, ws.rawDir]);
+
     await rm(sourcePath(ws, "Scratch/temp-research.md"));
+
     const { out } = await runCli([ws.configPath, ws.rawDir]);
 
     expect(out.split("\n")[0]).toBe(
       `vault "${vaultName()}": 6 selected, 0 copied, 6 unchanged, 1 removed`,
     );
+  });
+
+  it("lists the removed page", async () => {
+    const ws = await makeWorkspace();
+
+    await runCli([ws.configPath, ws.rawDir]);
+
+    await rm(sourcePath(ws, "Scratch/temp-research.md"));
+
+    const { out } = await runCli([ws.configPath, ws.rawDir]);
+
     expect(out).toContain("  - Scratch/temp-research.md");
+  });
+
+  it("renders the removal completion line", async () => {
+    const ws = await makeWorkspace();
+
+    await runCli([ws.configPath, ws.rawDir]);
+
+    await rm(sourcePath(ws, "Scratch/temp-research.md"));
+
+    const { out } = await runCli([ws.configPath, ws.rawDir]);
+
     expect(out.split("\n").at(-1)).toMatch(
       /^sync complete: 0 copied, 1 removed \(\d+(?:h\d{2}m\d{2}|m\d{2})?s\)$/,
     );
@@ -1395,23 +1419,47 @@ describe("sync-vault CLI", () => {
     expect(out).toContain("sync complete: no changes");
   });
 
-  it("renders a prune-only run line for line", async () => {
+  it("renders the prune-only summary line", async () => {
     const ws = await makeWorkspace();
 
     await runCli([ws.configPath, ws.rawDir]);
+
     await readdRetiredNamespace(ws);
+
     const { out } = await runCli([ws.configPath, ws.rawDir]);
 
     expect(out.split("\n")[0]).toBe(
       `vault "${vaultName()}": 7 selected, 0 copied, 7 unchanged, 0 removed`,
     );
+  });
+
+  it("lists the pruned stale namespace", async () => {
+    const ws = await makeWorkspace();
+
+    await runCli([ws.configPath, ws.rawDir]);
+
+    await readdRetiredNamespace(ws);
+
+    const { out } = await runCli([ws.configPath, ws.rawDir]);
+
     expect(out).toContain("  - Retired/ (stale namespace, not configured)");
+  });
+
+  it("renders the prune completion line", async () => {
+    const ws = await makeWorkspace();
+
+    await runCli([ws.configPath, ws.rawDir]);
+
+    await readdRetiredNamespace(ws);
+
+    const { out } = await runCli([ws.configPath, ws.rawDir]);
+
     expect(out.split("\n").at(-1)).toMatch(
       /^sync complete: 0 copied, 0 removed, 1 namespace pruned \(\d+(?:h\d{2}m\d{2}|m\d{2})?s\)$/,
     );
   });
 
-  it("exits 0 and lists the would-ingest notes for --dry-run", async () => {
+  it("exits 0 listing the would-ingest candidates for --dry-run", async () => {
     const ws = await makeWorkspace();
 
     const { out } = await runCli(["--dry-run", ws.configPath, ws.rawDir]);
@@ -1419,10 +1467,22 @@ describe("sync-vault CLI", () => {
     expect(out.split("\n")[0]).toBe(
       `vault "${vaultName()}": 7 of 9 candidates would be ingested`,
     );
+  });
+
+  it("lists every would-ingest note for --dry-run", async () => {
+    const ws = await makeWorkspace();
+
+    const { out } = await runCli(["--dry-run", ws.configPath, ws.rawDir]);
 
     for (const rel of SELECTED_PATHS) {
       expect(out).toContain(`  + ${rel}`);
     }
+  });
+
+  it("ends the --dry-run summary promising nothing written", async () => {
+    const ws = await makeWorkspace();
+
+    const { out } = await runCli(["--dry-run", ws.configPath, ws.rawDir]);
 
     expect(out.split("\n").at(-1)).toMatch(
       /^dry-run complete: nothing written \(\d+(?:h\d{2}m\d{2}|m\d{2})?s\)$/,
@@ -1469,12 +1529,19 @@ describe("sync-vault CLI", () => {
     expect(process.exitCode).toBe(1);
   });
 
-  it("rejects more than two positionals", async () => {
+  it("rejects a third positional on stderr", async () => {
     const ws = await makeWorkspace();
 
     const { err } = await runCli([ws.configPath, ws.rawDir, "extra"]);
 
     expect(err).toContain("expected at most two arguments");
+  });
+
+  it("exits 1", async () => {
+    const ws = await makeWorkspace();
+
+    await runCli([ws.configPath, ws.rawDir, "extra"]);
+
     expect(process.exitCode).toBe(1);
   });
   describe("sync-vault CLI help", () => {
@@ -1564,9 +1631,11 @@ describe("runVaultSync repo-source rejection", () => {
     ).rejects.toThrow(/repo source.*sync-repo/);
   });
 
-  it("rejects a repo source before writing anything to the raw dir", async () => {
+  it("rejects a repo source", async () => {
     const ws = await makeWorkspace();
+
     const configPath = join(ws.dir, "sync-meta.json");
+
     const rawDir = join(ws.dir, "raw-meta");
 
     await writeFile(
@@ -1585,6 +1654,34 @@ describe("runVaultSync repo-source rejection", () => {
     );
 
     await expect(runVaultSync({ configPath, rawDir })).rejects.toThrow();
+
+    await stat(rawDir).catch(() => undefined);
+  });
+
+  it("writes nothing to the raw dir", async () => {
+    const ws = await makeWorkspace();
+
+    const configPath = join(ws.dir, "sync-meta.json");
+
+    const rawDir = join(ws.dir, "raw-meta");
+
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        vaults: [
+          {
+            source: "repo",
+            name: "k-wiki",
+            root: ws.dir,
+            include: ["README.md"],
+          },
+        ],
+      }),
+      "utf8",
+    );
+
+    await runVaultSync({ configPath, rawDir }).catch(() => undefined);
+
     await expect(stat(rawDir)).rejects.toMatchObject({ code: "ENOENT" });
   });
 

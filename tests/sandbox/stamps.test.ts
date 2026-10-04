@@ -166,7 +166,7 @@ describe("sandboxLogEntry", () => {
     ).toBe(true);
   });
 
-  it("names every committed page and the expiry", () => {
+  it("names the committed page in the stamp entry", () => {
     const entry = sandboxLogEntry({
       date: "2026-08-20",
       slug: "attention-notes",
@@ -175,6 +175,16 @@ describe("sandboxLogEntry", () => {
     });
 
     expect(entry).toContain("wiki/sandbox/attention-notes.md");
+  });
+
+  it("carries the expiry in the stamp entry", () => {
+    const entry = sandboxLogEntry({
+      date: "2026-08-20",
+      slug: "attention-notes",
+      expires: "2026-08-27",
+      pages: ["wiki/sandbox/attention-notes.md"],
+    });
+
     expect(entry).toContain("2026-08-27");
   });
 });

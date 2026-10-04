@@ -117,28 +117,43 @@ describe("lease body strictness (issue #390 fail-closed)", () => {
     expect(() => parseLeaseBody(text, "lease")).toThrow(/"base" missing/);
   });
 
-  it("rejects junk around the renewals integer (no parseInt slack)", () => {
+  it("rejects garbage after the renewals integer", () => {
     expect(() =>
       parseLeaseBody(bodyWith({ renewals: "2 garbage" }), "lease"),
     ).toThrow(/"renewals" is not a plain count/);
+  });
+
+  it("rejects a hex renewals value", () => {
     expect(() =>
       parseLeaseBody(bodyWith({ renewals: "0x2" }), "lease"),
     ).toThrow(/"renewals" is not a plain count/);
+  });
+
+  it("rejects a negative renewals value", () => {
     expect(() => parseLeaseBody(bodyWith({ renewals: "-1" }), "lease")).toThrow(
       /"renewals" is not a plain count/,
     );
+  });
+
+  it("rejects junk around the renewals integer (no parseInt slack)", () => {
     expect(() => parseLeaseBody(bodyWith({ renewals: " 2" }), "lease")).toThrow(
       /"renewals" is not a plain count/,
     );
   });
 
-  it("rejects non-ISO-8601-Z acquired/expires timestamps", () => {
+  it("rejects a non-ISO expires timestamp", () => {
     expect(() =>
       parseLeaseBody(bodyWith({ expires: "yesterday" }), "lease"),
     ).toThrow(/"expires" is not an ISO-8601 Z timestamp/);
+  });
+
+  it("rejects a space-separated acquired timestamp", () => {
     expect(() =>
       parseLeaseBody(bodyWith({ acquired: "2026-01-01 00:00:00" }), "lease"),
     ).toThrow(/"acquired" is not an ISO-8601 Z timestamp/);
+  });
+
+  it("rejects an out-of-range expires timestamp", () => {
     expect(() =>
       parseLeaseBody(bodyWith({ expires: "2026-13-40T99:00:00Z" }), "lease"),
     ).toThrow(/is not a real date/);

@@ -102,14 +102,25 @@ async function runMain(args: readonly string[]): Promise<{
 }
 
 describe("lintFlags", () => {
-  it("maps every flag and the positional onto the typed flag set", () => {
+  it("parses without error", () => {
     const parsed = parseArgs(
       ["--settings", "s.yml", "--timeout", "5", "-w", "eng", "raw"],
       LINT_CLI_SPEC,
     );
-    const { flags, error } = lintFlags(parsed);
+
+    const { error } = lintFlags(parsed);
 
     expect(error).toBeUndefined();
+  });
+
+  it("maps the typed flag set", () => {
+    const parsed = parseArgs(
+      ["--settings", "s.yml", "--timeout", "5", "-w", "eng", "raw"],
+      LINT_CLI_SPEC,
+    );
+
+    const { flags } = lintFlags(parsed);
+
     expect(flags).toEqual({
       settings: "s.yml",
       timeoutMs: 5000,
@@ -119,10 +130,15 @@ describe("lintFlags", () => {
     });
   });
 
-  it("defaults every flag to absent", () => {
-    const { flags, error } = lintFlags(parseArgs([], LINT_CLI_SPEC));
+  it("parses with no flags", () => {
+    const { error } = lintFlags(parseArgs([], LINT_CLI_SPEC));
 
     expect(error).toBeUndefined();
+  });
+
+  it("leaves every value flag undefined", () => {
+    const { flags } = lintFlags(parseArgs([], LINT_CLI_SPEC));
+
     expect(flags).toEqual({
       settings: undefined,
       timeoutMs: undefined,
@@ -148,10 +164,15 @@ describe("lintFlags", () => {
 });
 
 describe("wiki-lint CLI", () => {
-  it("answers -h with usage and exits clean", async () => {
-    const { out, err } = await runMain(["-h"]);
+  it("answers -h with usage", async () => {
+    const { out } = await runMain(["-h"]);
 
     expect(out.startsWith("Usage: wiki-lint")).toBe(true);
+  });
+
+  it("answers -h with nothing on stderr", async () => {
+    const { err } = await runMain(["-h"]);
+
     expect(err).toBe("");
   });
 
@@ -191,7 +212,7 @@ describe("wiki-lint CLI", () => {
     expect(status.stdout).toContain("?? outputs/");
   });
 
-  it("exits 1 when the agent times out, naming the budget", async () => {
+  it("reports the failure under the wiki-lint prefix", async () => {
     const repo = await makeRepo();
 
     process.env.STUB_MODE = "sleep";
@@ -205,11 +226,41 @@ describe("wiki-lint CLI", () => {
     ]);
 
     expect(err).toContain("wiki-lint:");
+  });
+
+  it("names the timeout budget on stderr", async () => {
+    const repo = await makeRepo();
+
+    process.env.STUB_MODE = "sleep";
+
+    const { err } = await runMain([
+      "--settings",
+      repo.settingsPath,
+      "--timeout",
+      "1",
+      repo.rawDir,
+    ]);
+
     expect(err).toContain("timed out after 1 second");
+  });
+
+  it("exits 1", async () => {
+    const repo = await makeRepo();
+
+    process.env.STUB_MODE = "sleep";
+
+    await runMain([
+      "--settings",
+      repo.settingsPath,
+      "--timeout",
+      "1",
+      repo.rawDir,
+    ]);
+
     expect(process.exitCode).toBe(1);
   });
 
-  it("exits 1 and names the check when a guardrail trips", async () => {
+  it("names the tripped guardrail on stderr", async () => {
     const repo = await makeRepo();
 
     process.env.STUB_MODE = "rebel";
@@ -223,6 +274,15 @@ describe("wiki-lint CLI", () => {
     expect(err).toContain(
       "lint guardrail check 1 (immutability) failed; reverted to",
     );
+  });
+
+  it("exits 1", async () => {
+    const repo = await makeRepo();
+
+    process.env.STUB_MODE = "rebel";
+
+    await runMain(["--settings", repo.settingsPath, repo.rawDir]);
+
     expect(process.exitCode).toBe(1);
   });
 
