@@ -112,7 +112,6 @@ describe("runWikiIngest", () => {
 
   it("falls back to the next target after a startup failure", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
-    const progress: string[] = [];
     let attempts = 0;
 
     await writeFile(
@@ -120,7 +119,7 @@ describe("runWikiIngest", () => {
       "command: pi\ntargets: [zai/GLM-5.2, openrouter/moonshotai/kimi-k2.6]\nreasoning: high\n",
     );
     await runWikiIngest({
-      ...optionsFor(h, { onProgress: (message) => progress.push(message) }),
+      ...optionsFor(h),
       runAgent: async (_command, _args) => {
         attempts += 1;
 
@@ -395,15 +394,13 @@ describe("runWikiIngest", () => {
   it("omits the absent whitelist entry from the invocation (issue #144)", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
 
-    const progress: string[] = [];
-
     await writeFile(
       h.settingsPath,
       `${SETTINGS_YML}isolate.skills: [.agents/skills/absent]\n`,
     );
 
     await runWikiIngest({
-      ...optionsFor(h, { onProgress: (message) => progress.push(message) }),
+      ...optionsFor(h),
     });
 
     expect(invocation(h, 0).args).not.toContain("--skill");
@@ -3945,11 +3942,9 @@ describe("runWikiIngest failure reporting detail", () => {
   it("fails the run when the frontmatter guardrail trips", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
 
-    const progress: string[] = [];
-
     await expect(
       runWikiIngest({
-        ...optionsFor(h, { onProgress: (message) => progress.push(message) }),
+        ...optionsFor(h),
         runAgent: frontmatterSaboteur("bad.md"),
       }),
     ).rejects.toThrow("guardrail check 2 (frontmatter)");
@@ -4072,15 +4067,13 @@ describe("runWikiIngest failure reporting detail", () => {
   it("fails the run when the agent fails with changes kept", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
 
-    const progress: string[] = [];
-
     const failing: AgentRunner = async () => {
       throw new Error("agent exited with code 9");
     };
 
     await expect(
       runWikiIngest({
-        ...optionsFor(h, { onProgress: (message) => progress.push(message) }),
+        ...optionsFor(h),
         runAgent: failing,
       }),
     ).rejects.toThrow("agent exited with code 9");

@@ -388,8 +388,6 @@ describe("composeRunPrompt", () => {
   });
 
   it("labels the expunge prompt", async () => {
-    const progress: string[] = [];
-
     const previous = manifestWith("Engineering", { "gone.md": entry("gone") });
 
     const diff = diffManifests(previous, manifestWith("Engineering", {}));
@@ -402,15 +400,13 @@ describe("composeRunPrompt", () => {
       dataRoot: "/no/such/data-root",
       diff,
       env: process.env,
-      onProgress: (message) => progress.push(message),
+      onProgress: () => {},
     });
 
     expect(composed).toContain("EXPUNGE PROMPT");
   });
 
   it("lists the expunged source", async () => {
-    const progress: string[] = [];
-
     const previous = manifestWith("Engineering", { "gone.md": entry("gone") });
 
     const diff = diffManifests(previous, manifestWith("Engineering", {}));
@@ -423,15 +419,13 @@ describe("composeRunPrompt", () => {
       dataRoot: "/no/such/data-root",
       diff,
       env: process.env,
-      onProgress: (message) => progress.push(message),
+      onProgress: () => {},
     });
 
     expect(composed).toContain("### Engineering/gone.md");
   });
 
   it("carries the direct set", async () => {
-    const progress: string[] = [];
-
     const previous = manifestWith("Engineering", { "gone.md": entry("gone") });
 
     const diff = diffManifests(previous, manifestWith("Engineering", {}));
@@ -444,7 +438,7 @@ describe("composeRunPrompt", () => {
       dataRoot: "/no/such/data-root",
       diff,
       env: process.env,
-      onProgress: (message) => progress.push(message),
+      onProgress: () => {},
     });
 
     expect(directSet).toEqual(["index.md", "overview.md"]);

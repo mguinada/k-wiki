@@ -490,15 +490,12 @@ describe("failure-rule lease retention", () => {
 
     const { dataRoot } = cw;
 
-    const progress: string[] = [];
-
     const error = await runSharedCycle(
       optionsFor(cw, dataRoot, {
         run: runContext({
           rawDir: join(dataRoot, "raw"),
           env: process.env,
           now: NOW,
-          onProgress: (line: string) => progress.push(line),
         }),
         runSweep: async () => {
           await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
@@ -519,15 +516,12 @@ describe("failure-rule lease retention", () => {
 
     const { dataRoot } = cw;
 
-    const progress: string[] = [];
-
     await runSharedCycle(
       optionsFor(cw, dataRoot, {
         run: runContext({
           rawDir: join(dataRoot, "raw"),
           env: process.env,
           now: NOW,
-          onProgress: (line: string) => progress.push(line),
         }),
         runSweep: async () => {
           await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
@@ -550,15 +544,12 @@ describe("failure-rule lease retention", () => {
 
     const { dataRoot } = cw;
 
-    const progress: string[] = [];
-
     await runSharedCycle(
       optionsFor(cw, dataRoot, {
         run: runContext({
           rawDir: join(dataRoot, "raw"),
           env: process.env,
           now: NOW,
-          onProgress: (line: string) => progress.push(line),
         }),
         runSweep: async () => {
           await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
@@ -612,15 +603,12 @@ describe("failure-rule lease retention", () => {
 
     const { dataRoot } = cw;
 
-    const progress: string[] = [];
-
     const error = await runSharedCycle(
       optionsFor(cw, dataRoot, {
         run: runContext({
           rawDir: join(dataRoot, "raw"),
           env: process.env,
           now: NOW,
-          onProgress: (line: string) => progress.push(line),
         }),
         runSweep: async () => {
           await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
@@ -641,8 +629,6 @@ describe("failure-rule lease retention", () => {
 
     const { dataRoot } = cw;
 
-    const progress: string[] = [];
-
     let observedMidRun: ObservedLease | undefined;
 
     await runSharedCycle(
@@ -651,7 +637,6 @@ describe("failure-rule lease retention", () => {
           rawDir: join(dataRoot, "raw"),
           env: process.env,
           now: NOW,
-          onProgress: (line: string) => progress.push(line),
         }),
         runSweep: async () => {
           await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
@@ -706,15 +691,12 @@ describe("failure-rule lease retention", () => {
 
     const { dataRoot } = cw;
 
-    const progress: string[] = [];
-
     await runSharedCycle(
       optionsFor(cw, dataRoot, {
         run: runContext({
           rawDir: join(dataRoot, "raw"),
           env: process.env,
           now: NOW,
-          onProgress: (line: string) => progress.push(line),
         }),
         runSweep: async () => {
           await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
@@ -737,8 +719,6 @@ describe("failure-rule lease retention", () => {
 
     const { dataRoot } = cw;
 
-    const progress: string[] = [];
-
     let observedMidRun: ObservedLease | undefined;
 
     await runSharedCycle(
@@ -747,7 +727,6 @@ describe("failure-rule lease retention", () => {
           rawDir: join(dataRoot, "raw"),
           env: process.env,
           now: NOW,
-          onProgress: (line: string) => progress.push(line),
         }),
         runSweep: async () => {
           await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
@@ -806,8 +785,6 @@ describe("failure-rule lease retention", () => {
 
     const { dataRoot } = cw;
 
-    const progress: string[] = [];
-
     let observedMidRun: ObservedLease | undefined;
 
     await runSharedCycle(
@@ -816,7 +793,6 @@ describe("failure-rule lease retention", () => {
           rawDir: join(dataRoot, "raw"),
           env: process.env,
           now: NOW,
-          onProgress: (line: string) => progress.push(line),
         }),
         runSweep: async () => {
           await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
@@ -840,8 +816,6 @@ describe("failure-rule lease retention", () => {
 
     const { dataRoot } = cw;
 
-    const progress: string[] = [];
-
     let observedMidRun: ObservedLease | undefined;
 
     await runSharedCycle(
@@ -850,7 +824,6 @@ describe("failure-rule lease retention", () => {
           rawDir: join(dataRoot, "raw"),
           env: process.env,
           now: NOW,
-          onProgress: (line: string) => progress.push(line),
         }),
         runSweep: async () => {
           await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
@@ -876,15 +849,12 @@ describe("failure-rule lease retention", () => {
 
     const { dataRoot } = cw;
 
-    const progress: string[] = [];
-
     await runSharedCycle(
       optionsFor(cw, dataRoot, {
         run: runContext({
           rawDir: join(dataRoot, "raw"),
           env: process.env,
           now: NOW,
-          onProgress: (line: string) => progress.push(line),
         }),
         runSweep: async () => {
           await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
@@ -935,8 +905,6 @@ describe("failure-rule lease retention", () => {
 
     await writeFile(blocker, "not a directory\n");
 
-    const progress: string[] = [];
-
     await expect(
       runSharedCycle(
         optionsFor(cw, dataRoot, {
@@ -952,7 +920,6 @@ describe("failure-rule lease retention", () => {
             rawDir: join(dataRoot, "raw"),
             env: process.env,
             now: NOW,
-            onProgress: (line: string) => progress.push(line),
           }),
         }),
       ),
@@ -996,8 +963,6 @@ describe("failure-rule lease retention", () => {
 
     await writeFile(blocker, "not a directory\n");
 
-    const progress: string[] = [];
-
     await runSharedCycle(
       optionsFor(cw, dataRoot, {
         config: {
@@ -1012,7 +977,6 @@ describe("failure-rule lease retention", () => {
           rawDir: join(dataRoot, "raw"),
           env: process.env,
           now: NOW,
-          onProgress: (line: string) => progress.push(line),
         }),
       }),
     ).catch(() => undefined);
@@ -1059,8 +1023,6 @@ describe("failure-rule lease retention", () => {
 
     await writeFile(blocker, "not a directory\n");
 
-    const progress: string[] = [];
-
     await runSharedCycle(
       optionsFor(cw, dataRoot, {
         config: {
@@ -1075,7 +1037,6 @@ describe("failure-rule lease retention", () => {
           rawDir: join(dataRoot, "raw"),
           env: process.env,
           now: NOW,
-          onProgress: (line: string) => progress.push(line),
         }),
       }),
     ).catch(() => undefined);
@@ -1193,15 +1154,12 @@ describe("failure-rule lease retention", () => {
 
     const { dataRoot } = cw;
 
-    const progress: string[] = [];
-
     const error = await runSharedCycle(
       optionsFor(cw, dataRoot, {
         run: runContext({
           rawDir: join(dataRoot, "raw"),
           env: process.env,
           now: NOW,
-          onProgress: (line: string) => progress.push(line),
         }),
         runSweep: async () => {
           await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
@@ -1295,8 +1253,6 @@ describe("failure-rule lease retention", () => {
 
     const { dataRoot } = cw;
 
-    const progress: string[] = [];
-
     let foreignOid = "";
 
     await runSharedCycle(
@@ -1305,7 +1261,6 @@ describe("failure-rule lease retention", () => {
           rawDir: join(dataRoot, "raw"),
           env: process.env,
           now: NOW,
-          onProgress: (line: string) => progress.push(line),
         }),
         runSweep: async () => {
           await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
@@ -1350,15 +1305,12 @@ describe("failure-rule lease retention", () => {
 
     const { dataRoot } = cw;
 
-    const progress: string[] = [];
-
     const error = await runSharedCycle(
       optionsFor(cw, dataRoot, {
         run: runContext({
           rawDir: join(dataRoot, "raw"),
           env: process.env,
           now: NOW,
-          onProgress: (line: string) => progress.push(line),
         }),
         runSweep: async () => {
           await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
@@ -1482,15 +1434,12 @@ describe("failure-rule lease retention", () => {
 
     const { dataRoot } = cw;
 
-    const progress: string[] = [];
-
     await runSharedCycle(
       optionsFor(cw, dataRoot, {
         run: runContext({
           rawDir: join(dataRoot, "raw"),
           env: process.env,
           now: NOW,
-          onProgress: (line: string) => progress.push(line),
         }),
         runSweep: async () => {
           await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
@@ -1547,15 +1496,12 @@ describe("failure-rule lease retention", () => {
 
     const { dataRoot } = cw;
 
-    const progress: string[] = [];
-
     await runSharedCycle(
       optionsFor(cw, dataRoot, {
         run: runContext({
           rawDir: join(dataRoot, "raw"),
           env: process.env,
           now: NOW,
-          onProgress: (line: string) => progress.push(line),
         }),
         runSweep: async () => {
           await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
@@ -1616,15 +1562,12 @@ describe("failure-rule lease retention", () => {
 
     const { dataRoot } = cw;
 
-    const progress: string[] = [];
-
     await runSharedCycle(
       optionsFor(cw, dataRoot, {
         run: runContext({
           rawDir: join(dataRoot, "raw"),
           env: process.env,
           now: NOW,
-          onProgress: (line: string) => progress.push(line),
         }),
         runSweep: async () => {
           await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");

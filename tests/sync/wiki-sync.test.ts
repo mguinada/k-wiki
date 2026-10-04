@@ -3531,13 +3531,11 @@ describe("runWikiSync failure reporting", () => {
   it("fails the cycle when a lint guardrail trips", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 
-    const progress: string[] = [];
-
     h.lintAgent = rogueLintAgent();
 
     await expect(
       runWikiSync({
-        ...optionsFor(h, { onProgress: (message) => progress.push(message) }),
+        ...optionsFor(h),
       }),
     ).rejects.toThrow("guardrail check 2 (frontmatter)");
   });
@@ -3752,8 +3750,6 @@ describe("runWikiSync commit contents", () => {
 
   it("commits pending wiki edits with the no-ingest summary line", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
-    const progress: string[] = [];
-
     await runWikiSync(optionsFor(h));
     await writeFile(
       join(h.dataRoot, "wiki", "index.md"),
@@ -3761,7 +3757,7 @@ describe("runWikiSync commit contents", () => {
     );
 
     const result = await runWikiSync({
-      ...optionsFor(h, { onProgress: (message) => progress.push(message) }),
+      ...optionsFor(h),
     });
 
     if (result.commit.status !== "committed") {
