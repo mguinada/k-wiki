@@ -883,11 +883,6 @@ describe("setup-schedule main: install and uninstall", () => {
       return { out: out.join("\n"), exitCode: "0" };
     })();
 
-    const _plist = await readFile(
-      join(home, "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`),
-      "utf8",
-    );
-
     const domain = `gui/${process.getuid?.() ?? 501}`;
 
     expect(recorded).toEqual([
@@ -942,8 +937,6 @@ describe("setup-schedule main: install and uninstall", () => {
       "utf8",
     );
 
-    const _domain = `gui/${process.getuid?.() ?? 501}`;
-
     expect(plist).toContain(`<string>${LAUNCHD_LABEL}</string>`);
 
     await rm(home, { recursive: true, force: true });
@@ -979,8 +972,6 @@ describe("setup-schedule main: install and uninstall", () => {
       return { out: out.join("\n"), exitCode: "0" };
     })();
 
-    const _domain = `gui/${process.getuid?.() ?? 501}`;
-
     expect(out).toContain("installed");
 
     await rm(home, { recursive: true, force: true });
@@ -1015,8 +1006,6 @@ describe("setup-schedule main: install and uninstall", () => {
 
       return { out: out.join("\n"), exitCode: "0" };
     })();
-
-    const _domain = `gui/${process.getuid?.() ?? 501}`;
 
     expect(exitCode).toBe("0");
 
