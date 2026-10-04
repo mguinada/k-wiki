@@ -913,7 +913,7 @@ describe("wiki-query --web e2e", () => {
     );
 
     expect(artifact).toContain(
-      'webFailureReason: "enrichment empty after pruning untraceable citations: https://example.com/absent (cited URL absent from the audit table)"',
+      'webFailureReason: "enrichment empty after pruning 1 untraceable citation: https://example.com/absent (cited URL absent from the audit table)"',
     );
   });
 });

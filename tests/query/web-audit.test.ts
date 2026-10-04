@@ -174,8 +174,52 @@ describe("reconcileWebSources", () => {
     );
 
     expect(reconciliation.failure).toBe(
-      "enrichment empty after pruning untraceable citations: https://example.com/hallucinated (cited URL absent from the audit table)",
+      "enrichment empty after pruning 1 untraceable citation: https://example.com/hallucinated (cited URL absent from the audit table)",
     );
+  });
+
+  it("names the pruned count even when one URL accounts for every pruned bullet", () => {
+    const reconciliation = reconcileWebSources(
+      [
+        "- [x](https://example.com/ghost) (retrieved 2026-10-03).",
+        "- [y](https://example.com/ghost) (retrieved 2026-10-03).",
+      ].join("\n"),
+      [fetchCall],
+    );
+
+    expect(reconciliation.failure).toBe(
+      "enrichment empty after pruning 2 untraceable citations: https://example.com/ghost (cited URL absent from the audit table)",
+    );
+  });
+
+  it("prunes a wrapped bullet whole — its continuation line never survives alone", () => {
+    const reconciliation = reconcileWebSources(
+      [
+        "- [a](https://example.com/a) confirms the topic,",
+        " per https://example.com/ghost (retrieved 2026-10-03).",
+        "- [b](https://example.com/b) (retrieved 2026-10-03).",
+      ].join("\n"),
+      [
+        fetchCall,
+        {
+          ...fetchCall,
+          target: "https://example.com/b",
+          urls: ["https://example.com/b"],
+        },
+      ],
+    );
+
+    expect(reconciliation.enrichment).toBe(
+      "- [b](https://example.com/b) (retrieved 2026-10-03).",
+    );
+  });
+
+  it("keeps a wrapped bullet whole when every citation traces", () => {
+    const wrapped =
+      "- [a](https://example.com/a) confirms the topic,\n per https://example.com/a (retrieved 2026-10-03).";
+    const reconciliation = reconcileWebSources(wrapped, [fetchCall]);
+
+    expect(reconciliation.enrichment).toBe(wrapped);
   });
 
   it("keeps an uncited fetch call non-fatal — recorded, not failing", () => {

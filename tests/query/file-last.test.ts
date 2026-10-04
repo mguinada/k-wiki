@@ -1715,7 +1715,7 @@ describe("degraded --web artifacts", () => {
     const artifact = {
       ...DEGRADED,
       webFailureReason:
-        "enrichment empty after pruning untraceable citations: https://example.com/x (cited URL absent from the audit table)",
+        "enrichment empty after pruning 1 untraceable citation: https://example.com/x (cited URL absent from the audit table)",
     };
 
     expect(parseQueryArtifact(renderQueryArtifact(artifact))).toEqual(artifact);

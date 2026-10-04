@@ -264,7 +264,7 @@ describe("runWebEnrichment", () => {
     expect(outcome).toEqual({
       kind: "failed",
       reason:
-        "enrichment empty after pruning untraceable citations: https://example.com/not-in-audit (cited URL absent from the audit table)",
+        "enrichment empty after pruning 1 untraceable citation: https://example.com/not-in-audit (cited URL absent from the audit table)",
     });
   });
 
