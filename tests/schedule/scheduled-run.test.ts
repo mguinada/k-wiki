@@ -33,13 +33,14 @@ async function tempDir(): Promise<string> {
 }
 
 describe("runScheduledCycle (issue #240 kill batch)", () => {
-  it("treats a whitespace-only porcelain status as a clean tree", async () => {
+  it("runs the full scheduled sweep for a clean tree", async () => {
     const dir = await tempDir();
+
     const { git, runGitStep } = fakeGit();
 
     git.status = "   \n";
 
-    const outcome = await runScheduledCycle({
+    await runScheduledCycle({
       dataRoot: dir,
       repoRoot: dir,
       lockPath: join(dir, ".scheduled-run.lock"),
@@ -57,17 +58,39 @@ describe("runScheduledCycle (issue #240 kill batch)", () => {
     ]);
 
     await rm(dir, { recursive: true, force: true });
+  });
+
+  it("reports an ok outcome for a clean tree", async () => {
+    const dir = await tempDir();
+
+    const { git, runGitStep } = fakeGit();
+
+    git.status = "   \n";
+
+    const outcome = await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      log: () => {},
+    });
+
+    await rm(dir, { recursive: true, force: true });
+
     expect(outcome).toEqual({ status: "ok" });
   });
 });
 
 describe("runScheduledCycle --lint-full (issue #359)", () => {
-  it("runs the full sweep after the pull and before the cycle", async () => {
+  it("orders the git steps around the sweep and the cycle", async () => {
     const dir = await tempDir();
+
     const { git, runGitStep } = fakeGit();
+
     const sweeps: string[][] = [];
 
-    const outcome = await runScheduledCycle({
+    await runScheduledCycle({
       dataRoot: dir,
       repoRoot: dir,
       lockPath: join(dir, ".scheduled-run.lock"),
@@ -98,9 +121,61 @@ describe("runScheduledCycle --lint-full (issue #359)", () => {
       ["wiki-sync"],
       ["push"],
     ]);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("runs the sweep once with the full-sweep flags", async () => {
+    const dir = await tempDir();
+
+    const { git, runGitStep } = fakeGit();
+
+    const sweeps: string[][] = [];
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      runLintFull: async (sweepArgs) => {
+        sweeps.push([...sweepArgs]);
+        git.calls.push(["wiki-lint", ...sweepArgs]);
+      },
+      lintFullSettings: "s.yml",
+      lintFull: true,
+      log: () => {},
+    });
+
     expect(sweeps).toEqual([
       ["--full", "--timeout", "7200", "--settings", "s.yml", join(dir, "raw")],
     ]);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("reports an ok outcome", async () => {
+    const dir = await tempDir();
+
+    const { git, runGitStep } = fakeGit();
+
+    const sweeps: string[][] = [];
+
+    const outcome = await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      runLintFull: async (sweepArgs) => {
+        sweeps.push([...sweepArgs]);
+        git.calls.push(["wiki-lint", ...sweepArgs]);
+      },
+      lintFullSettings: "s.yml",
+      lintFull: true,
+      log: () => {},
+    });
+
     expect(outcome).toEqual({ status: "ok" });
 
     await rm(dir, { recursive: true, force: true });
@@ -130,8 +205,9 @@ describe("runScheduledCycle --lint-full (issue #359)", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it("fails the run without the cycle when the sweep fails", async () => {
+  it("fails the run naming the sweep error", async () => {
     const dir = await tempDir();
+
     const { git, runGitStep } = fakeGit();
 
     const outcome = await runScheduledCycle({
@@ -151,6 +227,28 @@ describe("runScheduledCycle --lint-full (issue #359)", () => {
       status: "failed",
       error: "wiki-lint exited 1",
     });
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("skips the cycle and push when the sweep fails", async () => {
+    const dir = await tempDir();
+
+    const { git, runGitStep } = fakeGit();
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      runLintFull: async () => {
+        throw new Error("wiki-lint exited 1");
+      },
+      lintFull: true,
+      log: () => {},
+    });
+
     expect(git.calls).toEqual([
       ["remote", "get-url", "origin"],
       ["status", "--porcelain", "--untracked-files=no"],
@@ -179,9 +277,53 @@ describe("runScheduledCycle --lint-full (issue #359)", () => {
     });
 
     expect(outcome.status).toBe("skipped");
-    if (outcome.status === "skipped") {
-      expect(outcome.reason).toContain("4242");
-    }
+
+    await releaseLock(lockPath);
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("names the lock holder in the skip reason", async () => {
+    const dir = await tempDir();
+    const { git, runGitStep } = fakeGit();
+    const lockPath = join(dir, ".scheduled-run.lock");
+
+    await mkdir(join(dir, "outputs"), { recursive: true });
+    await acquireLock(lockPath, { pid: 4242 });
+
+    const outcome = await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath,
+      runGitStep,
+      runSync: syncRecorder(git),
+      lintFull: true,
+      log: () => {},
+    });
+
+    expect(outcome.status === "skipped" && outcome.reason).toContain("4242");
+
+    await releaseLock(lockPath);
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("runs no git steps while the lock is busy", async () => {
+    const dir = await tempDir();
+    const { git, runGitStep } = fakeGit();
+    const lockPath = join(dir, ".scheduled-run.lock");
+
+    await mkdir(join(dir, "outputs"), { recursive: true });
+    await acquireLock(lockPath, { pid: 4242 });
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath,
+      runGitStep,
+      runSync: syncRecorder(git),
+      lintFull: true,
+      log: () => {},
+    });
+
     expect(git.calls).toEqual([]);
 
     await releaseLock(lockPath);
@@ -190,7 +332,7 @@ describe("runScheduledCycle --lint-full (issue #359)", () => {
 });
 
 describe("parseScheduledRunArgs", () => {
-  it("accepts the lint-full boolean with the shared value flags", () => {
+  it("parses --lint-full without error", () => {
     const parsed = parseScheduledRunArgs([
       "--lint-full",
       "--timeout",
@@ -200,23 +342,55 @@ describe("parseScheduledRunArgs", () => {
     ]);
 
     expect(parsed.error).toBeUndefined();
+  });
+
+  it("records --lint-full as a boolean flag", () => {
+    const parsed = parseScheduledRunArgs([
+      "--lint-full",
+      "--timeout",
+      "3600",
+      "config.json",
+      "raw",
+    ]);
+
     expect(parsed.flags.has("--lint-full")).toBe(true);
+  });
+
+  it("still reads the shared --timeout value", () => {
+    const parsed = parseScheduledRunArgs([
+      "--lint-full",
+      "--timeout",
+      "3600",
+      "config.json",
+      "raw",
+    ]);
+
     expect(parsed.values.get("--timeout")).toBe("3600");
   });
 
-  it("keeps the boolean optional", () => {
+  it("parses without --lint-full without error", () => {
     const parsed = parseScheduledRunArgs([]);
 
     expect(parsed.error).toBeUndefined();
+  });
+
+  it("leaves --lint-full unset by default", () => {
+    const parsed = parseScheduledRunArgs([]);
+
     expect(parsed.flags.has("--lint-full")).toBe(false);
   });
 });
 
 describe("buildScheduledEnv", () => {
-  it("sets HOME and a PATH with the node bin dir ahead of the system dirs", () => {
+  it("sets HOME for the scheduled environment", () => {
     const env = buildScheduledEnv("/Users/me", "/opt/node/bin/node");
 
     expect(env.HOME).toBe("/Users/me");
+  });
+
+  it("puts the node bin dir ahead of the system dirs in PATH", () => {
+    const env = buildScheduledEnv("/Users/me", "/opt/node/bin/node");
+
     expect(env.PATH).toBe(
       "/opt/node/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
     );
@@ -464,9 +638,11 @@ describe("runScheduledCycle", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it("locks, verifies origin, pulls, runs wiki-sync, pushes, releases", async () => {
+  it("runs the whole scheduled cycle to an ok outcome", async () => {
     const dir = await tempDir();
+
     const { git, runGitStep } = fakeGit();
+
     const lockPath = join(dir, ".scheduled-run.lock");
 
     const outcome = await runScheduledCycle({
@@ -479,6 +655,28 @@ describe("runScheduledCycle", () => {
     });
 
     expect(outcome).toEqual({ status: "ok" });
+
+    await readFile(lockPath, "utf8").catch(() => undefined);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("orders the git steps through the cycle", async () => {
+    const dir = await tempDir();
+
+    const { git, runGitStep } = fakeGit();
+
+    const lockPath = join(dir, ".scheduled-run.lock");
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath,
+      runGitStep,
+      runSync: syncRecorder(git),
+      args: ["--settings", "/x/settings.yml"],
+    });
+
     expect(git.calls).toEqual([
       ["remote", "get-url", "origin"],
       ["status", "--porcelain", "--untracked-files=no"],
@@ -486,6 +684,28 @@ describe("runScheduledCycle", () => {
       ["wiki-sync", "--settings", "/x/settings.yml"],
       ["push"],
     ]);
+
+    await readFile(lockPath, "utf8").catch(() => undefined);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("releases the lock after the cycle", async () => {
+    const dir = await tempDir();
+
+    const { git, runGitStep } = fakeGit();
+
+    const lockPath = join(dir, ".scheduled-run.lock");
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath,
+      runGitStep,
+      runSync: syncRecorder(git),
+      args: ["--settings", "/x/settings.yml"],
+    });
+
     await expect(readFile(lockPath, "utf8")).rejects.toThrow();
 
     await rm(dir, { recursive: true, force: true });
@@ -509,13 +729,15 @@ describe("runScheduledCycle", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it("fails loud when the data repo has no origin and runs nothing", async () => {
+  it("fails the run without an origin", async () => {
     const dir = await tempDir();
+
     const { git, runGitStep } = fakeGit((args) => {
       if (args[0] === "remote") {
         throw new Error("fatal: no origin configured");
       }
     });
+
     const lines: string[] = [];
 
     const outcome = await runScheduledCycle({
@@ -528,19 +750,94 @@ describe("runScheduledCycle", () => {
     });
 
     expect(outcome.status).toBe("failed");
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("names the missing origin as the error", async () => {
+    const dir = await tempDir();
+
+    const { git, runGitStep } = fakeGit((args) => {
+      if (args[0] === "remote") {
+        throw new Error("fatal: no origin configured");
+      }
+    });
+
+    const lines: string[] = [];
+
+    const outcome = await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      log: (line) => lines.push(line),
+    });
+
     expect(outcome.status === "failed" && outcome.error).toContain("origin");
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("runs no git steps beyond the origin check", async () => {
+    const dir = await tempDir();
+
+    const { git, runGitStep } = fakeGit((args) => {
+      if (args[0] === "remote") {
+        throw new Error("fatal: no origin configured");
+      }
+    });
+
+    const lines: string[] = [];
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      log: (line) => lines.push(line),
+    });
+
     expect(git.calls).toEqual([["remote", "get-url", "origin"]]);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("logs the origin failure", async () => {
+    const dir = await tempDir();
+
+    const { git, runGitStep } = fakeGit((args) => {
+      if (args[0] === "remote") {
+        throw new Error("fatal: no origin configured");
+      }
+    });
+
+    const lines: string[] = [];
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      log: (line) => lines.push(line),
+    });
+
     expect(lines.join("\n")).toContain("origin");
 
     await rm(dir, { recursive: true, force: true });
   });
 
-  it("skips without running anything while another run holds the lock", async () => {
+  it("skips while another run holds the lock", async () => {
     const dir = await tempDir();
+
     const { git, runGitStep } = fakeGit();
+
     const lockPath = join(dir, ".scheduled-run.lock");
 
     await mkdir(join(dir, "outputs"), { recursive: true });
+
     await acquireLock(lockPath);
 
     const outcome = await runScheduledCycle({
@@ -555,9 +852,35 @@ describe("runScheduledCycle", () => {
       status: "skipped",
       reason: expect.stringContaining("another run"),
     });
+
+    await releaseLock(lockPath);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("runs no git steps while the lock is held", async () => {
+    const dir = await tempDir();
+
+    const { git, runGitStep } = fakeGit();
+
+    const lockPath = join(dir, ".scheduled-run.lock");
+
+    await mkdir(join(dir, "outputs"), { recursive: true });
+
+    await acquireLock(lockPath);
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath,
+      runGitStep,
+      runSync: syncRecorder(git),
+    });
+
     expect(git.calls).toEqual([]);
 
     await releaseLock(lockPath);
+
     await rm(dir, { recursive: true, force: true });
   });
 
@@ -588,10 +911,13 @@ describe("runScheduledCycle", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it("stops before the push when wiki-sync fails and releases the lock", async () => {
+  it("fails the run when wiki-sync fails", async () => {
     const dir = await tempDir();
-    const { git, runGitStep } = fakeGit();
+
+    const { runGitStep } = fakeGit();
+
     const lines: string[] = [];
+
     const lockPath = join(dir, ".scheduled-run.lock");
 
     const outcome = await runScheduledCycle({
@@ -604,12 +930,84 @@ describe("runScheduledCycle", () => {
     });
 
     expect(outcome).toEqual({ status: "failed", error: "lint failed" });
+
+    await readFile(lockPath, "utf8").catch(() => undefined);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("stops before the push when wiki-sync fails", async () => {
+    const dir = await tempDir();
+
+    const { git, runGitStep } = fakeGit();
+
+    const lines: string[] = [];
+
+    const lockPath = join(dir, ".scheduled-run.lock");
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath,
+      runGitStep,
+      runSync: () => Promise.reject(new Error("lint failed")),
+      log: (line) => lines.push(line),
+    });
+
     expect(git.calls).toEqual([
       ["remote", "get-url", "origin"],
       ["status", "--porcelain", "--untracked-files=no"],
       ["pull", "--rebase"],
     ]);
+
+    await readFile(lockPath, "utf8").catch(() => undefined);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("logs the wiki-sync failure", async () => {
+    const dir = await tempDir();
+
+    const { runGitStep } = fakeGit();
+
+    const lines: string[] = [];
+
+    const lockPath = join(dir, ".scheduled-run.lock");
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath,
+      runGitStep,
+      runSync: () => Promise.reject(new Error("lint failed")),
+      log: (line) => lines.push(line),
+    });
+
     expect(lines.join("\n")).toContain("lint failed");
+
+    await readFile(lockPath, "utf8").catch(() => undefined);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("releases the lock after the failure", async () => {
+    const dir = await tempDir();
+
+    const { runGitStep } = fakeGit();
+
+    const lines: string[] = [];
+
+    const lockPath = join(dir, ".scheduled-run.lock");
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath,
+      runGitStep,
+      runSync: () => Promise.reject(new Error("lint failed")),
+      log: (line) => lines.push(line),
+    });
+
     await expect(readFile(lockPath, "utf8")).rejects.toThrow();
 
     await rm(dir, { recursive: true, force: true });
@@ -658,8 +1056,9 @@ describe("runScheduledCycle", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it("recovers a push rejection with pull --rebase and one retry", async () => {
+  it("reports an ok outcome after the push retry", async () => {
     const dir = await tempDir();
+
     const { git, runGitStep } = fakeGit((args, calls) => {
       if (
         args[0] === "push" &&
@@ -678,6 +1077,30 @@ describe("runScheduledCycle", () => {
     });
 
     expect(outcome).toEqual({ status: "ok" });
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("retries the push after a pull --rebase", async () => {
+    const dir = await tempDir();
+
+    const { git, runGitStep } = fakeGit((args, calls) => {
+      if (
+        args[0] === "push" &&
+        calls.filter((c) => c[0] === "push").length === 1
+      ) {
+        throw new Error("! [rejected] fetch first");
+      }
+    });
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+    });
+
     expect(git.calls).toEqual([
       ["remote", "get-url", "origin"],
       ["status", "--porcelain", "--untracked-files=no"],
@@ -691,13 +1114,15 @@ describe("runScheduledCycle", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it("alerts after the retry also fails", async () => {
+  it("fails the run when the retry also fails", async () => {
     const dir = await tempDir();
+
     const { git, runGitStep } = fakeGit((args) => {
       if (args[0] === "push") {
         throw new Error("! [rejected] fetch first");
       }
     });
+
     const lines: string[] = [];
 
     const outcome = await runScheduledCycle({
@@ -713,14 +1138,40 @@ describe("runScheduledCycle", () => {
       status: "failed",
       error: expect.stringContaining("! [rejected] fetch first"),
     });
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("alerts when the retry also fails", async () => {
+    const dir = await tempDir();
+
+    const { git, runGitStep } = fakeGit((args) => {
+      if (args[0] === "push") {
+        throw new Error("! [rejected] fetch first");
+      }
+    });
+
+    const lines: string[] = [];
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      log: (line) => lines.push(line),
+    });
+
     expect(lines.join("\n")).toContain("ALERT");
 
     await rm(dir, { recursive: true, force: true });
   });
 
-  it("skips the pre-run pull over a dirty tree and still completes the cycle", async () => {
+  it("reports an ok outcome over a dirty tree", async () => {
     const dir = await tempDir();
+
     const { git, runGitStep } = fakeGit();
+
     const lines: string[] = [];
 
     git.status = " M wiki/concepts/stub.md\n";
@@ -735,21 +1186,68 @@ describe("runScheduledCycle", () => {
     });
 
     expect(outcome).toEqual({ status: "ok" });
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("skips the pre-run pull over a dirty tree", async () => {
+    const dir = await tempDir();
+
+    const { git, runGitStep } = fakeGit();
+
+    const lines: string[] = [];
+
+    git.status = " M wiki/concepts/stub.md\n";
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      log: (line) => lines.push(line),
+    });
+
     expect(git.calls).toEqual([
       ["remote", "get-url", "origin"],
       ["status", "--porcelain", "--untracked-files=no"],
       ["wiki-sync"],
       ["push"],
     ]);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("logs the skipped pull", async () => {
+    const dir = await tempDir();
+
+    const { git, runGitStep } = fakeGit();
+
+    const lines: string[] = [];
+
+    git.status = " M wiki/concepts/stub.md\n";
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      log: (line) => lines.push(line),
+    });
+
     expect(lines.join("\n")).toContain("skipping the pre-run pull");
 
     await rm(dir, { recursive: true, force: true });
   });
 
-  it("never releases a lock a successor re-acquired mid-run", async () => {
+  it("reports an ok outcome with a successor lock", async () => {
     const dir = await tempDir();
+
     const lockPath = join(dir, ".scheduled-run.lock");
+
     const successorLock = `${JSON.stringify({ pid: 4242, takenAt: new Date().toISOString() })}\n`;
+
     const { git, runGitStep } = fakeGit(async () => {
       await writeFile(lockPath, successorLock);
     });
@@ -763,6 +1261,29 @@ describe("runScheduledCycle", () => {
     });
 
     expect(outcome).toEqual({ status: "ok" });
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("never releases a lock a successor re-acquired mid-run", async () => {
+    const dir = await tempDir();
+
+    const lockPath = join(dir, ".scheduled-run.lock");
+
+    const successorLock = `${JSON.stringify({ pid: 4242, takenAt: new Date().toISOString() })}\n`;
+
+    const { git, runGitStep } = fakeGit(async () => {
+      await writeFile(lockPath, successorLock);
+    });
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath,
+      runGitStep,
+      runSync: syncRecorder(git),
+    });
+
     await expect(readFile(lockPath, "utf8")).resolves.toBe(successorLock);
 
     await rm(dir, { recursive: true, force: true });
@@ -891,6 +1412,22 @@ describe("resolveDataRoot", () => {
       const resolution = await resolveDataRoot(configPath, undefined);
 
       expect(resolution.error).toContain("no dataRoot");
+    } finally {
+      errors.mockRestore();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns no dataRoot for an empty vault list", async () => {
+    const dir = await tempDir();
+    const configPath = join(dir, "sync.json");
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await writeFile(configPath, JSON.stringify({ vaults: [] }));
+
+    try {
+      const resolution = await resolveDataRoot(configPath, undefined);
+
       expect(resolution.dataRoot).toBeUndefined();
     } finally {
       errors.mockRestore();
@@ -915,10 +1452,15 @@ describe("resolveDataRoot", () => {
     }
   });
 
-  it("returns the config loader's error for an unreadable config", async () => {
+  it("names the missing config in the error", async () => {
     const resolution = await resolveDataRoot("/no/such/sync.json", undefined);
 
     expect(resolution.error).toContain("/no/such/sync.json");
+  });
+
+  it("returns no data root for an unreadable config", async () => {
+    const resolution = await resolveDataRoot("/no/such/sync.json", undefined);
+
     expect(resolution.dataRoot).toBeUndefined();
   });
 });
@@ -949,7 +1491,63 @@ describe("runScheduledCycle with the real wiki-sync spawner", () => {
     });
 
     expect(outcome).toEqual({ status: "ok" });
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("streams the child's stdout into the log on success", async () => {
+    const dir = await tempDir();
+    const repoRoot = join(dir, "repo");
+    const { runGitStep } = fakeGit();
+    const lines: string[] = [];
+
+    await mkdir(join(repoRoot, "bin"), { recursive: true });
+    await writeFile(
+      join(repoRoot, "bin", "wiki-sync"),
+      [
+        'console.log("digest-from-stdout");',
+        'console.error("progress-from-stderr");',
+      ].join("\n"),
+    );
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      args: [],
+      log: (line) => lines.push(line),
+    });
+
     expect(lines).toContain("digest-from-stdout");
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("streams the child's stderr into the log on success", async () => {
+    const dir = await tempDir();
+    const repoRoot = join(dir, "repo");
+    const { runGitStep } = fakeGit();
+    const lines: string[] = [];
+
+    await mkdir(join(repoRoot, "bin"), { recursive: true });
+    await writeFile(
+      join(repoRoot, "bin", "wiki-sync"),
+      [
+        'console.log("digest-from-stdout");',
+        'console.error("progress-from-stderr");',
+      ].join("\n"),
+    );
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      args: [],
+      log: (line) => lines.push(line),
+    });
+
     expect(lines).toContain("progress-from-stderr");
 
     await rm(dir, { recursive: true, force: true });
@@ -1008,9 +1606,11 @@ describe("runScheduledCycle with the real wiki-sync spawner", () => {
 });
 
 describe("runScheduledCycle log narration", () => {
-  it("narrates the full cycle in the log", async () => {
+  it("narrates the cycle start in the log", async () => {
     const dir = await tempDir();
+
     const { git, runGitStep } = fakeGit();
+
     const lines: string[] = [];
 
     await runScheduledCycle({
@@ -1026,10 +1626,125 @@ describe("runScheduledCycle log narration", () => {
     const text = lines.join("\n");
 
     expect(text).toContain("starting cycle");
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("narrates the pre-run pull in the log", async () => {
+    const dir = await tempDir();
+
+    const { git, runGitStep } = fakeGit();
+
+    const lines: string[] = [];
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      args: [],
+      log: (line) => lines.push(line),
+    });
+
+    const text = lines.join("\n");
+
     expect(text).toContain("git pull --rebase (data repo)");
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("narrates the wiki-sync start in the log", async () => {
+    const dir = await tempDir();
+
+    const { git, runGitStep } = fakeGit();
+
+    const lines: string[] = [];
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      args: [],
+      log: (line) => lines.push(line),
+    });
+
+    const text = lines.join("\n");
+
     expect(text).toContain("wiki-sync starting");
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("narrates the wiki-sync finish in the log", async () => {
+    const dir = await tempDir();
+
+    const { git, runGitStep } = fakeGit();
+
+    const lines: string[] = [];
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      args: [],
+      log: (line) => lines.push(line),
+    });
+
+    const text = lines.join("\n");
+
     expect(text).toContain("wiki-sync finished — pushing");
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("narrates the push in the log", async () => {
+    const dir = await tempDir();
+
+    const { git, runGitStep } = fakeGit();
+
+    const lines: string[] = [];
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      args: [],
+      log: (line) => lines.push(line),
+    });
+
+    const text = lines.join("\n");
+
     expect(text).toContain("pushed");
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("narrates the cycle completion in the log", async () => {
+    const dir = await tempDir();
+
+    const { git, runGitStep } = fakeGit();
+
+    const lines: string[] = [];
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      args: [],
+      log: (line) => lines.push(line),
+    });
+
+    const text = lines.join("\n");
+
     expect(text).toContain("cycle complete");
 
     await rm(dir, { recursive: true, force: true });
@@ -1149,13 +1864,15 @@ describe("runScheduledCycle log narration", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it("narrates the push rejection, retry, and alert in the log", async () => {
+  it("narrates the push rejection and retry in the log", async () => {
     const dir = await tempDir();
+
     const { git, runGitStep } = fakeGit((args) => {
       if (args[0] === "push") {
         throw new Error("! [rejected]");
       }
     });
+
     const lines: string[] = [];
 
     await runScheduledCycle({
@@ -1173,7 +1890,61 @@ describe("runScheduledCycle log narration", () => {
     expect(text).toContain(
       "push rejected — pull --rebase and retry once: ! [rejected]",
     );
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("narrates the second push failure in the log", async () => {
+    const dir = await tempDir();
+
+    const { git, runGitStep } = fakeGit((args) => {
+      if (args[0] === "push") {
+        throw new Error("! [rejected]");
+      }
+    });
+
+    const lines: string[] = [];
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      args: [],
+      log: (line) => lines.push(line),
+    });
+
+    const text = lines.join("\n");
+
     expect(text).toContain("push failed again after retry");
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("narrates the alert in the log", async () => {
+    const dir = await tempDir();
+
+    const { git, runGitStep } = fakeGit((args) => {
+      if (args[0] === "push") {
+        throw new Error("! [rejected]");
+      }
+    });
+
+    const lines: string[] = [];
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: syncRecorder(git),
+      args: [],
+      log: (line) => lines.push(line),
+    });
+
+    const text = lines.join("\n");
+
     expect(text).toContain("ALERT ! [rejected]");
 
     await rm(dir, { recursive: true, force: true });
@@ -1285,33 +2056,40 @@ describe("scheduled-run main: usage errors", () => {
     );
   });
 
-  it("rejects more than two positionals with exit 1", async () => {
-    const { err, exitCode } = await runMain(["a", "b", "c"]);
+  it("rejects more than two positionals on stderr", async () => {
+    const { err } = await runMain(["a", "b", "c"]);
 
     expect(err).toContain("expected at most two arguments");
+  });
+
+  it("rejects more than two positionals with exit 1", async () => {
+    const { exitCode } = await runMain(["a", "b", "c"]);
+
     expect(exitCode).toBe("1");
   });
 
-  it("rejects a value flag without its value with exit 1", async () => {
-    const { err, exitCode } = await runMain(["--settings"]);
+  it("reports a valueless --settings on stderr", async () => {
+    const { err } = await runMain(["--settings"]);
 
     expect(err).toContain("--settings needs a path value");
+  });
+
+  it("rejects a value flag without its value with exit 1", async () => {
+    const { exitCode } = await runMain(["--settings"]);
+
     expect(exitCode).toBe("1");
   });
 });
 
 describe("scheduled-run main: cycle outcomes", () => {
-  it("exits 1 and fails loud when the data repo has no origin", async () => {
+  it("exits 1 without an origin", async () => {
     const dir = await tempDir();
+
     const configPath = join(dir, "sync.json");
 
     await writeFile(configPath, JSON.stringify({ vaults: [], dataRoot: dir }));
 
-    // Absent settings: agent resolution skips (settings unreadable),
-    // so the origin failure surfaces on every machine — whether or
-    // not the ambient environment can resolve the repo's default
-    // agent command.
-    const { err, exitCode } = await runMain(
+    const { exitCode } = await runMain(
       [
         "--settings",
         join(dir, "absent-settings.yml"),
@@ -1324,6 +2102,29 @@ describe("scheduled-run main: cycle outcomes", () => {
     );
 
     expect(exitCode).toBe("1");
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("names the missing origin on stderr", async () => {
+    const dir = await tempDir();
+
+    const configPath = join(dir, "sync.json");
+
+    await writeFile(configPath, JSON.stringify({ vaults: [], dataRoot: dir }));
+
+    const { err } = await runMain(
+      [
+        "--settings",
+        join(dir, "absent-settings.yml"),
+        configPath,
+        join(dir, "raw"),
+      ],
+      {
+        KWIKI_SCHEDULED_LOG: join(dir, "run.log"),
+      },
+    );
+
     expect(err).toContain("origin");
 
     await rm(dir, { recursive: true, force: true });
@@ -1377,25 +2178,38 @@ describe("scheduled-run main: cycle outcomes", () => {
     }
   });
 
-  it("runs a real cycle into a temp data repo and logs to the override path", async () => {
+  it("runs a real cycle into a temp data repo", async () => {
     const dir = await tempDir();
+
     const dataRoot = join(dir, "data");
+
     const configPath = join(dir, "sync.json");
+
     const settingsPath = join(dir, "settings.yml");
+
     const logPath = join(dir, "run.log");
 
     await mkdir(join(dataRoot, "raw"), { recursive: true });
+
     await mkdir(join(dataRoot, "wiki"), { recursive: true });
+
     await writeFile(
       join(dataRoot, "raw", "manifest.json"),
       `${JSON.stringify({ vaults: {} }, null, 2)}\n`,
     );
+
     await writeFile(join(dataRoot, "wiki", "index.md"), "# Index\n");
+
     await gitRun(["init", "--quiet", "--initial-branch=main"], dataRoot);
+
     await gitRun(["config", "user.email", "t@t"], dataRoot);
+
     await gitRun(["config", "user.name", "t"], dataRoot);
+
     await gitRun(["add", "-A"], dataRoot);
+
     await gitRun(["commit", "--quiet", "-m", "init"], dataRoot);
+
     await gitRun(
       [
         "init",
@@ -1406,12 +2220,16 @@ describe("scheduled-run main: cycle outcomes", () => {
       ],
       dir,
     );
+
     await gitRun(
       ["remote", "add", "origin", join(dir, "upstream.git")],
       dataRoot,
     );
+
     await gitRun(["push", "--quiet", "-u", "origin", "main"], dataRoot);
+
     await writeFile(configPath, JSON.stringify({ vaults: [], dataRoot }));
+
     await writeFile(
       settingsPath,
       "command: /usr/bin/true\nmodel: M\nreasoning: low\n",
@@ -1425,6 +2243,74 @@ describe("scheduled-run main: cycle outcomes", () => {
     const log = await readFile(logPath, "utf8");
 
     expect(`${exitCode}|${log}`).toContain("0|");
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("logs the real cycle to the override path", async () => {
+    const dir = await tempDir();
+
+    const dataRoot = join(dir, "data");
+
+    const configPath = join(dir, "sync.json");
+
+    const settingsPath = join(dir, "settings.yml");
+
+    const logPath = join(dir, "run.log");
+
+    await mkdir(join(dataRoot, "raw"), { recursive: true });
+
+    await mkdir(join(dataRoot, "wiki"), { recursive: true });
+
+    await writeFile(
+      join(dataRoot, "raw", "manifest.json"),
+      `${JSON.stringify({ vaults: {} }, null, 2)}\n`,
+    );
+
+    await writeFile(join(dataRoot, "wiki", "index.md"), "# Index\n");
+
+    await gitRun(["init", "--quiet", "--initial-branch=main"], dataRoot);
+
+    await gitRun(["config", "user.email", "t@t"], dataRoot);
+
+    await gitRun(["config", "user.name", "t"], dataRoot);
+
+    await gitRun(["add", "-A"], dataRoot);
+
+    await gitRun(["commit", "--quiet", "-m", "init"], dataRoot);
+
+    await gitRun(
+      [
+        "init",
+        "--quiet",
+        "--bare",
+        "--initial-branch=main",
+        join(dir, "upstream.git"),
+      ],
+      dir,
+    );
+
+    await gitRun(
+      ["remote", "add", "origin", join(dir, "upstream.git")],
+      dataRoot,
+    );
+
+    await gitRun(["push", "--quiet", "-u", "origin", "main"], dataRoot);
+
+    await writeFile(configPath, JSON.stringify({ vaults: [], dataRoot }));
+
+    await writeFile(
+      settingsPath,
+      "command: /usr/bin/true\nmodel: M\nreasoning: low\n",
+    );
+
+    await runMain(
+      ["--settings", settingsPath, configPath, join(dataRoot, "raw")],
+      { KWIKI_SCHEDULED_LOG: logPath },
+    );
+
+    const log = await readFile(logPath, "utf8");
+
     expect(log).toContain("cycle complete");
 
     await rm(dir, { recursive: true, force: true });
@@ -1646,8 +2532,9 @@ describe("runScheduledCycle streamed output hygiene", () => {
 });
 
 describe("runScheduledCycle heartbeat (issue #362)", () => {
-  it("writes an ok stamp after a completed cycle", async () => {
+  it("reports an ok outcome for the stamped cycle", async () => {
     const dir = await tempDir();
+
     const { runGitStep } = fakeGit();
 
     const outcome = await runScheduledCycle({
@@ -1660,6 +2547,24 @@ describe("runScheduledCycle heartbeat (issue #362)", () => {
     });
 
     expect(outcome).toEqual({ status: "ok" });
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("writes an ok stamp after a completed cycle", async () => {
+    const dir = await tempDir();
+
+    const { runGitStep } = fakeGit();
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: async () => {},
+      pid: 4321,
+    });
+
     expect(
       JSON.parse(
         await readFile(join(dir, "outputs", "last-cycle.json"), "utf8"),
@@ -1669,13 +2574,15 @@ describe("runScheduledCycle heartbeat (issue #362)", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it("writes a failed stamp and notifies when the cycle fails", async () => {
+  it("fails the cycle for a failed stamp", async () => {
     const dir = await tempDir();
+
     const { runGitStep } = fakeGit((args) => {
       if (args[0] === "remote") {
         throw new Error("fatal: no origin configured");
       }
     });
+
     const notified: string[] = [];
 
     const outcome = await runScheduledCycle({
@@ -1690,6 +2597,32 @@ describe("runScheduledCycle heartbeat (issue #362)", () => {
     });
 
     expect(outcome.status).toBe("failed");
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("writes a failed stamp when the cycle fails", async () => {
+    const dir = await tempDir();
+
+    const { runGitStep } = fakeGit((args) => {
+      if (args[0] === "remote") {
+        throw new Error("fatal: no origin configured");
+      }
+    });
+
+    const notified: string[] = [];
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: async () => {},
+      notify: (message) => {
+        notified.push(message);
+      },
+    });
+
     expect(
       JSON.parse(
         await readFile(join(dir, "outputs", "last-cycle.json"), "utf8"),
@@ -1697,6 +2630,32 @@ describe("runScheduledCycle heartbeat (issue #362)", () => {
     ).toMatchObject({ outcome: "failed" });
 
     await rm(dir, { recursive: true, force: true });
+  });
+
+  it("notifies when the cycle fails", async () => {
+    const dir = await tempDir();
+
+    const { runGitStep } = fakeGit((args) => {
+      if (args[0] === "remote") {
+        throw new Error("fatal: no origin configured");
+      }
+    });
+
+    const notified: string[] = [];
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep,
+      runSync: async () => {},
+      notify: (message) => {
+        notified.push(message);
+      },
+    });
+
+    await rm(dir, { recursive: true, force: true });
+
     expect(notified).toHaveLength(1);
   });
 
@@ -1735,8 +2694,9 @@ describe("runScheduledCycle heartbeat (issue #362)", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it("writes no stamp when the tick skips on a held lock", async () => {
+  it("skips the tick on a held lock", async () => {
     const dir = await tempDir();
+
     const lockPath = join(dir, ".scheduled-run.lock");
 
     await acquireLock(lockPath, { pid: 1 });
@@ -1750,20 +2710,45 @@ describe("runScheduledCycle heartbeat (issue #362)", () => {
     });
 
     expect(outcome.status).toBe("skipped");
+
+    await readFile(join(dir, "outputs", "last-cycle.json"), "utf8").catch(
+      () => undefined,
+    );
+
+    await releaseLock(lockPath);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("writes no stamp when the tick skips", async () => {
+    const dir = await tempDir();
+
+    const lockPath = join(dir, ".scheduled-run.lock");
+
+    await acquireLock(lockPath, { pid: 1 });
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath,
+      runGitStep: fakeGit().runGitStep,
+      runSync: async () => {},
+    });
+
     await expect(
       readFile(join(dir, "outputs", "last-cycle.json"), "utf8"),
     ).rejects.toThrow();
 
     await releaseLock(lockPath);
+
     await rm(dir, { recursive: true, force: true });
   });
 
-  it("logs a warning instead of failing when the stamp write fails", async () => {
+  it("reports an ok outcome when the stamp write fails", async () => {
     const dir = await tempDir();
+
     const lines: string[] = [];
 
-    // A file where the outputs directory must go makes the stamp
-    // write fail (ENOTDIR) while the cycle itself succeeds.
     await writeFile(join(dir, "outputs"), "not a directory", "utf8");
 
     const outcome = await runScheduledCycle({
@@ -1776,6 +2761,26 @@ describe("runScheduledCycle heartbeat (issue #362)", () => {
     });
 
     expect(outcome).toEqual({ status: "ok" });
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("logs a warning when the stamp write fails", async () => {
+    const dir = await tempDir();
+
+    const lines: string[] = [];
+
+    await writeFile(join(dir, "outputs"), "not a directory", "utf8");
+
+    await runScheduledCycle({
+      dataRoot: dir,
+      repoRoot: dir,
+      lockPath: join(dir, ".scheduled-run.lock"),
+      runGitStep: fakeGit().runGitStep,
+      runSync: async () => {},
+      log: (line) => lines.push(line),
+    });
+
     expect(lines.some((line) => line.includes("heartbeat write failed"))).toBe(
       true,
     );
