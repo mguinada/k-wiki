@@ -119,7 +119,7 @@ Two principles govern this:
 ### Quality gates
 
 Type check, lint, and unit tests are quality gates: a change is not done
-until all three pass. Run them before every handoff.
+until they all pass. Run them before every handoff.
 
 - `npm run typecheck` — type check (`tsc --noEmit`).
 - `npm run lint` — lint and format verification (`biome check .`).

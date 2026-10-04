@@ -658,6 +658,7 @@ kept apart from the runtime surface above:
 | `npm run lint` | Biome | Lint and verify formatting across the repo |
 | `npm run format` | Biome | Rewrite files to the canonical format — the fix command for lint findings, not a gate |
 | `npm test` | vitest | Run the unit test suite |
+| `npm run check:test-structure` | one-expectation gate | Blocking AST gate over the unit tests: every `it`/`test` callback holds at most one `expect(...)` chain (`tests/` scanned recursively, `tests/e2e/` exempt); exit 0 clean, 1 violations (split the test block), 2 the gate itself failed; CI runs it in the unit-tests job before coverage |
 | `npm run test:coverage` | vitest | Run the unit tests and fail below the 90% coverage thresholds — what CI runs |
 | `npm run audit` | npm | On-demand dependency-vulnerability check (the same audits CI's gates job runs before typecheck): the production tree at high or worse and the full tree at critical, both blocking; CI additionally logs a non-blocking advisory full-tree audit whose findings surface as run annotations |
 | `npm run e2e` | vitest | Run the end-to-end suite (`tests/e2e/`): real CLI child processes through full CLI lifecycles in temp workspaces and temp data repos under `.e2e-tmp/` (gitignored); the per-CLI scenario inventory lives in [`docs/references/e2e-suite.md`](docs/references/e2e-suite.md) |
@@ -688,7 +689,7 @@ Verification has three layers:
 
 | Layer | Commands | Status |
 |---|---|---|
-| Gates | `npm run typecheck`, `npm run lint`, `npm test` | blocking — every change, every PR |
+| Gates | `npm run typecheck`, `npm run lint`, `npm test`, `npm run check:test-structure` | blocking — every change, every PR |
 | End-to-end | `npm run e2e`, `bin/k-wiki check-raw` | blocking — CI's `e2e` job on every PR; required locally when a change touches the sync, ingest, or CLI layers (exact trigger list in [AGENTS.md](AGENTS.md)) |
 | Mutation | CI nightly windowed run (trailing 7 days) + label-gated PR runs + on-demand code-wide dispatch (`mutation:changed` locally when wanted) | advisory — a signal, never a gate ([below](#mutation-testing)) |
 
