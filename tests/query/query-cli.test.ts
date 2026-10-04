@@ -126,11 +126,21 @@ console.log("Prefer RAG when the knowledge base changes often. See [[retrieval-a
     expect((await runCli(["--help"])).out).toContain("--file-last");
   });
 
-  it("documents the --web switch in the help", async () => {
+  it("documents the --web switch", async () => {
     const help = (await runCli(["--help"])).out;
 
     expect(help).toContain("--web");
+  });
+
+  it("names the web extension in the help", async () => {
+    const help = (await runCli(["--help"])).out;
+
     expect(help).toContain("pi-web-access");
+  });
+
+  it("describes the two agent passes", async () => {
+    const help = (await runCli(["--help"])).out;
+
     expect(help).toContain("Two agent passes");
   });
 

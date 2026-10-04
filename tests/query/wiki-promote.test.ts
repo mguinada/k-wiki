@@ -6,38 +6,97 @@ describe("wiki-promote main", () => {
     vi.restoreAllMocks();
   });
 
-  it("prints help and exits clean for --help", async () => {
+  it("prints the promote usage", async () => {
     const logged: string[] = [];
+
     vi.spyOn(console, "log").mockImplementation((line: string) => {
       logged.push(line);
     });
-    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    vi.spyOn(console, "error").mockImplementation(() => {});
 
     await main(["--help"]);
 
     expect(logged.join("\n")).toContain("Usage: wiki-promote");
+  });
+
+  it("documents --sources in the help", async () => {
+    const logged: string[] = [];
+
+    vi.spyOn(console, "log").mockImplementation((line: string) => {
+      logged.push(line);
+    });
+
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await main(["--help"]);
+
     expect(logged.join("\n")).toContain("--sources");
+  });
+
+  it("prints help without an error", async () => {
+    const logged: string[] = [];
+
+    vi.spyOn(console, "log").mockImplementation((line: string) => {
+      logged.push(line);
+    });
+
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await main(["--help"]);
+
     expect(error).not.toHaveBeenCalled();
+  });
+
+  it("exits 0", async () => {
+    const logged: string[] = [];
+
+    vi.spyOn(console, "log").mockImplementation((line: string) => {
+      logged.push(line);
+    });
+
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await main(["--help"]);
+
     expect(process.exitCode).toBeUndefined();
   });
 
-  it("fails with a usage error when the slug is missing", async () => {
+  it("reports a missing slug on stderr", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
 
     await main(["--sources", "rag-notes"]);
 
     expect(error.mock.calls.at(-1)?.[0]).toContain("a slug is required");
+
+    process.exitCode = 0;
+  });
+
+  it("exits 1", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await main(["--sources", "rag-notes"]);
+
     expect(process.exitCode).toBe(1);
 
     process.exitCode = 0;
   });
 
-  it("fails with a usage error when no sources were supplied", async () => {
+  it("reports missing sources on stderr", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
 
     await main(["attention-notes"]);
 
     expect(error.mock.calls.at(-1)?.[0]).toContain("at least one --sources");
+
+    process.exitCode = 0;
+  });
+
+  it("exits 1", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await main(["attention-notes"]);
+
     expect(process.exitCode).toBe(1);
 
     process.exitCode = 0;

@@ -474,7 +474,7 @@ describe("main (in-process)", () => {
     );
   });
 
-  it("exits 1 with an error line for an unexpected argument", async () => {
+  it("reports an unknown option on stderr", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
 
     await main(["--bogus"]);
@@ -482,10 +482,17 @@ describe("main (in-process)", () => {
     expect(error).toHaveBeenCalledWith(
       expect.stringContaining('unknown option "--bogus"'),
     );
+  });
+
+  it("exits 1", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await main(["--bogus"]);
+
     expect(process.exitCode).toBe(1);
   });
 
-  it("exits 1 with an error line for a second positional argument", async () => {
+  it("reports a second positional on stderr", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
 
     await main(["first-root", "second-root"]);
@@ -493,10 +500,17 @@ describe("main (in-process)", () => {
     expect(error).toHaveBeenCalledWith(
       expect.stringContaining("unexpected argument: second-root"),
     );
+  });
+
+  it("exits 1", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await main(["first-root", "second-root"]);
+
     expect(process.exitCode).toBe(1);
   });
 
-  it("exits 1 with an error line for an unreadable scan root", async () => {
+  it("reports an unreadable scan root on stderr", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
 
     await main([join(tmpdir(), "k-wiki-refactor-metrics-absent")]);
@@ -504,6 +518,13 @@ describe("main (in-process)", () => {
     expect(error).toHaveBeenCalledWith(
       expect.stringContaining("refactor-metrics:"),
     );
+  });
+
+  it("exits 1", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await main([join(tmpdir(), "k-wiki-refactor-metrics-absent")]);
+
     expect(process.exitCode).toBe(1);
   });
 });

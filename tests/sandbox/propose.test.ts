@@ -47,7 +47,7 @@ describe("templateCandidateNote", () => {
     );
   });
 
-  it("keeps a title with quotes and colons on one JSON-quoted line", () => {
+  it("keeps a quoted title on one JSON-quoted line", () => {
     const note = templateCandidateNote({
       title: 'RAG: "when" to prefer it',
       type: "concept",
@@ -55,6 +55,15 @@ describe("templateCandidateNote", () => {
     });
 
     expect(note.split("\n")[1]).toBe('title: "RAG: \\"when\\" to prefer it"');
+  });
+
+  it("keeps the concept type in the frontmatter", () => {
+    const note = templateCandidateNote({
+      title: 'RAG: "when" to prefer it',
+      type: "concept",
+      body: "Body.\n",
+    });
+
     expect(note).toContain("type: concept");
   });
 
@@ -82,7 +91,7 @@ describe("templateCandidateNote", () => {
 });
 
 describe("composeProposePrompt", () => {
-  it("carries the prompt text, the target path, and the fenced note", () => {
+  it("opens the prompt with the write rules", () => {
     const prompt = composeProposePrompt(
       "WRITE RULES.",
       "attention-notes",
@@ -90,9 +99,45 @@ describe("composeProposePrompt", () => {
     );
 
     expect(prompt.startsWith("WRITE RULES.")).toBe(true);
+  });
+
+  it("names the target path in the prompt", () => {
+    const prompt = composeProposePrompt(
+      "WRITE RULES.",
+      "attention-notes",
+      "---\ntype: query\n---\n\nBody.\n",
+    );
+
     expect(prompt).toContain("Target path: wiki/sandbox/attention-notes.md");
+  });
+
+  it("fences the note with begin and end markers", () => {
+    const prompt = composeProposePrompt(
+      "WRITE RULES.",
+      "attention-notes",
+      "---\ntype: query\n---\n\nBody.\n",
+    );
+
     expect(prompt).toContain("-----BEGIN NOTE-----");
+  });
+
+  it("carries the note's frontmatter into the prompt", () => {
+    const prompt = composeProposePrompt(
+      "WRITE RULES.",
+      "attention-notes",
+      "---\ntype: query\n---\n\nBody.\n",
+    );
+
     expect(prompt).toContain("-----END NOTE-----");
+  });
+
+  it("carries the prompt text, the target path, and the fenced note", () => {
+    const prompt = composeProposePrompt(
+      "WRITE RULES.",
+      "attention-notes",
+      "---\ntype: query\n---\n\nBody.\n",
+    );
+
     expect(prompt).toContain("---\ntype: query\n---\n\nBody.\n");
   });
 });

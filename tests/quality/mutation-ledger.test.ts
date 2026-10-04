@@ -340,22 +340,39 @@ describe("mergeLedger with span identities", () => {
     });
 
   it("files an actionable mutant under its span identity", () => {
+    const { ledger } = mergeLedger({ entries: [] }, spanReport("Survived"), {
+      absenceKills: false,
+      readSource: reader(addSources),
+    });
+
+    expect(ledger.entries).toHaveLength(1);
+  });
+
+  it("keys the entry by a span identity", () => {
+    const { ledger } = mergeLedger({ entries: [] }, spanReport("Survived"), {
+      absenceKills: false,
+      readSource: reader(addSources),
+    });
+
+    expect(ledger.entries[0]?.id).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  it("records the generated key with the mutant's span", () => {
     const { ledger, generated } = mergeLedger(
       { entries: [] },
       spanReport("Survived"),
       { absenceKills: false, readSource: reader(addSources) },
     );
 
-    expect(ledger.entries).toHaveLength(1);
-    expect(ledger.entries[0]?.id).toMatch(/^[0-9a-f]{16}$/);
     expect([...generated]).toEqual([
       ledger.entries[0]?.id,
       "src/math.ts:2|ArithmeticOperator",
     ]);
   });
 
-  it("keeps one entry, not two, when a refactor moved the span's lines", () => {
+  it("keeps one entry after a line-moving refactor", () => {
     const moved = ["// moved", ADD_SOURCE].join("\n");
+
     const first = mergeLedger({ entries: [] }, spanReport("Survived"), {
       absenceKills: false,
       readSource: reader(addSources),
@@ -367,6 +384,21 @@ describe("mergeLedger with span identities", () => {
     });
 
     expect(second.ledger.entries).toHaveLength(1);
+  });
+
+  it("tracks the entry to its new line", () => {
+    const moved = ["// moved", ADD_SOURCE].join("\n");
+
+    const first = mergeLedger({ entries: [] }, spanReport("Survived"), {
+      absenceKills: false,
+      readSource: reader(addSources),
+    });
+
+    const second = mergeLedger(first.ledger, spanReport("Survived", 3), {
+      absenceKills: false,
+      readSource: reader({ "src/math.ts": moved }),
+    });
+
     expect(second.ledger.entries[0]?.line).toBe(3);
   });
 
@@ -384,16 +416,29 @@ describe("mergeLedger with span identities", () => {
     ).toEqual([]);
   });
 
-  it("replaces a legacy stopgap entry with its span-identity twin — no duplicate", () => {
+  it("replaces a legacy stopgap entry", () => {
     const legacyPrior: Ledger = {
       entries: [survived("src/math.ts", 2, "ArithmeticOperator")],
     };
+
     const { ledger } = mergeLedger(legacyPrior, spanReport("Survived"), {
       absenceKills: false,
       readSource: reader(addSources),
     });
 
     expect(ledger.entries).toHaveLength(1);
+  });
+
+  it("keys the replacement by its span identity", () => {
+    const legacyPrior: Ledger = {
+      entries: [survived("src/math.ts", 2, "ArithmeticOperator")],
+    };
+
+    const { ledger } = mergeLedger(legacyPrior, spanReport("Survived"), {
+      absenceKills: false,
+      readSource: reader(addSources),
+    });
+
     expect(ledger.entries[0]?.id).toMatch(/^[0-9a-f]{16}$/);
   });
 
@@ -460,11 +505,20 @@ describe("mergeLedger with span identities", () => {
       readSource: readNothing,
     });
 
-    // The prior span-identity entry stays (windowed run, its verdict
-    // untouched); the fresh verdict files under the stopgap key — the
-    // bounded duplicate the next readable-source run or the full-run
-    // reconciliation rewrites.
     expect(second.ledger.entries.some((e) => e.id === undefined)).toBe(true);
+  });
+
+  it("records the stopgap key with the mutant's span", () => {
+    const first = mergeLedger({ entries: [] }, spanReport("Survived"), {
+      absenceKills: false,
+      readSource: reader(addSources),
+    });
+
+    const second = mergeLedger(first.ledger, spanReport("Survived"), {
+      absenceKills: false,
+      readSource: readNothing,
+    });
+
     expect([...second.generated]).toEqual(["src/math.ts:2|ArithmeticOperator"]);
   });
 });

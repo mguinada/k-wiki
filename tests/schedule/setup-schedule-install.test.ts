@@ -126,7 +126,7 @@ describe("setup-schedule install", () => {
     expect(out.endsWith("</plist>")).toBe(true);
   });
 
-  it("fails loud, naming the launchctl command, when loading fails", async () => {
+  it("names the launchctl command in the failure", async () => {
     const home = await tempHome();
 
     execFile.mockImplementation((...callArgs: unknown[]) => {
@@ -150,6 +150,35 @@ describe("setup-schedule install", () => {
     const failure = runMain([], "darwin", home);
 
     await expect(failure).rejects.toThrow("launchctl bootstrap");
+
+    await failure.catch(() => undefined);
+  });
+
+  it("carries the launchd error into the failure", async () => {
+    const home = await tempHome();
+
+    execFile.mockImplementation((...callArgs: unknown[]) => {
+      const args = callArgs[1] as readonly string[];
+      const callback = callArgs[callArgs.length - 1] as (
+        error: Error | null,
+        result?: { stdout: string },
+      ) => void;
+
+      if (args[0] === "bootstrap") {
+        callback(new Error("Bootstrap failed: 5"));
+
+        return undefined;
+      }
+
+      callback(null, { stdout: "" });
+
+      return undefined;
+    });
+
+    const failure = runMain([], "darwin", home);
+
+    await failure.catch(() => undefined);
+
     await expect(failure).rejects.toThrow("failed — Bootstrap failed: 5");
   });
 

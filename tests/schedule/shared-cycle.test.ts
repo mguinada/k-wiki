@@ -107,7 +107,7 @@ describe("scheduled-run flag surface (issue #390 steering repair 2)", () => {
     expect(parsed.error).toMatch(/--removal-receipt/);
   });
 
-  it("keeps accepting the forwarding flags scheduled-run owns", () => {
+  it("parses the forwarding flags without error", () => {
     const parsed = parseScheduledRunArgs([
       "--settings",
       "s.yml",
@@ -115,6 +115,15 @@ describe("scheduled-run flag surface (issue #390 steering repair 2)", () => {
     ]);
 
     expect(parsed.error).toBeUndefined();
+  });
+
+  it("accepts the --lint-full flag", () => {
+    const parsed = parseScheduledRunArgs([
+      "--settings",
+      "s.yml",
+      "--lint-full",
+    ]);
+
     expect(parsed.flags.has("--lint-full")).toBe(true);
   });
 });

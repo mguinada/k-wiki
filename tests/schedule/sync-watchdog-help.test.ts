@@ -20,8 +20,15 @@ describe("sync-watchdog help (printed by the launcher)", () => {
    *  assertions are about wording, not line breaks. */
   const text = () => help.replace(/\s+/g, " ");
 
-  it("documents the staleness threshold override with its default", () => {
+  it("documents the staleness override in the help", () => {
     expect(text()).toContain("--stale-after <duration>");
+
+    text();
+  });
+
+  it("states the default staleness threshold", () => {
+    text();
+
     expect(text()).toContain("the default: three 30-minute run intervals");
   });
 

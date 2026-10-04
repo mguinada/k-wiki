@@ -181,24 +181,45 @@ describe("parseRegistry", () => {
 });
 
 describe("splitByRegistry", () => {
-  it("moves a registry-recorded equivalent out of the untriaged list", () => {
+  it("moves a recorded equivalent out of the untriaged list", () => {
     const registry = registryOf(["a".repeat(16)]);
+
     const split = splitByRegistry(
       [actionable("a".repeat(16)), actionable("b".repeat(16))],
       registry,
     );
 
     expect(split.untriaged.map((e) => e.id)).toEqual(["b".repeat(16)]);
+  });
+
+  it("lists the equivalent under its record", () => {
+    const registry = registryOf(["a".repeat(16)]);
+
+    const split = splitByRegistry(
+      [actionable("a".repeat(16)), actionable("b".repeat(16))],
+      registry,
+    );
+
     expect(split.equivalents.map((r) => r.entry.id)).toEqual(["a".repeat(16)]);
   });
 
-  it("routes a recorded artifact to its own bucket, never the equivalent one", () => {
+  it("leaves the equivalents bucket empty for an artifact", () => {
     const id = "c".repeat(16);
+
     const registry = parseRegistry(registryText({ [id]: entry("artifact") }));
 
     const split = splitByRegistry([actionable(id)], registry);
 
     expect(split.equivalents).toEqual([]);
+  });
+
+  it("routes a recorded artifact to its own bucket", () => {
+    const id = "c".repeat(16);
+
+    const registry = parseRegistry(registryText({ [id]: entry("artifact") }));
+
+    const split = splitByRegistry([actionable(id)], registry);
+
     expect(split.artifacts.map((r) => r.entry.id)).toEqual([id]);
   });
 
@@ -208,23 +229,39 @@ describe("splitByRegistry", () => {
     expect(splitByRegistry([actionable()], registry).untriaged).toHaveLength(1);
   });
 
-  it("keeps an entry whose identity the registry does not record", () => {
+  it("keeps an unrecorded entry in the untriaged list", () => {
     const split = splitByRegistry(
       [actionable("b".repeat(16))],
       registryOf(["a".repeat(16)]),
     );
 
     expect(split.untriaged).toHaveLength(1);
+  });
+
+  it("leaves the equivalents bucket empty for it", () => {
+    const split = splitByRegistry(
+      [actionable("b".repeat(16))],
+      registryOf(["a".repeat(16)]),
+    );
+
     expect(split.equivalents).toEqual([]);
   });
 });
 
 describe("pruneCandidates", () => {
-  it("lists a registry entry no generated mutant carries", () => {
+  it("lists a registry entry no mutant carries", () => {
     const registry = registryOf(["a".repeat(16), "b".repeat(16)]);
+
     const candidates = pruneCandidates(registry, new Set(["b".repeat(16)]));
 
     expect(candidates.map((c) => c.id)).toEqual(["a".repeat(16)]);
+  });
+
+  it("carries the record's PR link", () => {
+    const registry = registryOf(["a".repeat(16), "b".repeat(16)]);
+
+    const candidates = pruneCandidates(registry, new Set(["b".repeat(16)]));
+
     expect(candidates[0]?.record.pr).toContain("/pull/237");
   });
 

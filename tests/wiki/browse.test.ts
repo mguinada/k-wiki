@@ -81,10 +81,19 @@ describe("listablePages", () => {
     expect(slugs(await listablePages(wikiDir))).toEqual(["notes"]);
   });
 
-  it("lists a page without a type with an undefined type", async () => {
+  it("lists the typeless page", async () => {
     const wikiDir = await makeWiki("plain.md", undefined, undefined);
 
     expect(slugs(await listablePages(wikiDir))).toEqual(["plain"]);
+
+    await listablePages(wikiDir);
+  });
+
+  it("leaves its type undefined", async () => {
+    const wikiDir = await makeWiki("plain.md", undefined, undefined);
+
+    slugs(await listablePages(wikiDir));
+
     expect((await listablePages(wikiDir))[0]?.type).toBeUndefined();
   });
 });
@@ -109,14 +118,25 @@ describe("filteredLines", () => {
 });
 
 describe("groupPages", () => {
-  it("groups pages by their frontmatter type", () => {
+  it("groups a concept page under its type", () => {
     const pages = [
       { path: "a.md", slug: "rag", type: "concept", title: "RAG" },
       { path: "b.md", slug: "hub", type: "source", title: "Hub" },
     ];
+
     const groups = groupPages(pages);
 
     expect(groups.get("concept")).toEqual([pages[0]]);
+  });
+
+  it("groups a source page under its type", () => {
+    const pages = [
+      { path: "a.md", slug: "rag", type: "concept", title: "RAG" },
+      { path: "b.md", slug: "hub", type: "source", title: "Hub" },
+    ];
+
+    const groups = groupPages(pages);
+
     expect(groups.get("source")).toEqual([pages[1]]);
   });
 
