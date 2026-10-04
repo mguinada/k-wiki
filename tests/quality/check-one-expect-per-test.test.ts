@@ -96,13 +96,27 @@ describe("analyzeSource counting", () => {
     expect(blocks.map((block) => block.expectLines.length)).toEqual([1]);
   });
 
-  it("a two-expect block is one violation naming both expect lines", () => {
+  it("collects the violating block once", () => {
     const blocks = analyzeSource(
       `it("loads the board", () => {\n  const board = load();\n  expect(board).toBeDefined();\n  expect(board.rows).toHaveLength(3);\n});\n`,
     );
 
     expect(blocks).toHaveLength(1);
+  });
+
+  it("names both expect lines in the violation", () => {
+    const blocks = analyzeSource(
+      `it("loads the board", () => {\n  const board = load();\n  expect(board).toBeDefined();\n  expect(board.rows).toHaveLength(3);\n});\n`,
+    );
+
     expect(blocks[0]?.expectLines).toEqual([3, 4]);
+  });
+
+  it("reports the block's start line", () => {
+    const blocks = analyzeSource(
+      `it("loads the board", () => {\n  const board = load();\n  expect(board).toBeDefined();\n  expect(board.rows).toHaveLength(3);\n});\n`,
+    );
+
     expect(blocks[0]?.line).toBe(1);
   });
 
@@ -146,22 +160,43 @@ describe("analyzeSource counting", () => {
     expect(blocks[0]?.expectLines).toHaveLength(1);
   });
 
-  it("describe-nested its are counted per innermost callback", () => {
+  it("counts two describe-nested its separately", () => {
     const blocks = analyzeSource(
       `describe("board", () => {\n  it("loads", () => {\n    expect(load()).toBeDefined();\n  });\n  it("rejects a stale token", () => {\n    expect(load("stale")).toBeNull();\n  });\n});\n`,
     );
 
     expect(blocks).toHaveLength(2);
+  });
+
+  it("counts one expectation per nested block", () => {
+    const blocks = analyzeSource(
+      `describe("board", () => {\n  it("loads", () => {\n    expect(load()).toBeDefined();\n  });\n  it("rejects a stale token", () => {\n    expect(load("stale")).toBeNull();\n  });\n});\n`,
+    );
+
     expect(blocks.map((block) => block.expectLines.length)).toEqual([1, 1]);
   });
 
-  it("a nested it callback's expects stay out of the parent's count", () => {
+  it("finds the nested it as its own block", () => {
     const blocks = analyzeSource(
       `it("outer", () => {\n  expect(1).toBe(1);\n  it("inner", () => {\n    expect(2).toBe(2);\n  });\n});\n`,
     );
 
     expect(blocks).toHaveLength(2);
+  });
+
+  it("keeps the parent's count to its own expects", () => {
+    const blocks = analyzeSource(
+      `it("outer", () => {\n  expect(1).toBe(1);\n  it("inner", () => {\n    expect(2).toBe(2);\n  });\n});\n`,
+    );
+
     expect(blocks[0]?.expectLines).toHaveLength(1);
+  });
+
+  it("counts the nested block's own expect", () => {
+    const blocks = analyzeSource(
+      `it("outer", () => {\n  expect(1).toBe(1);\n  it("inner", () => {\n    expect(2).toBe(2);\n  });\n});\n`,
+    );
+
     expect(blocks[1]?.expectLines).toHaveLength(1);
   });
 
@@ -171,18 +206,25 @@ describe("analyzeSource counting", () => {
     expect(blocks[0]?.expectLines).toHaveLength(0);
   });
 
-  it("a template-literal title is kept, a dynamic one reads as <dynamic>", () => {
+  it("keeps a template-literal title", () => {
     const blocks = analyzeSource(
       "it(`loads the board`, () => {\n  expect(load()).toBeDefined();\n});\nit(title(3), () => {\n  expect(load()).toBeDefined();\n  expect(load()).toBeDefined();\n});\n",
     );
 
     expect(blocks[0]?.title).toBe("loads the board");
+  });
+
+  it("reads a dynamic title as <dynamic>", () => {
+    const blocks = analyzeSource(
+      "it(`loads the board`, () => {\n  expect(load()).toBeDefined();\n});\nit(title(3), () => {\n  expect(load()).toBeDefined();\n  expect(load()).toBeDefined();\n});\n",
+    );
+
     expect(blocks[1]?.title).toBe("<dynamic>");
   });
 });
 
 describe("checkTree and rendering", () => {
-  it("a directory with one clean file reports zero violations", async () => {
+  it("reports zero violations for a clean file", async () => {
     const report = await checkTree(
       await fixtureDir(
         "clean.test.ts",
@@ -191,6 +233,16 @@ describe("checkTree and rendering", () => {
     );
 
     expect(report.violations).toEqual([]);
+  });
+
+  it("counts the scanned file", async () => {
+    const report = await checkTree(
+      await fixtureDir(
+        "clean.test.ts",
+        `it("works", () => {\n  expect(1).toBe(1);\n});\n`,
+      ),
+    );
+
     expect(report.files).toBe(1);
   });
 
@@ -198,14 +250,16 @@ describe("checkTree and rendering", () => {
     expect((await checkTree(await tempRoot())).violations).toEqual([]);
   });
 
-  it("the e2e directory is skipped entirely", async () => {
+  it("skips e2e files from the scan", async () => {
     const root = await tempRoot();
 
     await writeFile(
       join(root, "deep.test.ts"),
       `it("two behaviors", () => {\n  expect(1).toBe(1);\n  expect(2).toBe(2);\n});\n`,
     );
+
     await mkdir(join(root, "e2e"), { recursive: true });
+
     await writeFile(
       join(root, "e2e", "journey.e2e.test.ts"),
       `it("journey", () => {\n  expect(1).toBe(1);\n  expect(2).toBe(2);\n});\n`,
@@ -214,6 +268,25 @@ describe("checkTree and rendering", () => {
     const report = await checkTree(root);
 
     expect(report.files).toBe(1);
+  });
+
+  it("still flags the unit-test violation beside the e2e tree", async () => {
+    const root = await tempRoot();
+
+    await writeFile(
+      join(root, "deep.test.ts"),
+      `it("two behaviors", () => {\n  expect(1).toBe(1);\n  expect(2).toBe(2);\n});\n`,
+    );
+
+    await mkdir(join(root, "e2e"), { recursive: true });
+
+    await writeFile(
+      join(root, "e2e", "journey.e2e.test.ts"),
+      `it("journey", () => {\n  expect(1).toBe(1);\n  expect(2).toBe(2);\n});\n`,
+    );
+
+    const report = await checkTree(root);
+
     expect(report.violations).toHaveLength(1);
   });
 
@@ -225,19 +298,21 @@ describe("checkTree and rendering", () => {
     expect((await checkTree(root)).files).toBe(0);
   });
 
-  it("violations sort by file then line and render the locator format", async () => {
+  it("sorts violations by file then line", async () => {
     const root = await tempRoot();
 
     await writeFile(
       join(root, "b-second.test.ts"),
       `it("second file, first block", () => {\n  expect(1).toBe(1);\n  expect(2).toBe(2);\n});\n`,
     );
+
     await writeFile(
       join(root, "a-first.test.ts"),
       `it("alpha", () => {\n  expect(1).toBe(1);\n  expect(2).toBe(2);\n});\nit("beta", () => {\n  expect(1).toBe(1);\n  expect(2).toBe(2);\n  expect(3).toBe(3);\n});\n`,
     );
 
     const report = await checkTree(root);
+
     const display = (name: string) => relative(process.cwd(), join(root, name));
 
     expect(report.violations.map((v) => [v.file, v.line])).toEqual([
@@ -245,6 +320,25 @@ describe("checkTree and rendering", () => {
       [display("a-first.test.ts"), 5],
       [display("b-second.test.ts"), 1],
     ]);
+  });
+
+  it("renders the specced locator line", async () => {
+    const root = await tempRoot();
+
+    await writeFile(
+      join(root, "b-second.test.ts"),
+      `it("second file, first block", () => {\n  expect(1).toBe(1);\n  expect(2).toBe(2);\n});\n`,
+    );
+
+    await writeFile(
+      join(root, "a-first.test.ts"),
+      `it("alpha", () => {\n  expect(1).toBe(1);\n  expect(2).toBe(2);\n});\nit("beta", () => {\n  expect(1).toBe(1);\n  expect(2).toBe(2);\n  expect(3).toBe(3);\n});\n`,
+    );
+
+    const report = await checkTree(root);
+
+    const display = (name: string) => relative(process.cwd(), join(root, name));
+
     expect(renderViolation(report.violations[0]!)).toBe(
       `VIOLATION ${display("a-first.test.ts")}:1 it "alpha": 2 expects (2,3); standard 1`,
     );
@@ -284,7 +378,7 @@ describe("checkTree and rendering", () => {
 });
 
 describe("exit codes through the launcher", () => {
-  it("a clean tree exits 0 and prints one ok line", () => {
+  it("exits 0 on a clean tree", () => {
     const dir = fixtureDirSync(
       "clean.test.ts",
       `it("works", () => {\n  expect(1).toBe(1);\n});\n`,
@@ -293,26 +387,83 @@ describe("exit codes through the launcher", () => {
     const [status, output] = runLauncherCapture([dir]);
 
     expect(status).toBe(0);
+  });
+
+  it("prints one ok line on a clean tree", () => {
+    const dir = fixtureDirSync(
+      "clean.test.ts",
+      `it("works", () => {\n  expect(1).toBe(1);\n});\n`,
+    );
+
+    const [, output] = runLauncherCapture([dir]);
+
     expect(output.replace(/\u001b\[\d+m/gu, "")).toMatch(
       /^ok: 1 test blocks across 1 file/u,
     );
   });
 
-  it("a two-expect violation exits 1 with the locator and the prescription once", () => {
+  it("exits 1 on a two-expect violation", () => {
+    const dir = fixtureDirSync(
+      "broken.test.ts",
+      `it("loads the board", () => {\n  expect(load()).toBeDefined();\n  expect(load().rows).toHaveLength(3);\n});\n`,
+    );
+
+    const [status] = runLauncherCapture([dir]);
+
+    expect(status).toBe(1);
+  });
+
+  it("prints the locator line for the violating block", () => {
     const dir = fixtureDirSync(
       "broken.test.ts",
       `it("loads the board", () => {\n  expect(load()).toBeDefined();\n  expect(load().rows).toHaveLength(3);\n});\n`,
     );
 
     const [status, output] = runLauncherCapture([dir]);
+
     const plain = output.replace(/\u001b\[\d+m/gu, "");
 
-    expect(status).toBe(1);
     expect(plain).toContain(
       'broken.test.ts:1 it "loads the board": 2 expects (2,3); standard 1',
     );
+  });
+
+  it("prints the prescription once per invocation", () => {
+    const dir = fixtureDirSync(
+      "broken.test.ts",
+      `it("loads the board", () => {\n  expect(load()).toBeDefined();\n  expect(load().rows).toHaveLength(3);\n});\n`,
+    );
+
+    const [status, output] = runLauncherCapture([dir]);
+
+    const plain = output.replace(/\u001b\[\d+m/gu, "");
+
     expect(plain.match(/WHY /gu)).toHaveLength(1);
+  });
+
+  it("requires every assertion kept in the fix", () => {
+    const dir = fixtureDirSync(
+      "broken.test.ts",
+      `it("loads the board", () => {\n  expect(load()).toBeDefined();\n  expect(load().rows).toHaveLength(3);\n});\n`,
+    );
+
+    const [status, output] = runLauncherCapture([dir]);
+
+    const plain = output.replace(/\u001b\[\d+m/gu, "");
+
     expect(plain).toContain("keep EVERY assert");
+  });
+
+  it("points at re-running until clean", () => {
+    const dir = fixtureDirSync(
+      "broken.test.ts",
+      `it("loads the board", () => {\n  expect(load()).toBeDefined();\n  expect(load().rows).toHaveLength(3);\n});\n`,
+    );
+
+    const [status, output] = runLauncherCapture([dir]);
+
+    const plain = output.replace(/\u001b\[\d+m/gu, "");
+
     expect(plain).toContain("re-run until clean");
   });
 
@@ -326,21 +477,43 @@ describe("exit codes through the launcher", () => {
     ).toBe(2);
   });
 
-  it("a file that does not parse fails the checker — exit 2", () => {
+  it("exits 2 when a fixture does not parse", () => {
     const dir = fixtureDirSync("unparseable.test.ts", `it("broken", () => {\n`);
 
     const [status, output] = runLauncherCapture([dir]);
 
     expect(status).toBe(2);
+  });
+
+  it("names the unparseable file", () => {
+    const dir = fixtureDirSync("unparseable.test.ts", `it("broken", () => {\n`);
+
+    const [status, output] = runLauncherCapture([dir]);
+
     expect(output).toContain("unparseable.test.ts");
   });
 
-  it("--help exits 0 and states the standard, scope, and exit codes", () => {
+  it("exits 0 on --help", () => {
     const [status, output] = runLauncherCapture(["--help"]);
 
     expect(status).toBe(0);
+  });
+
+  it("states the standard in the help", () => {
+    const [status, output] = runLauncherCapture(["--help"]);
+
     expect(output).toContain("one expectation per test block");
+  });
+
+  it("states the e2e exemption in the help", () => {
+    const [status, output] = runLauncherCapture(["--help"]);
+
     expect(output).toContain("tests/e2e/");
+  });
+
+  it("states exit 2 in the help", () => {
+    const [status, output] = runLauncherCapture(["--help"]);
+
     expect(output).toContain("Exit 2");
   });
 });
