@@ -300,5 +300,5 @@ export async function main(
   }
 }
 
-/* v8 ignore next: covered only under direct `node src/query/wiki-query.ts` runs */
+/* v8 ignore next: covered only under direct `node src/query/query-cli.ts` runs */
 refuseDirectExecution(import.meta.url, "wiki-query");
