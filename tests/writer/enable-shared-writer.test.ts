@@ -661,6 +661,7 @@ describe("concurrent enablement (test 19)", () => {
       { clone: world.a, result: first },
       { clone: world.b, result: second },
     ];
+    const winners = outcomes.filter((o) => o.result === "ok");
     const remote = (
       await import("../../src/writer/git-remote.ts")
     ).gitRunnerFor({ dir: world.remoteDir, env: process.env });
