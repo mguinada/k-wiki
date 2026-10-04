@@ -168,7 +168,12 @@ e2e run or diagnosing a failing one.
   `webSources`, the three machine sections, the audit table),
   `--file-last` on it files the core answer only, and a missing
   pi-web-access install degrades to the wiki-only run with the
-  warning.
+  warning; and the pruning semantics (issue #425): a drifted
+  citation is pruned with the machine prune line in the artifact's
+  audit section while the traceable bullet survives, an uncited
+  fetch stays non-fatal, and an enrichment pruned empty is the
+  typed failure with the concrete reason persisted in the
+  artifact's `webFailureReason` header.
 - **k-wiki** — the front door (issue #337) in temp checkouts, temp
   data repos, and bound temp projects: read verbs on both doors
   (agent door via `.k-wiki.json`, human door from the checkout

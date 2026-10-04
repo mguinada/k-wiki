@@ -12,7 +12,12 @@
  * on it.
  */
 
-import type { WebCall, WebSource } from "./web-audit.ts";
+import {
+  citationGate,
+  type WebCall,
+  type WebPrunedCitations,
+  type WebSource,
+} from "./web-audit.ts";
 
 /** The artifact's header `mode` value for a `--web` run. */
 export const WEB_MODE = "query (--web)";
@@ -83,8 +88,14 @@ function auditRow(index: number, call: WebCall): string {
   return `| ${index} | ${call.tool} | ${call.target} | ${call.results} | ${new Date(call.timestamp).toISOString()} |`;
 }
 
-/** The `## Web calls audit` section: every recorded call, in order. */
-export function renderWebAuditSection(calls: readonly WebCall[]): string {
+/** The `## Web calls audit` section: every recorded call, in order;
+ *  when the reconciliation pruned citations, the machine-owned
+ *  prune line under the table records the audit trail of the
+ *  pruning itself (gate, count, offending URLs). */
+export function renderWebAuditSection(
+  calls: readonly WebCall[],
+  pruned?: WebPrunedCitations,
+): string {
   const header = [
     WEB_AUDIT_HEADING,
     "",
@@ -94,16 +105,26 @@ export function renderWebAuditSection(calls: readonly WebCall[]): string {
 
   const rows = calls.map((call, index) => auditRow(index + 1, call));
 
-  return [
+  const table = [
     ...header,
     ...(rows.length === 0 ? ["| - | none | - | 0 | - |"] : rows),
+  ];
+
+  if (pruned === undefined) {
+    return table.join("\n");
+  }
+
+  return [
+    ...table,
+    "",
+    `Pruned citations: ${pruned.count} — ${pruned.urls.join(", ")} (${citationGate(pruned.urls.length)})`,
   ].join("\n");
 }
 
 /** The `## Web enrichment` section: the machine heading and label,
- *  then the model bullets as given — the caller passes them through
- *  sanitizeEnrichment, so what is rendered and what is reconciled
- *  is the same text. */
+ *  then the reconciliation's traceable remainder as given — the
+ *  caller passes the reconciled text, so what is rendered and what
+ *  was reconciled is the same text. */
 export function renderWebEnrichmentSection(enrichment: string): string {
   return [
     WEB_ENRICHMENT_HEADING,

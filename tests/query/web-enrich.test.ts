@@ -161,6 +161,23 @@ describe("runWebEnrichment", () => {
     ),
   ].join("\n");
 
+  /** The live 2026-10-04 drift shape: the model cites one URL while
+   *  the audited tool result recorded a differently-spelled path. */
+  const driftedStream = [
+    toolCallLine("c1", { query: "topic" }),
+    toolResultLine("c1", "https://example.com/a", { totalResults: 3 }),
+    toolCallLine("c2", {
+      url: "https://example.com/triage/2026/2026-07-27.md",
+    }),
+    toolResultLine("c2", "page text"),
+    assistantTextLine(
+      [
+        "- [a](https://example.com/a) confirms the topic (retrieved 2026-10-03).",
+        "- [triage](https://example.com/triage/2026/07-27.md) mis-transcribed (retrieved 2026-10-03).",
+      ].join("\n"),
+    ),
+  ].join("\n");
+
   it("renders the three machine-owned sections from the recorded audit", async () => {
     const outcome = await runWebEnrichment({
       identity: SETTINGS,
@@ -226,7 +243,7 @@ describe("runWebEnrichment", () => {
     expect(outcome.kind).toBe("failed");
   });
 
-  it("degrades when the audit does not reconcile", async () => {
+  it("degrades with the persisted reason when pruning empties the enrichment", async () => {
     const hallucinated = [
       toolCallLine("c1", { query: "topic" }),
       toolResultLine("c1", "https://example.com/a", { totalResults: 1 }),
@@ -247,8 +264,103 @@ describe("runWebEnrichment", () => {
     expect(outcome).toEqual({
       kind: "failed",
       reason:
-        "cited URL absent from the audit table: https://example.com/not-in-audit",
+        "enrichment empty after pruning untraceable citations: https://example.com/not-in-audit (cited URL absent from the audit table)",
     });
+  });
+
+  it("stays ok when a drifted citation is pruned to the traceable remainder", async () => {
+    const outcome = await runWebEnrichment({
+      identity: SETTINGS,
+      isolationFlags: [...ISOLATION_FLAGS],
+      question: "Q",
+      coreAnswer: "CORE",
+      promptText: await makePromptsDir(),
+      run: runContext({ rawDir: join(tmpdir(), "k-wiki-web-run-raw") }),
+      runAgent: canned(driftedStream),
+    });
+
+    expect(outcome.kind).toBe("ok");
+  });
+
+  it("keeps the enrichment section to the traceable remainder", async () => {
+    const outcome = await runWebEnrichment({
+      identity: SETTINGS,
+      isolationFlags: [...ISOLATION_FLAGS],
+      question: "Q",
+      coreAnswer: "CORE",
+      promptText: await makePromptsDir(),
+      run: runContext({ rawDir: join(tmpdir(), "k-wiki-web-run-raw") }),
+      runAgent: canned(driftedStream),
+    });
+
+    if (outcome.kind !== "ok") {
+      throw new Error("expected an ok outcome");
+    }
+
+    expect(outcome.web.enrichment).not.toContain("triage/2026/07-27.md");
+  });
+
+  it("renders the pruning record with the drifted URL in the audit section", async () => {
+    const outcome = await runWebEnrichment({
+      identity: SETTINGS,
+      isolationFlags: [...ISOLATION_FLAGS],
+      question: "Q",
+      coreAnswer: "CORE",
+      promptText: await makePromptsDir(),
+      run: runContext({ rawDir: join(tmpdir(), "k-wiki-web-run-raw") }),
+      runAgent: canned(driftedStream),
+    });
+
+    if (outcome.kind !== "ok") {
+      throw new Error("expected an ok outcome");
+    }
+
+    expect(outcome.web.audit).toContain(
+      "Pruned citations: 1 — https://example.com/triage/2026/07-27.md (cited URL absent from the audit table)",
+    );
+  });
+
+  it("counts only the traceable remainder's sources after pruning", async () => {
+    const outcome = await runWebEnrichment({
+      identity: SETTINGS,
+      isolationFlags: [...ISOLATION_FLAGS],
+      question: "Q",
+      coreAnswer: "CORE",
+      promptText: await makePromptsDir(),
+      run: runContext({ rawDir: join(tmpdir(), "k-wiki-web-run-raw") }),
+      runAgent: canned(driftedStream),
+    });
+
+    if (outcome.kind !== "ok") {
+      throw new Error("expected an ok outcome");
+    }
+
+    expect(outcome.sources).toEqual([
+      { url: "https://example.com/a", retrieved: "2026-10-03" },
+    ]);
+  });
+
+  it("keeps an uncited fetch call non-fatal", async () => {
+    const uncitedFetch = [
+      toolCallLine("c1", { query: "topic" }),
+      toolResultLine("c1", "https://example.com/a", { totalResults: 1 }),
+      toolCallLine("c2", { url: "https://example.com/unused" }),
+      toolResultLine("c2", "page text"),
+      assistantTextLine(
+        "- [a](https://example.com/a) confirms the topic (retrieved 2026-10-03).",
+      ),
+    ].join("\n");
+    const outcome = await runWebEnrichment({
+      identity: SETTINGS,
+      isolationFlags: [...ISOLATION_FLAGS],
+      question: "Q",
+      coreAnswer: "CORE",
+      promptText: await makePromptsDir(),
+      run: runContext({ rawDir: join(tmpdir(), "k-wiki-web-run-raw") }),
+      runAgent: canned(uncitedFetch),
+    });
+
+    expect(outcome.kind).toBe("ok");
   });
 
   it("reconciles the rendered text only — imitation below the first owned line neither cites nor fails", async () => {
@@ -398,6 +510,32 @@ describe("enrichmentArtifact", () => {
       pages: [],
       answer: "CORE",
       webWarning: WEB_FAILED_WARNING,
+      webFailureReason: `${WEB_ENRICH_PROMPT_FILE} is unavailable`,
     });
+  });
+
+  it("persists the concrete failure reason beside the warning in the artifact", async () => {
+    const result = await enrichmentArtifact(
+      {
+        question: "Q",
+        timestamp: "2026-10-03T21:00:00.000Z",
+        pages: [],
+        answer: "CORE",
+      },
+      {
+        identity: SETTINGS,
+        isolationFlags: [...ISOLATION_FLAGS],
+        question: "Q",
+        promptText: "PROMPT",
+        run: runContext({ rawDir: join(tmpdir(), "k-wiki-web-run-raw") }),
+        runAgent: async () => {
+          throw new Error("agent timed out after 1800 seconds");
+        },
+      },
+    );
+
+    expect(result.artifact.webFailureReason).toBe(
+      "agent timed out after 1800 seconds",
+    );
   });
 });

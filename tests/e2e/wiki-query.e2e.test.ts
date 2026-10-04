@@ -455,13 +455,83 @@ describe("wiki-query e2e", () => {
   });
 });
 
-/**
- * The `--web` stub: text-mode invocations (the web-blind core run)
- * answer plainly; `--mode json` invocations (the enrichment run)
- * record their argv and emit a canned event stream — one search and
- * one fetch, both reconciled by the final bullet text.
- */
-const WEB_STUB = `#!/usr/bin/env node
+/** One canned enrichment-stream event. */
+const event = (message: object) => ({
+  type: "message_end",
+  message,
+});
+
+/** The default stream's shared events: one search returning the
+ *  traceable URL, and the final text citing it. */
+const SEARCH_CALL = event({
+  role: "assistant",
+  content: [
+    {
+      type: "toolCall",
+      id: "c1",
+      name: "web_search",
+      arguments: { query: "rag vs fine-tuning" },
+    },
+  ],
+  stopReason: "toolUse",
+  timestamp: 1791000000000,
+});
+
+const SEARCH_RESULT = event({
+  role: "toolResult",
+  toolCallId: "c1",
+  toolName: "web_search",
+  content: [{ type: "text", text: "https://example.com/a" }],
+  isError: false,
+  details: { totalResults: 4 },
+  timestamp: 1791000001000,
+});
+
+const FINAL_BULLET_A = event({
+  role: "assistant",
+  content: [
+    {
+      type: "text",
+      text: "- [Example A](https://example.com/a) reinforces the topic (retrieved 2026-10-03).",
+    },
+  ],
+  stopReason: "stop",
+  timestamp: 1791000004000,
+});
+
+/** The default enrichment stream: one search and one fetch, both
+ *  reconciled by the final bullet text. */
+const DEFAULT_WEB_MESSAGES = [
+  SEARCH_CALL,
+  SEARCH_RESULT,
+  event({
+    role: "assistant",
+    content: [
+      {
+        type: "toolCall",
+        id: "c2",
+        name: "fetch_content",
+        arguments: { url: "https://example.com/a" },
+      },
+    ],
+    timestamp: 1791000002000,
+  }),
+  event({
+    role: "toolResult",
+    toolCallId: "c2",
+    toolName: "fetch_content",
+    content: [{ type: "text", text: "page" }],
+    isError: false,
+    timestamp: 1791000003000,
+  }),
+  FINAL_BULLET_A,
+];
+
+/** The `--web` stub for one canned enrichment stream: text-mode
+ *  invocations (the web-blind core run) answer plainly; `--mode
+ *  json` invocations (the enrichment run) record their argv and
+ *  emit the stream. */
+const webStub = (messages: object[]) => `#!/usr/bin/env node
 import { appendFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -469,13 +539,7 @@ const args = process.argv.slice(2);
 
 if (args.includes("--mode")) {
   await writeFile(join(process.cwd(), "stub-web-argv.json"), JSON.stringify(args));
-  const stream = [
-    JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "toolCall", id: "c1", name: "web_search", arguments: { query: "rag vs fine-tuning" } }], timestamp: 1791000000000 } }),
-    JSON.stringify({ type: "message_end", message: { role: "toolResult", toolCallId: "c1", toolName: "web_search", content: [{ type: "text", text: "https://example.com/a" }], isError: false, details: { totalResults: 4 }, timestamp: 1791000001000 } }),
-    JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "toolCall", id: "c2", name: "fetch_content", arguments: { url: "https://example.com/a" } }], timestamp: 1791000002000 } }),
-    JSON.stringify({ type: "message_end", message: { role: "toolResult", toolCallId: "c2", toolName: "fetch_content", content: [{ type: "text", text: "page" }], isError: false, timestamp: 1791000003000 } }),
-    JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "- [Example A](https://example.com/a) reinforces the topic (retrieved 2026-10-03)." }], stopReason: "stop", timestamp: 1791000004000 } }),
-  ].join("\\n");
+  const stream = ${JSON.stringify(messages.map((message) => JSON.stringify(message)))}.join("\\n");
   console.log(stream);
 
   process.exit(0);
@@ -492,6 +556,96 @@ await writeFile(join(process.cwd(), "stub-prompt.txt"), prompt);
 await writeFile(join(process.cwd(), "stub-core-argv.json"), JSON.stringify(args));
 console.log("Prefer RAG when the knowledge base changes often. See [[retrieval-augmented-generation]].");
 `;
+
+const WEB_STUB = webStub(DEFAULT_WEB_MESSAGES);
+
+/** The live 2026-10-04 drift shape: the enrichment cites
+ *  `triage/2026/07-27.md` while the audited fetch recorded
+ *  `triage/2026/2026-07-27.md` — pruned, traceable bullet survives. */
+const DRIFT_WEB_MESSAGES = [
+  SEARCH_CALL,
+  SEARCH_RESULT,
+  event({
+    role: "assistant",
+    content: [
+      {
+        type: "toolCall",
+        id: "c2",
+        name: "fetch_content",
+        arguments: { url: "https://example.com/triage/2026/2026-07-27.md" },
+      },
+    ],
+    timestamp: 1791000002000,
+  }),
+  event({
+    role: "toolResult",
+    toolCallId: "c2",
+    toolName: "fetch_content",
+    content: [{ type: "text", text: "page" }],
+    isError: false,
+    timestamp: 1791000003000,
+  }),
+  event({
+    role: "assistant",
+    content: [
+      {
+        type: "text",
+        text: [
+          "- [Example A](https://example.com/a) reinforces the topic (retrieved 2026-10-03).",
+          "- [Triage](https://example.com/triage/2026/07-27.md) drifts (retrieved 2026-10-03).",
+        ].join("\n"),
+      },
+    ],
+    stopReason: "stop",
+    timestamp: 1791000004000,
+  }),
+];
+
+/** The fetch's target never enters the enrichment text: recorded,
+ *  harmless, and no longer a run failure. */
+const UNCITED_FETCH_WEB_MESSAGES = [
+  SEARCH_CALL,
+  SEARCH_RESULT,
+  event({
+    role: "assistant",
+    content: [
+      {
+        type: "toolCall",
+        id: "c2",
+        name: "fetch_content",
+        arguments: { url: "https://example.com/unused" },
+      },
+    ],
+    timestamp: 1791000002000,
+  }),
+  event({
+    role: "toolResult",
+    toolCallId: "c2",
+    toolName: "fetch_content",
+    content: [{ type: "text", text: "page" }],
+    isError: false,
+    timestamp: 1791000003000,
+  }),
+  FINAL_BULLET_A,
+];
+
+/** The enrichment's only citation is untraceable: pruning empties
+ *  it, and the run is the typed failure with the persisted reason. */
+const EMPTIED_WEB_MESSAGES = [
+  SEARCH_CALL,
+  SEARCH_RESULT,
+  event({
+    role: "assistant",
+    content: [
+      {
+        type: "text",
+        text: "- [Absent](https://example.com/absent) was never fetched (retrieved 2026-10-03).",
+      },
+    ],
+    stopReason: "stop",
+    timestamp: 1791000004000,
+  }),
+];
 
 /** A pi install root: `withPlugin` decides whether pi-web-access is
  *  installed under it. */
@@ -658,5 +812,108 @@ describe("wiki-query --web e2e", () => {
     expect(page).toContain("Prefer RAG when the knowledge base changes often.");
     expect(page).not.toContain("https://example.com/a");
     expect(page).not.toContain("## Web enrichment");
+  });
+
+  it("prunes the drifted citation in the artifact and keeps the traceable bullet", async () => {
+    const repo = await makeRepo();
+    const piRoot = await makePiRoot(true);
+
+    await writeFile(
+      join(repo.dataRoot, "stub-agent.mjs"),
+      webStub(DRIFT_WEB_MESSAGES),
+      { mode: 0o755 },
+    );
+
+    await runCli(
+      QUERY_SCRIPT,
+      [
+        "--settings",
+        repo.settingsPath,
+        "--raw-dir",
+        join(repo.dataRoot, "raw"),
+        "--outputs",
+        repo.outputsDir,
+        "--web",
+        "When should I prefer RAG over fine-tuning?",
+      ],
+      { env: { PI_CODING_AGENT_DIR: piRoot } },
+    );
+
+    const artifact = await readFile(
+      join(repo.outputsDir, "last-query.md"),
+      "utf8",
+    );
+
+    expect(artifact).toContain(
+      "Pruned citations: 1 — https://example.com/triage/2026/07-27.md (cited URL absent from the audit table)",
+    );
+  });
+
+  it("keeps an uncited fetch call non-fatal through the real CLI", async () => {
+    const repo = await makeRepo();
+    const piRoot = await makePiRoot(true);
+
+    await writeFile(
+      join(repo.dataRoot, "stub-agent.mjs"),
+      webStub(UNCITED_FETCH_WEB_MESSAGES),
+      { mode: 0o755 },
+    );
+
+    await runCli(
+      QUERY_SCRIPT,
+      [
+        "--settings",
+        repo.settingsPath,
+        "--raw-dir",
+        join(repo.dataRoot, "raw"),
+        "--outputs",
+        repo.outputsDir,
+        "--web",
+        "When should I prefer RAG over fine-tuning?",
+      ],
+      { env: { PI_CODING_AGENT_DIR: piRoot } },
+    );
+
+    const artifact = await readFile(
+      join(repo.outputsDir, "last-query.md"),
+      "utf8",
+    );
+
+    expect(artifact).toContain('mode: "query (--web)"');
+  });
+
+  it("persists the failure reason in the artifact when pruning empties the enrichment", async () => {
+    const repo = await makeRepo();
+    const piRoot = await makePiRoot(true);
+
+    await writeFile(
+      join(repo.dataRoot, "stub-agent.mjs"),
+      webStub(EMPTIED_WEB_MESSAGES),
+      { mode: 0o755 },
+    );
+
+    await runCli(
+      QUERY_SCRIPT,
+      [
+        "--settings",
+        repo.settingsPath,
+        "--raw-dir",
+        join(repo.dataRoot, "raw"),
+        "--outputs",
+        repo.outputsDir,
+        "--web",
+        "When should I prefer RAG over fine-tuning?",
+      ],
+      { env: { PI_CODING_AGENT_DIR: piRoot } },
+    );
+
+    const artifact = await readFile(
+      join(repo.outputsDir, "last-query.md"),
+      "utf8",
+    );
+
+    expect(artifact).toContain(
+      'webFailureReason: "enrichment empty after pruning untraceable citations: https://example.com/absent (cited URL absent from the audit table)"',
+    );
   });
 });
