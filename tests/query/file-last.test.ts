@@ -1711,6 +1711,16 @@ describe("degraded --web artifacts", () => {
     expect(parseQueryArtifact(text)).toEqual(DEGRADED);
   });
 
+  it("round-trips the persisted failure reason beside the warning", () => {
+    const artifact = {
+      ...DEGRADED,
+      webFailureReason:
+        "enrichment empty after pruning 1 untraceable citation: https://example.com/x (cited URL absent from the audit table)",
+    };
+
+    expect(parseQueryArtifact(renderQueryArtifact(artifact))).toEqual(artifact);
+  });
+
   it("persists the warning in the header, never in the body", () => {
     const text = renderQueryArtifact(DEGRADED);
     const lines = text.split("\n");

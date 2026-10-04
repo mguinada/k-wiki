@@ -277,8 +277,9 @@ prompt-policy lines, which the query and enrichment prompts carry:
   quoting or closely paraphrasing personal note content into a
   search query is forbidden.
 - Every web tool call is recorded in the run artifact's audit
-  table. An uncited call is a policy violation; a cited URL absent
-  from the audit table is a build failure.
+  table, which remains the completeness record of the run. A
+  citation that cannot be traced to a recorded call is pruned from
+  the enrichment by the wrapper; keep every citation traceable.
 - The enrichment is independent of the core answer: it is
   partitioned after it, never rewrites or restates it, and is never
   filed — `--file-last` on a `--web` artifact files the core answer

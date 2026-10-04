@@ -163,8 +163,9 @@ export interface WebEnrichmentOk {
   readonly web: WebArtifactSections;
 }
 
-/** The failed outcome: the reason stays a progress-line detail; the
- *  artifact carries the fixed degradation warning. */
+/** The failed outcome: the concrete reason goes to the progress
+ *  line and is persisted beside the fixed degradation warning as
+ *  the artifact's `webFailureReason` header. */
 export interface WebEnrichmentFailure {
   readonly kind: "failed";
   readonly reason: string;
@@ -203,10 +204,12 @@ function newestCallIso(calls: readonly WebCall[], now: () => Date): string {
 }
 
 /** Run the enrichment phase: compose, spawn with the web grant,
- *  parse the audit from the event stream, reconcile the sources,
+ *  parse the audit from the event stream, reconcile the sources —
+ *  pruning untraceable citations down to the traceable remainder —
  *  and render the three machine-owned sections. Any failure —
- *  spawn, timeout, empty output, audit violation — lands in the
- *  degradation path; it never touches the core answer. */
+ *  spawn, timeout, empty output, a pruning that empties the
+ *  enrichment — lands in the degradation path; it never touches the
+ *  core answer. */
 export async function runWebEnrichment(
   options: WebEnrichmentOptions,
 ): Promise<WebEnrichmentOutcome> {
@@ -265,9 +268,9 @@ export async function runWebEnrichment(
   }
 
   const web: WebArtifactSections = {
-    enrichment: renderWebEnrichmentSection(enrichment),
+    enrichment: renderWebEnrichmentSection(reconciliation.enrichment),
     sources: renderWebSourcesSection(reconciliation.sources),
-    audit: renderWebAuditSection(parsed.calls),
+    audit: renderWebAuditSection(parsed.calls, reconciliation.pruned),
   };
 
   return {
@@ -329,7 +332,11 @@ export async function enrichmentArtifact(
     run.onProgress(`wiki-query: enrichment failed — ${outcome.reason}`);
 
     return {
-      artifact: { ...core, webWarning: WEB_FAILED_WARNING },
+      artifact: {
+        ...core,
+        webWarning: WEB_FAILED_WARNING,
+        webFailureReason: outcome.reason,
+      },
       answer: core.answer,
       warning: WEB_FAILED_WARNING,
     };

@@ -8,7 +8,11 @@ Egress policy:
 
 - Web tools exist in this run solely because the operator passed `--web`.
 - Search queries are derived from the operator's question and, at topic level, from the core answer's subject matter. They **must never contain verbatim text from wiki pages or raw notes** — quoting or closely paraphrasing personal note content into a search query is forbidden.
-- Every web tool call is recorded in the run's audit table. An uncited call is a policy violation; a cited URL absent from the audit table is a build failure.
+- Every web tool call is recorded in the run's audit table, which
+  remains the completeness record of the run. A citation that cannot
+  be traced to a recorded call is pruned from the enrichment by the
+  wrapper; keep every citation traceable — pruning is the
+  enforcement, not an invitation.
 
 Enrichment rules:
 

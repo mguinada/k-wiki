@@ -1,9 +1,10 @@
 /**
  * The `--web` run's machine audit: every web tool call parsed from
  * the enrichment run's `--mode json` event stream, the cited-URL
- * extraction, and the reconciliation that fails a citation the audit
- * cannot account for. Pure query-domain code — text in, data out; the
- * artifact shape it feeds lives in web-artifact.ts.
+ * extraction, and the reconciliation that prunes a citation the
+ * audit cannot account for down to the traceable remainder. Pure
+ * query-domain code — text in, data out; the artifact shape it
+ * feeds lives in web-artifact.ts.
  */
 
 /** One recorded web tool call: the audit row's machine data. */
@@ -305,46 +306,125 @@ function consolidatedSources(
   });
 }
 
-/** What the sources reconciliation decided for one enrichment. */
+/** What the reconciliation pruned from one enrichment: the pruned
+ *  citations' count (every untraceable citation in a dropped
+ *  bullet) and the offending URLs, deduplicated in first-appearance
+ *  order. */
+export interface WebPrunedCitations {
+  readonly count: number;
+  readonly urls: readonly string[];
+}
+
+/** The traceability gate's name, singular with one offending URL —
+ *  the failure reason and the artifact's prune line both carry it. */
+export function citationGate(count: number): string {
+  return count === 1
+    ? "cited URL absent from the audit table"
+    : "cited URLs absent from the audit table";
+}
+
+/** The enrichment's bullets: each `- ` marker line starts one, and
+ *  any following non-marker lines are its wrapped continuations; a
+ *  run of lines before the first marker is a block of its own.
+ *  Joined with newlines, the blocks reassemble the text exactly. */
+function bulletBlocks(enrichment: string): string[] {
+  const blocks: string[] = [];
+  let current: string[] = [];
+
+  for (const line of enrichment.split("\n")) {
+    const startsBullet = line.startsWith("- ") && current.length > 0;
+
+    if (startsBullet) {
+      blocks.push(current.join("\n"));
+
+      current = [];
+    }
+
+    current.push(line);
+  }
+
+  if (current.length > 0) {
+    blocks.push(current.join("\n"));
+  }
+
+  return blocks;
+}
+
+/** The enrichment pruned to its traceable remainder: every bullet
+ *  citing a URL the audit cannot account for is dropped whole — a
+ *  wrapped continuation never survives without its marker — and
+ *  what was pruned is recorded. Text without violations passes
+ *  through byte-exact (already trimmed by the caller). */
+function pruneUntraceableBullets(
+  enrichment: string,
+  audited: ReadonlySet<string>,
+): { text: string; pruned: WebPrunedCitations | undefined } {
+  const kept: string[] = [];
+  const urls: string[] = [];
+  let count = 0;
+
+  for (const bullet of bulletBlocks(enrichment)) {
+    const untraceable = extractUrls(bullet).filter((url) => !audited.has(url));
+
+    if (untraceable.length === 0) {
+      kept.push(bullet);
+
+      continue;
+    }
+
+    count += untraceable.length;
+    urls.push(...untraceable);
+  }
+
+  return {
+    text: kept.join("\n").trim(),
+    pruned: count === 0 ? undefined : { count, urls: [...new Set(urls)] },
+  };
+}
+
+/** What the sources reconciliation decided for one enrichment: the
+ *  traceable remainder, its consolidated sources, what was pruned,
+ *  and the typed failure — set only when pruning emptied the
+ *  enrichment entirely. An uncited call is not a violation: every
+ *  recorded call stays an audit row whether the enrichment cited
+ *  it or not. */
 export interface WebReconciliation {
+  /** The enrichment's traceable remainder. */
+  readonly enrichment: string;
   readonly sources: readonly WebSource[];
-  /** The audit failure, undefined when the enrichment reconciles. */
+  /** What was pruned; undefined when every citation traced. */
+  readonly pruned: WebPrunedCitations | undefined;
+  /** The typed failure, undefined unless pruning left nothing. */
   readonly failure: string | undefined;
 }
 
-/** Reconcile the enrichment against the audit, both directions: a
- *  cited URL the audit cannot account for is a build failure, and a
- *  call whose exposed URLs were never cited is an uncited call (the
- *  query-targeted search and failed calls are exempt). */
+/** Reconcile the enrichment against the audit: every surviving
+ *  citation must trace to a recorded call. A bullet citing a URL
+ *  the audit cannot account for is pruned whole with its citations
+ *  recorded; the strict case survives in exactly one place — a
+ *  pruning that empties the enrichment is the typed failure. */
 export function reconcileWebSources(
   enrichment: string,
   calls: readonly WebCall[],
 ): WebReconciliation {
-  const cited = extractUrls(enrichment);
+  const audited = new Set(calls.flatMap((call) => call.urls));
+  const { text, pruned } = pruneUntraceableBullets(enrichment, audited);
 
-  for (const url of cited) {
-    if (!calls.some((call) => call.urls.includes(url))) {
-      return {
-        sources: [],
-        failure: `cited URL absent from the audit table: ${url}`,
-      };
-    }
+  if (pruned !== undefined && text === "") {
+    return {
+      enrichment: text,
+      sources: [],
+      pruned,
+      failure: `enrichment empty after pruning ${pruned.count} untraceable ${pruned.count === 1 ? "citation" : "citations"}: ${pruned.urls.join(", ")} (${citationGate(pruned.urls.length)})`,
+    };
   }
 
-  for (const call of calls) {
-    const uncited =
-      call.tool !== "web_search" &&
-      !call.failed &&
-      call.urls.length > 0 &&
-      !call.urls.some((url) => cited.includes(url));
+  const cited = extractUrls(text);
 
-    if (uncited) {
-      return {
-        sources: [],
-        failure: `uncited web call: ${call.tool} ${call.urls.join(", ")}`,
-      };
-    }
-  }
-
-  return { sources: consolidatedSources(cited, calls), failure: undefined };
+  return {
+    enrichment: text,
+    sources: consolidatedSources(cited, calls),
+    pruned,
+    failure: undefined,
+  };
 }

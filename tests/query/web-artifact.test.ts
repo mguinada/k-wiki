@@ -74,6 +74,23 @@ describe("section renderers", () => {
       "| 1 | web_search | topic | 5 | 2026-10-03T21:00:01.000Z |",
     );
   });
+
+  it("appends the pruning record with gate, count, and URLs under the table", () => {
+    const section = renderWebAuditSection([], {
+      count: 2,
+      urls: ["https://example.com/a", "https://example.com/b"],
+    });
+
+    expect(section).toContain(
+      "Pruned citations: 2 — https://example.com/a, https://example.com/b (cited URLs absent from the audit table)",
+    );
+  });
+
+  it("renders no prune line when nothing was pruned", () => {
+    const section = renderWebAuditSection([]);
+
+    expect(section).not.toContain("Pruned citations");
+  });
 });
 
 describe("partitioned body codec", () => {
@@ -116,6 +133,19 @@ describe("partitioned body codec", () => {
       answer: "The core answer.",
       web,
     });
+  });
+
+  it("round-trips a body whose audit section carries the pruning record", () => {
+    const audit = [
+      web.audit,
+      "",
+      "Pruned citations: 1 — https://example.com/drift (cited URL absent from the audit table)",
+    ].join("\n");
+    const parsed = parseWebArtifactBody(
+      renderWebArtifactBody("The core answer.", { ...web, audit }).split("\n"),
+    );
+
+    expect(parsed?.web.audit).toBe(audit);
   });
 
   it("resolves the partition when the core echoes a stray thematic break and a section heading", () => {

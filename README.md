@@ -1670,16 +1670,20 @@ omitted flag can never produce wiki writes:
   enrichment section the wrapper audits and machine-assembles after
   the core answer: a `---` thematic break, `## Web enrichment`,
   `## Web sources` (computed from the recorded tool calls, never
-  model output), and `## Web calls audit`. The artifact header gains
-  the mode (`query (--web)`), the web reference count, and the
-  retrieval timestamp. The flag prints a cost-and-slowness
-  disclosure first, and its degradations never fail the query: with
-  the plugin unavailable the run continues as a normal wiki-only run
-  with the warning persisted in the artifact header; when the
-  enrichment fails — the agent run, a web call, the audit
-  reconciliation, or the missing `prompts/web-enrich.md` prompt —
-  the artifact keeps the wiki-only core answer with the failure
-  warning.
+  model output), and `## Web calls audit` (which also records any
+  citation the audit could not account for — the wrapper prunes the
+  citing bullet and keeps the traceable remainder, and the prune
+  line names the gate, the count, and the offending URLs). The
+  artifact header gains the mode (`query (--web)`), the web
+  reference count, and the retrieval timestamp. The flag prints a
+  cost-and-slowness disclosure first, and its degradations never
+  fail the query: with the plugin unavailable the run continues as a
+  normal wiki-only run with the warning persisted in the artifact
+  header; when the enrichment fails — the agent run, the audit
+  reconciliation (a pruning that empties the enrichment), or the
+  missing `prompts/web-enrich.md` prompt — the artifact keeps the
+  wiki-only core answer with the failure warning and the concrete
+  reason persisted in the header.
   `--file-last` on a `--web` artifact files the core answer only —
   the web sections never enter the wiki.
 - **Stage 2 (`--file-last`, human-only)** is deterministic code, no

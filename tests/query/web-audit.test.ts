@@ -95,23 +95,143 @@ describe("reconcileWebSources", () => {
     ]);
   });
 
-  it("fails when a cited URL is absent from the audit table", () => {
+  it("prunes the bullet whose citation is absent from the audit table", () => {
+    const reconciliation = reconcileWebSources(
+      [
+        "- [a](https://example.com/a) (retrieved 2026-10-03).",
+        "- [x](https://example.com/hallucinated) (retrieved 2026-10-03).",
+      ].join("\n"),
+      [fetchCall],
+    );
+
+    expect(reconciliation.enrichment).toBe(
+      "- [a](https://example.com/a) (retrieved 2026-10-03).",
+    );
+  });
+
+  it("consolidates the sources of the traceable remainder only", () => {
+    const reconciliation = reconcileWebSources(
+      [
+        "- [a](https://example.com/a) (retrieved 2026-10-03).",
+        "- [x](https://example.com/hallucinated) (retrieved 2026-10-03).",
+      ].join("\n"),
+      [fetchCall],
+    );
+
+    expect(reconciliation.sources).toEqual([
+      { url: "https://example.com/a", retrieved: "2026-10-03" },
+    ]);
+  });
+
+  it("records the pruned citations' count and the offending URLs", () => {
     const reconciliation = reconcileWebSources(
       "- [x](https://example.com/hallucinated) (retrieved 2026-10-03).",
       [fetchCall],
     );
 
-    expect(reconciliation.failure).toContain(
-      "cited URL absent from the audit table: https://example.com/hallucinated",
+    expect(reconciliation.pruned).toEqual({
+      count: 1,
+      urls: ["https://example.com/hallucinated"],
+    });
+  });
+
+  it("reports no pruning when every citation traces", () => {
+    const reconciliation = reconcileWebSources(
+      "- [a](https://example.com/a) (retrieved 2026-10-03).",
+      [fetchCall],
+    );
+
+    expect(reconciliation.pruned).toBeUndefined();
+  });
+
+  it("prunes a mis-transcribed URL the recorded call spells differently", () => {
+    const recorded = "https://example.com/triage/2026/2026-07-27.md";
+    const reconciliation = reconcileWebSources(
+      "- [triage](https://example.com/triage/2026/07-27.md) (retrieved 2026-10-03).",
+      [{ ...fetchCall, target: recorded, urls: [recorded] }],
+    );
+
+    expect(reconciliation.pruned?.urls).toEqual([
+      "https://example.com/triage/2026/07-27.md",
+    ]);
+  });
+
+  it("drops a whole bullet citing one traceable and one untraceable URL", () => {
+    const reconciliation = reconcileWebSources(
+      [
+        "- both: [a](https://example.com/a) and [x](https://example.com/hallucinated) (retrieved 2026-10-03).",
+      ].join("\n"),
+      [fetchCall],
+    );
+
+    expect(reconciliation.sources).toEqual([]);
+  });
+
+  it("fails typed when pruning empties the enrichment", () => {
+    const reconciliation = reconcileWebSources(
+      "- [x](https://example.com/hallucinated) (retrieved 2026-10-03).",
+      [fetchCall],
+    );
+
+    expect(reconciliation.failure).toBe(
+      "enrichment empty after pruning 1 untraceable citation: https://example.com/hallucinated (cited URL absent from the audit table)",
     );
   });
 
-  it("fails when a fetch call's target goes uncited", () => {
+  it("names the pruned count even when one URL accounts for every pruned bullet", () => {
+    const reconciliation = reconcileWebSources(
+      [
+        "- [x](https://example.com/ghost) (retrieved 2026-10-03).",
+        "- [y](https://example.com/ghost) (retrieved 2026-10-03).",
+      ].join("\n"),
+      [fetchCall],
+    );
+
+    expect(reconciliation.failure).toBe(
+      "enrichment empty after pruning 2 untraceable citations: https://example.com/ghost (cited URL absent from the audit table)",
+    );
+  });
+
+  it("prunes a wrapped bullet whole — its continuation line never survives alone", () => {
+    const reconciliation = reconcileWebSources(
+      [
+        "- [a](https://example.com/a) confirms the topic,",
+        " per https://example.com/ghost (retrieved 2026-10-03).",
+        "- [b](https://example.com/b) (retrieved 2026-10-03).",
+      ].join("\n"),
+      [
+        fetchCall,
+        {
+          ...fetchCall,
+          target: "https://example.com/b",
+          urls: ["https://example.com/b"],
+        },
+      ],
+    );
+
+    expect(reconciliation.enrichment).toBe(
+      "- [b](https://example.com/b) (retrieved 2026-10-03).",
+    );
+  });
+
+  it("keeps a wrapped bullet whole when every citation traces", () => {
+    const wrapped =
+      "- [a](https://example.com/a) confirms the topic,\n per https://example.com/a (retrieved 2026-10-03).";
+    const reconciliation = reconcileWebSources(wrapped, [fetchCall]);
+
+    expect(reconciliation.enrichment).toBe(wrapped);
+  });
+
+  it("keeps an uncited fetch call non-fatal — recorded, not failing", () => {
     const reconciliation = reconcileWebSources("- nothing cited.", [fetchCall]);
 
-    expect(reconciliation.failure).toContain(
-      "uncited web call: fetch_content https://example.com/a",
-    );
+    expect(reconciliation.failure).toBeUndefined();
+  });
+
+  it("lists no sources when the enrichment cites nothing", () => {
+    const reconciliation = reconcileWebSources("- nothing cited.", [fetchCall]);
+
+    expect(reconciliation.sources).toEqual([]);
   });
 
   it("reconciles a cited URL containing balanced parentheses", () => {
@@ -138,7 +258,7 @@ describe("reconcileWebSources", () => {
     expect(reconciliation.sources).toEqual([{ url, retrieved: "2026-10-03" }]);
   });
 
-  it("exempts a failed fetch from the uncited-call rule", () => {
+  it("keeps a failed fetch call non-fatal", () => {
     const reconciliation = reconcileWebSources("- nothing cited.", [
       { ...fetchCall, failed: true },
     ]);
@@ -147,7 +267,7 @@ describe("reconcileWebSources", () => {
     expect(reconciliation.sources).toEqual([]);
   });
 
-  it("fails an uncited source_check call", () => {
+  it("keeps an uncited source_check call non-fatal", () => {
     const check: WebCall = {
       tool: "source_check",
       target: "https://example.com/source",
@@ -161,12 +281,10 @@ describe("reconcileWebSources", () => {
       [fetchCall, check],
     );
 
-    expect(reconciliation.failure).toContain(
-      "uncited web call: source_check https://example.com/source",
-    );
+    expect(reconciliation.failure).toBeUndefined();
   });
 
-  it("keeps an uncited search exempt from the uncited-call rule", () => {
+  it("keeps an uncited search non-fatal", () => {
     const search: WebCall = {
       tool: "web_search",
       target: "topic",

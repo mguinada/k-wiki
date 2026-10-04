@@ -51,10 +51,13 @@ Stage 1 with web enrichment: wiki-query "<question>" --web
   table. The run prints a cost-and-slowness disclosure first.
   Degradations never fail the query: with the pi-web-access plugin
   unavailable the run continues as a normal wiki-only run with the
-  warning persisted in the artifact header; when the enrichment's web
-  calls fail (network or tool failure, or the audit does not
-  reconcile) the artifact keeps the wiki-only core answer with the
-  failure warning. --file-last on a --web artifact files the core
+  warning persisted in the artifact header; a citation the audit
+  cannot account for is pruned from the enrichment, leaving the
+  traceable remainder with the prune recorded in the audit section;
+  when the enrichment still fails (network or tool failure, or the
+  pruning leaves nothing) the artifact keeps the wiki-only core
+  answer with the failure warning and its concrete reason persisted
+  in the header. --file-last on a --web artifact files the core
   answer only — the web sections never enter the wiki.
 
 Stage 2 (human-only): wiki-query --file-last
