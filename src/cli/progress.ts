@@ -236,6 +236,36 @@ export function startHeartbeat(beat: {
   }, beat.intervalMs ?? HEARTBEAT_MS);
 }
 
+/** Run one awaited step with the elapsed-time heartbeat around it;
+ *  the interval is always cleared, on every completion path. The
+ *  message starts with the caller's stable prefix, so an animated
+ *  sink keeps the beats on one line (see startHeartbeat for the
+ *  target-loop variant). */
+export async function withHeartbeat<T>(
+  beat: {
+    /** Progress sink the beats render on. */
+    readonly onProgress: (message: string) => void;
+    /** The beat message's stable prefix. */
+    readonly prefix: string;
+    /** Beat interval; the default is HEARTBEAT_MS. */
+    readonly intervalMs?: number | undefined;
+  },
+  step: () => Promise<T>,
+): Promise<T> {
+  const startedAt = Date.now();
+  const heartbeat = setInterval(() => {
+    const elapsed = formatDuration(Date.now() - startedAt);
+
+    beat.onProgress(`${beat.prefix} (${elapsed})`);
+  }, beat.intervalMs ?? HEARTBEAT_MS);
+
+  try {
+    return await step();
+  } finally {
+    clearInterval(heartbeat);
+  }
+}
+
 /** Heartbeat sentence prefixes this CLI emits (plain or expunge-
  *  labeled; see startHeartbeat); the TTY renderer keeps matching
  *  messages on one animated line (spinner + clock). */

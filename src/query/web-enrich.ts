@@ -8,6 +8,7 @@
  * run and renders its outcome.
  */
 
+import { withHeartbeat } from "../cli/progress.ts";
 import type { RunContext } from "../cli/run-context.ts";
 import { artifactBody, type QueryArtifact } from "./file-last.ts";
 import {
@@ -30,6 +31,10 @@ export const WEB_EXTENSION_SOURCE = "npm:pi-web-access";
 
 /** The grant width: search + fetch, pi `--tools` allowlist. */
 export const WEB_TOOL_ALLOWLIST = "web_search,source_check,fetch_content";
+
+/** Liveness prefix of the enrichment phase's heartbeat; the animated
+ *  sink keeps these on one line, like the core phase's. */
+export const WEB_ENRICH_HEARTBEAT_PREFIX = "wiki-query: web enrichment running";
 
 /** The machine-readable output mode of the enrichment run. */
 export const WEB_OUTPUT_MODE = "json";
@@ -180,6 +185,9 @@ export interface WebEnrichmentOptions {
   readonly run: RunContext;
   readonly runAgent: AgentSpawn;
   readonly timeoutMs?: number | undefined;
+  /** Heartbeat interval while the enrichment spawn runs; the same
+   *  default and shape as the core spawn's. */
+  readonly heartbeatMs?: number | undefined;
 }
 
 /** The ISO timestamp of the newest recorded call, or the run
@@ -218,14 +226,22 @@ export async function runWebEnrichment(
   let stdout: string;
 
   try {
-    ({ stdout } = await options.runAgent(
-      identity.command,
-      webEnrichAgentArgs(identity, options.isolationFlags, composed),
+    ({ stdout } = await withHeartbeat(
       {
-        cwd: run.dataRoot,
-        env: run.env,
-        timeoutMs: options.timeoutMs,
+        onProgress: run.onProgress,
+        prefix: WEB_ENRICH_HEARTBEAT_PREFIX,
+        intervalMs: options.heartbeatMs,
       },
+      () =>
+        options.runAgent(
+          identity.command,
+          webEnrichAgentArgs(identity, options.isolationFlags, composed),
+          {
+            cwd: run.dataRoot,
+            env: run.env,
+            timeoutMs: options.timeoutMs,
+          },
+        ),
     ));
   } catch (error) {
     return { kind: "failed", reason: (error as Error).message };
@@ -285,6 +301,8 @@ export async function enrichmentArtifact(
     readonly run: RunContext;
     readonly runAgent: AgentSpawn;
     readonly timeoutMs?: number | undefined;
+    /** Heartbeat interval while the enrichment spawn runs. */
+    readonly heartbeatMs?: number | undefined;
   },
 ): Promise<{ artifact: QueryArtifact; answer: string; warning?: string }> {
   const { run } = options;
@@ -304,6 +322,7 @@ export async function enrichmentArtifact(
           run,
           runAgent: options.runAgent,
           timeoutMs: options.timeoutMs,
+          heartbeatMs: options.heartbeatMs,
         });
 
   if (outcome.kind === "failed") {

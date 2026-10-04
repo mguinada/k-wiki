@@ -16,7 +16,7 @@
  */
 
 import { join } from "node:path";
-import { formatDuration, HEARTBEAT_MS } from "../cli/progress.ts";
+import { withHeartbeat } from "../cli/progress.ts";
 import type { RunContext } from "../cli/run-context.ts";
 import { pathExists } from "../cli/shared.ts";
 import { statusSince } from "../data/git.ts";
@@ -100,7 +100,7 @@ export interface QueryOptions {
   readonly runAgent?: AgentRunner;
   /** Kill the agent run after this many milliseconds. */
   readonly timeoutMs?: number | undefined;
-  /** Heartbeat interval while the agent runs; default 60 s. */
+  /** Heartbeat interval while an agent phase runs; default 60 s. */
   readonly heartbeatMs?: number | undefined;
   /** Opt-in web enrichment (`--web`): a two-phase run whose core
    *  answer stays web-blind and whose enrichment is partitioned,
@@ -185,24 +185,21 @@ async function spawnWithHeartbeat(
   runAgent: AgentRunner,
 ): Promise<string> {
   const { run } = options;
-  const agentStartedAt = Date.now();
-  const heartbeat = setInterval(() => {
-    const elapsed = formatDuration(Date.now() - agentStartedAt);
+  const { stdout } = await withHeartbeat(
+    {
+      onProgress: run.onProgress,
+      prefix: QUERY_HEARTBEAT_PREFIX,
+      intervalMs: options.heartbeatMs,
+    },
+    () =>
+      runAgent(settings.command, args, {
+        cwd: run.dataRoot,
+        env: run.env,
+        timeoutMs: options.timeoutMs,
+      }),
+  );
 
-    run.onProgress(`${QUERY_HEARTBEAT_PREFIX} (${elapsed})`);
-  }, options.heartbeatMs ?? HEARTBEAT_MS);
-
-  try {
-    const { stdout } = await runAgent(settings.command, args, {
-      cwd: run.dataRoot,
-      env: run.env,
-      timeoutMs: options.timeoutMs,
-    });
-
-    return stdout;
-  } finally {
-    clearInterval(heartbeat);
-  }
+  return stdout;
 }
 
 /** The plain (or degraded) artifact: core answer plus warning. */
@@ -337,6 +334,7 @@ export async function runWikiQuery(
       run,
       runAgent,
       timeoutMs: options.timeoutMs,
+      heartbeatMs: options.heartbeatMs,
     },
   );
 

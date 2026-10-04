@@ -12,6 +12,7 @@ import {
   composeEnrichmentPrompt,
   enrichmentArtifact,
   runWebEnrichment,
+  WEB_ENRICH_HEARTBEAT_PREFIX,
   WEB_ENRICH_PROMPT_FILE,
   WEB_EXTENSION_SOURCE,
   WEB_FAILED_WARNING,
@@ -306,6 +307,60 @@ describe("runWebEnrichment", () => {
     expect(invocation?.command).toBe("pi");
     expect(invocation?.args.at(-1)).toContain("Enrich the topic from the web.");
     expect(invocation?.args.at(-1)).toContain("CORE");
+  });
+
+  it("emits the enrichment heartbeat while a slow run is in flight", async () => {
+    const messages: string[] = [];
+
+    await runWebEnrichment({
+      identity: SETTINGS,
+      isolationFlags: [...ISOLATION_FLAGS],
+      question: "Q",
+      coreAnswer: "CORE",
+      promptText: await makePromptsDir(),
+      run: runContext({
+        rawDir: join(tmpdir(), "k-wiki-web-run-raw"),
+        onProgress: (message) => messages.push(message),
+      }),
+      runAgent: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 150));
+
+        return { stdout: okStream, stderr: "" };
+      },
+      heartbeatMs: 40,
+    });
+
+    expect(messages).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(WEB_ENRICH_HEARTBEAT_PREFIX),
+      ]),
+    );
+  });
+
+  it("stops the enrichment heartbeat when the run ends", async () => {
+    const messages: string[] = [];
+
+    await runWebEnrichment({
+      identity: SETTINGS,
+      isolationFlags: [...ISOLATION_FLAGS],
+      question: "Q",
+      coreAnswer: "CORE",
+      promptText: await makePromptsDir(),
+      run: runContext({
+        rawDir: join(tmpdir(), "k-wiki-web-run-raw"),
+        onProgress: (message) => messages.push(message),
+      }),
+      runAgent: canned(okStream),
+      heartbeatMs: 40,
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 120));
+
+    expect(
+      messages.filter((message) =>
+        message.includes(WEB_ENRICH_HEARTBEAT_PREFIX),
+      ),
+    ).toEqual([]);
   });
 });
 

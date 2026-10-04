@@ -33,10 +33,13 @@ export interface WebSource {
 }
 
 /** URLs mentioned in free text, in first-appearance order: markdown
- *  link targets and bare URLs alike. Trailing sentence punctuation
- *  is stripped. */
+ *  link targets and bare URLs alike. A parenthesized segment joins
+ *  the URL only when balanced (GFM autolink style): the `(planet)`
+ *  of "Mercury_(planet)" stays; a sentence's wrapping closer does
+ *  not. Trailing sentence punctuation is stripped. */
 export function extractUrls(text: string): string[] {
-  const matches = text.match(/https?:\/\/[^\s<>()[\]{}"'`]+/g) ?? [];
+  const matches =
+    text.match(/https?:\/\/(?:[^\s()<>[\]{}"'`]|\([^()\s]*\))+/g) ?? [];
 
   return [...new Set(matches.map((url) => url.replace(/[.,;:!?'"]+$/, "")))];
 }

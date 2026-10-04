@@ -5,6 +5,7 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { type RunContextInput, runContext } from "../../src/cli/run-context.ts";
 import type { AgentRunner } from "../../src/ingest/agent-run.ts";
 import { readQueryArtifact } from "../../src/query/file-last.ts";
+import { WEB_ENRICH_HEARTBEAT_PREFIX } from "../../src/query/web-enrich.ts";
 import {
   composeQueryPrompt,
   QUERY_HEARTBEAT_PREFIX,
@@ -1017,6 +1018,7 @@ describe("runWikiQuery --web", () => {
     h: Harness,
     runner: AgentRunner,
     run: Partial<RunContextInput> = {},
+    extra: { heartbeatMs?: number | undefined } = {},
   ) {
     const piRoot = await absentPiRoot();
     const piRootWithPlugin = join(
@@ -1047,6 +1049,7 @@ describe("runWikiQuery --web", () => {
       ...optionsFor(h, { env: { PI_CODING_AGENT_DIR: piRoot }, ...run }),
       web: true,
       runAgent: recording,
+      ...extra,
     });
   }
 
@@ -1090,6 +1093,32 @@ describe("runWikiQuery --web", () => {
       "web_search,source_check,fetch_content",
     );
     expect(enrichArgs).toContain("--no-extensions");
+  });
+
+  it("heartbeats the enrichment spawn while it runs", async () => {
+    const h = await makeHarness();
+    const messages: string[] = [];
+    const base = twoPhaseRunner("A.", OK_STREAM);
+    const slowEnrichment: AgentRunner = async (_command, args, options) => {
+      if (args.includes("--mode")) {
+        await new Promise((resolve) => setTimeout(resolve, 150));
+      }
+
+      return base(_command, args, options);
+    };
+
+    await runWeb(
+      h,
+      slowEnrichment,
+      { onProgress: (message) => messages.push(message) },
+      { heartbeatMs: 40 },
+    );
+
+    expect(messages).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(WEB_ENRICH_HEARTBEAT_PREFIX),
+      ]),
+    );
   });
 
   it("yields a byte-identical core section with and without --web", async () => {

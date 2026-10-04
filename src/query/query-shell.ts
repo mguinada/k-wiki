@@ -11,6 +11,7 @@
 import { errorMessage, terminalColors } from "../cli/colors.ts";
 import { stderrSink } from "../cli/progress.ts";
 import { runContext } from "../cli/run-context.ts";
+import { WEB_ENRICH_HEARTBEAT_PREFIX } from "./web-enrich.ts";
 import { QUERY_HEARTBEAT_PREFIX, runWikiQuery } from "./wiki-query.ts";
 
 export interface QueryCliOptions {
@@ -40,7 +41,10 @@ export interface QueryCliOptions {
  *  a failure prints red under the prefix and sets the exit code. */
 export async function runQueryCli(options: QueryCliOptions): Promise<void> {
   const colors = terminalColors(process.env);
-  const { sink, animated } = stderrSink(QUERY_HEARTBEAT_PREFIX);
+  const { sink, animated } = stderrSink([
+    QUERY_HEARTBEAT_PREFIX,
+    WEB_ENRICH_HEARTBEAT_PREFIX,
+  ]);
 
   // The shell owns the sink, so it builds the run context (issue
   // #257): the calling mains resolve only the raw dir.

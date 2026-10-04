@@ -114,6 +114,18 @@ describe("reconcileWebSources", () => {
     );
   });
 
+  it("reconciles a cited URL containing balanced parentheses", () => {
+    const url = "https://en.wikipedia.org/wiki/Mercury_(planet)";
+    const fetch: WebCall = { ...fetchCall, target: url, urls: [url] };
+    const reconciliation = reconcileWebSources(
+      `- [Mercury](${url}) confirms the topic (retrieved 2026-10-03).`,
+      [fetch],
+    );
+
+    expect(reconciliation.failure).toBeUndefined();
+    expect(reconciliation.sources).toEqual([{ url, retrieved: "2026-10-03" }]);
+  });
+
   it("exempts a failed fetch from the uncited-call rule", () => {
     const reconciliation = reconcileWebSources("- nothing cited.", [
       { ...fetchCall, failed: true },
@@ -151,5 +163,17 @@ describe("extractUrls", () => {
         "see [a](https://example.com/a) and https://example.com/b. Also https://example.com/a.",
       ),
     ).toEqual(["https://example.com/a", "https://example.com/b"]);
+  });
+
+  it("keeps balanced parentheses inside a URL", () => {
+    expect(
+      extractUrls("see https://en.wikipedia.org/wiki/Mercury_(planet) today"),
+    ).toEqual(["https://en.wikipedia.org/wiki/Mercury_(planet)"]);
+  });
+
+  it("leaves a sentence's wrapping closing parenthesis out of the URL", () => {
+    expect(extractUrls("(see https://example.com/x_(y) for details)")).toEqual([
+      "https://example.com/x_(y)",
+    ]);
   });
 });
