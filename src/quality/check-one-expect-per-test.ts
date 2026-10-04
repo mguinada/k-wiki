@@ -146,23 +146,31 @@ function isTestCall(node: Node): node is CallExpression {
   );
 }
 
-/** Whether the node opens an `expect(...)` chain: the callee is the
- *  bare identifier or one property off it (`expect.soft`). The chain
- *  counts once — later links' callees root at a call, not at the
- *  identifier, so they read as false here. */
+/** Whether the node opens an `expect(...)` chain: the callee chain —
+ *  through member accesses and the calls that carry them — roots at
+ *  the bare identifier (`expect(x).toBe(y)`, `expect.soft(x)`). The
+ *  chain counts once and the walk stops there, so `expect`
+ *  statics passed as matcher arguments (expect.stringMatching) are
+ *  never double-counted. */
 function isExpectCall(node: Node): boolean {
-  if (node.type !== "CallExpression") {
-    return false;
+  return node.type === "CallExpression" && expectRoot(node.callee);
+}
+
+/** Whether a callee chain roots at the `expect` identifier. */
+function expectRoot(callee: Node): boolean {
+  if (callee.type === "Identifier") {
+    return callee.name === "expect";
   }
 
-  const { callee } = node;
+  if (callee.type === "MemberExpression") {
+    return expectRoot(callee.object);
+  }
 
-  return (
-    (callee.type === "Identifier" && callee.name === "expect") ||
-    (callee.type === "MemberExpression" &&
-      callee.object.type === "Identifier" &&
-      callee.object.name === "expect")
-  );
+  if (callee.type === "CallExpression") {
+    return expectRoot(callee.callee);
+  }
+
+  return false;
 }
 
 /** Whether the node's subtree is a helper scope the enclosing block

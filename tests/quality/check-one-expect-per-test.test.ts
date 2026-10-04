@@ -114,6 +114,14 @@ describe("analyzeSource counting", () => {
     expect(blocks[0]?.expectLines).toHaveLength(1);
   });
 
+  it("an expect static passed as a matcher argument is not a second expectation", () => {
+    const blocks = analyzeSource(
+      `it("matches", () => {\n  expect(list).toContainEqual(expect.stringMatching(/^x/u));\n});\n`,
+    );
+
+    expect(blocks[0]?.expectLines).toHaveLength(1);
+  });
+
   it("an it.each body with one expect passes — one case, one behavior", () => {
     const blocks = analyzeSource(
       `it.each([1, 2, 3])("accepts %s", (n) => {\n  expect(accept(n)).toBe(true);\n});\n`,
