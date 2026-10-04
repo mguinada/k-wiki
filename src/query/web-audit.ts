@@ -74,19 +74,23 @@ function callTarget(args: Record<string, unknown>): string {
   return parts.join(" | ");
 }
 
+/** A message content array's object blocks: the shared narrowing
+ *  the text and toolCall readers both consume. */
+function contentBlocks(content: unknown): Record<string, unknown>[] {
+  return Array.isArray(content)
+    ? content.filter(
+        (block): block is Record<string, unknown> =>
+          typeof block === "object" && block !== null,
+      )
+    : [];
+}
+
 /** The text of a message's content blocks, concatenated. */
 function contentText(content: unknown): string {
-  if (!Array.isArray(content)) {
-    return "";
-  }
-
-  return content
+  return contentBlocks(content)
     .filter(
       (block): block is { type: string; text: string } =>
-        typeof block === "object" &&
-        block !== null &&
-        (block as { type?: unknown }).type === "text" &&
-        typeof (block as { text?: unknown }).text === "string",
+        block.type === "text" && typeof block.text === "string",
     )
     .map((block) => block.text)
     .join("\n");
@@ -96,35 +100,24 @@ function contentText(content: unknown): string {
 function messageToolCalls(
   content: unknown,
 ): { id: string; name: string; args: Record<string, unknown> }[] {
-  if (!Array.isArray(content)) {
-    return [];
-  }
-
   const calls: { id: string; name: string; args: Record<string, unknown> }[] =
     [];
 
-  for (const block of content) {
-    if (
-      typeof block === "object" &&
-      block !== null &&
-      (block as { type?: unknown }).type === "toolCall" &&
-      typeof (block as { name?: unknown }).name === "string"
-    ) {
-      const record = block as {
-        id?: unknown;
-        name: string;
-        arguments?: unknown;
-      };
-
-      calls.push({
-        id: typeof record.id === "string" ? record.id : "",
-        name: record.name,
-        args:
-          typeof record.arguments === "object" && record.arguments !== null
-            ? (record.arguments as Record<string, unknown>)
-            : {},
-      });
+  for (const block of contentBlocks(content)) {
+    if (block.type !== "toolCall" || typeof block.name !== "string") {
+      continue;
     }
+
+    const record = block as { id?: unknown; name: string; arguments?: unknown };
+
+    calls.push({
+      id: typeof record.id === "string" ? record.id : "",
+      name: record.name,
+      args:
+        typeof record.arguments === "object" && record.arguments !== null
+          ? (record.arguments as Record<string, unknown>)
+          : {},
+    });
   }
 
   return calls;
