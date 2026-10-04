@@ -1,4 +1,4 @@
 #!/usr/bin/env node
-import { main } from "../src/query/wiki-query.ts";
+import { main } from "../src/query/query-cli.ts";
 
 await main();

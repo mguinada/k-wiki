@@ -454,3 +454,209 @@ describe("wiki-query e2e", () => {
     expect(result.err).toContain("code 4");
   });
 });
+
+/**
+ * The `--web` stub: text-mode invocations (the web-blind core run)
+ * answer plainly; `--mode json` invocations (the enrichment run)
+ * record their argv and emit a canned event stream — one search and
+ * one fetch, both reconciled by the final bullet text.
+ */
+const WEB_STUB = `#!/usr/bin/env node
+import { appendFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+
+const args = process.argv.slice(2);
+
+if (args.includes("--mode")) {
+  await writeFile(join(process.cwd(), "stub-web-argv.json"), JSON.stringify(args));
+  const stream = [
+    JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "toolCall", id: "c1", name: "web_search", arguments: { query: "rag vs fine-tuning" } }], timestamp: 1791000000000 } }),
+    JSON.stringify({ type: "message_end", message: { role: "toolResult", toolCallId: "c1", toolName: "web_search", content: [{ type: "text", text: "https://example.com/a" }], isError: false, details: { totalResults: 4 }, timestamp: 1791000001000 } }),
+    JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "toolCall", id: "c2", name: "fetch_content", arguments: { url: "https://example.com/a" } }], timestamp: 1791000002000 } }),
+    JSON.stringify({ type: "message_end", message: { role: "toolResult", toolCallId: "c2", toolName: "fetch_content", content: [{ type: "text", text: "page" }], isError: false, timestamp: 1791000003000 } }),
+    JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "- [Example A](https://example.com/a) reinforces the topic (retrieved 2026-10-03)." }], stopReason: "stop", timestamp: 1791000004000 } }),
+  ].join("\\n");
+  console.log(stream);
+
+  process.exit(0);
+}
+
+const index = args.indexOf("--print");
+const prompt = index === -1 ? undefined : args[index + 1];
+
+if (prompt === undefined || prompt === "") {
+  process.exit(3);
+}
+
+await writeFile(join(process.cwd(), "stub-prompt.txt"), prompt);
+await writeFile(join(process.cwd(), "stub-core-argv.json"), JSON.stringify(args));
+console.log("Prefer RAG when the knowledge base changes often. See [[retrieval-augmented-generation]].");
+`;
+
+/** A pi install root: `withPlugin` decides whether pi-web-access is
+ *  installed under it. */
+async function makePiRoot(withPlugin: boolean): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), "k-wiki-query-pi-"));
+
+  tempDirs.push(root);
+
+  if (withPlugin) {
+    await mkdir(join(root, "npm", "node_modules", "pi-web-access"), {
+      recursive: true,
+    });
+  }
+
+  return root;
+}
+
+describe("wiki-query --web e2e", () => {
+  it("runs two phases, partitions the artifact, and audits the web calls", async () => {
+    const repo = await makeRepo();
+    const piRoot = await makePiRoot(true);
+
+    await writeFile(join(repo.dataRoot, "stub-agent.mjs"), WEB_STUB, {
+      mode: 0o755,
+    });
+
+    const result = await runCli(
+      QUERY_SCRIPT,
+      [
+        "--settings",
+        repo.settingsPath,
+        "--raw-dir",
+        join(repo.dataRoot, "raw"),
+        "--outputs",
+        repo.outputsDir,
+        "--web",
+        "When should I prefer RAG over fine-tuning?",
+      ],
+      { env: { PI_CODING_AGENT_DIR: piRoot } },
+    );
+
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("## Web enrichment");
+    expect(result.out).toContain("## Web sources");
+    expect(result.out).toContain("## Web calls audit");
+    expect(result.err).toContain(
+      "this run makes two agent passes and will be slower and may cost more",
+    );
+
+    const artifact = await readFile(
+      join(repo.outputsDir, "last-query.md"),
+      "utf8",
+    );
+
+    expect(artifact).toContain('mode: "query (--web)"');
+    expect(artifact).toContain("webSources: 1");
+    expect(artifact).toContain("## Web enrichment");
+    expect(artifact).toContain("| 1 | web_search | rag vs fine-tuning | 4 |");
+    expect(artifact).toContain(
+      "| 2 | fetch_content | https://example.com/a | 1 |",
+    );
+
+    const coreArgv = JSON.parse(
+      await readFile(join(repo.dataRoot, "stub-core-argv.json"), "utf8"),
+    ) as string[];
+
+    expect(coreArgv).toContain("--no-extensions");
+    expect(coreArgv.join(" ")).not.toContain("pi-web-access");
+
+    const webArgv = JSON.parse(
+      await readFile(join(repo.dataRoot, "stub-web-argv.json"), "utf8"),
+    ) as string[];
+
+    expect(webArgv[webArgv.indexOf("-e") + 1]).toBe("npm:pi-web-access");
+    expect(webArgv[webArgv.indexOf("--tools") + 1]).toBe(
+      "web_search,source_check,fetch_content",
+    );
+    expect(webArgv).toContain("--no-extensions");
+
+    expect(await wikiStatus(repo)).toBe("");
+  });
+
+  it("degrades to the wiki-only run with the warning when the plugin is absent", async () => {
+    const repo = await makeRepo();
+    const piRoot = await makePiRoot(false);
+
+    await writeFile(join(repo.dataRoot, "stub-agent.mjs"), WEB_STUB, {
+      mode: 0o755,
+    });
+
+    const result = await runCli(
+      QUERY_SCRIPT,
+      [
+        "--settings",
+        repo.settingsPath,
+        "--raw-dir",
+        join(repo.dataRoot, "raw"),
+        "--outputs",
+        repo.outputsDir,
+        "--web",
+        "When should I prefer RAG over fine-tuning?",
+      ],
+      { env: { PI_CODING_AGENT_DIR: piRoot } },
+    );
+
+    expect(result.code).toBe(0);
+    expect(result.err).toContain(
+      "WARNING — `--web` requested, but the pi-web-access plugin is not available — continuing in wiki-only mode.",
+    );
+
+    await expect(
+      readFile(join(repo.dataRoot, "stub-web-argv.json")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+
+    const artifact = await readFile(
+      join(repo.outputsDir, "last-query.md"),
+      "utf8",
+    );
+
+    expect(artifact).toContain(
+      "WARNING — `--web` requested, but the pi-web-access plugin is not available — continuing in wiki-only mode.",
+    );
+    expect(artifact).not.toContain("## Web enrichment");
+    expect(artifact).not.toContain("mode:");
+  });
+
+  it("files a --web artifact's core answer only", async () => {
+    const repo = await makeRepo();
+    const piRoot = await makePiRoot(true);
+
+    await writeFile(join(repo.dataRoot, "stub-agent.mjs"), WEB_STUB, {
+      mode: 0o755,
+    });
+
+    await runCli(
+      QUERY_SCRIPT,
+      [
+        "--settings",
+        repo.settingsPath,
+        "--raw-dir",
+        join(repo.dataRoot, "raw"),
+        "--outputs",
+        repo.outputsDir,
+        "--web",
+        "When should I prefer RAG over fine-tuning?",
+      ],
+      { env: { PI_CODING_AGENT_DIR: piRoot } },
+    );
+
+    const result = await stage2(repo);
+
+    expect(result.code).toBe(0);
+
+    const page = await readFile(
+      join(
+        repo.dataRoot,
+        "wiki",
+        "queries",
+        "when-should-i-prefer-rag-over-fine-tuning.md",
+      ),
+      "utf8",
+    );
+
+    expect(page).toContain("Prefer RAG when the knowledge base changes often.");
+    expect(page).not.toContain("https://example.com/a");
+    expect(page).not.toContain("## Web enrichment");
+  });
+});

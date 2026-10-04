@@ -728,7 +728,7 @@ Detected:
 The operational prompt text lives only in `prompts/` in the code
 repository — the CLIs load these files verbatim at runtime. This guide
 describes what each prompt does and points to the file; it never embeds
-prompt text. Index of the eight operational prompts:
+prompt text. Index of the nine operational prompts:
 
 | Prompt file | Trigger | Purpose |
 |---|---|---|
@@ -737,6 +737,7 @@ prompt text. Index of the eight operational prompts:
 | `prompts/expunge.md` | A sync removes notes (manifest diff has `removed` entries; §14a) | Re-derive affected pages from their remaining sources |
 | `prompts/rebuild.md` | Rebuilding the wiki from scratch (§15); the expunge threshold (§14a) | Rebuild the whole wiki from `raw/` |
 | `prompts/query.md` | Asking questions against the built wiki (§16) | Synthesize a cited answer; the wrapper saves it for human-gated filing |
+| `prompts/web-enrich.md` | The opt-in `--web` enrichment pass of `wiki-query` (§16) | Enrich the finished answer's topic from the web under the prompt's egress policy; the output is partitioned after the answer and never filed |
 | `prompts/lint.md` | The whole-wiki audit (§17): a first run with no snapshot, `wiki-lint --full`, or the weekly full sweep | Audit wiki quality; fix mechanical problems, report the rest |
 | `prompts/lint-window.md` | The cycle's lint stage and the default `wiki-lint` run once a snapshot exists (§17) | The same contract, scoped to the windowed audit's explicit page list |
 | `prompts/comparison-harvest.md` | One-shot harvest run manually (trial) | File comparisons where two or more sources explicitly contrast named approaches |

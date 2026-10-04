@@ -11,6 +11,7 @@
 import { errorMessage, terminalColors } from "../cli/colors.ts";
 import { stderrSink } from "../cli/progress.ts";
 import { runContext } from "../cli/run-context.ts";
+import { WEB_ENRICH_HEARTBEAT_PREFIX } from "./web-enrich.ts";
 import { QUERY_HEARTBEAT_PREFIX, runWikiQuery } from "./wiki-query.ts";
 
 export interface QueryCliOptions {
@@ -30,13 +31,20 @@ export interface QueryCliOptions {
   readonly timeoutMs?: number | undefined;
   /** The dim stderr hint printed after the answer. */
   readonly hint: string;
+  /** Opt-in web enrichment (`--web`); default off. */
+  readonly web?: boolean;
+  /** The rerun hint appended to a gap answer; forwarded to the run. */
+  readonly gapHint?: string;
 }
 
 /** Run one answer-only query: print the answer and the filing hint;
  *  a failure prints red under the prefix and sets the exit code. */
 export async function runQueryCli(options: QueryCliOptions): Promise<void> {
   const colors = terminalColors(process.env);
-  const { sink, animated } = stderrSink(QUERY_HEARTBEAT_PREFIX);
+  const { sink, animated } = stderrSink([
+    QUERY_HEARTBEAT_PREFIX,
+    WEB_ENRICH_HEARTBEAT_PREFIX,
+  ]);
 
   // The shell owns the sink, so it builds the run context (issue
   // #257): the calling mains resolve only the raw dir.
@@ -54,12 +62,19 @@ export async function runQueryCli(options: QueryCliOptions): Promise<void> {
       question: options.question,
       timeoutMs: options.timeoutMs,
       heartbeatMs: animated ? 100 : undefined,
+      ...(options.web !== undefined && { web: options.web }),
+      ...(options.gapHint !== undefined && { gapHint: options.gapHint }),
     });
 
     sink.end();
 
     console.log(result.answer);
     console.error();
+
+    if (result.warning !== undefined) {
+      console.error(colors.yellow(result.warning));
+    }
+
     console.error(colors.dim(options.hint));
   } catch (error) {
     sink.end();

@@ -263,6 +263,27 @@ byte-exactly into `queries/<slug>.md` (`type: query` frontmatter) and
 updates `index.md` and `log.md` — deterministic code, no agent
 involved. Never file a query yourself.
 
+A `wiki-query --web` run is the sole opt-in door to the web, and its
+enrichment is partitioned, audited output — never wiki content. The
+prompt-policy lines, which the query and enrichment prompts carry:
+
+- The core answer stays wiki-only: it is produced web-blind, every
+  citation resolves to a vault page, and it contains no web URLs.
+- Web tools exist in the enrichment run solely because the operator
+  passed `--web`.
+- Search queries are derived from the operator's question and, at
+  topic level, from the core answer's subject matter. They must
+  never contain verbatim text from wiki pages or raw notes —
+  quoting or closely paraphrasing personal note content into a
+  search query is forbidden.
+- Every web tool call is recorded in the run artifact's audit
+  table. An uncited call is a policy violation; a cited URL absent
+  from the audit table is a build failure.
+- The enrichment is independent of the core answer: it is
+  partitioned after it, never rewrites or restates it, and is never
+  filed — `--file-last` on a `--web` artifact files the core answer
+  only.
+
 In a second brain, read `wiki/second-brain/profile.md` before
 answering and let it shape the answer: questions about the subject's
 trajectory ("what did I try", "why did I choose") are answered from
@@ -315,6 +336,14 @@ Rebuild procedure:
    attributed, contradictions preserved. Wording may differ; LLM output
    is not byte-identical.
 
+## Markdown Craft
+
+Generated markdown uses only native constructs for structure and
+boundaries: headings, `---` thematic breaks, lists, tables,
+emphasis, and code fences. Never box-drawing characters, unicode
+rules, ASCII art, or text-decoration lines: generated documents
+must read as hand-crafted markdown.
+
 ## Expungement
 
 When a synced source note is deleted, the next run expunges its
@@ -360,8 +389,12 @@ dead-provenance check, recurring lint, periodic rebuild.
 ## Residual Risk
 
 The wiki is a closed-world system: it verifies consistency against
-what it has already ingested, and closed-world consistency is not
-truth. No mechanical check can prove a claim true.
+what it has already ingested. **Sole exception: `wiki-query --web`
+runs may read the web for an opt-in enrichment section. Enrichment
+output is structurally partitioned after the core answer, never
+enters the core answer or any wiki page, and every web call is
+recorded in the run artifact. Ingest, lint, and scoped re-ingest
+remain closed-world with no web access.**
 
 The measures in this contract — confidence-min propagation,
 no-derivative-citation, and the single-source corroboration lifecycle

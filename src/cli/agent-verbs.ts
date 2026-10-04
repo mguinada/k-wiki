@@ -300,6 +300,7 @@ async function runQueryVerb(
 ): Promise<void> {
   const wiki = instance.name === undefined ? "" : `--wiki ${instance.name} `;
   const hint = `To file this answer (human step): k-wiki wiki-query ${wiki}--file-last, run inside the checkout`;
+  const gapHint = `To enrich from the web (human step): k-wiki wiki-query ${wiki}--web "<question>", run inside the checkout`;
 
   await runQueryCli({
     prefix: "k-wiki",
@@ -310,6 +311,7 @@ async function runQueryVerb(
     question,
     timeoutMs,
     hint,
+    gapHint,
   });
 }
 

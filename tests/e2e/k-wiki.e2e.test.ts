@@ -43,6 +43,10 @@ const ALT_STUB_AGENT = `#!/usr/bin/env node
 console.log("ALT-AGENT answered.");
 `;
 
+const GAP_STUB_AGENT = `#!/usr/bin/env node
+console.log("The wiki cannot answer this question. Suggested sources: nodejs.org.");
+`;
+
 const ROGUE_STUB = `#!/usr/bin/env node
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -88,6 +92,9 @@ async function makeSetup(): Promise<Setup> {
   await writeFile(join(dataRoot, "stub-alt.mjs"), ALT_STUB_AGENT, {
     mode: 0o755,
   });
+  await writeFile(join(dataRoot, "stub-gap.mjs"), GAP_STUB_AGENT, {
+    mode: 0o755,
+  });
 
   await run("git", ["init", "--quiet"], { cwd: dataRoot });
   await run("git", ["add", "-A"], { cwd: dataRoot });
@@ -120,6 +127,10 @@ async function makeSetup(): Promise<Setup> {
   await writeFile(
     join(checkout, "settings-meta.yml"),
     `command: ${join(dataRoot, "stub-alt.mjs")}\nmodel: ALT\nreasoning: low\n`,
+  );
+  await writeFile(
+    join(checkout, "settings-gap.yml"),
+    `command: ${join(dataRoot, "stub-gap.mjs")}\nmodel: GAP\nreasoning: low\n`,
   );
   await mkdir(join(checkout, "prompts"), { recursive: true });
   await writeFile(join(checkout, "prompts", "query.md"), "QUERY PROMPT");
@@ -233,6 +244,25 @@ describe("k-wiki e2e", () => {
 
     expect(result.code).toBe(0);
     expect(result.out).toContain("ALT-AGENT answered.");
+  });
+
+  it("answers a gap with the enrichment hint naming the wiki-query CLI", async () => {
+    const setup = await makeSetup();
+
+    await bind(setup, "settings-gap.yml");
+
+    const result = await runCli(K_WIKI_SCRIPT, ["query", QUESTION], {
+      cwd: setup.project,
+    });
+
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("The wiki cannot answer this question");
+    expect(result.out).toContain(
+      'To enrich from the web (human step): k-wiki wiki-query --web "<question>"',
+    );
+    expect(result.out).not.toContain(
+      "rerunning with `--web` may enrich the topic from the web",
+    );
   });
 
   it("resolves the checkout from the env var without a binding", async () => {

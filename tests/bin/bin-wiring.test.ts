@@ -161,7 +161,7 @@ const ENTRIES: readonly Entry[] = [
   },
   {
     launcher: "wiki-query",
-    module: "src/query/wiki-query.ts",
+    module: "src/query/query-cli.ts",
     usage: "Usage: wiki-query",
   },
   {
