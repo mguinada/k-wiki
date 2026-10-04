@@ -1299,12 +1299,15 @@ describe("runGuardrails — check 3, wikilinks", () => {
 });
 
 describe("revertToPreRun", () => {
-  it("restores tracked files and removes files the run created", async () => {
+  it("restores tracked pages to their committed bytes", async () => {
     const dataRoot = await makeRepo();
+
     const pre = await capturePreRunState(dataRoot, process.env);
 
     await writeFile(join(dataRoot, "wiki", "index.md"), page("# wrecked\n"));
+
     await rm(join(dataRoot, "raw", "notes", "src.md"));
+
     await writeFile(join(dataRoot, "wiki", "new.md"), page());
 
     const post = await runGuardrails(dataRoot, process.env, pre);
@@ -1314,9 +1317,51 @@ describe("revertToPreRun", () => {
     expect(await readFile(join(dataRoot, "wiki", "index.md"), "utf8")).toBe(
       page("# Index\n"),
     );
+
+    await readFile(join(dataRoot, "wiki", "new.md"), "utf8").catch(
+      () => undefined,
+    );
+  });
+
+  it("restores tracked raw notes to their committed bytes", async () => {
+    const dataRoot = await makeRepo();
+
+    const pre = await capturePreRunState(dataRoot, process.env);
+
+    await writeFile(join(dataRoot, "wiki", "index.md"), page("# wrecked\n"));
+
+    await rm(join(dataRoot, "raw", "notes", "src.md"));
+
+    await writeFile(join(dataRoot, "wiki", "new.md"), page());
+
+    const post = await runGuardrails(dataRoot, process.env, pre);
+
+    await revertToPreRun(dataRoot, process.env, pre, post.entries);
+
     expect(
       await readFile(join(dataRoot, "raw", "notes", "src.md"), "utf8"),
     ).toBe("# src\n");
+
+    await readFile(join(dataRoot, "wiki", "new.md"), "utf8").catch(
+      () => undefined,
+    );
+  });
+
+  it("removes files the run created", async () => {
+    const dataRoot = await makeRepo();
+
+    const pre = await capturePreRunState(dataRoot, process.env);
+
+    await writeFile(join(dataRoot, "wiki", "index.md"), page("# wrecked\n"));
+
+    await rm(join(dataRoot, "raw", "notes", "src.md"));
+
+    await writeFile(join(dataRoot, "wiki", "new.md"), page());
+
+    const post = await runGuardrails(dataRoot, process.env, pre);
+
+    await revertToPreRun(dataRoot, process.env, pre, post.entries);
+
     await expect(
       readFile(join(dataRoot, "wiki", "new.md"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
@@ -1356,11 +1401,13 @@ describe("revertToPreRun", () => {
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("restores a rogue commit the run made", async () => {
+  it("resets HEAD back to the pre-run commit", async () => {
     const dataRoot = await makeRepo();
+
     const pre = await capturePreRunState(dataRoot, process.env);
 
     await writeFile(join(dataRoot, "wiki", "index.md"), page("# rogue\n"));
+
     await commit(dataRoot, "rogue");
 
     const post = await runGuardrails(dataRoot, process.env, pre);
@@ -1370,6 +1417,23 @@ describe("revertToPreRun", () => {
     const head = await run("git", ["rev-parse", "HEAD"], { cwd: dataRoot });
 
     expect(head.stdout.trim()).toBe(pre.commit);
+  });
+
+  it("restores the pages the rogue commit changed", async () => {
+    const dataRoot = await makeRepo();
+
+    const pre = await capturePreRunState(dataRoot, process.env);
+
+    await writeFile(join(dataRoot, "wiki", "index.md"), page("# rogue\n"));
+
+    await commit(dataRoot, "rogue");
+
+    const post = await runGuardrails(dataRoot, process.env, pre);
+
+    await revertToPreRun(dataRoot, process.env, pre, post.entries);
+
+    await run("git", ["rev-parse", "HEAD"], { cwd: dataRoot });
+
     expect(await readFile(join(dataRoot, "wiki", "index.md"), "utf8")).toBe(
       page("# Index\n"),
     );
@@ -1411,11 +1475,13 @@ describe("revertToPreRun", () => {
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("restores a raw note the run renamed into outputs/", async () => {
+  it("restores a raw note the run renamed into outputs", async () => {
     const dataRoot = await makeRepo();
+
     const pre = await capturePreRunState(dataRoot, process.env);
 
     await mkdir(join(dataRoot, "outputs"), { recursive: true });
+
     await run("git", ["mv", "raw/notes/src.md", "outputs/src.md"], {
       cwd: dataRoot,
     });
@@ -1427,15 +1493,37 @@ describe("revertToPreRun", () => {
     expect(
       await readFile(join(dataRoot, "raw", "notes", "src.md"), "utf8"),
     ).toBe("# src\n");
+
+    await readFile(join(dataRoot, "outputs", "src.md"), "utf8").catch(
+      () => undefined,
+    );
+  });
+
+  it("removes the renamed copy from outputs", async () => {
+    const dataRoot = await makeRepo();
+
+    const pre = await capturePreRunState(dataRoot, process.env);
+
+    await mkdir(join(dataRoot, "outputs"), { recursive: true });
+
+    await run("git", ["mv", "raw/notes/src.md", "outputs/src.md"], {
+      cwd: dataRoot,
+    });
+
+    const post = await runGuardrails(dataRoot, process.env, pre);
+
+    await revertToPreRun(dataRoot, process.env, pre, post.entries);
+
     await expect(
       readFile(join(dataRoot, "outputs", "src.md"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("restores a pre-run staged rename the run moved back onto the raw note", async () => {
+  it("keeps the staged rename's destination in outputs", async () => {
     const dataRoot = await makeRepo();
 
     await mkdir(join(dataRoot, "outputs"), { recursive: true });
+
     await run("git", ["mv", "raw/notes/src.md", "outputs/y.md"], {
       cwd: dataRoot,
     });
@@ -1453,6 +1541,31 @@ describe("revertToPreRun", () => {
     expect(await readFile(join(dataRoot, "outputs", "y.md"), "utf8")).toBe(
       "# src\n",
     );
+
+    await readFile(join(dataRoot, "raw", "notes", "src.md"), "utf8").catch(
+      () => undefined,
+    );
+  });
+
+  it("removes the raw note a staged rename moved onto", async () => {
+    const dataRoot = await makeRepo();
+
+    await mkdir(join(dataRoot, "outputs"), { recursive: true });
+
+    await run("git", ["mv", "raw/notes/src.md", "outputs/y.md"], {
+      cwd: dataRoot,
+    });
+
+    const pre = await capturePreRunState(dataRoot, process.env);
+
+    await run("git", ["mv", "-f", "outputs/y.md", "raw/notes/src.md"], {
+      cwd: dataRoot,
+    });
+
+    const post = await runGuardrails(dataRoot, process.env, pre);
+
+    await revertToPreRun(dataRoot, process.env, pre, post.entries);
+
     await expect(
       readFile(join(dataRoot, "raw", "notes", "src.md"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });

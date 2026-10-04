@@ -325,36 +325,66 @@ describe("runWikiQuery", () => {
     ).rejects.toThrow("reverted");
   });
 
-  it("reverts the agent's rogue page on failure", async () => {
+  it("fails the run when the agent writes a rogue page", async () => {
     const h = await makeHarness();
 
     await expect(
       runWikiQuery({ ...optionsFor(h), runAgent: wikiWritingRogue }),
     ).rejects.toThrow();
+
+    await readFile(join(h.dataRoot, "wiki", "queries", "rogue.md")).catch(
+      () => undefined,
+    );
+  });
+
+  it("reverts the agent's rogue page on failure", async () => {
+    const h = await makeHarness();
+
+    await runWikiQuery({ ...optionsFor(h), runAgent: wikiWritingRogue }).catch(
+      () => undefined,
+    );
 
     await expect(
       readFile(join(h.dataRoot, "wiki", "queries", "rogue.md")),
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("restores the overwritten index on failure", async () => {
+  it("fails the run when the agent writes a rogue page", async () => {
     const h = await makeHarness();
 
     await expect(
       runWikiQuery({ ...optionsFor(h), runAgent: wikiWritingRogue }),
     ).rejects.toThrow();
+  });
+
+  it("restores the overwritten index on failure", async () => {
+    const h = await makeHarness();
+
+    await runWikiQuery({ ...optionsFor(h), runAgent: wikiWritingRogue }).catch(
+      () => undefined,
+    );
 
     expect(await readFile(join(h.dataRoot, "wiki", "index.md"), "utf8")).toBe(
       "# Index\n",
     );
   });
 
-  it("saves no artifact when the agent writes under wiki/", async () => {
+  it("fails the run when the agent writes under wiki", async () => {
     const h = await makeHarness();
 
     await expect(
       runWikiQuery({ ...optionsFor(h), runAgent: wikiWritingRogue }),
     ).rejects.toThrow();
+
+    await readFile(join(h.outputsDir, "last-query.md")).catch(() => undefined);
+  });
+
+  it("saves no artifact when the agent writes under wiki", async () => {
+    const h = await makeHarness();
+
+    await runWikiQuery({ ...optionsFor(h), runAgent: wikiWritingRogue }).catch(
+      () => undefined,
+    );
 
     await expect(
       readFile(join(h.outputsDir, "last-query.md")),
@@ -384,24 +414,42 @@ describe("runWikiQuery", () => {
     ).rejects.toThrow("wiki/drafts/note.md");
   });
 
-  it("restores the pre-run untracked page the agent deleted", async () => {
+  it("fails the run when the agent deletes a pre-run page", async () => {
     const h = await harnessWithDraftNote();
 
     await expect(
       runWikiQuery({ ...optionsFor(h), runAgent: pageDeletingRogue }),
     ).rejects.toThrow();
+  });
+
+  it("restores the pre-run untracked page the agent deleted", async () => {
+    const h = await harnessWithDraftNote();
+
+    await runWikiQuery({ ...optionsFor(h), runAgent: pageDeletingRogue }).catch(
+      () => undefined,
+    );
 
     expect(
       await readFile(join(h.dataRoot, "wiki", "drafts", "note.md"), "utf8"),
     ).toBe("NOTE\n");
   });
 
-  it("saves no artifact when the agent deletes a pre-run page", async () => {
+  it("fails the run when the agent deletes a pre-run page", async () => {
     const h = await harnessWithDraftNote();
 
     await expect(
       runWikiQuery({ ...optionsFor(h), runAgent: pageDeletingRogue }),
     ).rejects.toThrow();
+
+    await readFile(join(h.outputsDir, "last-query.md")).catch(() => undefined);
+  });
+
+  it("saves no artifact when the agent deletes a pre-run page", async () => {
+    const h = await harnessWithDraftNote();
+
+    await runWikiQuery({ ...optionsFor(h), runAgent: pageDeletingRogue }).catch(
+      () => undefined,
+    );
 
     await expect(
       readFile(join(h.outputsDir, "last-query.md")),
@@ -425,24 +473,42 @@ describe("runWikiQuery", () => {
     ).rejects.toThrow("wiki/concepts/rag.md");
   });
 
-  it("restores the renamed page under wiki/", async () => {
+  it("fails the run when the agent renames a page under wiki", async () => {
     const h = await makeHarness();
 
     await expect(
       runWikiQuery({ ...optionsFor(h), runAgent: renamingRogue }),
     ).rejects.toThrow();
+  });
+
+  it("restores the renamed page under wiki", async () => {
+    const h = await makeHarness();
+
+    await runWikiQuery({ ...optionsFor(h), runAgent: renamingRogue }).catch(
+      () => undefined,
+    );
 
     expect(
       await readFile(join(h.dataRoot, "wiki", "concepts", "rag.md"), "utf8"),
     ).toBe("RAG\n");
   });
 
-  it("removes the out-of-wiki rename target on revert", async () => {
+  it("fails the run when the agent renames a page under wiki", async () => {
     const h = await makeHarness();
 
     await expect(
       runWikiQuery({ ...optionsFor(h), runAgent: renamingRogue }),
     ).rejects.toThrow();
+
+    await readFile(join(h.dataRoot, "notes", "rag.md")).catch(() => undefined);
+  });
+
+  it("removes the out-of-wiki rename target on revert", async () => {
+    const h = await makeHarness();
+
+    await runWikiQuery({ ...optionsFor(h), runAgent: renamingRogue }).catch(
+      () => undefined,
+    );
 
     await expect(
       readFile(join(h.dataRoot, "notes", "rag.md")),
@@ -478,8 +544,17 @@ describe("runWikiQuery", () => {
     ).rejects.toThrow("moved the data repo's HEAD");
   });
 
+  it("fails the run when the agent commits its writes", async () => {
+    const h = await makeHarness();
+
+    await expect(
+      runWikiQuery({ ...optionsFor(h), runAgent: committingRogue }),
+    ).rejects.toThrow();
+  });
+
   it("restores the data repo HEAD the agent moved", async () => {
     const h = await makeHarness();
+
     const { stdout: sha } = await run("git", [
       "-C",
       h.dataRoot,
@@ -487,9 +562,9 @@ describe("runWikiQuery", () => {
       "HEAD",
     ]);
 
-    await expect(
-      runWikiQuery({ ...optionsFor(h), runAgent: committingRogue }),
-    ).rejects.toThrow();
+    await runWikiQuery({ ...optionsFor(h), runAgent: committingRogue }).catch(
+      () => undefined,
+    );
 
     const { stdout: after } = await run("git", [
       "-C",
@@ -501,24 +576,42 @@ describe("runWikiQuery", () => {
     expect(after.trim()).toBe(sha.trim());
   });
 
-  it("reverts the committed index edit", async () => {
+  it("fails the run when the agent commits its writes", async () => {
     const h = await makeHarness();
 
     await expect(
       runWikiQuery({ ...optionsFor(h), runAgent: committingRogue }),
     ).rejects.toThrow();
+  });
+
+  it("reverts the committed index edit", async () => {
+    const h = await makeHarness();
+
+    await runWikiQuery({ ...optionsFor(h), runAgent: committingRogue }).catch(
+      () => undefined,
+    );
 
     expect(await readFile(join(h.dataRoot, "wiki", "index.md"), "utf8")).toBe(
       "# Index\n",
     );
   });
 
-  it("saves no artifact when the agent commits its writes", async () => {
+  it("fails the run when the agent commits its writes", async () => {
     const h = await makeHarness();
 
     await expect(
       runWikiQuery({ ...optionsFor(h), runAgent: committingRogue }),
     ).rejects.toThrow();
+
+    await readFile(join(h.outputsDir, "last-query.md")).catch(() => undefined);
+  });
+
+  it("saves no artifact when the agent commits its writes", async () => {
+    const h = await makeHarness();
+
+    await runWikiQuery({ ...optionsFor(h), runAgent: committingRogue }).catch(
+      () => undefined,
+    );
 
     await expect(
       readFile(join(h.outputsDir, "last-query.md")),
@@ -557,12 +650,21 @@ describe("runWikiQuery", () => {
     ).rejects.toThrow("reverted");
   });
 
-  it("restores the pre-run dirty content after the revert", async () => {
+  it("fails the run when the agent re-edits a dirty page", async () => {
     const h = await harnessWithDirtyIndex();
 
     await expect(
       runWikiQuery({ ...optionsFor(h), runAgent: dirtyReEditingRogue }),
     ).rejects.toThrow();
+  });
+
+  it("restores the pre-run dirty content after the revert", async () => {
+    const h = await harnessWithDirtyIndex();
+
+    await runWikiQuery({
+      ...optionsFor(h),
+      runAgent: dirtyReEditingRogue,
+    }).catch(() => undefined);
 
     expect(await readFile(join(h.dataRoot, "wiki", "index.md"), "utf8")).toBe(
       "# Index dirty\n",
@@ -580,13 +682,24 @@ describe("runWikiQuery", () => {
     );
   });
 
+  it("fails the run when the data repo has no commit", async () => {
+    const h = await makeHarness();
+
+    await rm(join(h.dataRoot, ".git"), { recursive: true });
+
+    await run("git", ["init", "--quiet"], { cwd: h.dataRoot });
+
+    await expect(runWikiQuery(optionsFor(h))).rejects.toThrow();
+  });
+
   it("runs no agent when the data repo has no commit", async () => {
     const h = await makeHarness();
 
     await rm(join(h.dataRoot, ".git"), { recursive: true });
+
     await run("git", ["init", "--quiet"], { cwd: h.dataRoot });
 
-    await expect(runWikiQuery(optionsFor(h))).rejects.toThrow();
+    await runWikiQuery(optionsFor(h)).catch(() => undefined);
 
     expect(h.invocations).toEqual([]);
   });
@@ -600,13 +713,26 @@ describe("runWikiQuery", () => {
     ).rejects.toThrow("no answer");
   });
 
-  it("saves no artifact when the agent produces no answer", async () => {
+  it("fails the run when the agent produces no answer", async () => {
     const h = await makeHarness();
+
     const silent: AgentRunner = async () => ({ stdout: "  \n", stderr: "" });
 
     await expect(
       runWikiQuery({ ...optionsFor(h), runAgent: silent }),
     ).rejects.toThrow();
+
+    await readFile(join(h.outputsDir, "last-query.md")).catch(() => undefined);
+  });
+
+  it("saves no artifact when the agent produces no answer", async () => {
+    const h = await makeHarness();
+
+    const silent: AgentRunner = async () => ({ stdout: "  \n", stderr: "" });
+
+    await runWikiQuery({ ...optionsFor(h), runAgent: silent }).catch(
+      () => undefined,
+    );
 
     await expect(
       readFile(join(h.outputsDir, "last-query.md")),
@@ -1053,7 +1179,7 @@ describe("runWikiQuery --web", () => {
     });
   }
 
-  it("keeps the plain run's argv free of any web grant (ambient-leak)", async () => {
+  it("strips context, extensions, and skills from the core argv", async () => {
     const h = await makeHarness();
 
     await runWikiQuery(optionsFor(h));
@@ -1065,12 +1191,39 @@ describe("runWikiQuery --web", () => {
       "--no-extensions",
       "--no-skills",
     ]);
+  });
+
+  it("keeps the plain run's argv free of the web extension", async () => {
+    const h = await makeHarness();
+
+    await runWikiQuery(optionsFor(h));
+
+    const args = invocation(h, 0).args;
+
     expect(args).not.toContain("-e");
+  });
+
+  it("keeps the plain run's argv free of the web tool grant", async () => {
+    const h = await makeHarness();
+
+    await runWikiQuery(optionsFor(h));
+
+    const args = invocation(h, 0).args;
+
     expect(args.join(" ")).not.toContain("pi-web-access");
+  });
+
+  it("keeps the plain run's argv free of a --tools grant", async () => {
+    const h = await makeHarness();
+
+    await runWikiQuery(optionsFor(h));
+
+    const args = invocation(h, 0).args;
+
     expect(args).not.toContain("--tools");
   });
 
-  it("keeps the core run's argv web-blind even under --web (grant isolation)", async () => {
+  it("keeps --no-extensions in the core run's argv", async () => {
     const h = await makeHarness();
 
     await runWeb(h, twoPhaseRunner("A.", OK_STREAM));
@@ -1078,6 +1231,15 @@ describe("runWikiQuery --web", () => {
     const coreArgs = invocation(h, 0).args;
 
     expect(coreArgs).toContain("--no-extensions");
+  });
+
+  it("keeps the core run's argv web-blind even under --web", async () => {
+    const h = await makeHarness();
+
+    await runWeb(h, twoPhaseRunner("A.", OK_STREAM));
+
+    const coreArgs = invocation(h, 0).args;
+
     expect(coreArgs.join(" ")).not.toContain("pi-web-access");
   });
 
@@ -1089,9 +1251,27 @@ describe("runWikiQuery --web", () => {
     const enrichArgs = invocation(h, 1).args;
 
     expect(enrichArgs[enrichArgs.indexOf("-e") + 1]).toBe("npm:pi-web-access");
+  });
+
+  it("scopes the web tools to the enrichment run", async () => {
+    const h = await makeHarness();
+
+    await runWeb(h, twoPhaseRunner("A.", OK_STREAM));
+
+    const enrichArgs = invocation(h, 1).args;
+
     expect(enrichArgs[enrichArgs.indexOf("--tools") + 1]).toBe(
       "web_search,source_check,fetch_content",
     );
+  });
+
+  it("keeps --no-extensions in the enrichment argv", async () => {
+    const h = await makeHarness();
+
+    await runWeb(h, twoPhaseRunner("A.", OK_STREAM));
+
+    const enrichArgs = invocation(h, 1).args;
+
     expect(enrichArgs).toContain("--no-extensions");
   });
 
@@ -1121,9 +1301,45 @@ describe("runWikiQuery --web", () => {
     );
   });
 
-  it("yields a byte-identical core section with and without --web", async () => {
+  it("keeps the core argv identical with and without --web", async () => {
     const plainHarness = await makeHarness();
+
     const webHarness = await makeHarness();
+
+    const recording =
+      (h: Harness): AgentRunner =>
+      async (command, args, options) => {
+        h.invocations.push({
+          command,
+          args,
+          cwd: options.cwd,
+          env: options.env,
+        });
+
+        return twoPhaseRunner("A.", OK_STREAM)(command, args, options);
+      };
+
+    await runWikiQuery({
+      ...optionsFor(plainHarness),
+      runAgent: recording(plainHarness),
+    });
+
+    await runWeb(webHarness, twoPhaseRunner("A.", OK_STREAM));
+
+    expect(invocation(plainHarness, 0).args).toEqual(
+      invocation(webHarness, 0).args,
+    );
+
+    await readQueryArtifact(join(plainHarness.outputsDir, "last-query.md"));
+
+    await readQueryArtifact(join(webHarness.outputsDir, "last-query.md"));
+  });
+
+  it("answers the core question in both runs", async () => {
+    const plainHarness = await makeHarness();
+
+    const webHarness = await makeHarness();
+
     const recording =
       (h: Harness): AgentRunner =>
       async (command, args, options) => {
@@ -1141,16 +1357,45 @@ describe("runWikiQuery --web", () => {
       ...optionsFor(plainHarness),
       runAgent: recording(plainHarness),
     });
+
     await runWeb(webHarness, twoPhaseRunner("A.", OK_STREAM));
 
-    expect(invocation(plainHarness, 0).args).toEqual(
-      invocation(webHarness, 0).args,
-    );
     expect(plain.answer).toBe("A.");
+
+    await readQueryArtifact(join(plainHarness.outputsDir, "last-query.md"));
+
+    await readQueryArtifact(join(webHarness.outputsDir, "last-query.md"));
+  });
+
+  it("saves the same core answer in both artifacts", async () => {
+    const plainHarness = await makeHarness();
+
+    const webHarness = await makeHarness();
+
+    const recording =
+      (h: Harness): AgentRunner =>
+      async (command, args, options) => {
+        h.invocations.push({
+          command,
+          args,
+          cwd: options.cwd,
+          env: options.env,
+        });
+
+        return twoPhaseRunner("A.", OK_STREAM)(command, args, options);
+      };
+
+    await runWikiQuery({
+      ...optionsFor(plainHarness),
+      runAgent: recording(plainHarness),
+    });
+
+    await runWeb(webHarness, twoPhaseRunner("A.", OK_STREAM));
 
     const plainSaved = await readQueryArtifact(
       join(plainHarness.outputsDir, "last-query.md"),
     );
+
     const webSaved = await readQueryArtifact(
       join(webHarness.outputsDir, "last-query.md"),
     );
@@ -1158,7 +1403,7 @@ describe("runWikiQuery --web", () => {
     expect(webSaved.answer).toBe(plainSaved.answer);
   });
 
-  it("partitions the web sections after the core answer in artifact order", async () => {
+  it("finds every web section in the artifact", async () => {
     const h = await makeHarness();
 
     await runWeb(
@@ -1167,6 +1412,7 @@ describe("runWikiQuery --web", () => {
     );
 
     const text = await readFile(join(h.outputsDir, "last-query.md"), "utf8");
+
     const order = [
       "## Answer",
       "---",
@@ -1180,13 +1426,73 @@ describe("runWikiQuery --web", () => {
     );
 
     expect(order.every((at) => at > -1)).toBe(true);
+  });
+
+  it("orders the web sections after the core answer", async () => {
+    const h = await makeHarness();
+
+    await runWeb(
+      h,
+      twoPhaseRunner("A. See [[retrieval-augmented-generation]].", OK_STREAM),
+    );
+
+    const text = await readFile(join(h.outputsDir, "last-query.md"), "utf8");
+
+    const order = [
+      "## Answer",
+      "---",
+      "## Web enrichment",
+      "## Web sources",
+      "## Web calls audit",
+    ].map((heading, at) =>
+      at === 1
+        ? text.lastIndexOf("---", text.indexOf("## Web enrichment"))
+        : text.indexOf(heading),
+    );
+
     expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+
+  it("labels the artifact with the --web mode", async () => {
+    const h = await makeHarness();
+
+    await runWeb(
+      h,
+      twoPhaseRunner("A. See [[retrieval-augmented-generation]].", OK_STREAM),
+    );
+
+    const text = await readFile(join(h.outputsDir, "last-query.md"), "utf8");
+
     expect(text).toContain('mode: "query (--web)"');
+  });
+
+  it("counts the web sources in the artifact", async () => {
+    const h = await makeHarness();
+
+    await runWeb(
+      h,
+      twoPhaseRunner("A. See [[retrieval-augmented-generation]].", OK_STREAM),
+    );
+
+    const text = await readFile(join(h.outputsDir, "last-query.md"), "utf8");
+
     expect(text).toContain("webSources: 1");
+  });
+
+  it("records the retrieved stamp in the artifact", async () => {
+    const h = await makeHarness();
+
+    await runWeb(
+      h,
+      twoPhaseRunner("A. See [[retrieval-augmented-generation]].", OK_STREAM),
+    );
+
+    const text = await readFile(join(h.outputsDir, "last-query.md"), "utf8");
+
     expect(text).toContain("webRetrieved:");
   });
 
-  it("keeps the core section free of web URLs (partition purity)", async () => {
+  it("keeps the core section free of web URLs", async () => {
     const h = await makeHarness();
 
     await runWeb(h, twoPhaseRunner("A.", OK_STREAM));
@@ -1194,7 +1500,25 @@ describe("runWikiQuery --web", () => {
     const saved = await readQueryArtifact(join(h.outputsDir, "last-query.md"));
 
     expect(saved.answer).not.toContain("https://");
+  });
+
+  it("keeps the web enrichment in its own section", async () => {
+    const h = await makeHarness();
+
+    await runWeb(h, twoPhaseRunner("A.", OK_STREAM));
+
+    const saved = await readQueryArtifact(join(h.outputsDir, "last-query.md"));
+
     expect(saved.web?.enrichment).toContain("https://example.com/a");
+  });
+
+  it("stamps the web retrieval time in its own section", async () => {
+    const h = await makeHarness();
+
+    await runWeb(h, twoPhaseRunner("A.", OK_STREAM));
+
+    const saved = await readQueryArtifact(join(h.outputsDir, "last-query.md"));
+
     expect(saved.web?.enrichment).toContain("retrieved 2026-10-03");
   });
 
@@ -1276,9 +1600,38 @@ describe("runWikiQuery --web", () => {
     );
   });
 
-  it("degrades to a normal wiki-only run with the exact warning when the plugin is absent", async () => {
+  it("runs one agent when the web plugin is absent", async () => {
     const h = await makeHarness();
+
     const piRoot = await absentPiRoot();
+
+    const recording: AgentRunner = async (command, args, options) => {
+      h.invocations.push({
+        command,
+        args,
+        cwd: options.cwd,
+        env: options.env,
+      });
+
+      return twoPhaseRunner("A.", OK_STREAM)(command, args, options);
+    };
+
+    await runWikiQuery({
+      ...optionsFor(h, { env: { PI_CODING_AGENT_DIR: piRoot } }),
+      web: true,
+      runAgent: recording,
+    });
+
+    expect(h.invocations).toHaveLength(1);
+
+    await readQueryArtifact(join(h.outputsDir, "last-query.md"));
+  });
+
+  it("degrades to a normal wiki-only run with the exact warning", async () => {
+    const h = await makeHarness();
+
+    const piRoot = await absentPiRoot();
+
     const recording: AgentRunner = async (command, args, options) => {
       h.invocations.push({
         command,
@@ -1296,20 +1649,97 @@ describe("runWikiQuery --web", () => {
       runAgent: recording,
     });
 
-    expect(h.invocations).toHaveLength(1);
     expect(result.warning).toBe(
       "WARNING — `--web` requested, but the pi-web-access plugin is not available — continuing in wiki-only mode.",
     );
 
+    await readQueryArtifact(join(h.outputsDir, "last-query.md"));
+  });
+
+  it("records the degradation warning in the artifact", async () => {
+    const h = await makeHarness();
+
+    const piRoot = await absentPiRoot();
+
+    const recording: AgentRunner = async (command, args, options) => {
+      h.invocations.push({
+        command,
+        args,
+        cwd: options.cwd,
+        env: options.env,
+      });
+
+      return twoPhaseRunner("A.", OK_STREAM)(command, args, options);
+    };
+
+    const result = await runWikiQuery({
+      ...optionsFor(h, { env: { PI_CODING_AGENT_DIR: piRoot } }),
+      web: true,
+      runAgent: recording,
+    });
+
     const saved = await readQueryArtifact(join(h.outputsDir, "last-query.md"));
 
     expect(saved.webWarning).toBe(result.warning);
+  });
+
+  it("omits the web section when the plugin is absent", async () => {
+    const h = await makeHarness();
+
+    const piRoot = await absentPiRoot();
+
+    const recording: AgentRunner = async (command, args, options) => {
+      h.invocations.push({
+        command,
+        args,
+        cwd: options.cwd,
+        env: options.env,
+      });
+
+      return twoPhaseRunner("A.", OK_STREAM)(command, args, options);
+    };
+
+    await runWikiQuery({
+      ...optionsFor(h, { env: { PI_CODING_AGENT_DIR: piRoot } }),
+      web: true,
+      runAgent: recording,
+    });
+
+    const saved = await readQueryArtifact(join(h.outputsDir, "last-query.md"));
+
     expect(saved.web).toBeUndefined();
+  });
+
+  it("still answers from the core run", async () => {
+    const h = await makeHarness();
+
+    const piRoot = await absentPiRoot();
+
+    const recording: AgentRunner = async (command, args, options) => {
+      h.invocations.push({
+        command,
+        args,
+        cwd: options.cwd,
+        env: options.env,
+      });
+
+      return twoPhaseRunner("A.", OK_STREAM)(command, args, options);
+    };
+
+    await runWikiQuery({
+      ...optionsFor(h, { env: { PI_CODING_AGENT_DIR: piRoot } }),
+      web: true,
+      runAgent: recording,
+    });
+
+    const saved = await readQueryArtifact(join(h.outputsDir, "last-query.md"));
+
     expect(saved.answer).toBe("A.");
   });
 
-  it("keeps the core answer with the failure warning when the enrichment run fails", async () => {
+  it("keeps the core answer when the enrichment run fails", async () => {
     const h = await makeHarness();
+
     const failingEnrichment: AgentRunner = async (_command, args) => {
       if (args.includes("--mode")) {
         throw new Error("agent timed out after 1800 seconds");
@@ -1321,17 +1751,67 @@ describe("runWikiQuery --web", () => {
     const result = await runWeb(h, failingEnrichment);
 
     expect(result.answer).toBe("A.");
+
+    await readQueryArtifact(join(h.outputsDir, "last-query.md"));
+  });
+
+  it("warns with the enrichment-failure wording", async () => {
+    const h = await makeHarness();
+
+    const failingEnrichment: AgentRunner = async (_command, args) => {
+      if (args.includes("--mode")) {
+        throw new Error("agent timed out after 1800 seconds");
+      }
+
+      return { stdout: "A.", stderr: "" };
+    };
+
+    const result = await runWeb(h, failingEnrichment);
+
     expect(result.warning).toBe(
       "WARNING — `--web` enrichment failed (web-call or tool failure) — continuing with the wiki-only core answer.",
     );
 
+    await readQueryArtifact(join(h.outputsDir, "last-query.md"));
+  });
+
+  it("records the failure warning in the artifact", async () => {
+    const h = await makeHarness();
+
+    const failingEnrichment: AgentRunner = async (_command, args) => {
+      if (args.includes("--mode")) {
+        throw new Error("agent timed out after 1800 seconds");
+      }
+
+      return { stdout: "A.", stderr: "" };
+    };
+
+    const result = await runWeb(h, failingEnrichment);
+
     const saved = await readQueryArtifact(join(h.outputsDir, "last-query.md"));
 
     expect(saved.webWarning).toBe(result.warning);
+  });
+
+  it("saves the core answer alone", async () => {
+    const h = await makeHarness();
+
+    const failingEnrichment: AgentRunner = async (_command, args) => {
+      if (args.includes("--mode")) {
+        throw new Error("agent timed out after 1800 seconds");
+      }
+
+      return { stdout: "A.", stderr: "" };
+    };
+
+    await runWeb(h, failingEnrichment);
+
+    const saved = await readQueryArtifact(join(h.outputsDir, "last-query.md"));
+
     expect(saved.answer).toBe("A.");
   });
 
-  it("fails the enrichment into the degradation path when the audit does not reconcile", async () => {
+  it("keeps the core answer when the audit does not reconcile", async () => {
     const hallucinated = [
       JSON.stringify({
         type: "message_end",
@@ -1348,11 +1828,36 @@ describe("runWikiQuery --web", () => {
         },
       }),
     ].join("\n");
+
     const h = await makeHarness();
 
     const result = await runWeb(h, twoPhaseRunner("A.", hallucinated));
 
     expect(result.answer).toBe("A.");
+  });
+
+  it("fails the enrichment into the degradation path", async () => {
+    const hallucinated = [
+      JSON.stringify({
+        type: "message_end",
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "text",
+              text: "- [X](https://example.com/hallucinated) (retrieved 2026-10-03).",
+            },
+          ],
+          stopReason: "stop",
+          timestamp: 1791000000000,
+        },
+      }),
+    ].join("\n");
+
+    const h = await makeHarness();
+
+    const result = await runWeb(h, twoPhaseRunner("A.", hallucinated));
+
     expect(result.warning).toContain("enrichment failed");
   });
 
