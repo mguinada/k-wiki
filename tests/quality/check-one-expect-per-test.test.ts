@@ -88,6 +88,14 @@ function runLauncherCapture(args: string[]): [number, string] {
   }
 }
 
+/** The ANSI escape, kept out of regex literals. */
+const esc = "\u001b";
+
+/** Captured launcher output with its SGR color sequences stripped. */
+function plainOutput(output: string): string {
+  return output.replace(new RegExp(`${esc}\\[\\d+m`, "gu"), "");
+}
+
 describe("analyzeSource counting", () => {
   it("a clean single-expect file yields no violation", () => {
     const blocks = analyzeSource(
@@ -340,7 +348,13 @@ describe("checkTree and rendering", () => {
 
     const display = (name: string) => relative(process.cwd(), join(root, name));
 
-    expect(renderViolation(report.violations[0]!)).toBe(
+    const [violation] = report.violations;
+
+    if (!violation) {
+      throw new Error("expected the alpha block to be reported");
+    }
+
+    expect(renderViolation(violation)).toBe(
       `VIOLATION ${display("a-first.test.ts")}:1 it "alpha": 2 expects (2,3); standard 1`,
     );
   });
@@ -385,7 +399,7 @@ describe("exit codes through the launcher", () => {
       `it("works", () => {\n  expect(1).toBe(1);\n});\n`,
     );
 
-    const [status, output] = runLauncherCapture([dir]);
+    const [status] = runLauncherCapture([dir]);
 
     expect(status).toBe(0);
   });
@@ -398,9 +412,7 @@ describe("exit codes through the launcher", () => {
 
     const [, output] = runLauncherCapture([dir]);
 
-    expect(output.replace(/\u001b\[\d+m/gu, "")).toMatch(
-      /^ok: 1 test blocks across 1 file/u,
-    );
+    expect(plainOutput(output)).toMatch(/^ok: 1 test blocks across 1 file/u);
   });
 
   it("exits 1 on a two-expect violation", () => {
@@ -420,11 +432,9 @@ describe("exit codes through the launcher", () => {
       `it("loads the board", () => {\n  expect(load()).toBeDefined();\n  expect(load().rows).toHaveLength(3);\n});\n`,
     );
 
-    const [status, output] = runLauncherCapture([dir]);
+    const [, output] = runLauncherCapture([dir]);
 
-    const plain = output.replace(/\u001b\[\d+m/gu, "");
-
-    expect(plain).toContain(
+    expect(plainOutput(output)).toContain(
       'broken.test.ts:1 it "loads the board": 2 expects (2,3); standard 1',
     );
   });
@@ -435,11 +445,9 @@ describe("exit codes through the launcher", () => {
       `it("loads the board", () => {\n  expect(load()).toBeDefined();\n  expect(load().rows).toHaveLength(3);\n});\n`,
     );
 
-    const [status, output] = runLauncherCapture([dir]);
+    const [, output] = runLauncherCapture([dir]);
 
-    const plain = output.replace(/\u001b\[\d+m/gu, "");
-
-    expect(plain.match(/WHY /gu)).toHaveLength(1);
+    expect(plainOutput(output).match(/WHY /gu)).toHaveLength(1);
   });
 
   it("requires every assertion kept in the fix", () => {
@@ -448,11 +456,9 @@ describe("exit codes through the launcher", () => {
       `it("loads the board", () => {\n  expect(load()).toBeDefined();\n  expect(load().rows).toHaveLength(3);\n});\n`,
     );
 
-    const [status, output] = runLauncherCapture([dir]);
+    const [, output] = runLauncherCapture([dir]);
 
-    const plain = output.replace(/\u001b\[\d+m/gu, "");
-
-    expect(plain).toContain("keep EVERY assert");
+    expect(plainOutput(output)).toContain("keep EVERY assert");
   });
 
   it("points at re-running until clean", () => {
@@ -461,11 +467,9 @@ describe("exit codes through the launcher", () => {
       `it("loads the board", () => {\n  expect(load()).toBeDefined();\n  expect(load().rows).toHaveLength(3);\n});\n`,
     );
 
-    const [status, output] = runLauncherCapture([dir]);
+    const [, output] = runLauncherCapture([dir]);
 
-    const plain = output.replace(/\u001b\[\d+m/gu, "");
-
-    expect(plain).toContain("re-run until clean");
+    expect(plainOutput(output)).toContain("re-run until clean");
   });
 
   it("an unknown flag is a bad invocation — exit 2", () => {
@@ -481,7 +485,7 @@ describe("exit codes through the launcher", () => {
   it("exits 2 when a fixture does not parse", () => {
     const dir = fixtureDirSync("unparseable.test.ts", `it("broken", () => {\n`);
 
-    const [status, output] = runLauncherCapture([dir]);
+    const [status] = runLauncherCapture([dir]);
 
     expect(status).toBe(2);
   });
@@ -489,31 +493,31 @@ describe("exit codes through the launcher", () => {
   it("names the unparseable file", () => {
     const dir = fixtureDirSync("unparseable.test.ts", `it("broken", () => {\n`);
 
-    const [status, output] = runLauncherCapture([dir]);
+    const [, output] = runLauncherCapture([dir]);
 
     expect(output).toContain("unparseable.test.ts");
   });
 
   it("exits 0 on --help", () => {
-    const [status, output] = runLauncherCapture(["--help"]);
+    const [status] = runLauncherCapture(["--help"]);
 
     expect(status).toBe(0);
   });
 
   it("states the standard in the help", () => {
-    const [status, output] = runLauncherCapture(["--help"]);
+    const [, output] = runLauncherCapture(["--help"]);
 
     expect(output).toContain("one expectation per test block");
   });
 
   it("states the e2e exemption in the help", () => {
-    const [status, output] = runLauncherCapture(["--help"]);
+    const [, output] = runLauncherCapture(["--help"]);
 
     expect(output).toContain("tests/e2e/");
   });
 
   it("states exit 2 in the help", () => {
-    const [status, output] = runLauncherCapture(["--help"]);
+    const [, output] = runLauncherCapture(["--help"]);
 
     expect(output).toContain("Exit 2");
   });

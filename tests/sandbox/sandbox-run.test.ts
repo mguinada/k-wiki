@@ -762,7 +762,6 @@ describe("runSandboxRun", () => {
     );
 
     const agent: AgentRunner = async () => {
-
       return { stdout: "", stderr: "" };
     };
 

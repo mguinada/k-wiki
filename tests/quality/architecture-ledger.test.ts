@@ -111,14 +111,6 @@ describe("architecture ledger (live tree)", () => {
       domains,
       "AGENTS.md carries no Architecture alignment block",
     ).not.toBeUndefined();
-
-    const live = (await readdir(join(repoRoot, "src"), { withFileTypes: true }))
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)
-      .sort();
-
-    const ledger = [...new Set(domains)].sort();
-
   });
 
   it("keeps every src/ module's purpose header declared", async ({ skip }) => {

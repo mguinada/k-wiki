@@ -67,8 +67,7 @@ describe("fetchBoardState", () => {
       },
       boardPage([issueNode({ id: "I2", number: 2, status: "Ready" })]),
     ];
-    const graphql: GraphQLFn = async (_query, variables) =>
-      responses.shift() as unknown;
+    const graphql: GraphQLFn = async (_query) => responses.shift() as unknown;
 
     const state = await fetchBoardState(graphql, "mguinada", 2);
 
@@ -93,8 +92,7 @@ describe("fetchBoardState", () => {
       },
       boardPage([issueNode({ id: "I2", number: 2, status: "Ready" })]),
     ];
-    const graphql: GraphQLFn = async (_query, variables) =>
-      responses.shift() as unknown;
+    const graphql: GraphQLFn = async (_query) => responses.shift() as unknown;
 
     const state = await fetchBoardState(graphql, "mguinada", 2);
 
