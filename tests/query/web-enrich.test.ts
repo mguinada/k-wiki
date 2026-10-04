@@ -7,6 +7,7 @@ import {
   type AgentSettings,
   ISOLATION_FLAGS,
 } from "../../src/ingest/agent-settings.ts";
+import { WEB_SOURCES_HEADING } from "../../src/query/web-artifact.ts";
 import {
   composeEnrichmentPrompt,
   enrichmentArtifact,
@@ -18,7 +19,6 @@ import {
   webEnrichAgentArgs,
   withGapHint,
 } from "../../src/query/web-enrich.ts";
-import { WEB_SOURCES_HEADING } from "../../src/query/web-artifact.ts";
 import { assistantTextLine, toolCallLine, toolResultLine } from "./helpers.ts";
 
 const SETTINGS: AgentSettings = {

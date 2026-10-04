@@ -1721,7 +1721,12 @@ describe("degraded --web artifacts", () => {
     expect(lines.slice(1, close)).toContain(
       `webWarning: ${JSON.stringify(DEGRADED.webWarning)}`,
     );
-    expect(lines.slice(close + 1).join("\n").trim()).toBe(ANSWER);
+    expect(
+      lines
+        .slice(close + 1)
+        .join("\n")
+        .trim(),
+    ).toBe(ANSWER);
   });
 
   it("parses a plain answer that itself starts with WARNING as plain, not degraded", () => {
