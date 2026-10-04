@@ -1691,9 +1691,7 @@ describe("partitioned --web artifacts", () => {
     expect(page).not.toContain("## Web enrichment");
     expect(page).not.toContain("## Web sources");
     expect(page).not.toContain("## Web calls audit");
-    expect(page).not.toContain(
-      "──────────────────── web enrichment boundary ────────────────────",
-    );
+    expect(page.split("\n").filter((line) => line === "---")).toHaveLength(2);
   });
 });
 

@@ -25,9 +25,9 @@ import {
 import { buildPageIndex, extractWikilinks } from "../wiki/wiki-links.ts";
 import { prependWikiLog } from "../wiki/wiki-log.ts";
 import {
+  looksPartitionedWeb,
   parseWebArtifactBody,
   renderWebArtifactBody,
-  WEB_PARTITION_SEPARATOR,
   type WebArtifactSections,
 } from "./web-artifact.ts";
 
@@ -315,7 +315,7 @@ export function parseQueryArtifact(text: string): QueryArtifact {
     return webArtifact(core, bag, web);
   }
 
-  if (bodyLines.includes(WEB_PARTITION_SEPARATOR)) {
+  if (looksPartitionedWeb(bodyLines)) {
     throw headerError("malformed partitioned web body");
   }
 

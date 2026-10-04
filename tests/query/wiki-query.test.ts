@@ -1140,17 +1140,18 @@ describe("runWikiQuery --web", () => {
     const text = await readFile(join(h.outputsDir, "last-query.md"), "utf8");
     const order = [
       "## Answer",
+      "---",
       "## Web enrichment",
       "## Web sources",
       "## Web calls audit",
-    ].map((heading) => text.indexOf(heading));
-    const separator = text.indexOf(
-      "──────────────────── web enrichment boundary ────────────────────",
+    ].map((heading, at) =>
+      at === 1
+        ? text.lastIndexOf("---", text.indexOf("## Web enrichment"))
+        : text.indexOf(heading),
     );
 
     expect(order.every((at) => at > -1)).toBe(true);
-    expect(separator).toBeGreaterThan(order[0] ?? 0);
-    expect(separator).toBeLessThan(order[1] ?? 0);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(text).toContain('mode: "query (--web)"');
     expect(text).toContain("webSources: 1");
     expect(text).toContain("webRetrieved:");

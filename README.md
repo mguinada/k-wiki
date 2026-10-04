@@ -1668,7 +1668,7 @@ omitted flag can never produce wiki writes:
   passed, receives the `pi-web-access` extension restricted by pi's
   `--tools` allowlist to the search and fetch tools, and produces an
   enrichment section the wrapper audits and machine-assembles after
-  the core answer: a partition separator, `## Web enrichment`,
+  the core answer: a `---` thematic break, `## Web enrichment`,
   `## Web sources` (computed from the recorded tool calls, never
   model output), and `## Web calls audit`. The artifact header gains
   the mode (`query (--web)`), the web reference count, and the

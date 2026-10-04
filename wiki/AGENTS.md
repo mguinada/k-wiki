@@ -336,6 +336,14 @@ Rebuild procedure:
    attributed, contradictions preserved. Wording may differ; LLM output
    is not byte-identical.
 
+## Markdown Craft
+
+Generated markdown uses only native constructs for structure and
+boundaries: headings, `---` thematic breaks, lists, tables,
+emphasis, and code fences. Never box-drawing characters, unicode
+rules, ASCII art, or text-decoration lines: generated documents
+must read as hand-crafted markdown.
+
 ## Expungement
 
 When a synced source note is deleted, the next run expunges its
