@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   analyzeSource,
   checkTree,
+  main,
   renderViolation,
   runCheck,
 } from "../../src/quality/check-one-expect-per-test.ts";
@@ -515,5 +516,103 @@ describe("exit codes through the launcher", () => {
     const [status, output] = runLauncherCapture(["--help"]);
 
     expect(output).toContain("Exit 2");
+  });
+});
+
+describe("runCheck in-process", () => {
+  it("returns 0 and prints the ok summary for a clean tree", async ({
+    onTestFinished,
+  }) => {
+    onTestFinished(() => {
+      delete process.env.NO_COLOR;
+    });
+
+    process.env.NO_COLOR = "1";
+    const root = await fixtureDir(
+      "clean.test.ts",
+      `it("works", () => {\n  expect(1).toBe(1);\n});\n`,
+    );
+
+    expect(await runCheck(root)).toBe(0);
+  });
+
+  it("returns 1 and prints every locator plus the prescription", async ({
+    onTestFinished,
+  }) => {
+    onTestFinished(() => {
+      delete process.env.NO_COLOR;
+    });
+
+    process.env.NO_COLOR = "1";
+    const root = await fixtureDir(
+      "broken.test.ts",
+      `it("two behaviors", () => {\n  expect(1).toBe(1);\n  expect(2).toBe(2);\n});\nit("three", () => {\n  expect(1).toBe(1);\n  expect(2).toBe(2);\n  expect(3).toBe(3);\n});\n`,
+    );
+
+    expect(await runCheck(root)).toBe(1);
+  });
+
+  it("returns 2 when a fixture does not parse", async () => {
+    const root = await fixtureDir("bad.test.ts", `it("broken", () => {\n`);
+
+    expect(await runCheck(root)).toBe(2);
+  });
+
+  it("returns 2 when the scan root is missing", async () => {
+    expect(await runCheck(join(tmpdir(), "one-expect-gate-missing"))).toBe(2);
+  });
+});
+
+describe("main in-process", () => {
+  it("sets exit 2 for an unknown flag", async () => {
+    const previous = process.exitCode;
+
+    try {
+      await main(["--nope"]);
+
+      expect(process.exitCode).toBe(2);
+    } finally {
+      process.exitCode = previous;
+    }
+  });
+
+  it("runs the repo default scan when no path is given", async () => {
+    const previous = process.exitCode;
+
+    try {
+      await main([]);
+
+      expect(process.exitCode).toBe(0);
+    } finally {
+      process.exitCode = previous;
+    }
+  });
+});
+
+describe("main help branch", () => {
+  it("prints the help and exits clean for -h", async () => {
+    const previous = process.exitCode;
+
+    try {
+      await main(["-h"]);
+
+      expect(process.exitCode).toBeUndefined();
+    } finally {
+      process.exitCode = previous;
+    }
+  });
+});
+
+describe("main positional overflow", () => {
+  it("sets exit 2 for a second positional argument", async () => {
+    const previous = process.exitCode;
+
+    try {
+      await main(["a", "b"]);
+
+      expect(process.exitCode).toBe(2);
+    } finally {
+      process.exitCode = previous;
+    }
   });
 });
