@@ -141,7 +141,7 @@ describe("completion verb", () => {
     expect(err).toContain("unexpected argument");
   });
 
-  it("exits 1 for the zsh and fish targets", async () => {
+  it("exits 1 for a second positional argument", async () => {
     await runVerb(["zsh", "fish"]);
 
     expect(process.exitCode).toBe(1);
