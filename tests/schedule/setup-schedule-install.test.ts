@@ -150,8 +150,6 @@ describe("setup-schedule install", () => {
     const failure = runMain([], "darwin", home);
 
     await expect(failure).rejects.toThrow("launchctl bootstrap");
-
-    await failure.catch(() => undefined);
   });
 
   it("carries the launchd error into the failure", async () => {

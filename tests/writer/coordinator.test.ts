@@ -178,9 +178,7 @@ describe("lease refusal", () => {
 
     worlds.push(world);
 
-    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
-
-    const { dataRoot } = cw;
+    await enabledDataRepo(world, (dir) => tempDirs.push(dir));
 
     await world.a.git(["fetch", "origin", "refs/heads/main"]);
 
@@ -195,8 +193,6 @@ describe("lease refusal", () => {
     });
 
     expect(attempt.status).toBe("acquired");
-
-    await runSharedCycle(optionsFor(cw, dataRoot)).catch((e: unknown) => e);
   });
 
   it("names the lease holder in the error", async () => {
@@ -424,9 +420,7 @@ describe("fail-closed states", () => {
 
     worlds.push(world);
 
-    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
-
-    const { dataRoot } = cw;
+    await enabledDataRepo(world, (dir) => tempDirs.push(dir));
 
     await world.a.git(["fetch", "origin", "refs/heads/main"]);
 
@@ -441,10 +435,6 @@ describe("fail-closed states", () => {
     });
 
     expect(attempt.status).toBe("acquired");
-
-    await world.a.git(["fetch", "origin"]);
-
-    await runSharedCycle(optionsFor(cw, dataRoot)).catch((e: unknown) => e);
   });
 
   it("still observes a lease a default fetch cannot see (test 13)", async () => {
@@ -484,30 +474,11 @@ describe("failure-rule lease retention", () => {
 
     worlds.push(world);
 
-    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
-
-    const { dataRoot } = cw;
-
-    const progress: string[] = [];
+    await enabledDataRepo(world, (dir) => tempDirs.push(dir));
 
     const before = await observeLeaseOid(world.a.git, "origin", LEASE_REF);
 
     expect(before).toBeUndefined();
-
-    await runSharedCycle(
-      optionsFor(cw, dataRoot, {
-        run: runContext({
-          rawDir: join(dataRoot, "raw"),
-          env: process.env,
-          now: NOW,
-          onProgress: (line: string) => progress.push(line),
-        }),
-        runSweep: async () => {
-          await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
-          throw new Error("agent stage blew up");
-        },
-      }),
-    ).catch((e: unknown) => e);
   }, 30000);
 
   it("fails mid-run naming the agent stage", async () => {
