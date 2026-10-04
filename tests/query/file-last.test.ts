@@ -1634,21 +1634,41 @@ describe("partitioned --web artifacts", () => {
     },
   };
 
-  it("round-trips the partitioned artifact byte-exactly", () => {
+  it("parses the partitioned artifact", () => {
     const text = renderQueryArtifact(WEB_ARTIFACT);
 
     expect(parseQueryArtifact(text)).toEqual(WEB_ARTIFACT);
+  });
+
+  it("round-trips the rendered bytes byte-exactly", () => {
+    const text = renderQueryArtifact(WEB_ARTIFACT);
+
     expect(
       parseQueryArtifact(renderQueryArtifact(parseQueryArtifact(text))),
     ).toEqual(WEB_ARTIFACT);
   });
 
-  it("keeps the core answer separate from the web sections on parse", () => {
+  it("keeps the core answer separate on parse", () => {
     const parsed = parseQueryArtifact(renderQueryArtifact(WEB_ARTIFACT));
 
     expect(parsed.answer).toBe(ANSWER);
+  });
+
+  it("keeps the enrichment section separate", () => {
+    const parsed = parseQueryArtifact(renderQueryArtifact(WEB_ARTIFACT));
+
     expect(parsed.web?.enrichment).toContain("## Web enrichment");
+  });
+
+  it("keeps the sources section separate", () => {
+    const parsed = parseQueryArtifact(renderQueryArtifact(WEB_ARTIFACT));
+
     expect(parsed.web?.sources).toContain("## Web sources");
+  });
+
+  it("keeps the audit section separate", () => {
+    const parsed = parseQueryArtifact(renderQueryArtifact(WEB_ARTIFACT));
+
     expect(parsed.web?.audit).toContain("| 1 | web_search | rag | 4 |");
   });
 
@@ -1672,11 +1692,13 @@ describe("partitioned --web artifacts", () => {
     expect(() => parseQueryArtifact(text)).toThrow("not a wiki-query artifact");
   });
 
-  it("files the core answer only — no web section enters the wiki", async () => {
+  it("files the core answer into the wiki page", async () => {
     const dataRoot = await makeCommittedRepo();
+
     const artifactPath = join(dataRoot, "outputs", "last-query.md");
 
     await mkdir(join(dataRoot, "outputs"), { recursive: true });
+
     await writeFile(artifactPath, renderQueryArtifact(WEB_ARTIFACT), "utf8");
 
     const result = await fileLastQuery({
@@ -1684,13 +1706,109 @@ describe("partitioned --web artifacts", () => {
       dataRoot,
       now: () => new Date("2026-10-04T09:00:00Z"),
     });
+
     const page = await readFile(join(dataRoot, result.pagePath), "utf8");
 
     expect(page).toContain(ANSWER);
+  });
+
+  it("keeps web URLs out of the filed page", async () => {
+    const dataRoot = await makeCommittedRepo();
+
+    const artifactPath = join(dataRoot, "outputs", "last-query.md");
+
+    await mkdir(join(dataRoot, "outputs"), { recursive: true });
+
+    await writeFile(artifactPath, renderQueryArtifact(WEB_ARTIFACT), "utf8");
+
+    const result = await fileLastQuery({
+      artifactPath,
+      dataRoot,
+      now: () => new Date("2026-10-04T09:00:00Z"),
+    });
+
+    const page = await readFile(join(dataRoot, result.pagePath), "utf8");
+
     expect(page).not.toContain("https://example.com/a");
+  });
+
+  it("keeps the enrichment heading out", async () => {
+    const dataRoot = await makeCommittedRepo();
+
+    const artifactPath = join(dataRoot, "outputs", "last-query.md");
+
+    await mkdir(join(dataRoot, "outputs"), { recursive: true });
+
+    await writeFile(artifactPath, renderQueryArtifact(WEB_ARTIFACT), "utf8");
+
+    const result = await fileLastQuery({
+      artifactPath,
+      dataRoot,
+      now: () => new Date("2026-10-04T09:00:00Z"),
+    });
+
+    const page = await readFile(join(dataRoot, result.pagePath), "utf8");
+
     expect(page).not.toContain("## Web enrichment");
+  });
+
+  it("keeps the sources heading out", async () => {
+    const dataRoot = await makeCommittedRepo();
+
+    const artifactPath = join(dataRoot, "outputs", "last-query.md");
+
+    await mkdir(join(dataRoot, "outputs"), { recursive: true });
+
+    await writeFile(artifactPath, renderQueryArtifact(WEB_ARTIFACT), "utf8");
+
+    const result = await fileLastQuery({
+      artifactPath,
+      dataRoot,
+      now: () => new Date("2026-10-04T09:00:00Z"),
+    });
+
+    const page = await readFile(join(dataRoot, result.pagePath), "utf8");
+
     expect(page).not.toContain("## Web sources");
+  });
+
+  it("keeps the audit heading out", async () => {
+    const dataRoot = await makeCommittedRepo();
+
+    const artifactPath = join(dataRoot, "outputs", "last-query.md");
+
+    await mkdir(join(dataRoot, "outputs"), { recursive: true });
+
+    await writeFile(artifactPath, renderQueryArtifact(WEB_ARTIFACT), "utf8");
+
+    const result = await fileLastQuery({
+      artifactPath,
+      dataRoot,
+      now: () => new Date("2026-10-04T09:00:00Z"),
+    });
+
+    const page = await readFile(join(dataRoot, result.pagePath), "utf8");
+
     expect(page).not.toContain("## Web calls audit");
+  });
+
+  it("caps the filed page at the artifact's breaks", async () => {
+    const dataRoot = await makeCommittedRepo();
+
+    const artifactPath = join(dataRoot, "outputs", "last-query.md");
+
+    await mkdir(join(dataRoot, "outputs"), { recursive: true });
+
+    await writeFile(artifactPath, renderQueryArtifact(WEB_ARTIFACT), "utf8");
+
+    const result = await fileLastQuery({
+      artifactPath,
+      dataRoot,
+      now: () => new Date("2026-10-04T09:00:00Z"),
+    });
+
+    const page = await readFile(join(dataRoot, result.pagePath), "utf8");
+
     expect(page.split("\n").filter((line) => line === "---")).toHaveLength(2);
   });
 });
@@ -1721,14 +1839,25 @@ describe("degraded --web artifacts", () => {
     expect(parseQueryArtifact(renderQueryArtifact(artifact))).toEqual(artifact);
   });
 
-  it("persists the warning in the header, never in the body", () => {
+  it("persists the warning in the artifact header", () => {
     const text = renderQueryArtifact(DEGRADED);
+
     const lines = text.split("\n");
+
     const close = lines.indexOf("---", 1);
 
     expect(lines.slice(1, close)).toContain(
       `webWarning: ${JSON.stringify(DEGRADED.webWarning)}`,
     );
+  });
+
+  it("keeps the warning out of the body", () => {
+    const text = renderQueryArtifact(DEGRADED);
+
+    const lines = text.split("\n");
+
+    const close = lines.indexOf("---", 1);
+
     expect(
       lines
         .slice(close + 1)
@@ -1757,11 +1886,13 @@ describe("degraded --web artifacts", () => {
     });
   });
 
-  it("files the answer without the warning line", async () => {
+  it("files the answer text", async () => {
     const dataRoot = await makeCommittedRepo();
+
     const artifactPath = join(dataRoot, "outputs", "last-query.md");
 
     await mkdir(join(dataRoot, "outputs"), { recursive: true });
+
     await writeFile(artifactPath, renderQueryArtifact(DEGRADED), "utf8");
 
     const result = await fileLastQuery({
@@ -1769,9 +1900,29 @@ describe("degraded --web artifacts", () => {
       dataRoot,
       now: () => new Date("2026-10-04T09:00:00Z"),
     });
+
     const page = await readFile(join(dataRoot, result.pagePath), "utf8");
 
     expect(page).toContain(ANSWER);
+  });
+
+  it("omits the warning line from the filed page", async () => {
+    const dataRoot = await makeCommittedRepo();
+
+    const artifactPath = join(dataRoot, "outputs", "last-query.md");
+
+    await mkdir(join(dataRoot, "outputs"), { recursive: true });
+
+    await writeFile(artifactPath, renderQueryArtifact(DEGRADED), "utf8");
+
+    const result = await fileLastQuery({
+      artifactPath,
+      dataRoot,
+      now: () => new Date("2026-10-04T09:00:00Z"),
+    });
+
+    const page = await readFile(join(dataRoot, result.pagePath), "utf8");
+
     expect(page).not.toContain("WARNING");
   });
 });

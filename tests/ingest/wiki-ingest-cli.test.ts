@@ -44,6 +44,29 @@ const track: (dir: string) => void = (dir) => tempDirs.push(dir);
 describe("ingestFlags", () => {
   const SPEC = INGEST_SPEC;
 
+  it("parses the CLI flags without error", () => {
+    const parsed = parseArgs(
+      [
+        "--settings",
+        "s.yml",
+        "--outputs",
+        "o",
+        "--timeout",
+        "5",
+        "--sources",
+        "V/a.md",
+        "--note",
+        "re-open",
+        "raw",
+      ],
+      SPEC,
+    );
+
+    const { error } = ingestFlags(parsed);
+
+    expect(error).toBeUndefined();
+  });
+
   it("maps every flag and the positional onto the typed flag set", () => {
     const parsed = parseArgs(
       [
@@ -61,9 +84,9 @@ describe("ingestFlags", () => {
       ],
       SPEC,
     );
-    const { flags, error } = ingestFlags(parsed);
 
-    expect(error).toBeUndefined();
+    const { flags } = ingestFlags(parsed);
+
     expect(flags).toEqual({
       settings: "s.yml",
       outputs: "o",
@@ -74,20 +97,45 @@ describe("ingestFlags", () => {
     });
   });
 
-  it("reads the inline = forms of the value and repeat flags", () => {
+  it("parses the inline = forms without error", () => {
     const parsed = parseArgs(["--settings=s.yml", "--sources=V/a.md"], SPEC);
-    const { flags, error } = ingestFlags(parsed);
+
+    const { error } = ingestFlags(parsed);
 
     expect(error).toBeUndefined();
+  });
+
+  it("reads the inline = form of a value flag", () => {
+    const parsed = parseArgs(["--settings=s.yml", "--sources=V/a.md"], SPEC);
+
+    const { flags } = ingestFlags(parsed);
+
     expect(flags.settings).toBe("s.yml");
+  });
+
+  it("reads the inline = forms of repeat flags", () => {
+    const parsed = parseArgs(["--settings=s.yml", "--sources=V/a.md"], SPEC);
+
+    const { flags } = ingestFlags(parsed);
+
     expect(flags.sources).toEqual(["V/a.md"]);
   });
 
-  it("defaults to an empty sources list and an absent note", () => {
-    const { flags, error } = ingestFlags(parseArgs([], SPEC));
+  it("parses with no flags without error", () => {
+    const { error } = ingestFlags(parseArgs([], SPEC));
 
     expect(error).toBeUndefined();
+  });
+
+  it("defaults sources to an empty list", () => {
+    const { flags } = ingestFlags(parseArgs([], SPEC));
+
     expect(flags.sources).toEqual([]);
+  });
+
+  it("leaves the note undefined", () => {
+    const { flags } = ingestFlags(parseArgs([], SPEC));
+
     expect(flags.note).toBeUndefined();
   });
 
@@ -139,10 +187,15 @@ describe("ingestFlags", () => {
     expect(error).toBe('unknown option "--nope"');
   });
 
-  it("carries the --wiki name onto the flag set", () => {
-    const { flags, error } = ingestFlags(parseArgs(["--wiki", "meta"], SPEC));
+  it("parses --wiki without error", () => {
+    const { error } = ingestFlags(parseArgs(["--wiki", "meta"], SPEC));
 
     expect(error).toBeUndefined();
+  });
+
+  it("carries the --wiki name onto the flag set", () => {
+    const { flags } = ingestFlags(parseArgs(["--wiki", "meta"], SPEC));
+
     expect(flags.wiki).toBe("meta");
   });
 
@@ -158,10 +211,15 @@ describe("ingestFlags", () => {
     expect(error).toContain("--wiki must be a wiki name");
   });
 
-  it("keeps an absent --wiki undefined", () => {
-    const { flags, error } = ingestFlags(parseArgs([], SPEC));
+  it("parses without --wiki without error", () => {
+    const { error } = ingestFlags(parseArgs([], SPEC));
 
     expect(error).toBeUndefined();
+  });
+
+  it("keeps an absent --wiki undefined", () => {
+    const { flags } = ingestFlags(parseArgs([], SPEC));
+
     expect(flags.wiki).toBeUndefined();
   });
 
@@ -331,10 +389,15 @@ console.log("stub report");
     expect(out).toContain("--note <text>");
   });
 
-  it("documents the --note default line and scoped-only rule", async () => {
+  it("documents the --note default line", async () => {
     const out = (await runCli(["--help"])).out;
 
     expect(out).toContain("does not imply a no-op");
+  });
+
+  it("documents the scoped-only rule", async () => {
+    const out = (await runCli(["--help"])).out;
+
     expect(out).toContain("requires --sources");
   });
 
@@ -365,10 +428,11 @@ console.log("stub report");
     expect(prompt.split("~ Engineering/a.md").length - 1).toBe(1);
   });
 
-  it("carries a --note into the scoped prompt", async () => {
+  it("heads the scoped prompt with the operator note", async () => {
     const h = await makeCliHarness();
 
     await mkdir(dirname(h.snapshotPath), { recursive: true });
+
     await writeFile(
       h.snapshotPath,
       serializeManifest(manifestWith("Engineering", { "a.md": entry("a") }), {
@@ -390,13 +454,41 @@ console.log("stub report");
     );
 
     expect(prompt).toContain("Operator note:");
-    expect(prompt).toContain("recovery: re-adjudicate the four pages");
   });
 
-  it("applies the default operator note on a scoped CLI run without --note", async () => {
+  it("carries the --note text into the scoped prompt", async () => {
     const h = await makeCliHarness();
 
     await mkdir(dirname(h.snapshotPath), { recursive: true });
+
+    await writeFile(
+      h.snapshotPath,
+      serializeManifest(manifestWith("Engineering", { "a.md": entry("a") }), {
+        snapshotFor: h.dataRoot,
+      }),
+    );
+
+    await runCli([
+      ...cliArgs(h),
+      "--sources",
+      "Engineering/a.md",
+      "--note",
+      "recovery: re-adjudicate the four pages",
+    ]);
+
+    const prompt = await readFile(
+      join(h.dataRoot, "outputs", "stub-prompt.txt"),
+      "utf8",
+    );
+
+    expect(prompt).toContain("recovery: re-adjudicate the four pages");
+  });
+
+  it("heads the scoped prompt with the operator note", async () => {
+    const h = await makeCliHarness();
+
+    await mkdir(dirname(h.snapshotPath), { recursive: true });
+
     await writeFile(
       h.snapshotPath,
       serializeManifest(manifestWith("Engineering", { "a.md": entry("a") }), {
@@ -412,34 +504,97 @@ console.log("stub report");
     );
 
     expect(prompt).toContain("Operator note:");
+  });
+
+  it("applies the default operator note wording", async () => {
+    const h = await makeCliHarness();
+
+    await mkdir(dirname(h.snapshotPath), { recursive: true });
+
+    await writeFile(
+      h.snapshotPath,
+      serializeManifest(manifestWith("Engineering", { "a.md": entry("a") }), {
+        snapshotFor: h.dataRoot,
+      }),
+    );
+
+    await runCli([...cliArgs(h), "--sources", "Engineering/a.md"]);
+
+    const prompt = await readFile(
+      join(h.dataRoot, "outputs", "stub-prompt.txt"),
+      "utf8",
+    );
+
     expect(prompt).toContain("Sources re-opened by the operator");
+  });
+
+  it("asks for re-adjudication on a scoped run", async () => {
+    const h = await makeCliHarness();
+
+    await mkdir(dirname(h.snapshotPath), { recursive: true });
+
+    await writeFile(
+      h.snapshotPath,
+      serializeManifest(manifestWith("Engineering", { "a.md": entry("a") }), {
+        snapshotFor: h.dataRoot,
+      }),
+    );
+
+    await runCli([...cliArgs(h), "--sources", "Engineering/a.md"]);
+
+    const prompt = await readFile(
+      join(h.dataRoot, "outputs", "stub-prompt.txt"),
+      "utf8",
+    );
+
     expect(prompt).toContain("re-adjudicate filing decisions");
   });
 
-  it("exits 1 when --note has no value", async () => {
+  it("reports a valueless --note on stderr", async () => {
     const h = await makeCliHarness();
 
     const { err } = await runCli([...cliArgs(h), "--note"]);
 
     expect(err).toContain("--note needs a value");
+  });
+
+  it("exits 1", async () => {
+    const h = await makeCliHarness();
+
+    await runCli([...cliArgs(h), "--note"]);
+
     expect(process.exitCode).toBe(1);
   });
 
-  it("exits 1 when --note has a blank value", async () => {
+  it("reports a blank --note on stderr", async () => {
     const h = await makeCliHarness();
 
     const { err } = await runCli([...cliArgs(h), "--note", ""]);
 
     expect(err).toContain("--note needs a value");
+  });
+
+  it("exits 1", async () => {
+    const h = await makeCliHarness();
+
+    await runCli([...cliArgs(h), "--note", ""]);
+
     expect(process.exitCode).toBe(1);
   });
 
-  it("exits 1 when --note runs without --sources", async () => {
+  it("reports --note without --sources on stderr", async () => {
     const h = await makeCliHarness();
 
     const { err } = await runCli([...cliArgs(h), "--note", "intent"]);
 
     expect(err).toContain("--note requires --sources");
+  });
+
+  it("exits 1", async () => {
+    const h = await makeCliHarness();
+
+    await runCli([...cliArgs(h), "--note", "intent"]);
+
     expect(process.exitCode).toBe(1);
   });
 

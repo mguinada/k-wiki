@@ -57,7 +57,7 @@ describe("section renderers", () => {
     );
   });
 
-  it("renders the audit table with one row per recorded call", () => {
+  it("renders the audit table header", () => {
     const section = renderWebAuditSection([
       {
         tool: "web_search",
@@ -70,6 +70,20 @@ describe("section renderers", () => {
     ]);
 
     expect(section).toContain("| # | tool | target | results | timestamp |");
+  });
+
+  it("renders one audit row per recorded call", () => {
+    const section = renderWebAuditSection([
+      {
+        tool: "web_search",
+        target: "topic",
+        results: 5,
+        timestamp: Date.parse("2026-10-03T21:00:01.000Z"),
+        urls: [],
+        failed: false,
+      },
+    ]);
+
     expect(section).toContain(
       "| 1 | web_search | topic | 5 | 2026-10-03T21:00:01.000Z |",
     );
@@ -116,13 +130,35 @@ describe("partitioned body codec", () => {
     ].join("\n"),
   };
 
-  it("renders the body with a markdown thematic break at the boundary", () => {
+  it("leaves a blank line before the thematic break", () => {
     const body = renderWebArtifactBody("The core answer.", web);
+
     const lines = body.split("\n");
 
     expect(lines[lines.indexOf("---") - 1]).toBe("");
+  });
+
+  it("leaves a blank line after the thematic break", () => {
+    const body = renderWebArtifactBody("The core answer.", web);
+
+    const lines = body.split("\n");
+
     expect(lines[lines.indexOf("---") + 1]).toBe("");
+  });
+
+  it("opens the enrichment heading after the break", () => {
+    const body = renderWebArtifactBody("The core answer.", web);
+
+    const lines = body.split("\n");
+
     expect(lines[lines.indexOf("---") + 2]).toBe(WEB_ENRICHMENT_HEADING);
+  });
+
+  it("uses the markdown break, not the box character", () => {
+    const body = renderWebArtifactBody("The core answer.", web);
+
+    body.split("\n");
+
     expect(body).not.toContain("─");
   });
 
@@ -148,7 +184,7 @@ describe("partitioned body codec", () => {
     expect(parsed?.web.audit).toBe(audit);
   });
 
-  it("resolves the partition when the core echoes a stray thematic break and a section heading", () => {
+  it("resolves the core answer past a stray break", () => {
     const answer = [
       "The core answer.",
       "",
@@ -158,31 +194,97 @@ describe("partitioned body codec", () => {
       "",
       "A stray line the core happens to carry.",
     ].join("\n");
+
     const parsed = parseWebArtifactBody(
       renderWebArtifactBody(answer, web).split("\n"),
     );
 
     expect(parsed?.answer).toBe(answer);
+  });
+
+  it("keeps the web sources section", () => {
+    const answer = [
+      "The core answer.",
+      "",
+      "---",
+      "",
+      "## Web sources",
+      "",
+      "A stray line the core happens to carry.",
+    ].join("\n");
+
+    const parsed = parseWebArtifactBody(
+      renderWebArtifactBody(answer, web).split("\n"),
+    );
+
     expect(parsed?.web.sources).toBe(web.sources);
+  });
+
+  it("keeps the web audit section", () => {
+    const answer = [
+      "The core answer.",
+      "",
+      "---",
+      "",
+      "## Web sources",
+      "",
+      "A stray line the core happens to carry.",
+    ].join("\n");
+
+    const parsed = parseWebArtifactBody(
+      renderWebArtifactBody(answer, web).split("\n"),
+    );
+
     expect(parsed?.web.audit).toBe(web.audit);
   });
 
-  it("detects the partitioned shape by machine-owned headings, not any text line", () => {
+  it("detects the machine-owned partitioned shape", () => {
     const lines = renderWebArtifactBody("The core answer.", web).split("\n");
 
     expect(looksPartitionedWeb(lines)).toBe(true);
+
+    looksPartitionedWeb(["Just an answer.", "", "---"]);
+
+    looksPartitionedWeb(["## Answer", "", "no sections here"]);
+  });
+
+  it("rejects a plain answer with a stray break", () => {
+    const lines = renderWebArtifactBody("The core answer.", web).split("\n");
+
+    looksPartitionedWeb(lines);
+
     expect(looksPartitionedWeb(["Just an answer.", "", "---"])).toBe(false);
+
+    looksPartitionedWeb(["## Answer", "", "no sections here"]);
+  });
+
+  it("rejects an Answer heading without sections", () => {
+    const lines = renderWebArtifactBody("The core answer.", web).split("\n");
+
+    looksPartitionedWeb(lines);
+
+    looksPartitionedWeb(["Just an answer.", "", "---"]);
+
     expect(looksPartitionedWeb(["## Answer", "", "no sections here"])).toBe(
       false,
     );
   });
 
-  it("rejects a look-partitioned body whose tail fails resolution", () => {
+  it("detects the look-partitioned shape", () => {
     const lines = renderWebArtifactBody("The core answer.", web)
       .split("\n")
       .filter((line) => line !== WEB_SOURCES_HEADING);
 
     expect(looksPartitionedWeb(lines)).toBe(true);
+  });
+
+  it("rejects a tail that fails resolution", () => {
+    const lines = renderWebArtifactBody("The core answer.", web)
+      .split("\n")
+      .filter((line) => line !== WEB_SOURCES_HEADING);
+
+    looksPartitionedWeb(lines);
+
     expect(parseWebArtifactBody(lines)).toBeUndefined();
   });
 
