@@ -610,7 +610,6 @@ describe("concurrent enablement (test 19)", () => {
       { clone: world.a, result: first },
       { clone: world.b, result: second },
     ];
-    const winners = outcomes.filter((o) => o.result === "ok");
     const losers = outcomes.filter((o) => o.result !== "ok");
 
     const remote = (
