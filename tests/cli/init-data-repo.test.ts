@@ -203,8 +203,9 @@ describe("data:init CLI help", () => {
     expect(process.exitCode).toBe(1);
   });
 
-  it("rejects a second positional argument", async () => {
+  it("reports a second positional on stderr", async () => {
     const dir = await makeTempDir();
+
     const configPath = join(dir, "sync.json");
 
     await writeFile(configPath, JSON.stringify({ vaults: [], dataRoot: dir }));
@@ -212,6 +213,17 @@ describe("data:init CLI help", () => {
     const { err } = await runInitCli([configPath, "extra"]);
 
     expect(err).toContain("expected at most one <config> argument");
+  });
+
+  it("exits 1", async () => {
+    const dir = await makeTempDir();
+
+    const configPath = join(dir, "sync.json");
+
+    await writeFile(configPath, JSON.stringify({ vaults: [], dataRoot: dir }));
+
+    await runInitCli([configPath, "extra"]);
+
     expect(process.exitCode).toBe(1);
   });
 

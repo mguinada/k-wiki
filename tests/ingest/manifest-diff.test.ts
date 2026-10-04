@@ -663,11 +663,13 @@ describe("wikiPages vanished untracked detection", () => {
     expect(pages.deleted).toEqual([]);
   });
 
-  it("lists created and updated pages in sorted order with no stray entries", async () => {
+  it("lists created pages in sorted order", async () => {
     const dataRoot = await makeDataRepo({ "a.md": "a" }, track);
 
     await writeFile(join(dataRoot, "wiki", "z.md"), "# Z\n");
+
     await writeFile(join(dataRoot, "wiki", "a.md"), "# A\n");
+
     await writeFile(join(dataRoot, "wiki", "index.md"), "# Index changed\n");
 
     const pages = await wikiPages(
@@ -676,10 +678,26 @@ describe("wikiPages vanished untracked detection", () => {
     );
 
     expect(pages.created).toEqual(["wiki/a.md", "wiki/z.md"]);
+  });
+
+  it("lists updated pages", async () => {
+    const dataRoot = await makeDataRepo({ "a.md": "a" }, track);
+
+    await writeFile(join(dataRoot, "wiki", "z.md"), "# Z\n");
+
+    await writeFile(join(dataRoot, "wiki", "a.md"), "# A\n");
+
+    await writeFile(join(dataRoot, "wiki", "index.md"), "# Index changed\n");
+
+    const pages = await wikiPages(
+      dataRoot,
+      await porcelainStatus(dataRoot, process.env),
+    );
+
     expect(pages.updated).toEqual(["wiki/index.md"]);
   });
 
-  it("counts a staged rename's target as created and its origin as deleted", async () => {
+  it("counts a staged rename's target as created", async () => {
     const dataRoot = await makeDataRepo({ "a.md": "a" }, track);
 
     await run("git", [
@@ -696,7 +714,43 @@ describe("wikiPages vanished untracked detection", () => {
     );
 
     expect(pages.created).toEqual(["wiki/renamed.md"]);
+  });
+
+  it("leaves updated pages empty", async () => {
+    const dataRoot = await makeDataRepo({ "a.md": "a" }, track);
+
+    await run("git", [
+      "-C",
+      dataRoot,
+      "mv",
+      "wiki/index.md",
+      "wiki/renamed.md",
+    ]);
+
+    const pages = await wikiPages(
+      dataRoot,
+      await porcelainStatus(dataRoot, process.env),
+    );
+
     expect(pages.updated).toEqual([]);
+  });
+
+  it("counts the rename's origin as deleted", async () => {
+    const dataRoot = await makeDataRepo({ "a.md": "a" }, track);
+
+    await run("git", [
+      "-C",
+      dataRoot,
+      "mv",
+      "wiki/index.md",
+      "wiki/renamed.md",
+    ]);
+
+    const pages = await wikiPages(
+      dataRoot,
+      await porcelainStatus(dataRoot, process.env),
+    );
+
     expect(pages.deleted).toEqual(["wiki/index.md"]);
   });
 

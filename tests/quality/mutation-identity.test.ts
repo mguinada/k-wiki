@@ -170,12 +170,14 @@ describe("mutantIdentity", () => {
     );
   });
 
-  it("keys duplicate identical spans within one file by their occurrence", () => {
+  it("keys duplicate identical spans apart", () => {
     const source = [
       "const first: string[] = [];",
       "const second: string[] = [];",
     ].join("\n");
+
     const reader = () => source;
+
     const at = (line: number, column: number): Mutant => ({
       ...addMutant("ArrayDeclaration"),
       replacement: '["Stryker was here"]',
@@ -186,10 +188,53 @@ describe("mutantIdentity", () => {
     });
 
     const first = mutantIdentity("src/math.ts", at(1, 25), reader);
+
     const second = mutantIdentity("src/math.ts", at(2, 26), reader);
 
     expect(first).not.toBe(second);
+  });
+
+  it("keys each duplicate by its occurrence", () => {
+    const source = [
+      "const first: string[] = [];",
+      "const second: string[] = [];",
+    ].join("\n");
+
+    const reader = () => source;
+
+    const at = (line: number, column: number): Mutant => ({
+      ...addMutant("ArrayDeclaration"),
+      replacement: '["Stryker was here"]',
+      location: {
+        start: { line, column },
+        end: { line, column: column + 2 },
+      },
+    });
+
+    const first = mutantIdentity("src/math.ts", at(1, 25), reader);
+
     expect(first).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  it("keys duplicate identical spans within one file by their occurrence", () => {
+    const source = [
+      "const first: string[] = [];",
+      "const second: string[] = [];",
+    ].join("\n");
+
+    const reader = () => source;
+
+    const at = (line: number, column: number): Mutant => ({
+      ...addMutant("ArrayDeclaration"),
+      replacement: '["Stryker was here"]',
+      location: {
+        start: { line, column },
+        end: { line, column: column + 2 },
+      },
+    });
+
+    const second = mutantIdentity("src/math.ts", at(2, 26), reader);
+
     expect(second).toMatch(/^[0-9a-f]{16}$/);
   });
 
@@ -258,17 +303,13 @@ describe("mutantIdentity", () => {
     );
   });
 
-  it("keys a live-report mutant by its exact expression text", ({ skip }) => {
+  it("reads the exact expression text for a live-report mutant", ({ skip }) => {
     if (insideStrykerSandbox()) {
       skip(skipNote);
 
       return;
     }
 
-    // The same convention Stryker writes: `a.path < b.path` on
-    // 1-based line 61 of mutation-chunk.ts, columns 35..50, mutated
-    // to `a.path <= b.path` — the survived sibling; `>=` is another
-    // mutant with another identity.
     const real = {
       ...addMutant(),
       mutatorName: "EqualityOperator",
@@ -278,6 +319,7 @@ describe("mutantIdentity", () => {
         end: { line: 61, column: 50 },
       },
     } as const;
+
     const chunk = readFileSync(
       join(
         dirname(fileURLToPath(import.meta.url)),
@@ -285,9 +327,39 @@ describe("mutantIdentity", () => {
       ),
       "utf8",
     );
+
     const text = spanText(chunk, real);
 
     expect(text).toBe("a.path < b.path");
+  });
+
+  it("keys the chunk's span to the live mutant's identity", ({ skip }) => {
+    if (insideStrykerSandbox()) {
+      skip(skipNote);
+
+      return;
+    }
+
+    const real = {
+      ...addMutant(),
+      mutatorName: "EqualityOperator",
+      replacement: "a.path <= b.path",
+      location: {
+        start: { line: 61, column: 35 },
+        end: { line: 61, column: 50 },
+      },
+    } as const;
+
+    const chunk = readFileSync(
+      join(
+        dirname(fileURLToPath(import.meta.url)),
+        "../../src/quality/mutation-chunk.ts",
+      ),
+      "utf8",
+    );
+
+    spanText(chunk, real);
+
     expect(
       mutantIdentity("src/quality/mutation-chunk.ts", real, () => chunk),
     ).toMatch(/^[0-9a-f]{16}$/);

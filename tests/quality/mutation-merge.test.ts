@@ -311,12 +311,19 @@ describe("mutation-merge main in-process", () => {
     }
   };
 
-  it("rejects a typo'd flag as an unknown option, not an input path", async () => {
+  it("rejects a typo'd flag on stderr", async () => {
     const { dir, first } = await writeChunkReports();
 
     const result = await run([join(dir, "merged.json"), first, "--expec", "2"]);
 
     expect(result.error[0]).toContain('unknown option "--expec"');
+  });
+
+  it("rejects a typo'd flag as an unknown option, not an input path", async () => {
+    const { dir, first } = await writeChunkReports();
+
+    const result = await run([join(dir, "merged.json"), first, "--expec", "2"]);
+
     expect(result.exitCode).toBe(1);
   });
 

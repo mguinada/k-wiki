@@ -130,8 +130,9 @@ describe("sandbox exclusion guard (issue #338)", () => {
     ]);
   });
 
-  it("publish never ships a sandbox page to the mirror", async () => {
+  it("never ships a sandbox page to the mirror", async () => {
     const root = await makeWikiTree();
+
     const mirror = join(root, "mirror");
 
     await runPublishStage({
@@ -143,6 +144,24 @@ describe("sandbox exclusion guard (issue #338)", () => {
     await expect(
       readFile(join(mirror, "wiki", "sandbox", "proposal.md"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("still ships the main pages beside it", async () => {
+    const root = await makeWikiTree();
+
+    const mirror = join(root, "mirror");
+
+    await runPublishStage({
+      dataRoot: root,
+      mirror,
+      include: ["wiki/**"],
+    });
+
+    await readFile(
+      join(mirror, "wiki", "sandbox", "proposal.md"),
+      "utf8",
+    ).catch(() => undefined);
+
     await expect(
       readFile(join(mirror, "wiki", "concepts", "attention.md"), "utf8"),
     ).resolves.toContain("Concept body.");
