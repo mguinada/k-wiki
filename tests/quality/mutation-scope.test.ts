@@ -252,14 +252,25 @@ describe("mutation-scope CLI", () => {
     }
   });
 
-  it("rejects an unexpected argument instead of ignoring it", () => {
+  it("reports an unexpected argument on stderr", () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const git: GitText = () => "";
 
     try {
       main(["bogus"], git);
-
       expect(error.mock.calls[0]?.[0]).toContain("unexpected argument: bogus");
+    } finally {
+      error.mockRestore();
+      process.exitCode = undefined;
+    }
+  });
+
+  it("exits 1 on an unexpected argument", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const git: GitText = () => "";
+
+    try {
+      main(["bogus"], git);
       expect(process.exitCode).toBe(1);
     } finally {
       error.mockRestore();
@@ -267,14 +278,25 @@ describe("mutation-scope CLI", () => {
     }
   });
 
-  it("rejects an unknown option instead of ignoring it", () => {
+  it("reports an unknown option on stderr", () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const git: GitText = () => "";
 
     try {
       main(["--bogus"], git);
-
       expect(error.mock.calls[0]?.[0]).toContain('unknown option "--bogus"');
+    } finally {
+      error.mockRestore();
+      process.exitCode = undefined;
+    }
+  });
+
+  it("exits 1 on an unknown option", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const git: GitText = () => "";
+
+    try {
+      main(["--bogus"], git);
       expect(process.exitCode).toBe(1);
     } finally {
       error.mockRestore();
@@ -345,8 +367,9 @@ describe("parseWindowDays", () => {
 });
 
 describe("windowBase", () => {
-  it("resolves the newest origin/main commit before the window", () => {
+  it("resolves the window base to the newest pre-window commit", () => {
     const calls: string[][] = [];
+
     const git: GitText = (args) => {
       calls.push([...args]);
 
@@ -354,6 +377,19 @@ describe("windowBase", () => {
     };
 
     expect(windowBase(git, 7)).toBe("abc123");
+  });
+
+  it("runs the windowed rev-list against origin/main", () => {
+    const calls: string[][] = [];
+
+    const git: GitText = (args) => {
+      calls.push([...args]);
+
+      return "abc123\n";
+    };
+
+    windowBase(git, 7);
+
     expect(calls[0]).toEqual([
       "rev-list",
       "-1",
@@ -369,8 +405,9 @@ describe("windowBase", () => {
     expect(windowBase(git, 7)).toBe("old3");
   });
 
-  it("returns the before-window sha without consulting the full history", () => {
+  it("returns the before-window sha", () => {
     const calls: string[][] = [];
+
     const git: GitText = (args) => {
       calls.push([...args]);
 
@@ -378,6 +415,19 @@ describe("windowBase", () => {
     };
 
     expect(windowBase(git, 7)).toBe("win1");
+  });
+
+  it("runs only the one windowed rev-list", () => {
+    const calls: string[][] = [];
+
+    const git: GitText = (args) => {
+      calls.push([...args]);
+
+      return args.join(" ").includes("--before") ? "win1\n" : "tip1\nold1\n";
+    };
+
+    windowBase(git, 7);
+
     expect(calls).toEqual([
       ["rev-list", "-1", "--before=7 days ago", "origin/main"],
     ]);
@@ -511,13 +561,40 @@ describe("base-parameterized scoping", () => {
       main([], git, { MUTATION_WINDOW_DAYS: "7" });
 
       expect(diffs[0]?.[3]).toBe("abc123");
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("prints the scoped diff hunk line from the environment window", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const diffs: string[][] = [];
+    const git: GitText = (args) => {
+      if (args[0] === "diff") {
+        diffs.push([...args]);
+
+        return [
+          "diff --git a/src/a.ts b/src/a.ts",
+          "--- a/src/a.ts",
+          "+++ b/src/a.ts",
+          "@@ -1,1 +12,9 @@",
+          "+x",
+        ].join("\n");
+      }
+
+      return args[0] === "rev-list" ? "abc123\n" : "";
+    };
+
+    try {
+      main([], git, { MUTATION_WINDOW_DAYS: "7" });
+
       expect(log.mock.calls[0]?.[0]).toBe("src/a.ts:12-20");
     } finally {
       log.mockRestore();
     }
   });
 
-  it("exits 1 naming MUTATION_WINDOW_DAYS when it is not a positive integer", () => {
+  it("reports a non-integer MUTATION_WINDOW_DAYS on stderr", () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
 
     try {
@@ -526,6 +603,31 @@ describe("base-parameterized scoping", () => {
       expect(error.mock.calls[0]?.[0]).toContain(
         "MUTATION_WINDOW_DAYS must be a positive integer",
       );
+    } finally {
+      error.mockRestore();
+      process.exitCode = undefined;
+    }
+  });
+
+  it("exits 1 on a non-integer MUTATION_WINDOW_DAYS", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      main([], () => "", { MUTATION_WINDOW_DAYS: "week" });
+
+      expect(process.exitCode).toBe(1);
+    } finally {
+      error.mockRestore();
+      process.exitCode = undefined;
+    }
+  });
+
+  it("exits 1 on a non-integer MUTATION_WINDOW_DAYS", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      main([], () => "", { MUTATION_WINDOW_DAYS: "week" });
+
       expect(process.exitCode).toBe(1);
     } finally {
       error.mockRestore();
@@ -564,13 +666,53 @@ describe("mutation-scope --base and --print-base", () => {
     }
   });
 
-  it("exits 1 naming --base when its value is absent", () => {
+  it("scopes the diff to the --base flag value", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const diffs: string[][] = [];
+    const git: GitText = (args) => {
+      if (args[0] === "diff") {
+        diffs.push([...args]);
+
+        return [
+          "diff --git a/src/a.ts b/src/a.ts",
+          "--- a/src/a.ts",
+          "+++ b/src/a.ts",
+          "@@ -1,1 +12,9 @@",
+          "+x",
+        ].join("\n");
+      }
+
+      return "";
+    };
+
+    try {
+      main(["--base", "feature/sha"], git);
+
+      expect(log.mock.calls[0]?.[0]).toBe("src/a.ts:12-20");
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("reports a valueless --base on stderr", () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
 
     try {
       main(["--base"], () => "");
 
       expect(error.mock.calls[0]?.[0]).toContain("--base requires a value");
+    } finally {
+      error.mockRestore();
+      process.exitCode = undefined;
+    }
+  });
+
+  it("exits 1 on a valueless --base", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      main(["--base"], () => "");
+
       expect(process.exitCode).toBe(1);
     } finally {
       error.mockRestore();
@@ -578,13 +720,24 @@ describe("mutation-scope --base and --print-base", () => {
     }
   });
 
-  it("prints only the resolved base for --print-base", () => {
+  it("prints the resolved base for --print-base", () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
 
     try {
       main(["--print-base"], () => "", {});
 
       expect(log.mock.calls[0]?.[0]).toBe("origin/main");
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("prints nothing else for --print-base", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      main(["--print-base"], () => "", {});
+
       expect(log).toHaveBeenCalledTimes(1);
     } finally {
       log.mockRestore();
