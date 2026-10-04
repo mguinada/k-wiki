@@ -645,6 +645,43 @@ describe("concurrent enablement (test 19)", () => {
     await world.b.git(["fetch", "-q", "origin", "refs/heads/main"]);
     await world.b.git(["reset", "-q", "--hard", "origin/main"]);
 
+    await Promise.all([
+      enable(cw.dataRoot).then(
+        () => "ok",
+        () => undefined,
+      ),
+      enable(world.b.dir).then(
+        () => "ok",
+        () => undefined,
+      ),
+    ]);
+    const remote = (
+      await import("../../src/writer/git-remote.ts")
+    ).gitRunnerFor({ dir: world.remoteDir, env: process.env });
+
+    expect((await remote(["for-each-ref", LEASE_REF])).stdout.trim()).toBe("");
+  }, 60000);
+
+  it("racing enables: a winner's head matches the remote main", async () => {
+    const world = await makeWriterWorld();
+    worlds.push(world);
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+    const { enable } = await import("../../src/writer/enable-shared-writer.ts");
+
+    const { rm: rmDir } = await import("node:fs/promises");
+
+    await rmDir(join(cw.dataRoot, ".k-wiki"), { recursive: true, force: true });
+    await world.a.git(["add", "-A"]);
+    await world.a.git(["commit", "-m", "marker removed"]);
+    await world.a.git([
+      "push",
+      "-q",
+      "origin",
+      "refs/heads/main:refs/heads/main",
+    ]);
+    await world.b.git(["fetch", "-q", "origin", "refs/heads/main"]);
+    await world.b.git(["reset", "-q", "--hard", "origin/main"]);
+
     const [first, second] = await Promise.all([
       enable(cw.dataRoot).then(
         () => "ok",
@@ -661,6 +698,7 @@ describe("concurrent enablement (test 19)", () => {
       { clone: world.b, result: second },
     ];
     const winners = outcomes.filter((o) => o.result === "ok");
+
     const remote = (
       await import("../../src/writer/git-remote.ts")
     ).gitRunnerFor({ dir: world.remoteDir, env: process.env });
@@ -669,7 +707,6 @@ describe("concurrent enablement (test 19)", () => {
       await remote(["rev-parse", "refs/heads/main"])
     ).stdout.trim();
 
-    expect((await remote(["for-each-ref", LEASE_REF])).stdout.trim()).toBe("");
     expect(await Promise.all(winners.map((o) => head0(o.clone.dir)))).toContain(
       remoteMain,
     );

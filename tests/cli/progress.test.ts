@@ -379,7 +379,7 @@ describe("stderrSink", () => {
       });
   }
 
-  it("builds a plain-line sink when stderr is not a TTY", () => {
+  it("builds a plain sink when stderr is not a TTY", () => {
     const restore = forceTty(false);
     const lines: string[] = [];
     const errorSpy = vi
@@ -392,7 +392,43 @@ describe("stderrSink", () => {
       sink.render("pfx: agent still running (0s)");
 
       expect(animated).toBe(false);
+    } finally {
+      errorSpy.mockRestore();
+      restore();
+    }
+  });
+
+  it("keeps the plain line's content", () => {
+    const restore = forceTty(false);
+    const lines: string[] = [];
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation((text) => lines.push(String(text)));
+
+    try {
+      const { sink } = stderrSink("pfx:");
+
+      sink.render("pfx: agent still running (0s)");
+
       expect(lines[0]).toContain("pfx: agent still running (0s)");
+    } finally {
+      errorSpy.mockRestore();
+      restore();
+    }
+  });
+
+  it("keeps carriage returns out of the plain line", () => {
+    const restore = forceTty(false);
+    const lines: string[] = [];
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation((text) => lines.push(String(text)));
+
+    try {
+      const { sink } = stderrSink("pfx:");
+
+      sink.render("pfx: agent still running (0s)");
+
       expect(lines[0]).not.toContain("\r");
     } finally {
       errorSpy.mockRestore();
@@ -400,7 +436,7 @@ describe("stderrSink", () => {
     }
   });
 
-  it("builds an animated sink when stderr is a TTY with color on", () => {
+  it("builds an animated sink on a color TTY", () => {
     const restore = forceTty(true);
     const writes: string[] = [];
     const writeSpy = vi
@@ -420,7 +456,69 @@ describe("stderrSink", () => {
       sink.render("pfx: agent still running (0s)");
 
       expect(animated).toBe(true);
+    } finally {
+      writeSpy.mockRestore();
+      restore();
+
+      if (priorNoColor === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = priorNoColor;
+      }
+    }
+  });
+
+  it("prefers the animated output with a spinner", () => {
+    const restore = forceTty(true);
+    const writes: string[] = [];
+    const writeSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation((text) => {
+        writes.push(String(text));
+
+        return true;
+      });
+    const priorNoColor = process.env.NO_COLOR;
+
+    delete process.env.NO_COLOR;
+
+    try {
+      const { sink } = stderrSink("pfx:");
+
+      sink.render("pfx: agent still running (0s)");
+
       expect(writes[0]?.startsWith("\r⠋")).toBe(true);
+    } finally {
+      writeSpy.mockRestore();
+      restore();
+
+      if (priorNoColor === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = priorNoColor;
+      }
+    }
+  });
+
+  it("names the agent still-running line in the animated output", () => {
+    const restore = forceTty(true);
+    const writes: string[] = [];
+    const writeSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation((text) => {
+        writes.push(String(text));
+
+        return true;
+      });
+    const priorNoColor = process.env.NO_COLOR;
+
+    delete process.env.NO_COLOR;
+
+    try {
+      const { sink } = stderrSink("pfx:");
+
+      sink.render("pfx: agent still running (0s)");
+
       expect(writes[0]).toContain("pfx: agent still running (0s)");
     } finally {
       writeSpy.mockRestore();
@@ -434,7 +532,7 @@ describe("stderrSink", () => {
     }
   });
 
-  it("builds a plain non-animated sink under NO_COLOR", () => {
+  it("builds a plain sink under NO_COLOR", () => {
     const restore = forceTty(true);
     const lines: string[] = [];
     const errorSpy = vi
@@ -450,6 +548,33 @@ describe("stderrSink", () => {
       sink.render("pfx: agent still running (0s)");
 
       expect(animated).toBe(false);
+    } finally {
+      errorSpy.mockRestore();
+      restore();
+
+      if (priorNoColor === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = priorNoColor;
+      }
+    }
+  });
+
+  it("keeps the NO_COLOR line exact", () => {
+    const restore = forceTty(true);
+    const lines: string[] = [];
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation((text) => lines.push(String(text)));
+    const priorNoColor = process.env.NO_COLOR;
+
+    process.env.NO_COLOR = "1";
+
+    try {
+      const { sink } = stderrSink("pfx:");
+
+      sink.render("pfx: agent still running (0s)");
+
       expect(lines).toEqual(["pfx: agent still running (0s)"]);
     } finally {
       errorSpy.mockRestore();

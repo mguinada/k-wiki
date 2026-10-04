@@ -1047,7 +1047,7 @@ describe("printSurvivors with a registry (issue #241)", () => {
     });
   };
 
-  it("filters the recorded equivalent and prints the recorded-count line", async () => {
+  it("keeps the unrecorded mutants untriaged", async () => {
     const out: string[] = [];
     const spy = vi
       .spyOn(console, "log")
@@ -1058,9 +1058,41 @@ describe("printSurvivors with a registry (issue #241)", () => {
     try {
       await withRegistryCwd(recordedEquivalent(), () => main([]));
       expect(out.join("\n")).toContain("Untriaged mutants (2)");
+    } finally {
+      process.exitCode = undefined;
+      spy.mockRestore();
+    }
+  });
+
+  it("hides the recorded equivalent from the untriaged list", async () => {
+    const out: string[] = [];
+    const spy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+
+    process.exitCode = undefined;
+
+    try {
+      await withRegistryCwd(recordedEquivalent(), () => main([]));
       expect(out.join("\n")).not.toContain(
         "  Survived  src/math.ts:2  ArithmeticOperator",
       );
+    } finally {
+      process.exitCode = undefined;
+      spy.mockRestore();
+    }
+  });
+
+  it("prints the recorded-count line", async () => {
+    const out: string[] = [];
+    const spy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+
+    process.exitCode = undefined;
+
+    try {
+      await withRegistryCwd(recordedEquivalent(), () => main([]));
       expect(out.join("\n")).toContain(
         "Recorded adjudications (1) — filtered from the list above: 1 equivalent, 0 artifact",
       );
@@ -1089,7 +1121,7 @@ describe("printSurvivors with a registry (issue #241)", () => {
     }
   });
 
-  it("exits 1 naming the registry when it is present but corrupt", async () => {
+  it("names the corrupt registry on stderr", async () => {
     const errors: string[] = [];
     const spy = vi
       .spyOn(console, "error")
@@ -1102,6 +1134,24 @@ describe("printSurvivors with a registry (issue #241)", () => {
     try {
       await withRegistryCwd("{not json", () => main([]));
       expect(errors.join("\n")).toContain(".mutants-registry.json");
+    } finally {
+      process.exitCode = undefined;
+      spy.mockRestore();
+    }
+  });
+
+  it("exits 1 naming the registry when it is present but corrupt", async () => {
+    const errors: string[] = [];
+    const spy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) =>
+        errors.push(parts.join(" ")),
+      );
+
+    process.exitCode = undefined;
+
+    try {
+      await withRegistryCwd("{not json", () => main([]));
       expect(process.exitCode).toBe(1);
     } finally {
       process.exitCode = undefined;
