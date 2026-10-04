@@ -386,7 +386,7 @@ describe("promoteSandboxNote", () => {
     await run("git", ["status", "--porcelain", "-uall"], { cwd: dataRoot });
   });
 
-  it("leaves a clean tree", async () => {
+  it("leaves a clean tree after a successful promote", async () => {
     const dataRoot = await makeRepo();
 
     await promote(dataRoot);
@@ -598,7 +598,7 @@ describe("promoteSandboxNote", () => {
     await run("git", ["status", "--porcelain", "-uall"], { cwd: dataRoot });
   });
 
-  it("restores the index", async () => {
+  it("restores the index after the failed-commit rollback", async () => {
     const dataRoot = await makeRepo();
 
     await run("git", ["config", "user.name", ""], { cwd: dataRoot });
@@ -615,7 +615,7 @@ describe("promoteSandboxNote", () => {
     await run("git", ["status", "--porcelain", "-uall"], { cwd: dataRoot });
   });
 
-  it("leaves a clean tree", async () => {
+  it("leaves a clean tree after the failed-commit rollback", async () => {
     const dataRoot = await makeRepo();
 
     await run("git", ["config", "user.name", ""], { cwd: dataRoot });
@@ -704,7 +704,7 @@ describe("promoteSandboxNote", () => {
     await run("git", ["status", "--porcelain", "-uall"], { cwd: dataRoot });
   });
 
-  it("restores the index", async () => {
+  it("restores the index after the citation-wall rollback", async () => {
     const dataRoot = await makeRepo({
       noteText: NOTE_TEXT.replace(
         "Proposal body citing [[rag-notes]].",
@@ -746,7 +746,7 @@ describe("promoteSandboxNote", () => {
     await run("git", ["status", "--porcelain", "-uall"], { cwd: dataRoot });
   });
 
-  it("leaves a clean tree", async () => {
+  it("leaves a clean tree after the citation-wall rollback", async () => {
     const dataRoot = await makeRepo({
       noteText: NOTE_TEXT.replace(
         "Proposal body citing [[rag-notes]].",

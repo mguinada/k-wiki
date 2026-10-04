@@ -298,7 +298,7 @@ describe("composeRunPrompt", () => {
     expect(composed).toBe("FULL PROMPT");
   });
 
-  it("sets no direct file set", async () => {
+  it("sets no direct file set in full mode", async () => {
     const { directSet } = await composeRunPrompt({
       mode: "full",
       promptText: "FULL PROMPT",
@@ -371,7 +371,7 @@ describe("composeRunPrompt", () => {
     expect(composed).toContain("re-adjudicate");
   });
 
-  it("sets no direct file set", async () => {
+  it("sets no direct file set in incremental mode", async () => {
     const diff = diffManifests(
       manifestWith("Engineering", { "a.md": entry("a") }),
       manifestWith("Engineering", { "a.md": entry("a2") }),

@@ -161,8 +161,6 @@ describe("rotateLogIfNeeded default threshold", () => {
 
     await expect(readFile(logPath, "utf8")).resolves.toBe("x");
 
-    await readFile(`${logPath}.1`, "utf8").catch(() => undefined);
-
     await rm(dir, { recursive: true, force: true });
   });
 

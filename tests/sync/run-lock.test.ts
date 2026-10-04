@@ -180,8 +180,6 @@ describe("releaseLock", () => {
 
     await releaseLock(lockPath);
 
-    await readFile(lockPath, "utf8").catch(() => undefined);
-
     await expect(releaseLock(lockPath)).resolves.toBeUndefined();
 
     await rm(dir, { recursive: true, force: true });
@@ -202,8 +200,6 @@ describe("releaseLock", () => {
     await expect(readFile(lockPath, "utf8")).resolves.toContain("4242");
 
     await releaseLock(lockPath, 4242);
-
-    await readFile(lockPath, "utf8").catch(() => undefined);
 
     await rm(dir, { recursive: true, force: true });
   });

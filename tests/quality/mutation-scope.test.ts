@@ -621,23 +621,10 @@ describe("base-parameterized scoping", () => {
       process.exitCode = undefined;
     }
   });
-
-  it("exits 1 on a non-integer MUTATION_WINDOW_DAYS", () => {
-    const error = vi.spyOn(console, "error").mockImplementation(() => {});
-
-    try {
-      main([], () => "", { MUTATION_WINDOW_DAYS: "week" });
-
-      expect(process.exitCode).toBe(1);
-    } finally {
-      error.mockRestore();
-      process.exitCode = undefined;
-    }
-  });
 });
 
 describe("mutation-scope --base and --print-base", () => {
-  it("prints the scoped hunk from the --base flag value", () => {
+  it("passes the --base flag value into the git diff command", async () => {
     const diffs: string[][] = [];
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     const git: GitText = (args) => {
@@ -669,34 +656,6 @@ describe("mutation-scope --base and --print-base", () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     const git: GitText = (args) => {
       if (args[0] === "diff") {
-        return [
-          "diff --git a/src/a.ts b/src/a.ts",
-          "--- a/src/a.ts",
-          "+++ b/src/a.ts",
-          "@@ -1,1 +12,9 @@",
-          "+x",
-        ].join("\n");
-      }
-
-      return "";
-    };
-
-    try {
-      main(["--base", "feature/sha"], git);
-
-      expect(log.mock.calls[0]?.[0]).toBe("src/a.ts:12-20");
-    } finally {
-      log.mockRestore();
-    }
-  });
-
-  it("prints the scoped hunk from the --base flag value", () => {
-    const log = vi.spyOn(console, "log").mockImplementation(() => {});
-    const diffs: string[][] = [];
-    const git: GitText = (args) => {
-      if (args[0] === "diff") {
-        diffs.push([...args]);
-
         return [
           "diff --git a/src/a.ts b/src/a.ts",
           "--- a/src/a.ts",

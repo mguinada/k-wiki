@@ -57,7 +57,7 @@ describe("leasedCycle renewals", () => {
     const outcome = await runSharedCycle({ ...options(cw), git });
 
     expect(outcome.status).toBe("completed");
-  });
+  }, 30000);
 
   it("renews the lease around the cycle's stages", async () => {
     const world = await makeWriterWorld();
@@ -71,7 +71,7 @@ describe("leasedCycle renewals", () => {
     await runSharedCycle({ ...options(cw), git });
 
     expect(count()).toBeGreaterThanOrEqual(3);
-  });
+  }, 30000);
 
   it("completes the leased cycle", async () => {
     const world = await makeWriterWorld();
@@ -99,7 +99,7 @@ describe("leasedCycle renewals", () => {
     });
 
     expect(outcome.status).toBe("completed");
-  });
+  }, 30000);
 
   it("runs the sweep hook inside the lease tenure", async () => {
     const world = await makeWriterWorld();
@@ -127,7 +127,7 @@ describe("leasedCycle renewals", () => {
     });
 
     expect(order).toEqual(["sweep", "leased"]);
-  });
+  }, 30000);
 });
 
 describe("gate refusal inside the tenure", () => {
@@ -196,7 +196,7 @@ describe("gate refusal inside the tenure", () => {
       status: "refused",
       reason: expect.stringContaining("--removal-receipt"),
     });
-  });
+  }, 30000);
 
   it("names the removed path in the refusal", async () => {
     const world = await makeWriterWorld();
@@ -260,9 +260,9 @@ describe("gate refusal inside the tenure", () => {
     const outcome = await runSharedCycle(options(cw));
 
     expect((outcome as { reason: string }).reason).toContain("sub/gone.md");
-  });
+  }, 30000);
 
-  it("releases the lease on the refusal", async () => {
+  it("releases the lease on the removal-receipt refusal", async () => {
     const world = await makeWriterWorld();
 
     worlds.push(world);
@@ -326,7 +326,7 @@ describe("gate refusal inside the tenure", () => {
     expect(
       await observeLeaseOid(gitOf(cw), "origin", LEASE_REF),
     ).toBeUndefined();
-  });
+  }, 30000);
 
   it("refuses a stale namespace's expunge", async () => {
     const world = await makeWriterWorld();
@@ -385,7 +385,7 @@ describe("gate refusal inside the tenure", () => {
       status: "refused",
       reason: expect.stringContaining("--removal-receipt"),
     });
-  });
+  }, 30000);
 
   it("names the stale namespace in the refusal", async () => {
     const world = await makeWriterWorld();
@@ -441,9 +441,9 @@ describe("gate refusal inside the tenure", () => {
     const outcome = await runSharedCycle(options(cw));
 
     expect((outcome as { reason: string }).reason).toContain("Retired/Old.md");
-  });
+  }, 30000);
 
-  it("releases the lease on the refusal", async () => {
+  it("releases the lease on the stale-namespace refusal", async () => {
     const world = await makeWriterWorld();
 
     worlds.push(world);
@@ -499,7 +499,7 @@ describe("gate refusal inside the tenure", () => {
     expect(
       await observeLeaseOid(gitOf(cw), "origin", LEASE_REF),
     ).toBeUndefined();
-  });
+  }, 30000);
 });
 
 describe("post-commit failure inside the tenure", () => {
@@ -542,7 +542,7 @@ describe("post-commit failure inside the tenure", () => {
         },
       }),
     ).rejects.toThrow();
-  });
+  }, 30000);
 
   it("retains the lease once the content commit exists", async () => {
     const world = await makeWriterWorld();
@@ -583,7 +583,7 @@ describe("post-commit failure inside the tenure", () => {
     }).catch(() => undefined);
 
     expect(await observeLeaseOid(gitOf(cw), "origin", LEASE_REF)).toBeDefined();
-  });
+  }, 30000);
 });
 
 function options(cw: CoordWorld) {

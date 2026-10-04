@@ -207,8 +207,6 @@ describe("renderBreaches (guard tree)", () => {
     const breaches = breachesOf({ ...zeroBudget(), dataToSyncEdges: 0 }, fresh);
 
     expect(breaches.length).toBeGreaterThan(0);
-
-    renderBreaches(breaches, offenders);
   });
 
   it("renders the offending import file and line", async () => {

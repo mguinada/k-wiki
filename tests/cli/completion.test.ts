@@ -129,7 +129,7 @@ describe("completion verb", () => {
     expect(err).toContain("zsh");
   });
 
-  it("exits 1", async () => {
+  it("exits 1 for the bash target", async () => {
     await runVerb(["bash"]);
 
     expect(process.exitCode).toBe(1);
@@ -141,7 +141,7 @@ describe("completion verb", () => {
     expect(err).toContain("unexpected argument");
   });
 
-  it("exits 1", async () => {
+  it("exits 1 for the zsh and fish targets", async () => {
     await runVerb(["zsh", "fish"]);
 
     expect(process.exitCode).toBe(1);

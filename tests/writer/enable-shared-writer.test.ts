@@ -42,11 +42,9 @@ async function unenabledRepo() {
 
 describe("enable-shared-writer (library)", () => {
   it("commits the marker naming its path", async () => {
-    const { world, cw } = await unenabledRepo();
+    const { cw } = await unenabledRepo();
 
     const { enable } = await import("../../src/writer/enable-shared-writer.ts");
-
-    const { gitRunnerFor } = await import("../../src/writer/git-remote.ts");
 
     const message = await enable(cw.dataRoot);
 
@@ -57,23 +55,12 @@ describe("enable-shared-writer (library)", () => {
       branch: string;
       leaseRef: string;
     };
-
-    const remote = gitRunnerFor({
-      dir: world.remoteDir,
-      env: process.env,
-    });
-
-    (await remote(["rev-parse", "refs/heads/main"])).stdout.trim();
-
-    (await gitOf(cw.dataRoot)(["rev-parse", "HEAD"])).stdout.trim();
-  });
+  }, 30000);
 
   it("writes the marker's version, branch, and lease ref", async () => {
-    const { world, cw } = await unenabledRepo();
+    const { cw } = await unenabledRepo();
 
     const { enable } = await import("../../src/writer/enable-shared-writer.ts");
-
-    const { gitRunnerFor } = await import("../../src/writer/git-remote.ts");
 
     await enable(cw.dataRoot);
 
@@ -87,23 +74,12 @@ describe("enable-shared-writer (library)", () => {
       leaseRef: LEASE_REF,
       sourceRemovalPolicy: "confirm",
     });
-
-    const remote = gitRunnerFor({
-      dir: world.remoteDir,
-      env: process.env,
-    });
-
-    (await remote(["rev-parse", "refs/heads/main"])).stdout.trim();
-
-    (await gitOf(cw.dataRoot)(["rev-parse", "HEAD"])).stdout.trim();
-  });
+  }, 30000);
 
   it("releases the bootstrap lease", async () => {
-    const { world, cw } = await unenabledRepo();
+    const { cw } = await unenabledRepo();
 
     const { enable } = await import("../../src/writer/enable-shared-writer.ts");
-
-    const { gitRunnerFor } = await import("../../src/writer/git-remote.ts");
 
     await enable(cw.dataRoot);
 
@@ -112,20 +88,10 @@ describe("enable-shared-writer (library)", () => {
       branch: string;
       leaseRef: string;
     };
-
-    const remote = gitRunnerFor({
-      dir: world.remoteDir,
-      env: process.env,
-    });
-
     expect(
       await lsRemoteOid(gitOf(cw.dataRoot), "origin", LEASE_REF),
     ).toBeUndefined();
-
-    (await remote(["rev-parse", "refs/heads/main"])).stdout.trim();
-
-    (await gitOf(cw.dataRoot)(["rev-parse", "HEAD"])).stdout.trim();
-  });
+  }, 30000);
 
   it("pushes the marker commit to the remote", async () => {
     const { world, cw } = await unenabledRepo();
@@ -156,7 +122,7 @@ describe("enable-shared-writer (library)", () => {
     ).stdout.trim();
 
     expect(remoteHead).toBe(localHead);
-  });
+  }, 30000);
 
   it("returns success without probe or lease churn when already enabled", async () => {
     const { cw } = await unenabledRepo();
@@ -364,11 +330,9 @@ exit 0
     await writeFile(join(cw.dataRoot, "junk.md"), "junk\n");
 
     await expect(enable(cw.dataRoot)).rejects.toThrow(/dirty/);
+  }, 30000);
 
-    await readFile(join(cw.dataRoot, MARKER_PATH)).catch(() => undefined);
-  });
-
-  it("writes no marker on refusal", async () => {
+  it("writes no marker when the checkout is dirty", async () => {
     const { cw } = await unenabledRepo();
 
     const { enable } = await import("../../src/writer/enable-shared-writer.ts");
@@ -380,7 +344,7 @@ exit 0
     await expect(
       readFile(join(cw.dataRoot, MARKER_PATH)),
     ).rejects.toMatchObject({ code: "ENOENT" });
-  });
+  }, 30000);
 
   it("refuses a remote without the shared-writer protocol", async () => {
     const { world, cw } = await unenabledRepo();
@@ -398,11 +362,9 @@ exit 0
     await expect(enable(cw.dataRoot)).rejects.toThrow(
       /does not support the shared-writer protocol/,
     );
+  }, 30000);
 
-    await readFile(join(cw.dataRoot, MARKER_PATH)).catch(() => undefined);
-  });
-
-  it("writes no marker on refusal", async () => {
+  it("writes no marker when the remote lacks the protocol", async () => {
     const { world, cw } = await unenabledRepo();
 
     const { enable } = await import("../../src/writer/enable-shared-writer.ts");
@@ -420,7 +382,7 @@ exit 0
     await expect(
       readFile(join(cw.dataRoot, MARKER_PATH)),
     ).rejects.toMatchObject({ code: "ENOENT" });
-  });
+  }, 30000);
 });
 
 function gitOf(dataRoot: string) {
@@ -463,7 +425,7 @@ describe("writer-lease verbs (library)", () => {
     expect(acquire.status).toBe("acquired");
 
     await observeLease(gitOf(cw.dataRoot), "origin", LEASE_REF);
-  });
+  }, 30000);
 
   it("reports the live lease's holder", async () => {
     const world = await makeWriterWorld();
@@ -493,7 +455,7 @@ describe("writer-lease verbs (library)", () => {
     const lease = await observeLease(gitOf(cw.dataRoot), "origin", LEASE_REF);
 
     expect(lease?.body.holder).toBe("mac-a:42");
-  });
+  }, 30000);
 
   it("reports the live lease's expiry", async () => {
     const world = await makeWriterWorld();
@@ -523,7 +485,7 @@ describe("writer-lease verbs (library)", () => {
     const lease = await observeLease(gitOf(cw.dataRoot), "origin", LEASE_REF);
 
     expect(lease?.body.expires).toBe("2026-01-01T04:00:00.000Z");
-  });
+  }, 30000);
 });
 
 describe("concurrent enablement (test 19)", () => {

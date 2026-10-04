@@ -428,7 +428,7 @@ console.log("stub report");
     expect(prompt.split("~ Engineering/a.md").length - 1).toBe(1);
   });
 
-  it("heads the scoped prompt with the operator note", async () => {
+  it("heads the scoped prompt with the passed operator note", async () => {
     const h = await makeCliHarness();
 
     await mkdir(dirname(h.snapshotPath), { recursive: true });
@@ -484,7 +484,7 @@ console.log("stub report");
     expect(prompt).toContain("recovery: re-adjudicate the four pages");
   });
 
-  it("heads the scoped prompt with the operator note", async () => {
+  it("heads the scoped prompt with the default operator note", async () => {
     const h = await makeCliHarness();
 
     await mkdir(dirname(h.snapshotPath), { recursive: true });
@@ -558,7 +558,7 @@ console.log("stub report");
     expect(err).toContain("--note needs a value");
   });
 
-  it("exits 1", async () => {
+  it("exits 1 on a valueless --note", async () => {
     const h = await makeCliHarness();
 
     await runCli([...cliArgs(h), "--note"]);
@@ -574,7 +574,7 @@ console.log("stub report");
     expect(err).toContain("--note needs a value");
   });
 
-  it("exits 1", async () => {
+  it("exits 1 on a blank --note", async () => {
     const h = await makeCliHarness();
 
     await runCli([...cliArgs(h), "--note", ""]);
@@ -590,7 +590,7 @@ console.log("stub report");
     expect(err).toContain("--note requires --sources");
   });
 
-  it("exits 1", async () => {
+  it("exits 1 on --note without --sources", async () => {
     const h = await makeCliHarness();
 
     await runCli([...cliArgs(h), "--note", "intent"]);

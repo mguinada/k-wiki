@@ -484,7 +484,7 @@ describe("main (in-process)", () => {
     );
   });
 
-  it("exits 1", async () => {
+  it("exits 1 on an unknown option", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
 
     await main(["--bogus"]);
@@ -502,7 +502,7 @@ describe("main (in-process)", () => {
     );
   });
 
-  it("exits 1", async () => {
+  it("exits 1 on a second positional", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
 
     await main(["first-root", "second-root"]);
@@ -520,7 +520,7 @@ describe("main (in-process)", () => {
     );
   });
 
-  it("exits 1", async () => {
+  it("exits 1 on an unreadable scan root", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
 
     await main([join(tmpdir(), "k-wiki-refactor-metrics-absent")]);

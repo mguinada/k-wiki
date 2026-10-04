@@ -244,7 +244,7 @@ describe("wiki-lint CLI", () => {
     expect(err).toContain("timed out after 1 second");
   });
 
-  it("exits 1", async () => {
+  it("exits 1 when the agent times out", async () => {
     const repo = await makeRepo();
 
     process.env.STUB_MODE = "sleep";
@@ -276,7 +276,7 @@ describe("wiki-lint CLI", () => {
     );
   });
 
-  it("exits 1", async () => {
+  it("exits 1 when a guardrail trips", async () => {
     const repo = await makeRepo();
 
     process.env.STUB_MODE = "rebel";

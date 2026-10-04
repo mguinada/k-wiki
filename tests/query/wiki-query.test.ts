@@ -325,18 +325,6 @@ describe("runWikiQuery", () => {
     ).rejects.toThrow("reverted");
   });
 
-  it("fails the run when the agent writes a rogue page", async () => {
-    const h = await makeHarness();
-
-    await expect(
-      runWikiQuery({ ...optionsFor(h), runAgent: wikiWritingRogue }),
-    ).rejects.toThrow();
-
-    await readFile(join(h.dataRoot, "wiki", "queries", "rogue.md")).catch(
-      () => undefined,
-    );
-  });
-
   it("reverts the agent's rogue page on failure", async () => {
     const h = await makeHarness();
 
@@ -375,8 +363,6 @@ describe("runWikiQuery", () => {
     await expect(
       runWikiQuery({ ...optionsFor(h), runAgent: wikiWritingRogue }),
     ).rejects.toThrow();
-
-    await readFile(join(h.outputsDir, "last-query.md")).catch(() => undefined);
   });
 
   it("saves no artifact when the agent writes under wiki", async () => {
@@ -434,16 +420,6 @@ describe("runWikiQuery", () => {
     ).toBe("NOTE\n");
   });
 
-  it("fails the run when the agent deletes a pre-run page", async () => {
-    const h = await harnessWithDraftNote();
-
-    await expect(
-      runWikiQuery({ ...optionsFor(h), runAgent: pageDeletingRogue }),
-    ).rejects.toThrow();
-
-    await readFile(join(h.outputsDir, "last-query.md")).catch(() => undefined);
-  });
-
   it("saves no artifact when the agent deletes a pre-run page", async () => {
     const h = await harnessWithDraftNote();
 
@@ -491,16 +467,6 @@ describe("runWikiQuery", () => {
     expect(
       await readFile(join(h.dataRoot, "wiki", "concepts", "rag.md"), "utf8"),
     ).toBe("RAG\n");
-  });
-
-  it("fails the run when the agent renames a page under wiki", async () => {
-    const h = await makeHarness();
-
-    await expect(
-      runWikiQuery({ ...optionsFor(h), runAgent: renamingRogue }),
-    ).rejects.toThrow();
-
-    await readFile(join(h.dataRoot, "notes", "rag.md")).catch(() => undefined);
   });
 
   it("removes the out-of-wiki rename target on revert", async () => {
@@ -576,14 +542,6 @@ describe("runWikiQuery", () => {
     expect(after.trim()).toBe(sha.trim());
   });
 
-  it("fails the run when the agent commits its writes", async () => {
-    const h = await makeHarness();
-
-    await expect(
-      runWikiQuery({ ...optionsFor(h), runAgent: committingRogue }),
-    ).rejects.toThrow();
-  });
-
   it("reverts the committed index edit", async () => {
     const h = await makeHarness();
 
@@ -594,16 +552,6 @@ describe("runWikiQuery", () => {
     expect(await readFile(join(h.dataRoot, "wiki", "index.md"), "utf8")).toBe(
       "# Index\n",
     );
-  });
-
-  it("fails the run when the agent commits its writes", async () => {
-    const h = await makeHarness();
-
-    await expect(
-      runWikiQuery({ ...optionsFor(h), runAgent: committingRogue }),
-    ).rejects.toThrow();
-
-    await readFile(join(h.outputsDir, "last-query.md")).catch(() => undefined);
   });
 
   it("saves no artifact when the agent commits its writes", async () => {
@@ -721,8 +669,6 @@ describe("runWikiQuery", () => {
     await expect(
       runWikiQuery({ ...optionsFor(h), runAgent: silent }),
     ).rejects.toThrow();
-
-    await readFile(join(h.outputsDir, "last-query.md")).catch(() => undefined);
   });
 
   it("saves no artifact when the agent produces no answer", async () => {

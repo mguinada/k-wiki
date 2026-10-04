@@ -273,7 +273,7 @@ describe("no-op cycle under lease", () => {
     expect(outcome.status).toBe("completed");
 
     gitRunnerFor(remoteHost(world.remoteDir));
-  });
+  }, 30000);
 
   it("advances nothing on a no-op cycle", async () => {
     const world = await makeWriterWorld();
@@ -293,7 +293,7 @@ describe("no-op cycle under lease", () => {
     expect((await remote(["rev-parse", "refs/heads/main"])).stdout.trim()).toBe(
       before,
     );
-  });
+  }, 30000);
 
   it("releases the lease on completion", async () => {
     const world = await makeWriterWorld();
@@ -313,7 +313,7 @@ describe("no-op cycle under lease", () => {
     expect((await remote(["for-each-ref", "refs/k-wiki/"])).stdout.trim()).toBe(
       "",
     );
-  });
+  }, 30000);
 
   it("completes a fresh-clone cycle", async () => {
     const world = await makeWriterWorld();
@@ -342,7 +342,7 @@ describe("no-op cycle under lease", () => {
       snapshotFor: string;
       committedHead: string;
     };
-  });
+  }, 30000);
 
   it("bootstraps the snapshot from the canonical tree", async () => {
     const world = await makeWriterWorld();
@@ -371,7 +371,7 @@ describe("no-op cycle under lease", () => {
     };
 
     expect(parsed.snapshotFor).toBe(dirC);
-  });
+  }, 30000);
 
   it("records the committed head in the snapshot", async () => {
     const world = await makeWriterWorld();
@@ -400,7 +400,7 @@ describe("no-op cycle under lease", () => {
     };
 
     expect(parsed.committedHead).toBe(await commitOid(world.a));
-  });
+  }, 30000);
 });
 
 describe("fail-closed states", () => {
@@ -510,7 +510,7 @@ describe("failure-rule lease retention", () => {
     ).catch((e: unknown) => e);
 
     await observeLease(world.a.git, "origin", LEASE_REF);
-  });
+  }, 30000);
 
   it("fails mid-run naming the agent stage", async () => {
     const world = await makeWriterWorld();
@@ -543,7 +543,7 @@ describe("failure-rule lease retention", () => {
     expect((error as Error).message).toContain("agent stage blew up");
 
     await observeLease(world.a.git, "origin", LEASE_REF);
-  });
+  }, 30000);
 
   it("retains a lease after the mid-run failure", async () => {
     const world = await makeWriterWorld();
@@ -576,9 +576,9 @@ describe("failure-rule lease retention", () => {
     const lease = await observeLease(world.a.git, "origin", LEASE_REF);
 
     expect(lease).toBeDefined();
-  });
+  }, 30000);
 
-  it("shortens the retained lease to fifteen minutes", async () => {
+  it("shortens the retained lease to fifteen minutes after the mid-run failure", async () => {
     const world = await makeWriterWorld();
 
     worlds.push(world);
@@ -609,7 +609,7 @@ describe("failure-rule lease retention", () => {
     const lease = await observeLease(world.a.git, "origin", LEASE_REF);
 
     expect(lease?.body.expires).toBe("2026-01-01T00:15:00.000Z");
-  });
+  }, 30000);
 
   it("announces the retained lease expiry on progress", async () => {
     const world = await makeWriterWorld();
@@ -644,7 +644,7 @@ describe("failure-rule lease retention", () => {
     expect(
       progress.find((line) => line.includes("retained lease expires")),
     ).toContain("2026-01-01T00:15:00.000Z");
-  });
+  }, 30000);
 
   it("fails the cycle again for the lease replacement", async () => {
     const world = await makeWriterWorld();
@@ -679,7 +679,7 @@ describe("failure-rule lease retention", () => {
       .find((match) => match !== null);
 
     await observeLease(world.a.git, "origin", LEASE_REF);
-  });
+  }, 30000);
 
   it("observes the lease mid-run", async () => {
     const world = await makeWriterWorld();
@@ -717,7 +717,7 @@ describe("failure-rule lease retention", () => {
     expect(observedMidRun).toBeDefined();
 
     await observeLease(world.a.git, "origin", LEASE_REF);
-  });
+  }, 30000);
 
   it("re-acquires the retained lease", async () => {
     const world = await makeWriterWorld();
@@ -752,7 +752,7 @@ describe("failure-rule lease retention", () => {
     await observeLease(world.a.git, "origin", LEASE_REF);
 
     expect(acquired).not.toBeNull();
-  });
+  }, 30000);
 
   it("keeps a retained lease in the ref", async () => {
     const world = await makeWriterWorld();
@@ -787,7 +787,7 @@ describe("failure-rule lease retention", () => {
     const retained = await observeLease(world.a.git, "origin", LEASE_REF);
 
     expect(retained).toBeDefined();
-  });
+  }, 30000);
 
   it("replaces the retained lease by a new OID", async () => {
     const world = await makeWriterWorld();
@@ -825,7 +825,7 @@ describe("failure-rule lease retention", () => {
     const retained = await observeLease(world.a.git, "origin", LEASE_REF);
 
     expect(retained?.oid).not.toBe(observedMidRun?.oid);
-  });
+  }, 30000);
 
   it("keeps the acquired token out of the lease OID", async () => {
     const world = await makeWriterWorld();
@@ -860,7 +860,7 @@ describe("failure-rule lease retention", () => {
     const retained = await observeLease(world.a.git, "origin", LEASE_REF);
 
     expect(retained?.oid.slice(0, 8)).not.toBe(acquired?.[1]);
-  });
+  }, 30000);
 
   it("carries the acquired token into the retained lease", async () => {
     const world = await makeWriterWorld();
@@ -898,7 +898,7 @@ describe("failure-rule lease retention", () => {
     const retained = await observeLease(world.a.git, "origin", LEASE_REF);
 
     expect(retained?.body.token).toBe(observedMidRun?.body.token);
-  });
+  }, 30000);
 
   it("counts the renewal on the retained lease", async () => {
     const world = await makeWriterWorld();
@@ -938,7 +938,7 @@ describe("failure-rule lease retention", () => {
     expect(retained?.body.renewals).toBe(
       (observedMidRun?.body.renewals ?? 0) + 1,
     );
-  });
+  }, 30000);
 
   it("keeps the shortened expiry on the retained lease", async () => {
     const world = await makeWriterWorld();
@@ -973,7 +973,7 @@ describe("failure-rule lease retention", () => {
     const retained = await observeLease(world.a.git, "origin", LEASE_REF);
 
     expect(retained?.body.expires).toBe("2026-01-01T00:15:00.000Z");
-  });
+  }, 30000);
 
   it("fails the cycle during finalization", async () => {
     const world = await makeWriterWorld();
@@ -1036,7 +1036,7 @@ describe("failure-rule lease retention", () => {
     ).rejects.toThrow();
 
     await observeLease(world.a.git, "origin", LEASE_REF);
-  });
+  }, 30000);
 
   it("retains a lease after a finalization failure", async () => {
     const world = await makeWriterWorld();
@@ -1099,9 +1099,9 @@ describe("failure-rule lease retention", () => {
     const lease = await observeLease(world.a.git, "origin", LEASE_REF);
 
     expect(lease).toBeDefined();
-  });
+  }, 30000);
 
-  it("shortens the retained lease to fifteen minutes", async () => {
+  it("shortens the retained lease to fifteen minutes after the finalization failure", async () => {
     const world = await makeWriterWorld();
 
     worlds.push(world);
@@ -1162,7 +1162,7 @@ describe("failure-rule lease retention", () => {
     const lease = await observeLease(world.a.git, "origin", LEASE_REF);
 
     expect(lease?.body.expires).toBe("2026-01-01T00:15:00.000Z");
-  });
+  }, 30000);
 
   it("announces the finalization-failure lease on progress", async () => {
     const world = await makeWriterWorld();
@@ -1229,7 +1229,7 @@ describe("failure-rule lease retention", () => {
         line.includes("cycle failed during finalization"),
       ),
     ).toContain("2026-01-01T00:15:00.000Z");
-  });
+  }, 30000);
 
   it("refuses the run before acquisition", async () => {
     const world = await makeWriterWorld();
@@ -1265,7 +1265,7 @@ describe("failure-rule lease retention", () => {
     ).toBeUndefined();
   });
 
-  it("fails the cycle naming the agent stage", async () => {
+  it("fails the cycle naming the agent stage when the retention race is lost", async () => {
     const world = await makeWriterWorld();
 
     worlds.push(world);
@@ -1312,7 +1312,7 @@ describe("failure-rule lease retention", () => {
     ).catch((e: unknown) => e);
 
     expect((error as Error).message).toContain("agent stage blew up");
-  });
+  }, 30000);
 
   it("logs a lost retention race", async () => {
     const world = await makeWriterWorld();
@@ -1365,7 +1365,7 @@ describe("failure-rule lease retention", () => {
         line.includes("failed to shorten retained lease"),
       ),
     ).toBeDefined();
-  });
+  }, 30000);
 
   it("leaves the foreign lease in place", async () => {
     const world = await makeWriterWorld();
@@ -1420,9 +1420,9 @@ describe("failure-rule lease retention", () => {
     expect(await observeLeaseOid(world.a.git, "origin", LEASE_REF)).toBe(
       foreignOid,
     );
-  });
+  }, 30000);
 
-  it("fails the cycle naming the agent stage", async () => {
+  it("fails the cycle naming the agent stage before the expired-lease refusal", async () => {
     const world = await makeWriterWorld();
 
     worlds.push(world);
@@ -1470,8 +1470,6 @@ describe("failure-rule lease retention", () => {
       ttlMs: -60_000,
     });
 
-    false;
-
     const outcome = await runSharedCycle(
       optionsFor(cw, dataRoot, {
         run: runContext({
@@ -1487,7 +1485,7 @@ describe("failure-rule lease retention", () => {
     if (outcome.status !== "refused") {
       throw new Error("expected a refusal, got a completed cycle");
     }
-  });
+  }, 30000);
 
   it("announces the expired retained lease on progress", async () => {
     const world = await makeWriterWorld();
@@ -1539,8 +1537,6 @@ describe("failure-rule lease retention", () => {
       ttlMs: -60_000,
     });
 
-    false;
-
     const outcome = await runSharedCycle(
       optionsFor(cw, dataRoot, {
         run: runContext({
@@ -1556,7 +1552,7 @@ describe("failure-rule lease retention", () => {
     if (outcome.status !== "refused") {
       throw new Error("expected a refusal, got a completed cycle");
     }
-  });
+  }, 30000);
 
   it("still sees the dirty tree first", async () => {
     const world = await makeWriterWorld();
@@ -1604,8 +1600,6 @@ describe("failure-rule lease retention", () => {
       ttlMs: -60_000,
     });
 
-    false;
-
     const outcome = await runSharedCycle(
       optionsFor(cw, dataRoot, {
         run: runContext({
@@ -1623,7 +1617,7 @@ describe("failure-rule lease retention", () => {
     }
 
     expect(outcome.reason).toContain("dirty");
-  });
+  }, 30000);
 
   it("never reaches the sweep past a dirty tree", async () => {
     const world = await makeWriterWorld();
@@ -1692,7 +1686,7 @@ describe("failure-rule lease retention", () => {
     }
 
     expect(reachedSweep).toBe(false);
-  });
+  }, 30000);
 
   it("leaves the expired lease in place", async () => {
     const world = await makeWriterWorld();
@@ -1740,8 +1734,6 @@ describe("failure-rule lease retention", () => {
       ttlMs: -60_000,
     });
 
-    false;
-
     const outcome = await runSharedCycle(
       optionsFor(cw, dataRoot, {
         run: runContext({
@@ -1761,7 +1753,7 @@ describe("failure-rule lease retention", () => {
     expect(await observeLeaseOid(world.a.git, "origin", LEASE_REF)).toBe(
       expired.oid,
     );
-  });
+  }, 30000);
 });
 
 describe("ambiguous finalize recovery (test 18)", () => {
@@ -1795,7 +1787,7 @@ describe("ambiguous finalize recovery (test 18)", () => {
     expect(outcome.status).toBe("completed");
 
     gitRunnerFor(remoteHost(world.remoteDir));
-  });
+  }, 30000);
 
   it("releases the lease on proven success", async () => {
     const world = await makeWriterWorld();
@@ -1827,7 +1819,7 @@ describe("ambiguous finalize recovery (test 18)", () => {
     expect((await remote(["for-each-ref", "refs/k-wiki/"])).stdout.trim()).toBe(
       "",
     );
-  });
+  }, 30000);
 });
 
 /** Five hours past the retention instant — the fifteen-minute

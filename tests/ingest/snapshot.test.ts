@@ -64,7 +64,7 @@ describe("readSnapshot shape guard (issue #240 kill batch)", () => {
     expect(messages[0]).toContain("has no instance stamp");
   });
 
-  it("treats it as unstamped", async () => {
+  it("treats a null snapshot body as unstamped", async () => {
     const dir = await mkdtemp(join(tmpdir(), "k-wiki-snap-null-"));
 
     tempDirs.push(dir);
@@ -106,7 +106,7 @@ describe("readSnapshot shape guard (issue #240 kill batch)", () => {
     expect(messages[0]).toContain("has no instance stamp");
   });
 
-  it("treats it as unstamped", async () => {
+  it("treats a foreign snapshotFor stamp as unstamped", async () => {
     const dir = await mkdtemp(join(tmpdir(), "k-wiki-snap-stamp-"));
 
     tempDirs.push(dir);
@@ -448,8 +448,6 @@ describe("deferred shared-cycle snapshot (issue #390 steering repair 3)", () => 
 
     expect(advance.manifest).toEqual({ vaults: {} });
 
-    await readFile(snapshotPath, "utf8").catch(() => "absent");
-
     await writeSnapshotAdvance(snapshotPath, run, advance.manifest);
 
     JSON.parse(await readFile(snapshotPath, "utf8")) as {
@@ -499,8 +497,6 @@ describe("deferred shared-cycle snapshot (issue #390 steering repair 3)", () => 
     const advance = buildSnapshotAdvance(undefined, undefined, {
       vaults: {},
     });
-
-    await readFile(snapshotPath, "utf8").catch(() => "absent");
 
     await writeSnapshotAdvance(snapshotPath, run, advance.manifest);
 

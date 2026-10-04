@@ -30,12 +30,6 @@ describe("probeRemoteCapabilities", () => {
       });
 
       expect(result.ok).toBe(true);
-
-      (
-        await world.a.git(["ls-remote", "--refs", "origin"]).catch(() => ({
-          stdout: "",
-        }))
-      ).stdout;
     } finally {
       await world.cleanup();
     }
@@ -59,12 +53,6 @@ describe("probeRemoteCapabilities", () => {
       });
 
       expect(result.retained).toEqual([]);
-
-      (
-        await world.a.git(["ls-remote", "--refs", "origin"]).catch(() => ({
-          stdout: "",
-        }))
-      ).stdout;
     } finally {
       await world.cleanup();
     }
@@ -88,12 +76,6 @@ describe("probeRemoteCapabilities", () => {
       });
 
       expect(result.detail.length).toBeGreaterThanOrEqual(3);
-
-      (
-        await world.a.git(["ls-remote", "--refs", "origin"]).catch(() => ({
-          stdout: "",
-        }))
-      ).stdout;
     } finally {
       await world.cleanup();
     }
@@ -117,12 +99,6 @@ describe("probeRemoteCapabilities", () => {
       });
 
       expect(result.detail.join("\n")).toContain("atomic finalize verified");
-
-      (
-        await world.a.git(["ls-remote", "--refs", "origin"]).catch(() => ({
-          stdout: "",
-        }))
-      ).stdout;
     } finally {
       await world.cleanup();
     }

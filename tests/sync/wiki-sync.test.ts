@@ -584,18 +584,6 @@ describe("runWikiSync", () => {
     await expect(runWikiSync(optionsFor(h))).rejects.toThrow("agent exploded");
   });
 
-  it("fails the cycle when the ingest agent throws", async () => {
-    const h = await makeHarness({ "AI/RAG.md": "rag body" });
-
-    h.ingestAgent = async () => {
-      throw new Error("agent exploded");
-    };
-
-    await headOf(h.dataRoot);
-
-    await expect(runWikiSync(optionsFor(h))).rejects.toThrow("agent exploded");
-  });
-
   it("keeps the committed head when the ingest agent fails", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 
@@ -628,26 +616,6 @@ describe("runWikiSync", () => {
     );
   });
 
-  it("fails the cycle when a lint guardrail trips", async () => {
-    const h = await makeHarness({ "AI/RAG.md": "rag body" });
-
-    h.lintAgent = async (_command, _args, options) => {
-      await mkdir(join(options.cwd, "wiki", "concepts"), { recursive: true });
-      await writeFile(
-        join(options.cwd, "wiki", "concepts", "broken.md"),
-        "no frontmatter\n",
-      );
-
-      return { stdout: "rogue lint", stderr: "" };
-    };
-
-    await headOf(h.dataRoot);
-
-    await expect(runWikiSync(optionsFor(h))).rejects.toThrow(
-      "guardrail check 2 (frontmatter)",
-    );
-  });
-
   it("keeps the pre-run commit when a lint guardrail trips", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 
@@ -666,29 +634,6 @@ describe("runWikiSync", () => {
     await runWikiSync(optionsFor(h)).catch(() => undefined);
 
     expect(await headOf(h.dataRoot)).toBe(headBefore);
-  });
-
-  it("fails the cycle when a lint guardrail trips", async () => {
-    const h = await makeHarness({ "AI/RAG.md": "rag body" });
-
-    h.lintAgent = async (_command, _args, options) => {
-      await mkdir(join(options.cwd, "wiki", "concepts"), { recursive: true });
-      await writeFile(
-        join(options.cwd, "wiki", "concepts", "broken.md"),
-        "no frontmatter\n",
-      );
-
-      return { stdout: "rogue lint", stderr: "" };
-    };
-
-    await expect(runWikiSync(optionsFor(h))).rejects.toThrow(
-      "guardrail check 2 (frontmatter)",
-    );
-
-    await readFile(
-      join(h.dataRoot, "wiki", "concepts", "broken.md"),
-      "utf8",
-    ).catch(() => undefined);
   });
 
   it("removes the rogue page when the lint revert runs", async () => {
@@ -711,24 +656,6 @@ describe("runWikiSync", () => {
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("fails the cycle when a lint guardrail trips", async () => {
-    const h = await makeHarness({ "AI/RAG.md": "rag body" });
-
-    h.lintAgent = async (_command, _args, options) => {
-      await mkdir(join(options.cwd, "wiki", "concepts"), { recursive: true });
-      await writeFile(
-        join(options.cwd, "wiki", "concepts", "broken.md"),
-        "no frontmatter\n",
-      );
-
-      return { stdout: "rogue lint", stderr: "" };
-    };
-
-    await expect(runWikiSync(optionsFor(h))).rejects.toThrow(
-      "guardrail check 2 (frontmatter)",
-    );
-  });
-
   it("keeps the ingest changes when the lint revert runs", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 
@@ -749,20 +676,6 @@ describe("runWikiSync", () => {
     ).resolves.toContain("New page");
   });
 
-  it("fails the cycle when the ingest agent throws", async () => {
-    const h = await makeHarness({ "AI/RAG.md": "rag body" });
-
-    h.ingestAgent = async () => {
-      throw new Error("agent exploded");
-    };
-
-    await expect(runWikiSync(optionsFor(h))).rejects.toThrow("agent exploded");
-
-    h.ingestAgent = ingestStub;
-
-    await runWikiSync(optionsFor(h));
-  });
-
   it("runs the ingest again on the retry run", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 
@@ -777,20 +690,6 @@ describe("runWikiSync", () => {
     const result = await runWikiSync(optionsFor(h));
 
     expect(result.ingest.status).toBe("ran");
-  });
-
-  it("fails the cycle when the ingest agent throws", async () => {
-    const h = await makeHarness({ "AI/RAG.md": "rag body" });
-
-    h.ingestAgent = async () => {
-      throw new Error("agent exploded");
-    };
-
-    await expect(runWikiSync(optionsFor(h))).rejects.toThrow("agent exploded");
-
-    h.ingestAgent = ingestStub;
-
-    await runWikiSync(optionsFor(h));
   });
 
   it("invokes the full prompt again on the retry run", async () => {
@@ -811,20 +710,6 @@ describe("runWikiSync", () => {
     ).toHaveLength(2);
   });
 
-  it("fails the cycle when the ingest agent throws", async () => {
-    const h = await makeHarness({ "AI/RAG.md": "rag body" });
-
-    h.ingestAgent = async () => {
-      throw new Error("agent exploded");
-    };
-
-    await expect(runWikiSync(optionsFor(h))).rejects.toThrow("agent exploded");
-
-    h.ingestAgent = ingestStub;
-
-    await runWikiSync(optionsFor(h));
-  });
-
   it("commits the retry cycle after a failed run", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 
@@ -839,20 +724,6 @@ describe("runWikiSync", () => {
     const result = await runWikiSync(optionsFor(h));
 
     expect(result.commit.status).toBe("committed");
-  });
-
-  it("fails the cycle when the ingest agent throws", async () => {
-    const h = await makeHarness({ "AI/RAG.md": "rag body" });
-
-    h.ingestAgent = async () => {
-      throw new Error("agent exploded");
-    };
-
-    await expect(runWikiSync(optionsFor(h))).rejects.toThrow("agent exploded");
-
-    h.ingestAgent = ingestStub;
-
-    await runWikiSync(optionsFor(h));
   });
 
   it("digests no source changes on the retry run", async () => {
@@ -940,10 +811,6 @@ describe("runWikiSync run lock (issue #313)", () => {
     };
 
     await expect(runWikiSync(optionsFor(h))).rejects.toThrow("agent exploded");
-
-    await readFile(join(h.dataRoot, ".scheduled-run.lock"), "utf8").catch(
-      () => undefined,
-    );
   });
 
   it("releases the run lock when the cycle fails", async () => {
@@ -996,10 +863,6 @@ describe("runWikiSync run lock (issue #313)", () => {
     await writeFreshLock(h, 4242, 5 * 60 * 60 * 1000);
 
     await expect(runWikiSync(optionsFor(h))).resolves.toBeDefined();
-
-    await readFile(join(h.dataRoot, ".scheduled-run.lock"), "utf8").catch(
-      () => undefined,
-    );
   });
 
   it("releases the stale lock after the run", async () => {
@@ -1345,7 +1208,7 @@ describe("runWikiSync publish stage (issue #15)", () => {
     await writeFile(h.configPath, `${JSON.stringify(config, null, 2)}\n`);
   }
 
-  it("reports a publish stage result", async () => {
+  it("reports the publish stage result for a mirror without a root", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 
     const mirror = join(dirname(h.dataRoot), "KWiki");
@@ -1371,7 +1234,7 @@ describe("runWikiSync publish stage (issue #15)", () => {
     ).resolves.toContain("New page");
   });
 
-  it("reports a publish stage result", async () => {
+  it("reports the publish stage result when the config sets publish.root", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 
     const mirror = join(dirname(h.dataRoot), "KWiki");
@@ -2070,7 +1933,7 @@ describe("runWikiSync citation wall stage (issue #339)", () => {
     ).resolves.toBe(committed);
   });
 
-  it("leaves HEAD on the pre-run commit", async () => {
+  it("leaves HEAD on the pre-run commit when a main-to-sandbox edge trips the wall", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 
     const head = await headOf(h.dataRoot);
@@ -2158,7 +2021,7 @@ describe("runWikiSync citation wall stage (issue #339)", () => {
     ).resolves.toBe(committed);
   });
 
-  it("leaves HEAD on the pre-run commit", async () => {
+  it("leaves HEAD on the pre-run commit when a via stamp lands on a main page", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 
     const head = await headOf(h.dataRoot);
@@ -2197,10 +2060,6 @@ describe("runWikiSync citation wall stage (issue #339)", () => {
 
     await expect(runWikiSync(optionsFor(h))).rejects.toThrow(
       /citation wall failed[\s\S]*wiki\/rogue\.md:\d+ -> \[\[sandbox\/proposal\]\]/,
-    );
-
-    await readFile(join(h.dataRoot, "wiki", "rogue.md"), "utf8").catch(
-      () => undefined,
     );
   });
 
@@ -2494,16 +2353,6 @@ describe("runWikiSync verification stage", () => {
     );
   });
 
-  it("fails the cycle when verification fails", async () => {
-    const h = await makeHarness({ "AI/RAG.md": "rag body" });
-
-    h.lintAgent = fidelityDriftLintAgent();
-
-    await headOf(h.dataRoot);
-
-    await expect(runWikiSync(optionsFor(h))).rejects.toThrow();
-  });
-
   it("reverts to the pre-run commit when verification fails", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 
@@ -2514,20 +2363,6 @@ describe("runWikiSync verification stage", () => {
     await runWikiSync(optionsFor(h)).catch(() => undefined);
 
     expect(await headOf(h.dataRoot)).toBe(headBefore);
-  });
-
-  it("fails the cycle when verification fails", async () => {
-    const h = await makeHarness({ "AI/RAG.md": "rag body" });
-
-    h.lintAgent = fidelityDriftLintAgent();
-
-    await headOf(h.dataRoot);
-
-    const progress: string[] = [];
-
-    await expect(
-      runWikiSync(optionsFor(h, { onProgress: (m) => progress.push(m) })),
-    ).rejects.toThrow();
   });
 
   it("announces the lint revert on the progress line", async () => {
@@ -2548,19 +2383,6 @@ describe("runWikiSync verification stage", () => {
     );
   });
 
-  it("fails the cycle when verification fails", async () => {
-    const h = await makeHarness({ "AI/RAG.md": "rag body" });
-
-    h.lintAgent = fidelityDriftLintAgent();
-
-    await expect(runWikiSync(optionsFor(h))).rejects.toThrow();
-
-    await readFile(
-      join(h.dataRoot, "outputs", "lint-2026-08-20-full.md"),
-      "utf8",
-    ).catch(() => undefined);
-  });
-
   it("removes the reverted lint report", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 
@@ -2571,19 +2393,6 @@ describe("runWikiSync verification stage", () => {
     await expect(
       readFile(join(h.dataRoot, "outputs", "lint-2026-08-20-full.md"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
-  });
-
-  it("fails the cycle when verification fails", async () => {
-    const h = await makeHarness({ "AI/RAG.md": "rag body" });
-
-    h.lintAgent = fidelityDriftLintAgent();
-
-    await expect(runWikiSync(optionsFor(h))).rejects.toThrow();
-
-    await readFile(
-      join(h.dataRoot, "wiki", "concepts", "drifted.md"),
-      "utf8",
-    ).catch(() => undefined);
   });
 
   it("removes the drifted page with the lint revert", async () => {
@@ -2598,14 +2407,6 @@ describe("runWikiSync verification stage", () => {
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("fails the cycle when verification fails", async () => {
-    const h = await makeHarness({ "AI/RAG.md": "rag body" });
-
-    h.lintAgent = fidelityDriftLintAgent();
-
-    await expect(runWikiSync(optionsFor(h))).rejects.toThrow();
-  });
-
   it("keeps the ingest edits through the lint revert", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 
@@ -2616,19 +2417,6 @@ describe("runWikiSync verification stage", () => {
     await expect(
       readFile(join(h.dataRoot, "wiki", "concepts", "new.md"), "utf8"),
     ).resolves.toContain("New page");
-  });
-
-  it("fails the cycle when verification fails", async () => {
-    const h = await makeHarness({ "AI/RAG.md": "rag body" });
-
-    h.lintAgent = fidelityDriftLintAgent();
-
-    await expect(runWikiSync(optionsFor(h))).rejects.toThrow();
-
-    await readFile(
-      join(h.dataRoot, "outputs", "lint-window.json"),
-      "utf8",
-    ).catch(() => undefined);
   });
 
   it("leaves no lint-window snapshot behind", async () => {
@@ -2643,7 +2431,7 @@ describe("runWikiSync verification stage", () => {
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("fails the cycle when verification fails", async () => {
+  it("fails the second cycle when the window verification fails", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 
     await runWikiSync(optionsFor(h));
@@ -2739,16 +2527,6 @@ describe("runWikiSync verification stage", () => {
     );
   });
 
-  it("fails the cycle when the provenance check fails", async () => {
-    const h = await makeHarness({ "AI/RAG.md": "rag body" });
-
-    h.lintAgent = deadOriginLintAgent();
-
-    await headOf(h.dataRoot);
-
-    await expect(runWikiSync(optionsFor(h))).rejects.toThrow();
-  });
-
   it("commits nothing when the provenance check fails", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 
@@ -2759,19 +2537,6 @@ describe("runWikiSync verification stage", () => {
     await runWikiSync(optionsFor(h)).catch(() => undefined);
 
     expect(await headOf(h.dataRoot)).toBe(headBefore);
-  });
-
-  it("fails the cycle when the provenance check fails", async () => {
-    const h = await makeHarness({ "AI/RAG.md": "rag body" });
-
-    h.lintAgent = deadOriginLintAgent();
-
-    await expect(runWikiSync(optionsFor(h))).rejects.toThrow();
-
-    await readFile(
-      join(h.dataRoot, "wiki", "sources", "dead-origin.md"),
-      "utf8",
-    ).catch(() => undefined);
   });
 
   it("removes the rogue page when the provenance check fails", async () => {
@@ -4577,18 +4342,6 @@ describe("runWikiSync cycle digest (issue #385)", () => {
     expect(digest).toContain("- **Result:** failed");
   });
 
-  it("fails the cycle when a lint guardrail trips", async () => {
-    const h = await makeHarness({ "AI/RAG.md": "rag body" });
-
-    tripLintGuardrail(h);
-
-    await headOf(h.dataRoot);
-
-    await expect(runWikiSync(optionsFor(h))).rejects.toThrow(
-      "guardrail check 2 (frontmatter)",
-    );
-  });
-
   it("commits nothing when the cycle fails after ingest", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 
@@ -4719,7 +4472,7 @@ describe("runWikiSync cycle digest (issue #385)", () => {
     expect(digest).toContain("- **Result:** failed");
   });
 
-  it("fails the cycle when a lint guardrail trips", async () => {
+  it("fails the cycle when the ingest agent trips the guardrail", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 
     h.ingestAgent = async (_command, _args, options) => {
@@ -4734,10 +4487,6 @@ describe("runWikiSync cycle digest (issue #385)", () => {
 
     await expect(runWikiSync(optionsFor(h))).rejects.toThrow(
       "guardrail check 2 (frontmatter)",
-    );
-
-    await readFile(join(h.dataRoot, DIGEST_PATH), "utf8").catch(
-      () => undefined,
     );
   });
 

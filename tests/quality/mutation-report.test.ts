@@ -506,13 +506,13 @@ describe("mutation-report merge CLI", () => {
     expect(ledgerFromBody(body).entries.length).toBe(4);
   });
 
-  it("exits 1 naming --prior-body when its value is absent", async () => {
+  it("exits 1 when --prior-body has no value", async () => {
     const result = await runNode(["report.json", "--prior-body"]);
 
     expect(result.code).toBe(1);
   });
 
-  it("exits 1 naming --prior-body when its value is absent", async () => {
+  it("reports the missing --prior-body value on stderr", async () => {
     const result = await runNode(["report.json", "--prior-body"]);
 
     expect(result.err).toContain("--prior-body requires a value");

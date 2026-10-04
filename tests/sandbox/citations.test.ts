@@ -112,7 +112,7 @@ describe("checkCitationWall", () => {
     ]);
   });
 
-  it("lists the offending main page", async () => {
+  it("lists the main page citing a sandbox note inline", async () => {
     const wikiDir = await makeWiki({
       "note-a.md": mainPage("See [[proposal]]."),
       "sandbox/proposal.md": sandboxPage("Body."),
@@ -188,7 +188,7 @@ describe("checkCitationWall", () => {
     ]);
   });
 
-  it("lists the offending main page", async () => {
+  it("lists the main page citing a sandbox note in its sources list", async () => {
     const wikiDir = await makeWiki({
       "note-a.md": mainPage("Body.", ["sources:", '  - "[[proposal]]"']),
       "sandbox/proposal.md": sandboxPage("Body."),

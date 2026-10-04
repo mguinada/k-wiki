@@ -2434,15 +2434,6 @@ describe("runWikiIngest", () => {
     await expect(
       runWikiIngest({ ...optionsFor(h), runAgent: failing }),
     ).rejects.toThrow();
-
-    const { readFile } = await import("node:fs/promises");
-
-    await readFile(h.snapshotPath, "utf8").catch(() => undefined);
-
-    await readFile(
-      join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"),
-      "utf8",
-    ).catch(() => undefined);
   });
 
   it("leaves no snapshot when the agent fails", async () => {
@@ -2461,11 +2452,6 @@ describe("runWikiIngest", () => {
     await expect(readFile(h.snapshotPath, "utf8")).rejects.toMatchObject({
       code: "ENOENT",
     });
-
-    await readFile(
-      join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"),
-      "utf8",
-    ).catch(() => undefined);
   });
 
   it("leaves no run digest when the agent fails", async () => {
@@ -2480,8 +2466,6 @@ describe("runWikiIngest", () => {
     );
 
     const { readFile } = await import("node:fs/promises");
-
-    await readFile(h.snapshotPath, "utf8").catch(() => undefined);
 
     await expect(
       readFile(
@@ -2509,10 +2493,6 @@ describe("runWikiIngest", () => {
     });
 
     await expect(runWikiIngest(optionsFor(h))).rejects.toThrow();
-
-    const { readFile } = await import("node:fs/promises");
-
-    await readFile(h.snapshotPath, "utf8").catch(() => undefined);
   });
 
   it("leaves no snapshot when the digest write fails", async () => {
@@ -2781,7 +2761,7 @@ describe("runWikiIngest --sources", () => {
     expect(prompt).toContain("Changed sources since the previous ingestion:");
   });
 
-  it("includes an Operator note section in the prompt", async () => {
+  it("includes a passed operator note in the prompt", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
 
     await seedSnapshot(h, { "a.md": "a" });
@@ -2831,7 +2811,7 @@ describe("runWikiIngest --sources", () => {
     expect(prompt).toContain("recovery: file the four pre-adjudicated pages");
   });
 
-  it("includes an Operator note section in the prompt", async () => {
+  it("includes the default operator note in the prompt", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
 
     await seedSnapshot(h, { "a.md": "a" });
@@ -3579,24 +3559,6 @@ describe("runWikiIngest --sources", () => {
     ).rejects.toThrow("guardrail check 2 (frontmatter)");
   });
 
-  it("fails the scoped run when a guardrail trips", async () => {
-    const h = await makeHarness({ "a.md": "a" }, track);
-
-    await seedSnapshot(h, { "a.md": "a" });
-
-    await expect(
-      runWikiIngest({
-        ...optionsFor(h),
-        sources: ["Engineering/a.md"],
-        runAgent: frontmatterSaboteur("bad.md"),
-      }),
-    ).rejects.toThrow("guardrail check 2 (frontmatter)");
-
-    await readFile(join(h.dataRoot, "wiki", "bad.md"), "utf8").catch(
-      () => undefined,
-    );
-  });
-
   it("auto-reverts the offending page on a scoped run", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
 
@@ -3611,22 +3573,6 @@ describe("runWikiIngest --sources", () => {
     await expect(
       readFile(join(h.dataRoot, "wiki", "bad.md"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
-  });
-
-  it("fails the scoped run when a guardrail trips", async () => {
-    const h = await makeHarness({ "a.md": "a" }, track);
-
-    await seedSnapshot(h, { "a.md": "a" });
-
-    await readFile(h.snapshotPath, "utf8");
-
-    await expect(
-      runWikiIngest({
-        ...optionsFor(h),
-        sources: ["Engineering/a.md"],
-        runAgent: frontmatterSaboteur("bad.md"),
-      }),
-    ).rejects.toThrow("guardrail check 2 (frontmatter)");
   });
 
   it("leaves the snapshot when a guardrail trips on a scoped run", async () => {
@@ -3681,7 +3627,7 @@ describe("runWikiIngest guardrails", () => {
     ).rejects.toThrow("guardrail check 2 (frontmatter)");
   });
 
-  it("fails the run when the frontmatter guardrail trips", async () => {
+  it("fails the run naming the tripped frontmatter check", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
 
     await expect(
@@ -3690,10 +3636,6 @@ describe("runWikiIngest guardrails", () => {
         runAgent: frontmatterSaboteur("bad.md"),
       }),
     ).rejects.toThrow("guardrail check 2 (frontmatter)");
-
-    await readFile(join(h.dataRoot, "wiki", "bad.md"), "utf8").catch(
-      () => undefined,
-    );
   });
 
   it("removes the offending page when the frontmatter guardrail trips", async () => {
@@ -3707,19 +3649,6 @@ describe("runWikiIngest guardrails", () => {
     await expect(
       readFile(join(h.dataRoot, "wiki", "bad.md"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
-  });
-
-  it("fails the run when the frontmatter guardrail trips", async () => {
-    const h = await makeHarness({ "a.md": "a" }, track);
-
-    await expect(
-      runWikiIngest({
-        ...optionsFor(h),
-        runAgent: frontmatterSaboteur("bad.md"),
-      }),
-    ).rejects.toThrow("guardrail check 2 (frontmatter)");
-
-    await readFile(h.snapshotPath, "utf8").catch(() => undefined);
   });
 
   it("leaves no snapshot when the frontmatter guardrail trips", async () => {
@@ -3746,19 +3675,6 @@ describe("runWikiIngest guardrails", () => {
     ).rejects.toThrow();
   });
 
-  it("fails the run when the frontmatter guardrail trips", async () => {
-    const h = await makeHarness({ "a.md": "a" }, track);
-
-    await expect(
-      runWikiIngest({
-        ...optionsFor(h),
-        runAgent: frontmatterSaboteur("bad.md"),
-      }),
-    ).rejects.toThrow();
-
-    await readFile(digestPath(h), "utf8");
-  });
-
   it("names the tripped check in the failure digest", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
 
@@ -3772,19 +3688,6 @@ describe("runWikiIngest guardrails", () => {
     expect(digest).toContain("Check 2 (frontmatter)");
   });
 
-  it("fails the run when the frontmatter guardrail trips", async () => {
-    const h = await makeHarness({ "a.md": "a" }, track);
-
-    await expect(
-      runWikiIngest({
-        ...optionsFor(h),
-        runAgent: frontmatterSaboteur("bad.md"),
-      }),
-    ).rejects.toThrow();
-
-    await readFile(digestPath(h), "utf8");
-  });
-
   it("names the offending page in the failure digest", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
 
@@ -3796,19 +3699,6 @@ describe("runWikiIngest guardrails", () => {
     const digest = await readFile(digestPath(h), "utf8");
 
     expect(digest).toContain("wiki/bad.md");
-  });
-
-  it("fails the run when the frontmatter guardrail trips", async () => {
-    const h = await makeHarness({ "a.md": "a" }, track);
-
-    await expect(
-      runWikiIngest({
-        ...optionsFor(h),
-        runAgent: frontmatterSaboteur("bad.md"),
-      }),
-    ).rejects.toThrow();
-
-    await readFile(digestPath(h), "utf8");
   });
 
   it("embeds the agent report in the failure digest", async () => {
@@ -3837,10 +3727,6 @@ describe("runWikiIngest guardrails", () => {
     await expect(
       runWikiIngest({ ...optionsFor(h), runAgent: saboteur }),
     ).rejects.toThrow("guardrail check 1 (immutability)");
-
-    await readFile(join(h.dataRoot, "raw", "notes", "rogue.md"), "utf8").catch(
-      () => undefined,
-    );
   });
 
   it("reverts the rogue write outside the whitelist", async () => {
@@ -3875,10 +3761,6 @@ describe("runWikiIngest guardrails", () => {
     await expect(
       runWikiIngest({ ...optionsFor(h), runAgent: saboteur }),
     ).rejects.toThrow("guardrail check 1 (immutability)");
-
-    await readFile(join(h.dataRoot, "raw", "notes", "rogue.md"), "utf8").catch(
-      () => undefined,
-    );
   });
 
   it("reverts raw tampering even when the agent fails", async () => {
@@ -3947,10 +3829,6 @@ describe("runWikiIngest guardrails", () => {
     await expect(
       runWikiIngest({ ...optionsFor(h), runAgent: saboteur }),
     ).rejects.toThrow("guardrail check 3 (wikilinks)");
-
-    await readFile(join(h.dataRoot, "wiki", "dangling.md"), "utf8").catch(
-      () => undefined,
-    );
   });
 
   it("reverts the dangling-link page", async () => {
@@ -4153,22 +4031,6 @@ describe("runWikiIngest failure reporting detail", () => {
     ).rejects.toThrow();
   });
 
-  it("fails the run when the frontmatter guardrail trips", async () => {
-    const h = await makeHarness({ "a.md": "a" }, track);
-
-    await expect(
-      runWikiIngest({
-        ...optionsFor(h),
-        runAgent: frontmatterSaboteur("bad.md"),
-      }),
-    ).rejects.toThrow();
-
-    await readFile(
-      join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"),
-      "utf8",
-    );
-  });
-
   it("states the mode in the failure digest", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
 
@@ -4185,22 +4047,6 @@ describe("runWikiIngest failure reporting detail", () => {
     expect(digest).toContain("**Mode:** full");
   });
 
-  it("fails the run when the frontmatter guardrail trips", async () => {
-    const h = await makeHarness({ "a.md": "a" }, track);
-
-    await expect(
-      runWikiIngest({
-        ...optionsFor(h),
-        runAgent: frontmatterSaboteur("bad.md"),
-      }),
-    ).rejects.toThrow();
-
-    await readFile(
-      join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"),
-      "utf8",
-    );
-  });
-
   it("names the prompt file in the failure digest", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
 
@@ -4215,22 +4061,6 @@ describe("runWikiIngest failure reporting detail", () => {
     );
 
     expect(digest).toContain("prompt `prompts/ingest.md`");
-  });
-
-  it("fails the run when the frontmatter guardrail trips", async () => {
-    const h = await makeHarness({ "a.md": "a" }, track);
-
-    await expect(
-      runWikiIngest({
-        ...optionsFor(h),
-        runAgent: frontmatterSaboteur("bad.md"),
-      }),
-    ).rejects.toThrow();
-
-    await readFile(
-      join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"),
-      "utf8",
-    );
   });
 
   it("reports the wiki pages as unavailable in the failure digest", async () => {
@@ -4662,8 +4492,6 @@ describe("deferSnapshot (issue #390 steering repair 3)", () => {
     }
 
     expect(result.pendingSnapshot).toBeDefined();
-
-    await readFile(h.snapshotPath, "utf8").catch(() => "absent");
   });
 
   it("writes nothing with the pending-snapshot flag", async () => {

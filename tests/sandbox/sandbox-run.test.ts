@@ -391,8 +391,6 @@ describe("runSandboxRun", () => {
     await run("git", ["rev-parse", "HEAD"], {
       cwd: dataRoot,
     });
-
-    await readFile(join(dataRoot, "wiki", "log.md")).catch(() => undefined);
   });
 
   it("leaves the tree untouched when nothing was written", async () => {
@@ -409,8 +407,6 @@ describe("runSandboxRun", () => {
     });
 
     expect(after).toBe(before);
-
-    await readFile(join(dataRoot, "wiki", "log.md")).catch(() => undefined);
   });
 
   it("keeps the tree clean after an empty run", async () => {
@@ -427,8 +423,6 @@ describe("runSandboxRun", () => {
     });
 
     expect(await statusOf(dataRoot)).toBe("");
-
-    await readFile(join(dataRoot, "wiki", "log.md")).catch(() => undefined);
   });
 
   it("writes no log entry for an empty run", async () => {
@@ -466,10 +460,6 @@ describe("runSandboxRun", () => {
       /accept-gate failed.*wiki\/index\.md/s,
     );
 
-    await readFile(join(dataRoot, "wiki", "sandbox", "note-slug.md")).catch(
-      () => undefined,
-    );
-
     await run("git", ["log", "--format=%s"], {
       cwd: dataRoot,
     });
@@ -494,10 +484,6 @@ describe("runSandboxRun", () => {
 
     expect(await readFile(join(dataRoot, "wiki", "index.md"), "utf8")).toBe(
       "# Index\n",
-    );
-
-    await readFile(join(dataRoot, "wiki", "sandbox", "note-slug.md")).catch(
-      () => undefined,
     );
 
     await run("git", ["log", "--format=%s"], {
@@ -525,10 +511,6 @@ describe("runSandboxRun", () => {
     expect(
       await readFile(join(dataRoot, "wiki", "dirty-page.md"), "utf8"),
     ).toBe("pre-run dirty work\n");
-
-    await readFile(join(dataRoot, "wiki", "sandbox", "note-slug.md")).catch(
-      () => undefined,
-    );
 
     await run("git", ["log", "--format=%s"], {
       cwd: dataRoot,
@@ -577,10 +559,6 @@ describe("runSandboxRun", () => {
     });
 
     await promise.catch(() => undefined);
-
-    await readFile(join(dataRoot, "wiki", "sandbox", "note-slug.md")).catch(
-      () => undefined,
-    );
 
     const { stdout: log } = await run("git", ["log", "--format=%s"], {
       cwd: dataRoot,
@@ -1090,8 +1068,6 @@ describe("runSandboxRun", () => {
     await expect(sandboxRun(dataRoot, { runAgent: agent })).rejects.toThrow(
       /accept-gate failed/,
     );
-
-    await readFile(join(dataRoot, "wiki", "rogue.md")).catch(() => undefined);
   });
 
   it("leaves the tree fully clean after the revert", async () => {
@@ -1109,8 +1085,6 @@ describe("runSandboxRun", () => {
     await sandboxRun(dataRoot, { runAgent: agent }).catch(() => undefined);
 
     expect(await statusOf(dataRoot)).toBe("");
-
-    await readFile(join(dataRoot, "wiki", "rogue.md")).catch(() => undefined);
   });
 
   it("removes the staged out-of-sandbox file", async () => {
@@ -1305,7 +1279,7 @@ describe("revertPathsToLastCommit", () => {
     ).resolves.toBe("page\n");
   });
 
-  it("leaves a clean tree after the rename revert", async () => {
+  it("leaves a clean tree after reverting an untracked rename", async () => {
     const dataRoot = await makeRenamedRepo();
 
     await rm(join(dataRoot, "wiki", "concepts", "old.md"));
@@ -1335,7 +1309,7 @@ describe("revertPathsToLastCommit", () => {
     ).resolves.toBe("page\n");
   });
 
-  it("leaves a clean tree after the rename revert", async () => {
+  it("leaves a clean tree after reverting a staged rename", async () => {
     const dataRoot = await makeRenamedRepo();
 
     await run("git", ["mv", "wiki/concepts/old.md", "wiki/concepts/new.md"], {

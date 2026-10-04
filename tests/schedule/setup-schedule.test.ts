@@ -591,7 +591,7 @@ describe("setup-schedule origin guard (issue #361)", () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  it("refuses a linked worktree on stderr", async () => {
+  it("refuses install from a linked worktree on stderr", async () => {
     const { err, home } = await runGuarded([], "darwin", worktreeGit);
 
     expect(err).toContain("linked worktree");
@@ -601,7 +601,7 @@ describe("setup-schedule origin guard (issue #361)", () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  it("runs no launchd steps from a linked worktree", async () => {
+  it("runs no launchd steps refusing a linked-worktree install", async () => {
     const { launchctl, home } = await runGuarded([], "darwin", worktreeGit);
 
     expect(launchctl).toEqual([]);
@@ -631,7 +631,7 @@ describe("setup-schedule origin guard (issue #361)", () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  it("refuses a linked worktree on stderr", async () => {
+  it("refuses uninstall from a linked worktree on stderr", async () => {
     const { err, home } = await runGuarded(
       ["--uninstall"],
       "darwin",
@@ -643,7 +643,7 @@ describe("setup-schedule origin guard (issue #361)", () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  it("runs no launchd steps from a linked worktree", async () => {
+  it("runs no launchd steps refusing a linked-worktree uninstall", async () => {
     const { launchctl, home } = await runGuarded(
       ["--uninstall"],
       "darwin",
@@ -1135,8 +1135,6 @@ describe("setup-schedule main: install and uninstall", () => {
       logSpy.mockRestore();
     }
 
-    await readFile(target, "utf8").catch(() => undefined);
-
     expect(recorded).toEqual([
       ["bootout", `gui/${process.getuid?.() ?? 501}`, target],
     ]);
@@ -1179,8 +1177,6 @@ describe("setup-schedule main: install and uninstall", () => {
     } finally {
       logSpy.mockRestore();
     }
-
-    await readFile(target, "utf8").catch(() => undefined);
 
     expect(outs.join("\n")).toContain("uninstalled");
 

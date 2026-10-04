@@ -302,7 +302,7 @@ describe("reconcileWebSources", () => {
     expect(reconciliation.failure).toBeUndefined();
   });
 
-  it("keeps the cited source listed", () => {
+  it("keeps a cited source with a parenthesized URL listed", async () => {
     const url = "https://en.wikipedia.org/wiki/Mercury_(planet)";
 
     const fetch: WebCall = { ...fetchCall, target: url, urls: [url] };
@@ -328,7 +328,7 @@ describe("reconcileWebSources", () => {
     expect(reconciliation.failure).toBeUndefined();
   });
 
-  it("keeps the cited source listed", () => {
+  it("keeps a cited source with nested parentheses in its URL listed", async () => {
     const url = "https://en.wikipedia.org/wiki/Foo_(bar_(baz))";
 
     const fetch: WebCall = { ...fetchCall, target: url, urls: [url] };

@@ -1317,10 +1317,6 @@ describe("revertToPreRun", () => {
     expect(await readFile(join(dataRoot, "wiki", "index.md"), "utf8")).toBe(
       page("# Index\n"),
     );
-
-    await readFile(join(dataRoot, "wiki", "new.md"), "utf8").catch(
-      () => undefined,
-    );
   });
 
   it("restores tracked raw notes to their committed bytes", async () => {
@@ -1341,10 +1337,6 @@ describe("revertToPreRun", () => {
     expect(
       await readFile(join(dataRoot, "raw", "notes", "src.md"), "utf8"),
     ).toBe("# src\n");
-
-    await readFile(join(dataRoot, "wiki", "new.md"), "utf8").catch(
-      () => undefined,
-    );
   });
 
   it("removes files the run created", async () => {
@@ -1493,10 +1485,6 @@ describe("revertToPreRun", () => {
     expect(
       await readFile(join(dataRoot, "raw", "notes", "src.md"), "utf8"),
     ).toBe("# src\n");
-
-    await readFile(join(dataRoot, "outputs", "src.md"), "utf8").catch(
-      () => undefined,
-    );
   });
 
   it("removes the renamed copy from outputs", async () => {
@@ -1540,10 +1528,6 @@ describe("revertToPreRun", () => {
 
     expect(await readFile(join(dataRoot, "outputs", "y.md"), "utf8")).toBe(
       "# src\n",
-    );
-
-    await readFile(join(dataRoot, "raw", "notes", "src.md"), "utf8").catch(
-      () => undefined,
     );
   });
 

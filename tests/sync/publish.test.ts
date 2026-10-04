@@ -116,7 +116,7 @@ describe("runPublishStage", () => {
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("counts only the published pages", async () => {
+  it("leaves the sandbox namespace out of the published count", async () => {
     const tree = await makeTree();
 
     await mkdir(join(tree.dataRoot, "wiki", "sandbox"), {
@@ -129,11 +129,6 @@ describe("runPublishStage", () => {
     );
 
     const result = await runPublishStage(optionsFor(tree));
-
-    await readFile(
-      join(tree.mirror, "wiki", "sandbox", "proposal.md"),
-      "utf8",
-    ).catch(() => undefined);
 
     expect(result.copied).toBe(2);
   });
@@ -185,11 +180,6 @@ describe("runPublishStage", () => {
 
     const result = await runPublishStage(optionsFor(tree));
 
-    await readFile(
-      join(tree.mirror, "wiki", "sandbox", "stale.md"),
-      "utf8",
-    ).catch(() => undefined);
-
     expect(result.removed).toBe(1);
   });
 
@@ -217,10 +207,6 @@ describe("runPublishStage", () => {
     );
 
     const result = await runPublishStage(optionsFor(tree));
-
-    await readFile(join(tree.mirror, "wiki", "alias.md"), "utf8").catch(
-      () => undefined,
-    );
 
     expect(result.copied).toBe(2);
   });
@@ -261,8 +247,6 @@ describe("runPublishStage", () => {
     await writeFile(stray, "stale\n");
 
     const result = await runPublishStage(optionsFor(tree));
-
-    await readFile(stray, "utf8").catch(() => undefined);
 
     expect(result.removed).toBe(1);
   });
@@ -396,10 +380,6 @@ describe("runPublishStage", () => {
     await expect(
       readFile(join(tree.mirror, "wiki", ".obsidian", "app.json"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
-
-    await readFile(join(tree.mirror, "wiki", ".DS_Store"), "utf8").catch(
-      () => undefined,
-    );
   });
 
   it("skips .DS_Store on the wiki side", async () => {
@@ -413,17 +393,12 @@ describe("runPublishStage", () => {
 
     await runPublishStage(optionsFor(tree));
 
-    await readFile(
-      join(tree.mirror, "wiki", ".obsidian", "app.json"),
-      "utf8",
-    ).catch(() => undefined);
-
     await expect(
       readFile(join(tree.mirror, "wiki", ".DS_Store"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("counts only the published pages", async () => {
+  it("leaves dotfiles and noise out of the published count", async () => {
     const tree = await makeTree();
 
     await mkdir(join(tree.dataRoot, "wiki", ".obsidian"), { recursive: true });
@@ -433,15 +408,6 @@ describe("runPublishStage", () => {
     await writeFile(join(tree.dataRoot, "wiki", ".DS_Store"), "junk");
 
     const result = await runPublishStage(optionsFor(tree));
-
-    await readFile(
-      join(tree.mirror, "wiki", ".obsidian", "app.json"),
-      "utf8",
-    ).catch(() => undefined);
-
-    await readFile(join(tree.mirror, "wiki", ".DS_Store"), "utf8").catch(
-      () => undefined,
-    );
 
     expect(result.copied).toBe(2);
   });
@@ -458,11 +424,6 @@ describe("runPublishStage", () => {
     await expect(
       readFile(join(tree.mirror, "wiki", "index.md"), "utf8"),
     ).resolves.toBe("# Index\n");
-
-    await readFile(
-      join(tree.mirror, "wiki", "concepts", "stub.md"),
-      "utf8",
-    ).catch(() => undefined);
   });
 
   it("withholds pages outside the include subset", async () => {
@@ -530,8 +491,6 @@ describe("runPublishStage", () => {
     await expect(readFile(join(tree.mirror, "index.md"), "utf8")).resolves.toBe(
       "# Index\n",
     );
-
-    await stat(join(tree.mirror, "wiki")).catch(() => undefined);
   });
 
   it("re-bases concept paths by stripping the configured root", async () => {
@@ -542,8 +501,6 @@ describe("runPublishStage", () => {
     await expect(
       readFile(join(tree.mirror, "concepts", "stub.md"), "utf8"),
     ).resolves.toBe("stub\n");
-
-    await stat(join(tree.mirror, "wiki")).catch(() => undefined);
   });
 
   it("leaves no verbatim wiki tree behind", async () => {
@@ -560,8 +517,6 @@ describe("runPublishStage", () => {
     const tree = await makeTree();
 
     const result = await runPublishStage({ ...optionsFor(tree), root: "wiki" });
-
-    await stat(join(tree.mirror, "wiki")).catch(() => undefined);
 
     expect(result.copied).toBe(2);
   });
@@ -601,8 +556,6 @@ describe("runPublishStage", () => {
 
     await runPublishStage({ ...optionsFor(tree), root: "wiki" });
 
-    await stat(join(tree.mirror, "wiki")).catch(() => undefined);
-
     await expect(readFile(join(tree.mirror, "index.md"), "utf8")).resolves.toBe(
       "# Index\n",
     );
@@ -623,8 +576,6 @@ describe("runPublishStage", () => {
 
     await runPublishStage({ ...optionsFor(tree), root: "wiki" });
 
-    await stat(join(tree.mirror, "wiki")).catch(() => undefined);
-
     await expect(
       readFile(join(tree.mirror, ".obsidian", "state.json"), "utf8"),
     ).resolves.toBe("{}");
@@ -644,8 +595,6 @@ describe("runPublishStage", () => {
     await writeFile(join(tree.mirror, ".obsidian", "state.json"), "{}");
 
     const result = await runPublishStage({ ...optionsFor(tree), root: "wiki" });
-
-    await stat(join(tree.mirror, "wiki")).catch(() => undefined);
 
     expect(result).toEqual({ copied: 2, removed: 2 });
   });

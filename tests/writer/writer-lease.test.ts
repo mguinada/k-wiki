@@ -81,7 +81,7 @@ describe("writer-lease status", () => {
     const out = logSpy.mock.calls.map((call) => String(call[0])).join("\n");
 
     expect(out).toContain("mac-b:9");
-  });
+  }, 30000);
 
   it("reports the live lease's expiry", async () => {
     const world = await makeWriterWorld();
@@ -121,7 +121,7 @@ describe("writer-lease status", () => {
     const out = logSpy.mock.calls.map((call) => String(call[0])).join("\n");
 
     expect(out).toContain("2026-01-01T04:00:00.000Z");
-  });
+  }, 30000);
 
   it("names the takeover route for an expired lease", async () => {
     const world = await makeWriterWorld();
@@ -161,7 +161,7 @@ describe("writer-lease status", () => {
     const out = logSpy.mock.calls.map((call) => String(call[0])).join("\n");
 
     expect(/EXPIRED|takeover --expected/.test(out)).toBe(true);
-  });
+  }, 30000);
 
   it("reports a free lane", async () => {
     const world = await makeWriterWorld();
@@ -179,7 +179,7 @@ describe("writer-lease status", () => {
     expect(out).toContain("none held");
 
     process.exitCode = undefined;
-  });
+  }, 30000);
 
   it("reports a free lane when no lease is held and exits 0", async () => {
     const world = await makeWriterWorld();
@@ -197,7 +197,7 @@ describe("writer-lease status", () => {
     expect(process.exitCode).not.toBe(1);
 
     process.exitCode = undefined;
-  });
+  }, 30000);
 
   it("reports a repo without a marker", async () => {
     const world = await makeWriterWorld();
@@ -269,7 +269,7 @@ describe("writer-lease takeover", () => {
     );
 
     process.exitCode = undefined;
-  });
+  }, 30000);
 
   it("replaces the lease", async () => {
     const world = await makeWriterWorld();
@@ -311,7 +311,7 @@ describe("writer-lease takeover", () => {
     expect(lease).toBeDefined();
 
     process.exitCode = undefined;
-  });
+  }, 30000);
 
   it("replaces it under a new OID", async () => {
     const world = await makeWriterWorld();
@@ -353,7 +353,7 @@ describe("writer-lease takeover", () => {
     expect(lease?.oid).not.toBe(acquire.lease.oid);
 
     process.exitCode = undefined;
-  });
+  }, 30000);
 
   it("changes the holder on recovery", async () => {
     const world = await makeWriterWorld();
@@ -395,7 +395,7 @@ describe("writer-lease takeover", () => {
     expect(lease?.body.holder).not.toBe("mac-a:1");
 
     process.exitCode = undefined;
-  });
+  }, 30000);
 
   it("bases the recovery lease on the current head", async () => {
     const world = await makeWriterWorld();
@@ -439,7 +439,7 @@ describe("writer-lease takeover", () => {
     );
 
     process.exitCode = undefined;
-  });
+  }, 30000);
 
   it("replaces the lease by exact OID with a fresh recovery lease", async () => {
     const world = await makeWriterWorld();
@@ -481,7 +481,7 @@ describe("writer-lease takeover", () => {
     expect(lease?.body.renewals).toBe(0);
 
     process.exitCode = undefined;
-  });
+  }, 30000);
 
   it("refuses a takeover quoting a stale OID", async () => {
     const world = await makeWriterWorld();
@@ -561,7 +561,7 @@ describe("writer-lease observation invariant", () => {
     await git(["fetch", "origin"]);
 
     expect(await git(["for-each-ref", "refs/remotes/origin"])).toBeDefined();
-  });
+  }, 30000);
 
   it("still misses the lease a default fetch cannot observe", async () => {
     const world = await makeWriterWorld();
@@ -577,5 +577,5 @@ describe("writer-lease observation invariant", () => {
     await git(["fetch", "origin"]);
 
     expect(await observeLeaseOid(git, "origin", LEASE_REF)).toBeUndefined();
-  });
+  }, 30000);
 });

@@ -1654,8 +1654,6 @@ describe("runVaultSync repo-source rejection", () => {
     );
 
     await expect(runVaultSync({ configPath, rawDir })).rejects.toThrow();
-
-    await stat(rawDir).catch(() => undefined);
   });
 
   it("writes nothing to the raw dir", async () => {

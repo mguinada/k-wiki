@@ -656,8 +656,6 @@ describe("runScheduledCycle", () => {
 
     expect(outcome).toEqual({ status: "ok" });
 
-    await readFile(lockPath, "utf8").catch(() => undefined);
-
     await rm(dir, { recursive: true, force: true });
   });
 
@@ -684,8 +682,6 @@ describe("runScheduledCycle", () => {
       ["wiki-sync", "--settings", "/x/settings.yml"],
       ["push"],
     ]);
-
-    await readFile(lockPath, "utf8").catch(() => undefined);
 
     await rm(dir, { recursive: true, force: true });
   });
@@ -931,8 +927,6 @@ describe("runScheduledCycle", () => {
 
     expect(outcome).toEqual({ status: "failed", error: "lint failed" });
 
-    await readFile(lockPath, "utf8").catch(() => undefined);
-
     await rm(dir, { recursive: true, force: true });
   });
 
@@ -960,8 +954,6 @@ describe("runScheduledCycle", () => {
       ["pull", "--rebase"],
     ]);
 
-    await readFile(lockPath, "utf8").catch(() => undefined);
-
     await rm(dir, { recursive: true, force: true });
   });
 
@@ -984,8 +976,6 @@ describe("runScheduledCycle", () => {
     });
 
     expect(lines.join("\n")).toContain("lint failed");
-
-    await readFile(lockPath, "utf8").catch(() => undefined);
 
     await rm(dir, { recursive: true, force: true });
   });
@@ -2710,10 +2700,6 @@ describe("runScheduledCycle heartbeat (issue #362)", () => {
     });
 
     expect(outcome.status).toBe("skipped");
-
-    await readFile(join(dir, "outputs", "last-cycle.json"), "utf8").catch(
-      () => undefined,
-    );
 
     await releaseLock(lockPath);
 

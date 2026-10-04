@@ -72,7 +72,7 @@ describe("wiki-promote main", () => {
     process.exitCode = 0;
   });
 
-  it("exits 1", async () => {
+  it("exits 1 when the slug is missing", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
 
     await main(["--sources", "rag-notes"]);
@@ -92,7 +92,7 @@ describe("wiki-promote main", () => {
     process.exitCode = 0;
   });
 
-  it("exits 1", async () => {
+  it("exits 1 when --sources is missing", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
 
     await main(["attention-notes"]);
