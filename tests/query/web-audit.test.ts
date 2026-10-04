@@ -147,6 +147,39 @@ describe("reconcileWebSources", () => {
     expect(reconciliation.sources).toEqual([]);
   });
 
+  it("fails an uncited source_check call", () => {
+    const check: WebCall = {
+      tool: "source_check",
+      target: "https://example.com/source",
+      results: 2,
+      timestamp: 1791000002000,
+      urls: ["https://example.com/source"],
+      failed: false,
+    };
+    const reconciliation = reconcileWebSources(
+      "- [a](https://example.com/a) (retrieved 2026-10-03).",
+      [fetchCall, check],
+    );
+
+    expect(reconciliation.failure).toContain(
+      "uncited web call: source_check https://example.com/source",
+    );
+  });
+
+  it("keeps an uncited search exempt from the uncited-call rule", () => {
+    const search: WebCall = {
+      tool: "web_search",
+      target: "topic",
+      results: 5,
+      timestamp: 1791000000000,
+      urls: ["https://example.com/unused"],
+      failed: false,
+    };
+    const reconciliation = reconcileWebSources("- nothing cited.", [search]);
+
+    expect(reconciliation.failure).toBeUndefined();
+  });
+
   it("credits a search entry whose returned URL the enrichment cites", () => {
     const search: WebCall = {
       tool: "web_search",

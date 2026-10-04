@@ -314,8 +314,8 @@ export interface WebReconciliation {
 
 /** Reconcile the enrichment against the audit, both directions: a
  *  cited URL the audit cannot account for is a build failure, and a
- *  fetch whose target was never cited is an uncited call (failed
- *  fetches exposed nothing and are exempt). */
+ *  call whose exposed URLs were never cited is an uncited call (the
+ *  query-targeted search and failed calls are exempt). */
 export function reconcileWebSources(
   enrichment: string,
   calls: readonly WebCall[],
@@ -333,7 +333,7 @@ export function reconcileWebSources(
 
   for (const call of calls) {
     const uncited =
-      call.tool === "fetch_content" &&
+      call.tool !== "web_search" &&
       !call.failed &&
       call.urls.length > 0 &&
       !call.urls.some((url) => cited.includes(url));
