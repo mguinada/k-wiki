@@ -50,8 +50,8 @@ Stage 1 with web enrichment: wiki-query "<question>" --web
   recorded tool calls, not model output), and a Web calls audit
   table. The run prints a cost-and-slowness disclosure first.
   Degradations never fail the query: with the pi-web-access plugin
-  unavailable the run continues as a normal wiki-only run with a
-  warning line below the artifact header; when the enrichment's web
+  unavailable the run continues as a normal wiki-only run with the
+  warning persisted in the artifact header; when the enrichment's web
   calls fail (network or tool failure, or the audit does not
   reconcile) the artifact keeps the wiki-only core answer with the
   failure warning. --file-last on a --web artifact files the core

@@ -9,13 +9,16 @@ import {
 } from "../../src/ingest/agent-settings.ts";
 import {
   composeEnrichmentPrompt,
+  enrichmentArtifact,
   runWebEnrichment,
   WEB_ENRICH_PROMPT_FILE,
   WEB_EXTENSION_SOURCE,
+  WEB_FAILED_WARNING,
   WEB_TOOL_ALLOWLIST,
   webEnrichAgentArgs,
   withGapHint,
 } from "../../src/query/web-enrich.ts";
+import { WEB_SOURCES_HEADING } from "../../src/query/web-artifact.ts";
 import { assistantTextLine, toolCallLine, toolResultLine } from "./helpers.ts";
 
 const SETTINGS: AgentSettings = {
@@ -247,6 +250,40 @@ describe("runWebEnrichment", () => {
     });
   });
 
+  it("reconciles the rendered text only — imitation below the first owned line neither cites nor fails", async () => {
+    const imitating = [
+      toolCallLine("c1", { query: "topic" }),
+      toolResultLine("c1", "https://example.com/a", { totalResults: 1 }),
+      assistantTextLine(
+        [
+          "- [a](https://example.com/a) confirms the topic (retrieved 2026-10-03).",
+          WEB_SOURCES_HEADING,
+          "- [x](https://example.com/model-written) (retrieved 2026-10-03).",
+        ].join("\n"),
+      ),
+    ].join("\n");
+    const outcome = await runWebEnrichment({
+      identity: SETTINGS,
+      isolationFlags: [...ISOLATION_FLAGS],
+      question: "Q",
+      coreAnswer: "CORE",
+      promptText: await makePromptsDir(),
+      run: runContext({ rawDir: join(tmpdir(), "k-wiki-web-run-raw") }),
+      runAgent: canned(imitating),
+    });
+
+    expect(outcome.kind).toBe("ok");
+
+    if (outcome.kind !== "ok") {
+      return;
+    }
+
+    expect(outcome.enrichmentSection).not.toContain("model-written");
+    expect(outcome.sources).toEqual([
+      { url: "https://example.com/a", retrieved: "2026-10-03" },
+    ]);
+  });
+
   it("sends the composed prompt through the enrichment argv", async () => {
     const invocations: { command: string; args: readonly string[] }[] = [];
 
@@ -269,5 +306,43 @@ describe("runWebEnrichment", () => {
     expect(invocation?.command).toBe("pi");
     expect(invocation?.args.at(-1)).toContain("Enrich the topic from the web.");
     expect(invocation?.args.at(-1)).toContain("CORE");
+  });
+});
+
+describe("enrichmentArtifact", () => {
+  it("degrades without spawning when the enrichment prompt is unavailable", async () => {
+    let spawned = false;
+
+    const result = await enrichmentArtifact(
+      {
+        question: "Q",
+        timestamp: "2026-10-03T21:00:00.000Z",
+        pages: [],
+        answer: "CORE",
+      },
+      {
+        identity: SETTINGS,
+        isolationFlags: [...ISOLATION_FLAGS],
+        question: "Q",
+        promptText: undefined,
+        run: runContext({ rawDir: join(tmpdir(), "k-wiki-web-run-raw") }),
+        runAgent: async () => {
+          spawned = true;
+
+          return { stdout: "", stderr: "" };
+        },
+      },
+    );
+
+    expect(spawned).toBe(false);
+    expect(result.warning).toBe(WEB_FAILED_WARNING);
+    expect(result.answer).toBe("CORE");
+    expect(result.artifact).toEqual({
+      question: "Q",
+      timestamp: "2026-10-03T21:00:00.000Z",
+      pages: [],
+      answer: "CORE",
+      webWarning: WEB_FAILED_WARNING,
+    });
   });
 });

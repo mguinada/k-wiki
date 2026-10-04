@@ -41,8 +41,10 @@ export interface WebArtifactSections {
 /** Strip everything the machinery owns from model output: at the
  *  first machine-owned line — a section heading, the partition
  *  separator, or the label — the model's text ends; whatever
- *  followed is section imitation the machinery recomputes anyway. */
-function sanitizeEnrichment(text: string): string {
+ *  followed is section imitation the machinery recomputes anyway.
+ *  The enrichment's one text boundary: both the rendered section
+ *  and the sources reconciliation consume its result. */
+export function sanitizeEnrichment(text: string): string {
   const owned = [
     WEB_ENRICHMENT_HEADING,
     WEB_SOURCES_HEADING,
@@ -99,14 +101,16 @@ export function renderWebAuditSection(calls: readonly WebCall[]): string {
 }
 
 /** The `## Web enrichment` section: the machine heading and label,
- *  then the sanitized model bullets. */
+ *  then the model bullets as given — the caller passes them through
+ *  sanitizeEnrichment, so what is rendered and what is reconciled
+ *  is the same text. */
 export function renderWebEnrichmentSection(enrichment: string): string {
   return [
     WEB_ENRICHMENT_HEADING,
     "",
     WEB_ENRICHMENT_LABEL,
     "",
-    sanitizeEnrichment(enrichment),
+    enrichment,
   ].join("\n");
 }
 

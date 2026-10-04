@@ -3,6 +3,7 @@ import {
   renderWebAuditSection,
   renderWebEnrichmentSection,
   renderWebSourcesSection,
+  sanitizeEnrichment,
   WEB_ENRICHMENT_HEADING,
   WEB_ENRICHMENT_LABEL,
   WEB_PARTITION_SEPARATOR,
@@ -25,7 +26,7 @@ describe("section renderers", () => {
   });
 
   it("strips machine-owned headings and separators the model imitated", () => {
-    const section = renderWebEnrichmentSection(
+    const sanitized = sanitizeEnrichment(
       [
         "- real bullet",
         "",
@@ -39,10 +40,7 @@ describe("section renderers", () => {
       ].join("\n"),
     );
 
-    expect(section).not.toContain(WEB_SOURCES_HEADING);
-    expect(section).not.toContain("model-written");
-    expect(section).not.toContain(WEB_PARTITION_SEPARATOR);
-    expect(section).toContain("- real bullet");
+    expect(sanitized).toBe("- real bullet");
   });
 
   it("lists each source with its retrieval date", () => {

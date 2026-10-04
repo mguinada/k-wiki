@@ -1666,7 +1666,7 @@ omitted flag can never produce wiki writes:
   retrieval timestamp. The flag prints a cost-and-slowness
   disclosure first, and its degradations never fail the query: with
   the plugin unavailable the run continues as a normal wiki-only run
-  with a warning line below the artifact header; when the
+  with the warning persisted in the artifact header; when the
   enrichment's web calls fail or the audit does not reconcile, the
   artifact keeps the wiki-only core answer with the failure warning.
   `--file-last` on a `--web` artifact files the core answer only —

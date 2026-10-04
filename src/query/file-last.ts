@@ -49,8 +49,8 @@ export interface QueryArtifact {
   readonly webSources?: number;
   /** Web retrieval timestamp of a `--web` artifact, ISO 8601. */
   readonly webRetrieved?: string;
-  /** A degraded `--web` run's warning line, persisted below the
-   *  header and excluded from the answer (never filed). */
+  /** A degraded `--web` run's warning line, persisted as a header
+   *  value and excluded from the answer (never filed). */
   readonly webWarning?: string;
   /** The machine-owned web sections of a `--web` artifact, in
    *  artifact order, each including its heading. */
@@ -143,31 +143,25 @@ function webArtifact(
   };
 }
 
-/** The plain or degraded body: a WARNING line below the header is
- *  the degraded run's warning, kept out of the answer. */
+/** The plain or degraded body: the answer alone — the degraded
+ *  run's warning travels in the `webWarning` header, so machinery
+ *  markers and answer text can never collide. */
 function plainArtifact(
   core: CoreHeaders,
-  bodyLines: readonly string[],
   body: string,
+  webWarning: string | undefined,
 ): QueryArtifact {
-  if (bodyLines[0]?.startsWith("WARNING — ")) {
-    const answer = bodyLines
-      .slice(1)
-      .join("\n")
-      .replace(/^\n/, "")
-      .replace(/\n$/, "");
-
-    return { ...core, answer, webWarning: bodyLines[0] };
-  }
-
-  return { ...core, answer: body };
+  return webWarning === undefined
+    ? { ...core, answer: body }
+    : { ...core, answer: body, webWarning };
 }
 
 /**
  * Render the artifact: a frontmatter block (single-line JSON values,
- * so any question round-trips) and the body — the partitioned `--web`
- * structure with its extra header keys, else the degraded warning
- * line, else the plain answer.
+ * so any question round-trips; the degraded `--web` warning is a
+ * header value, never body text) and the body — the partitioned
+ * `--web` structure with its extra header keys, else the plain
+ * answer.
  */
 export function renderQueryArtifact(artifact: QueryArtifact): string {
   return [
@@ -184,6 +178,9 @@ export function renderQueryArtifact(artifact: QueryArtifact): string {
     ...(artifact.webRetrieved === undefined
       ? []
       : [`webRetrieved: ${JSON.stringify(artifact.webRetrieved)}`]),
+    ...(artifact.webWarning === undefined
+      ? []
+      : [`webWarning: ${JSON.stringify(artifact.webWarning)}`]),
     "---",
     "",
     artifactBody(artifact),
@@ -192,17 +189,12 @@ export function renderQueryArtifact(artifact: QueryArtifact): string {
 }
 
 /** The artifact body: the partitioned `--web` shape, else the
- *  degraded warning line above the answer, else the answer alone —
- *  exactly the shape the plain render has always produced. */
+ *  answer alone — the degraded warning travels in the header. */
 export function artifactBody(artifact: QueryArtifact): string {
   const web = artifact.web;
 
   if (web !== undefined) {
     return renderWebArtifactBody(artifact.answer, web);
-  }
-
-  if (artifact.webWarning !== undefined) {
-    return [artifact.webWarning, "", artifact.answer].join("\n");
   }
 
   return artifact.answer;
@@ -211,7 +203,7 @@ export function artifactBody(artifact: QueryArtifact): string {
 /** One frontmatter header line split into its key and JSON value. */
 function parseHeaderLine(line: string): { key: string; value: string } {
   const match =
-    /^(question|mode|timestamp|pages|webSources|webRetrieved): (.+)$/.exec(
+    /^(question|mode|timestamp|pages|webSources|webRetrieved|webWarning): (.+)$/.exec(
       line,
     );
 
@@ -239,6 +231,7 @@ interface HeaderBag {
   pages?: readonly string[];
   webSources?: number;
   webRetrieved?: string;
+  webWarning?: string;
 }
 
 type HeaderBagKey = keyof HeaderBag;
@@ -250,6 +243,7 @@ const HEADER_KEYS: readonly HeaderBagKey[] = [
   "pages",
   "webSources",
   "webRetrieved",
+  "webWarning",
 ];
 
 /** Assign one header line's parsed value into the bag when the key
@@ -302,10 +296,11 @@ function readHeaders(lines: readonly string[]): HeaderBag {
 
 /**
  * Parse the artifact text. Strict: exactly the header keys with
- * JSON values, a closed frontmatter block, and one of three body
- * shapes — the plain answer, the partitioned `--web` structure (all
- * three web sections required), or the degraded warning line above
- * a plain answer. Everything else is `not a wiki-query artifact`.
+ * JSON values, a closed frontmatter block, and one of two body
+ * shapes — the plain answer, or the partitioned `--web` structure
+ * (all three web sections required; a degraded run's warning is the
+ * `webWarning` header). Everything else is `not a wiki-query
+ * artifact`.
  */
 export function parseQueryArtifact(text: string): QueryArtifact {
   const lines = text.split("\n");
@@ -324,7 +319,7 @@ export function parseQueryArtifact(text: string): QueryArtifact {
     throw headerError("malformed partitioned web body");
   }
 
-  return plainArtifact(core, bodyLines, body);
+  return plainArtifact(core, body, bag.webWarning);
 }
 
 /** Read and parse the artifact; missing file names the remedy. */

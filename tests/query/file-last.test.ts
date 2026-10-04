@@ -1713,14 +1713,35 @@ describe("degraded --web artifacts", () => {
     expect(parseQueryArtifact(text)).toEqual(DEGRADED);
   });
 
-  it("persists the warning line below the header, outside the answer", () => {
+  it("persists the warning in the header, never in the body", () => {
     const text = renderQueryArtifact(DEGRADED);
     const lines = text.split("\n");
-    const warning = DEGRADED.webWarning ?? "";
+    const close = lines.indexOf("---", 1);
 
-    expect(lines[lines.indexOf(warning) - 1]).toBe("");
-    expect(lines[lines.indexOf(warning) - 2]).toBe("---");
-    expect(parseQueryArtifact(text).answer).toBe(ANSWER);
+    expect(lines.slice(1, close)).toContain(
+      `webWarning: ${JSON.stringify(DEGRADED.webWarning)}`,
+    );
+    expect(lines.slice(close + 1).join("\n").trim()).toBe(ANSWER);
+  });
+
+  it("parses a plain answer that itself starts with WARNING as plain, not degraded", () => {
+    const answer = "WARNING — wiki/pages/x.md and raw/ disagree on the title.";
+
+    expect(
+      parseQueryArtifact(
+        renderQueryArtifact({
+          question: QUESTION,
+          timestamp: "2026-10-03T21:00:00.000Z",
+          pages: [],
+          answer,
+        }),
+      ),
+    ).toEqual({
+      question: QUESTION,
+      timestamp: "2026-10-03T21:00:00.000Z",
+      pages: [],
+      answer,
+    });
   });
 
   it("files the answer without the warning line", async () => {

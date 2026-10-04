@@ -14,6 +14,7 @@ import {
   renderWebAuditSection,
   renderWebEnrichmentSection,
   renderWebSourcesSection,
+  sanitizeEnrichment,
   WEB_MODE,
   type WebArtifactSections,
 } from "./web-artifact.ts";
@@ -232,21 +233,23 @@ export async function runWebEnrichment(
 
   const parsed = parseAgentJsonStream(stdout);
 
-  if (parsed.enrichment === "") {
+  const enrichment = sanitizeEnrichment(parsed.enrichment);
+
+  if (enrichment === "") {
     return {
       kind: "failed",
       reason: "the enrichment run produced no output",
     };
   }
 
-  const reconciliation = reconcileWebSources(parsed.enrichment, parsed.calls);
+  const reconciliation = reconcileWebSources(enrichment, parsed.calls);
 
   if (reconciliation.failure !== undefined) {
     return { kind: "failed", reason: reconciliation.failure };
   }
 
   const web: WebArtifactSections = {
-    enrichment: renderWebEnrichmentSection(parsed.enrichment),
+    enrichment: renderWebEnrichmentSection(enrichment),
     sources: renderWebSourcesSection(reconciliation.sources),
     audit: renderWebAuditSection(parsed.calls),
   };
@@ -289,17 +292,22 @@ export async function enrichmentArtifact(
 ): Promise<{ artifact: QueryArtifact; answer: string; warning?: string }> {
   const { run } = options;
 
-  const outcome = await runWebEnrichment({
-    identity: options.identity,
-    isolationFlags: options.isolationFlags,
-    question: options.question,
-    coreAnswer: core.answer,
-    promptText:
-      options.promptText ?? `(${WEB_ENRICH_PROMPT_FILE} is unavailable)`,
-    run,
-    runAgent: options.runAgent,
-    timeoutMs: options.timeoutMs,
-  });
+  const outcome: WebEnrichmentOutcome =
+    options.promptText === undefined
+      ? {
+          kind: "failed",
+          reason: `${WEB_ENRICH_PROMPT_FILE} is unavailable`,
+        }
+      : await runWebEnrichment({
+          identity: options.identity,
+          isolationFlags: options.isolationFlags,
+          question: options.question,
+          coreAnswer: core.answer,
+          promptText: options.promptText,
+          run,
+          runAgent: options.runAgent,
+          timeoutMs: options.timeoutMs,
+        });
 
   if (outcome.kind === "failed") {
     run.onProgress(`wiki-query: enrichment failed — ${outcome.reason}`);
