@@ -1295,7 +1295,7 @@ describe("failure-rule lease retention", () => {
           // A foreign writer CAS-replaces the live lease out from
           // under the session: the retention push must lose its
           // exact-OID race.
-          const foreign = await replaceLease({
+          await replaceLease({
             git: world.b.git,
             remote: "origin",
             leaseRef: LEASE_REF,
