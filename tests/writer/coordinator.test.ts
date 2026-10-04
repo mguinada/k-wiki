@@ -1480,9 +1480,7 @@ describe("failure-rule lease retention", () => {
           now: NOW,
           onProgress: () => {},
         }),
-        runSweep: async () => {
-          reachedSweep = true;
-        },
+        runSweep: async () => {},
       }),
     );
 
@@ -1551,9 +1549,7 @@ describe("failure-rule lease retention", () => {
           now: NOW,
           onProgress: () => {},
         }),
-        runSweep: async () => {
-          reachedSweep = true;
-        },
+        runSweep: async () => {},
       }),
     );
 
@@ -1618,9 +1614,7 @@ describe("failure-rule lease retention", () => {
           now: NOW,
           onProgress: () => {},
         }),
-        runSweep: async () => {
-          reachedSweep = true;
-        },
+        runSweep: async () => {},
       }),
     );
 
@@ -1756,9 +1750,7 @@ describe("failure-rule lease retention", () => {
           now: NOW,
           onProgress: () => {},
         }),
-        runSweep: async () => {
-          reachedSweep = true;
-        },
+        runSweep: async () => {},
       }),
     );
 

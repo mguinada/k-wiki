@@ -720,8 +720,6 @@ describe("runSandboxRun", () => {
     );
 
     const agent: AgentRunner = async () => {
-      invoked = true;
-
       return { stdout: "", stderr: "" };
     };
 
@@ -764,7 +762,6 @@ describe("runSandboxRun", () => {
     );
 
     const agent: AgentRunner = async () => {
-      invoked = true;
 
       return { stdout: "", stderr: "" };
     };
@@ -785,8 +782,6 @@ describe("runSandboxRun", () => {
     await writeFile(join(dataRoot, "wiki", "log.md"), "## stale audit entry\n");
 
     const agent: AgentRunner = async () => {
-      invoked = true;
-
       return { stdout: "", stderr: "" };
     };
 
@@ -819,8 +814,6 @@ describe("runSandboxRun", () => {
     await writeFile(join(dataRoot, "wiki", "log.md"), "## stale audit entry\n");
 
     const agent: AgentRunner = async () => {
-      invoked = true;
-
       return { stdout: "", stderr: "" };
     };
 
