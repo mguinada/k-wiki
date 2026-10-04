@@ -44,10 +44,60 @@ describe("fetchBoardState", () => {
       return responses.shift() as unknown;
     };
 
-    const state = await fetchBoardState(graphql, "mguinada", 2);
+    await fetchBoardState(graphql, "mguinada", 2);
 
     expect(cursors).toEqual(["null", "c1"]);
+  });
+
+  it("collects the items of every page", async () => {
+    const responses = [
+      {
+        data: {
+          user: {
+            projectV2: {
+              id: "PVT_1",
+              items: {
+                pageInfo: { hasNextPage: true, endCursor: "c1" },
+                nodes: [issueNode({ id: "I1", number: 1, status: "Backlog" })],
+              },
+              field: STATUS_FIELD,
+            },
+          },
+        },
+      },
+      boardPage([issueNode({ id: "I2", number: 2, status: "Ready" })]),
+    ];
+    const graphql: GraphQLFn = async (_query, variables) =>
+      responses.shift() as unknown;
+
+    const state = await fetchBoardState(graphql, "mguinada", 2);
+
     expect(state.items.map((item) => item.number)).toEqual([1, 2]);
+  });
+
+  it("reads the project id from the first page", async () => {
+    const responses = [
+      {
+        data: {
+          user: {
+            projectV2: {
+              id: "PVT_1",
+              items: {
+                pageInfo: { hasNextPage: true, endCursor: "c1" },
+                nodes: [issueNode({ id: "I1", number: 1, status: "Backlog" })],
+              },
+              field: STATUS_FIELD,
+            },
+          },
+        },
+      },
+      boardPage([issueNode({ id: "I2", number: 2, status: "Ready" })]),
+    ];
+    const graphql: GraphQLFn = async (_query, variables) =>
+      responses.shift() as unknown;
+
+    const state = await fetchBoardState(graphql, "mguinada", 2);
+
     expect(state.ids.projectId).toBe("PVT_1");
   });
 
@@ -233,18 +283,32 @@ function mixedBoard() {
 describe("runBoardTriage", () => {
   const OPTIONS = { owner: "mguinada", projectNumber: 2, dryRun: false };
 
-  it("plans every move and stay with its evidence clause without writing in dry run", async () => {
-    const { graphql, mutations } = fakeBoard(mixedBoard());
+  it("plans every move and stay with its evidence clause in a dry run", async () => {
+    const { graphql } = fakeBoard(mixedBoard());
 
     const report = await runBoardTriage(graphql, { ...OPTIONS, dryRun: true });
 
-    expect(report.dryRun).toBe(true);
-    expect(mutations).toEqual([]);
     expect(report.lines.map((line) => line.text)).toEqual([
       "#101 Backlog → Ready — unblocked, no research label",
       "#102 stays Backlog — blocked by open #9",
       "#103 In progress → Done — issue closed",
     ]);
+  });
+
+  it("writes nothing in a dry run", async () => {
+    const { graphql, mutations } = fakeBoard(mixedBoard());
+
+    await runBoardTriage(graphql, { ...OPTIONS, dryRun: true });
+
+    expect(mutations).toEqual([]);
+  });
+
+  it("flags the report as a dry run", async () => {
+    const { graphql } = fakeBoard(mixedBoard());
+
+    const report = await runBoardTriage(graphql, { ...OPTIONS, dryRun: true });
+
+    expect(report.dryRun).toBe(true);
   });
 
   it("ends a dry run with a summary line that names it", async () => {
@@ -255,14 +319,21 @@ describe("runBoardTriage", () => {
     expect(report.summary).toBe(
       "board-triage: 2 moves, 1 stay, 1 untouched — dry run, no writes",
     );
+  });
+
+  it("ends a dry run ok", async () => {
+    const { graphql } = fakeBoard(mixedBoard());
+
+    const report = await runBoardTriage(graphql, { ...OPTIONS, dryRun: true });
+
     expect(report.ok).toBe(true);
   });
 
-  it("applies each planned move with the freshly resolved ids and reports it verified", async () => {
+  it("applies each planned move with the freshly resolved ids", async () => {
     const nodes = mixedBoard();
     const { graphql, mutations } = fakeBoard(nodes);
 
-    const report = await runBoardTriage(graphql, OPTIONS);
+    await runBoardTriage(graphql, OPTIONS);
 
     expect(mutations).toEqual([
       {
@@ -278,54 +349,137 @@ describe("runBoardTriage", () => {
         optionId: "o-done",
       },
     ]);
+  });
+
+  it("lands the first move's status on the board", async () => {
+    const nodes = mixedBoard();
+    const { graphql } = fakeBoard(nodes);
+
+    await runBoardTriage(graphql, OPTIONS);
+
     expect(nodes[0]?.fieldValueByName).toEqual({
       name: "Ready",
       optionId: "o-ready",
     });
+  });
+
+  it("lands the second move's status on the board", async () => {
+    const nodes = mixedBoard();
+    const { graphql } = fakeBoard(nodes);
+
+    await runBoardTriage(graphql, OPTIONS);
+
     expect(nodes[2]?.fieldValueByName).toEqual({
       name: "Done",
       optionId: "o-done",
     });
+  });
+
+  it("reports a fully applied run ok", async () => {
+    const nodes = mixedBoard();
+    const { graphql } = fakeBoard(nodes);
+
+    const report = await runBoardTriage(graphql, OPTIONS);
+
     expect(report.ok).toBe(true);
+  });
+
+  it("summarizes the applied run with its move count", async () => {
+    const nodes = mixedBoard();
+    const { graphql } = fakeBoard(nodes);
+
+    const report = await runBoardTriage(graphql, OPTIONS);
+
     expect(report.summary).toBe(
       "board-triage: 2 moves, 1 stay, 1 untouched — verified against the board (0 reconciled)",
     );
   });
 
-  it("reconciles a lost write by one retry and reports it reconciled", async () => {
+  it("retries a lost write once", async () => {
     const { graphql, mutations } = fakeBoard(mixedBoard(), {
+      failFirst: ["I1"],
+    });
+
+    await runBoardTriage(graphql, OPTIONS);
+
+    expect(mutations.filter((call) => call.itemId === "I1").length).toBe(2);
+  });
+
+  it("reports a reconciled run ok", async () => {
+    const { graphql } = fakeBoard(mixedBoard(), {
       failFirst: ["I1"],
     });
 
     const report = await runBoardTriage(graphql, OPTIONS);
 
-    expect(mutations.filter((call) => call.itemId === "I1").length).toBe(2);
     expect(report.ok).toBe(true);
+  });
+
+  it("reconciles a lost write and names it in the summary", async () => {
+    const { graphql } = fakeBoard(mixedBoard(), {
+      failFirst: ["I1"],
+    });
+
+    const report = await runBoardTriage(graphql, OPTIONS);
+
     expect(report.summary).toContain("(1 reconciled)");
   });
 
-  it("fails the run with an error line when a move never verifies", async () => {
+  it("fails the run when a move never verifies", async () => {
     const { graphql } = fakeBoard(mixedBoard(), { failAlways: ["I1"] });
 
     const report = await runBoardTriage(graphql, OPTIONS);
 
     expect(report.ok).toBe(false);
+  });
+
+  it("explains the unverified move in the last line", async () => {
+    const { graphql } = fakeBoard(mixedBoard(), { failAlways: ["I1"] });
+
+    const report = await runBoardTriage(graphql, OPTIONS);
+
     expect(report.lines.at(-1)?.text).toBe(
       "#101 Backlog → Ready not verified — still on Backlog",
     );
+  });
+
+  it("marks the unverified move's line as an error", async () => {
+    const { graphql } = fakeBoard(mixedBoard(), { failAlways: ["I1"] });
+
+    const report = await runBoardTriage(graphql, OPTIONS);
+
     expect(report.lines.at(-1)?.level).toBe("error");
   });
 
-  it("is idempotent: a second run over the moved board plans zero moves and writes nothing", async () => {
+  it("plans zero moves on a second run over the moved board", async () => {
+    const { graphql } = fakeBoard(mixedBoard());
+
+    await runBoardTriage(graphql, OPTIONS);
+
+    const second = await runBoardTriage(graphql, OPTIONS);
+
+    expect(second.moves).toBe(0);
+  });
+
+  it("runs ok on a second pass over the moved board", async () => {
+    const { graphql } = fakeBoard(mixedBoard());
+
+    await runBoardTriage(graphql, OPTIONS);
+
+    const second = await runBoardTriage(graphql, OPTIONS);
+
+    expect(second.ok).toBe(true);
+  });
+
+  it("writes nothing on a second run over the moved board", async () => {
     const { graphql, mutations } = fakeBoard(mixedBoard());
 
     await runBoardTriage(graphql, OPTIONS);
 
     const before = mutations.length;
-    const second = await runBoardTriage(graphql, OPTIONS);
 
-    expect(second.moves).toBe(0);
-    expect(second.ok).toBe(true);
+    await runBoardTriage(graphql, OPTIONS);
+
     expect(mutations.length).toBe(before);
   });
 
@@ -620,7 +774,7 @@ describe("runBoardTriage mid-failure reporting (issue #245)", () => {
 });
 
 describe("ghGraphQL", () => {
-  it("passes the query and typed variables to gh api graphql and parses its JSON", async () => {
+  it("passes the query and typed variables to gh api graphql", async () => {
     const calls: { args: readonly string[]; env: NodeJS.ProcessEnv }[] = [];
     const graphql = ghGraphQL(
       async (args, env) => {
@@ -631,11 +785,8 @@ describe("ghGraphQL", () => {
       { GH_TOKEN: "t" },
     );
 
-    await expect(
-      graphql("query Q { q }", { owner: "o", n: 2 }),
-    ).resolves.toEqual({
-      data: { ok: 1 },
-    });
+    await graphql("query Q { q }", { owner: "o", n: 2 });
+
     expect(calls[0]?.args).toEqual([
       "api",
       "graphql",
@@ -646,6 +797,19 @@ describe("ghGraphQL", () => {
       "-F",
       "n=2",
     ]);
+  });
+
+  it("parses the gh api graphql JSON response into data", async () => {
+    const graphql = ghGraphQL(
+      async () => ({ stdout: '{"data":{"ok":1}}', stderr: "" }),
+      { GH_TOKEN: "t" },
+    );
+
+    await expect(
+      graphql("query Q { q }", { owner: "o", n: 2 }),
+    ).resolves.toEqual({
+      data: { ok: 1 },
+    });
   });
 
   it("omits null variables instead of sending the string null", async () => {
@@ -660,7 +824,7 @@ describe("ghGraphQL", () => {
     expect(calls[0]?.args.join(" ").includes("cursor")).toBe(false);
   });
 
-  it("strips a local repo-scope GITHUB_TOKEN but keeps GH_TOKEN for the child gh", async () => {
+  it("strips a local repo-scope GITHUB_TOKEN for the child gh", async () => {
     const calls: { args: readonly string[]; env: NodeJS.ProcessEnv }[] = [];
     const graphql = ghGraphQL(
       async (args, env) => {
@@ -672,7 +836,23 @@ describe("ghGraphQL", () => {
     );
 
     await graphql("query Q { q }", {});
+
     expect(calls[0]?.env.GITHUB_TOKEN).toBeUndefined();
+  });
+
+  it("keeps GH_TOKEN for the child gh", async () => {
+    const calls: { args: readonly string[]; env: NodeJS.ProcessEnv }[] = [];
+    const graphql = ghGraphQL(
+      async (args, env) => {
+        calls.push({ args, env });
+
+        return { stdout: "{}", stderr: "" };
+      },
+      { GH_TOKEN: "actions-token", GITHUB_TOKEN: "repo-scope-only" },
+    );
+
+    await graphql("query Q { q }", {});
+
     expect(calls[0]?.env.GH_TOKEN).toBe("actions-token");
   });
 

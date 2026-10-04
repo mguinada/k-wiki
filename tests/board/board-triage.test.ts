@@ -124,38 +124,63 @@ describe("main", () => {
     ).toBe("undefined|0|true");
   });
 
-  it("rejects an unknown option with exit 1", async () => {
+  it("rejects an unknown option by naming it on stderr", async () => {
     const { err } = await runCli(["--wat"], undefined);
 
     expect(err[0]).toContain("unknown option");
+  });
+
+  it("exits 1 on an unknown option", async () => {
+    await runCli(["--wat"], undefined);
+
     expect(process.exitCode).toBe(1);
   });
 
-  it("rejects a positional argument with exit 1 instead of triaging the default board", async () => {
+  it("rejects a positional argument by naming it instead of triaging the default board", async () => {
     const { err } = await runCli(["mguinada", "3"], undefined);
 
     expect(err[0]).toContain("unexpected argument");
+  });
+
+  it("exits 1 on a positional argument instead of triaging the default board", async () => {
+    await runCli(["mguinada", "3"], undefined);
+
     expect(process.exitCode).toBe(1);
   });
 
-  it("rejects a non-numeric --project value with exit 1", async () => {
+  it("rejects a non-numeric --project value by naming the requirement", async () => {
     const { err } = await runCli(["--project", "abc"], undefined);
 
     expect(err[0]).toContain("--project needs a project number");
+  });
+
+  it("exits 1 on a non-numeric --project value", async () => {
+    await runCli(["--project", "abc"], undefined);
+
     expect(process.exitCode).toBe(1);
   });
 
-  it("rejects a valueless --owner with exit 1", async () => {
+  it("rejects a valueless --owner by naming the missing login", async () => {
     const { err } = await runCli(["--owner"], undefined);
 
     expect(err[0]).toContain("--owner needs a login value");
+  });
+
+  it("exits 1 on a valueless --owner", async () => {
+    await runCli(["--owner"], undefined);
+
     expect(process.exitCode).toBe(1);
   });
 
-  it("rejects a valueless --project with exit 1 instead of triaging the default board", async () => {
+  it("rejects a valueless --project by naming the requirement instead of triaging the default board", async () => {
     const { err } = await runCli(["--project"], undefined);
 
     expect(err[0]).toContain("--project needs a project number");
+  });
+
+  it("exits 1 on a valueless --project instead of triaging the default board", async () => {
+    await runCli(["--project"], undefined);
+
     expect(process.exitCode).toBe(1);
   });
 
@@ -198,17 +223,27 @@ describe("main", () => {
     expect(seen[0]).toEqual({ owner: "mguinada", projectNumber: 2 });
   });
 
-  it("rejects a --project value with leading junk", async () => {
+  it("rejects a --project value with leading junk by naming the requirement", async () => {
     const { err } = await runCli(["--project", "x7"], undefined);
 
     expect(err[0]).toContain("--project needs a project number");
+  });
+
+  it("exits 1 on a --project value with leading junk", async () => {
+    await runCli(["--project", "x7"], undefined);
+
     expect(process.exitCode).toBe(1);
   });
 
-  it("rejects a --project value with trailing junk", async () => {
+  it("rejects a --project value with trailing junk by naming the requirement", async () => {
     const { err } = await runCli(["--project", "7x"], undefined);
 
     expect(err[0]).toContain("--project needs a project number");
+  });
+
+  it("exits 1 on a --project value with trailing junk", async () => {
+    await runCli(["--project", "7x"], undefined);
+
     expect(process.exitCode).toBe(1);
   });
 
@@ -302,7 +337,7 @@ describe("main", () => {
     ).toBe(true);
   });
 
-  it("renders the dry-run plan on stdout and appends the job summary when GITHUB_STEP_SUMMARY is set", async () => {
+  it("renders the dry-run plan on stdout", async () => {
     const dir = await mkdtemp(join(tmpdir(), "k-wiki-triage-summary-"));
 
     tempDirs.push(dir);
@@ -320,12 +355,29 @@ describe("main", () => {
     expect(
       out.some((line) => line.includes("#7 Backlog → Ready — unblocked")),
     ).toBe(true);
+  });
+
+  it("appends the dry-run job summary when GITHUB_STEP_SUMMARY is set", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-triage-summary-"));
+
+    tempDirs.push(dir);
+
+    const summaryPath = join(dir, "summary.md");
+    const { graphql } = fakeBoard([
+      issueNode({ id: "I1", number: 7, status: "Backlog" }),
+    ]);
+
+    await runCli(["--dry-run"], graphql, {
+      GITHUB_STEP_SUMMARY: summaryPath,
+      NO_COLOR: "1",
+    });
+
     expect(await readFile(summaryPath, "utf8")).toContain(
       "## Board triage (dry run)",
     );
   });
 
-  it("reports a failing client red on stderr with exit 1", async () => {
+  it("reports a failing client red on stderr", async () => {
     const graphql: GraphQLFn = async () => {
       throw new Error("boom");
     };
@@ -333,10 +385,19 @@ describe("main", () => {
     const { err } = await runCli([], graphql);
 
     expect(err[0]).toContain("board-triage: boom");
+  });
+
+  it("exits 1 when the injected client fails", async () => {
+    const graphql: GraphQLFn = async () => {
+      throw new Error("boom");
+    };
+
+    await runCli([], graphql);
+
     expect(process.exitCode).toBe(1);
   });
 
-  it("exits 1 when a move fails verification", async () => {
+  it("names a failed verification on stderr", async () => {
     const { graphql } = fakeBoard(
       [issueNode({ id: "I1", number: 7, status: "Backlog" })],
       {
@@ -347,10 +408,22 @@ describe("main", () => {
     const { err } = await runCli([], graphql);
 
     expect(err.some((line) => line.includes("not verified"))).toBe(true);
+  });
+
+  it("exits 1 when a move fails verification", async () => {
+    const { graphql } = fakeBoard(
+      [issueNode({ id: "I1", number: 7, status: "Backlog" })],
+      {
+        failAlways: ["I1"],
+      },
+    );
+
+    await runCli([], graphql);
+
     expect(process.exitCode).toBe(1);
   });
 
-  it("exits 0 on a green applied run", async () => {
+  it("plans the move on a green applied run", async () => {
     const { graphql } = fakeBoard([
       issueNode({ id: "I1", number: 7, status: "Backlog" }),
     ]);
@@ -358,9 +431,27 @@ describe("main", () => {
     const { out } = await runCli([], graphql);
 
     expect(out.some((line) => line.includes("#7 Backlog → Ready"))).toBe(true);
+  });
+
+  it("verifies applied moves against the board", async () => {
+    const { graphql } = fakeBoard([
+      issueNode({ id: "I1", number: 7, status: "Backlog" }),
+    ]);
+
+    const { out } = await runCli([], graphql);
+
     expect(
       out.some((line) => line.includes("verified against the board")),
     ).toBe(true);
+  });
+
+  it("exits 0 on a green applied run", async () => {
+    const { graphql } = fakeBoard([
+      issueNode({ id: "I1", number: 7, status: "Backlog" }),
+    ]);
+
+    await runCli([], graphql);
+
     expect(process.exitCode).toBeUndefined();
   });
 
