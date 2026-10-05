@@ -112,7 +112,6 @@ describe("runWikiIngest", () => {
 
   it("falls back to the next target after a startup failure", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
-    const progress: string[] = [];
     let attempts = 0;
 
     await writeFile(
@@ -120,7 +119,7 @@ describe("runWikiIngest", () => {
       "command: pi\ntargets: [zai/GLM-5.2, openrouter/moonshotai/kimi-k2.6]\nreasoning: high\n",
     );
     await runWikiIngest({
-      ...optionsFor(h, { onProgress: (message) => progress.push(message) }),
+      ...optionsFor(h),
       runAgent: async (_command, _args) => {
         attempts += 1;
 
@@ -373,14 +372,16 @@ describe("runWikiIngest", () => {
     ]);
   });
 
-  it("warns and omits an absent whitelist entry (issue #144)", async () => {
+  it("warns about an absent whitelist entry (issue #144)", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
+
     const progress: string[] = [];
 
     await writeFile(
       h.settingsPath,
       `${SETTINGS_YML}isolate.skills: [.agents/skills/absent]\n`,
     );
+
     await runWikiIngest({
       ...optionsFor(h, { onProgress: (message) => progress.push(message) }),
     });
@@ -388,6 +389,20 @@ describe("runWikiIngest", () => {
     expect(progress).toContain(
       `WARNING — isolate.skills entry "${join(h.dataRoot, ".agents", "skills", "absent")}" not found; omitted`,
     );
+  });
+
+  it("omits the absent whitelist entry from the invocation (issue #144)", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    await writeFile(
+      h.settingsPath,
+      `${SETTINGS_YML}isolate.skills: [.agents/skills/absent]\n`,
+    );
+
+    await runWikiIngest({
+      ...optionsFor(h),
+    });
+
     expect(invocation(h, 0).args).not.toContain("--skill");
   });
 
@@ -2193,7 +2208,7 @@ describe("runWikiIngest", () => {
     );
   });
 
-  it("runs no agent when the data repo has no git to revert to", async () => {
+  it("fails the run when the data repo has no git to revert to", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
 
     await rm(join(h.dataRoot, ".git"), { recursive: true });
@@ -2201,6 +2216,14 @@ describe("runWikiIngest", () => {
     await expect(runWikiIngest(optionsFor(h))).rejects.toThrow(
       "no commit to revert to",
     );
+  });
+
+  it("runs no agent when the data repo has no git to revert to", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    await rm(join(h.dataRoot, ".git"), { recursive: true });
+
+    await runWikiIngest(optionsFor(h)).catch(() => undefined);
 
     expect(h.invocations).toHaveLength(0);
   });
@@ -2398,8 +2421,9 @@ describe("runWikiIngest", () => {
     ).rejects.toThrow("code 1");
   });
 
-  it("leaves no snapshot and no digest when the agent fails", async () => {
+  it("fails the run when the agent fails", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
+
     const failing: AgentRunner = async () => {
       throw new Error("agent exited with code 1");
     };
@@ -2407,12 +2431,39 @@ describe("runWikiIngest", () => {
     await expect(
       runWikiIngest({ ...optionsFor(h), runAgent: failing }),
     ).rejects.toThrow();
+  });
+
+  it("leaves no snapshot when the agent fails", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    const failing: AgentRunner = async () => {
+      throw new Error("agent exited with code 1");
+    };
+
+    await runWikiIngest({ ...optionsFor(h), runAgent: failing }).catch(
+      () => undefined,
+    );
 
     const { readFile } = await import("node:fs/promises");
 
     await expect(readFile(h.snapshotPath, "utf8")).rejects.toMatchObject({
       code: "ENOENT",
     });
+  });
+
+  it("leaves no run digest when the agent fails", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    const failing: AgentRunner = async () => {
+      throw new Error("agent exited with code 1");
+    };
+
+    await runWikiIngest({ ...optionsFor(h), runAgent: failing }).catch(
+      () => undefined,
+    );
+
+    const { readFile } = await import("node:fs/promises");
+
     await expect(
       readFile(
         join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"),
@@ -2431,7 +2482,7 @@ describe("runWikiIngest", () => {
     await expect(runWikiIngest(optionsFor(h))).rejects.toThrow();
   });
 
-  it("leaves no snapshot when the digest write fails", async () => {
+  it("fails the run when the digest write fails", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
 
     await mkdir(join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"), {
@@ -2439,6 +2490,16 @@ describe("runWikiIngest", () => {
     });
 
     await expect(runWikiIngest(optionsFor(h))).rejects.toThrow();
+  });
+
+  it("leaves no snapshot when the digest write fails", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    await mkdir(join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"), {
+      recursive: true,
+    });
+
+    await runWikiIngest(optionsFor(h)).catch(() => undefined);
 
     const { readFile } = await import("node:fs/promises");
 
@@ -2697,8 +2758,9 @@ describe("runWikiIngest --sources", () => {
     expect(prompt).toContain("Changed sources since the previous ingestion:");
   });
 
-  it("carries the --note text below the ~ lines under an Operator note heading", async () => {
+  it("includes a passed operator note in the prompt", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
+
     await seedSnapshot(h, { "a.md": "a" });
 
     await runWikiIngest({
@@ -2710,14 +2772,45 @@ describe("runWikiIngest --sources", () => {
     const prompt = invocation(h, 0).args.at(-1) ?? "";
 
     expect(prompt).toContain("Operator note:");
+  });
+
+  it("orders the vault lines above the operator note", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    await seedSnapshot(h, { "a.md": "a" });
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md"],
+      note: "recovery: file the four pre-adjudicated pages",
+    });
+
+    const prompt = invocation(h, 0).args.at(-1) ?? "";
+
     expect(prompt.indexOf("~ Engineering/a.md")).toBeLessThan(
       prompt.indexOf("Operator note:"),
     );
+  });
+
+  it("carries the --note text under the Operator note heading", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    await seedSnapshot(h, { "a.md": "a" });
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md"],
+      note: "recovery: file the four pre-adjudicated pages",
+    });
+
+    const prompt = invocation(h, 0).args.at(-1) ?? "";
+
     expect(prompt).toContain("recovery: file the four pre-adjudicated pages");
   });
 
-  it("applies the default operator note when --sources runs without one", async () => {
+  it("includes the default operator note in the prompt", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
+
     await seedSnapshot(h, { "a.md": "a" });
 
     await runWikiIngest({
@@ -2728,13 +2821,28 @@ describe("runWikiIngest --sources", () => {
     const prompt = invocation(h, 0).args.at(-1) ?? "";
 
     expect(prompt).toContain("Operator note:");
+  });
+
+  it("applies the default operator note for a --sources run", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    await seedSnapshot(h, { "a.md": "a" });
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md"],
+    });
+
+    const prompt = invocation(h, 0).args.at(-1) ?? "";
+
     expect(prompt).toContain(
       "Sources re-opened by the operator: unchanged content does not imply a no-op; re-adjudicate filing decisions; if declining, state per concept why its treatment fails the page bar.",
     );
   });
 
-  it("appends the cycle report note below the composed prompt when the cycle sets one", async () => {
+  it("appends the cycle report note to the prompt", async () => {
     const h = await makeHarness({ "a.md": "a", "b.md": "b" }, track);
+
     await seedSnapshot(h, { "a.md": "a" });
 
     await runWikiIngest({
@@ -2748,6 +2856,21 @@ describe("runWikiIngest --sources", () => {
     expect(prompt).toContain(
       "This cycle's full report will be committed at `outputs/cycle-2026-08-20.md`; cite it in your log entry as a plain path (no [[brackets]]).",
     );
+  });
+
+  it("places the cycle report note below the composed prompt", async () => {
+    const h = await makeHarness({ "a.md": "a", "b.md": "b" }, track);
+
+    await seedSnapshot(h, { "a.md": "a" });
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      cycleReportNote:
+        "This cycle's full report will be committed at `outputs/cycle-2026-08-20.md`; cite it in your log entry as a plain path (no [[brackets]]).",
+    });
+
+    const prompt = invocation(h, 0).args.at(-1) ?? "";
+
     expect(prompt.indexOf("+ Engineering/b.md")).toBeLessThan(
       prompt.indexOf("This cycle's full report will be committed"),
     );
@@ -2780,8 +2903,9 @@ describe("runWikiIngest --sources", () => {
     expect(prompt).not.toContain("full report will be committed");
   });
 
-  it("omits the operator note on an ordinary incremental run", async () => {
+  it("lists the changed page in the prompt", async () => {
     const h = await makeHarness({ "a.md": "a", "b.md": "b" }, track);
+
     await seedSnapshot(h, { "a.md": "a" });
 
     await runWikiIngest(optionsFor(h));
@@ -2789,6 +2913,17 @@ describe("runWikiIngest --sources", () => {
     const prompt = invocation(h, 0).args.at(-1) ?? "";
 
     expect(prompt).toContain("+ Engineering/b.md");
+  });
+
+  it("omits the operator note on an ordinary incremental run", async () => {
+    const h = await makeHarness({ "a.md": "a", "b.md": "b" }, track);
+
+    await seedSnapshot(h, { "a.md": "a" });
+
+    await runWikiIngest(optionsFor(h));
+
+    const prompt = invocation(h, 0).args.at(-1) ?? "";
+
     expect(prompt).not.toContain("Operator note:");
   });
 
@@ -2819,7 +2954,7 @@ describe("runWikiIngest --sources", () => {
     ).rejects.toThrow("guardrail check 2 (frontmatter)");
   });
 
-  it("omits the sources-selected marker from an ordinary failure digest", async () => {
+  it("fails the run when the agent's page trips the frontmatter guardrail", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
 
     await expect(
@@ -2828,6 +2963,15 @@ describe("runWikiIngest --sources", () => {
         runAgent: frontmatterSaboteur("bad.md"),
       }),
     ).rejects.toThrow("guardrail check 2 (frontmatter)");
+  });
+
+  it("omits the sources-selected marker from an ordinary failure digest", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: frontmatterSaboteur("bad.md"),
+    }).catch(() => undefined);
 
     const digest = await readFile(
       join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"),
@@ -2885,6 +3029,7 @@ describe("runWikiIngest --sources", () => {
       },
       track,
     );
+
     await seedSnapshot(h, { "a.md": "a" });
 
     await runWikiIngest({
@@ -2898,6 +3043,29 @@ describe("runWikiIngest --sources", () => {
     );
 
     expect(snapshot.vaults.Engineering?.["new.md"]).toBeUndefined();
+  });
+
+  it("keeps the synced entries in the merged snapshot", async () => {
+    const h = await makeHarness(
+      {
+        "a.md": "a v2",
+        "new.md": "added since snapshot",
+      },
+      track,
+    );
+
+    await seedSnapshot(h, { "a.md": "a" });
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md"],
+    });
+
+    const snapshot = parseManifest(
+      await readFile(h.snapshotPath, "utf8"),
+      h.snapshotPath,
+    );
+
     expect(snapshot.vaults.Engineering?.["a.md"]).toEqual(entry("a v2"));
   });
 
@@ -3002,8 +3170,9 @@ describe("runWikiIngest --sources", () => {
     );
   });
 
-  it("expunges a covered rename's source path on the next ordinary run", async () => {
+  it("keeps a covered rename's source path in the snapshot", async () => {
     const h = await makeHarness({ "moved.md": "moved" }, track);
+
     await seedSnapshot(h, { "old.md": "moved" });
 
     await runWikiIngest({
@@ -3017,7 +3186,41 @@ describe("runWikiIngest --sources", () => {
     );
 
     expect(snapshot.vaults.Engineering?.["old.md"]).toBeDefined();
+
+    await runWikiIngest(optionsFor(h));
+  });
+
+  it("records the rename's destination in the snapshot", async () => {
+    const h = await makeHarness({ "moved.md": "moved" }, track);
+
+    await seedSnapshot(h, { "old.md": "moved" });
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/moved.md"],
+    });
+
+    const snapshot = parseManifest(
+      await readFile(h.snapshotPath, "utf8"),
+      h.snapshotPath,
+    );
+
     expect(snapshot.vaults.Engineering?.["moved.md"]).toBeDefined();
+
+    await runWikiIngest(optionsFor(h));
+  });
+
+  it("runs the expunge on the next ordinary run", async () => {
+    const h = await makeHarness({ "moved.md": "moved" }, track);
+
+    await seedSnapshot(h, { "old.md": "moved" });
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/moved.md"],
+    });
+
+    parseManifest(await readFile(h.snapshotPath, "utf8"), h.snapshotPath);
 
     const pending = await runWikiIngest(optionsFor(h));
 
@@ -3048,11 +3251,11 @@ describe("runWikiIngest --sources", () => {
 
   it("keeps a pending removal in the merged snapshot for the next expunge run", async () => {
     const h = await makeHarness({ "a.md": "a", "doomed.md": "doomed" }, track);
+
     await seedSnapshot(h, { "a.md": "a", "doomed.md": "doomed" });
 
-    // A sync removed the note: raw file gone, manifest updated, the
-    // snapshot (and the expunge it routes to) still ahead.
     await rm(join(h.dataRoot, "raw", "notes", "Engineering", "doomed.md"));
+
     await writeFile(
       join(h.dataRoot, "raw", "manifest.json"),
       serializeManifest(manifestWith("Engineering", { "a.md": entry("a") })),
@@ -3069,6 +3272,28 @@ describe("runWikiIngest --sources", () => {
     );
 
     expect(snapshot.vaults.Engineering?.["doomed.md"]).toBeDefined();
+
+    await runWikiIngest(optionsFor(h));
+  });
+
+  it("runs the expunge mode on that run", async () => {
+    const h = await makeHarness({ "a.md": "a", "doomed.md": "doomed" }, track);
+
+    await seedSnapshot(h, { "a.md": "a", "doomed.md": "doomed" });
+
+    await rm(join(h.dataRoot, "raw", "notes", "Engineering", "doomed.md"));
+
+    await writeFile(
+      join(h.dataRoot, "raw", "manifest.json"),
+      serializeManifest(manifestWith("Engineering", { "a.md": entry("a") })),
+    );
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md"],
+    });
+
+    parseManifest(await readFile(h.snapshotPath, "utf8"), h.snapshotPath);
 
     const pending = await runWikiIngest(optionsFor(h));
 
@@ -3137,8 +3362,9 @@ describe("runWikiIngest --sources", () => {
     expect(result).toMatchObject({ status: "ran", mode: "full" });
   });
 
-  it("records sources selected explicitly on the failure digest of a reverted scoped run", async () => {
+  it("fails the scoped run when the agent trips the frontmatter guardrail", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
+
     await seedSnapshot(h, { "a.md": "a" });
 
     await expect(
@@ -3148,6 +3374,18 @@ describe("runWikiIngest --sources", () => {
         runAgent: frontmatterSaboteur("bad.md"),
       }),
     ).rejects.toThrow("guardrail check 2 (frontmatter)");
+  });
+
+  it("records sources selected explicitly on the reverted run's failure digest", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    await seedSnapshot(h, { "a.md": "a" });
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md"],
+      runAgent: frontmatterSaboteur("bad.md"),
+    }).catch(() => undefined);
 
     const digest = await readFile(
       join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"),
@@ -3255,10 +3493,11 @@ describe("runWikiIngest --sources", () => {
     ).rejects.toThrow("agent exited with code 1");
   });
 
-  it("leaves the snapshot untouched when the scoped agent run fails", async () => {
+  it("fails the scoped run when the agent fails", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
+
     await seedSnapshot(h, { "a.md": "a" });
-    const before = await readFile(h.snapshotPath, "utf8");
+
     const failing: AgentRunner = async () => {
       throw new Error("agent exited with code 1");
     };
@@ -3270,6 +3509,24 @@ describe("runWikiIngest --sources", () => {
         runAgent: failing,
       }),
     ).rejects.toThrow("agent exited with code 1");
+  });
+
+  it("leaves the snapshot untouched when the scoped agent run fails", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    await seedSnapshot(h, { "a.md": "a" });
+
+    const before = await readFile(h.snapshotPath, "utf8");
+
+    const failing: AgentRunner = async () => {
+      throw new Error("agent exited with code 1");
+    };
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md"],
+      runAgent: failing,
+    }).catch(() => undefined);
 
     expect(await readFile(h.snapshotPath, "utf8")).toBe(before);
   });
@@ -3287,17 +3544,16 @@ describe("runWikiIngest --sources", () => {
     ).rejects.toThrow("guardrail check 2 (frontmatter)");
   });
 
-  it("auto-reverts the offending page when a guardrail trips on a scoped run", async () => {
+  it("auto-reverts the offending page on a scoped run", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
+
     await seedSnapshot(h, { "a.md": "a" });
 
-    await expect(
-      runWikiIngest({
-        ...optionsFor(h),
-        sources: ["Engineering/a.md"],
-        runAgent: frontmatterSaboteur("bad.md"),
-      }),
-    ).rejects.toThrow("guardrail check 2 (frontmatter)");
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md"],
+      runAgent: frontmatterSaboteur("bad.md"),
+    }).catch(() => undefined);
 
     await expect(
       readFile(join(h.dataRoot, "wiki", "bad.md"), "utf8"),
@@ -3306,16 +3562,16 @@ describe("runWikiIngest --sources", () => {
 
   it("leaves the snapshot when a guardrail trips on a scoped run", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
+
     await seedSnapshot(h, { "a.md": "a" });
+
     const before = await readFile(h.snapshotPath, "utf8");
 
-    await expect(
-      runWikiIngest({
-        ...optionsFor(h),
-        sources: ["Engineering/a.md"],
-        runAgent: frontmatterSaboteur("bad.md"),
-      }),
-    ).rejects.toThrow("guardrail check 2 (frontmatter)");
+    await runWikiIngest({
+      ...optionsFor(h),
+      sources: ["Engineering/a.md"],
+      runAgent: frontmatterSaboteur("bad.md"),
+    }).catch(() => undefined);
 
     expect(await readFile(h.snapshotPath, "utf8")).toBe(before);
   });
@@ -3356,7 +3612,7 @@ describe("runWikiIngest guardrails", () => {
     ).rejects.toThrow("guardrail check 2 (frontmatter)");
   });
 
-  it("removes the offending page when the frontmatter guardrail trips", async () => {
+  it("fails the run naming the tripped frontmatter check", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
 
     await expect(
@@ -3365,6 +3621,15 @@ describe("runWikiIngest guardrails", () => {
         runAgent: frontmatterSaboteur("bad.md"),
       }),
     ).rejects.toThrow("guardrail check 2 (frontmatter)");
+  });
+
+  it("removes the offending page when the frontmatter guardrail trips", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: frontmatterSaboteur("bad.md"),
+    }).catch(() => undefined);
 
     await expect(
       readFile(join(h.dataRoot, "wiki", "bad.md"), "utf8"),
@@ -3374,12 +3639,10 @@ describe("runWikiIngest guardrails", () => {
   it("leaves no snapshot when the frontmatter guardrail trips", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
 
-    await expect(
-      runWikiIngest({
-        ...optionsFor(h),
-        runAgent: frontmatterSaboteur("bad.md"),
-      }),
-    ).rejects.toThrow("guardrail check 2 (frontmatter)");
+    await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: frontmatterSaboteur("bad.md"),
+    }).catch(() => undefined);
 
     await expect(readFile(h.snapshotPath, "utf8")).rejects.toMatchObject({
       code: "ENOENT",
@@ -3397,15 +3660,13 @@ describe("runWikiIngest guardrails", () => {
     ).rejects.toThrow();
   });
 
-  it("writes a failure digest naming the tripped check", async () => {
+  it("names the tripped check in the failure digest", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
 
-    await expect(
-      runWikiIngest({
-        ...optionsFor(h),
-        runAgent: frontmatterSaboteur("bad.md"),
-      }),
-    ).rejects.toThrow();
+    await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: frontmatterSaboteur("bad.md"),
+    }).catch(() => undefined);
 
     const digest = await readFile(digestPath(h), "utf8");
 
@@ -3415,12 +3676,10 @@ describe("runWikiIngest guardrails", () => {
   it("names the offending page in the failure digest", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
 
-    await expect(
-      runWikiIngest({
-        ...optionsFor(h),
-        runAgent: frontmatterSaboteur("bad.md"),
-      }),
-    ).rejects.toThrow();
+    await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: frontmatterSaboteur("bad.md"),
+    }).catch(() => undefined);
 
     const digest = await readFile(digestPath(h), "utf8");
 
@@ -3430,20 +3689,19 @@ describe("runWikiIngest guardrails", () => {
   it("embeds the agent report in the failure digest", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
 
-    await expect(
-      runWikiIngest({
-        ...optionsFor(h),
-        runAgent: frontmatterSaboteur("bad.md"),
-      }),
-    ).rejects.toThrow();
+    await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: frontmatterSaboteur("bad.md"),
+    }).catch(() => undefined);
 
     const digest = await readFile(digestPath(h), "utf8");
 
     expect(digest).toContain("rogue report");
   });
 
-  it("reverts and fails the run when the agent writes outside the whitelist", async () => {
+  it("fails the run when the agent writes outside the whitelist", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
+
     const saboteur: AgentRunner = async (_command, _args, options) => {
       await mkdir(join(options.cwd, "raw", "notes"), { recursive: true });
       await writeFile(join(options.cwd, "raw", "notes", "rogue.md"), "x\n");
@@ -3454,13 +3712,30 @@ describe("runWikiIngest guardrails", () => {
     await expect(
       runWikiIngest({ ...optionsFor(h), runAgent: saboteur }),
     ).rejects.toThrow("guardrail check 1 (immutability)");
+  });
+
+  it("reverts the rogue write outside the whitelist", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    const saboteur: AgentRunner = async (_command, _args, options) => {
+      await mkdir(join(options.cwd, "raw", "notes"), { recursive: true });
+      await writeFile(join(options.cwd, "raw", "notes", "rogue.md"), "x\n");
+
+      return { stdout: "rogue report", stderr: "" };
+    };
+
+    await runWikiIngest({ ...optionsFor(h), runAgent: saboteur }).catch(
+      () => undefined,
+    );
+
     await expect(
       readFile(join(h.dataRoot, "raw", "notes", "rogue.md"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("reverts raw tampering even when the agent fails", async () => {
+  it("fails the run when the agent tampers with raw", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
+
     const saboteur: AgentRunner = async (_command, _args, options) => {
       await mkdir(join(options.cwd, "raw", "notes"), { recursive: true });
       await writeFile(join(options.cwd, "raw", "notes", "rogue.md"), "x\n");
@@ -3471,13 +3746,30 @@ describe("runWikiIngest guardrails", () => {
     await expect(
       runWikiIngest({ ...optionsFor(h), runAgent: saboteur }),
     ).rejects.toThrow("guardrail check 1 (immutability)");
+  });
+
+  it("reverts raw tampering even when the agent fails", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    const saboteur: AgentRunner = async (_command, _args, options) => {
+      await mkdir(join(options.cwd, "raw", "notes"), { recursive: true });
+      await writeFile(join(options.cwd, "raw", "notes", "rogue.md"), "x\n");
+
+      throw new Error("agent exited with code 1");
+    };
+
+    await runWikiIngest({ ...optionsFor(h), runAgent: saboteur }).catch(
+      () => undefined,
+    );
+
     await expect(
       readFile(join(h.dataRoot, "raw", "notes", "rogue.md"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("keeps valid changes when the agent fails and guardrails pass", async () => {
+  it("fails the run when the agent fails", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
+
     const failing: AgentRunner = async (_command, _args, options) => {
       await writeFile(join(options.cwd, "wiki", "ok.md"), wikiPage("Kept"));
 
@@ -3487,13 +3779,29 @@ describe("runWikiIngest guardrails", () => {
     await expect(
       runWikiIngest({ ...optionsFor(h), runAgent: failing }),
     ).rejects.toThrow("code 1");
+  });
+
+  it("keeps valid changes when the agent fails and guardrails pass", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    const failing: AgentRunner = async (_command, _args, options) => {
+      await writeFile(join(options.cwd, "wiki", "ok.md"), wikiPage("Kept"));
+
+      throw new Error("agent exited with code 1");
+    };
+
+    await runWikiIngest({ ...optionsFor(h), runAgent: failing }).catch(
+      () => undefined,
+    );
+
     expect(await readFile(join(h.dataRoot, "wiki", "ok.md"), "utf8")).toContain(
       "Kept",
     );
   });
 
-  it("reverts and fails the run when a changed page leaves a dangling wikilink", async () => {
+  it("fails the run when a changed page leaves a dangling wikilink", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
+
     const saboteur: AgentRunner = async (_command, _args, options) => {
       await writeFile(
         join(options.cwd, "wiki", "dangling.md"),
@@ -3506,6 +3814,24 @@ describe("runWikiIngest guardrails", () => {
     await expect(
       runWikiIngest({ ...optionsFor(h), runAgent: saboteur }),
     ).rejects.toThrow("guardrail check 3 (wikilinks)");
+  });
+
+  it("reverts the dangling-link page", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    const saboteur: AgentRunner = async (_command, _args, options) => {
+      await writeFile(
+        join(options.cwd, "wiki", "dangling.md"),
+        wikiPage("See [[Nowhere]]."),
+      );
+
+      return { stdout: "rogue report", stderr: "" };
+    };
+
+    await runWikiIngest({ ...optionsFor(h), runAgent: saboteur }).catch(
+      () => undefined,
+    );
+
     await expect(
       readFile(join(h.dataRoot, "wiki", "dangling.md"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
@@ -3613,16 +3939,26 @@ describe("runWikiIngest failure reporting detail", () => {
     expect((error as Error).cause).toBeUndefined();
   });
 
-  it("reports the guardrail failure on progress", async () => {
+  it("fails the run when the frontmatter guardrail trips", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
-    const progress: string[] = [];
 
     await expect(
       runWikiIngest({
-        ...optionsFor(h, { onProgress: (message) => progress.push(message) }),
+        ...optionsFor(h),
         runAgent: frontmatterSaboteur("bad.md"),
       }),
     ).rejects.toThrow("guardrail check 2 (frontmatter)");
+  });
+
+  it("reports the guardrail failure on progress", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    const progress: string[] = [];
+
+    await runWikiIngest({
+      ...optionsFor(h, { onProgress: (message) => progress.push(message) }),
+      runAgent: frontmatterSaboteur("bad.md"),
+    }).catch(() => undefined);
 
     expect(progress.join("\n")).toMatch(
       /^wiki-ingest: guardrail check 2 \(frontmatter\) failed — reverting to [0-9a-f]{8}$/m,
@@ -3681,12 +4017,10 @@ describe("runWikiIngest failure reporting detail", () => {
   it("states the mode in the failure digest", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
 
-    await expect(
-      runWikiIngest({
-        ...optionsFor(h),
-        runAgent: frontmatterSaboteur("bad.md"),
-      }),
-    ).rejects.toThrow();
+    await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: frontmatterSaboteur("bad.md"),
+    }).catch(() => undefined);
 
     const digest = await readFile(
       join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"),
@@ -3699,12 +4033,10 @@ describe("runWikiIngest failure reporting detail", () => {
   it("names the prompt file in the failure digest", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
 
-    await expect(
-      runWikiIngest({
-        ...optionsFor(h),
-        runAgent: frontmatterSaboteur("bad.md"),
-      }),
-    ).rejects.toThrow();
+    await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: frontmatterSaboteur("bad.md"),
+    }).catch(() => undefined);
 
     const digest = await readFile(
       join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"),
@@ -3717,12 +4049,10 @@ describe("runWikiIngest failure reporting detail", () => {
   it("reports the wiki pages as unavailable in the failure digest", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
 
-    await expect(
-      runWikiIngest({
-        ...optionsFor(h),
-        runAgent: frontmatterSaboteur("bad.md"),
-      }),
-    ).rejects.toThrow();
+    await runWikiIngest({
+      ...optionsFor(h),
+      runAgent: frontmatterSaboteur("bad.md"),
+    }).catch(() => undefined);
 
     const digest = await readFile(
       join(h.outputsDir, "runs", "2026-08-20T18-00-00.000Z.md"),
@@ -3734,19 +4064,34 @@ describe("runWikiIngest failure reporting detail", () => {
     );
   });
 
-  it("announces a kept-changes agent failure on progress", async () => {
+  it("fails the run when the agent fails with changes kept", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
-    const progress: string[] = [];
+
     const failing: AgentRunner = async () => {
       throw new Error("agent exited with code 9");
     };
 
     await expect(
       runWikiIngest({
-        ...optionsFor(h, { onProgress: (message) => progress.push(message) }),
+        ...optionsFor(h),
         runAgent: failing,
       }),
     ).rejects.toThrow("agent exited with code 9");
+  });
+
+  it("announces a kept-changes agent failure on progress", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    const progress: string[] = [];
+
+    const failing: AgentRunner = async () => {
+      throw new Error("agent exited with code 9");
+    };
+
+    await runWikiIngest({
+      ...optionsFor(h, { onProgress: (message) => progress.push(message) }),
+      runAgent: failing,
+    }).catch(() => undefined);
 
     expect(progress).toContain(
       "wiki-ingest: agent failed — guardrails passed, changes kept",
@@ -4001,7 +4346,7 @@ describe("runWikiIngest dashboard hook (issue #73)", () => {
     expect(html).toBe("STALE\n");
   });
 
-  it("excludes dashboard.html via .git/info/exclude, never a dirty tracked .gitignore (issue #390)", async () => {
+  it("excludes dashboard.html via .git/info/exclude (issue #390)", async () => {
     const h = await makeHarness({ "a.md": "a" }, track);
 
     await runWikiIngest(optionsFor(h));
@@ -4012,6 +4357,12 @@ describe("runWikiIngest dashboard hook (issue #73)", () => {
     );
 
     expect(exclude.split("\n")).toContain("dashboard.html");
+  });
+
+  it("keeps dashboard.html out of the tracked .gitignore (issue #390)", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    await runWikiIngest(optionsFor(h));
 
     const gitignore = await readFile(join(h.dataRoot, ".gitignore"), "utf8");
 
@@ -4118,12 +4469,37 @@ describe("deferSnapshot (issue #390 steering repair 3)", () => {
     }
 
     expect(result.pendingSnapshot).toBeDefined();
+  });
+
+  it("writes nothing with the pending-snapshot flag", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    const result = await runWikiIngest({
+      ...optionsFor(h),
+      deferSnapshot: true,
+    });
+
+    if (result.status !== "ran") {
+      throw new Error("expected a ran result");
+    }
 
     const written = await readFile(h.snapshotPath, "utf8").catch(
       () => "absent",
     );
 
     expect(written).toBe("absent");
+  });
+
+  it("returns no pending snapshot without the flag", async () => {
+    const h = await makeHarness({ "a.md": "a" }, track);
+
+    const result = await runWikiIngest(optionsFor(h));
+
+    if (result.status !== "ran") {
+      throw new Error("expected a ran result");
+    }
+
+    expect(result.pendingSnapshot).toBeUndefined();
   });
 
   it("keeps writing the snapshot immediately without the flag", async () => {
@@ -4135,7 +4511,6 @@ describe("deferSnapshot (issue #390 steering repair 3)", () => {
       throw new Error("expected a ran result");
     }
 
-    expect(result.pendingSnapshot).toBeUndefined();
     expect(await readFile(h.snapshotPath, "utf8")).toContain("snapshotFor");
   });
 });

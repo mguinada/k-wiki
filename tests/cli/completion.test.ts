@@ -45,10 +45,15 @@ async function runVerb(args: readonly string[]): Promise<Capture> {
 }
 
 describe("completion verb", () => {
-  it("answers -h with usage and exits 0 without side effects", async () => {
-    const { out, err } = await runVerb(["-h"]);
+  it("answers -h with usage on stdout", async () => {
+    const { out } = await runVerb(["-h"]);
 
     expect(out.startsWith("Usage: k-wiki completion")).toBe(true);
+  });
+
+  it("answers -h with nothing on stderr", async () => {
+    const { err } = await runVerb(["-h"]);
+
     expect(err).toBe("");
   });
 
@@ -65,19 +70,37 @@ describe("completion verb", () => {
     expect(out.startsWith("Usage: k-wiki completion")).toBe(true);
   });
 
-  it("emits the zsh script on stdout with nothing on stderr, exit 0", async () => {
-    const { out, err } = await runVerb([]);
+  it("emits the zsh script on stdout", async () => {
+    const { out } = await runVerb([]);
 
     expect(out.startsWith("#compdef k-wiki")).toBe(true);
+  });
+
+  it("emits the zsh script with nothing on stderr", async () => {
+    const { err } = await runVerb([]);
+
     expect(err).toBe("");
+  });
+
+  it("exits 0", async () => {
+    await runVerb([]);
+
     expect(process.exitCode).toBeUndefined();
   });
 
   it("emits byte-identical output for the default and the explicit zsh spelling", async () => {
     const implicit = await runVerb([]);
+
     const explicit = await runVerb(["zsh"]);
 
     expect(explicit.out).toBe(implicit.out);
+  });
+
+  it("prints nothing on stderr for either zsh spelling", async () => {
+    await runVerb([]);
+
+    const explicit = await runVerb(["zsh"]);
+
     expect(explicit.err).toBe("");
   });
 
@@ -88,19 +111,39 @@ describe("completion verb", () => {
     expect(second.out).toBe(first.out);
   });
 
-  it("exits 1 naming zsh for an unsupported shell, printing nothing on stdout", async () => {
-    const { out, err } = await runVerb(["bash"]);
+  it("prints nothing on stdout for an unsupported shell", async () => {
+    const { out } = await runVerb(["bash"]);
 
     expect(out).toBe("");
+  });
+
+  it("names the unsupported shell on stderr", async () => {
+    const { err } = await runVerb(["bash"]);
+
     expect(err).toContain('unsupported shell "bash"');
+  });
+
+  it("suggests zsh on stderr", async () => {
+    const { err } = await runVerb(["bash"]);
+
     expect(err).toContain("zsh");
+  });
+
+  it("exits 1 for the bash target", async () => {
+    await runVerb(["bash"]);
+
     expect(process.exitCode).toBe(1);
   });
 
-  it("exits 1 for a second positional argument", async () => {
+  it("reports a second positional argument on stderr", async () => {
     const { err } = await runVerb(["zsh", "fish"]);
 
     expect(err).toContain("unexpected argument");
+  });
+
+  it("exits 1 for a second positional argument", async () => {
+    await runVerb(["zsh", "fish"]);
+
     expect(process.exitCode).toBe(1);
   });
 });
@@ -118,30 +161,55 @@ describe("zsh completion script", () => {
     }
   });
 
-  it("groups the verb lists in the bare-help tier order", () => {
+  it("finds every verb list in the bare help", () => {
     const script = zshCompletionScript();
+
     const positions = tierSections().map(({ tier }) =>
       script.indexOf(`_k_wiki_${tier}=(`),
     );
 
     expect(positions.every((pos) => pos !== -1)).toBe(true);
+  });
+
+  it("keeps the verb lists in tier order", () => {
+    const script = zshCompletionScript();
+
+    const positions = tierSections().map(({ tier }) =>
+      script.indexOf(`_k_wiki_${tier}=(`),
+    );
+
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
   });
 
-  it("completes the global flags, --checkout as a path-taking flag", () => {
+  it("offers the help flags in the completion script", () => {
     const script = zshCompletionScript();
 
     expect(script).toContain("'(-h --help)'{-h,--help}'");
+  });
+
+  it("offers the -w/--wiki flag in the completion script", () => {
+    const script = zshCompletionScript();
+
     expect(script).toContain("'(-w --wiki)'{-w,--wiki}'");
+  });
+
+  it("completes --checkout as a path-taking flag", () => {
+    const script = zshCompletionScript();
+
     expect(script).toContain(
       "'--checkout[k-wiki checkout for this run]:path:_files'",
     );
   });
 
-  it("offers the verbs at the first word and nothing beyond the flags", () => {
+  it("offers the verbs at the first word", () => {
     const script = zshCompletionScript();
 
     expect(script).toContain("'1:verb:->verb'");
+  });
+
+  it("offers nothing beyond the flags", () => {
+    const script = zshCompletionScript();
+
     expect(script).toContain("'*: :'");
   });
 

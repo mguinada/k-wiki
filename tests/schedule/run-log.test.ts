@@ -150,14 +150,29 @@ describe("appendLog failure reporting", () => {
 });
 
 describe("rotateLogIfNeeded default threshold", () => {
-  it("keeps a one-byte log in place", async () => {
+  it("keeps the one-byte log in place", async () => {
     const dir = await tempDir();
+
     const logPath = join(dir, "scheduled-run.log");
 
     await writeFile(logPath, "x");
+
     await rotateLogIfNeeded(logPath);
 
     await expect(readFile(logPath, "utf8")).resolves.toBe("x");
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("writes no rotated sibling", async () => {
+    const dir = await tempDir();
+
+    const logPath = join(dir, "scheduled-run.log");
+
+    await writeFile(logPath, "x");
+
+    await rotateLogIfNeeded(logPath);
+
     await expect(readFile(`${logPath}.1`, "utf8")).rejects.toThrow();
 
     await rm(dir, { recursive: true, force: true });

@@ -80,5 +80,5 @@ of the advisory workflow in AGENTS.md, never a gate.
   code text); assert on observable behavior of the exported API.
 - Log hygiene: test input is the synthetic fixture vault; the real
   vault is never test input.
-- The gates (`npm run typecheck`, `npm run lint`, `npm test`) must
-  stay green after new tests.
+- The gates (`npm run typecheck`, `npm run lint`, `npm test`,
+  `npm run check:test-structure`) must stay green after new tests.

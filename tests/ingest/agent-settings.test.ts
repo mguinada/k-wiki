@@ -678,7 +678,7 @@ describe("agentArgs", () => {
     ]);
   });
 
-  it("drops a path-spelled pi-web-access whitelist entry too", () => {
+  it("drops a path-spelled pi-web-access entry from the args", () => {
     const args = agentArgs(
       {
         command: "pi",
@@ -690,6 +690,19 @@ describe("agentArgs", () => {
     );
 
     expect(args.join("\u0000")).not.toContain("pi-web-access");
+  });
+
+  it("grants no extension for a path-spelled entry", () => {
+    const args = agentArgs(
+      {
+        command: "pi",
+        model: "m",
+        reasoning: "h",
+        isolateExtensions: ["/opt/pi/npm/node_modules/pi-web-access/index.ts"],
+      },
+      "PROMPT",
+    );
+
     expect(args).not.toContain("-e");
   });
 
@@ -1050,14 +1063,15 @@ describe("loadAgentSettings whitelist resolution (issue #144)", () => {
     ]);
   });
 
-  it("warns once and omits a missing skill entry", async () => {
+  it("warns once naming the absent skill entry", async () => {
     const { settingsPath, piInstallRoot } = await makeWhitelistFixture({
       presentSkills: ["present"],
       missingSkills: ["absent"],
     });
+
     const warnings: string[] = [];
 
-    const settings = await loadAgentSettings(settingsPath, {
+    await loadAgentSettings(settingsPath, {
       piInstallRoot,
       onProgress: (message) => warnings.push(message),
     });
@@ -1065,19 +1079,32 @@ describe("loadAgentSettings whitelist resolution (issue #144)", () => {
     expect(warnings).toEqual([
       `WARNING — isolate.skills entry "${join(dirnameOf(settingsPath), "skills", "absent")}" not found; omitted`,
     ]);
+  });
+
+  it("omits the absent skill and keeps the present one", async () => {
+    const { settingsPath, piInstallRoot } = await makeWhitelistFixture({
+      presentSkills: ["present"],
+      missingSkills: ["absent"],
+    });
+
+    const settings = await loadAgentSettings(settingsPath, {
+      piInstallRoot,
+    });
+
     expect(settings.isolateSkills).toEqual([
       join(dirnameOf(settingsPath), "skills", "present"),
     ]);
   });
 
-  it("keeps an installed npm: extension and strips a missing one with a warning", async () => {
+  it("warns naming the uninstalled npm extension", async () => {
     const { settingsPath, piInstallRoot } = await makeWhitelistFixture({
       presentExtensions: ["npm:pi-web-access"],
       missingExtensions: ["npm:pi-not-installed"],
     });
+
     const warnings: string[] = [];
 
-    const settings = await loadAgentSettings(settingsPath, {
+    await loadAgentSettings(settingsPath, {
       piInstallRoot,
       onProgress: (message) => warnings.push(message),
     });
@@ -1085,10 +1112,22 @@ describe("loadAgentSettings whitelist resolution (issue #144)", () => {
     expect(warnings).toEqual([
       'WARNING — isolate.extensions entry "npm:pi-not-installed" not installed under the pi install root; omitted',
     ]);
+  });
+
+  it("strips the missing extension and keeps the installed one", async () => {
+    const { settingsPath, piInstallRoot } = await makeWhitelistFixture({
+      presentExtensions: ["npm:pi-web-access"],
+      missingExtensions: ["npm:pi-not-installed"],
+    });
+
+    const settings = await loadAgentSettings(settingsPath, {
+      piInstallRoot,
+    });
+
     expect(settings.isolateExtensions).toEqual(["npm:pi-web-access"]);
   });
 
-  it("keeps a versioned npm: extension by checking the bare package name", async () => {
+  it("warns nothing for a versioned installed extension", async () => {
     const root = await mkdtemp(join(tmpdir(), "k-wiki-whitelist-npm-"));
 
     whitelistDirs.push(root);
@@ -1106,18 +1145,44 @@ describe("loadAgentSettings whitelist resolution (issue #144)", () => {
       "command: pi\nmodel: m\nreasoning: h\nisolate.extensions: npm:pkg@1.2.3\n",
       "utf8",
     );
+
     const warnings: string[] = [];
 
-    const settings = await loadAgentSettings(settingsPath, {
+    await loadAgentSettings(settingsPath, {
       piInstallRoot,
       onProgress: (message) => warnings.push(message),
     });
 
     expect(warnings).toEqual([]);
+  });
+
+  it("keeps the versioned npm extension", async () => {
+    const root = await mkdtemp(join(tmpdir(), "k-wiki-whitelist-npm-"));
+
+    whitelistDirs.push(root);
+
+    const piInstallRoot = join(root, "pi-root");
+
+    await mkdir(join(piInstallRoot, "npm", "node_modules", "pkg"), {
+      recursive: true,
+    });
+
+    const settingsPath = join(root, "settings.yml");
+
+    await writeFile(
+      settingsPath,
+      "command: pi\nmodel: m\nreasoning: h\nisolate.extensions: npm:pkg@1.2.3\n",
+      "utf8",
+    );
+
+    const settings = await loadAgentSettings(settingsPath, {
+      piInstallRoot,
+    });
+
     expect(settings.isolateExtensions).toEqual(["npm:pkg@1.2.3"]);
   });
 
-  it("checks a scoped npm: extension against its bare name", async () => {
+  it("warns nothing for an installed scoped extension", async () => {
     const root = await mkdtemp(join(tmpdir(), "k-wiki-whitelist-npm-"));
 
     whitelistDirs.push(root);
@@ -1135,14 +1200,40 @@ describe("loadAgentSettings whitelist resolution (issue #144)", () => {
       "command: pi\nmodel: m\nreasoning: h\nisolate.extensions: npm:@scope/pkg@1.2.3\n",
       "utf8",
     );
+
     const warnings: string[] = [];
 
-    const settings = await loadAgentSettings(settingsPath, {
+    await loadAgentSettings(settingsPath, {
       piInstallRoot,
       onProgress: (message) => warnings.push(message),
     });
 
     expect(warnings).toEqual([]);
+  });
+
+  it("keeps the scoped npm extension", async () => {
+    const root = await mkdtemp(join(tmpdir(), "k-wiki-whitelist-npm-"));
+
+    whitelistDirs.push(root);
+
+    const piInstallRoot = join(root, "pi-root");
+
+    await mkdir(join(piInstallRoot, "npm", "node_modules", "@scope", "pkg"), {
+      recursive: true,
+    });
+
+    const settingsPath = join(root, "settings.yml");
+
+    await writeFile(
+      settingsPath,
+      "command: pi\nmodel: m\nreasoning: h\nisolate.extensions: npm:@scope/pkg@1.2.3\n",
+      "utf8",
+    );
+
+    const settings = await loadAgentSettings(settingsPath, {
+      piInstallRoot,
+    });
+
     expect(settings.isolateExtensions).toEqual(["npm:@scope/pkg@1.2.3"]);
   });
 
@@ -1171,11 +1262,45 @@ describe("loadAgentSettings whitelist resolution (issue #144)", () => {
     process.env.PI_CODING_AGENT_DIR = agentDir;
 
     try {
-      const settings = await loadAgentSettings(settingsPath, {
+      await loadAgentSettings(settingsPath, {
         onProgress: (message) => warnings.push(message),
       });
 
       expect(warnings).toEqual([]);
+    } finally {
+      if (previous === undefined) {
+        delete process.env.PI_CODING_AGENT_DIR;
+      } else {
+        process.env.PI_CODING_AGENT_DIR = previous;
+      }
+    }
+  });
+
+  it("keeps the extension pre-flighted against PI_CODING_AGENT_DIR", async () => {
+    const root = await mkdtemp(join(tmpdir(), "k-wiki-whitelist-env-"));
+
+    whitelistDirs.push(root);
+
+    const agentDir = join(root, "custom-agent-dir");
+
+    await mkdir(join(agentDir, "npm", "node_modules", "pkg"), {
+      recursive: true,
+    });
+
+    const settingsPath = join(root, "settings.yml");
+
+    await writeFile(
+      settingsPath,
+      "command: pi\nmodel: m\nreasoning: h\nisolate.extensions: npm:pkg\n",
+      "utf8",
+    );
+
+    const previous = process.env.PI_CODING_AGENT_DIR;
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+
+    try {
+      const settings = await loadAgentSettings(settingsPath, {});
+
       expect(settings.isolateExtensions).toEqual(["npm:pkg"]);
     } finally {
       if (previous === undefined) {
@@ -1186,13 +1311,14 @@ describe("loadAgentSettings whitelist resolution (issue #144)", () => {
     }
   });
 
-  it("warns and omits a path-like extension entry that does not exist", async () => {
+  it("warns naming the missing path-like extension", async () => {
     const { settingsPath, piInstallRoot } = await makeWhitelistFixture({
       missingExtensions: ["ext/absent.ts"],
     });
+
     const warnings: string[] = [];
 
-    const settings = await loadAgentSettings(settingsPath, {
+    await loadAgentSettings(settingsPath, {
       piInstallRoot,
       onProgress: (message) => warnings.push(message),
     });
@@ -1200,21 +1326,44 @@ describe("loadAgentSettings whitelist resolution (issue #144)", () => {
     expect(warnings).toEqual([
       `WARNING — isolate.extensions entry "${join(dirnameOf(settingsPath), "ext", "absent.ts")}" not found; omitted`,
     ]);
+  });
+
+  it("omits the missing path-like extension", async () => {
+    const { settingsPath, piInstallRoot } = await makeWhitelistFixture({
+      missingExtensions: ["ext/absent.ts"],
+    });
+
+    const settings = await loadAgentSettings(settingsPath, {
+      piInstallRoot,
+    });
+
     expect(settings.isolateExtensions).toEqual([]);
   });
 
-  it("passes git: extension sources through without a pre-flight", async () => {
+  it("warns nothing for a git: extension", async () => {
     const { settingsPath, piInstallRoot } = await makeWhitelistFixture({
       presentExtensions: ["git:github.com/example/ext"],
     });
+
     const warnings: string[] = [];
 
-    const settings = await loadAgentSettings(settingsPath, {
+    await loadAgentSettings(settingsPath, {
       piInstallRoot,
       onProgress: (message) => warnings.push(message),
     });
 
     expect(warnings).toEqual([]);
+  });
+
+  it("passes the git: extension through", async () => {
+    const { settingsPath, piInstallRoot } = await makeWhitelistFixture({
+      presentExtensions: ["git:github.com/example/ext"],
+    });
+
+    const settings = await loadAgentSettings(settingsPath, {
+      piInstallRoot,
+    });
+
     expect(settings.isolateExtensions).toEqual(["git:github.com/example/ext"]);
   });
 
@@ -1233,12 +1382,33 @@ describe("loadAgentSettings whitelist resolution (issue #144)", () => {
     expect(warnings).toEqual([]);
   });
 
-  it("skips the pre-flight entirely on an isolate: false opt-out", async () => {
+  it("warns nothing on an isolate: false opt-out", async () => {
     const { settingsPath, piInstallRoot } = await makeWhitelistFixture({
       missingSkills: ["absent"],
       missingExtensions: ["npm:pi-not-installed"],
     });
+
     const warnings: string[] = [];
+
+    await writeFile(
+      settingsPath,
+      `${await readFile(settingsPath, "utf8").then((t) => (t.endsWith("\n") ? t : `${t}\n`))}isolate: false\n`,
+      "utf8",
+    );
+
+    await loadAgentSettings(settingsPath, {
+      piInstallRoot,
+      onProgress: (message) => warnings.push(message),
+    });
+
+    expect(warnings).toEqual([]);
+  });
+
+  it("skips the pre-flight on isolate: false", async () => {
+    const { settingsPath, piInstallRoot } = await makeWhitelistFixture({
+      missingSkills: ["absent"],
+      missingExtensions: ["npm:pi-not-installed"],
+    });
 
     await writeFile(
       settingsPath,
@@ -1248,10 +1418,8 @@ describe("loadAgentSettings whitelist resolution (issue #144)", () => {
 
     const settings = await loadAgentSettings(settingsPath, {
       piInstallRoot,
-      onProgress: (message) => warnings.push(message),
     });
 
-    expect(warnings).toEqual([]);
     expect(settings.isolate).toBe(false);
   });
 
@@ -1275,12 +1443,31 @@ describe("loadAgentSettings whitelist resolution (issue #144)", () => {
     expect(settings.isolateSkills).toEqual([]);
   });
 
-  it("expands a leading ~ in path-like extension entries against home", async () => {
+  it("omits a home-relative missing extension", async () => {
     const root = await mkdtemp(join(tmpdir(), "k-wiki-whitelist-home-"));
 
     whitelistDirs.push(root);
 
     const settingsPath = join(root, "settings.yml");
+
+    await writeFile(
+      settingsPath,
+      "command: pi\nmodel: m\nreasoning: h\nisolate.extensions: ~/definitely-missing-ext.ts\n",
+      "utf8",
+    );
+
+    const settings = await loadAgentSettings(settingsPath, {});
+
+    expect(settings.isolateExtensions).toEqual([]);
+  });
+
+  it("warns naming the home-expanded path", async () => {
+    const root = await mkdtemp(join(tmpdir(), "k-wiki-whitelist-home-"));
+
+    whitelistDirs.push(root);
+
+    const settingsPath = join(root, "settings.yml");
+
     const warnings: string[] = [];
 
     await writeFile(
@@ -1289,11 +1476,10 @@ describe("loadAgentSettings whitelist resolution (issue #144)", () => {
       "utf8",
     );
 
-    const settings = await loadAgentSettings(settingsPath, {
+    await loadAgentSettings(settingsPath, {
       onProgress: (message) => warnings.push(message),
     });
 
-    expect(settings.isolateExtensions).toEqual([]);
     expect(warnings[0]).toContain(
       `entry "${join(homedir(), "definitely-missing-ext.ts")}"`,
     );

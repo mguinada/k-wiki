@@ -2,7 +2,7 @@
   "budget": {
     "filesOver800": 2,
     "filesOver500": 14,
-    "filesOver350": 30,
+    "filesOver350": 31,
     "maxFileLines": 1295,
     "crossDomainEdges": 112,
     "dataToSyncEdges": 0,

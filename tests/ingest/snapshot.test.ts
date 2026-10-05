@@ -48,7 +48,7 @@ describe("warnTrackedIgnored (issue #146)", () => {
 });
 
 describe("readSnapshot shape guard (issue #240 kill batch)", () => {
-  it("treats a null snapshot body as unstamped, not a crash", async () => {
+  it("warns on a null snapshot body", async () => {
     const dir = await mkdtemp(join(tmpdir(), "k-wiki-snap-null-"));
 
     tempDirs.push(dir);
@@ -58,6 +58,23 @@ describe("readSnapshot shape guard (issue #240 kill batch)", () => {
     await (await import("node:fs/promises")).writeFile(snapshotPath, "null");
 
     const messages: string[] = [];
+
+    await readSnapshot(snapshotPath, dir, (m) => messages.push(m), false);
+
+    expect(messages[0]).toContain("has no instance stamp");
+  });
+
+  it("treats a null snapshot body as unstamped", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-snap-null-"));
+
+    tempDirs.push(dir);
+
+    const snapshotPath = join(dir, "snapshot.json");
+
+    await (await import("node:fs/promises")).writeFile(snapshotPath, "null");
+
+    const messages: string[] = [];
+
     const snapshot = await readSnapshot(
       snapshotPath,
       dir,
@@ -65,16 +82,16 @@ describe("readSnapshot shape guard (issue #240 kill batch)", () => {
       false,
     );
 
-    expect(messages[0]).toContain("has no instance stamp");
     expect(snapshot).toBeUndefined();
   });
 
-  it("treats a non-string snapshotFor stamp as unstamped", async () => {
+  it("warns on a non-string snapshotFor stamp", async () => {
     const dir = await mkdtemp(join(tmpdir(), "k-wiki-snap-stamp-"));
 
     tempDirs.push(dir);
 
     const snapshotPath = join(dir, "snapshot.json");
+
     const fs = await import("node:fs/promises");
 
     await fs.writeFile(
@@ -83,6 +100,28 @@ describe("readSnapshot shape guard (issue #240 kill batch)", () => {
     );
 
     const messages: string[] = [];
+
+    await readSnapshot(snapshotPath, dir, (m) => messages.push(m), false);
+
+    expect(messages[0]).toContain("has no instance stamp");
+  });
+
+  it("treats a foreign snapshotFor stamp as unstamped", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-snap-stamp-"));
+
+    tempDirs.push(dir);
+
+    const snapshotPath = join(dir, "snapshot.json");
+
+    const fs = await import("node:fs/promises");
+
+    await fs.writeFile(
+      snapshotPath,
+      JSON.stringify({ snapshotFor: 42, files: {} }),
+    );
+
+    const messages: string[] = [];
+
     const snapshot = await readSnapshot(
       snapshotPath,
       dir,
@@ -90,7 +129,6 @@ describe("readSnapshot shape guard (issue #240 kill batch)", () => {
       false,
     );
 
-    expect(messages[0]).toContain("has no instance stamp");
     expect(snapshot).toBeUndefined();
   });
 });
@@ -107,15 +145,26 @@ describe("gitignore guards (issue #240 kill batch)", () => {
     expect(messages[0]).toContain(`${join(dir, ".gitignore")}`);
   });
 
-  it("excludes dashboard.html via .git/info/exclude — never a dirty tracked .gitignore (issue #390)", async () => {
+  it("names the exclude file it guards", async () => {
     const dir = await mkdtemp(join(tmpdir(), "k-wiki-dash-ignore-"));
 
     tempDirs.push(dir);
 
     const messages: string[] = [];
+
     await ensureDashboardIgnored(dir, (m) => messages.push(m));
 
     expect(messages[0]).toContain(`${join(dir, ".git", "info", "exclude")}`);
+  });
+
+  it("excludes dashboard.html via .git/info/exclude", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-dash-ignore-"));
+
+    tempDirs.push(dir);
+
+    const messages: string[] = [];
+
+    await ensureDashboardIgnored(dir, (m) => messages.push(m));
 
     const exclude = await readFile(
       join(dir, ".git", "info", "exclude"),
@@ -127,7 +176,7 @@ describe("gitignore guards (issue #240 kill batch)", () => {
 });
 
 describe("lint-window exclude guard (issue #359)", () => {
-  it("excludes the snapshot and its temp sibling in .git/info/exclude", async () => {
+  it("excludes the lint-window snapshot", async () => {
     const dir = await mkdtemp(join(tmpdir(), "k-wiki-lint-exclude-"));
 
     tempDirs.push(dir);
@@ -140,6 +189,20 @@ describe("lint-window exclude guard (issue #359)", () => {
     );
 
     expect(exclude).toContain("outputs/lint-window.json\n");
+  });
+
+  it("excludes its temp sibling", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-lint-exclude-"));
+
+    tempDirs.push(dir);
+
+    await ensureLintWindowIgnored(dir, () => {});
+
+    const exclude = await readFile(
+      join(dir, ".git", "info", "exclude"),
+      "utf8",
+    );
+
     expect(exclude).toContain("outputs/lint-window.json.tmp\n");
   });
 
@@ -169,7 +232,7 @@ describe("lint-window exclude guard (issue #359)", () => {
     expect(await readFile(excludePath, "utf8")).toBe(before);
   });
 
-  it("keeps an operator's own exclude lines ahead of the guard block", async () => {
+  it("keeps the operator's exclude lines first", async () => {
     const dir = await mkdtemp(join(tmpdir(), "k-wiki-lint-exclude-"));
 
     tempDirs.push(dir);
@@ -177,6 +240,7 @@ describe("lint-window exclude guard (issue #359)", () => {
     const excludePath = join(dir, ".git", "info", "exclude");
 
     await mkdir(join(dir, ".git", "info"), { recursive: true });
+
     await writeFile(excludePath, "*.secret\n");
 
     await ensureLintWindowIgnored(dir, () => {});
@@ -184,18 +248,37 @@ describe("lint-window exclude guard (issue #359)", () => {
     const exclude = await readFile(excludePath, "utf8");
 
     expect(exclude.startsWith("*.secret\n")).toBe(true);
+  });
+
+  it("still excludes the snapshot paths", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-lint-exclude-"));
+
+    tempDirs.push(dir);
+
+    const excludePath = join(dir, ".git", "info", "exclude");
+
+    await mkdir(join(dir, ".git", "info"), { recursive: true });
+
+    await writeFile(excludePath, "*.secret\n");
+
+    await ensureLintWindowIgnored(dir, () => {});
+
+    const exclude = await readFile(excludePath, "utf8");
+
     expect(exclude).toContain("outputs/lint-window.json");
   });
 });
 
 describe("committed-head anchor (issue #390)", () => {
-  it("ignores a snapshot whose anchor is not in HEAD's history — the incident regression (test 4)", async () => {
+  it("ignores a snapshot anchored outside HEAD's history", async () => {
     const dataRoot = await makeDataRepo({ "kept.md": "kept" }, (dir) =>
       tempDirs.push(dir),
     );
+
     const snapshotPath = join(dataRoot, "outputs", SNAPSHOT_NAME);
 
     await mkdir(dirname(snapshotPath), { recursive: true });
+
     await writeFile(
       snapshotPath,
       `${JSON.stringify({
@@ -206,6 +289,7 @@ describe("committed-head anchor (issue #390)", () => {
     );
 
     const messages: string[] = [];
+
     const snapshot = await readSnapshot(
       snapshotPath,
       dataRoot,
@@ -214,6 +298,35 @@ describe("committed-head anchor (issue #390)", () => {
     );
 
     expect(snapshot).toBeUndefined();
+  });
+
+  it("says why the snapshot was ignored", async () => {
+    const dataRoot = await makeDataRepo({ "kept.md": "kept" }, (dir) =>
+      tempDirs.push(dir),
+    );
+
+    const snapshotPath = join(dataRoot, "outputs", SNAPSHOT_NAME);
+
+    await mkdir(dirname(snapshotPath), { recursive: true });
+
+    await writeFile(
+      snapshotPath,
+      `${JSON.stringify({
+        snapshotFor: dataRoot,
+        committedHead: "f".repeat(40),
+        vaults: {},
+      })}\n`,
+    );
+
+    const messages: string[] = [];
+
+    await readSnapshot(
+      snapshotPath,
+      dataRoot,
+      (message) => messages.push(message),
+      false,
+    );
+
     expect(messages.join("\n")).toContain("not in this checkout's history");
   });
 
@@ -249,11 +362,13 @@ describe("committed-head anchor (issue #390)", () => {
     expect(snapshot).toEqual({ vaults: {} });
   });
 
-  it("anchors a written snapshot to the data repo's current head", async () => {
+  it("anchors the written snapshot to the current head", async () => {
     const dataRoot = await makeDataRepo({ "kept.md": "kept" }, (dir) =>
       tempDirs.push(dir),
     );
+
     const snapshotPath = join(dataRoot, "outputs", SNAPSHOT_NAME);
+
     const run = runContext({
       rawDir: join(dataRoot, "raw"),
       env: process.env,
@@ -267,40 +382,120 @@ describe("committed-head anchor (issue #390)", () => {
       committedHead: string | undefined;
       snapshotFor: string;
     };
+
     const { promisify } = await import("node:util");
+
     const { execFile } = await import("node:child_process");
+
     const head = (
       await promisify(execFile)("git", ["-C", dataRoot, "rev-parse", "HEAD"])
     ).stdout.trim();
 
     expect(stored.committedHead).toBe(head);
-    expect(stored.snapshotFor).toBe(dataRoot);
   });
-});
 
-describe("deferred shared-cycle snapshot (issue #390 steering repair 3)", () => {
-  it("builds the pending state without writing; the writer anchors to a given head", async () => {
+  it("stamps the snapshot with the instance", async () => {
     const dataRoot = await makeDataRepo({ "kept.md": "kept" }, (dir) =>
       tempDirs.push(dir),
     );
+
     const snapshotPath = join(dataRoot, "outputs", SNAPSHOT_NAME);
+
     const run = runContext({
       rawDir: join(dataRoot, "raw"),
       env: process.env,
     });
 
-    // Build-only: no file written.
+    await writeSnapshotIfNeeded(run, undefined, undefined, snapshotPath, {
+      vaults: {},
+    });
+
+    const stored = JSON.parse(await readFile(snapshotPath, "utf8")) as {
+      committedHead: string | undefined;
+      snapshotFor: string;
+    };
+
+    const { promisify } = await import("node:util");
+
+    const { execFile } = await import("node:child_process");
+
+    (
+      await promisify(execFile)("git", ["-C", dataRoot, "rev-parse", "HEAD"])
+    ).stdout.trim();
+
+    expect(stored.snapshotFor).toBe(dataRoot);
+  });
+});
+
+describe("deferred shared-cycle snapshot (issue #390 steering repair 3)", () => {
+  it("builds the pending manifest without writing", async () => {
+    const dataRoot = await makeDataRepo({ "kept.md": "kept" }, (dir) =>
+      tempDirs.push(dir),
+    );
+
+    const snapshotPath = join(dataRoot, "outputs", SNAPSHOT_NAME);
+
+    const run = runContext({
+      rawDir: join(dataRoot, "raw"),
+      env: process.env,
+    });
+
     const advance = buildSnapshotAdvance(undefined, undefined, {
       vaults: {},
     });
 
     expect(advance.manifest).toEqual({ vaults: {} });
+
+    await writeSnapshotAdvance(snapshotPath, run, advance.manifest);
+
+    JSON.parse(await readFile(snapshotPath, "utf8")) as {
+      committedHead: string;
+    };
+  });
+
+  it("leaves no snapshot file on disk", async () => {
+    const dataRoot = await makeDataRepo({ "kept.md": "kept" }, (dir) =>
+      tempDirs.push(dir),
+    );
+
+    const snapshotPath = join(dataRoot, "outputs", SNAPSHOT_NAME);
+
+    const run = runContext({
+      rawDir: join(dataRoot, "raw"),
+      env: process.env,
+    });
+
+    const advance = buildSnapshotAdvance(undefined, undefined, {
+      vaults: {},
+    });
+
     expect(await readFile(snapshotPath, "utf8").catch(() => "absent")).toBe(
       "absent",
     );
 
-    // The deferred write anchors to the head the caller knows — the
-    // post-content-commit HEAD in a shared cycle.
+    await writeSnapshotAdvance(snapshotPath, run, advance.manifest);
+
+    JSON.parse(await readFile(snapshotPath, "utf8")) as {
+      committedHead: string;
+    };
+  });
+
+  it("anchors the pending state to the given head", async () => {
+    const dataRoot = await makeDataRepo({ "kept.md": "kept" }, (dir) =>
+      tempDirs.push(dir),
+    );
+
+    const snapshotPath = join(dataRoot, "outputs", SNAPSHOT_NAME);
+
+    const run = runContext({
+      rawDir: join(dataRoot, "raw"),
+      env: process.env,
+    });
+
+    const advance = buildSnapshotAdvance(undefined, undefined, {
+      vaults: {},
+    });
+
     await writeSnapshotAdvance(snapshotPath, run, advance.manifest);
 
     const stored = JSON.parse(await readFile(snapshotPath, "utf8")) as {

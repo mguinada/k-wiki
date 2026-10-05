@@ -96,9 +96,7 @@ describe("hasLeadingDocblock", () => {
 });
 
 describe("architecture ledger (live tree)", () => {
-  it("the Bounded contexts table names exactly the src/ domains", async ({
-    skip,
-  }) => {
+  it("carries a parseable Bounded contexts table", async ({ skip }) => {
     if (insideStrykerSandbox()) {
       skip(skipNote);
 
@@ -111,12 +109,26 @@ describe("architecture ledger (live tree)", () => {
       domains,
       "AGENTS.md carries no Architecture alignment block",
     ).not.toBeUndefined();
+  });
+
+  it("keeps the Bounded contexts table aligned with the src/ tree", async ({
+    skip,
+  }) => {
+    if (insideStrykerSandbox()) {
+      skip(skipNote);
+
+      return;
+    }
+
+    const domains = ledgerDomains(await readFile(agentsPath, "utf8"));
 
     const live = (await readdir(join(repoRoot, "src"), { withFileTypes: true }))
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
       .sort();
+
     const ledger = [...new Set(domains)].sort();
+
     const offenders = [
       ...ledger
         .filter((domain) => !live.includes(domain))

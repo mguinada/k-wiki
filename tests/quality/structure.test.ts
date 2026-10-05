@@ -68,10 +68,15 @@ async function guardOffenders(): Promise<StructureOffenders> {
 }
 
 describe("parseStructureBudget", () => {
-  it("parses a budget carrying every counter and no excludes", () => {
+  it("parses the budget counters", () => {
     const parsed = parseStructureBudget(budgetJson({ maxFileLines: 1170 }));
 
     expect(parsed.budget.maxFileLines).toBe(1170);
+  });
+
+  it("parses an empty exclude list", () => {
+    const parsed = parseStructureBudget(budgetJson({ maxFileLines: 1170 }));
+
     expect(parsed.exclude).toEqual({});
   });
 
@@ -157,13 +162,23 @@ describe("breachesOf", () => {
 });
 
 describe("applyExcludes", () => {
-  it("removes the excluded path's sites from that counter only", () => {
+  it("drops the excluded path's sites", () => {
     const offenders = guardTreeOffenders();
+
     const filtered = applyExcludes(offenders, {
       filesOver800: ["big.ts"],
     });
 
     expect(filtered.filesOver800).toEqual([]);
+  });
+
+  it("keeps other counters' sites", () => {
+    const offenders = guardTreeOffenders();
+
+    const filtered = applyExcludes(offenders, {
+      filesOver800: ["big.ts"],
+    });
+
     expect(filtered.filesOver350).toEqual(offenders.filesOver350);
   });
 
@@ -184,12 +199,23 @@ describe("applyExcludes", () => {
 });
 
 describe("renderBreaches (guard tree)", () => {
-  it("names the data→sync offending import file:line for a breached dataToSyncEdges budget", async () => {
+  it("reports a breached data-to-sync edge", async () => {
     const offenders = await guardOffenders();
+
     const fresh = metricsOfOffenders(offenders);
+
     const breaches = breachesOf({ ...zeroBudget(), dataToSyncEdges: 0 }, fresh);
 
     expect(breaches.length).toBeGreaterThan(0);
+  });
+
+  it("renders the offending import file and line", async () => {
+    const offenders = await guardOffenders();
+
+    const fresh = metricsOfOffenders(offenders);
+
+    const breaches = breachesOf({ ...zeroBudget(), dataToSyncEdges: 0 }, fresh);
+
     expect(renderBreaches(breaches, offenders)).toContain("data/db.ts:1");
   });
 
@@ -215,7 +241,7 @@ describe("renderBreaches (guard tree)", () => {
     );
   });
 
-  it("caps the site list at ten entries with an overflow count", () => {
+  it("caps the site list at ten entries", () => {
     const offenders: StructureOffenders = {
       ...emptyOffenders(),
       parseArgsCopies: Array.from({ length: 12 }, (_, i) => ({
@@ -223,11 +249,43 @@ describe("renderBreaches (guard tree)", () => {
         line: i + 1,
       })),
     };
+
     const fresh = metricsOfOffenders(offenders);
+
     const text = renderBreaches(breachesOf(zeroBudget(), fresh), offenders);
 
     expect(text).toContain("src/mod9.ts:10");
+  });
+
+  it("reports the overflow count", () => {
+    const offenders: StructureOffenders = {
+      ...emptyOffenders(),
+      parseArgsCopies: Array.from({ length: 12 }, (_, i) => ({
+        path: `src/mod${i}.ts`,
+        line: i + 1,
+      })),
+    };
+
+    const fresh = metricsOfOffenders(offenders);
+
+    const text = renderBreaches(breachesOf(zeroBudget(), fresh), offenders);
+
     expect(text).toContain("+2 more");
+  });
+
+  it("drops the eleventh site from the list", () => {
+    const offenders: StructureOffenders = {
+      ...emptyOffenders(),
+      parseArgsCopies: Array.from({ length: 12 }, (_, i) => ({
+        path: `src/mod${i}.ts`,
+        line: i + 1,
+      })),
+    };
+
+    const fresh = metricsOfOffenders(offenders);
+
+    const text = renderBreaches(breachesOf(zeroBudget(), fresh), offenders);
+
     expect(text).not.toContain("src/mod10.ts");
   });
 });

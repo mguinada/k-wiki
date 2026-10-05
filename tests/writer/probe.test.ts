@@ -12,7 +12,7 @@ import { makeWriterWorld } from "./git-world.ts";
 const NOW = () => new Date("2026-01-01T00:00:00Z");
 
 describe("probeRemoteCapabilities", () => {
-  it("passes the full lifecycle against a local bare remote and cleans up", async () => {
+  it("passes the full lifecycle against a local bare remote", async () => {
     const world = await makeWriterWorld();
 
     try {
@@ -30,9 +30,96 @@ describe("probeRemoteCapabilities", () => {
       });
 
       expect(result.ok).toBe(true);
+    } finally {
+      await world.cleanup();
+    }
+  });
+
+  it("retains no refs after the probe cleanup", async () => {
+    const world = await makeWriterWorld();
+
+    try {
+      await world.a.git(["fetch", "origin", "refs/heads/main"]);
+      const treeOid = (
+        await world.a.git(["rev-parse", "FETCH_HEAD^{tree}"])
+      ).stdout.trim();
+      const result = await probeRemoteCapabilities({
+        git: world.a.git,
+        remote: "origin",
+        treeOid,
+        now: NOW,
+        holder: "probe-host:1",
+        onProgress: () => {},
+      });
+
       expect(result.retained).toEqual([]);
+    } finally {
+      await world.cleanup();
+    }
+  });
+
+  it("narrates at least three lifecycle steps", async () => {
+    const world = await makeWriterWorld();
+
+    try {
+      await world.a.git(["fetch", "origin", "refs/heads/main"]);
+      const treeOid = (
+        await world.a.git(["rev-parse", "FETCH_HEAD^{tree}"])
+      ).stdout.trim();
+      const result = await probeRemoteCapabilities({
+        git: world.a.git,
+        remote: "origin",
+        treeOid,
+        now: NOW,
+        holder: "probe-host:1",
+        onProgress: () => {},
+      });
+
       expect(result.detail.length).toBeGreaterThanOrEqual(3);
+    } finally {
+      await world.cleanup();
+    }
+  });
+
+  it("verifies the atomic finalize in the narration", async () => {
+    const world = await makeWriterWorld();
+
+    try {
+      await world.a.git(["fetch", "origin", "refs/heads/main"]);
+      const treeOid = (
+        await world.a.git(["rev-parse", "FETCH_HEAD^{tree}"])
+      ).stdout.trim();
+      const result = await probeRemoteCapabilities({
+        git: world.a.git,
+        remote: "origin",
+        treeOid,
+        now: NOW,
+        holder: "probe-host:1",
+        onProgress: () => {},
+      });
+
       expect(result.detail.join("\n")).toContain("atomic finalize verified");
+    } finally {
+      await world.cleanup();
+    }
+  });
+
+  it("keeps the detail narration informative", async () => {
+    const world = await makeWriterWorld();
+
+    try {
+      await world.a.git(["fetch", "origin", "refs/heads/main"]);
+      const treeOid = (
+        await world.a.git(["rev-parse", "FETCH_HEAD^{tree}"])
+      ).stdout.trim();
+      await probeRemoteCapabilities({
+        git: world.a.git,
+        remote: "origin",
+        treeOid,
+        now: NOW,
+        holder: "probe-host:1",
+        onProgress: () => {},
+      });
 
       const refs = (
         await world.a.git(["ls-remote", "--refs", "origin"]).catch(() => ({
@@ -46,7 +133,7 @@ describe("probeRemoteCapabilities", () => {
     }
   });
 
-  it("records the custom-ref create and exact-OID replace steps", async () => {
+  it("narrates the probe lease creation", async () => {
     const world = await makeWriterWorld();
 
     try {
@@ -64,13 +151,35 @@ describe("probeRemoteCapabilities", () => {
       });
 
       expect(result.detail[0]).toContain("probe lease created");
+    } finally {
+      await world.cleanup();
+    }
+  });
+
+  it("narrates the exact-OID replacement", async () => {
+    const world = await makeWriterWorld();
+
+    try {
+      await world.a.git(["fetch", "origin", "refs/heads/main"]);
+      const treeOid = (
+        await world.a.git(["rev-parse", "FETCH_HEAD^{tree}"])
+      ).stdout.trim();
+      const result = await probeRemoteCapabilities({
+        git: world.a.git,
+        remote: "origin",
+        treeOid,
+        now: NOW,
+        holder: "probe-host:1",
+        onProgress: () => {},
+      });
+
       expect(result.detail[1]).toContain("replaced by exact OID");
     } finally {
       await world.cleanup();
     }
   });
 
-  it("fails and names retained refs when the remote rejects custom refs", async () => {
+  it("fails the probe when custom refs are refused", async () => {
     const world = await makeWriterWorld();
 
     try {
@@ -103,6 +212,43 @@ describe("probeRemoteCapabilities", () => {
       });
 
       expect(result.ok).toBe(false);
+    } finally {
+      await world.cleanup();
+    }
+  });
+
+  it("names the retained refs in the refusal", async () => {
+    const world = await makeWriterWorld();
+
+    try {
+      // A pre-receive hook that rejects every refs/k-wiki/ update:
+      // the stand-in for a remote without the capabilities.
+      await world.a.git([
+        "push",
+        "-q",
+        "origin",
+        "refs/heads/main:refs/heads/main",
+      ]);
+      const hook =
+        '#!/bin/sh\nwhile read -r _old _new ref; do\n  case "$ref" in refs/k-wiki/*) echo no-custom-refs >&2; exit 1 ;; esac\ndone\nexit 0\n';
+      await import("node:fs/promises").then(async (fs) => {
+        await fs.writeFile(`${world.remoteDir}/hooks/pre-receive`, hook, {
+          mode: 0o755,
+        });
+      });
+
+      const treeOid = (
+        await world.a.git(["rev-parse", "HEAD^{tree}"])
+      ).stdout.trim();
+      const result = await probeRemoteCapabilities({
+        git: world.a.git,
+        remote: "origin",
+        treeOid,
+        now: NOW,
+        holder: "probe-host:1",
+        onProgress: () => {},
+      });
+
       expect(result.detail.join(" ")).toMatch(/custom-ref create refused/);
     } finally {
       await world.cleanup();

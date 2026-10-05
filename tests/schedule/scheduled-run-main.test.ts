@@ -103,14 +103,23 @@ describe("scheduled-run main config resolution", () => {
     expect(`${exitCode}|${err}`).toMatch(/^1\|/);
   });
 
-  it("exits 1 with a fail-loud message when the config has no dataRoot", async () => {
+  it("exits 1 without a dataRoot", async () => {
     await tempHome();
 
     loadSyncConfig.mockResolvedValue({});
 
-    const { err, exitCode } = await runMain([]);
+    const { exitCode } = await runMain([]);
 
     expect(exitCode).toBe(1);
+  });
+
+  it("fails loud naming the missing dataRoot", async () => {
+    await tempHome();
+
+    loadSyncConfig.mockResolvedValue({});
+
+    const { err } = await runMain([]);
+
     expect(err).toContain("no dataRoot");
   });
 

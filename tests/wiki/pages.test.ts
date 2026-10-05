@@ -385,12 +385,19 @@ describe("parsePageFields", () => {
     expect(fields.tags).toEqual(["llm", "rag"]);
   });
 
-  it("switches list mode off between sources and tags keys", () => {
+  it("reads the sources list after list mode ends", () => {
     const fields = parsePageFields(
       '---\nsources:\n  - "[[A]]"\ntags:\n  - llm\n---\n',
     );
 
     expect(fields.sources).toEqual(["[[A]]"]);
+  });
+
+  it("reads the tags list after list mode ends", () => {
+    const fields = parsePageFields(
+      '---\nsources:\n  - "[[A]]"\ntags:\n  - llm\n---\n',
+    );
+
     expect(fields.tags).toEqual(["llm"]);
   });
 

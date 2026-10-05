@@ -219,7 +219,7 @@ describe("runQueryCli", () => {
     expect(prompt).toContain("Question: When should I prefer RAG?");
   });
 
-  it("prints a failure red under the caller's prefix and sets exit 1", async () => {
+  it("prints the failure under the caller's prefix", async () => {
     const prior = process.env.NO_COLOR;
 
     process.env.NO_COLOR = "1";
@@ -229,6 +229,24 @@ describe("runQueryCli", () => {
       const { err } = await runShell(h, { prefix: "wiki-query" });
 
       expect(err).toContain("wiki-query: agent exited with code 1");
+    } finally {
+      if (prior === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = prior;
+      }
+    }
+  });
+
+  it("prints a failure red under the caller's prefix and sets exit 1", async () => {
+    const prior = process.env.NO_COLOR;
+
+    process.env.NO_COLOR = "1";
+
+    try {
+      const h = await makeHarness(FAILING_AGENT);
+      await runShell(h, { prefix: "wiki-query" });
+
       expect(process.exitCode).toBe(1);
     } finally {
       if (prior === undefined) {

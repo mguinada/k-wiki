@@ -43,9 +43,11 @@ function argv(
 }
 
 describe("writer-lease status", () => {
-  it("reports the live lease's holder and expiry", async () => {
+  it("reports the live lease's holder", async () => {
     const world = await makeWriterWorld();
+
     worlds.push(world);
+
     const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
 
     await runSharedCycle({
@@ -56,12 +58,12 @@ describe("writer-lease status", () => {
       },
     }).catch(() => {});
 
-    // Hold a lease with a known holder via the cycle's own protocol:
-    // acquire directly so the fields are exact.
     const { acquireLease } = await import("../../src/writer/lease-ops.ts");
+
     const git = gitRunnerFor({ dir: cw.dataRoot, env: process.env });
 
     await git(["fetch", "origin", "refs/heads/main"]);
+
     await acquireLease({
       git,
       remote: "origin",
@@ -79,16 +81,95 @@ describe("writer-lease status", () => {
     const out = logSpy.mock.calls.map((call) => String(call[0])).join("\n");
 
     expect(out).toContain("mac-b:9");
+  }, 30000);
+
+  it("reports the live lease's expiry", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    await runSharedCycle({
+      ...optionsFor(cw, cw.dataRoot),
+      run: {
+        ...optionsFor(cw, cw.dataRoot).run,
+        now: () => new Date("2025-12-31T23:00:00Z"),
+      },
+    }).catch(() => {});
+
+    const { acquireLease } = await import("../../src/writer/lease-ops.ts");
+
+    const git = gitRunnerFor({ dir: cw.dataRoot, env: process.env });
+
+    await git(["fetch", "origin", "refs/heads/main"]);
+
+    await acquireLease({
+      git,
+      remote: "origin",
+      leaseRef: LEASE_REF,
+      treeOid: (await git(["rev-parse", "HEAD^{tree}"])).stdout.trim(),
+      base: (await git(["rev-parse", "HEAD"])).stdout.trim(),
+      now: NOW,
+      holder: "mac-b:9",
+    });
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await main(argv("status", cw));
+
+    const out = logSpy.mock.calls.map((call) => String(call[0])).join("\n");
+
     expect(out).toContain("2026-01-01T04:00:00.000Z");
-    // The expiry verdict is wall-clock relative: either the live
-    // takeover hint or the expired verdict, never neither.
+  }, 30000);
+
+  it("names the takeover route for an expired lease", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    await runSharedCycle({
+      ...optionsFor(cw, cw.dataRoot),
+      run: {
+        ...optionsFor(cw, cw.dataRoot).run,
+        now: () => new Date("2025-12-31T23:00:00Z"),
+      },
+    }).catch(() => {});
+
+    const { acquireLease } = await import("../../src/writer/lease-ops.ts");
+
+    const git = gitRunnerFor({ dir: cw.dataRoot, env: process.env });
+
+    await git(["fetch", "origin", "refs/heads/main"]);
+
+    await acquireLease({
+      git,
+      remote: "origin",
+      leaseRef: LEASE_REF,
+      treeOid: (await git(["rev-parse", "HEAD^{tree}"])).stdout.trim(),
+      base: (await git(["rev-parse", "HEAD"])).stdout.trim(),
+      now: NOW,
+      holder: "mac-b:9",
+    });
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await main(argv("status", cw));
+
+    const out = logSpy.mock.calls.map((call) => String(call[0])).join("\n");
+
     expect(/EXPIRED|takeover --expected/.test(out)).toBe(true);
   }, 30000);
 
-  it("reports a free lane when no lease is held and exits 0", async () => {
+  it("reports a free lane", async () => {
     const world = await makeWriterWorld();
+
     worlds.push(world);
+
     const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     await main(argv("status", cw));
@@ -97,8 +178,22 @@ describe("writer-lease status", () => {
 
     expect(out).toContain("none held");
 
-    // A completed read resets any usage error.
+    process.exitCode = undefined;
+  }, 30000);
+
+  it("reports a free lane when no lease is held and exits 0", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await main(argv("status", cw));
+
     expect(process.exitCode).not.toBe(1);
+
     process.exitCode = undefined;
   }, 30000);
 
@@ -128,14 +223,19 @@ describe("writer-lease status", () => {
 });
 
 describe("writer-lease takeover", () => {
-  it("replaces the lease by exact OID with a fresh recovery lease", async () => {
+  it("logs the recovery lease replacement", async () => {
     const world = await makeWriterWorld();
+
     worlds.push(world);
+
     const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
     const { acquireLease } = await import("../../src/writer/lease-ops.ts");
+
     const git = gitRunnerFor({ dir: cw.dataRoot, env: process.env });
 
     await git(["fetch", "origin", "refs/heads/main"]);
+
     const acquire = await acquireLease({
       git,
       remote: "origin",
@@ -160,20 +260,218 @@ describe("writer-lease takeover", () => {
       logSpy.mock.calls.map((call) => String(call[0])).join("\n"),
     ).toContain("lease taken over");
 
-    // The recovery lease replaced the old one by exact OID: new
-    // token, base = current remote main, TTL restarted — and the
-    // lane stays serialized under it.
+    process.exitCode = undefined;
+  }, 30000);
+
+  it("replaces the lease", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { acquireLease } = await import("../../src/writer/lease-ops.ts");
+
+    const git = gitRunnerFor({ dir: cw.dataRoot, env: process.env });
+
+    await git(["fetch", "origin", "refs/heads/main"]);
+
+    const acquire = await acquireLease({
+      git,
+      remote: "origin",
+      leaseRef: LEASE_REF,
+      treeOid: (await git(["rev-parse", "HEAD^{tree}"])).stdout.trim(),
+      base: (await git(["rev-parse", "HEAD"])).stdout.trim(),
+      now: NOW,
+      holder: "mac-a:1",
+    });
+
+    if (acquire.status !== "acquired") {
+      throw new Error("setup: acquire refused");
+    }
+
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await main(
+      argv("takeover", cw, ["--expected", acquire.lease.oid, "--confirm"]),
+    );
+
     const lease = await (
       await import("../../src/writer/lease.ts")
     ).observeLease(git, "origin", LEASE_REF);
 
     expect(lease).toBeDefined();
+
+    process.exitCode = undefined;
+  }, 30000);
+
+  it("replaces it under a new OID", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { acquireLease } = await import("../../src/writer/lease-ops.ts");
+
+    const git = gitRunnerFor({ dir: cw.dataRoot, env: process.env });
+
+    await git(["fetch", "origin", "refs/heads/main"]);
+
+    const acquire = await acquireLease({
+      git,
+      remote: "origin",
+      leaseRef: LEASE_REF,
+      treeOid: (await git(["rev-parse", "HEAD^{tree}"])).stdout.trim(),
+      base: (await git(["rev-parse", "HEAD"])).stdout.trim(),
+      now: NOW,
+      holder: "mac-a:1",
+    });
+
+    if (acquire.status !== "acquired") {
+      throw new Error("setup: acquire refused");
+    }
+
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await main(
+      argv("takeover", cw, ["--expected", acquire.lease.oid, "--confirm"]),
+    );
+
+    const lease = await (
+      await import("../../src/writer/lease.ts")
+    ).observeLease(git, "origin", LEASE_REF);
+
     expect(lease?.oid).not.toBe(acquire.lease.oid);
+
+    process.exitCode = undefined;
+  }, 30000);
+
+  it("changes the holder on recovery", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { acquireLease } = await import("../../src/writer/lease-ops.ts");
+
+    const git = gitRunnerFor({ dir: cw.dataRoot, env: process.env });
+
+    await git(["fetch", "origin", "refs/heads/main"]);
+
+    const acquire = await acquireLease({
+      git,
+      remote: "origin",
+      leaseRef: LEASE_REF,
+      treeOid: (await git(["rev-parse", "HEAD^{tree}"])).stdout.trim(),
+      base: (await git(["rev-parse", "HEAD"])).stdout.trim(),
+      now: NOW,
+      holder: "mac-a:1",
+    });
+
+    if (acquire.status !== "acquired") {
+      throw new Error("setup: acquire refused");
+    }
+
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await main(
+      argv("takeover", cw, ["--expected", acquire.lease.oid, "--confirm"]),
+    );
+
+    const lease = await (
+      await import("../../src/writer/lease.ts")
+    ).observeLease(git, "origin", LEASE_REF);
+
     expect(lease?.body.holder).not.toBe("mac-a:1");
+
+    process.exitCode = undefined;
+  }, 30000);
+
+  it("bases the recovery lease on the current head", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { acquireLease } = await import("../../src/writer/lease-ops.ts");
+
+    const git = gitRunnerFor({ dir: cw.dataRoot, env: process.env });
+
+    await git(["fetch", "origin", "refs/heads/main"]);
+
+    const acquire = await acquireLease({
+      git,
+      remote: "origin",
+      leaseRef: LEASE_REF,
+      treeOid: (await git(["rev-parse", "HEAD^{tree}"])).stdout.trim(),
+      base: (await git(["rev-parse", "HEAD"])).stdout.trim(),
+      now: NOW,
+      holder: "mac-a:1",
+    });
+
+    if (acquire.status !== "acquired") {
+      throw new Error("setup: acquire refused");
+    }
+
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await main(
+      argv("takeover", cw, ["--expected", acquire.lease.oid, "--confirm"]),
+    );
+
+    const lease = await (
+      await import("../../src/writer/lease.ts")
+    ).observeLease(git, "origin", LEASE_REF);
+
     expect(lease?.body.base).toBe(
       (await git(["rev-parse", "HEAD"])).stdout.trim(),
     );
+
+    process.exitCode = undefined;
+  }, 30000);
+
+  it("replaces the lease by exact OID with a fresh recovery lease", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { acquireLease } = await import("../../src/writer/lease-ops.ts");
+
+    const git = gitRunnerFor({ dir: cw.dataRoot, env: process.env });
+
+    await git(["fetch", "origin", "refs/heads/main"]);
+
+    const acquire = await acquireLease({
+      git,
+      remote: "origin",
+      leaseRef: LEASE_REF,
+      treeOid: (await git(["rev-parse", "HEAD^{tree}"])).stdout.trim(),
+      base: (await git(["rev-parse", "HEAD"])).stdout.trim(),
+      now: NOW,
+      holder: "mac-a:1",
+    });
+
+    if (acquire.status !== "acquired") {
+      throw new Error("setup: acquire refused");
+    }
+
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await main(
+      argv("takeover", cw, ["--expected", acquire.lease.oid, "--confirm"]),
+    );
+
+    const lease = await (
+      await import("../../src/writer/lease.ts")
+    ).observeLease(git, "origin", LEASE_REF);
+
     expect(lease?.body.renewals).toBe(0);
+
     process.exitCode = undefined;
   }, 30000);
 
@@ -241,20 +539,35 @@ describe("writer-lease takeover", () => {
 });
 
 describe("writer-lease observation invariant", () => {
-  it("sees the lease a default fetch cannot observe (test 13, CLI side)", async () => {
+  it("sees the remote refs a default fetch observes", async () => {
     const world = await makeWriterWorld();
+
     worlds.push(world);
+
     const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
     const git = gitRunnerFor({ dir: cw.dataRoot, env: process.env });
 
     await git(["fetch", "origin", "refs/heads/main"]);
+
     await git(["fetch", "origin"]);
 
-    // No local ref carries the lease; only the explicit observation
-    // path can see it — undefined here means "not fetched by
-    // default", so an absent observation through ls-remote stays the
-    // single source of truth.
     expect(await git(["for-each-ref", "refs/remotes/origin"])).toBeDefined();
+  }, 30000);
+
+  it("still misses the lease a default fetch cannot observe", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const git = gitRunnerFor({ dir: cw.dataRoot, env: process.env });
+
+    await git(["fetch", "origin", "refs/heads/main"]);
+
+    await git(["fetch", "origin"]);
+
     expect(await observeLeaseOid(git, "origin", LEASE_REF)).toBeUndefined();
   }, 30000);
 });

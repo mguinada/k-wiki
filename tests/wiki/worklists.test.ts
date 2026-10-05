@@ -260,7 +260,7 @@ describe("computeWikiWorklists", () => {
 });
 
 describe("computeWikiWorklists second brain", () => {
-  it("gives the second brain's profile no orphan, index, or sources rows", async () => {
+  it("reports no orphan candidates for the second brain", async () => {
     const wikiDir = await makeWiki({
       "index.md":
         "---\ntitle: I\ntype: topic\ncreated: 2026-09-01\nupdated: 2026-09-01\ntags:\n  - nav\n---\n# Index\n- [[a]]\n",
@@ -282,11 +282,81 @@ describe("computeWikiWorklists second brain", () => {
 
     const worklists = await computeWikiWorklists(wikiDir);
 
-    // The contract's accreted layer: read by convention, no `sources`,
-    // never an index entry — none of it is a lint candidate.
     expect(worklists.orphans).toEqual([]);
+  });
+
+  it("reports no index misses for the second brain", async () => {
+    const wikiDir = await makeWiki({
+      "index.md":
+        "---\ntitle: I\ntype: topic\ncreated: 2026-09-01\nupdated: 2026-09-01\ntags:\n  - nav\n---\n# Index\n- [[a]]\n",
+      "a.md": page(),
+      "second-brain/profile.md": [
+        "---",
+        'title: "Profile"',
+        "type: profile",
+        "created: 2026-09-01",
+        "updated: 2026-09-01",
+        "tags:",
+        "  - profile",
+        "---",
+        "",
+        "Context about the subject.",
+        "",
+      ].join("\n"),
+    });
+
+    const worklists = await computeWikiWorklists(wikiDir);
+
     expect(worklists.indexMisses).toEqual([]);
+  });
+
+  it("reports no frontmatter misses for the second brain", async () => {
+    const wikiDir = await makeWiki({
+      "index.md":
+        "---\ntitle: I\ntype: topic\ncreated: 2026-09-01\nupdated: 2026-09-01\ntags:\n  - nav\n---\n# Index\n- [[a]]\n",
+      "a.md": page(),
+      "second-brain/profile.md": [
+        "---",
+        'title: "Profile"',
+        "type: profile",
+        "created: 2026-09-01",
+        "updated: 2026-09-01",
+        "tags:",
+        "  - profile",
+        "---",
+        "",
+        "Context about the subject.",
+        "",
+      ].join("\n"),
+    });
+
+    const worklists = await computeWikiWorklists(wikiDir);
+
     expect(worklists.frontmatterMisses).toEqual([]);
+  });
+
+  it("reports no single-source pages for the second brain", async () => {
+    const wikiDir = await makeWiki({
+      "index.md":
+        "---\ntitle: I\ntype: topic\ncreated: 2026-09-01\nupdated: 2026-09-01\ntags:\n  - nav\n---\n# Index\n- [[a]]\n",
+      "a.md": page(),
+      "second-brain/profile.md": [
+        "---",
+        'title: "Profile"',
+        "type: profile",
+        "created: 2026-09-01",
+        "updated: 2026-09-01",
+        "tags:",
+        "  - profile",
+        "---",
+        "",
+        "Context about the subject.",
+        "",
+      ].join("\n"),
+    });
+
+    const worklists = await computeWikiWorklists(wikiDir);
+
     expect(worklists.singleSource).toEqual([]);
   });
 });
@@ -321,7 +391,7 @@ describe("filterWorklistsToWindow", () => {
 });
 
 describe("renderWorklists", () => {
-  it("renders one evidence line per candidate and (none) sections", () => {
+  it("renders an evidence line per candidate", () => {
     const text = renderWorklists({
       orphans: [{ page: "a.md", detail: "no inbound links" }],
       singleSource: [],
@@ -334,8 +404,50 @@ describe("renderWorklists", () => {
     });
 
     expect(text).toContain("- a.md — no inbound links");
+  });
+
+  it("heads the orphan section with its count", () => {
+    const text = renderWorklists({
+      orphans: [{ page: "a.md", detail: "no inbound links" }],
+      singleSource: [],
+      nonSourceEdges: [],
+      frontmatterMisses: [],
+      tagDrift: [],
+      indexMisses: [],
+      duplicateTitles: [],
+      danglingIndexEntries: [],
+    });
+
     expect(text).toContain("### Orphan candidates (1)");
+  });
+
+  it("renders empty sections as (none)", () => {
+    const text = renderWorklists({
+      orphans: [{ page: "a.md", detail: "no inbound links" }],
+      singleSource: [],
+      nonSourceEdges: [],
+      frontmatterMisses: [],
+      tagDrift: [],
+      indexMisses: [],
+      duplicateTitles: [],
+      danglingIndexEntries: [],
+    });
+
     expect(text).toContain("### Single-source pages (0)");
+  });
+
+  it("renders one evidence line per candidate and (none) sections", () => {
+    const text = renderWorklists({
+      orphans: [{ page: "a.md", detail: "no inbound links" }],
+      singleSource: [],
+      nonSourceEdges: [],
+      frontmatterMisses: [],
+      tagDrift: [],
+      indexMisses: [],
+      duplicateTitles: [],
+      danglingIndexEntries: [],
+    });
+
     expect(text).toContain("(none)");
   });
 });

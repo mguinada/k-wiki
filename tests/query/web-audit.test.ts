@@ -8,7 +8,7 @@ import {
 import { assistantTextLine, toolCallLine, toolResultLine } from "./helpers.ts";
 
 describe("parseAgentJsonStream", () => {
-  it("records every web tool call in order with its target and count", () => {
+  it("records every web tool call in order", () => {
     const stream = [
       toolCallLine("c1", { query: "first query" }),
       toolResultLine("c1", "results one", { totalResults: 5 }),
@@ -16,14 +16,54 @@ describe("parseAgentJsonStream", () => {
       toolResultLine("c2", "fetched b"),
       assistantTextLine("- done"),
     ].join("\n");
+
     const parsed = parseAgentJsonStream(stream);
 
     expect(parsed.calls.map((call) => call.tool)).toEqual([
       "web_search",
       "web_search",
     ]);
+  });
+
+  it("records the first call's target", () => {
+    const stream = [
+      toolCallLine("c1", { query: "first query" }),
+      toolResultLine("c1", "results one", { totalResults: 5 }),
+      toolCallLine("c2", { url: "https://example.com/b" }),
+      toolResultLine("c2", "fetched b"),
+      assistantTextLine("- done"),
+    ].join("\n");
+
+    const parsed = parseAgentJsonStream(stream);
+
     expect(parsed.calls[0]?.target).toBe("first query");
+  });
+
+  it("records the first call's result count", () => {
+    const stream = [
+      toolCallLine("c1", { query: "first query" }),
+      toolResultLine("c1", "results one", { totalResults: 5 }),
+      toolCallLine("c2", { url: "https://example.com/b" }),
+      toolResultLine("c2", "fetched b"),
+      assistantTextLine("- done"),
+    ].join("\n");
+
+    const parsed = parseAgentJsonStream(stream);
+
     expect(parsed.calls[0]?.results).toBe(5);
+  });
+
+  it("records the second call's target", () => {
+    const stream = [
+      toolCallLine("c1", { query: "first query" }),
+      toolResultLine("c1", "results one", { totalResults: 5 }),
+      toolCallLine("c2", { url: "https://example.com/b" }),
+      toolResultLine("c2", "fetched b"),
+      assistantTextLine("- done"),
+    ].join("\n");
+
+    const parsed = parseAgentJsonStream(stream);
+
     expect(parsed.calls[1]?.target).toBe("https://example.com/b");
   });
 
@@ -54,12 +94,19 @@ describe("parseAgentJsonStream", () => {
     expect(parsed.enrichment).toBe("- the answer bullets");
   });
 
-  it("skips non-JSON lines instead of failing the parse", () => {
+  it("keeps the enrichment from non-JSON lines", () => {
     const parsed = parseAgentJsonStream(
       ["not json", assistantTextLine("- ok")].join("\n"),
     );
 
     expect(parsed.enrichment).toBe("- ok");
+  });
+
+  it("records no calls from non-JSON lines", () => {
+    const parsed = parseAgentJsonStream(
+      ["not json", assistantTextLine("- ok")].join("\n"),
+    );
+
     expect(parsed.calls).toEqual([]);
   });
 
@@ -85,11 +132,19 @@ describe("reconcileWebSources", () => {
     failed: false,
   };
 
-  it("passes when every cited URL is accounted for and every fetch is cited", () => {
+  it("passes reconciliation when citations account", () => {
     const enrichment = "- [a](https://example.com/a) (retrieved 2026-10-03).";
+
     const reconciliation = reconcileWebSources(enrichment, [fetchCall]);
 
     expect(reconciliation.failure).toBeUndefined();
+  });
+
+  it("carries the cited sources with stamps", () => {
+    const enrichment = "- [a](https://example.com/a) (retrieved 2026-10-03).";
+
+    const reconciliation = reconcileWebSources(enrichment, [fetchCall]);
+
     expect(reconciliation.sources).toEqual([
       { url: "https://example.com/a", retrieved: "2026-10-03" },
     ]);
@@ -234,27 +289,55 @@ describe("reconcileWebSources", () => {
     expect(reconciliation.sources).toEqual([]);
   });
 
-  it("reconciles a cited URL containing balanced parentheses", () => {
+  it("reconciles a URL with balanced parentheses", () => {
     const url = "https://en.wikipedia.org/wiki/Mercury_(planet)";
+
     const fetch: WebCall = { ...fetchCall, target: url, urls: [url] };
+
     const reconciliation = reconcileWebSources(
       `- [Mercury](${url}) confirms the topic (retrieved 2026-10-03).`,
       [fetch],
     );
 
     expect(reconciliation.failure).toBeUndefined();
+  });
+
+  it("keeps a cited source with a parenthesized URL listed", async () => {
+    const url = "https://en.wikipedia.org/wiki/Mercury_(planet)";
+
+    const fetch: WebCall = { ...fetchCall, target: url, urls: [url] };
+
+    const reconciliation = reconcileWebSources(
+      `- [Mercury](${url}) confirms the topic (retrieved 2026-10-03).`,
+      [fetch],
+    );
+
     expect(reconciliation.sources).toEqual([{ url, retrieved: "2026-10-03" }]);
   });
 
-  it("reconciles a cited URL with nested balanced parentheses", () => {
+  it("reconciles a URL with nested parentheses", () => {
     const url = "https://en.wikipedia.org/wiki/Foo_(bar_(baz))";
+
     const fetch: WebCall = { ...fetchCall, target: url, urls: [url] };
+
     const reconciliation = reconcileWebSources(
       `- [Foo](${url}) confirms the topic (retrieved 2026-10-03).`,
       [fetch],
     );
 
     expect(reconciliation.failure).toBeUndefined();
+  });
+
+  it("keeps a cited source with nested parentheses in its URL listed", async () => {
+    const url = "https://en.wikipedia.org/wiki/Foo_(bar_(baz))";
+
+    const fetch: WebCall = { ...fetchCall, target: url, urls: [url] };
+
+    const reconciliation = reconcileWebSources(
+      `- [Foo](${url}) confirms the topic (retrieved 2026-10-03).`,
+      [fetch],
+    );
+
     expect(reconciliation.sources).toEqual([{ url, retrieved: "2026-10-03" }]);
   });
 
@@ -264,6 +347,13 @@ describe("reconcileWebSources", () => {
     ]);
 
     expect(reconciliation.failure).toBeUndefined();
+  });
+
+  it("lists no sources for a failed fetch", () => {
+    const reconciliation = reconcileWebSources("- nothing cited.", [
+      { ...fetchCall, failed: true },
+    ]);
+
     expect(reconciliation.sources).toEqual([]);
   });
 
@@ -298,7 +388,7 @@ describe("reconcileWebSources", () => {
     expect(reconciliation.failure).toBeUndefined();
   });
 
-  it("credits a search entry whose returned URL the enrichment cites", () => {
+  it("passes when a search result is cited", () => {
     const search: WebCall = {
       tool: "web_search",
       target: "topic",
@@ -307,12 +397,30 @@ describe("reconcileWebSources", () => {
       urls: ["https://example.com/a", "https://example.com/other"],
       failed: false,
     };
+
     const reconciliation = reconcileWebSources(
       "- [a](https://example.com/a).",
       [search],
     );
 
     expect(reconciliation.failure).toBeUndefined();
+  });
+
+  it("credits the search's URL as a source", () => {
+    const search: WebCall = {
+      tool: "web_search",
+      target: "topic",
+      results: 5,
+      timestamp: 1791000000000,
+      urls: ["https://example.com/a", "https://example.com/other"],
+      failed: false,
+    };
+
+    const reconciliation = reconcileWebSources(
+      "- [a](https://example.com/a).",
+      [search],
+    );
+
     expect(reconciliation.sources).toEqual([
       { url: "https://example.com/a", retrieved: "2026-10-03" },
     ]);

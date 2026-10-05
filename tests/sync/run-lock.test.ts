@@ -45,15 +45,41 @@ async function tempDir(): Promise<string> {
 }
 
 describe("acquireLock", () => {
-  it("creates the lock file with the current pid and an ISO timestamp", async () => {
+  it("acquires a free lock", async () => {
     const dir = await tempDir();
+
     const lockPath = join(dir, "scheduled-run.lock");
 
     expect(await acquireLock(lockPath)).toBe("acquired");
 
+    lockData(await readFile(lockPath, "utf8"));
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("records the current pid in the lock", async () => {
+    const dir = await tempDir();
+
+    const lockPath = join(dir, "scheduled-run.lock");
+
+    await acquireLock(lockPath);
+
     const lock = lockData(await readFile(lockPath, "utf8"));
 
     expect(lock?.pid).toBe(process.pid);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("records an ISO takenAt stamp", async () => {
+    const dir = await tempDir();
+
+    const lockPath = join(dir, "scheduled-run.lock");
+
+    await acquireLock(lockPath);
+
+    const lock = lockData(await readFile(lockPath, "utf8"));
+
     expect(Number.isNaN(Date.parse(lock?.takenAt ?? "x"))).toBe(false);
 
     await rm(dir, { recursive: true, force: true });
@@ -129,30 +155,66 @@ describe("acquireLock", () => {
 });
 
 describe("releaseLock", () => {
-  it("removes the lock file and tolerates an absent one", async () => {
+  it("removes the lock file on release", async () => {
     const dir = await tempDir();
+
     const lockPath = join(dir, "scheduled-run.lock");
 
     await acquireLock(lockPath);
+
     await releaseLock(lockPath);
 
     await expect(readFile(lockPath, "utf8")).rejects.toThrow();
+
+    await releaseLock(lockPath);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("tolerates releasing an absent lock", async () => {
+    const dir = await tempDir();
+
+    const lockPath = join(dir, "scheduled-run.lock");
+
+    await acquireLock(lockPath);
+
+    await releaseLock(lockPath);
+
     await expect(releaseLock(lockPath)).resolves.toBeUndefined();
 
     await rm(dir, { recursive: true, force: true });
   });
 
-  it("keeps a successor's lock whose recorded pid is not this process's", async () => {
+  it("keeps a successor's lock in place", async () => {
     const dir = await tempDir();
+
     const lockPath = join(dir, "scheduled-run.lock");
 
     await writeFile(
       lockPath,
       `${JSON.stringify({ pid: 4242, takenAt: new Date().toISOString() })}\n`,
     );
+
     await releaseLock(lockPath, 1111);
 
     await expect(readFile(lockPath, "utf8")).resolves.toContain("4242");
+
+    await releaseLock(lockPath, 4242);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("refuses to remove a lock this process does not own", async () => {
+    const dir = await tempDir();
+
+    const lockPath = join(dir, "scheduled-run.lock");
+
+    await writeFile(
+      lockPath,
+      `${JSON.stringify({ pid: 4242, takenAt: new Date().toISOString() })}\n`,
+    );
+
+    await releaseLock(lockPath, 1111);
 
     await releaseLock(lockPath, 4242);
 
@@ -353,20 +415,39 @@ describe("acquireLock (issue #240 kill batch)", () => {
 });
 
 describe("lockData", () => {
-  it("parses a written lock and rejects garbage", () => {
+  it("parses a well-formed lock body", () => {
     const parsed = lockData('{"pid":42,"takenAt":"2026-01-01T00:00:00Z"}');
 
     expect(parsed).toEqual({ pid: 42, takenAt: "2026-01-01T00:00:00Z" });
+  });
+
+  it("rejects a non-JSON lock body", () => {
+    lockData('{"pid":42,"takenAt":"2026-01-01T00:00:00Z"}');
+
     expect(lockData("not json")).toBeUndefined();
+  });
+
+  it("rejects a lock body without a pid", () => {
+    lockData('{"pid":42,"takenAt":"2026-01-01T00:00:00Z"}');
+
     expect(lockData('{"takenAt":"2026-01-01T00:00:00Z"}')).toBeUndefined();
   });
 
-  it("rejects a non-object lock, a non-numeric pid, and a non-string timestamp", () => {
+  it("rejects a non-object lock body", () => {
     expect(lockData("42")).toBeUndefined();
+  });
+
+  it("rejects a non-numeric pid", () => {
     expect(lockData('"str"')).toBeUndefined();
+  });
+
+  it("rejects a non-string takenAt", () => {
     expect(
       lockData('{"pid":"42","takenAt":"2026-01-01T00:00:00Z"}'),
     ).toBeUndefined();
+  });
+
+  it("rejects a non-numeric takenAt", () => {
     expect(lockData('{"pid":42,"takenAt":42}')).toBeUndefined();
   });
 });

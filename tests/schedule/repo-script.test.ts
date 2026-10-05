@@ -33,8 +33,9 @@ async function tempRepo(): Promise<Repo> {
 }
 
 describe("spawnRepoScript", () => {
-  it("streams the child's stdout and stderr into the log", async () => {
+  it("resolves the spawned script", async () => {
     const repo = await tempRepo();
+
     const lines: string[] = [];
 
     await repo.write(
@@ -50,6 +51,24 @@ describe("spawnRepoScript", () => {
         lines.push(line),
       ),
     ).resolves.toBeUndefined();
+  });
+
+  it("streams the child's stdout and stderr into the log", async () => {
+    const repo = await tempRepo();
+
+    const lines: string[] = [];
+
+    await repo.write(
+      "wiki-sync",
+      [
+        'console.log("digest-from-stdout");',
+        'console.error("progress-from-stderr");',
+      ].join("\n"),
+    );
+
+    await spawnRepoScript(repo.repoRoot, "wiki-sync", [], (line) =>
+      lines.push(line),
+    );
 
     expect(lines).toEqual(["digest-from-stdout", "progress-from-stderr"]);
   });

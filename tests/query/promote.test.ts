@@ -197,10 +197,15 @@ describe("templatePromotedPage", () => {
     expect(page.endsWith("Proposal body citing [[rag-notes]].\n")).toBe(true);
   });
 
-  it("drops the via and expires stamps", () => {
+  it("drops the via stamp on promotion", () => {
     const page = templatePromotedPage(NOTE_TEXT, ["rag-notes"], "2026-08-20");
 
     expect(page).not.toContain("via:");
+  });
+
+  it("drops the expires stamp on promotion", () => {
+    const page = templatePromotedPage(NOTE_TEXT, ["rag-notes"], "2026-08-20");
+
     expect(page).not.toContain("expires:");
   });
 
@@ -272,9 +277,17 @@ describe("promoteLogEntry", () => {
 describe("promoteSandboxNote", () => {
   it("lands the promoted page under its type directory", async () => {
     const dataRoot = await makeRepo();
+
     const result = await promote(dataRoot);
 
     expect(result.pagePath).toBe("wiki/concepts/attention-notes.md");
+  });
+
+  it("writes the promoted text unchanged", async () => {
+    const dataRoot = await makeRepo();
+
+    await promote(dataRoot);
+
     expect(
       await readFile(
         join(dataRoot, "wiki", "concepts", "attention-notes.md"),
@@ -303,21 +316,32 @@ describe("promoteSandboxNote", () => {
     );
   });
 
-  it("prepends the promote audit entry to log.md", async () => {
+  it("prepends the promote audit entry", async () => {
     const dataRoot = await makeRepo();
+
     await promote(dataRoot);
 
     const log = await readFile(join(dataRoot, "wiki", "log.md"), "utf8");
 
     expect(log).toContain("## [2026-08-20] promote | Attention notes");
+  });
+
+  it("names the source and destination in the entry", async () => {
+    const dataRoot = await makeRepo();
+
+    await promote(dataRoot);
+
+    const log = await readFile(join(dataRoot, "wiki", "log.md"), "utf8");
+
     expect(log).toContain(
       "Promoted wiki/sandbox/attention-notes.md to wiki/concepts/attention-notes.md; sources: [[rag-notes]].",
     );
   });
 
-  it("leaves exactly one promote commit and a clean tree", async () => {
+  it("leaves one promote commit", async () => {
     const dataRoot = await makeRepo();
-    const result = await promote(dataRoot);
+
+    await promote(dataRoot);
 
     const { stdout: subjects } = await run("git", ["log", "--format=%s"], {
       cwd: dataRoot,
@@ -327,9 +351,13 @@ describe("promoteSandboxNote", () => {
       "promote: attention-notes",
       "init",
     ]);
+  });
 
-    // --no-renames: git would fold the sandbox-copy deletion into a
-    // rename R<score> line and --name-only would hide the source.
+  it("touches exactly the promoted page, index, log, and sandbox note", async () => {
+    const dataRoot = await makeRepo();
+
+    await promote(dataRoot);
+
     const { stdout: files } = await run(
       "git",
       ["show", "--name-only", "--no-renames", "--format=", "HEAD"],
@@ -342,6 +370,12 @@ describe("promoteSandboxNote", () => {
       "wiki/log.md",
       "wiki/sandbox/attention-notes.md",
     ]);
+  });
+
+  it("leaves a clean tree after a successful promote", async () => {
+    const dataRoot = await makeRepo();
+
+    await promote(dataRoot);
 
     const { stdout: status } = await run(
       "git",
@@ -350,6 +384,13 @@ describe("promoteSandboxNote", () => {
     );
 
     expect(status).toBe("");
+  });
+
+  it("records the promote commit sha", async () => {
+    const dataRoot = await makeRepo();
+
+    const result = await promote(dataRoot);
+
     expect(result.commit).toMatch(/^[0-9a-f]{40}$/);
   });
 
@@ -380,7 +421,31 @@ describe("promoteSandboxNote", () => {
     );
 
     expect(failure?.message).toContain("dirty");
+  });
+
+  it("names the dirty path", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(join(dataRoot, "wiki", "index.md"), `${INDEX_TEXT}dirty\n`);
+
+    const failure = await promote(dataRoot).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
     expect(failure?.message).toContain("wiki/index.md");
+  });
+
+  it("leaves the sandbox note untouched", async () => {
+    const dataRoot = await makeRepo();
+
+    await writeFile(join(dataRoot, "wiki", "index.md"), `${INDEX_TEXT}dirty\n`);
+
+    await promote(dataRoot).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
     expect(
       await readFile(
         join(dataRoot, "wiki", "sandbox", "attention-notes.md"),
@@ -419,10 +484,17 @@ describe("promoteSandboxNote", () => {
     );
   });
 
-  it("refuses a slug that collides with an existing main page", async () => {
+  it("refuses a colliding slug", async () => {
     const dataRoot = await makeRepo({ collide: true });
 
     await expect(promote(dataRoot)).rejects.toThrow(/already exists/);
+  });
+
+  it("leaves the existing main page's sources intact", async () => {
+    const dataRoot = await makeRepo({ collide: true });
+
+    await promote(dataRoot).catch(() => undefined);
+
     expect(
       await readFile(
         join(dataRoot, "wiki", "concepts", "attention-notes.md"),
@@ -455,10 +527,9 @@ describe("promoteSandboxNote", () => {
     await expect(promote(dataRoot)).rejects.toThrow(/type/);
   });
 
-  it("rolls back every artifact when the commit itself fails", async () => {
+  it("fails the commit naming the rollback", async () => {
     const dataRoot = await makeRepo();
 
-    // An empty user name makes git refuse the commit deterministically.
     await run("git", ["config", "user.name", ""], { cwd: dataRoot });
 
     const failure = await promote(dataRoot).then(
@@ -467,6 +538,17 @@ describe("promoteSandboxNote", () => {
     );
 
     expect(failure?.message).toContain("rolled back");
+  });
+
+  it("restores the sandbox note", async () => {
+    const dataRoot = await makeRepo();
+
+    await run("git", ["config", "user.name", ""], { cwd: dataRoot });
+
+    await promote(dataRoot).then(
+      () => undefined,
+      (error: Error) => error,
+    );
 
     expect(
       await readFile(
@@ -474,8 +556,31 @@ describe("promoteSandboxNote", () => {
         "utf8",
       ),
     ).toBe(NOTE_TEXT);
+  });
+
+  it("restores the index after the failed-commit rollback", async () => {
+    const dataRoot = await makeRepo();
+
+    await run("git", ["config", "user.name", ""], { cwd: dataRoot });
+
+    await promote(dataRoot).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
     expect(await readFile(join(dataRoot, "wiki", "index.md"), "utf8")).toBe(
       INDEX_TEXT,
+    );
+  });
+
+  it("leaves a clean tree after the failed-commit rollback", async () => {
+    const dataRoot = await makeRepo();
+
+    await run("git", ["config", "user.name", ""], { cwd: dataRoot });
+
+    await promote(dataRoot).then(
+      () => undefined,
+      (error: Error) => error,
     );
 
     const { stdout: status } = await run(
@@ -495,7 +600,7 @@ describe("promoteSandboxNote", () => {
     );
   });
 
-  it("rolls back every artifact when the citation wall trips", async () => {
+  it("fails the run naming the citation wall", async () => {
     const dataRoot = await makeRepo({
       noteText: NOTE_TEXT.replace(
         "Proposal body citing [[rag-notes]].",
@@ -510,7 +615,38 @@ describe("promoteSandboxNote", () => {
     );
 
     expect(failure?.message).toContain("citation wall");
+  });
+
+  it("names the offending peer note", async () => {
+    const dataRoot = await makeRepo({
+      noteText: NOTE_TEXT.replace(
+        "Proposal body citing [[rag-notes]].",
+        "Proposal body citing [[rag-notes]] and [[peer-note]].",
+      ),
+      withPeer: true,
+    });
+
+    const failure = await promote(dataRoot).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
     expect(failure?.message).toContain("peer-note");
+  });
+
+  it("keeps the sandbox note with its link", async () => {
+    const dataRoot = await makeRepo({
+      noteText: NOTE_TEXT.replace(
+        "Proposal body citing [[rag-notes]].",
+        "Proposal body citing [[rag-notes]] and [[peer-note]].",
+      ),
+      withPeer: true,
+    });
+
+    await promote(dataRoot).then(
+      () => undefined,
+      (error: Error) => error,
+    );
 
     expect(
       await readFile(
@@ -518,11 +654,58 @@ describe("promoteSandboxNote", () => {
         "utf8",
       ),
     ).toContain("peer-note");
+  });
+
+  it("restores the index after the citation-wall rollback", async () => {
+    const dataRoot = await makeRepo({
+      noteText: NOTE_TEXT.replace(
+        "Proposal body citing [[rag-notes]].",
+        "Proposal body citing [[rag-notes]] and [[peer-note]].",
+      ),
+      withPeer: true,
+    });
+
+    await promote(dataRoot).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
     expect(await readFile(join(dataRoot, "wiki", "index.md"), "utf8")).toBe(
       INDEX_TEXT,
     );
+  });
+
+  it("restores the log", async () => {
+    const dataRoot = await makeRepo({
+      noteText: NOTE_TEXT.replace(
+        "Proposal body citing [[rag-notes]].",
+        "Proposal body citing [[rag-notes]] and [[peer-note]].",
+      ),
+      withPeer: true,
+    });
+
+    await promote(dataRoot).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+
     expect(await readFile(join(dataRoot, "wiki", "log.md"), "utf8")).toBe(
       "# Wiki Log\n",
+    );
+  });
+
+  it("leaves a clean tree after the citation-wall rollback", async () => {
+    const dataRoot = await makeRepo({
+      noteText: NOTE_TEXT.replace(
+        "Proposal body citing [[rag-notes]].",
+        "Proposal body citing [[rag-notes]] and [[peer-note]].",
+      ),
+      withPeer: true,
+    });
+
+    await promote(dataRoot).then(
+      () => undefined,
+      (error: Error) => error,
     );
 
     const { stdout: status } = await run(

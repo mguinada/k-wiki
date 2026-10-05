@@ -482,13 +482,25 @@ describe("formatAge", () => {
 });
 
 describe("watchdog grace anchor", () => {
-  it("writes and reads the anchor as one ISO line", async () => {
+  it("reads back the anchored instant", async () => {
     const dataRoot = await tempDataRoot();
+
     const now = new Date("2026-09-20T11:00:00.000Z");
 
     await writeWatchdogSince({ dataRoot, now });
 
     expect((await readWatchdogSince(dataRoot))?.getTime()).toBe(now.getTime());
+  });
+
+  it("stores the anchor as one ISO line", async () => {
+    const dataRoot = await tempDataRoot();
+
+    const now = new Date("2026-09-20T11:00:00.000Z");
+
+    await writeWatchdogSince({ dataRoot, now });
+
+    await readWatchdogSince(dataRoot);
+
     expect(await readFile(watchdogSincePath(dataRoot), "utf8")).toBe(
       "2026-09-20T11:00:00.000Z\n",
     );

@@ -290,21 +290,30 @@ describe("composeExpungePrompt", () => {
 
 describe("composeRunPrompt", () => {
   it("returns the full prompt unmodified", async () => {
-    const { composed, directSet } = await composeRunPrompt({
+    const { composed } = await composeRunPrompt({
       mode: "full",
       promptText: "FULL PROMPT",
     });
 
     expect(composed).toBe("FULL PROMPT");
+  });
+
+  it("sets no direct file set in full mode", async () => {
+    const { directSet } = await composeRunPrompt({
+      mode: "full",
+      promptText: "FULL PROMPT",
+    });
+
     expect(directSet).toBeUndefined();
   });
 
-  it("appends the changed-source list and operator note on incremental", async () => {
+  it("labels the incremental prompt", async () => {
     const diff = diffManifests(
       manifestWith("Engineering", { "a.md": entry("a") }),
       manifestWith("Engineering", { "a.md": entry("a2") }),
     );
-    const { composed, directSet } = await composeRunPrompt({
+
+    const { composed } = await composeRunPrompt({
       mode: "incremental",
       promptText: "INCREMENTAL PROMPT",
       diff,
@@ -312,17 +321,137 @@ describe("composeRunPrompt", () => {
     });
 
     expect(composed).toContain("INCREMENTAL PROMPT");
+  });
+
+  it("lists the changed sources", async () => {
+    const diff = diffManifests(
+      manifestWith("Engineering", { "a.md": entry("a") }),
+      manifestWith("Engineering", { "a.md": entry("a2") }),
+    );
+
+    const { composed } = await composeRunPrompt({
+      mode: "incremental",
+      promptText: "INCREMENTAL PROMPT",
+      diff,
+      note: "re-adjudicate",
+    });
+
     expect(composed).toContain("~ Engineering/a.md");
+  });
+
+  it("adds the operator note heading", async () => {
+    const diff = diffManifests(
+      manifestWith("Engineering", { "a.md": entry("a") }),
+      manifestWith("Engineering", { "a.md": entry("a2") }),
+    );
+
+    const { composed } = await composeRunPrompt({
+      mode: "incremental",
+      promptText: "INCREMENTAL PROMPT",
+      diff,
+      note: "re-adjudicate",
+    });
+
     expect(composed).toContain("Operator note:");
+  });
+
+  it("asks for re-adjudication", async () => {
+    const diff = diffManifests(
+      manifestWith("Engineering", { "a.md": entry("a") }),
+      manifestWith("Engineering", { "a.md": entry("a2") }),
+    );
+
+    const { composed } = await composeRunPrompt({
+      mode: "incremental",
+      promptText: "INCREMENTAL PROMPT",
+      diff,
+      note: "re-adjudicate",
+    });
+
     expect(composed).toContain("re-adjudicate");
+  });
+
+  it("sets no direct file set in incremental mode", async () => {
+    const diff = diffManifests(
+      manifestWith("Engineering", { "a.md": entry("a") }),
+      manifestWith("Engineering", { "a.md": entry("a2") }),
+    );
+
+    const { directSet } = await composeRunPrompt({
+      mode: "incremental",
+      promptText: "INCREMENTAL PROMPT",
+      diff,
+      note: "re-adjudicate",
+    });
+
     expect(directSet).toBeUndefined();
   });
 
-  it("composes the expunge message with the direct set and announces it", async () => {
-    const progress: string[] = [];
+  it("labels the expunge prompt", async () => {
     const previous = manifestWith("Engineering", { "gone.md": entry("gone") });
+
     const diff = diffManifests(previous, manifestWith("Engineering", {}));
-    const { composed, directSet } = await composeRunPrompt({
+
+    const { composed } = await composeRunPrompt({
+      mode: "expunge",
+      removedCount: 1,
+      promptText: "EXPUNGE PROMPT",
+      promptsDir: "/no/such/prompts",
+      dataRoot: "/no/such/data-root",
+      diff,
+      env: process.env,
+      onProgress: () => {},
+    });
+
+    expect(composed).toContain("EXPUNGE PROMPT");
+  });
+
+  it("lists the expunged source", async () => {
+    const previous = manifestWith("Engineering", { "gone.md": entry("gone") });
+
+    const diff = diffManifests(previous, manifestWith("Engineering", {}));
+
+    const { composed } = await composeRunPrompt({
+      mode: "expunge",
+      removedCount: 1,
+      promptText: "EXPUNGE PROMPT",
+      promptsDir: "/no/such/prompts",
+      dataRoot: "/no/such/data-root",
+      diff,
+      env: process.env,
+      onProgress: () => {},
+    });
+
+    expect(composed).toContain("### Engineering/gone.md");
+  });
+
+  it("carries the direct set", async () => {
+    const previous = manifestWith("Engineering", { "gone.md": entry("gone") });
+
+    const diff = diffManifests(previous, manifestWith("Engineering", {}));
+
+    const { directSet } = await composeRunPrompt({
+      mode: "expunge",
+      removedCount: 1,
+      promptText: "EXPUNGE PROMPT",
+      promptsDir: "/no/such/prompts",
+      dataRoot: "/no/such/data-root",
+      diff,
+      env: process.env,
+      onProgress: () => {},
+    });
+
+    expect(directSet).toEqual(["index.md", "overview.md"]);
+  });
+
+  it("announces the expunge on progress", async () => {
+    const progress: string[] = [];
+
+    const previous = manifestWith("Engineering", { "gone.md": entry("gone") });
+
+    const diff = diffManifests(previous, manifestWith("Engineering", {}));
+
+    await composeRunPrompt({
       mode: "expunge",
       removedCount: 1,
       promptText: "EXPUNGE PROMPT",
@@ -333,9 +462,6 @@ describe("composeRunPrompt", () => {
       onProgress: (message) => progress.push(message),
     });
 
-    expect(composed).toContain("EXPUNGE PROMPT");
-    expect(composed).toContain("### Engineering/gone.md");
-    expect(directSet).toEqual(["index.md", "overview.md"]);
     expect(progress).toEqual([
       "wiki-ingest: expunge — 1 removed source; direct set: wiki/index.md, wiki/overview.md",
     ]);

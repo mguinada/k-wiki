@@ -97,8 +97,11 @@ describe("scheduled-run help (printed by the launcher)", () => {
     expect(bullet).toContain("recover-fix-surface");
   });
 
-  it("documents the credential pre-flight's named skip reason", () => {
+  it("documents the credential pre-flight in the help", () => {
     expect(help).toContain("Credential pre-flight:");
+  });
+
+  it("names the skip reason in the help", () => {
     expect(help).toContain("authenticatable agent target — zai/GLM-5.2");
   });
 

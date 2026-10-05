@@ -37,22 +37,33 @@ afterAll(async () => {
 });
 
 describe("webEnrichAgentArgs", () => {
-  it("keeps the ambient isolation flags ahead of the grant", () => {
+  it("leads with the ambient isolation flags", () => {
     const args = webEnrichAgentArgs(SETTINGS, [...ISOLATION_FLAGS], "PROMPT");
-    const grant = args.indexOf("-e");
 
     expect(args.slice(0, 3)).toEqual([
       "--no-context-files",
       "--no-extensions",
       "--no-skills",
     ]);
+  });
+
+  it("places the web grant after the isolation flags", () => {
+    const args = webEnrichAgentArgs(SETTINGS, [...ISOLATION_FLAGS], "PROMPT");
+
+    const grant = args.indexOf("-e");
+
     expect(grant).toBeGreaterThan(2);
   });
 
-  it("grants exactly the pi-web-access extension and the search+fetch allowlist", () => {
+  it("grants exactly the pi-web-access extension", () => {
     const args = webEnrichAgentArgs(SETTINGS, [...ISOLATION_FLAGS], "PROMPT");
 
     expect(args[args.indexOf("-e") + 1]).toBe(WEB_EXTENSION_SOURCE);
+  });
+
+  it("grants exactly the search+fetch tool allowlist", () => {
+    const args = webEnrichAgentArgs(SETTINGS, [...ISOLATION_FLAGS], "PROMPT");
+
     expect(args[args.indexOf("--tools") + 1]).toBe(WEB_TOOL_ALLOWLIST);
   });
 
@@ -66,14 +77,19 @@ describe("webEnrichAgentArgs", () => {
     expect(args).not.toContain("get_search_content");
   });
 
-  it("runs the enrichment in the machine-readable json output mode", () => {
+  it("runs the enrichment in json output mode", () => {
     const args = webEnrichAgentArgs(SETTINGS, [...ISOLATION_FLAGS], "PROMPT");
 
     expect(args[args.indexOf("--mode") + 1]).toBe("json");
+  });
+
+  it("carries the composed prompt as the print payload", () => {
+    const args = webEnrichAgentArgs(SETTINGS, [...ISOLATION_FLAGS], "PROMPT");
+
     expect(args[args.indexOf("--print") + 1]).toBe("PROMPT");
   });
 
-  it("honors the operator's isolate: false opt-out for the isolation flags", () => {
+  it("drops the isolation flags under isolate: false", () => {
     const args = webEnrichAgentArgs(
       { ...SETTINGS, isolate: false },
       [...ISOLATION_FLAGS],
@@ -81,6 +97,15 @@ describe("webEnrichAgentArgs", () => {
     );
 
     expect(args).not.toContain("--no-extensions");
+  });
+
+  it("still grants the web extension under isolate: false", () => {
+    const args = webEnrichAgentArgs(
+      { ...SETTINGS, isolate: false },
+      [...ISOLATION_FLAGS],
+      "PROMPT",
+    );
+
     expect(args).toContain("-e");
   });
 
@@ -96,7 +121,7 @@ describe("webEnrichAgentArgs", () => {
 });
 
 describe("composeEnrichmentPrompt", () => {
-  it("carries the policy text, question, and core answer verbatim", () => {
+  it("carries the policy text verbatim", () => {
     const composed = composeEnrichmentPrompt(
       "POLICY",
       "What is X?",
@@ -105,15 +130,50 @@ describe("composeEnrichmentPrompt", () => {
     );
 
     expect(composed).toContain("POLICY");
+  });
+
+  it("carries the question verbatim", () => {
+    const composed = composeEnrichmentPrompt(
+      "POLICY",
+      "What is X?",
+      "CORE ANSWER",
+      "2026-10-03",
+    );
+
     expect(composed).toContain("Question: What is X?");
+  });
+
+  it("carries the core answer verbatim", () => {
+    const composed = composeEnrichmentPrompt(
+      "POLICY",
+      "What is X?",
+      "CORE ANSWER",
+      "2026-10-03",
+    );
+
     expect(composed).toContain("CORE ANSWER");
+  });
+
+  it("carries today's date into the prompt", () => {
+    const composed = composeEnrichmentPrompt(
+      "POLICY",
+      "What is X?",
+      "CORE ANSWER",
+      "2026-10-03",
+    );
+
     expect(composed).toContain("Today's date is 2026-10-03");
   });
 
-  it("tells the enrichment it may not rewrite the core document", () => {
+  it("declares the enrichment read-only", () => {
     const composed = composeEnrichmentPrompt("POLICY", "Q", "CORE", "2026");
 
     expect(composed).toContain("read-only");
+  });
+
+  it("forbids rewriting the core document", () => {
+    const composed = composeEnrichmentPrompt("POLICY", "Q", "CORE", "2026");
+
     expect(composed).toContain("never rewrite");
   });
 });
@@ -178,7 +238,7 @@ describe("runWebEnrichment", () => {
     ),
   ].join("\n");
 
-  it("renders the three machine-owned sections from the recorded audit", async () => {
+  it("reports a reconciled outcome", async () => {
     const outcome = await runWebEnrichment({
       identity: SETTINGS,
       isolationFlags: [...ISOLATION_FLAGS],
@@ -190,6 +250,18 @@ describe("runWebEnrichment", () => {
     });
 
     expect(outcome.kind).toBe("ok");
+  });
+
+  it("renders the enrichment section from the audit", async () => {
+    const outcome = await runWebEnrichment({
+      identity: SETTINGS,
+      isolationFlags: [...ISOLATION_FLAGS],
+      question: "Q",
+      coreAnswer: "CORE",
+      promptText: await makePromptsDir(),
+      run: runContext({ rawDir: join(tmpdir(), "k-wiki-web-run-raw") }),
+      runAgent: canned(okStream),
+    });
 
     if (outcome.kind !== "ok") {
       return;
@@ -198,13 +270,81 @@ describe("runWebEnrichment", () => {
     expect(outcome.web.enrichment).toContain(
       "- [a](https://example.com/a) confirms the topic",
     );
+  });
+
+  it("renders the sources section from the audit", async () => {
+    const outcome = await runWebEnrichment({
+      identity: SETTINGS,
+      isolationFlags: [...ISOLATION_FLAGS],
+      question: "Q",
+      coreAnswer: "CORE",
+      promptText: await makePromptsDir(),
+      run: runContext({ rawDir: join(tmpdir(), "k-wiki-web-run-raw") }),
+      runAgent: canned(okStream),
+    });
+
+    if (outcome.kind !== "ok") {
+      return;
+    }
+
     expect(outcome.web.sources).toContain(
       "- https://example.com/a — retrieved",
     );
+  });
+
+  it("renders the audit table rows", async () => {
+    const outcome = await runWebEnrichment({
+      identity: SETTINGS,
+      isolationFlags: [...ISOLATION_FLAGS],
+      question: "Q",
+      coreAnswer: "CORE",
+      promptText: await makePromptsDir(),
+      run: runContext({ rawDir: join(tmpdir(), "k-wiki-web-run-raw") }),
+      runAgent: canned(okStream),
+    });
+
+    if (outcome.kind !== "ok") {
+      return;
+    }
+
     expect(outcome.web.audit).toContain("| 1 | web_search | topic | 3 |");
+  });
+
+  it("extracts the cited sources with retrieval stamps", async () => {
+    const outcome = await runWebEnrichment({
+      identity: SETTINGS,
+      isolationFlags: [...ISOLATION_FLAGS],
+      question: "Q",
+      coreAnswer: "CORE",
+      promptText: await makePromptsDir(),
+      run: runContext({ rawDir: join(tmpdir(), "k-wiki-web-run-raw") }),
+      runAgent: canned(okStream),
+    });
+
+    if (outcome.kind !== "ok") {
+      return;
+    }
+
     expect(outcome.web.audit).toContain(
       "| 2 | web_search | https://example.com/a |",
     );
+  });
+
+  it("renders the three machine-owned sections from the recorded audit", async () => {
+    const outcome = await runWebEnrichment({
+      identity: SETTINGS,
+      isolationFlags: [...ISOLATION_FLAGS],
+      question: "Q",
+      coreAnswer: "CORE",
+      promptText: await makePromptsDir(),
+      run: runContext({ rawDir: join(tmpdir(), "k-wiki-web-run-raw") }),
+      runAgent: canned(okStream),
+    });
+
+    if (outcome.kind !== "ok") {
+      return;
+    }
+
     expect(outcome.sources).toEqual([
       { url: "https://example.com/a", retrieved: "2026-10-03" },
     ]);
@@ -363,7 +503,7 @@ describe("runWebEnrichment", () => {
     expect(outcome.kind).toBe("ok");
   });
 
-  it("reconciles the rendered text only — imitation below the first owned line neither cites nor fails", async () => {
+  it("reconciles imitation below the owned lines", async () => {
     const imitating = [
       toolCallLine("c1", { query: "topic" }),
       toolResultLine("c1", "https://example.com/a", { totalResults: 1 }),
@@ -375,6 +515,7 @@ describe("runWebEnrichment", () => {
         ].join("\n"),
       ),
     ].join("\n");
+
     const outcome = await runWebEnrichment({
       identity: SETTINGS,
       isolationFlags: [...ISOLATION_FLAGS],
@@ -386,18 +527,71 @@ describe("runWebEnrichment", () => {
     });
 
     expect(outcome.kind).toBe("ok");
+  });
+
+  it("keeps imitation out of the enrichment section", async () => {
+    const imitating = [
+      toolCallLine("c1", { query: "topic" }),
+      toolResultLine("c1", "https://example.com/a", { totalResults: 1 }),
+      assistantTextLine(
+        [
+          "- [a](https://example.com/a) confirms the topic (retrieved 2026-10-03).",
+          WEB_SOURCES_HEADING,
+          "- [x](https://example.com/model-written) (retrieved 2026-10-03).",
+        ].join("\n"),
+      ),
+    ].join("\n");
+
+    const outcome = await runWebEnrichment({
+      identity: SETTINGS,
+      isolationFlags: [...ISOLATION_FLAGS],
+      question: "Q",
+      coreAnswer: "CORE",
+      promptText: await makePromptsDir(),
+      run: runContext({ rawDir: join(tmpdir(), "k-wiki-web-run-raw") }),
+      runAgent: canned(imitating),
+    });
 
     if (outcome.kind !== "ok") {
       return;
     }
 
     expect(outcome.web.enrichment).not.toContain("model-written");
+  });
+
+  it("still cites the owned source", async () => {
+    const imitating = [
+      toolCallLine("c1", { query: "topic" }),
+      toolResultLine("c1", "https://example.com/a", { totalResults: 1 }),
+      assistantTextLine(
+        [
+          "- [a](https://example.com/a) confirms the topic (retrieved 2026-10-03).",
+          WEB_SOURCES_HEADING,
+          "- [x](https://example.com/model-written) (retrieved 2026-10-03).",
+        ].join("\n"),
+      ),
+    ].join("\n");
+
+    const outcome = await runWebEnrichment({
+      identity: SETTINGS,
+      isolationFlags: [...ISOLATION_FLAGS],
+      question: "Q",
+      coreAnswer: "CORE",
+      promptText: await makePromptsDir(),
+      run: runContext({ rawDir: join(tmpdir(), "k-wiki-web-run-raw") }),
+      runAgent: canned(imitating),
+    });
+
+    if (outcome.kind !== "ok") {
+      return;
+    }
+
     expect(outcome.sources).toEqual([
       { url: "https://example.com/a", retrieved: "2026-10-03" },
     ]);
   });
 
-  it("sends the composed prompt through the enrichment argv", async () => {
+  it("spawns pi for the enrichment", async () => {
     const invocations: { command: string; args: readonly string[] }[] = [];
 
     await runWebEnrichment({
@@ -417,7 +611,49 @@ describe("runWebEnrichment", () => {
     const invocation = invocations[0];
 
     expect(invocation?.command).toBe("pi");
+  });
+
+  it("sends the enrichment ask through the argv", async () => {
+    const invocations: { command: string; args: readonly string[] }[] = [];
+
+    await runWebEnrichment({
+      identity: SETTINGS,
+      isolationFlags: [...ISOLATION_FLAGS],
+      question: "Q",
+      coreAnswer: "CORE",
+      promptText: await makePromptsDir(),
+      run: runContext({ rawDir: join(tmpdir(), "k-wiki-web-run-raw") }),
+      runAgent: async (command, args) => {
+        invocations.push({ command, args });
+
+        return { stdout: okStream, stderr: "" };
+      },
+    });
+
+    const invocation = invocations[0];
+
     expect(invocation?.args.at(-1)).toContain("Enrich the topic from the web.");
+  });
+
+  it("sends the core context through the argv", async () => {
+    const invocations: { command: string; args: readonly string[] }[] = [];
+
+    await runWebEnrichment({
+      identity: SETTINGS,
+      isolationFlags: [...ISOLATION_FLAGS],
+      question: "Q",
+      coreAnswer: "CORE",
+      promptText: await makePromptsDir(),
+      run: runContext({ rawDir: join(tmpdir(), "k-wiki-web-run-raw") }),
+      runAgent: async (command, args) => {
+        invocations.push({ command, args });
+
+        return { stdout: okStream, stderr: "" };
+      },
+    });
+
+    const invocation = invocations[0];
+
     expect(invocation?.args.at(-1)).toContain("CORE");
   });
 
@@ -477,10 +713,10 @@ describe("runWebEnrichment", () => {
 });
 
 describe("enrichmentArtifact", () => {
-  it("degrades without spawning when the enrichment prompt is unavailable", async () => {
+  it("spawns nothing when the prompt is unavailable", async () => {
     let spawned = false;
 
-    const result = await enrichmentArtifact(
+    await enrichmentArtifact(
       {
         question: "Q",
         timestamp: "2026-10-03T21:00:00.000Z",
@@ -502,8 +738,68 @@ describe("enrichmentArtifact", () => {
     );
 
     expect(spawned).toBe(false);
+  });
+
+  it("warns with the web-failed wording", async () => {
+    const result = await enrichmentArtifact(
+      {
+        question: "Q",
+        timestamp: "2026-10-03T21:00:00.000Z",
+        pages: [],
+        answer: "CORE",
+      },
+      {
+        identity: SETTINGS,
+        isolationFlags: [...ISOLATION_FLAGS],
+        question: "Q",
+        promptText: undefined,
+        run: runContext({ rawDir: join(tmpdir(), "k-wiki-web-run-raw") }),
+        runAgent: async () => ({ stdout: "", stderr: "" }),
+      },
+    );
+
     expect(result.warning).toBe(WEB_FAILED_WARNING);
+  });
+
+  it("answers from the core run alone", async () => {
+    const result = await enrichmentArtifact(
+      {
+        question: "Q",
+        timestamp: "2026-10-03T21:00:00.000Z",
+        pages: [],
+        answer: "CORE",
+      },
+      {
+        identity: SETTINGS,
+        isolationFlags: [...ISOLATION_FLAGS],
+        question: "Q",
+        promptText: undefined,
+        run: runContext({ rawDir: join(tmpdir(), "k-wiki-web-run-raw") }),
+        runAgent: async () => ({ stdout: "", stderr: "" }),
+      },
+    );
+
     expect(result.answer).toBe("CORE");
+  });
+
+  it("saves the degraded artifact shape", async () => {
+    const result = await enrichmentArtifact(
+      {
+        question: "Q",
+        timestamp: "2026-10-03T21:00:00.000Z",
+        pages: [],
+        answer: "CORE",
+      },
+      {
+        identity: SETTINGS,
+        isolationFlags: [...ISOLATION_FLAGS],
+        question: "Q",
+        promptText: undefined,
+        run: runContext({ rawDir: join(tmpdir(), "k-wiki-web-run-raw") }),
+        runAgent: async () => ({ stdout: "", stderr: "" }),
+      },
+    );
+
     expect(result.artifact).toEqual({
       question: "Q",
       timestamp: "2026-10-03T21:00:00.000Z",

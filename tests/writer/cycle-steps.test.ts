@@ -51,7 +51,7 @@ describe("refuseDirtyWorkingTree", () => {
     ).toBeUndefined();
   });
 
-  it("refuses a tracked modification, naming the path", async () => {
+  it("refuses a tracked modification", async () => {
     const dir = await tempGitRepo();
 
     await writeFile(join(dir, "base.txt"), "changed\n");
@@ -61,13 +61,25 @@ describe("refuseDirtyWorkingTree", () => {
     );
 
     expect(refusal).toContain("dirty");
+  });
+
+  it("names the modified path", async () => {
+    const dir = await tempGitRepo();
+
+    await writeFile(join(dir, "base.txt"), "changed\n");
+
+    const refusal = await refuseDirtyWorkingTree(
+      gitRunnerFor({ dir, env: process.env }),
+    );
+
     expect(refusal).toContain("base.txt");
   });
 
-  it("refuses untracked content but allows the run lock", async () => {
+  it("refuses untracked content", async () => {
     const dir = await tempGitRepo();
 
     await writeFile(join(dir, ".scheduled-run.lock"), "{}\n");
+
     await writeFile(join(dir, "stray.md"), "stray\n");
 
     const refusal = await refuseDirtyWorkingTree(
@@ -75,6 +87,19 @@ describe("refuseDirtyWorkingTree", () => {
     );
 
     expect(refusal).toContain("stray.md");
+  });
+
+  it("allows the run lock through the gate", async () => {
+    const dir = await tempGitRepo();
+
+    await writeFile(join(dir, ".scheduled-run.lock"), "{}\n");
+
+    await writeFile(join(dir, "stray.md"), "stray\n");
+
+    const refusal = await refuseDirtyWorkingTree(
+      gitRunnerFor({ dir, env: process.env }),
+    );
+
     expect(refusal).not.toContain("scheduled-run.lock");
   });
 });
@@ -125,11 +150,13 @@ describe("workingTreeClean", () => {
 });
 
 describe("baselineSnapshot", () => {
-  it("bootstraps the snapshot when none exists, stamped and anchored", async () => {
+  it("bootstraps the snapshot when none exists", async () => {
     const dataRoot = await mkdtemp(join(tmpdir(), "baseline-"));
+
     tempDirs.push(dataRoot);
 
     await mkdir(join(dataRoot, "raw"), { recursive: true });
+
     await writeFile(
       join(dataRoot, "raw", "manifest.json"),
       '{"vaults": {"V": {}}}\n',
@@ -144,6 +171,7 @@ describe("baselineSnapshot", () => {
     });
 
     const text = await readFile(snapshotPathFor(dataRoot), "utf8");
+
     const parsed = JSON.parse(text) as {
       snapshotFor: string;
       committedHead: string;
@@ -151,7 +179,67 @@ describe("baselineSnapshot", () => {
     };
 
     expect(parsed.snapshotFor).toBe(dataRoot);
+  });
+
+  it("anchors the bootstrapped snapshot to HEAD", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "baseline-"));
+
+    tempDirs.push(dataRoot);
+
+    await mkdir(join(dataRoot, "raw"), { recursive: true });
+
+    await writeFile(
+      join(dataRoot, "raw", "manifest.json"),
+      '{"vaults": {"V": {}}}\n',
+    );
+
+    const run = runContext({ rawDir: join(dataRoot, "raw"), now: NOW });
+
+    await baselineSnapshot({
+      run,
+      headOid: "a".repeat(40),
+      fastForwarded: false,
+    });
+
+    const text = await readFile(snapshotPathFor(dataRoot), "utf8");
+
+    const parsed = JSON.parse(text) as {
+      snapshotFor: string;
+      committedHead: string;
+      vaults: Record<string, unknown>;
+    };
+
     expect(parsed.committedHead).toBe("a".repeat(40));
+  });
+
+  it("starts the bootstrapped snapshot empty", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "baseline-"));
+
+    tempDirs.push(dataRoot);
+
+    await mkdir(join(dataRoot, "raw"), { recursive: true });
+
+    await writeFile(
+      join(dataRoot, "raw", "manifest.json"),
+      '{"vaults": {"V": {}}}\n',
+    );
+
+    const run = runContext({ rawDir: join(dataRoot, "raw"), now: NOW });
+
+    await baselineSnapshot({
+      run,
+      headOid: "a".repeat(40),
+      fastForwarded: false,
+    });
+
+    const text = await readFile(snapshotPathFor(dataRoot), "utf8");
+
+    const parsed = JSON.parse(text) as {
+      snapshotFor: string;
+      committedHead: string;
+      vaults: Record<string, unknown>;
+    };
+
     expect(parsed.vaults.V).toEqual({});
   });
 
@@ -178,16 +266,20 @@ describe("baselineSnapshot", () => {
     expect(text).toContain('"old"');
   });
 
-  it("rewrites the snapshot after a fast-forward (the repair path)", async () => {
+  it("rewrites the snapshot after a fast-forward", async () => {
     const dataRoot = await mkdtemp(join(tmpdir(), "baseline-"));
+
     tempDirs.push(dataRoot);
 
     await mkdir(join(dataRoot, "outputs"), { recursive: true });
+
     await mkdir(join(dataRoot, "raw"), { recursive: true });
+
     await writeFile(
       join(dataRoot, "raw", "manifest.json"),
       '{"vaults": {"V": {}}}\n',
     );
+
     await writeFile(
       join(dataRoot, "outputs", "last-ingested-manifest.json"),
       '{"snapshotFor":"stale","committedHead":"0000","vaults":{}}\n',
@@ -204,6 +296,37 @@ describe("baselineSnapshot", () => {
     const text = await readFile(snapshotPathFor(dataRoot), "utf8");
 
     expect(text).toContain("c".repeat(40));
+  });
+
+  it("drops the stale anchor bytes", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "baseline-"));
+
+    tempDirs.push(dataRoot);
+
+    await mkdir(join(dataRoot, "outputs"), { recursive: true });
+
+    await mkdir(join(dataRoot, "raw"), { recursive: true });
+
+    await writeFile(
+      join(dataRoot, "raw", "manifest.json"),
+      '{"vaults": {"V": {}}}\n',
+    );
+
+    await writeFile(
+      join(dataRoot, "outputs", "last-ingested-manifest.json"),
+      '{"snapshotFor":"stale","committedHead":"0000","vaults":{}}\n',
+    );
+
+    const run = runContext({ rawDir: join(dataRoot, "raw"), now: NOW });
+
+    await baselineSnapshot({
+      run,
+      headOid: "c".repeat(40),
+      fastForwarded: true,
+    });
+
+    const text = await readFile(snapshotPathFor(dataRoot), "utf8");
+
     expect(text).not.toContain("stale");
   });
 });
@@ -228,9 +351,11 @@ describe("gateRemovals", () => {
     expect(gate.status).toBe("pass");
   });
 
-  it("refuses without a receipt, writing one and naming the command", async () => {
+  it("refuses a removal without a receipt", async () => {
     const dataRoot = await mkdtemp(join(tmpdir(), "gate-"));
+
     tempDirs.push(dataRoot);
+
     const run = runContext({ rawDir: join(dataRoot, "raw"), now: NOW });
 
     const gate = await gateRemovals({
@@ -245,9 +370,49 @@ describe("gateRemovals", () => {
     }
 
     expect(gate.reason.join("\n")).toContain("--removal-receipt");
+  });
+
+  it("names the missing receipt flag", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "gate-"));
+
+    tempDirs.push(dataRoot);
+
+    const run = runContext({ rawDir: join(dataRoot, "raw"), now: NOW });
+
+    const gate = await gateRemovals({
+      run,
+      base: "a".repeat(40),
+      plans: PLANS,
+      receipt: undefined,
+    });
+
+    if (gate.status !== "refuse") {
+      throw new Error("expected a refusal");
+    }
+
     expect(gate.reason.join("\n")).toContain("V/gone.md");
+  });
+
+  it("names the removed path", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "gate-"));
+
+    tempDirs.push(dataRoot);
+
+    const run = runContext({ rawDir: join(dataRoot, "raw"), now: NOW });
+
+    const gate = await gateRemovals({
+      run,
+      base: "a".repeat(40),
+      plans: PLANS,
+      receipt: undefined,
+    });
+
+    if (gate.status !== "refuse") {
+      throw new Error("expected a refusal");
+    }
 
     const receiptPath = join(dataRoot, "outputs/shared-writer-receipt.json");
+
     const receipt = await readReceipt(receiptPath);
 
     expect(receipt.plans).toEqual(PLANS);
@@ -274,16 +439,19 @@ describe("gateRemovals", () => {
     );
   });
 
-  it("passes with a matching receipt and refuses a stale base", async () => {
+  it("passes with a matching receipt", async () => {
     const dataRoot = await mkdtemp(join(tmpdir(), "gate-"));
+
     tempDirs.push(dataRoot);
+
     const run = runContext({ rawDir: join(dataRoot, "raw"), now: NOW });
+
     const base = "a".repeat(40);
-    const receiptPath = join(dataRoot, "receipt.json");
 
     const { buildReceipt, writeReceipt } = await import(
       "../../src/writer/receipts.ts"
     );
+
     const path = await writeReceipt(dataRoot, buildReceipt(base, PLANS));
 
     const ok = await gateRemovals({
@@ -294,8 +462,23 @@ describe("gateRemovals", () => {
     });
 
     expect(ok.status).toBe("pass");
+  });
 
-    await writeFile(receiptPath, "unused");
+  it("refuses a receipt staged against a stale base", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "gate-"));
+
+    tempDirs.push(dataRoot);
+
+    const run = runContext({ rawDir: join(dataRoot, "raw"), now: NOW });
+
+    const base = "a".repeat(40);
+
+    const { buildReceipt, writeReceipt } = await import(
+      "../../src/writer/receipts.ts"
+    );
+
+    const path = await writeReceipt(dataRoot, buildReceipt(base, PLANS));
+
     const stale = await gateRemovals({
       run,
       base: "b".repeat(40),

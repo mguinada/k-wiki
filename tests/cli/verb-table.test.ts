@@ -84,10 +84,15 @@ describe("k-wiki verb table", () => {
     expect(unwired.map((verb) => verb.name)).toEqual([]);
   });
 
-  it("wires every write-note main to the sandbox domain (the gate's caller)", async () => {
+  it("routes the propose verb to the write-note class", async () => {
     const propose = verbTable().find((verb) => verb.name === "propose");
 
     expect(propose?.klass).toBe("write-note");
+  });
+
+  it("binds the propose verb to its main", async () => {
+    const propose = verbTable().find((verb) => verb.name === "propose");
+
     expect(propose?.main).toBeDefined();
   });
 
@@ -146,7 +151,7 @@ describe("k-wiki verb table", () => {
     ]);
   });
 
-  it("groups the bare help porcelain tier first", () => {
+  it("finds every tier heading in the bare help", () => {
     const tiers = [
       "Daily (porcelain):",
       "Occasional operator:",
@@ -156,6 +161,17 @@ describe("k-wiki verb table", () => {
     const positions = tiers.map((heading) => buildHelp().indexOf(heading));
 
     expect(positions.every((pos) => pos !== -1)).toBe(true);
+  });
+
+  it("keeps the porcelain tier first", () => {
+    const tiers = [
+      "Daily (porcelain):",
+      "Occasional operator:",
+      "Maintenance (plumbing",
+    ];
+
+    const positions = tiers.map((heading) => buildHelp().indexOf(heading));
+
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
   });
 

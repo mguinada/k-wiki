@@ -141,26 +141,55 @@ describe("isEagain", () => {
 });
 
 describe("readFileTolerant", () => {
-  it("reads a healthy file without retrying", async () => {
+  it("reads a healthy file on the first attempt", async () => {
     const dir = await makeTempDir();
+
     const path = join(dir, "note.md");
 
     await writeFile(path, "# healthy\n");
 
     expect((await readFileTolerant(path, 0)).toString()).toBe("# healthy\n");
+  });
+
+  it("retries nothing for a healthy file", async () => {
+    const dir = await makeTempDir();
+
+    const path = join(dir, "note.md");
+
+    await writeFile(path, "# healthy\n");
+
+    await readFileTolerant(path, 0);
+
     expect(readFile).toHaveBeenCalledTimes(1);
   });
 
-  it("recovers when EAGAIN strikes once", async () => {
+  it("recovers a one-strike EAGAIN read", async () => {
     const dir = await makeTempDir();
+
     const path = join(dir, "note.md");
 
     await writeFile(path, "materialized\n");
+
     vi.mocked(readFile).mockImplementationOnce(
       rejectReadFor(eagainError("read"), path),
     );
 
     expect((await readFileTolerant(path, 0)).toString()).toBe("materialized\n");
+  });
+
+  it("retries exactly once after EAGAIN", async () => {
+    const dir = await makeTempDir();
+
+    const path = join(dir, "note.md");
+
+    await writeFile(path, "materialized\n");
+
+    vi.mocked(readFile).mockImplementationOnce(
+      rejectReadFor(eagainError("read"), path),
+    );
+
+    await readFileTolerant(path, 0);
+
     expect(readFile).toHaveBeenCalledTimes(2);
   });
 
@@ -192,17 +221,21 @@ describe("readFileTolerant", () => {
     expect(waits).toEqual([EAGAIN_RETRY_DELAY_MS]);
   });
 
-  it("recovers when EAGAIN strikes three times before the provider settles", async () => {
+  it("recovers when EAGAIN strikes three times", async () => {
     const dir = await makeTempDir();
+
     const path = join(dir, "note.md");
 
     await writeFile(path, "slow provider\n");
+
     vi.mocked(readFile).mockImplementationOnce(
       rejectReadFor(eagainError("read"), path),
     );
+
     vi.mocked(readFile).mockImplementationOnce(
       rejectReadFor(eagainError("read"), path),
     );
+
     vi.mocked(readFile).mockImplementationOnce(
       rejectReadFor(eagainError("read"), path),
     );
@@ -210,6 +243,29 @@ describe("readFileTolerant", () => {
     expect((await readFileTolerant(path, 0, 10_000)).toString()).toBe(
       "slow provider\n",
     );
+  });
+
+  it("retries until the provider settles", async () => {
+    const dir = await makeTempDir();
+
+    const path = join(dir, "note.md");
+
+    await writeFile(path, "slow provider\n");
+
+    vi.mocked(readFile).mockImplementationOnce(
+      rejectReadFor(eagainError("read"), path),
+    );
+
+    vi.mocked(readFile).mockImplementationOnce(
+      rejectReadFor(eagainError("read"), path),
+    );
+
+    vi.mocked(readFile).mockImplementationOnce(
+      rejectReadFor(eagainError("read"), path),
+    );
+
+    await readFileTolerant(path, 0, 10_000);
+
     expect(readFile).toHaveBeenCalledTimes(4);
   });
 
@@ -242,13 +298,15 @@ describe("readFileTolerant", () => {
     expect(buffer.byteLength).toBe(2 * 1024 * 1024);
   });
 
-  it("fails loudly with the EAGAIN error when even cat cannot read", async () => {
+  it("fails with the EAGAIN error when the budget runs out", async () => {
     const dir = await makeTempDir();
+
     const path = join(dir, "note.md");
 
     vi.mocked(readFile).mockImplementation(async () =>
       Promise.reject(eagainError("read")),
     );
+
     vi.mocked(execFile).mockImplementationOnce(
       (_file, _args, _options, callback) => {
         callback?.(catEagain(), Buffer.alloc(0), Buffer.alloc(0));
@@ -260,16 +318,47 @@ describe("readFileTolerant", () => {
     await expect(readFileTolerant(path, 0, 50)).rejects.toMatchObject({
       errno: -11,
     });
+  });
+
+  it("retries more than twice before giving up", async () => {
+    const dir = await makeTempDir();
+
+    const path = join(dir, "note.md");
+
+    vi.mocked(readFile).mockImplementation(async () =>
+      Promise.reject(eagainError("read")),
+    );
+
+    vi.mocked(execFile).mockImplementationOnce(
+      (_file, _args, _options, callback) => {
+        callback?.(catEagain(), Buffer.alloc(0), Buffer.alloc(0));
+
+        return undefined as never;
+      },
+    );
+
+    await readFileTolerant(path, 0, 50).catch(() => undefined);
+
     expect(vi.mocked(readFile).mock.calls.length).toBeGreaterThan(2);
   });
 
-  it("propagates a non-EAGAIN failure without retry", async () => {
+  it("propagates a non-EAGAIN read failure", async () => {
     const dir = await makeTempDir();
+
     const path = join(dir, "gone.md");
 
     await expect(readFileTolerant(path, 0)).rejects.toMatchObject({
       code: "ENOENT",
     });
+  });
+
+  it("retries nothing for a non-EAGAIN failure", async () => {
+    const dir = await makeTempDir();
+
+    const path = join(dir, "gone.md");
+
+    await readFileTolerant(path, 0).catch(() => undefined);
+
     expect(readFile).toHaveBeenCalledTimes(1);
   });
 
@@ -319,9 +408,11 @@ describe("readFileTolerant", () => {
 });
 
 describe("copyFileTolerant", () => {
-  it("copies onto a healthy target without retrying", async () => {
+  it("copies onto a healthy target on the first attempt", async () => {
     const dir = await makeTempDir();
+
     const source = join(dir, "a.md");
+
     const target = join(dir, "b.md");
 
     await writeFile(source, "src\n");
@@ -329,16 +420,33 @@ describe("copyFileTolerant", () => {
     await copyFileTolerant(source, target);
 
     expect(await readFile(target, "utf8")).toBe("src\n");
-    expect(copyFile).toHaveBeenCalledTimes(1);
   });
 
-  it("removes the dataless target and retries once when EAGAIN strikes", async () => {
+  it("retries nothing for a healthy target", async () => {
     const dir = await makeTempDir();
+
     const source = join(dir, "a.md");
+
     const target = join(dir, "b.md");
 
     await writeFile(source, "src\n");
+
+    await copyFileTolerant(source, target);
+
+    expect(copyFile).toHaveBeenCalledTimes(1);
+  });
+
+  it("lands the copy after an EAGAIN retry", async () => {
+    const dir = await makeTempDir();
+
+    const source = join(dir, "a.md");
+
+    const target = join(dir, "b.md");
+
+    await writeFile(source, "src\n");
+
     await writeFile(target, "stale stub\n");
+
     vi.mocked(copyFile).mockImplementationOnce(async (from, to) =>
       to === target
         ? Promise.reject(eagainError("copyfile"))
@@ -348,16 +456,61 @@ describe("copyFileTolerant", () => {
     await copyFileTolerant(source, target, 0);
 
     expect(await readFile(target, "utf8")).toBe("src\n");
+  });
+
+  it("retries exactly once after EAGAIN", async () => {
+    const dir = await makeTempDir();
+
+    const source = join(dir, "a.md");
+
+    const target = join(dir, "b.md");
+
+    await writeFile(source, "src\n");
+
+    await writeFile(target, "stale stub\n");
+
+    vi.mocked(copyFile).mockImplementationOnce(async (from, to) =>
+      to === target
+        ? Promise.reject(eagainError("copyfile"))
+        : actualFs.copyFile(from, to),
+    );
+
+    await copyFileTolerant(source, target, 0);
+
     expect(copyFile).toHaveBeenCalledTimes(2);
+  });
+
+  it("removes the dataless target before the retry", async () => {
+    const dir = await makeTempDir();
+
+    const source = join(dir, "a.md");
+
+    const target = join(dir, "b.md");
+
+    await writeFile(source, "src\n");
+
+    await writeFile(target, "stale stub\n");
+
+    vi.mocked(copyFile).mockImplementationOnce(async (from, to) =>
+      to === target
+        ? Promise.reject(eagainError("copyfile"))
+        : actualFs.copyFile(from, to),
+    );
+
+    await copyFileTolerant(source, target, 0);
+
     expect(rm).toHaveBeenCalledWith(target, { force: true });
   });
 
   it("recovers when the copyfile EAGAIN outlasts one retry", async () => {
     const dir = await makeTempDir();
+
     const source = join(dir, "a.md");
+
     const target = join(dir, "b.md");
 
     await writeFile(source, "src\n");
+
     for (let i = 0; i < 2; i += 1) {
       vi.mocked(copyFile).mockImplementationOnce(async (from, to) =>
         to === target
@@ -369,6 +522,27 @@ describe("copyFileTolerant", () => {
     await copyFileTolerant(source, target, 0, 10_000);
 
     expect(await readFile(target, "utf8")).toBe("src\n");
+  });
+
+  it("retries twice after the first EAGAIN", async () => {
+    const dir = await makeTempDir();
+
+    const source = join(dir, "a.md");
+
+    const target = join(dir, "b.md");
+
+    await writeFile(source, "src\n");
+
+    for (let i = 0; i < 2; i += 1) {
+      vi.mocked(copyFile).mockImplementationOnce(async (from, to) =>
+        to === target
+          ? Promise.reject(eagainError("copyfile"))
+          : actualFs.copyFile(from, to),
+      );
+    }
+
+    await copyFileTolerant(source, target, 0, 10_000);
+
     expect(copyFile).toHaveBeenCalledTimes(3);
   });
 
@@ -389,14 +563,27 @@ describe("copyFileTolerant", () => {
     );
   });
 
-  it("propagates a non-EAGAIN copy failure without retry", async () => {
+  it("propagates a non-EAGAIN copy failure", async () => {
     const dir = await makeTempDir();
+
     const source = join(dir, "gone.md");
+
     const target = join(dir, "b.md");
 
     await expect(copyFileTolerant(source, target)).rejects.toMatchObject({
       code: "ENOENT",
     });
+  });
+
+  it("retries nothing for a non-EAGAIN copy failure", async () => {
+    const dir = await makeTempDir();
+
+    const source = join(dir, "gone.md");
+
+    const target = join(dir, "b.md");
+
+    await copyFileTolerant(source, target).catch(() => undefined);
+
     expect(copyFile).toHaveBeenCalledTimes(1);
   });
 
@@ -421,6 +608,28 @@ describe("copyFileTolerant", () => {
       ).rejects.toMatchObject({
         errno: -11,
       });
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it("stops copy retries when the budget leaves the call untried", async () => {
+    const dir = await makeTempDir();
+    const source = join(dir, "a.md");
+    const target = join(dir, "b.md");
+
+    await writeFile(source, "src\n");
+    vi.mocked(copyFile).mockImplementation(async () =>
+      Promise.reject(eagainError("copyfile")),
+    );
+    const realNow = Date.now;
+    let ticks = 0;
+    const now = vi
+      .spyOn(Date, "now")
+      .mockImplementation(() => realNow() + ticks++);
+
+    try {
+      await copyFileTolerant(source, target, 10, 5).catch(() => undefined);
     } finally {
       now.mockRestore();
     }
@@ -590,8 +799,9 @@ async function makePublishTree(): Promise<PublishTree> {
 }
 
 describe("runPublishStage EAGAIN surface", () => {
-  it("completes when the mirror copyfile fails EAGAIN once", async () => {
+  it("counts the mirrored page as copied", async () => {
     const tree = await makePublishTree();
+
     const target = join(tree.mirror, "wiki", "index.md");
 
     vi.mocked(copyFile).mockImplementationOnce(async (from, to) =>
@@ -607,6 +817,25 @@ describe("runPublishStage EAGAIN surface", () => {
     });
 
     expect(result.copied).toBe(1);
+  });
+
+  it("lands the mirror copy after the EAGAIN retry", async () => {
+    const tree = await makePublishTree();
+
+    const target = join(tree.mirror, "wiki", "index.md");
+
+    vi.mocked(copyFile).mockImplementationOnce(async (from, to) =>
+      to === target
+        ? Promise.reject(eagainError("copyfile"))
+        : actualFs.copyFile(from, to),
+    );
+
+    await runPublishStage({
+      dataRoot: tree.dataRoot,
+      mirror: tree.mirror,
+      include: ["wiki/**"],
+    });
+
     expect(await readFile(target, "utf8")).toBe("# Index\n");
   });
 

@@ -50,12 +50,43 @@ describe("acquireLease", () => {
     }
   });
 
-  it("refuses a second writer, naming holder and expiry (test 1)", async () => {
+  it("refuses a second writer for a held lease (test 1)", async () => {
     const world = await makeWriterWorld();
 
     try {
       const treeOid = await fetchMain(world.a);
       const first = await acquireLease({
+        git: world.a.git,
+        remote: "origin",
+        leaseRef: LEASE_REF,
+        treeOid,
+        base: "b".repeat(40),
+        now: NOW,
+        holder: HOLDER,
+      });
+      await fetchMain(world.b);
+      await acquireLease({
+        git: world.b.git,
+        remote: "origin",
+        leaseRef: LEASE_REF,
+        treeOid,
+        base: "b".repeat(40),
+        now: NOW,
+        holder: "other:2",
+      });
+
+      expect(first.status).toBe("acquired");
+    } finally {
+      await world.cleanup();
+    }
+  });
+
+  it("names the lease holder in the refusal (test 1)", async () => {
+    const world = await makeWriterWorld();
+
+    try {
+      const treeOid = await fetchMain(world.a);
+      await acquireLease({
         git: world.a.git,
         remote: "origin",
         leaseRef: LEASE_REF,
@@ -75,11 +106,40 @@ describe("acquireLease", () => {
         holder: "other:2",
       });
 
-      expect(first.status).toBe("acquired");
       expect(second).toEqual({
         status: "refused",
         reason: expect.stringContaining(HOLDER),
       });
+    } finally {
+      await world.cleanup();
+    }
+  });
+
+  it("names the lease expiry in the refusal (test 1)", async () => {
+    const world = await makeWriterWorld();
+
+    try {
+      const treeOid = await fetchMain(world.a);
+      await acquireLease({
+        git: world.a.git,
+        remote: "origin",
+        leaseRef: LEASE_REF,
+        treeOid,
+        base: "b".repeat(40),
+        now: NOW,
+        holder: HOLDER,
+      });
+      await fetchMain(world.b);
+      const second = await acquireLease({
+        git: world.b.git,
+        remote: "origin",
+        leaseRef: LEASE_REF,
+        treeOid,
+        base: "b".repeat(40),
+        now: NOW,
+        holder: "other:2",
+      });
+
       expect((second as { reason: string }).reason).toContain(
         "2026-01-01T04:00:00.000Z",
       );
@@ -90,7 +150,7 @@ describe("acquireLease", () => {
 });
 
 describe("renewLease", () => {
-  it("extends expiry under the same token and bumps renewals", async () => {
+  it("extends the lease under the same token", async () => {
     const world = await makeWriterWorld();
 
     try {
@@ -122,14 +182,86 @@ describe("renewLease", () => {
       });
 
       expect(renewed.body.token).toBe(first.lease.body.token);
+    } finally {
+      await world.cleanup();
+    }
+  });
+
+  it("counts the first renewal", async () => {
+    const world = await makeWriterWorld();
+
+    try {
+      const treeOid = await fetchMain(world.a);
+      const first = await acquireLease({
+        git: world.a.git,
+        remote: "origin",
+        leaseRef: LEASE_REF,
+        treeOid,
+        base: "b".repeat(40),
+        now: NOW,
+        holder: HOLDER,
+      });
+
+      if (first.status !== "acquired") {
+        throw new Error("setup: acquire refused");
+      }
+
+      const later = () => new Date("2026-01-01T01:00:00Z");
+      const renewed = await renewLease({
+        git: world.a.git,
+        remote: "origin",
+        leaseRef: LEASE_REF,
+        current: first.lease,
+        treeOid,
+        base: "b".repeat(40),
+        now: later,
+        holder: HOLDER,
+      });
+
       expect(renewed.body.renewals).toBe(1);
+    } finally {
+      await world.cleanup();
+    }
+  });
+
+  it("moves the expiry on renewal", async () => {
+    const world = await makeWriterWorld();
+
+    try {
+      const treeOid = await fetchMain(world.a);
+      const first = await acquireLease({
+        git: world.a.git,
+        remote: "origin",
+        leaseRef: LEASE_REF,
+        treeOid,
+        base: "b".repeat(40),
+        now: NOW,
+        holder: HOLDER,
+      });
+
+      if (first.status !== "acquired") {
+        throw new Error("setup: acquire refused");
+      }
+
+      const later = () => new Date("2026-01-01T01:00:00Z");
+      const renewed = await renewLease({
+        git: world.a.git,
+        remote: "origin",
+        leaseRef: LEASE_REF,
+        current: first.lease,
+        treeOid,
+        base: "b".repeat(40),
+        now: later,
+        holder: HOLDER,
+      });
+
       expect(renewed.body.expires).toBe("2026-01-01T05:00:00.000Z");
     } finally {
       await world.cleanup();
     }
   });
 
-  it("fails a stale owner's renewal — the CAS race (test 17)", async () => {
+  it("acquires the expired lease on takeover (test 17)", async () => {
     const world = await makeWriterWorld();
 
     try {
@@ -166,6 +298,48 @@ describe("renewLease", () => {
       });
 
       expect(thief.status).toBe("acquired");
+
+      () => new Date("2026-01-01T01:00:00Z");
+    } finally {
+      await world.cleanup();
+    }
+  });
+
+  it("fails the stale owner's renewal on the CAS race (test 17)", async () => {
+    const world = await makeWriterWorld();
+
+    try {
+      const treeOid = await fetchMain(world.a);
+      const first = await acquireLease({
+        git: world.a.git,
+        remote: "origin",
+        leaseRef: LEASE_REF,
+        treeOid,
+        base: "b".repeat(40),
+        now: NOW,
+        holder: HOLDER,
+      });
+
+      if (first.status !== "acquired") {
+        throw new Error("setup: acquire refused");
+      }
+
+      // A takeover by another writer moves the ref under writer A.
+      await fetchMain(world.b);
+      const liveOid = await observeLeaseOid(world.b.git, "origin", LEASE_REF);
+      await takeOverExpiredLease({
+        git: world.b.git,
+        remote: "origin",
+        leaseRef: LEASE_REF,
+        observed: {
+          oid: liveOid ?? "",
+          body: { ...first.lease.body, expires: "2020-01-01T00:00:00Z" },
+        },
+        treeOid,
+        base: "b".repeat(40),
+        now: NOW,
+        holder: "thief:2",
+      });
 
       const later = () => new Date("2026-01-01T01:00:00Z");
 
@@ -276,7 +450,7 @@ describe("takeOverExpiredLease", () => {
     }
   });
 
-  it("replaces an expired lease by exact OID with no unlocked gap (test 6)", async () => {
+  it("replaces an expired lease by exact OID (test 6)", async () => {
     const world = await makeWriterWorld();
 
     try {
@@ -313,6 +487,49 @@ describe("takeOverExpiredLease", () => {
 
       expect(outcome.status).toBe("acquired");
 
+      (await world.b.git(["ls-remote", "--refs", "origin", LEASE_REF])).stdout
+        .trim()
+        .split("\t")[0];
+    } finally {
+      await world.cleanup();
+    }
+  });
+
+  it("leaves no unlocked gap on replacement (test 6)", async () => {
+    const world = await makeWriterWorld();
+
+    try {
+      const treeOid = await fetchMain(world.a);
+      const first = await acquireLease({
+        git: world.a.git,
+        remote: "origin",
+        leaseRef: LEASE_REF,
+        treeOid,
+        base: "b".repeat(40),
+        now: NOW,
+        holder: HOLDER,
+      });
+
+      if (first.status !== "acquired") {
+        throw new Error("setup: acquire refused");
+      }
+
+      const expired: typeof first.lease = {
+        oid: first.lease.oid,
+        body: { ...first.lease.body, expires: "2020-01-01T00:00:00Z" },
+      };
+      await fetchMain(world.b);
+      const outcome = await takeOverExpiredLease({
+        git: world.b.git,
+        remote: "origin",
+        leaseRef: LEASE_REF,
+        observed: expired,
+        treeOid,
+        base: "b".repeat(40),
+        now: NOW,
+        holder: "other:2",
+      });
+
       const remoteOid = (
         await world.b.git(["ls-remote", "--refs", "origin", LEASE_REF])
       ).stdout
@@ -327,7 +544,7 @@ describe("takeOverExpiredLease", () => {
 });
 
 describe("finalizeWithLeaseRelease", () => {
-  it("advances the branch and removes the lease atomically (test 8)", async () => {
+  it("advances the branch on finalize (test 8)", async () => {
     const world = await makeWriterWorld();
 
     try {
@@ -362,6 +579,43 @@ describe("finalizeWithLeaseRelease", () => {
       expect(
         (await remote(["rev-parse", "refs/heads/main"])).stdout.trim(),
       ).toBe(newHead);
+    } finally {
+      await world.cleanup();
+    }
+  });
+
+  it("removes the lease on finalize (test 8)", async () => {
+    const world = await makeWriterWorld();
+
+    try {
+      const treeOid = await fetchMain(world.a);
+      const first = await acquireLease({
+        git: world.a.git,
+        remote: "origin",
+        leaseRef: LEASE_REF,
+        treeOid,
+        base: "b".repeat(40),
+        now: NOW,
+        holder: HOLDER,
+      });
+
+      if (first.status !== "acquired") {
+        throw new Error("setup: acquire refused");
+      }
+
+      const newHead = await commitFile(world.a, "work.txt", "work\n");
+
+      await finalizeWithLeaseRelease({
+        git: world.a.git,
+        remote: "origin",
+        branchRef: BRANCH_REF,
+        leaseRef: LEASE_REF,
+        newBranchOid: newHead,
+        leaseOid: first.lease.oid,
+      });
+
+      const remote = gitRunnerFor(remoteHost(world.remoteDir));
+
       expect(
         (await remote(["for-each-ref", "refs/k-wiki/"])).stdout.trim(),
       ).toBe("");
@@ -370,7 +624,54 @@ describe("finalizeWithLeaseRelease", () => {
     }
   });
 
-  it("rejects a stale owner's fenced finalize after takeover (test 7)", async () => {
+  it("acquires after the takeover (test 7)", async () => {
+    const world = await makeWriterWorld();
+
+    try {
+      const treeOid = await fetchMain(world.a);
+      const first = await acquireLease({
+        git: world.a.git,
+        remote: "origin",
+        leaseRef: LEASE_REF,
+        treeOid,
+        base: "b".repeat(40),
+        now: NOW,
+        holder: HOLDER,
+      });
+
+      if (first.status !== "acquired") {
+        throw new Error("setup: acquire refused");
+      }
+
+      await commitFile(world.a, "work.txt", "work\n");
+      (await world.a.git(["rev-parse", "HEAD"])).stdout.trim();
+
+      // Another writer takes the (expired) lease over.
+      const expired: typeof first.lease = {
+        oid: first.lease.oid,
+        body: { ...first.lease.body, expires: "2020-01-01T00:00:00Z" },
+      };
+      await fetchMain(world.b);
+      const thief = await takeOverExpiredLease({
+        git: world.b.git,
+        remote: "origin",
+        leaseRef: LEASE_REF,
+        observed: expired,
+        treeOid,
+        base: "b".repeat(40),
+        now: NOW,
+        holder: "thief:2",
+      });
+
+      expect(thief.status).toBe("acquired");
+
+      // The branch never moved and the thief's lease survives.
+    } finally {
+      await world.cleanup();
+    }
+  });
+
+  it("fails the stale owner's fenced finalize (test 7)", async () => {
     const world = await makeWriterWorld();
 
     try {
@@ -398,7 +699,7 @@ describe("finalizeWithLeaseRelease", () => {
         body: { ...first.lease.body, expires: "2020-01-01T00:00:00Z" },
       };
       await fetchMain(world.b);
-      const thief = await takeOverExpiredLease({
+      await takeOverExpiredLease({
         git: world.b.git,
         remote: "origin",
         leaseRef: LEASE_REF,
@@ -408,8 +709,6 @@ describe("finalizeWithLeaseRelease", () => {
         now: NOW,
         holder: "thief:2",
       });
-
-      expect(thief.status).toBe("acquired");
 
       await expect(
         finalizeWithLeaseRelease({
@@ -421,6 +720,51 @@ describe("finalizeWithLeaseRelease", () => {
           leaseOid: first.lease.oid,
         }),
       ).rejects.toThrow(/failed/);
+
+      // The branch never moved and the thief's lease survives.
+    } finally {
+      await world.cleanup();
+    }
+  });
+
+  it("keeps the branch unmoved after the fenced refusal (test 7)", async () => {
+    const world = await makeWriterWorld();
+
+    try {
+      const treeOid = await fetchMain(world.a);
+      const first = await acquireLease({
+        git: world.a.git,
+        remote: "origin",
+        leaseRef: LEASE_REF,
+        treeOid,
+        base: "b".repeat(40),
+        now: NOW,
+        holder: HOLDER,
+      });
+
+      if (first.status !== "acquired") {
+        throw new Error("setup: acquire refused");
+      }
+
+      await commitFile(world.a, "work.txt", "work\n");
+      const newHead = (await world.a.git(["rev-parse", "HEAD"])).stdout.trim();
+
+      // Another writer takes the (expired) lease over.
+      const expired: typeof first.lease = {
+        oid: first.lease.oid,
+        body: { ...first.lease.body, expires: "2020-01-01T00:00:00Z" },
+      };
+      await fetchMain(world.b);
+      await takeOverExpiredLease({
+        git: world.b.git,
+        remote: "origin",
+        leaseRef: LEASE_REF,
+        observed: expired,
+        treeOid,
+        base: "b".repeat(40),
+        now: NOW,
+        holder: "thief:2",
+      });
 
       // The branch never moved and the thief's lease survives.
       const remote = gitRunnerFor(remoteHost(world.remoteDir));

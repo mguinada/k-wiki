@@ -122,27 +122,45 @@ describe("readExpiresStamp", () => {
 });
 
 describe("reapExpiredSandboxNotes", () => {
-  it("deletes a note whose expires date is strictly past", async () => {
-    const { dataRoot, run } = await makeRepo({
+  it("reaps a note whose expiry is past", async () => {
+    const { run } = await makeRepo({
       "past-note.md": page("2026-08-19"),
     });
 
     const result = await reapExpiredSandboxNotes(run);
 
     expect(result.reaped).toEqual(["wiki/sandbox/past-note.md"]);
+  });
+
+  it("deletes the expired note", async () => {
+    const { dataRoot, run } = await makeRepo({
+      "past-note.md": page("2026-08-19"),
+    });
+
+    await reapExpiredSandboxNotes(run);
+
     await expect(
       textOrNull(join(dataRoot, "wiki", "sandbox", "past-note.md")),
     ).resolves.toBeNull();
   });
 
-  it("keeps a note that expires today (edge 1: strictly past)", async () => {
-    const { dataRoot, run } = await makeRepo({
+  it("reaps nothing for a note expiring today", async () => {
+    const { run } = await makeRepo({
       "today-note.md": page("2026-08-20"),
     });
 
     const result = await reapExpiredSandboxNotes(run);
 
     expect(result.reaped).toEqual([]);
+  });
+
+  it("keeps today's note", async () => {
+    const { dataRoot, run } = await makeRepo({
+      "today-note.md": page("2026-08-20"),
+    });
+
+    await reapExpiredSandboxNotes(run);
+
     await expect(
       textOrNull(join(dataRoot, "wiki", "sandbox", "today-note.md")),
     ).resolves.toContain("Proposal body.");
@@ -187,17 +205,29 @@ describe("reapExpiredSandboxNotes", () => {
     expect((await reapExpiredSandboxNotes(run)).reaped).toEqual([]);
   });
 
-  it("is a silent no-op when the sandbox namespace is absent", async () => {
+  it("reaps nothing without a sandbox namespace", async () => {
     const dataRoot = await mkdtemp(join(tmpdir(), "k-wiki-reaper-"));
 
     tempDirs.push(dataRoot);
 
     const messages: string[] = [];
+
     const result = await reapExpiredSandboxNotes(
       contextFor(dataRoot, messages),
     );
 
     expect(result.reaped).toEqual([]);
+  });
+
+  it("stays silent without the namespace", async () => {
+    const dataRoot = await mkdtemp(join(tmpdir(), "k-wiki-reaper-"));
+
+    tempDirs.push(dataRoot);
+
+    const messages: string[] = [];
+
+    await reapExpiredSandboxNotes(contextFor(dataRoot, messages));
+
     expect(messages).toEqual([]);
   });
 

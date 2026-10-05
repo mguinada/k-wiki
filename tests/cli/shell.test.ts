@@ -32,10 +32,15 @@ describe("parseArgs", () => {
     expect(parsed.values.get("--settings")).toBeUndefined();
   });
 
-  it("never reads a value flag's value as a positional, dash included", () => {
+  it("reads a dash-leading value as the flag's value", () => {
     const parsed = parseArgs(["--timeout", "-5"], { value: ["--timeout"] });
 
     expect(parsed.values.get("--timeout")).toBe("-5");
+  });
+
+  it("records no positional for it", () => {
+    const parsed = parseArgs(["--timeout", "-5"], { value: ["--timeout"] });
+
     expect(parsed.positional).toEqual([]);
   });
 
@@ -47,10 +52,15 @@ describe("parseArgs", () => {
     expect(parsed.values.get("--settings")).toBe("b.yml");
   });
 
-  it("reads a value flag's inline = form as its value", () => {
+  it("reads the inline = form as the flag's value", () => {
     const parsed = parseArgs(["--timeout=5", "q"], { value: ["--timeout"] });
 
     expect(parsed.values.get("--timeout")).toBe("5");
+  });
+
+  it("still collects the following positional", () => {
+    const parsed = parseArgs(["--timeout=5", "q"], { value: ["--timeout"] });
+
     expect(parsed.positional).toEqual(["q"]);
   });
 
@@ -116,17 +126,27 @@ describe("parseArgs", () => {
     );
   });
 
-  it("skips a hole in the argv array without recording an argument", () => {
+  it("skips the argv hole", () => {
     const parsed = parseArgs(["a", undefined, "b"]);
 
     expect(parsed.positional).toEqual(["a", "b"]);
+  });
+
+  it("records no argument for the hole", () => {
+    const parsed = parseArgs(["a", undefined, "b"]);
+
     expect(parsed.error).toBeUndefined();
   });
 
-  it("accepts any number of positionals without a maximum", () => {
+  it("accepts positionals without a maximum", () => {
     const parsed = parseArgs(["a", "b", "c"]);
 
     expect(parsed.error).toBeUndefined();
+  });
+
+  it("collects every positional in order", () => {
+    const parsed = parseArgs(["a", "b", "c"]);
+
     expect(parsed.positional).toEqual(["a", "b", "c"]);
   });
 
@@ -148,17 +168,27 @@ describe("parseArgs", () => {
     expect(parsed.error).toBe('unknown option "--print=x"');
   });
 
-  it("collects every token after -- verbatim as positionals", () => {
+  it("collects the tokens after -- verbatim", () => {
     const parsed = parseArgs(["read", "--", "-weird-slug"]);
 
     expect(parsed.positional).toEqual(["read", "-weird-slug"]);
+  });
+
+  it("records no parse error past --", () => {
+    const parsed = parseArgs(["read", "--", "-weird-slug"]);
+
     expect(parsed.error).toBeUndefined();
   });
 
-  it("stops flag parsing at -- even for known flags", () => {
+  it("stops flag parsing at --", () => {
     const parsed = parseArgs(["--", "--dry-run"], { boolean: ["--dry-run"] });
 
     expect(parsed.flags.has("--dry-run")).toBe(false);
+  });
+
+  it("collects the known flag as a positional past --", () => {
+    const parsed = parseArgs(["--", "--dry-run"], { boolean: ["--dry-run"] });
+
     expect(parsed.positional).toEqual(["--dry-run"]);
   });
 
@@ -230,19 +260,33 @@ describe("parseArgs repeatable flags", () => {
     });
 
     expect(parsed.repeated.get("--sources")).toEqual(["a/x.md"]);
+  });
+
+  it("still collects the following positional", () => {
+    const parsed = parseArgs(["--sources=a/x.md", "pos"], {
+      repeat: ["--sources"],
+    });
+
     expect(parsed.positional).toEqual(["pos"]);
   });
 
-  it("never reads a repeat flag's value as a positional", () => {
+  it("reads a dash-leading value as the repeat flag's value", () => {
     const parsed = parseArgs(["--sources", "-weird"], {
       repeat: ["--sources"],
     });
 
     expect(parsed.repeated.get("--sources")).toEqual(["-weird"]);
+  });
+
+  it("records no positional for it", () => {
+    const parsed = parseArgs(["--sources", "-weird"], {
+      repeat: ["--sources"],
+    });
+
     expect(parsed.positional).toEqual([]);
   });
 
-  it("collects repeat values beside single value flags and positionals", () => {
+  it("reads the single value flag beside repeats", () => {
     const parsed = parseArgs(
       [
         "--settings",
@@ -257,7 +301,39 @@ describe("parseArgs repeatable flags", () => {
     );
 
     expect(parsed.values.get("--settings")).toBe("a.yml");
+  });
+
+  it("collects every repeat value in order", () => {
+    const parsed = parseArgs(
+      [
+        "--settings",
+        "a.yml",
+        "--sources",
+        "a/x.md",
+        "raw",
+        "--sources",
+        "b/y.md",
+      ],
+      { value: ["--settings"], repeat: ["--sources"] },
+    );
+
     expect(parsed.repeated.get("--sources")).toEqual(["a/x.md", "b/y.md"]);
+  });
+
+  it("collects the trailing positional", () => {
+    const parsed = parseArgs(
+      [
+        "--settings",
+        "a.yml",
+        "--sources",
+        "a/x.md",
+        "raw",
+        "--sources",
+        "b/y.md",
+      ],
+      { value: ["--settings"], repeat: ["--sources"] },
+    );
+
     expect(parsed.positional).toEqual(["raw"]);
   });
 

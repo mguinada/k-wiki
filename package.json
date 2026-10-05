@@ -13,6 +13,7 @@
     "format": "biome format --write .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "check:test-structure": "node dev/check-one-expect-per-test.ts",
     "audit": "npm audit --omit=dev --audit-level=high && npm audit --audit-level=critical",
     "e2e": "vitest run --config vitest.e2e.config.ts",
     "health": "node bin/libexec/check-raw",
@@ -57,6 +58,7 @@
     "writer-lease": "node bin/writer-lease"
   },
   "devDependencies": {
+    "@babel/parser": "^7.29.8",
     "@biomejs/biome": "^2.5.8",
     "@stryker-mutator/core": "^10.0.0",
     "@stryker-mutator/vitest-runner": "^10.0.0",

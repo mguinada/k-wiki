@@ -371,14 +371,17 @@ describe("fixtures CLI unknown-arg policy", () => {
     process.exitCode = undefined;
   });
 
-  it("rejects an unknown option instead of treating it as the target dir", async () => {
+  it("rejects an unknown option on stderr", async () => {
     const err: string[] = [];
+
     const errorSpy = vi
       .spyOn(console, "error")
       .mockImplementation((...parts: unknown[]) => err.push(parts.join(" ")));
+
     const argv = process.argv;
 
     process.exitCode = undefined;
+
     process.argv = [...argv.slice(0, 2), "--nope"];
 
     try {
@@ -389,17 +392,42 @@ describe("fixtures CLI unknown-arg policy", () => {
     }
 
     expect(err[0]).toContain('fixtures: unknown option "--nope"');
-    expect(process.exitCode).toBe(1);
   });
 
-  it("rejects a second positional argument", async () => {
+  it("exits 1 on an unknown option", async () => {
     const err: string[] = [];
+
     const errorSpy = vi
       .spyOn(console, "error")
       .mockImplementation((...parts: unknown[]) => err.push(parts.join(" ")));
+
     const argv = process.argv;
 
     process.exitCode = undefined;
+
+    process.argv = [...argv.slice(0, 2), "--nope"];
+
+    try {
+      await main();
+    } finally {
+      process.argv = argv;
+      errorSpy.mockRestore();
+    }
+
+    expect(process.exitCode).toBe(1);
+    });
+
+  it("reports a second positional on stderr", async () => {
+    const err: string[] = [];
+
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) => err.push(parts.join(" ")));
+
+    const argv = process.argv;
+
+    process.exitCode = undefined;
+
     process.argv = [...argv.slice(0, 2), "one", "two"];
 
     try {
@@ -410,6 +438,28 @@ describe("fixtures CLI unknown-arg policy", () => {
     }
 
     expect(err[0]).toContain("expected at most one <target-dir> argument");
-    expect(process.exitCode).toBe(1);
   });
+
+  it("exits 1 on a second positional", async () => {
+    const err: string[] = [];
+
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation((...parts: unknown[]) => err.push(parts.join(" ")));
+
+    const argv = process.argv;
+
+    process.exitCode = undefined;
+
+    process.argv = [...argv.slice(0, 2), "one", "two"];
+
+    try {
+      await main();
+    } finally {
+      process.argv = argv;
+      errorSpy.mockRestore();
+    }
+
+    expect(process.exitCode).toBe(1);
+    });
 });

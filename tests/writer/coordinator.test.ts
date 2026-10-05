@@ -57,10 +57,13 @@ afterEach(async () => {
 });
 
 describe("precondition refusals (before any source scan)", () => {
-  it("refuses a dirty tree, naming the offending path", async () => {
+  it("refuses a dirty tree", async () => {
     const world = await makeWriterWorld();
+
     worlds.push(world);
+
     const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
     const { dataRoot } = cw;
 
     await writeFile(join(dataRoot, "wiki", "junk.md"), "junk\n");
@@ -71,13 +74,31 @@ describe("precondition refusals (before any source scan)", () => {
       status: "refused",
       reason: expect.stringContaining("dirty"),
     });
+  });
+
+  it("names the offending path in the refusal", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { dataRoot } = cw;
+
+    await writeFile(join(dataRoot, "wiki", "junk.md"), "junk\n");
+
+    const outcome = await runSharedCycle(optionsFor(cw, dataRoot));
+
     expect((outcome as { reason: string }).reason).toContain("junk.md");
   });
 
-  it("refuses a locally-ahead checkout without pushing anything", async () => {
+  it("refuses a locally-ahead checkout", async () => {
     const world = await makeWriterWorld();
+
     worlds.push(world);
+
     const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
     const { dataRoot } = cw;
 
     await commitFile(world.a, "unshared.txt", "unshared\n");
@@ -88,8 +109,21 @@ describe("precondition refusals (before any source scan)", () => {
       status: "refused",
       reason: expect.stringContaining("ahead"),
     });
+  });
 
-    // The remote never saw the unshared commit.
+  it("pushes nothing from a locally-ahead checkout", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { dataRoot } = cw;
+
+    await commitFile(world.a, "unshared.txt", "unshared\n");
+
+    await runSharedCycle(optionsFor(cw, dataRoot));
+
     expect(
       await lsRemoteOid(world.a.git, "origin", "refs/heads/main"),
     ).not.toBe(await commitOid(world.a));
@@ -139,13 +173,15 @@ describe("precondition refusals (before any source scan)", () => {
 });
 
 describe("lease refusal", () => {
-  it("refuses while another writer holds a live lease, naming holder and expiry (test 1)", async () => {
+  it("loses the lease race to a live holder", async () => {
     const world = await makeWriterWorld();
+
     worlds.push(world);
-    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
-    const { dataRoot } = cw;
+
+    await enabledDataRepo(world, (dir) => tempDirs.push(dir));
 
     await world.a.git(["fetch", "origin", "refs/heads/main"]);
+
     const attempt = await acquireLease({
       git: world.b.git,
       remote: "origin",
@@ -157,47 +193,135 @@ describe("lease refusal", () => {
     });
 
     expect(attempt.status).toBe("acquired");
+  });
+
+  it("names the lease holder in the error", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { dataRoot } = cw;
+
+    await world.a.git(["fetch", "origin", "refs/heads/main"]);
+
+    await acquireLease({
+      git: world.b.git,
+      remote: "origin",
+      leaseRef: LEASE_REF,
+      treeOid: await fetchedTreeOid(world.b.git),
+      base: "b".repeat(40),
+      now: NOW,
+      holder: "other-mac:99",
+    });
 
     const error = await runSharedCycle(optionsFor(cw, dataRoot)).catch(
       (e: unknown) => e,
     );
 
     expect((error as Error).message).toContain("other-mac:99");
+  });
+
+  it("names the lease expiry in the error", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { dataRoot } = cw;
+
+    await world.a.git(["fetch", "origin", "refs/heads/main"]);
+
+    await acquireLease({
+      git: world.b.git,
+      remote: "origin",
+      leaseRef: LEASE_REF,
+      treeOid: await fetchedTreeOid(world.b.git),
+      base: "b".repeat(40),
+      now: NOW,
+      holder: "other-mac:99",
+    });
+
+    const error = await runSharedCycle(optionsFor(cw, dataRoot)).catch(
+      (e: unknown) => e,
+    );
+
     expect((error as Error).message).toContain("2026-01-01T04:00:00.000Z");
   });
 });
 
 describe("no-op cycle under lease", () => {
-  it("completes, releases the exact lease, and advances nothing", async () => {
+  it("completes the no-op cycle", async () => {
     const world = await makeWriterWorld();
+
     worlds.push(world);
+
     const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
     const { dataRoot } = cw;
-    const before = await commitOid(world.a);
+
+    await commitOid(world.a);
 
     const outcome = await runSharedCycle(optionsFor(cw, dataRoot));
 
     expect(outcome.status).toBe("completed");
+  }, 30000);
+
+  it("advances nothing on a no-op cycle", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { dataRoot } = cw;
+
+    const before = await commitOid(world.a);
+
+    await runSharedCycle(optionsFor(cw, dataRoot));
 
     const remote = gitRunnerFor(remoteHost(world.remoteDir));
 
     expect((await remote(["rev-parse", "refs/heads/main"])).stdout.trim()).toBe(
       before,
     );
+  }, 30000);
+
+  it("releases the lease on completion", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { dataRoot } = cw;
+
+    await commitOid(world.a);
+
+    await runSharedCycle(optionsFor(cw, dataRoot));
+
+    const remote = gitRunnerFor(remoteHost(world.remoteDir));
+
     expect((await remote(["for-each-ref", "refs/k-wiki/"])).stdout.trim()).toBe(
       "",
     );
   }, 30000);
 
-  it("bootstraps the snapshot from the canonical tree on a fresh clone (test 3)", async () => {
+  it("completes a fresh-clone cycle", async () => {
     const world = await makeWriterWorld();
+
     worlds.push(world);
+
     const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
 
-    // A fresh clone with no per-machine state.
     const dirC = join(world.remoteDir, "..", "writer-c");
+
     await run("git", ["clone", "-q", world.remoteDir, dirC]);
+
     await run("git", ["config", "user.email", "t@t"], { cwd: dirC });
+
     await run("git", ["config", "user.name", "t"], { cwd: dirC });
 
     const outcome = await runSharedCycle(optionsFor(cw, dirC));
@@ -207,12 +331,68 @@ describe("no-op cycle under lease", () => {
     const snapshot = await import("node:fs/promises").then((fs) =>
       fs.readFile(join(dirC, "outputs", "last-ingested-manifest.json"), "utf8"),
     );
+
+    JSON.parse(snapshot) as {
+      snapshotFor: string;
+      committedHead: string;
+    };
+  }, 30000);
+
+  it("bootstraps the snapshot from the canonical tree", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const dirC = join(world.remoteDir, "..", "writer-c");
+
+    await run("git", ["clone", "-q", world.remoteDir, dirC]);
+
+    await run("git", ["config", "user.email", "t@t"], { cwd: dirC });
+
+    await run("git", ["config", "user.name", "t"], { cwd: dirC });
+
+    await runSharedCycle(optionsFor(cw, dirC));
+
+    const snapshot = await import("node:fs/promises").then((fs) =>
+      fs.readFile(join(dirC, "outputs", "last-ingested-manifest.json"), "utf8"),
+    );
+
     const parsed = JSON.parse(snapshot) as {
       snapshotFor: string;
       committedHead: string;
     };
 
     expect(parsed.snapshotFor).toBe(dirC);
+  }, 30000);
+
+  it("records the committed head in the snapshot", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const dirC = join(world.remoteDir, "..", "writer-c");
+
+    await run("git", ["clone", "-q", world.remoteDir, dirC]);
+
+    await run("git", ["config", "user.email", "t@t"], { cwd: dirC });
+
+    await run("git", ["config", "user.name", "t"], { cwd: dirC });
+
+    await runSharedCycle(optionsFor(cw, dirC));
+
+    const snapshot = await import("node:fs/promises").then((fs) =>
+      fs.readFile(join(dirC, "outputs", "last-ingested-manifest.json"), "utf8"),
+    );
+
+    const parsed = JSON.parse(snapshot) as {
+      snapshotFor: string;
+      committedHead: string;
+    };
+
     expect(parsed.committedHead).toBe(await commitOid(world.a));
   }, 30000);
 });
@@ -233,13 +413,15 @@ describe("fail-closed states", () => {
     expect((error as Error).message).toContain("failing closed");
   });
 
-  it("still observes a lease a default fetch cannot see (test 13)", async () => {
+  it("sees the prior writer's lease acquisition", async () => {
     const world = await makeWriterWorld();
+
     worlds.push(world);
-    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
-    const { dataRoot } = cw;
+
+    await enabledDataRepo(world, (dir) => tempDirs.push(dir));
 
     await world.a.git(["fetch", "origin", "refs/heads/main"]);
+
     const attempt = await acquireLease({
       git: world.b.git,
       remote: "origin",
@@ -251,8 +433,29 @@ describe("fail-closed states", () => {
     });
 
     expect(attempt.status).toBe("acquired");
+  });
 
-    // The default fetch brings nothing from refs/k-wiki/.
+  it("still observes a lease a default fetch cannot see (test 13)", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { dataRoot } = cw;
+
+    await world.a.git(["fetch", "origin", "refs/heads/main"]);
+
+    await acquireLease({
+      git: world.b.git,
+      remote: "origin",
+      leaseRef: LEASE_REF,
+      treeOid: await fetchedTreeOid(world.b.git),
+      base: "b".repeat(40),
+      now: NOW,
+      holder: "sneaky:1",
+    });
+
     await world.a.git(["fetch", "origin"]);
 
     const error = await runSharedCycle(optionsFor(cw, dataRoot)).catch(
@@ -264,18 +467,112 @@ describe("fail-closed states", () => {
 });
 
 describe("failure-rule lease retention", () => {
-  it("shortens a retained lease to fifteen minutes when a mid-run failure leaves a dirty surface", async () => {
+  it("starts with no retained lease", async () => {
     const world = await makeWriterWorld();
+
     worlds.push(world);
-    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
-    const { dataRoot } = cw;
-    const progress: string[] = [];
+
+    await enabledDataRepo(world, (dir) => tempDirs.push(dir));
 
     const before = await observeLeaseOid(world.a.git, "origin", LEASE_REF);
 
     expect(before).toBeUndefined();
+  }, 30000);
+
+  it("fails mid-run naming the agent stage", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { dataRoot } = cw;
 
     const error = await runSharedCycle(
+      optionsFor(cw, dataRoot, {
+        run: runContext({
+          rawDir: join(dataRoot, "raw"),
+          env: process.env,
+          now: NOW,
+        }),
+        runSweep: async () => {
+          await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
+          throw new Error("agent stage blew up");
+        },
+      }),
+    ).catch((e: unknown) => e);
+
+    expect((error as Error).message).toContain("agent stage blew up");
+  }, 30000);
+
+  it("retains a lease after the mid-run failure", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { dataRoot } = cw;
+
+    await runSharedCycle(
+      optionsFor(cw, dataRoot, {
+        run: runContext({
+          rawDir: join(dataRoot, "raw"),
+          env: process.env,
+          now: NOW,
+        }),
+        runSweep: async () => {
+          await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
+          throw new Error("agent stage blew up");
+        },
+      }),
+    ).catch((e: unknown) => e);
+
+    const lease = await observeLease(world.a.git, "origin", LEASE_REF);
+
+    expect(lease).toBeDefined();
+  }, 30000);
+
+  it("shortens the retained lease to fifteen minutes after the mid-run failure", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { dataRoot } = cw;
+
+    await runSharedCycle(
+      optionsFor(cw, dataRoot, {
+        run: runContext({
+          rawDir: join(dataRoot, "raw"),
+          env: process.env,
+          now: NOW,
+        }),
+        runSweep: async () => {
+          await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
+          throw new Error("agent stage blew up");
+        },
+      }),
+    ).catch((e: unknown) => e);
+
+    const lease = await observeLease(world.a.git, "origin", LEASE_REF);
+
+    expect(lease?.body.expires).toBe("2026-01-01T00:15:00.000Z");
+  }, 30000);
+
+  it("announces the retained lease expiry on progress", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { dataRoot } = cw;
+
+    const progress: string[] = [];
+
+    await runSharedCycle(
       optionsFor(cw, dataRoot, {
         run: runContext({
           rawDir: join(dataRoot, "raw"),
@@ -290,27 +587,19 @@ describe("failure-rule lease retention", () => {
       }),
     ).catch((e: unknown) => e);
 
-    expect((error as Error).message).toContain("agent stage blew up");
-
-    // The lease is retained, but short: ~15 minutes, not the 4-hour TTL.
-    const lease = await observeLease(world.a.git, "origin", LEASE_REF);
-
-    expect(lease).toBeDefined();
-    expect(lease?.body.expires).toBe("2026-01-01T00:15:00.000Z");
-
-    // The retained log line names the shortened expiry.
     expect(
       progress.find((line) => line.includes("retained lease expires")),
     ).toContain("2026-01-01T00:15:00.000Z");
   }, 30000);
 
-  it("replaces the retained lease by exact OID, continuing the acquired token", async () => {
+  it("fails the cycle again for the lease replacement", async () => {
     const world = await makeWriterWorld();
+
     worlds.push(world);
+
     const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
     const { dataRoot } = cw;
-    const progress: string[] = [];
-    let observedMidRun: ObservedLease | undefined;
 
     const error = await runSharedCycle(
       optionsFor(cw, dataRoot, {
@@ -318,7 +607,34 @@ describe("failure-rule lease retention", () => {
           rawDir: join(dataRoot, "raw"),
           env: process.env,
           now: NOW,
-          onProgress: (line: string) => progress.push(line),
+        }),
+        runSweep: async () => {
+          await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
+          throw new Error("agent stage blew up");
+        },
+      }),
+    ).catch((e: unknown) => e);
+
+    expect((error as Error).message).toContain("agent stage blew up");
+  }, 30000);
+
+  it("observes the lease mid-run", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { dataRoot } = cw;
+
+    let observedMidRun: ObservedLease | undefined;
+
+    await runSharedCycle(
+      optionsFor(cw, dataRoot, {
+        run: runContext({
+          rawDir: join(dataRoot, "raw"),
+          env: process.env,
+          now: NOW,
         }),
         runSweep: async () => {
           await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
@@ -328,64 +644,264 @@ describe("failure-rule lease retention", () => {
       }),
     ).catch((e: unknown) => e);
 
-    expect((error as Error).message).toContain("agent stage blew up");
+    expect(observedMidRun).toBeDefined();
+  }, 30000);
+
+  it("re-acquires the retained lease", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { dataRoot } = cw;
+
+    const progress: string[] = [];
+
+    await runSharedCycle(
+      optionsFor(cw, dataRoot, {
+        run: runContext({
+          rawDir: join(dataRoot, "raw"),
+          env: process.env,
+          now: NOW,
+          onProgress: (line: string) => progress.push(line),
+        }),
+        runSweep: async () => {
+          await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
+          throw new Error("agent stage blew up");
+        },
+      }),
+    ).catch((e: unknown) => e);
 
     const acquired = progress
       .map((line) => /lease ([0-9a-f]{8}) acquired/.exec(line))
       .find((match) => match !== null);
 
-    expect(observedMidRun).toBeDefined();
+    expect(acquired).not.toBeNull();
+  }, 30000);
+
+  it("keeps a retained lease in the ref", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { dataRoot } = cw;
+
+    await runSharedCycle(
+      optionsFor(cw, dataRoot, {
+        run: runContext({
+          rawDir: join(dataRoot, "raw"),
+          env: process.env,
+          now: NOW,
+        }),
+        runSweep: async () => {
+          await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
+          throw new Error("agent stage blew up");
+        },
+      }),
+    ).catch((e: unknown) => e);
 
     const retained = await observeLease(world.a.git, "origin", LEASE_REF);
 
-    expect(acquired).not.toBeNull();
     expect(retained).toBeDefined();
+  }, 30000);
 
-    // The ref moved off the observed lease commit and off the
-    // acquired one, yet kept the token and the renewal sequence —
-    // a CAS replacement, never release-then-re-acquire.
+  it("replaces the retained lease by a new OID", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { dataRoot } = cw;
+
+    let observedMidRun: ObservedLease | undefined;
+
+    await runSharedCycle(
+      optionsFor(cw, dataRoot, {
+        run: runContext({
+          rawDir: join(dataRoot, "raw"),
+          env: process.env,
+          now: NOW,
+        }),
+        runSweep: async () => {
+          await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
+          observedMidRun = await observeLease(world.a.git, "origin", LEASE_REF);
+          throw new Error("agent stage blew up");
+        },
+      }),
+    ).catch((e: unknown) => e);
+
+    const retained = await observeLease(world.a.git, "origin", LEASE_REF);
+
     expect(retained?.oid).not.toBe(observedMidRun?.oid);
+  }, 30000);
+
+  it("keeps the acquired token out of the lease OID", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { dataRoot } = cw;
+
+    const progress: string[] = [];
+
+    await runSharedCycle(
+      optionsFor(cw, dataRoot, {
+        run: runContext({
+          rawDir: join(dataRoot, "raw"),
+          env: process.env,
+          now: NOW,
+          onProgress: (line: string) => progress.push(line),
+        }),
+        runSweep: async () => {
+          await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
+          throw new Error("agent stage blew up");
+        },
+      }),
+    ).catch((e: unknown) => e);
+
+    const acquired = progress
+      .map((line) => /lease ([0-9a-f]{8}) acquired/.exec(line))
+      .find((match) => match !== null);
+
+    const retained = await observeLease(world.a.git, "origin", LEASE_REF);
+
     expect(retained?.oid.slice(0, 8)).not.toBe(acquired?.[1]);
+  }, 30000);
+
+  it("carries the acquired token into the retained lease", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { dataRoot } = cw;
+
+    let observedMidRun: ObservedLease | undefined;
+
+    await runSharedCycle(
+      optionsFor(cw, dataRoot, {
+        run: runContext({
+          rawDir: join(dataRoot, "raw"),
+          env: process.env,
+          now: NOW,
+        }),
+        runSweep: async () => {
+          await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
+          observedMidRun = await observeLease(world.a.git, "origin", LEASE_REF);
+          throw new Error("agent stage blew up");
+        },
+      }),
+    ).catch((e: unknown) => e);
+
+    const retained = await observeLease(world.a.git, "origin", LEASE_REF);
+
     expect(retained?.body.token).toBe(observedMidRun?.body.token);
+  }, 30000);
+
+  it("counts the renewal on the retained lease", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { dataRoot } = cw;
+
+    let observedMidRun: ObservedLease | undefined;
+
+    await runSharedCycle(
+      optionsFor(cw, dataRoot, {
+        run: runContext({
+          rawDir: join(dataRoot, "raw"),
+          env: process.env,
+          now: NOW,
+        }),
+        runSweep: async () => {
+          await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
+          observedMidRun = await observeLease(world.a.git, "origin", LEASE_REF);
+          throw new Error("agent stage blew up");
+        },
+      }),
+    ).catch((e: unknown) => e);
+
+    const retained = await observeLease(world.a.git, "origin", LEASE_REF);
+
     expect(retained?.body.renewals).toBe(
       (observedMidRun?.body.renewals ?? 0) + 1,
     );
+  }, 30000);
+
+  it("keeps the shortened expiry on the retained lease", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { dataRoot } = cw;
+
+    await runSharedCycle(
+      optionsFor(cw, dataRoot, {
+        run: runContext({
+          rawDir: join(dataRoot, "raw"),
+          env: process.env,
+          now: NOW,
+        }),
+        runSweep: async () => {
+          await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
+          throw new Error("agent stage blew up");
+        },
+      }),
+    ).catch((e: unknown) => e);
+
+    const retained = await observeLease(world.a.git, "origin", LEASE_REF);
+
     expect(retained?.body.expires).toBe("2026-01-01T00:15:00.000Z");
   }, 30000);
 
-  it("shortens the retained lease when the cycle fails during finalization", async () => {
+  it("fails the cycle during finalization", async () => {
     const world = await makeWriterWorld();
+
     worlds.push(world);
+
     const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
     const { dataRoot } = cw;
+
     const vault = cw.config.vaults[0];
 
     if (vault === undefined) {
       throw new Error("setup: the world has no vault");
     }
 
-    // One new vault note: the sync stage projects it, so the cycle
-    // makes a content commit and enters the finalize phase. The
-    // stub prompts let the ingest agent stage complete.
     await mkdir(join(vault.root, "Inbox"), { recursive: true });
+
     await writeFile(
       join(vault.root, "Inbox", "finalize-failure-note.md"),
       "---\ntitle: Finalize failure\n---\n\ncontent\n",
     );
+
     await mkdir(join(cw.scratch, "prompts"), { recursive: true });
+
     await writeFile(join(cw.scratch, "prompts", "ingest.md"), "FULL PROMPT");
+
     await writeFile(
       join(cw.scratch, "prompts", "incremental.md"),
       "INCREMENTAL PROMPT",
     );
+
     await writeFile(join(cw.scratch, "prompts", "lint.md"), "LINT PROMPT");
 
-    // A publish mirror whose parent is a file: publish fails after
-    // the content commit exists, on a clean tree.
     const blocker = join(cw.scratch, "blocker");
-    await writeFile(blocker, "not a directory\n");
 
-    const progress: string[] = [];
+    await writeFile(blocker, "not a directory\n");
 
     await expect(
       runSharedCycle(
@@ -402,18 +918,190 @@ describe("failure-rule lease retention", () => {
             rawDir: join(dataRoot, "raw"),
             env: process.env,
             now: NOW,
-            onProgress: (line: string) => progress.push(line),
           }),
         }),
       ),
     ).rejects.toThrow();
+  }, 30000);
 
-    // The finalize-phase retention also shortens: the full-TTL lease
-    // became the fifteen-minute dead-man window, not a release.
+  it("retains a lease after a finalization failure", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { dataRoot } = cw;
+
+    const vault = cw.config.vaults[0];
+
+    if (vault === undefined) {
+      throw new Error("setup: the world has no vault");
+    }
+
+    await mkdir(join(vault.root, "Inbox"), { recursive: true });
+
+    await writeFile(
+      join(vault.root, "Inbox", "finalize-failure-note.md"),
+      "---\ntitle: Finalize failure\n---\n\ncontent\n",
+    );
+
+    await mkdir(join(cw.scratch, "prompts"), { recursive: true });
+
+    await writeFile(join(cw.scratch, "prompts", "ingest.md"), "FULL PROMPT");
+
+    await writeFile(
+      join(cw.scratch, "prompts", "incremental.md"),
+      "INCREMENTAL PROMPT",
+    );
+
+    await writeFile(join(cw.scratch, "prompts", "lint.md"), "LINT PROMPT");
+
+    const blocker = join(cw.scratch, "blocker");
+
+    await writeFile(blocker, "not a directory\n");
+
+    await runSharedCycle(
+      optionsFor(cw, dataRoot, {
+        config: {
+          ...cw.config,
+          publish: {
+            mirror: join(blocker, "mirror"),
+            include: ["**/*.md"],
+            root: undefined,
+          },
+        },
+        run: runContext({
+          rawDir: join(dataRoot, "raw"),
+          env: process.env,
+          now: NOW,
+        }),
+      }),
+    ).catch(() => undefined);
+
     const lease = await observeLease(world.a.git, "origin", LEASE_REF);
 
     expect(lease).toBeDefined();
+  }, 30000);
+
+  it("shortens the retained lease to fifteen minutes after the finalization failure", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { dataRoot } = cw;
+
+    const vault = cw.config.vaults[0];
+
+    if (vault === undefined) {
+      throw new Error("setup: the world has no vault");
+    }
+
+    await mkdir(join(vault.root, "Inbox"), { recursive: true });
+
+    await writeFile(
+      join(vault.root, "Inbox", "finalize-failure-note.md"),
+      "---\ntitle: Finalize failure\n---\n\ncontent\n",
+    );
+
+    await mkdir(join(cw.scratch, "prompts"), { recursive: true });
+
+    await writeFile(join(cw.scratch, "prompts", "ingest.md"), "FULL PROMPT");
+
+    await writeFile(
+      join(cw.scratch, "prompts", "incremental.md"),
+      "INCREMENTAL PROMPT",
+    );
+
+    await writeFile(join(cw.scratch, "prompts", "lint.md"), "LINT PROMPT");
+
+    const blocker = join(cw.scratch, "blocker");
+
+    await writeFile(blocker, "not a directory\n");
+
+    await runSharedCycle(
+      optionsFor(cw, dataRoot, {
+        config: {
+          ...cw.config,
+          publish: {
+            mirror: join(blocker, "mirror"),
+            include: ["**/*.md"],
+            root: undefined,
+          },
+        },
+        run: runContext({
+          rawDir: join(dataRoot, "raw"),
+          env: process.env,
+          now: NOW,
+        }),
+      }),
+    ).catch(() => undefined);
+
+    const lease = await observeLease(world.a.git, "origin", LEASE_REF);
+
     expect(lease?.body.expires).toBe("2026-01-01T00:15:00.000Z");
+  }, 30000);
+
+  it("announces the finalization-failure lease on progress", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { dataRoot } = cw;
+
+    const vault = cw.config.vaults[0];
+
+    if (vault === undefined) {
+      throw new Error("setup: the world has no vault");
+    }
+
+    await mkdir(join(vault.root, "Inbox"), { recursive: true });
+
+    await writeFile(
+      join(vault.root, "Inbox", "finalize-failure-note.md"),
+      "---\ntitle: Finalize failure\n---\n\ncontent\n",
+    );
+
+    await mkdir(join(cw.scratch, "prompts"), { recursive: true });
+
+    await writeFile(join(cw.scratch, "prompts", "ingest.md"), "FULL PROMPT");
+
+    await writeFile(
+      join(cw.scratch, "prompts", "incremental.md"),
+      "INCREMENTAL PROMPT",
+    );
+
+    await writeFile(join(cw.scratch, "prompts", "lint.md"), "LINT PROMPT");
+
+    const blocker = join(cw.scratch, "blocker");
+
+    await writeFile(blocker, "not a directory\n");
+
+    const progress: string[] = [];
+
+    await runSharedCycle(
+      optionsFor(cw, dataRoot, {
+        config: {
+          ...cw.config,
+          publish: {
+            mirror: join(blocker, "mirror"),
+            include: ["**/*.md"],
+            root: undefined,
+          },
+        },
+        run: runContext({
+          rawDir: join(dataRoot, "raw"),
+          env: process.env,
+          now: NOW,
+          onProgress: (line: string) => progress.push(line),
+        }),
+      }),
+    ).catch(() => undefined);
+
     expect(
       progress.find((line) =>
         line.includes("cycle failed during finalization"),
@@ -421,10 +1109,13 @@ describe("failure-rule lease retention", () => {
     ).toContain("2026-01-01T00:15:00.000Z");
   }, 30000);
 
-  it("leaves no lease when the failure precedes acquisition", async () => {
+  it("refuses the run before acquisition", async () => {
     const world = await makeWriterWorld();
+
     worlds.push(world);
+
     const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
     const { dataRoot } = cw;
 
     await writeFile(join(dataRoot, "wiki", "junk.md"), "junk\n");
@@ -432,18 +1123,34 @@ describe("failure-rule lease retention", () => {
     const outcome = await runSharedCycle(optionsFor(cw, dataRoot));
 
     expect(outcome).toMatchObject({ status: "refused" });
+  });
+
+  it("leaves no lease when the failure precedes acquisition", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { dataRoot } = cw;
+
+    await writeFile(join(dataRoot, "wiki", "junk.md"), "junk\n");
+
+    await runSharedCycle(optionsFor(cw, dataRoot));
+
     expect(
       await observeLeaseOid(world.a.git, "origin", LEASE_REF),
     ).toBeUndefined();
   });
 
-  it("logs a lost retention race and never masks the original error", async () => {
+  it("fails the cycle naming the agent stage when the retention race is lost", async () => {
     const world = await makeWriterWorld();
+
     worlds.push(world);
+
     const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
     const { dataRoot } = cw;
-    const progress: string[] = [];
-    let foreignOid = "";
 
     const error = await runSharedCycle(
       optionsFor(cw, dataRoot, {
@@ -451,7 +1158,107 @@ describe("failure-rule lease retention", () => {
           rawDir: join(dataRoot, "raw"),
           env: process.env,
           now: NOW,
+        }),
+        runSweep: async () => {
+          await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
+          const live = await observeLease(world.a.git, "origin", LEASE_REF);
+
+          if (live === undefined) {
+            throw new Error("setup: the lease vanished mid-run");
+          }
+
+          // A foreign writer CAS-replaces the live lease out from
+          // under the session: the retention push must lose its
+          // exact-OID race.
+          await replaceLease({
+            git: world.b.git,
+            remote: "origin",
+            leaseRef: LEASE_REF,
+            expectedOid: live.oid,
+            previous: live.body,
+            treeOid: await fetchedTreeOid(world.b.git),
+            base: live.body.base,
+            now: NOW,
+            holder: "foreign:9",
+          });
+          throw new Error("agent stage blew up");
+        },
+      }),
+    ).catch((e: unknown) => e);
+
+    expect((error as Error).message).toContain("agent stage blew up");
+  }, 30000);
+
+  it("logs a lost retention race", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { dataRoot } = cw;
+
+    const progress: string[] = [];
+
+    await runSharedCycle(
+      optionsFor(cw, dataRoot, {
+        run: runContext({
+          rawDir: join(dataRoot, "raw"),
+          env: process.env,
+          now: NOW,
           onProgress: (line: string) => progress.push(line),
+        }),
+        runSweep: async () => {
+          await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
+          const live = await observeLease(world.a.git, "origin", LEASE_REF);
+
+          if (live === undefined) {
+            throw new Error("setup: the lease vanished mid-run");
+          }
+
+          // A foreign writer CAS-replaces the live lease out from
+          // under the session: the retention push must lose its
+          // exact-OID race.
+          await replaceLease({
+            git: world.b.git,
+            remote: "origin",
+            leaseRef: LEASE_REF,
+            expectedOid: live.oid,
+            previous: live.body,
+            treeOid: await fetchedTreeOid(world.b.git),
+            base: live.body.base,
+            now: NOW,
+            holder: "foreign:9",
+          });
+          throw new Error("agent stage blew up");
+        },
+      }),
+    ).catch((e: unknown) => e);
+
+    expect(
+      progress.find((line) =>
+        line.includes("failed to shorten retained lease"),
+      ),
+    ).toBeDefined();
+  }, 30000);
+
+  it("leaves the foreign lease in place", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { dataRoot } = cw;
+
+    let foreignOid = "";
+
+    await runSharedCycle(
+      optionsFor(cw, dataRoot, {
+        run: runContext({
+          rawDir: join(dataRoot, "raw"),
+          env: process.env,
+          now: NOW,
         }),
         runSweep: async () => {
           await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
@@ -482,29 +1289,85 @@ describe("failure-rule lease retention", () => {
       }),
     ).catch((e: unknown) => e);
 
-    // The original failure still propagates — never masked.
-    expect((error as Error).message).toContain("agent stage blew up");
-
-    // The lost retention is logged, and the losing CAS left the
-    // foreign lease untouched.
-    expect(
-      progress.find((line) =>
-        line.includes("failed to shorten retained lease"),
-      ),
-    ).toBeDefined();
     expect(await observeLeaseOid(world.a.git, "origin", LEASE_REF)).toBe(
       foreignOid,
     );
   }, 30000);
 
-  it("still sees the dirty tree first when the retained lease has expired", async () => {
+  it("fails the cycle naming the agent stage before the expired-lease refusal", async () => {
     const world = await makeWriterWorld();
+
     worlds.push(world);
+
     const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
     const { dataRoot } = cw;
-    const progress: string[] = [];
 
     const error = await runSharedCycle(
+      optionsFor(cw, dataRoot, {
+        run: runContext({
+          rawDir: join(dataRoot, "raw"),
+          env: process.env,
+          now: NOW,
+        }),
+        runSweep: async () => {
+          await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
+
+          throw new Error("agent stage blew up");
+        },
+      }),
+    ).catch((e: unknown) => e);
+
+    expect((error as Error).message).toContain("agent stage blew up");
+
+    const retained = await observeLease(world.a.git, "origin", LEASE_REF);
+
+    if (retained === undefined) {
+      throw new Error("setup: the retained lease is gone");
+    }
+
+    await replaceLease({
+      git: world.b.git,
+      remote: "origin",
+      leaseRef: LEASE_REF,
+      expectedOid: retained.oid,
+      previous: retained.body,
+      treeOid: await fetchedTreeOid(world.b.git),
+      base: retained.body.base,
+      now: NOW,
+      holder: "expired-fixture:1",
+      ttlMs: -60_000,
+    });
+
+    const outcome = await runSharedCycle(
+      optionsFor(cw, dataRoot, {
+        run: runContext({
+          rawDir: join(dataRoot, "raw"),
+          env: process.env,
+          now: NOW,
+          onProgress: () => {},
+        }),
+        runSweep: async () => {},
+      }),
+    );
+
+    if (outcome.status !== "refused") {
+      throw new Error("expected a refusal, got a completed cycle");
+    }
+  }, 30000);
+
+  it("announces the expired retained lease on progress", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { dataRoot } = cw;
+
+    const progress: string[] = [];
+
+    await runSharedCycle(
       optionsFor(cw, dataRoot, {
         run: runContext({
           rawDir: join(dataRoot, "raw"),
@@ -520,14 +1383,198 @@ describe("failure-rule lease retention", () => {
       }),
     ).catch((e: unknown) => e);
 
-    expect((error as Error).message).toContain("agent stage blew up");
     expect(
       progress.find((line) => line.includes("retained lease expires")),
     ).toBeDefined();
 
-    // The short window passes: a foreign writer replaces the lease
-    // with an already-expired one — the remote state fifteen
-    // minutes later.
+    const retained = await observeLease(world.a.git, "origin", LEASE_REF);
+
+    if (retained === undefined) {
+      throw new Error("setup: the retained lease is gone");
+    }
+
+    await replaceLease({
+      git: world.b.git,
+      remote: "origin",
+      leaseRef: LEASE_REF,
+      expectedOid: retained.oid,
+      previous: retained.body,
+      treeOid: await fetchedTreeOid(world.b.git),
+      base: retained.body.base,
+      now: NOW,
+      holder: "expired-fixture:1",
+      ttlMs: -60_000,
+    });
+
+    const outcome = await runSharedCycle(
+      optionsFor(cw, dataRoot, {
+        run: runContext({
+          rawDir: join(dataRoot, "raw"),
+          env: process.env,
+          now: NOW,
+          onProgress: () => {},
+        }),
+        runSweep: async () => {},
+      }),
+    );
+
+    if (outcome.status !== "refused") {
+      throw new Error("expected a refusal, got a completed cycle");
+    }
+  }, 30000);
+
+  it("still sees the dirty tree first", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { dataRoot } = cw;
+
+    await runSharedCycle(
+      optionsFor(cw, dataRoot, {
+        run: runContext({
+          rawDir: join(dataRoot, "raw"),
+          env: process.env,
+          now: NOW,
+        }),
+        runSweep: async () => {
+          await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
+
+          throw new Error("agent stage blew up");
+        },
+      }),
+    ).catch((e: unknown) => e);
+
+    const retained = await observeLease(world.a.git, "origin", LEASE_REF);
+
+    if (retained === undefined) {
+      throw new Error("setup: the retained lease is gone");
+    }
+
+    await replaceLease({
+      git: world.b.git,
+      remote: "origin",
+      leaseRef: LEASE_REF,
+      expectedOid: retained.oid,
+      previous: retained.body,
+      treeOid: await fetchedTreeOid(world.b.git),
+      base: retained.body.base,
+      now: NOW,
+      holder: "expired-fixture:1",
+      ttlMs: -60_000,
+    });
+
+    const outcome = await runSharedCycle(
+      optionsFor(cw, dataRoot, {
+        run: runContext({
+          rawDir: join(dataRoot, "raw"),
+          env: process.env,
+          now: NOW,
+          onProgress: () => {},
+        }),
+        runSweep: async () => {},
+      }),
+    );
+
+    if (outcome.status !== "refused") {
+      throw new Error("expected a refusal, got a completed cycle");
+    }
+
+    expect(outcome.reason).toContain("dirty");
+  }, 30000);
+
+  it("never reaches the sweep past a dirty tree", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { dataRoot } = cw;
+
+    await runSharedCycle(
+      optionsFor(cw, dataRoot, {
+        run: runContext({
+          rawDir: join(dataRoot, "raw"),
+          env: process.env,
+          now: NOW,
+        }),
+        runSweep: async () => {
+          await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
+
+          throw new Error("agent stage blew up");
+        },
+      }),
+    ).catch((e: unknown) => e);
+
+    const retained = await observeLease(world.a.git, "origin", LEASE_REF);
+
+    if (retained === undefined) {
+      throw new Error("setup: the retained lease is gone");
+    }
+
+    await replaceLease({
+      git: world.b.git,
+      remote: "origin",
+      leaseRef: LEASE_REF,
+      expectedOid: retained.oid,
+      previous: retained.body,
+      treeOid: await fetchedTreeOid(world.b.git),
+      base: retained.body.base,
+      now: NOW,
+      holder: "expired-fixture:1",
+      ttlMs: -60_000,
+    });
+
+    let reachedSweep = false;
+
+    const outcome = await runSharedCycle(
+      optionsFor(cw, dataRoot, {
+        run: runContext({
+          rawDir: join(dataRoot, "raw"),
+          env: process.env,
+          now: NOW,
+          onProgress: () => {},
+        }),
+        runSweep: async () => {
+          reachedSweep = true;
+        },
+      }),
+    );
+
+    if (outcome.status !== "refused") {
+      throw new Error("expected a refusal, got a completed cycle");
+    }
+
+    expect(reachedSweep).toBe(false);
+  }, 30000);
+
+  it("leaves the expired lease in place", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { dataRoot } = cw;
+
+    await runSharedCycle(
+      optionsFor(cw, dataRoot, {
+        run: runContext({
+          rawDir: join(dataRoot, "raw"),
+          env: process.env,
+          now: NOW,
+        }),
+        runSweep: async () => {
+          await writeFile(join(dataRoot, "raw", "stray.md"), "partial\n");
+
+          throw new Error("agent stage blew up");
+        },
+      }),
+    ).catch((e: unknown) => e);
+
     const retained = await observeLease(world.a.git, "origin", LEASE_REF);
 
     if (retained === undefined) {
@@ -547,9 +1594,6 @@ describe("failure-rule lease retention", () => {
       ttlMs: -60_000,
     });
 
-    // The next tick must see the dirty tree first and refuse: no
-    // takeover of the expired lease, no agent work, no ref move.
-    let reachedSweep = false;
     const outcome = await runSharedCycle(
       optionsFor(cw, dataRoot, {
         run: runContext({
@@ -558,9 +1602,7 @@ describe("failure-rule lease retention", () => {
           now: NOW,
           onProgress: () => {},
         }),
-        runSweep: async () => {
-          reachedSweep = true;
-        },
+        runSweep: async () => {},
       }),
     );
 
@@ -568,8 +1610,6 @@ describe("failure-rule lease retention", () => {
       throw new Error("expected a refusal, got a completed cycle");
     }
 
-    expect(outcome.reason).toContain("dirty");
-    expect(reachedSweep).toBe(false);
     expect(await observeLeaseOid(world.a.git, "origin", LEASE_REF)).toBe(
       expired.oid,
     );
@@ -577,15 +1617,17 @@ describe("failure-rule lease retention", () => {
 });
 
 describe("ambiguous finalize recovery (test 18)", () => {
-  it("recognizes proven success when the push report is lost", async () => {
+  it("completes the cycle when the push report is lost", async () => {
     const world = await makeWriterWorld();
+
     worlds.push(world);
+
     const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
     const { dataRoot } = cw;
 
-    // Wrap the real runner: the atomic finalize push actually lands,
-    // then reports failure — the lost-response shape.
     const realGit = gitRunnerFor({ dir: dataRoot, env: process.env });
+
     const flaky: typeof realGit = async (argsList) => {
       const result = await realGit(argsList);
 
@@ -603,6 +1645,32 @@ describe("ambiguous finalize recovery (test 18)", () => {
     );
 
     expect(outcome.status).toBe("completed");
+  }, 30000);
+
+  it("releases the lease on proven success", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { dataRoot } = cw;
+
+    const realGit = gitRunnerFor({ dir: dataRoot, env: process.env });
+
+    const flaky: typeof realGit = async (argsList) => {
+      const result = await realGit(argsList);
+
+      if (argsList.includes("--atomic")) {
+        throw Object.assign(new Error("connection lost mid-push"), {
+          stderr: "fatal: the remote end hung up unexpectedly",
+        });
+      }
+
+      return result;
+    };
+
+    await runSharedCycle(optionsFor(cw, dataRoot, { git: flaky }));
 
     const remote = gitRunnerFor(remoteHost(world.remoteDir));
 

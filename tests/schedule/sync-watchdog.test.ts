@@ -82,7 +82,7 @@ const NOW = new Date("2026-09-20T12:00:00.000Z");
 const THRESHOLD = 90 * 60_000;
 
 describe("parseWatchdogArgs", () => {
-  it("takes the stale-after value flag and two positionals", () => {
+  it("parses without error", () => {
     const parsed = parseWatchdogArgs([
       "--stale-after",
       "3hours",
@@ -91,7 +91,27 @@ describe("parseWatchdogArgs", () => {
     ]);
 
     expect(parsed.error).toBeUndefined();
+  });
+
+  it("reads the --stale-after value", () => {
+    const parsed = parseWatchdogArgs([
+      "--stale-after",
+      "3hours",
+      "sync.json",
+      "raw",
+    ]);
+
     expect(parsed.values.get("--stale-after")).toBe("3hours");
+  });
+
+  it("reads the two positionals", () => {
+    const parsed = parseWatchdogArgs([
+      "--stale-after",
+      "3hours",
+      "sync.json",
+      "raw",
+    ]);
+
     expect(parsed.positional).toEqual(["sync.json", "raw"]);
   });
 
@@ -103,9 +123,11 @@ describe("parseWatchdogArgs", () => {
 });
 
 describe("runWatchdog", () => {
-  it("exits 0 with one line on a fresh stamp and stays silent", async () => {
+  it("exits 0 on a fresh stamp", async () => {
     const dataRoot = await tempDataRoot();
+
     const lines: string[] = [];
+
     const notified: string[] = [];
 
     await putStamp(dataRoot, stamp({ timestamp: new Date().toISOString() }));
@@ -120,13 +142,55 @@ describe("runWatchdog", () => {
     });
 
     expect(code).toBe(0);
+  });
+
+  it("prints one line on a fresh stamp", async () => {
+    const dataRoot = await tempDataRoot();
+
+    const lines: string[] = [];
+
+    const notified: string[] = [];
+
+    await putStamp(dataRoot, stamp({ timestamp: new Date().toISOString() }));
+
+    await runWatchdog({
+      dataRoot,
+      staleAfterMs: THRESHOLD,
+      log: (line) => lines.push(line),
+      notify: (message) => {
+        notified.push(message);
+      },
+    });
+
     expect(lines).toHaveLength(1);
+  });
+
+  it("stays silent on a fresh stamp", async () => {
+    const dataRoot = await tempDataRoot();
+
+    const lines: string[] = [];
+
+    const notified: string[] = [];
+
+    await putStamp(dataRoot, stamp({ timestamp: new Date().toISOString() }));
+
+    await runWatchdog({
+      dataRoot,
+      staleAfterMs: THRESHOLD,
+      log: (line) => lines.push(line),
+      notify: (message) => {
+        notified.push(message);
+      },
+    });
+
     expect(notified).toEqual([]);
   });
 
-  it("exits 1 and notifies on a stale stamp", async () => {
+  it("exits 1 on a stale stamp", async () => {
     const dataRoot = await tempDataRoot();
+
     const lines: string[] = [];
+
     const notified: string[] = [];
 
     await putStamp(dataRoot, stamp());
@@ -142,7 +206,49 @@ describe("runWatchdog", () => {
     });
 
     expect(code).toBe(1);
+  });
+
+  it("alerts naming the last cycle age", async () => {
+    const dataRoot = await tempDataRoot();
+
+    const lines: string[] = [];
+
+    const notified: string[] = [];
+
+    await putStamp(dataRoot, stamp());
+
+    await runWatchdog({
+      dataRoot,
+      staleAfterMs: THRESHOLD,
+      now: () => NOW,
+      log: (line) => lines.push(line),
+      notify: (message) => {
+        notified.push(message);
+      },
+    });
+
     expect(lines[0]).toContain("ALERT — last cycle 2h ago");
+  });
+
+  it("notifies with the alert line", async () => {
+    const dataRoot = await tempDataRoot();
+
+    const lines: string[] = [];
+
+    const notified: string[] = [];
+
+    await putStamp(dataRoot, stamp());
+
+    await runWatchdog({
+      dataRoot,
+      staleAfterMs: THRESHOLD,
+      now: () => NOW,
+      log: (line) => lines.push(line),
+      notify: (message) => {
+        notified.push(message);
+      },
+    });
+
     expect(notified).toEqual([lines[0]]);
   });
 
@@ -182,8 +288,9 @@ describe("runWatchdog", () => {
     });
   });
 
-  it("exits 1 and notifies on an unreadable stamp", async () => {
+  it("exits 1 on an unreadable stamp", async () => {
     const dataRoot = await tempDataRoot();
+
     const notified: string[] = [];
 
     await putStamp(dataRoot, "garbage bytes");
@@ -198,11 +305,30 @@ describe("runWatchdog", () => {
     });
 
     expect(code).toBe(1);
+  });
+
+  it("notifies naming the unreadable heartbeat", async () => {
+    const dataRoot = await tempDataRoot();
+
+    const notified: string[] = [];
+
+    await putStamp(dataRoot, "garbage bytes");
+
+    await runWatchdog({
+      dataRoot,
+      staleAfterMs: THRESHOLD,
+      log: () => {},
+      notify: (message) => {
+        notified.push(message);
+      },
+    });
+
     expect(notified[0]).toContain("heartbeat unreadable");
   });
 
-  it("holds the grace window when no stamp exists and the repo is fresh", async () => {
+  it("holds the grace window with no stamp on a fresh repo", async () => {
     const dataRoot = await tempDataRoot(new Date());
+
     const notified: string[] = [];
 
     const code = await runWatchdog({
@@ -215,11 +341,28 @@ describe("runWatchdog", () => {
     });
 
     expect(code).toBe(0);
+  });
+
+  it("stays silent inside the grace window", async () => {
+    const dataRoot = await tempDataRoot(new Date());
+
+    const notified: string[] = [];
+
+    await runWatchdog({
+      dataRoot,
+      staleAfterMs: THRESHOLD,
+      log: () => {},
+      notify: (message) => {
+        notified.push(message);
+      },
+    });
+
     expect(notified).toEqual([]);
   });
 
-  it("alerts when no stamp exists and the newest commit is past the threshold", async () => {
+  it("exits 1 when no stamp exists past the threshold", async () => {
     const dataRoot = await tempDataRoot(new Date("2026-09-20T09:00:00.000Z"));
+
     const notified: string[] = [];
 
     const code = await runWatchdog({
@@ -233,13 +376,32 @@ describe("runWatchdog", () => {
     });
 
     expect(code).toBe(1);
+  });
+
+  it("alerts that no heartbeat exists", async () => {
+    const dataRoot = await tempDataRoot(new Date("2026-09-20T09:00:00.000Z"));
+
+    const notified: string[] = [];
+
+    await runWatchdog({
+      dataRoot,
+      staleAfterMs: THRESHOLD,
+      now: () => NOW,
+      log: () => {},
+      notify: (message) => {
+        notified.push(message);
+      },
+    });
+
     expect(notified[0]).toContain("no heartbeat");
   });
-  it("holds the grace on a fresh install anchor over old commits", async () => {
+  it("holds the grace on a fresh install anchor", async () => {
     const dataRoot = await tempDataRoot(new Date("2026-09-20T09:00:00.000Z"));
+
     const notified: string[] = [];
 
     await mkdir(join(dataRoot, "outputs"), { recursive: true });
+
     await writeFile(
       join(dataRoot, "outputs", "watchdog-since.txt"),
       "2026-09-20T11:30:00.000Z\n",
@@ -257,6 +419,31 @@ describe("runWatchdog", () => {
     });
 
     expect(code).toBe(0);
+  });
+
+  it("stays silent under the install anchor", async () => {
+    const dataRoot = await tempDataRoot(new Date("2026-09-20T09:00:00.000Z"));
+
+    const notified: string[] = [];
+
+    await mkdir(join(dataRoot, "outputs"), { recursive: true });
+
+    await writeFile(
+      join(dataRoot, "outputs", "watchdog-since.txt"),
+      "2026-09-20T11:30:00.000Z\n",
+      "utf8",
+    );
+
+    await runWatchdog({
+      dataRoot,
+      staleAfterMs: THRESHOLD,
+      now: () => NOW,
+      log: () => {},
+      notify: (message) => {
+        notified.push(message);
+      },
+    });
+
     expect(notified).toEqual([]);
   });
 });
@@ -292,6 +479,17 @@ describe("main", () => {
       expect(logSpy.mock.calls.flat().join("\n")).toContain(
         "Usage: sync-watchdog",
       );
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it("answers --help without setting an exit code", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      await main(["--help"]);
+
       expect(process.exitCode).toBeUndefined();
     } finally {
       logSpy.mockRestore();
@@ -326,7 +524,71 @@ describe("main", () => {
       await main([configPath]);
 
       expect(process.exitCode).toBe(1);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it("prints one line for a stale stamp via the default threshold", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-watchdog-main-"));
+
+    tempDirs.push(dir);
+
+    const dataRoot = await tempDataRoot();
+    const configPath = join(dir, "sync.json");
+
+    await writeFile(
+      configPath,
+      JSON.stringify({ dataRoot, vaults: [] }),
+      "utf8",
+    );
+    await putStamp(
+      dataRoot,
+      stamp({
+        timestamp: new Date(
+          Date.now() - (DEFAULT_STALE_AFTER_SECONDS + 60) * 1000,
+        ).toISOString(),
+      }),
+    );
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      await main([configPath]);
+
       expect(logSpy.mock.calls).toHaveLength(1);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it("alerts naming the last cycle age via the default threshold", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-watchdog-main-"));
+
+    tempDirs.push(dir);
+
+    const dataRoot = await tempDataRoot();
+    const configPath = join(dir, "sync.json");
+
+    await writeFile(
+      configPath,
+      JSON.stringify({ dataRoot, vaults: [] }),
+      "utf8",
+    );
+    await putStamp(
+      dataRoot,
+      stamp({
+        timestamp: new Date(
+          Date.now() - (DEFAULT_STALE_AFTER_SECONDS + 60) * 1000,
+        ).toISOString(),
+      }),
+    );
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      await main([configPath]);
+
       expect(String(logSpy.mock.calls[0]?.[0])).toContain("ALERT — last cycle");
     } finally {
       logSpy.mockRestore();
@@ -342,6 +604,17 @@ describe("main", () => {
       expect(errorSpy.mock.calls.flat().join("\n")).toContain(
         "invalid --stale-after value",
       );
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("exits 1 on an invalid --stale-after value", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      await main(["--stale-after", "soon"]);
+
       expect(process.exitCode).toBe(1);
     } finally {
       errorSpy.mockRestore();
@@ -357,6 +630,17 @@ describe("main", () => {
       expect(errorSpy.mock.calls.flat().join("\n")).toContain(
         "--stale-after needs a duration value",
       );
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("exits 1 on --stale-after without a value", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      await main(["--stale-after"]);
+
       expect(process.exitCode).toBe(1);
     } finally {
       errorSpy.mockRestore();
@@ -365,7 +649,7 @@ describe("main", () => {
 });
 
 describe("runWatchdog against a non-repo data root", () => {
-  it("alerts with no git history to hold the grace window", async () => {
+  it("exits 1 with no git history to hold the grace", async () => {
     const dir = await mkdtemp(join(tmpdir(), "k-wiki-watchdog-nogit-"));
 
     tempDirs.push(dir);
@@ -380,6 +664,22 @@ describe("runWatchdog against a non-repo data root", () => {
     });
 
     expect(code).toBe(1);
+  });
+
+  it("alerts that no data-repo git history exists", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-watchdog-nogit-"));
+
+    tempDirs.push(dir);
+
+    const lines: string[] = [];
+
+    await runWatchdog({
+      dataRoot: dir,
+      staleAfterMs: THRESHOLD,
+      log: (line) => lines.push(line),
+      notify: () => {},
+    });
+
     expect(lines[0]).toContain("no data-repo git history");
   });
 });

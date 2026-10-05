@@ -548,10 +548,15 @@ describe("health CLI", () => {
     expect(process.exitCode).toBe(1);
   });
 
-  it("rejects a second positional argument instead of ignoring it", async () => {
+  it("reports a second positional on stderr", async () => {
     const { err } = await runHealthCli(["raw-one", "raw-two"]);
 
     expect(err).toContain("unexpected argument: raw-two");
+  });
+
+  it("exits 1", async () => {
+    await runHealthCli(["raw-one", "raw-two"]);
+
     expect(process.exitCode).toBe(1);
   });
 
@@ -1395,8 +1400,8 @@ describe("printHealthReport", () => {
     ]);
   });
 
-  it("prints one red problem line per problem and sets exit 1", async () => {
-    const { out, err } = await capture(
+  it("keeps problems off stdout", async () => {
+    const { out } = await capture(
       {
         healthy: false,
         problems: ["notes/Documents/a.md: orphan (no manifest entry)"],
@@ -1408,9 +1413,37 @@ describe("printHealthReport", () => {
     );
 
     expect(out).toEqual([]);
+  });
+
+  it("paints each problem line red", async () => {
+    const { err } = await capture(
+      {
+        healthy: false,
+        problems: ["notes/Documents/a.md: orphan (no manifest entry)"],
+        summary: "",
+        warnings: [],
+        stale: false,
+      },
+      "k-wiki",
+    );
+
     expect(err).toEqual([
       paint.red("notes/Documents/a.md: orphan (no manifest entry)"),
     ]);
+  });
+
+  it("exits 1", async () => {
+    await capture(
+      {
+        healthy: false,
+        problems: ["notes/Documents/a.md: orphan (no manifest entry)"],
+        summary: "",
+        warnings: [],
+        stale: false,
+      },
+      "k-wiki",
+    );
+
     expect(process.exitCode).toBe(1);
   });
 

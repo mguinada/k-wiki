@@ -209,9 +209,11 @@ describe("stableNodePath", () => {
 });
 
 describe("main --print node path pinning", () => {
-  it("pins the symlinked invocation path, not the resolved binary", async () => {
+  it("pins the symlinked invocation path in the plist", async () => {
     const dir = await mkdtemp(join(tmpdir(), "k-wiki-argv0-"));
+
     const nodeSymlink = join(dir, "node-stable");
+
     const repoRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 
     await symlink(process.execPath, nodeSymlink);
@@ -233,6 +235,33 @@ describe("main --print node path pinning", () => {
     await rm(dir, { recursive: true, force: true });
 
     expect(stdout).toContain(`<string>${nodeSymlink}</string>`);
+  });
+
+  it("never resolves the binary in the plist", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "k-wiki-argv0-"));
+
+    const nodeSymlink = join(dir, "node-stable");
+
+    const repoRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
+
+    await symlink(process.execPath, nodeSymlink);
+
+    const stdout = await new Promise<string>((resolve, reject) => {
+      const child = spawn(nodeSymlink, [
+        join(repoRoot, "bin", "setup-schedule"),
+        "--print",
+      ]);
+      let out = "";
+
+      child.stdout.on("data", (chunk) => (out += String(chunk)));
+      child.on("error", reject);
+      child.on("close", (code) =>
+        code === 0 ? resolve(out) : reject(new Error(`exit ${code}: ${out}`)),
+      );
+    });
+
+    await rm(dir, { recursive: true, force: true });
+
     expect(stdout).not.toContain(
       `<string>${realpathSync(process.execPath)}</string>`,
     );
@@ -240,18 +269,33 @@ describe("main --print node path pinning", () => {
 });
 
 describe("schedulerUnsupportedError", () => {
-  it("points linux at the systemd follow-up and the --print escape hatch", () => {
+  it("names the linux platform in the follow-up message", () => {
     const message = schedulerUnsupportedError("linux");
 
     expect(message).toContain("linux");
+  });
+
+  it("points linux at the systemd follow-up", () => {
+    const message = schedulerUnsupportedError("linux");
+
     expect(message).toContain("systemd");
+  });
+
+  it("offers the --print escape hatch", () => {
+    const message = schedulerUnsupportedError("linux");
+
     expect(message).toContain("--print");
+  });
+
+  it("names the win32 platform in the follow-up message", () => {
+    const message = schedulerUnsupportedError("win32");
+
+    expect(message).toContain("win32");
   });
 
   it("points win32 at the Task Scheduler follow-up", () => {
     const message = schedulerUnsupportedError("win32");
 
-    expect(message).toContain("win32");
     expect(message).toContain("Task Scheduler");
   });
 });
@@ -477,14 +521,19 @@ describe("setup-schedule origin guard (issue #361)", () => {
     expect(originRefusal(false, canonicalFacts, "/repo")).toBeUndefined();
   });
 
-  it("refuses a Stryker sandbox, naming the k-wiki verb to run instead", () => {
+  it("refuses a Stryker sandbox by name", () => {
     const refusal = originRefusal(true, canonicalFacts, "/repo");
 
     expect(refusal).toContain("Stryker sandbox");
+  });
+
+  it("names the k-wiki verb to run instead", () => {
+    const refusal = originRefusal(true, canonicalFacts, "/repo");
+
     expect(refusal).toContain("k-wiki setup-schedule");
   });
 
-  it("refuses a linked worktree, naming the main checkout path", () => {
+  it("refuses a linked worktree by name", () => {
     const refusal = originRefusal(
       false,
       {
@@ -496,6 +545,19 @@ describe("setup-schedule origin guard (issue #361)", () => {
     );
 
     expect(refusal).toContain("linked worktree");
+  });
+
+  it("names the main checkout path", () => {
+    const refusal = originRefusal(
+      false,
+      {
+        commonDir: "/repo/.git",
+        gitDir: "/repo/.git/worktrees/issue-x",
+        head: "refs/heads/issue-x",
+      },
+      "/repo-wt",
+    );
+
     expect(refusal).toContain("/repo");
   });
 
@@ -519,37 +581,82 @@ describe("setup-schedule origin guard (issue #361)", () => {
     expect(refusal).toContain("not inside a git repository");
   });
 
-  it("refuses install from a linked worktree: exit 1, the refusal, and nothing written", async () => {
-    const { err, exitCode, launchctl, home } = await runGuarded(
-      [],
-      "darwin",
-      worktreeGit,
-    );
+  it("exits 1 from a linked-worktree install", async () => {
+    const { exitCode, home } = await runGuarded([], "darwin", worktreeGit);
 
     expect(exitCode).toBe(1);
+
+    await pathExists(join(home, "Library"));
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("refuses install from a linked worktree on stderr", async () => {
+    const { err, home } = await runGuarded([], "darwin", worktreeGit);
+
     expect(err).toContain("linked worktree");
+
+    await pathExists(join(home, "Library"));
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("runs no launchd steps refusing a linked-worktree install", async () => {
+    const { launchctl, home } = await runGuarded([], "darwin", worktreeGit);
+
     expect(launchctl).toEqual([]);
+
+    await pathExists(join(home, "Library"));
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("writes nothing under HOME from a linked worktree", async () => {
+    const { home } = await runGuarded([], "darwin", worktreeGit);
+
     await expect(pathExists(join(home, "Library"))).resolves.toBe(false);
 
     await rm(home, { recursive: true, force: true });
   });
 
-  it("refuses uninstall from a linked worktree the same way", async () => {
-    const { err, exitCode, launchctl, home } = await runGuarded(
+  it("exits 1 from a linked-worktree uninstall", async () => {
+    const { exitCode, home } = await runGuarded(
       ["--uninstall"],
       "darwin",
       worktreeGit,
     );
 
     expect(exitCode).toBe(1);
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("refuses uninstall from a linked worktree on stderr", async () => {
+    const { err, home } = await runGuarded(
+      ["--uninstall"],
+      "darwin",
+      worktreeGit,
+    );
+
     expect(err).toContain("linked worktree");
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("runs no launchd steps refusing a linked-worktree uninstall", async () => {
+    const { launchctl, home } = await runGuarded(
+      ["--uninstall"],
+      "darwin",
+      worktreeGit,
+    );
+
     expect(launchctl).toEqual([]);
 
     await rm(home, { recursive: true, force: true });
   });
 
-  it("refuses install inside a Stryker sandbox even on an unsupported platform", async () => {
-    const { err, exitCode, launchctl, home } = await runGuarded(
+  it("exits 1 from a sandboxed install on an unsupported platform", async () => {
+    const { exitCode, home } = await runGuarded(
       [],
       "linux",
       canonicalGit,
@@ -557,15 +664,42 @@ describe("setup-schedule origin guard (issue #361)", () => {
     );
 
     expect(exitCode).toBe(1);
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("refuses a Stryker sandbox on stderr", async () => {
+    const { err, home } = await runGuarded([], "linux", canonicalGit, true);
+
     expect(err).toContain("Stryker sandbox");
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("keeps the platform notice out of the refusal", async () => {
+    const { err, home } = await runGuarded([], "linux", canonicalGit, true);
+
     expect(err).not.toContain("systemd");
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("runs no launchd steps from a sandbox", async () => {
+    const { launchctl, home } = await runGuarded(
+      [],
+      "linux",
+      canonicalGit,
+      true,
+    );
+
     expect(launchctl).toEqual([]);
 
     await rm(home, { recursive: true, force: true });
   });
 
-  it("lets --print through from a sandboxed origin (it writes nothing)", async () => {
+  it("prints the plist from a sandboxed origin", async () => {
     const home = await mkdtemp(join(tmpdir(), "k-wiki-setup-print-"));
+
     const printed: string[] = [];
 
     process.exitCode = undefined;
@@ -586,20 +720,64 @@ describe("setup-schedule origin guard (issue #361)", () => {
     }
 
     expect(printed.join("\n")).toContain(LAUNCHD_LABEL);
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("exits 0", async () => {
+    const home = await mkdtemp(join(tmpdir(), "k-wiki-setup-print-"));
+
+    const printed: string[] = [];
+
+    process.exitCode = undefined;
+
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) =>
+        printed.push(parts.join(" ")),
+      );
+
+    try {
+      (globalThis as Record<string, unknown>).__stryker__ = {};
+
+      await main(["--print"], "linux", async () => {}, home, canonicalGit);
+    } finally {
+      delete (globalThis as Record<string, unknown>).__stryker__;
+      logSpy.mockRestore();
+    }
+
     expect(process.exitCode).toBeUndefined();
 
     await rm(home, { recursive: true, force: true });
   });
 
-  it("installs and replaces cleanly from the main checkout on a branch", async () => {
-    const { exitCode, launchctl, home } = await runGuarded(
-      [],
-      "darwin",
-      canonicalGit,
-    );
+  it("exits clean installing from the main checkout on a branch", async () => {
+    const { exitCode, home } = await runGuarded([], "darwin", canonicalGit);
 
     expect(exitCode).toBeUndefined();
+
+    await pathExists(
+      join(home, "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`),
+    );
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("registers the launchd job", async () => {
+    const { launchctl, home } = await runGuarded([], "darwin", canonicalGit);
+
     expect(launchctl.length).toBe(3);
+
+    await pathExists(
+      join(home, "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`),
+    );
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("writes the plist into LaunchAgents", async () => {
+    const { home } = await runGuarded([], "darwin", canonicalGit);
+
     await expect(
       pathExists(
         join(home, "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`),
@@ -609,7 +787,7 @@ describe("setup-schedule origin guard (issue #361)", () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  it("documents the origin guard in the help text", async () => {
+  it("documents the main working tree rule in the help", async () => {
     const printed: string[] = [];
 
     const logSpy = vi
@@ -627,7 +805,45 @@ describe("setup-schedule origin guard (issue #361)", () => {
     const help = printed.join("\n");
 
     expect(help).toContain("main working tree");
+  });
+
+  it("documents the Stryker sandbox rule in the help", async () => {
+    const printed: string[] = [];
+
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) =>
+        printed.push(parts.join(" ")),
+      );
+
+    try {
+      await main(["--help"]);
+    } finally {
+      logSpy.mockRestore();
+    }
+
+    const help = printed.join("\n");
+
     expect(help).toContain("Stryker sandbox");
+  });
+
+  it("documents the linked worktree rule in the help", async () => {
+    const printed: string[] = [];
+
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) =>
+        printed.push(parts.join(" ")),
+      );
+
+    try {
+      await main(["--help"]);
+    } finally {
+      logSpy.mockRestore();
+    }
+
+    const help = printed.join("\n");
+
     expect(help).toContain("linked worktree");
   });
 });
@@ -637,10 +853,61 @@ describe("setup-schedule main: install and uninstall", () => {
     return await mkdtemp(join(tmpdir(), "k-wiki-setup-"));
   }
 
-  it("writes the plist, registers it, and verifies it from the clean launchd view", async () => {
+  it("bootouts and bootstraps the job through launchd", async () => {
     const home = await tempHome();
+
     const recorded: string[][] = [];
-    const { out, exitCode } = await (async () => {
+
+    await (async () => {
+      const argv = process.argv;
+      const out: string[] = [];
+      const logSpy = vi
+        .spyOn(console, "log")
+        .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+
+      try {
+        await main(
+          [],
+          "darwin",
+          async (args) => {
+            recorded.push([...args]);
+          },
+          home,
+          canonicalGit,
+        );
+      } finally {
+        process.argv = argv;
+        logSpy.mockRestore();
+      }
+
+      return { out: out.join("\n"), exitCode: "0" };
+    })();
+
+    const domain = `gui/${process.getuid?.() ?? 501}`;
+
+    expect(recorded).toEqual([
+      [
+        "bootout",
+        domain,
+        join(home, "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`),
+      ],
+      [
+        "bootstrap",
+        domain,
+        join(home, "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`),
+      ],
+      ["print", `${domain}/${LAUNCHD_LABEL}`],
+    ]);
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("writes the label into the plist", async () => {
+    const home = await tempHome();
+
+    const recorded: string[][] = [];
+
+    await (async () => {
       const argv = process.argv;
       const out: string[] = [];
       const logSpy = vi
@@ -669,23 +936,77 @@ describe("setup-schedule main: install and uninstall", () => {
       join(home, "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`),
       "utf8",
     );
-    const domain = `gui/${process.getuid?.() ?? 501}`;
 
-    expect(recorded).toEqual([
-      [
-        "bootout",
-        domain,
-        join(home, "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`),
-      ],
-      [
-        "bootstrap",
-        domain,
-        join(home, "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`),
-      ],
-      ["print", `${domain}/${LAUNCHD_LABEL}`],
-    ]);
     expect(plist).toContain(`<string>${LAUNCHD_LABEL}</string>`);
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("reports the install", async () => {
+    const home = await tempHome();
+
+    const recorded: string[][] = [];
+
+    const { out } = await (async () => {
+      const argv = process.argv;
+      const out: string[] = [];
+      const logSpy = vi
+        .spyOn(console, "log")
+        .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+
+      try {
+        await main(
+          [],
+          "darwin",
+          async (args) => {
+            recorded.push([...args]);
+          },
+          home,
+          canonicalGit,
+        );
+      } finally {
+        process.argv = argv;
+        logSpy.mockRestore();
+      }
+
+      return { out: out.join("\n"), exitCode: "0" };
+    })();
+
     expect(out).toContain("installed");
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("exits 0", async () => {
+    const home = await tempHome();
+
+    const recorded: string[][] = [];
+
+    const { exitCode } = await (async () => {
+      const argv = process.argv;
+      const out: string[] = [];
+      const logSpy = vi
+        .spyOn(console, "log")
+        .mockImplementation((...parts: unknown[]) => out.push(parts.join(" ")));
+
+      try {
+        await main(
+          [],
+          "darwin",
+          async (args) => {
+            recorded.push([...args]);
+          },
+          home,
+          canonicalGit,
+        );
+      } finally {
+        process.argv = argv;
+        logSpy.mockRestore();
+      }
+
+      return { out: out.join("\n"), exitCode: "0" };
+    })();
+
     expect(exitCode).toBe("0");
 
     await rm(home, { recursive: true, force: true });
@@ -716,21 +1037,26 @@ describe("setup-schedule main: install and uninstall", () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  it("removes the plist and boots the job out on --uninstall", async () => {
+  it("removes the plist on --uninstall", async () => {
     const home = await tempHome();
+
     const target = join(
       home,
       "Library",
       "LaunchAgents",
       `${LAUNCHD_LABEL}.plist`,
     );
+
     const recorded: string[][] = [];
+
     const outs: string[] = [];
+
     const logSpy = vi
       .spyOn(console, "log")
       .mockImplementation((...parts: unknown[]) => outs.push(parts.join(" ")));
 
     await mkdir(dirname(target), { recursive: true });
+
     await writeFile(target, "<plist/>");
 
     try {
@@ -748,9 +1074,89 @@ describe("setup-schedule main: install and uninstall", () => {
     }
 
     await expect(readFile(target, "utf8")).rejects.toThrow();
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("boots the job out of launchd", async () => {
+    const home = await tempHome();
+
+    const target = join(
+      home,
+      "Library",
+      "LaunchAgents",
+      `${LAUNCHD_LABEL}.plist`,
+    );
+
+    const recorded: string[][] = [];
+
+    const outs: string[] = [];
+
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => outs.push(parts.join(" ")));
+
+    await mkdir(dirname(target), { recursive: true });
+
+    await writeFile(target, "<plist/>");
+
+    try {
+      await main(
+        ["--uninstall"],
+        "darwin",
+        async (args) => {
+          recorded.push([...args]);
+        },
+        home,
+        canonicalGit,
+      );
+    } finally {
+      logSpy.mockRestore();
+    }
+
     expect(recorded).toEqual([
       ["bootout", `gui/${process.getuid?.() ?? 501}`, target],
     ]);
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("reports the uninstall", async () => {
+    const home = await tempHome();
+
+    const target = join(
+      home,
+      "Library",
+      "LaunchAgents",
+      `${LAUNCHD_LABEL}.plist`,
+    );
+
+    const recorded: string[][] = [];
+
+    const outs: string[] = [];
+
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) => outs.push(parts.join(" ")));
+
+    await mkdir(dirname(target), { recursive: true });
+
+    await writeFile(target, "<plist/>");
+
+    try {
+      await main(
+        ["--uninstall"],
+        "darwin",
+        async (args) => {
+          recorded.push([...args]);
+        },
+        home,
+        canonicalGit,
+      );
+    } finally {
+      logSpy.mockRestore();
+    }
+
     expect(outs.join("\n")).toContain("uninstalled");
 
     await rm(home, { recursive: true, force: true });
@@ -922,12 +1328,15 @@ describe("setup-schedule main wiring (issue #240 kill batch)", () => {
 });
 
 describe("parseWeeklyAt", () => {
-  it("parses a weekday-time into launchd calendar fields", () => {
+  it("parses a lowercase weekday-time into calendar fields", () => {
     expect(parseWeeklyAt("sun-03:00")).toEqual({
       weekday: 0,
       hour: 3,
       minute: 0,
     });
+  });
+
+  it("parses an uppercase weekday-time into calendar fields", () => {
     expect(parseWeeklyAt("SAT-16:45")).toEqual({
       weekday: 6,
       hour: 16,
@@ -935,11 +1344,23 @@ describe("parseWeeklyAt", () => {
     });
   });
 
-  it("rejects malformed values", () => {
+  it("rejects a full day name", () => {
     expect(parseWeeklyAt("sunday-03:00")).toBeUndefined();
+  });
+
+  it("rejects a single-digit hour", () => {
     expect(parseWeeklyAt("sun-3:00")).toBeUndefined();
+  });
+
+  it("rejects an out-of-range hour", () => {
     expect(parseWeeklyAt("sun-24:00")).toBeUndefined();
+  });
+
+  it("rejects an out-of-range minute", () => {
     expect(parseWeeklyAt("sun-03:60")).toBeUndefined();
+  });
+
+  it("rejects an empty value", () => {
     expect(parseWeeklyAt("")).toBeUndefined();
   });
 });
@@ -949,9 +1370,11 @@ describe("calendar registration (issue #359)", () => {
     return await mkdtemp(join(tmpdir(), "k-wiki-cal-"));
   }
 
-  it("prints the sweep plist with a StartCalendarInterval trigger", async () => {
+  it("labels the sweep plist", async () => {
     const home = await tempHome();
+
     const printed: string[] = [];
+
     const logSpy = vi
       .spyOn(console, "log")
       .mockImplementation((...parts: unknown[]) =>
@@ -967,18 +1390,135 @@ describe("calendar registration (issue #359)", () => {
     const plist = printed.join("\n");
 
     expect(plist).toContain("<string>com.kwiki.scheduled-lint</string>");
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("uses a StartCalendarInterval trigger", async () => {
+    const home = await tempHome();
+
+    const printed: string[] = [];
+
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) =>
+        printed.push(parts.join(" ")),
+      );
+
+    try {
+      await main(["--calendar", "--print"], "linux", async () => {}, home);
+    } finally {
+      logSpy.mockRestore();
+    }
+
+    const plist = printed.join("\n");
+
     expect(plist).toContain("<key>StartCalendarInterval</key>");
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("sets the Sunday weekday field", async () => {
+    const home = await tempHome();
+
+    const printed: string[] = [];
+
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) =>
+        printed.push(parts.join(" ")),
+      );
+
+    try {
+      await main(["--calendar", "--print"], "linux", async () => {}, home);
+    } finally {
+      logSpy.mockRestore();
+    }
+
+    const plist = printed.join("\n");
+
     expect(plist).toContain("<integer>0</integer>");
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("sets the 3 o'clock hour field", async () => {
+    const home = await tempHome();
+
+    const printed: string[] = [];
+
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) =>
+        printed.push(parts.join(" ")),
+      );
+
+    try {
+      await main(["--calendar", "--print"], "linux", async () => {}, home);
+    } finally {
+      logSpy.mockRestore();
+    }
+
+    const plist = printed.join("\n");
+
     expect(plist).toContain("<integer>3</integer>");
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("passes --lint-full to the sweep", async () => {
+    const home = await tempHome();
+
+    const printed: string[] = [];
+
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) =>
+        printed.push(parts.join(" ")),
+      );
+
+    try {
+      await main(["--calendar", "--print"], "linux", async () => {}, home);
+    } finally {
+      logSpy.mockRestore();
+    }
+
+    const plist = printed.join("\n");
+
     expect(plist).toContain("<string>--lint-full</string>");
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("avoids the StartInterval trigger", async () => {
+    const home = await tempHome();
+
+    const printed: string[] = [];
+
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) =>
+        printed.push(parts.join(" ")),
+      );
+
+    try {
+      await main(["--calendar", "--print"], "linux", async () => {}, home);
+    } finally {
+      logSpy.mockRestore();
+    }
+
+    const plist = printed.join("\n");
+
     expect(plist).not.toContain("StartInterval");
 
     await rm(home, { recursive: true, force: true });
   });
 
-  it("honors --weekly-at for the trigger fields", async () => {
+  it("sets the Saturday weekday field from --weekly-at", async () => {
     const home = await tempHome();
+
     const printed: string[] = [];
+
     const logSpy = vi
       .spyOn(console, "log")
       .mockImplementation((...parts: unknown[]) =>
@@ -999,14 +1539,71 @@ describe("calendar registration (issue #359)", () => {
     const plist = printed.join("\n");
 
     expect(plist).toContain("<integer>6</integer>");
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("sets the 4 o'clock hour from --weekly-at", async () => {
+    const home = await tempHome();
+
+    const printed: string[] = [];
+
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) =>
+        printed.push(parts.join(" ")),
+      );
+
+    try {
+      await main(
+        ["--calendar", "--weekly-at", "sat-04:30", "--print"],
+        "linux",
+        async () => {},
+        home,
+      );
+    } finally {
+      logSpy.mockRestore();
+    }
+
+    const plist = printed.join("\n");
+
     expect(plist).toContain("<integer>4</integer>");
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("sets the 30th minute from --weekly-at", async () => {
+    const home = await tempHome();
+
+    const printed: string[] = [];
+
+    const logSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation((...parts: unknown[]) =>
+        printed.push(parts.join(" ")),
+      );
+
+    try {
+      await main(
+        ["--calendar", "--weekly-at", "sat-04:30", "--print"],
+        "linux",
+        async () => {},
+        home,
+      );
+    } finally {
+      logSpy.mockRestore();
+    }
+
+    const plist = printed.join("\n");
+
     expect(plist).toContain("<integer>30</integer>");
 
     await rm(home, { recursive: true, force: true });
   });
 
-  it("installs, replaces, and uninstalls only the sweep plist", async () => {
+  it("bootouts, bootstraps, and prints only the sweep job", async () => {
     const home = await tempHome();
+
     const calls: string[][] = [];
 
     await main(
@@ -1031,8 +1628,102 @@ describe("calendar registration (issue #359)", () => {
       ["bootstrap", expect.any(String), target],
       ["print", expect.any(String)],
     ]);
+
+    await main(
+      ["--calendar", "--uninstall"],
+      "darwin",
+      async (args) => {
+        calls.push([...args]);
+      },
+      home,
+      canonicalGit,
+    );
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("anchors the sweep label in the printed view", async () => {
+    const home = await tempHome();
+
+    const calls: string[][] = [];
+
+    await main(
+      ["--calendar"],
+      "darwin",
+      async (args) => {
+        calls.push([...args]);
+      },
+      home,
+      canonicalGit,
+    );
+
     expect(calls[2]?.[1]).toContain("com.kwiki.scheduled-lint");
+
+    await main(
+      ["--calendar", "--uninstall"],
+      "darwin",
+      async (args) => {
+        calls.push([...args]);
+      },
+      home,
+      canonicalGit,
+    );
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("installs the sweep plist with --lint-full", async () => {
+    const home = await tempHome();
+
+    const calls: string[][] = [];
+
+    await main(
+      ["--calendar"],
+      "darwin",
+      async (args) => {
+        calls.push([...args]);
+      },
+      home,
+      canonicalGit,
+    );
+
+    const target = join(
+      home,
+      "Library",
+      "LaunchAgents",
+      "com.kwiki.scheduled-lint.plist",
+    );
+
     expect(await readFile(target, "utf8")).toContain("--lint-full");
+
+    await main(
+      ["--calendar", "--uninstall"],
+      "darwin",
+      async (args) => {
+        calls.push([...args]);
+      },
+      home,
+      canonicalGit,
+    );
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("removes the sweep plist on uninstall", async () => {
+    const home = await tempHome();
+
+    const calls: string[][] = [];
+
+    await main(
+      ["--calendar"],
+      "darwin",
+      async (args) => {
+        calls.push([...args]);
+      },
+      home,
+      canonicalGit,
+    );
+
     expect(await pathExists(plistPath(home))).toBe(false);
 
     await main(
@@ -1045,7 +1736,78 @@ describe("calendar registration (issue #359)", () => {
       canonicalGit,
     );
 
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("bootouts the sweep job on uninstall", async () => {
+    const home = await tempHome();
+
+    const calls: string[][] = [];
+
+    await main(
+      ["--calendar"],
+      "darwin",
+      async (args) => {
+        calls.push([...args]);
+      },
+      home,
+      canonicalGit,
+    );
+
+    const target = join(
+      home,
+      "Library",
+      "LaunchAgents",
+      "com.kwiki.scheduled-lint.plist",
+    );
+
+    await main(
+      ["--calendar", "--uninstall"],
+      "darwin",
+      async (args) => {
+        calls.push([...args]);
+      },
+      home,
+      canonicalGit,
+    );
+
     expect(calls.at(-1)).toEqual(["bootout", expect.any(String), target]);
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("leaves no sweep target on disk", async () => {
+    const home = await tempHome();
+
+    const calls: string[][] = [];
+
+    await main(
+      ["--calendar"],
+      "darwin",
+      async (args) => {
+        calls.push([...args]);
+      },
+      home,
+      canonicalGit,
+    );
+
+    const target = join(
+      home,
+      "Library",
+      "LaunchAgents",
+      "com.kwiki.scheduled-lint.plist",
+    );
+
+    await main(
+      ["--calendar", "--uninstall"],
+      "darwin",
+      async (args) => {
+        calls.push([...args]);
+      },
+      home,
+      canonicalGit,
+    );
+
     expect(await pathExists(target)).toBe(false);
 
     await rm(home, { recursive: true, force: true });
@@ -1158,9 +1920,11 @@ describe("watchdog registration (issue #362)", () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  it("installs, replaces, and uninstalls only the watchdog plist", async () => {
+  it("bootouts, bootstraps, and prints only the watchdog job", async () => {
     const home = await tempHome();
+
     const calls: string[][] = [];
+
     const anchored: string[] = [];
 
     await main(
@@ -1183,6 +1947,32 @@ describe("watchdog registration (issue #362)", () => {
       ["bootstrap", expect.any(String), target],
       ["print", expect.any(String)],
     ]);
+
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("leaves the sweep anchor out of the watchdog run", async () => {
+    const home = await tempHome();
+
+    const calls: string[][] = [];
+
+    const anchored: string[] = [];
+
+    await main(
+      ["--watchdog"],
+      "darwin",
+      async (args) => {
+        calls.push([...args]);
+      },
+      home,
+      canonicalGit,
+      async (dataRoot) => {
+        anchored.push(dataRoot);
+      },
+    );
+
+    watchdogPlistPath(home);
+
     expect(anchored).toHaveLength(1);
 
     await rm(home, { recursive: true, force: true });

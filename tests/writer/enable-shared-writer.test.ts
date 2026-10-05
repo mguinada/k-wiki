@@ -41,14 +41,28 @@ async function unenabledRepo() {
 }
 
 describe("enable-shared-writer (library)", () => {
-  it("commits and pushes the marker, releasing the bootstrap lease", async () => {
-    const { world, cw } = await unenabledRepo();
+  it("commits the marker naming its path", async () => {
+    const { cw } = await unenabledRepo();
+
     const { enable } = await import("../../src/writer/enable-shared-writer.ts");
-    const { gitRunnerFor } = await import("../../src/writer/git-remote.ts");
 
     const message = await enable(cw.dataRoot);
 
     expect(message).toContain(MARKER_PATH);
+
+    JSON.parse(await readFile(join(cw.dataRoot, MARKER_PATH), "utf8")) as {
+      version: number;
+      branch: string;
+      leaseRef: string;
+    };
+  }, 30000);
+
+  it("writes the marker's version, branch, and lease ref", async () => {
+    const { cw } = await unenabledRepo();
+
+    const { enable } = await import("../../src/writer/enable-shared-writer.ts");
+
+    await enable(cw.dataRoot);
 
     const marker = JSON.parse(
       await readFile(join(cw.dataRoot, MARKER_PATH), "utf8"),
@@ -60,20 +74,49 @@ describe("enable-shared-writer (library)", () => {
       leaseRef: LEASE_REF,
       sourceRemovalPolicy: "confirm",
     });
+  }, 30000);
 
-    // The marker commit is on origin and the lease is released.
+  it("releases the bootstrap lease", async () => {
+    const { cw } = await unenabledRepo();
+
+    const { enable } = await import("../../src/writer/enable-shared-writer.ts");
+
+    await enable(cw.dataRoot);
+
+    JSON.parse(await readFile(join(cw.dataRoot, MARKER_PATH), "utf8")) as {
+      version: number;
+      branch: string;
+      leaseRef: string;
+    };
+    expect(
+      await lsRemoteOid(gitOf(cw.dataRoot), "origin", LEASE_REF),
+    ).toBeUndefined();
+  }, 30000);
+
+  it("pushes the marker commit to the remote", async () => {
+    const { world, cw } = await unenabledRepo();
+
+    const { enable } = await import("../../src/writer/enable-shared-writer.ts");
+
+    const { gitRunnerFor } = await import("../../src/writer/git-remote.ts");
+
+    await enable(cw.dataRoot);
+
+    JSON.parse(await readFile(join(cw.dataRoot, MARKER_PATH), "utf8")) as {
+      version: number;
+      branch: string;
+      leaseRef: string;
+    };
+
     const remote = gitRunnerFor({
       dir: world.remoteDir,
       env: process.env,
     });
 
-    expect(
-      await lsRemoteOid(gitOf(cw.dataRoot), "origin", LEASE_REF),
-    ).toBeUndefined();
-
     const remoteHead = (
       await remote(["rev-parse", "refs/heads/main"])
     ).stdout.trim();
+
     const localHead = (
       await gitOf(cw.dataRoot)(["rev-parse", "HEAD"])
     ).stdout.trim();
@@ -279,26 +322,37 @@ exit 0
     });
   }, 30000);
 
-  it("refuses a dirty checkout without writing the marker", async () => {
+  it("refuses a dirty checkout", async () => {
     const { cw } = await unenabledRepo();
+
     const { enable } = await import("../../src/writer/enable-shared-writer.ts");
 
     await writeFile(join(cw.dataRoot, "junk.md"), "junk\n");
 
     await expect(enable(cw.dataRoot)).rejects.toThrow(/dirty/);
+  }, 30000);
+
+  it("writes no marker when the checkout is dirty", async () => {
+    const { cw } = await unenabledRepo();
+
+    const { enable } = await import("../../src/writer/enable-shared-writer.ts");
+
+    await writeFile(join(cw.dataRoot, "junk.md"), "junk\n");
+
+    await enable(cw.dataRoot).catch(() => undefined);
+
     await expect(
       readFile(join(cw.dataRoot, MARKER_PATH)),
     ).rejects.toMatchObject({ code: "ENOENT" });
   }, 30000);
 
-  it("refuses when the remote cannot do the protocol, with no marker", async () => {
+  it("refuses a remote without the shared-writer protocol", async () => {
     const { world, cw } = await unenabledRepo();
+
     const { enable } = await import("../../src/writer/enable-shared-writer.ts");
+
     const fs = await import("node:fs/promises");
 
-    // A pre-receive hook on the remote rejecting custom refs: the
-    // unsupported-capability stand-in (the probe's own test proves
-    // this hook mechanism fires).
     await fs.writeFile(
       `${world.remoteDir}/hooks/pre-receive`,
       '#!/bin/sh\nwhile read -r _old _new ref; do\n  case "$ref" in refs/k-wiki/*) echo no-custom-refs >&2; exit 1 ;; esac\ndone\nexit 0\n',
@@ -308,6 +362,23 @@ exit 0
     await expect(enable(cw.dataRoot)).rejects.toThrow(
       /does not support the shared-writer protocol/,
     );
+  }, 30000);
+
+  it("writes no marker when the remote lacks the protocol", async () => {
+    const { world, cw } = await unenabledRepo();
+
+    const { enable } = await import("../../src/writer/enable-shared-writer.ts");
+
+    const fs = await import("node:fs/promises");
+
+    await fs.writeFile(
+      `${world.remoteDir}/hooks/pre-receive`,
+      '#!/bin/sh\nwhile read -r _old _new ref; do\n  case "$ref" in refs/k-wiki/*) echo no-custom-refs >&2; exit 1 ;; esac\ndone\nexit 0\n',
+      { mode: 0o755 },
+    );
+
+    await enable(cw.dataRoot).catch(() => undefined);
+
     await expect(
       readFile(join(cw.dataRoot, MARKER_PATH)),
     ).rejects.toMatchObject({ code: "ENOENT" });
@@ -326,14 +397,17 @@ async function head(dataRoot: string): Promise<string> {
 }
 
 describe("writer-lease verbs (library)", () => {
-  it("status reports a live lease with holder and expiry", async () => {
+  it("acquires the lease for the status probe", async () => {
     const world = await makeWriterWorld();
+
     worlds.push(world);
+
     const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
     const { acquireLease } = await import("../../src/writer/lease-ops.ts");
-    const { observeLease } = await import("../../src/writer/lease.ts");
 
     await gitOf(cw.dataRoot)(["fetch", "origin", "refs/heads/main"]);
+
     const acquire = await acquireLease({
       git: gitOf(cw.dataRoot),
       remote: "origin",
@@ -347,10 +421,65 @@ describe("writer-lease verbs (library)", () => {
     });
 
     expect(acquire.status).toBe("acquired");
+  }, 30000);
+
+  it("reports the live lease's holder", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { acquireLease } = await import("../../src/writer/lease-ops.ts");
+
+    const { observeLease } = await import("../../src/writer/lease.ts");
+
+    await gitOf(cw.dataRoot)(["fetch", "origin", "refs/heads/main"]);
+
+    await acquireLease({
+      git: gitOf(cw.dataRoot),
+      remote: "origin",
+      leaseRef: LEASE_REF,
+      treeOid: (
+        await gitOf(cw.dataRoot)(["rev-parse", "HEAD^{tree}"])
+      ).stdout.trim(),
+      base: (await gitOf(cw.dataRoot)(["rev-parse", "HEAD"])).stdout.trim(),
+      now: () => new Date("2026-01-01T00:00:00Z"),
+      holder: "mac-a:42",
+    });
 
     const lease = await observeLease(gitOf(cw.dataRoot), "origin", LEASE_REF);
 
     expect(lease?.body.holder).toBe("mac-a:42");
+  }, 30000);
+
+  it("reports the live lease's expiry", async () => {
+    const world = await makeWriterWorld();
+
+    worlds.push(world);
+
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+
+    const { acquireLease } = await import("../../src/writer/lease-ops.ts");
+
+    const { observeLease } = await import("../../src/writer/lease.ts");
+
+    await gitOf(cw.dataRoot)(["fetch", "origin", "refs/heads/main"]);
+
+    await acquireLease({
+      git: gitOf(cw.dataRoot),
+      remote: "origin",
+      leaseRef: LEASE_REF,
+      treeOid: (
+        await gitOf(cw.dataRoot)(["rev-parse", "HEAD^{tree}"])
+      ).stdout.trim(),
+      base: (await gitOf(cw.dataRoot)(["rev-parse", "HEAD"])).stdout.trim(),
+      now: () => new Date("2026-01-01T00:00:00Z"),
+      holder: "mac-a:42",
+    });
+
+    const lease = await observeLease(gitOf(cw.dataRoot), "origin", LEASE_REF);
+
     expect(lease?.body.expires).toBe("2026-01-01T04:00:00.000Z");
   }, 30000);
 });
@@ -364,6 +493,50 @@ describe("concurrent enablement (test 19)", () => {
 
     // Strip the marker so both clones start unenabled; each clone
     // enables itself, racing for the bootstrap lease and the branch.
+    const { rm: rmDir } = await import("node:fs/promises");
+
+    await rmDir(join(cw.dataRoot, ".k-wiki"), { recursive: true, force: true });
+    await world.a.git(["add", "-A"]);
+    await world.a.git(["commit", "-m", "marker removed"]);
+    await world.a.git([
+      "push",
+      "-q",
+      "origin",
+      "refs/heads/main:refs/heads/main",
+    ]);
+    await world.b.git(["fetch", "-q", "origin", "refs/heads/main"]);
+    await world.b.git(["reset", "-q", "--hard", "origin/main"]);
+
+    const [first, second] = await Promise.all([
+      enable(cw.dataRoot).then(
+        () => "ok",
+        (e: unknown) => String((e as Error).message),
+      ),
+      enable(world.b.dir).then(
+        () => "ok",
+        (e: unknown) => String((e as Error).message),
+      ),
+    ]);
+
+    const outcomes = [
+      { clone: world.a, result: first },
+      { clone: world.b, result: second },
+    ];
+    const winners = outcomes.filter((o) => o.result === "ok");
+    // At least one enable wins the lease race; either clone may win.
+    // The loser may be lease-refused, finalize-rejected, classify the
+    // remote as diverged, or fast-forward to the winner and take the
+    // idempotent already-enabled path. The state assertions below are
+    // the interleaving-agnostic contract.
+    expect(winners.length).toBeGreaterThanOrEqual(1);
+  }, 60000);
+
+  it("racing enables: every loser fails closed on the base or the remote main", async () => {
+    const world = await makeWriterWorld();
+    worlds.push(world);
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+    const { enable } = await import("../../src/writer/enable-shared-writer.ts");
+
     const { rm: rmDir } = await import("node:fs/promises");
 
     await rmDir(join(cw.dataRoot, ".k-wiki"), { recursive: true, force: true });
@@ -395,17 +568,8 @@ describe("concurrent enablement (test 19)", () => {
       { clone: world.a, result: first },
       { clone: world.b, result: second },
     ];
-    const winners = outcomes.filter((o) => o.result === "ok");
     const losers = outcomes.filter((o) => o.result !== "ok");
 
-    // At least one enable wins the lease race; either clone may win.
-    // The loser may be lease-refused, finalize-rejected, classify the
-    // remote as diverged, or fast-forward to the winner and take the
-    // idempotent already-enabled path. The state assertions below are
-    // the interleaving-agnostic contract.
-    expect(winners.length).toBeGreaterThanOrEqual(1);
-
-    // The remote is consistent: main = a winner's push, no lease.
     const remote = (
       await import("../../src/writer/git-remote.ts")
     ).gitRunnerFor({ dir: world.remoteDir, env: process.env });
@@ -417,8 +581,90 @@ describe("concurrent enablement (test 19)", () => {
     for (const loser of losers) {
       expect([baseHead, remoteMain]).toContain(await head0(loser.clone.dir));
     }
+  }, 60000);
+
+  it("racing enables: the lease releases and a winner matches the remote main", async () => {
+    const world = await makeWriterWorld();
+    worlds.push(world);
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+    const { enable } = await import("../../src/writer/enable-shared-writer.ts");
+
+    const { rm: rmDir } = await import("node:fs/promises");
+
+    await rmDir(join(cw.dataRoot, ".k-wiki"), { recursive: true, force: true });
+    await world.a.git(["add", "-A"]);
+    await world.a.git(["commit", "-m", "marker removed"]);
+    await world.a.git([
+      "push",
+      "-q",
+      "origin",
+      "refs/heads/main:refs/heads/main",
+    ]);
+    await world.b.git(["fetch", "-q", "origin", "refs/heads/main"]);
+    await world.b.git(["reset", "-q", "--hard", "origin/main"]);
+
+    await Promise.all([
+      enable(cw.dataRoot).then(
+        () => "ok",
+        () => undefined,
+      ),
+      enable(world.b.dir).then(
+        () => "ok",
+        () => undefined,
+      ),
+    ]);
+    const remote = (
+      await import("../../src/writer/git-remote.ts")
+    ).gitRunnerFor({ dir: world.remoteDir, env: process.env });
 
     expect((await remote(["for-each-ref", LEASE_REF])).stdout.trim()).toBe("");
+  }, 60000);
+
+  it("racing enables: a winner's head matches the remote main", async () => {
+    const world = await makeWriterWorld();
+    worlds.push(world);
+    const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
+    const { enable } = await import("../../src/writer/enable-shared-writer.ts");
+
+    const { rm: rmDir } = await import("node:fs/promises");
+
+    await rmDir(join(cw.dataRoot, ".k-wiki"), { recursive: true, force: true });
+    await world.a.git(["add", "-A"]);
+    await world.a.git(["commit", "-m", "marker removed"]);
+    await world.a.git([
+      "push",
+      "-q",
+      "origin",
+      "refs/heads/main:refs/heads/main",
+    ]);
+    await world.b.git(["fetch", "-q", "origin", "refs/heads/main"]);
+    await world.b.git(["reset", "-q", "--hard", "origin/main"]);
+
+    const [first, second] = await Promise.all([
+      enable(cw.dataRoot).then(
+        () => "ok",
+        (e: unknown) => String((e as Error).message),
+      ),
+      enable(world.b.dir).then(
+        () => "ok",
+        (e: unknown) => String((e as Error).message),
+      ),
+    ]);
+
+    const outcomes = [
+      { clone: world.a, result: first },
+      { clone: world.b, result: second },
+    ];
+    const winners = outcomes.filter((o) => o.result === "ok");
+
+    const remote = (
+      await import("../../src/writer/git-remote.ts")
+    ).gitRunnerFor({ dir: world.remoteDir, env: process.env });
+
+    const remoteMain = (
+      await remote(["rev-parse", "refs/heads/main"])
+    ).stdout.trim();
+
     expect(await Promise.all(winners.map((o) => head0(o.clone.dir)))).toContain(
       remoteMain,
     );

@@ -110,6 +110,16 @@ describe("checkCitationWall", () => {
     expect(report.problems).toEqual([
       "wiki/note-a.md:10 -> [[proposal]] (main pages must not link or embed sandbox pages)",
     ]);
+  });
+
+  it("lists the main page citing a sandbox note inline", async () => {
+    const wikiDir = await makeWiki({
+      "note-a.md": mainPage("See [[proposal]]."),
+      "sandbox/proposal.md": sandboxPage("Body."),
+    });
+
+    const report = await checkCitationWall(wikiDir);
+
     expect(report.offendingPaths).toEqual(["note-a.md"]);
   });
 
@@ -151,6 +161,17 @@ describe("checkCitationWall", () => {
     expect(report.problems).toEqual([
       "wiki/sandbox/proposal.md:6 -> [[draft-two]] (sandbox pages cite main wiki content only, never sandbox peers)",
     ]);
+  });
+
+  it("lists the offending sandbox page", async () => {
+    const wikiDir = await makeWiki({
+      "note-a.md": mainPage("Body."),
+      "sandbox/proposal.md": sandboxPage("Builds on [[draft-two]]."),
+      "sandbox/draft-two.md": sandboxPage("Body."),
+    });
+
+    const report = await checkCitationWall(wikiDir);
+
     expect(report.offendingPaths).toEqual(["sandbox/proposal.md"]);
   });
 
@@ -165,6 +186,16 @@ describe("checkCitationWall", () => {
     expect(report.problems).toEqual([
       'wiki/note-a.md -> sources entry "[[proposal]]" (sources edges never touch the sandbox)',
     ]);
+  });
+
+  it("lists the main page citing a sandbox note in its sources list", async () => {
+    const wikiDir = await makeWiki({
+      "note-a.md": mainPage("Body.", ["sources:", '  - "[[proposal]]"']),
+      "sandbox/proposal.md": sandboxPage("Body."),
+    });
+
+    const report = await checkCitationWall(wikiDir);
+
     expect(report.offendingPaths).toEqual(["note-a.md"]);
   });
 
@@ -217,6 +248,24 @@ describe("checkCitationWall", () => {
     expect(report.problems).toEqual([
       "wiki/note-a.md:4 -> via: agent (agent-stamped pages live only under wiki/sandbox/)",
     ]);
+  });
+
+  it("lists the stamped page", async () => {
+    const wikiDir = await makeWiki({
+      "note-a.md": [
+        "---",
+        'title: "P"',
+        "type: concept",
+        "via: agent",
+        "---",
+        "",
+        "Body.",
+        "",
+      ].join("\n"),
+    });
+
+    const report = await checkCitationWall(wikiDir);
+
     expect(report.offendingPaths).toEqual(["note-a.md"]);
   });
 
@@ -228,6 +277,15 @@ describe("checkCitationWall", () => {
     const report = await checkCitationWall(wikiDir);
 
     expect(report.problems).toEqual([]);
+  });
+
+  it("counts the sandbox page", async () => {
+    const wikiDir = await makeWiki({
+      "sandbox/proposal.md": sandboxPage("Body."),
+    });
+
+    const report = await checkCitationWall(wikiDir);
+
     expect(report.sandboxPages).toBe(1);
   });
 
@@ -339,7 +397,7 @@ describe("checkCitationWall", () => {
     expect(report.problems).toEqual([]);
   });
 
-  it("reports every offending path once, sorted, when a page carries several violations", async () => {
+  it("reports each offending path once", async () => {
     const wikiDir = await makeWiki({
       "note-a.md": mainPage("See [[proposal]] and [[sandbox/draft]].", [
         "sources:",
@@ -352,6 +410,20 @@ describe("checkCitationWall", () => {
     const report = await checkCitationWall(wikiDir);
 
     expect(report.offendingPaths).toEqual(["note-a.md"]);
+  });
+
+  it("reports every problem line", async () => {
+    const wikiDir = await makeWiki({
+      "note-a.md": mainPage("See [[proposal]] and [[sandbox/draft]].", [
+        "sources:",
+        '  - "[[draft]]"',
+      ]),
+      "sandbox/proposal.md": sandboxPage("Body."),
+      "sandbox/draft.md": sandboxPage("Body."),
+    });
+
+    const report = await checkCitationWall(wikiDir);
+
     expect(report.problems).toHaveLength(3);
   });
 });

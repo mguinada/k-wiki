@@ -258,7 +258,7 @@ describe("launchdPlist", () => {
     );
   });
 
-  it("escapes XML-significant characters in the interpolated paths", () => {
+  it("escapes XML in the program arguments", () => {
     const weird = parsePlistDict(
       launchdPlist({
         nodePath: "/opt/a<b>&c/node",
@@ -273,10 +273,49 @@ describe("launchdPlist", () => {
       "/opt/a<b>&c/node",
       "/Users/me&Lab/k-wiki/bin/scheduled-run",
     ]);
+  });
+
+  it("escapes XML in the environment values", () => {
+    const weird = parsePlistDict(
+      launchdPlist({
+        nodePath: "/opt/a<b>&c/node",
+        scriptPath: "/Users/me&Lab/k-wiki/bin/scheduled-run",
+        home: "/Users/me<home>",
+        logDir: "/Users/me/Library&Logs/k-wiki",
+        intervalSeconds: 1800,
+      }),
+    );
+
     expect(dictOf(weird.EnvironmentVariables).HOME).toBe("/Users/me<home>");
+  });
+
+  it("escapes XML in the stdout path", () => {
+    const weird = parsePlistDict(
+      launchdPlist({
+        nodePath: "/opt/a<b>&c/node",
+        scriptPath: "/Users/me&Lab/k-wiki/bin/scheduled-run",
+        home: "/Users/me<home>",
+        logDir: "/Users/me/Library&Logs/k-wiki",
+        intervalSeconds: 1800,
+      }),
+    );
+
     expect(weird.StandardOutPath).toBe(
       "/Users/me/Library&Logs/k-wiki/launchd-stdout.log",
     );
+  });
+
+  it("escapes XML in the stderr path", () => {
+    const weird = parsePlistDict(
+      launchdPlist({
+        nodePath: "/opt/a<b>&c/node",
+        scriptPath: "/Users/me&Lab/k-wiki/bin/scheduled-run",
+        home: "/Users/me<home>",
+        logDir: "/Users/me/Library&Logs/k-wiki",
+        intervalSeconds: 1800,
+      }),
+    );
+
     expect(weird.StandardErrorPath).toBe(
       "/Users/me/Library&Logs/k-wiki/launchd-stderr.log",
     );
@@ -307,15 +346,21 @@ describe("launchdWatchdogPlist (issue #362)", () => {
     ]);
   });
 
-  it("sweeps hourly with RunAtLoad", () => {
+  it("sweeps hourly", () => {
     expect(plist.StartInterval).toBe(3600);
+  });
+
+  it("runs at load", () => {
     expect(plist.RunAtLoad).toBe(true);
   });
 
-  it("captures launchd output under the watchdog prefix", () => {
+  it("captures the watchdog's stdout under its log prefix", () => {
     expect(plist.StandardOutPath).toBe(
       "/Users/me/Library/Logs/k-wiki/launchd-watchdog-stdout.log",
     );
+  });
+
+  it("captures the watchdog's stderr under its log prefix", () => {
     expect(plist.StandardErrorPath).toBe(
       "/Users/me/Library/Logs/k-wiki/launchd-watchdog-stderr.log",
     );
@@ -333,12 +378,15 @@ describe("launchdCalendarPlist", () => {
     }),
   );
 
-  it("triggers on the calendar fields with --lint-full", () => {
+  it("triggers on the calendar fields", () => {
     expect(dictOf(plist.StartCalendarInterval)).toEqual({
       Weekday: 0,
       Hour: 3,
       Minute: 0,
     });
+  });
+
+  it("passes --lint-full to the sweep arguments", () => {
     expect(arrayOf(plist.ProgramArguments)).toEqual([
       "/opt/node/bin/node",
       "/Users/me/Lab/k-wiki/bin/scheduled-run",
