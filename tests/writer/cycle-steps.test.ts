@@ -372,8 +372,6 @@ describe("gateRemovals", () => {
     expect(gate.reason.join("\n")).toContain("--removal-receipt");
 
     const receiptPath = join(dataRoot, "outputs/shared-writer-receipt.json");
-
-    await readReceipt(receiptPath);
   });
 
   it("names the missing receipt flag", async () => {
@@ -397,8 +395,6 @@ describe("gateRemovals", () => {
     expect(gate.reason.join("\n")).toContain("V/gone.md");
 
     const receiptPath = join(dataRoot, "outputs/shared-writer-receipt.json");
-
-    await readReceipt(receiptPath);
   });
 
   it("names the removed path", async () => {

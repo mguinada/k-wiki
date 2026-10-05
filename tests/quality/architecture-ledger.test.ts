@@ -113,7 +113,9 @@ describe("architecture ledger (live tree)", () => {
     ).not.toBeUndefined();
   });
 
-  it("keeps every src/ module's purpose header declared", async ({ skip }) => {
+  it("keeps the Bounded contexts table aligned with the src/ tree", async ({
+    skip,
+  }) => {
     if (insideStrykerSandbox()) {
       skip(skipNote);
 

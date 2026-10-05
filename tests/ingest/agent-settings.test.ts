@@ -1087,11 +1087,8 @@ describe("loadAgentSettings whitelist resolution (issue #144)", () => {
       missingSkills: ["absent"],
     });
 
-    const warnings: string[] = [];
-
     const settings = await loadAgentSettings(settingsPath, {
       piInstallRoot,
-      onProgress: (message) => warnings.push(message),
     });
 
     expect(settings.isolateSkills).toEqual([
@@ -1123,11 +1120,8 @@ describe("loadAgentSettings whitelist resolution (issue #144)", () => {
       missingExtensions: ["npm:pi-not-installed"],
     });
 
-    const warnings: string[] = [];
-
     const settings = await loadAgentSettings(settingsPath, {
       piInstallRoot,
-      onProgress: (message) => warnings.push(message),
     });
 
     expect(settings.isolateExtensions).toEqual(["npm:pi-web-access"]);
@@ -1181,11 +1175,8 @@ describe("loadAgentSettings whitelist resolution (issue #144)", () => {
       "utf8",
     );
 
-    const warnings: string[] = [];
-
     const settings = await loadAgentSettings(settingsPath, {
       piInstallRoot,
-      onProgress: (message) => warnings.push(message),
     });
 
     expect(settings.isolateExtensions).toEqual(["npm:pkg@1.2.3"]);
@@ -1239,11 +1230,8 @@ describe("loadAgentSettings whitelist resolution (issue #144)", () => {
       "utf8",
     );
 
-    const warnings: string[] = [];
-
     const settings = await loadAgentSettings(settingsPath, {
       piInstallRoot,
-      onProgress: (message) => warnings.push(message),
     });
 
     expect(settings.isolateExtensions).toEqual(["npm:@scope/pkg@1.2.3"]);
@@ -1308,14 +1296,10 @@ describe("loadAgentSettings whitelist resolution (issue #144)", () => {
     );
 
     const previous = process.env.PI_CODING_AGENT_DIR;
-    const warnings: string[] = [];
-
     process.env.PI_CODING_AGENT_DIR = agentDir;
 
     try {
-      const settings = await loadAgentSettings(settingsPath, {
-        onProgress: (message) => warnings.push(message),
-      });
+      const settings = await loadAgentSettings(settingsPath, {});
 
       expect(settings.isolateExtensions).toEqual(["npm:pkg"]);
     } finally {
@@ -1349,11 +1333,8 @@ describe("loadAgentSettings whitelist resolution (issue #144)", () => {
       missingExtensions: ["ext/absent.ts"],
     });
 
-    const warnings: string[] = [];
-
     const settings = await loadAgentSettings(settingsPath, {
       piInstallRoot,
-      onProgress: (message) => warnings.push(message),
     });
 
     expect(settings.isolateExtensions).toEqual([]);
@@ -1379,11 +1360,8 @@ describe("loadAgentSettings whitelist resolution (issue #144)", () => {
       presentExtensions: ["git:github.com/example/ext"],
     });
 
-    const warnings: string[] = [];
-
     const settings = await loadAgentSettings(settingsPath, {
       piInstallRoot,
-      onProgress: (message) => warnings.push(message),
     });
 
     expect(settings.isolateExtensions).toEqual(["git:github.com/example/ext"]);
@@ -1432,8 +1410,6 @@ describe("loadAgentSettings whitelist resolution (issue #144)", () => {
       missingExtensions: ["npm:pi-not-installed"],
     });
 
-    const warnings: string[] = [];
-
     await writeFile(
       settingsPath,
       `${await readFile(settingsPath, "utf8").then((t) => (t.endsWith("\n") ? t : `${t}\n`))}isolate: false\n`,
@@ -1442,7 +1418,6 @@ describe("loadAgentSettings whitelist resolution (issue #144)", () => {
 
     const settings = await loadAgentSettings(settingsPath, {
       piInstallRoot,
-      onProgress: (message) => warnings.push(message),
     });
 
     expect(settings.isolate).toBe(false);
@@ -1475,17 +1450,13 @@ describe("loadAgentSettings whitelist resolution (issue #144)", () => {
 
     const settingsPath = join(root, "settings.yml");
 
-    const warnings: string[] = [];
-
     await writeFile(
       settingsPath,
       "command: pi\nmodel: m\nreasoning: h\nisolate.extensions: ~/definitely-missing-ext.ts\n",
       "utf8",
     );
 
-    const settings = await loadAgentSettings(settingsPath, {
-      onProgress: (message) => warnings.push(message),
-    });
+    const settings = await loadAgentSettings(settingsPath, {});
 
     expect(settings.isolateExtensions).toEqual([]);
   });
