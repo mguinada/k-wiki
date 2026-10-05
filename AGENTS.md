@@ -397,10 +397,11 @@ triaged with the mutation-triage skill
 (`.agents/skills/mutation-triage/SKILL.md`).
 
 The blocking gates (`npm run typecheck`, `npm run lint`, `npm test`,
-`npm run complexity`) are unchanged and must still pass after any new
-tests. Per-mutant adjudications (equivalent, artifact) are recorded in
-`.mutants-registry.json` with their receipt — never as inline
-suppressions. A `// Stryker disable` comment remains legal only for
+`npm run check:test-structure`, `npm run complexity`) are unchanged and
+must still pass after any new tests. Per-mutant adjudications
+(equivalent, artifact) are recorded in `.mutants-registry.json` with
+their receipt — never as inline suppressions. A `// Stryker disable`
+comment remains legal only for
 the coarse case: a location that should never be mutated at all (and
 still requires a written justification line in the PR body) —
 recording equivalent mutants stays a human judgment.

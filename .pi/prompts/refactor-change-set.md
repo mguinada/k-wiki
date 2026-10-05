@@ -7,7 +7,8 @@ Load the `refactor`, `typescript`, `design-pattern-adopter`, and `tdd` skills, t
 
 1. Check the diff for improvements: refactoring opportunities, TypeScript issues, applicable design patterns, and test gaps.
 2. Adopt only the ones that bring clear benefits. Keep changes behavior-preserving; write or strengthen tests for changed behavior first (TDD).
-3. Run the quality gates (`npm run typecheck`, `npm run lint`, `npm test`).
+3. Run the quality gates (`npm run typecheck`, `npm run lint`, `npm test`,
+   `npm run check:test-structure`).
 4. Report two lists:
    - Adopted: what you changed and why.
    - Rejected: what you skipped and why.
