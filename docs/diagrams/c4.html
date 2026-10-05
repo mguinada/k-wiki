@@ -1,0 +1,820 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>k-wiki — C4 Architecture</title>
+<style>
+  :root{
+    --bg:#f4f6f8; --panel:#ffffff; --ink:#1e293b; --muted:#64748b; --line:#cbd5e1;
+    --blue:#2563eb; --blue-soft:#eff6ff; --teal:#0f766e; --teal-soft:#f0fdfa;
+    --amber:#b45309; --amber-soft:#fffbeb; --ext:#94a3b8; --ext-soft:#fafafa;
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;}
+  header{position:sticky;top:0;z-index:10;background:rgba(244,246,248,.94);backdrop-filter:blur(4px);
+    border-bottom:1px solid var(--line);padding:10px 20px;}
+  h1{font-size:15px;margin:0 0 6px;font-weight:650}
+  h1 span{color:var(--muted);font-weight:400}
+  .crumb{display:flex;gap:4px;align-items:center;flex-wrap:wrap;font-size:12.5px;color:var(--muted)}
+  .crumb button{border:0;background:none;color:var(--blue);cursor:pointer;font:inherit;padding:2px 4px;border-radius:6px}
+  .crumb button:hover{background:var(--blue-soft)}
+  .crumb .here{color:var(--ink);font-weight:600;padding:2px 4px}
+  .crumb .sep{color:var(--line)}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;font-size:11.5px;color:var(--muted)}
+  .legend i{display:inline-block;width:22px;height:0;border-top:2px solid #334155;vertical-align:middle;margin-right:4px}
+  .legend .dotted i{border-top-style:dotted;border-top-color:#94a3b8}
+  .legend .orch i{border-top-color:var(--amber)}
+  main{padding:18px 20px 60px}
+  .view{display:none}
+  .view.active{display:block}
+  .canvas{position:relative;margin:0 auto;max-width:1360px}
+  .canvas svg.wires{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+  .grid{display:grid;gap:14px;position:relative}
+
+  /* ---- boxes ---- */
+  .box{background:var(--panel);border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;
+    box-shadow:0 1px 2px rgba(15,23,42,.05);position:relative;z-index:1}
+  .box h3{margin:0;font-size:13px;font-weight:650}
+  .box p{margin:4px 0 0;font-size:11.5px;color:var(--muted)}
+  .box .mono{font-family:var(--mono);font-size:10.5px;color:var(--muted);display:block;margin-top:4px}
+  .box.click{cursor:pointer;transition:box-shadow .15s,transform .15s}
+  .box.click:hover{box-shadow:0 4px 14px rgba(37,99,235,.18);transform:translateY(-1px)}
+  .box.click::after{content:"⤵ drill in";position:absolute;top:8px;right:10px;font-size:9.5px;
+    color:var(--blue);opacity:0;transition:opacity .15s}
+  .box.click:hover::after{opacity:.9}
+  .person{border-radius:999px;text-align:center;background:#e2e8f0;border-color:#64748b;padding:14px 16px}
+  .person h3{font-size:12.5px}
+  .external{border-style:dashed;border-color:var(--ext);background:var(--ext-soft)}
+  .container{border-color:var(--blue)}
+  .container.dev{border-color:#d97706;background:var(--amber-soft)}
+  .store{border-color:var(--teal);background:var(--teal-soft)}
+  .tag{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+    border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:1px}
+  .tag.run{background:var(--blue-soft);color:var(--blue)}
+  .tag.dev{background:#fef3c7;color:var(--amber)}
+  .tag.data{background:#ccfbf1;color:var(--teal)}
+  .tag.ext{background:#f1f5f9;color:var(--muted)}
+
+  /* ---- context layout ---- */
+  .ctx{grid-template-columns:200px 1fr 230px;min-width:1080px}
+  .ctx .stack{display:grid;gap:14px;align-content:start}
+  .sysbox{border:2px solid var(--blue);border-radius:14px;padding:16px;background:var(--blue-soft)}
+  .sysbox h3{font-size:15px}
+  .sysbox ul{margin:8px 0 0;padding-left:18px;font-size:11.5px;color:#334155}
+
+  /* ---- containers layout ---- */
+  .ctn{grid-template-columns:170px 1fr 250px;min-width:1180px}
+  .boundary{border:2px solid #93c5fd;border-radius:16px;padding:14px;background:rgba(255,255,255,.6);position:relative;z-index:1}
+  .boundary>.bt{position:absolute;top:-9px;left:16px;background:var(--bg);padding:0 8px;
+    font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--blue)}
+  .inner{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+  .col{display:grid;gap:12px;align-content:start}
+  .colhead{font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin-bottom:-4px}
+  .storewrap{border:1.5px solid var(--teal);border-radius:14px;padding:12px;background:rgba(240,253,250,.55);position:relative}
+  .storewrap>.bt{position:absolute;top:-8px;left:12px;background:var(--bg);padding:0 6px;font-size:10px;
+    font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:.06em}
+  .storewrap .col{gap:10px}
+
+  /* ---- component view ---- */
+  .comp-head{max-width:1000px;margin:0 auto 16px;background:var(--panel);border:1.5px solid var(--blue);
+    border-radius:12px;padding:16px 18px}
+  .comp-head h2{margin:0;font-size:17px}
+  .comp-head .role{margin:6px 0 10px;font-size:13.5px;color:#334155}
+  .comp-head ul{margin:0;padding-left:18px;font-size:12.5px;color:#475569}
+  .comp-head li{margin:3px 0}
+  .comp-grid{max-width:1000px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
+  .comp{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:9px 12px}
+  .comp code{font-family:var(--mono);font-size:11.5px;color:var(--blue);font-weight:600;display:block}
+  .comp span{font-size:11.5px;color:var(--muted)}
+  .comp-group{max-width:1000px;margin:18px auto 6px;font-size:11px;font-weight:700;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--muted)}
+  .back{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--panel);
+    border-radius:8px;padding:5px 12px;font:inherit;font-size:12.5px;cursor:pointer;color:var(--blue);margin-bottom:14px}
+  .back:hover{background:var(--blue-soft)}
+  footer{max-width:1000px;margin:26px auto 0;font-size:11px;color:var(--muted);border-top:1px solid var(--line);padding-top:10px}
+</style>
+</head>
+<body>
+<header>
+  <h1>k-wiki <span>· C4 architecture · derived knowledge wiki pipeline</span></h1>
+  <nav class="crumb" id="crumb"></nav>
+  <div class="legend">
+    <span><i></i> data flow</span>
+    <span class="orch"><i></i> orchestration</span>
+    <span class="dotted"><i></i> library dependency</span>
+    <span style="margin-left:auto">Click any container to drill into its components · Esc goes back</span>
+  </div>
+</header>
+<main>
+
+  <!-- ================= LEVEL 1 : SYSTEM CONTEXT ================= -->
+  <section class="view active" id="view-context">
+    <div class="canvas">
+      <svg class="wires" id="wires-context"></svg>
+      <div class="grid ctx" id="grid-context">
+        <div class="stack">
+          <div class="box person">
+            <h3>Human owner</h3>
+            <p>Owns the source vault. Runs verbs, reviews runs, promotes sandbox notes.</p>
+          </div>
+          <div class="box person">
+            <h3>Coding agents</h3>
+            <p>Spawned headless by the pipeline. Bound by <b>wiki/AGENTS.md</b> — never edits the contract it runs.</p>
+          </div>
+        </div>
+
+        <div class="sysbox box click" id="sys-kwiki" data-goto="containers" style="cursor:pointer">
+          <h3>k-wiki <span class="tag run">software system</span></h3>
+          <p style="font-size:12.5px;color:#334155">An LLM-maintained knowledge wiki built as <b>derived data</b> from a human-owned Obsidian vault. Deterministic sync projects the vault into an immutable <code>raw/</code> tree; prompted agent runs turn it into a structured, interlinked <code>wiki/</code>; both are versioned in a git data repo.</p>
+          <ul>
+            <li><b>Two agent contexts, never mixed:</b> wiki operations (minimal, traceable edits) vs pipeline development (free refactoring).</li>
+            <li><b>Core rule:</b> the vault is the source of truth; <code>raw/</code> and <code>wiki/</code> are disposable and regenerable.</li>
+            <li>Click to open the container diagram ↓</li>
+          </ul>
+        </div>
+
+        <div class="stack">
+          <div class="box external" id="ext-vault">
+            <h3>Obsidian vault <span class="tag ext">external</span></h3>
+            <p>Human-owned source of truth. Lives outside this repo — read-only to the pipeline.</p>
+          </div>
+          <div class="box external" id="ext-datarepo">
+            <h3>Data repo <span class="tag ext">external</span></h3>
+            <p>Own git repository holding <code>raw/</code> + <code>wiki/</code>; GitHub remote carries the shared-writer lease in branch history.</p>
+          </div>
+          <div class="box external" id="ext-llm">
+            <h3>LLM provider <span class="tag ext">external</span></h3>
+            <p>Headless agent runs for ingest, lint, query and <code>--web</code> enrichment.</p>
+          </div>
+          <div class="box external" id="ext-github">
+            <h3>GitHub <span class="tag ext">external</span></h3>
+            <p>Projects board (triage) and the data repo's remote.</p>
+          </div>
+          <div class="box external" id="ext-launchd">
+            <h3>launchd <span class="tag ext">external</span></h3>
+            <p>macOS scheduler firing the unattended cycle on an interval.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= LEVEL 2 : CONTAINERS ================= -->
+  <section class="view" id="view-containers">
+    <div class="canvas">
+      <svg class="wires" id="wires-containers"></svg>
+      <div class="grid ctn" id="grid-containers">
+        <div class="stack">
+          <div class="box external" id="ext-vault2">
+            <h3>Obsidian vault</h3>
+            <p>Source of truth, outside the repo.</p>
+          </div>
+          <div class="box external" id="ext-llm2">
+            <h3>LLM provider</h3>
+            <p>Headless agent runs.</p>
+          </div>
+          <div class="box external" id="ext-launchd2">
+            <h3>launchd</h3>
+            <p>Fires the scheduled cycle.</p>
+          </div>
+        </div>
+
+        <div class="boundary">
+          <span class="bt">k-wiki runtime · src/ bounded contexts</span>
+          <div class="inner">
+            <div class="col">
+              <div class="colhead">Deterministic core</div>
+              <div class="box container click" id="c-sync" data-goto="sync">
+                <h3>sync/ <span class="tag run">runtime</span></h3>
+                <p>Vault→raw projection and the wiki-sync cycle. Deterministic only — no LLM concerns.</p>
+                <span class="mono">bin/sync-vault · wiki-sync · sync-repo · wiki-lint</span>
+              </div>
+              <div class="box container click" id="c-writer" data-goto="writer">
+                <h3>writer/ <span class="tag run">runtime</span></h3>
+                <p>Shared-writer protocol: marker, remote lease, receipts; the cycle coordinator both writers run.</p>
+                <span class="mono">bin/wiki-sync · writer-lease · enable-shared-writer · recover-fix-surface</span>
+              </div>
+              <div class="box container click" id="c-schedule" data-goto="schedule">
+                <h3>schedule/ <span class="tag run">runtime</span></h3>
+                <p>Unattended cycle: launchd setup, wrapper, heartbeat, watchdog, preflights.</p>
+                <span class="mono">bin/scheduled-run · setup-schedule · setup-meta-sync</span>
+              </div>
+              <div class="colhead" style="margin-top:4px">Verification</div>
+              <div class="box container click" id="c-health" data-goto="health">
+                <h3>health/ <span class="tag run">runtime</span></h3>
+                <p>Read-only coherence and freshness verdicts over <code>raw/</code>.</p>
+                <span class="mono">bin/libexec/check-raw</span>
+              </div>
+            </div>
+
+            <div class="col">
+              <div class="colhead">Agent layer</div>
+              <div class="box container click" id="c-ingest" data-goto="ingest">
+                <h3>ingest/ <span class="tag run">runtime</span></h3>
+                <p>Headless wiki-agent runs: manifest diff → prompt → spawn → guardrails → digest.</p>
+                <span class="mono">bin/wiki-ingest</span>
+              </div>
+              <div class="box container click" id="c-sandbox" data-goto="sandbox">
+                <h3>sandbox/ <span class="tag run">runtime</span></h3>
+                <p>The agent-write gate: <code>wiki/sandbox/</code> namespace, accept-gate, stamps, citation wall, TTL reaper.</p>
+                <span class="mono">k-wiki propose · bin/libexec/check-citations · wiki-promote</span>
+              </div>
+              <div class="box container click" id="c-query" data-goto="query">
+                <h3>query/ <span class="tag run">runtime</span></h3>
+                <p>Wiki-query shell: two-stage filing, <code>--web</code> enrichment + audit, sandbox promotion.</p>
+                <span class="mono">bin/wiki-query · k-wiki query</span>
+              </div>
+              <div class="colhead" style="margin-top:4px">Observation</div>
+              <div class="box container click" id="c-dashboard" data-goto="dashboard">
+                <h3>dashboard/ <span class="tag run">runtime</span></h3>
+                <p>Static KPI page over the data repo's existing artifacts.</p>
+                <span class="mono">bin/dashboard</span>
+              </div>
+            </div>
+
+            <div class="col">
+              <div class="colhead">Shared shell &amp; libraries</div>
+              <div class="box container click" id="c-binlaunch" data-goto="launchers">
+                <h3>bin/ + dev/ <span class="tag run">launchers</span></h3>
+                <p>The two doors: runtime launchers (<code>bin/</code>, maintenance in <code>bin/libexec/</code>) and dev-only tooling (<code>dev/</code>). Extensionless, shebanged, help-first.</p>
+              </div>
+              <div class="box container click" id="c-cli" data-goto="cli">
+                <h3>cli/ <span class="tag run">runtime</span></h3>
+                <p>The one CLI shell: argv parsing, verb table, colors, run context, <code>k-wiki</code> binding.</p>
+                <span class="mono">bin/k-wiki</span>
+              </div>
+              <div class="box container click" id="c-wiki" data-goto="wikilib">
+                <h3>wiki/ <span class="tag run">runtime</span></h3>
+                <p>Wiki-domain library: wikilinks, crosslinks, provenance, fidelity, worklists, log.</p>
+              </div>
+              <div class="box container click" id="c-data" data-goto="data">
+                <h3>data/ <span class="tag run">runtime</span></h3>
+                <p>Git porcelain for the data repo; never imported by <code>sync/</code> in the data→sync direction.</p>
+                <span class="mono">bin/init-data-repo</span>
+              </div>
+              <div class="colhead" style="margin-top:4px">Dev-only</div>
+              <div class="box container dev click" id="c-quality" data-goto="quality">
+                <h3>quality/ <span class="tag dev">dev</span></h3>
+                <p>Gates and mutation tooling: structure counters, complexity gate, Stryker chunking.</p>
+              </div>
+              <div class="box container dev click" id="c-board" data-goto="board">
+                <h3>board/ <span class="tag dev">dev</span></h3>
+                <p>Board-triage decisions + gh/GraphQL infrastructure.</p>
+              </div>
+              <div class="box container dev click" id="c-fixtures" data-goto="fixtures">
+                <h3>fixtures/ <span class="tag dev">dev</span></h3>
+                <p>Deterministic synthetic vault generator + byte-exact snapshot.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="storewrap">
+          <span class="bt">Data repo · git-versioned</span>
+          <div class="col">
+            <div class="box store click" id="s-raw" data-goto="raw">
+              <h3>raw/ <span class="tag data">data</span></h3>
+              <p>Immutable source projection. Byte-exact, hash-manifested, never hand-edited.</p>
+            </div>
+            <div class="box store click" id="s-wiki" data-goto="wikistore">
+              <h3>wiki/ <span class="tag data">data</span></h3>
+              <p>LLM-owned knowledge: concepts, entities, sources, queries, comparisons, sandbox.</p>
+            </div>
+            <p style="font-size:10.5px;color:var(--muted);margin:2px 0 0">Synced to a GitHub remote; branch history carries the shared-writer lease.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= LEVEL 3 : COMPONENTS (generated) ================= -->
+  <section class="view" id="view-components">
+    <button class="back" id="back-btn">← Back to containers</button>
+    <div id="comp-root"></div>
+  </section>
+
+</main>
+
+<script>
+"use strict";
+
+/* ---------- data: containers and their components ---------- */
+const CONTAINERS = {
+  sync: {
+    title:"sync/", tag:"runtime", launchers:"bin/sync-vault · bin/wiki-sync · bin/sync-repo · bin/wiki-lint",
+    role:"Projects the human-owned vault into the immutable raw/ tree and orchestrates the whole wiki-sync cycle. The deterministic layer: an LLM may only appear inside a guardrailed, revertible stage (lint).",
+    mechanics:[
+      "The cycle is a stage table (stageNames) — one row per stage, no scattered stage arithmetic.",
+      "raw/manifest.json records a SHA-256 + sync time per projected file — the immutability and diff baseline.",
+      "Selection is frontmatter-driven: a top-level `<key>: false` opts a note out.",
+      "A single O_EXCL run-lock serializes cycles; instances resolve through one shared chain (sync.json)."
+    ],
+    components:[
+      ["wiki-sync.ts","The one-command cycle orchestrator; chains sync → ingest → lint → checks → dashboard."],
+      ["sync-vault.ts","Vault-source adapter: per-vault select → project, LLM-free."],
+      ["sync-repo.ts","Repo-as-source adapter: allowlisted committed files projected verbatim (SHA-grounded)."],
+      ["projection.ts","Source-neutral library every adapter funnels through."],
+      ["scan.ts","Vault walker: collects markdown, prunes vault noise."],
+      ["frontmatter.ts","Selection rule: `<key>: false` blocks one note."],
+      ["manifest.ts","raw/manifest.json — hash + last-sync per projected file."],
+      ["committed-tree.ts","Guard: a repo source's recorded commit must describe the checked-out tree."],
+      ["publish.ts","Publish stage: include-matched files copied out to a mirror vault."],
+      ["lint-stage.ts","Guardrailed quality-lint agent run inside the cycle (auto-revert on failure)."],
+      ["wiki-lint.ts","Standalone door for the lint stage — reuses the same run core."],
+      ["config.ts","sync.json loader: what to sync, where to publish."],
+      ["instance.ts","Shared wiki-instance resolver — one chain for both doors."],
+      ["run-lock.ts","Atomic O_EXCL lockfile held across one cycle by either cycle owner."],
+      ["eagain.ts","Tolerates iCloud dataless-file EAGAIN during reads/copies."],
+      ["wiki-sync-help.ts","Help texts for the wiki-sync launchers."]
+    ]
+  },
+  writer: {
+    title:"writer/", tag:"runtime", launchers:"bin/writer-lease · bin/enable-shared-writer · bin/recover-fix-surface",
+    role:"The shared-writer protocol: lets a manual wiki-sync and the scheduled cycle take turns on one data repo without stepping on each other. Orchestrates sync's cycle — never re-implements it.",
+    mechanics:[
+      "A marker file (.k-wiki/shared-writer.json) opts the data repo in after a remote capability probe.",
+      "Tenure is a remote lease stored in git branch history — crash-safe and visible to every device.",
+      "Source removals need a human-confirmation receipt; a stale local view can never become a shared expunge.",
+      "One state-machine coordinator runs the cycle for both manual and scheduled writers."
+    ],
+    components:[
+      ["coordinator.ts","The shared-writer state machine every marker-enabled data repo runs."],
+      ["leased-cycle.ts","Everything between acquiring the lease and finalizing it."],
+      ["lease.ts / writer-lease.ts","Lease semantics + the writer-lease CLI operations."],
+      ["lease-ops.ts / lease-schema.ts","Lease git operations and the on-disk record schema."],
+      ["marker.ts","Reads and validates the operator-owned shared-writer marker."],
+      ["probe.ts","Proves the remote accepts custom refs before enabling the mode."],
+      ["receipts.ts","Human-confirmation receipts gating source removals/renames."],
+      ["cycle-steps.ts","Named steps of the leased cycle."],
+      ["recovery.ts / recovery-record.ts","The failed-cycle fix surface and its record."],
+      ["recover-fix-surface.ts","One executor behind both recovery doors."],
+      ["enable-shared-writer.ts","Opt-in verb; runs the probe first."],
+      ["resolve.ts","Data-repo / raw-dir positional resolution, shared with wiki-sync."],
+      ["git-remote.ts","Dir-bound git runner + remote plumbing for the protocol."],
+      ["options.ts","Shared CLI options for the writer verbs."]
+    ]
+  },
+  schedule: {
+    title:"schedule/", tag:"runtime", launchers:"bin/scheduled-run · bin/setup-schedule · bin/setup-meta-sync",
+    role:"Runs the cycle unattended: registers with the OS scheduler, wraps each tick with lock, heartbeat, logs and notifications, and delegates the remote work to the writer coordinator.",
+    mechanics:[
+      "setup-schedule installs launchd plists and refuses to install from a Stryker sandbox, worktree or detached HEAD (origin guard).",
+      "Every tick ends with a heartbeat stamp (outputs/last-cycle.json) — ok, failed, or a benign skipped tick.",
+      "An independent watchdog judges the heartbeat and raises the alarm after missed cycles.",
+      "Quota and credential preflights skip a tick cleanly instead of failing loudly."
+    ],
+    components:[
+      ["scheduled-run.ts","The unattended wrapper the scheduler fires on an interval."],
+      ["setup-schedule.ts","Registers the pipeline with the OS scheduler (darwin: launchd)."],
+      ["launchd-plists.ts","Writes the launchd plist files."],
+      ["shared-cycle.ts","Delegates the remote work to the writer coordinator; keeps wrapper duties local."],
+      ["heartbeat.ts","One gitignored stamp written on every cycle completion."],
+      ["run-log.ts","Append-only log of scheduled runs."],
+      ["notify.ts","Best-effort macOS notification via osascript."],
+      ["sync-watchdog.ts / watchdog-verdict.ts","Independent heartbeat observer and its mechanical verdicts."],
+      ["credential-preflight.ts","Skips the tick when agent credentials are missing."],
+      ["quota-preflight.ts","Skips the tick when provider quota is exhausted."],
+      ["resolve-agent.ts","Resolves the agent binary under launchd's minimal PATH."],
+      ["repo-script.ts","Builds the unattended HOME/PATH environment and child scripts."],
+      ["meta-sync-hook.ts / setup-meta-sync.ts","Post-merge auto-sync hook for the meta wiki."],
+      ["*-help.ts","Help texts for the scheduled-run / setup verbs."]
+    ]
+  },
+  ingest: {
+    title:"ingest/", tag:"runtime", launchers:"bin/wiki-ingest",
+    role:"Turns raw/ changes into wiki/ pages with headless agent runs. Owns the run lifecycle — settings, prompts, spawn, guardrails — but the wiki writes themselves pass through the sandbox gate.",
+    mechanics:[
+      "Diffs raw/manifest.json against the last-ingested snapshot to get added / changed / deleted sources.",
+      "Composes a prompt per mode: full, incremental (with changed-source list), expunge, rebuild.",
+      "Spawns the agent non-interactively with a timeout and output cap (spawnAgent).",
+      "Three mechanical post-run guardrails; any failure auto-reverts to the pre-run commit."
+    ],
+    components:[
+      ["wiki-ingest.ts","One headless agent run end-to-end: diff → prompt → run → guardrails → digest."],
+      ["wiki-ingest-cli.ts","Argv parsing and help for the launcher."],
+      ["agent-run.ts","Run primitives: AgentRunner, spawnAgent, target runners."],
+      ["agent-settings.ts","settings.yml parser + non-interactive agent argv builders."],
+      ["prompts.ts","Prompt composition per mode; the only intentionally non-deterministic output."],
+      ["guardrails.ts","Mechanical post-run checks with automatic revert to the pre-run commit."],
+      ["manifest-diff.ts","What changed between the last snapshot and the current raw manifest."],
+      ["snapshot.ts","Last-ingested snapshot: read with stamp guard, adopt legacy, advance."],
+      ["digest.ts","Per-run review digest; failure digest; deterministic expunge seed."]
+    ]
+  },
+  sandbox: {
+    title:"sandbox/", tag:"runtime", launchers:"k-wiki propose · bin/libexec/check-citations · (epilogue of bin/wiki-ingest)",
+    role:"The agent-write gate. Agent edits land only in wiki/sandbox/, stamped and committed atomically; the human promotes them deliberately. The main wiki can never flow back into the sandbox.",
+    mechanics:[
+      "Accept-gate reverts out-of-namespace writes path-scoped — a mid-window wiki-sync commit survives a revert.",
+      "Every sandbox page gets via:/expires: stamps; a TTL reaper expires stale ones after each ingest.",
+      "Sandbox commits use a `sandbox: <slug>` convention and append to a log.md audit.",
+      "One-way citation wall: sandbox may read the main wiki; any page the wall offends is reverted to its last committed state."
+    ],
+    components:[
+      ["sandbox-run.ts","One gated agent run — the agent-write half of the two-door authority split."],
+      ["stamps.ts","via:/expires: epilogue stamps + the SANDBOX_ROOT exclusion other walkers consume."],
+      ["citations.ts","The citation-wall core: judges direction and placement, reverts offenders."],
+      ["propose.ts","The propose verb: note body → deterministic template → gated agent run."],
+      ["reaper.ts","TTL reaper — the hygiene epilogue of every completed wiki-ingest."]
+    ]
+  },
+  query: {
+    title:"query/", tag:"runtime", launchers:"bin/wiki-query · k-wiki query",
+    role:"The read side: ask questions against the built wiki, save answers deterministically, enrich with web access when asked, and promote sandbox notes into the main wiki.",
+    mechanics:[
+      "Two-stage filing: stage 1 is the LLM answer saved to outputs/last-query.md; stage 2 files it byte-exactly into wiki/queries/ — no LLM.",
+      "wiki-promote is the sandbox's only exit — a deliberate human act that grants real provenance.",
+      "--web is a separate phase-2 run: the core answer stays web-blind; every web tool call is audited."
+    ],
+    components:[
+      ["wiki-query.ts","Terminal front-end for asking the wiki."],
+      ["query-shell.ts","Shared query runner: progress sink, spawn path, shell plumbing."],
+      ["file-last.ts","Stage 2: deterministic, byte-exact filing of the saved answer."],
+      ["promote.ts","Promotion core: sandbox note → main wiki page with provenance."],
+      ["wiki-promote.ts","wiki-promote CLI: help, flags, main()."],
+      ["web-enrich.ts","Phase-2 --web run; per-run argv-injected web grant."],
+      ["web-audit.ts","Machine audit of every web tool call + cited-URL reconciliation."],
+      ["web-artifact.ts","Partitioned audit artifact body — machine-owned sections."]
+    ]
+  },
+  cli: {
+    title:"cli/", tag:"runtime", launchers:"bin/k-wiki",
+    role:"The shared CLI shell every launcher runs through: one parser, one verb table, one color system, one run context. It renders and routes — it never makes domain decisions.",
+    mechanics:[
+      "The verb table maps one row per bin/ and bin/libexec/ launcher — the human-door vocabulary.",
+      "argv parsing exists once (structure gate pins parser copies at 1).",
+      "Run context bundles env, clock, progress sink and the three canonical paths (data root, raw dir, wiki dir).",
+      "One color per feedback kind; NO_COLOR honored everywhere."
+    ],
+    components:[
+      ["k-wiki.ts","The k-wiki front door: dispatches verbs to launchers."],
+      ["k-wiki-binding.ts","Reads the .k-wiki.json project binding (data repo + instance)."],
+      ["verb-table.ts","The verb vocabulary — one row per launcher, with class per verb."],
+      ["agent-verbs.ts","Read verbs served on both doors: query, status, list, read, health."],
+      ["read-verb-help.ts","In-context help text per read verb."],
+      ["flag-args.ts","The one flag/argv parser."],
+      ["shell.ts","Shared shell primitives across CLIs."],
+      ["shared.ts","Generic helpers with no domain of their own."],
+      ["run-context.ts","Ambient trio + canonical paths, as one required argument."],
+      ["env.ts","Cross-domain env-var name contracts (launcher sets, spawn site consumes)."],
+      ["colors.ts","One color per feedback kind at the render boundary."],
+      ["progress.ts","Live status line + scrolling events on stderr."],
+      ["completion.ts","Zsh completion emitter derived from the verb table."],
+      ["last-change.ts","'How fresh is the wiki' — from the data repo's last commit."],
+      ["init-data-repo.ts","Argv/help for data:init (seeding lives in data/)."],
+      ["is-main.ts","Direct-execution guard: `node src/…` tells you to run bin/<name>."]
+    ]
+  },
+  wikilib: {
+    title:"wiki/", tag:"runtime", launchers:"library — used by sync, ingest, sandbox, query, health, dashboard",
+    role:"The wiki-domain library: deterministic parsing and reporting over wiki pages and links. Every consumer of the wiki's link and provenance contracts shares one rule from here.",
+    mechanics:[
+      "One wikilink primitive set feeds both human-run checks and ingest guardrails.",
+      "Dead-provenance backstop: every sources wikilink must resolve, catching purge misses and any sync/wiki drift.",
+      "Lint worklists are computed deterministically first, so the lint agent judges instead of scanning.",
+      "log.md is prepend-only — the audit trail reads newest-first under a standing preamble."
+    ],
+    components:[
+      ["wiki-links.ts","Wikilink extraction/validation primitives."],
+      ["crosslinks.ts","Cross-wiki one-way link discipline audit (cycle stage + check)."],
+      ["provenance.ts","Dead-provenance core: every sources link resolves or it's drift."],
+      ["fidelity.ts","Deterministic citation-fidelity tier: quoted tokens must exist at the cited path."],
+      ["source-hubs.ts","Which raw paths a `type: source` page covers — one rule, three consumers."],
+      ["chapter-headings.ts","Hub anchors resolve only to byte-identical heading text."],
+      ["outputs-links.ts","outputs/… wikilinks resolve against the data root, never the page index."],
+      ["pages.ts","Page existence + the frontmatter fields the pipeline reads."],
+      ["browse.ts","List / group / resolve-by-slug domain logic for reading."],
+      ["worklists.ts","Deterministic lint pre-pass: orphans, single-source pages, field misses, tags."],
+      ["wiki-log.ts","Prepend-only writer for the wiki's log.md audit trail."]
+    ]
+  },
+  data: {
+    title:"data/", tag:"runtime", launchers:"bin/init-data-repo",
+    role:"Git porcelain for the data repo: the only place that talks raw git so no domain hand-rolls it. The projection layer (sync) may depend on it, never the reverse.",
+    mechanics:[
+      "runGit confines repository discovery to the target directory via GIT_CEILING_DIRECTORIES.",
+      "Porcelain-status parsing is shared (parseStatus) — one parser for every consumer.",
+      "data:init seeds the data repo skeleton; raw/ + wiki/ contents live only in the data repo."
+    ],
+    components:[
+      ["git.ts","runGit, porcelain status parsing, commit and hash comparison."],
+      ["init-data-repo.ts","Seeds the data repo at a given dataRoot."]
+    ]
+  },
+  health: {
+    title:"health/", tag:"runtime", launchers:"bin/libexec/check-raw",
+    role:"Read-only verdicts on raw/ coherence and freshness. Compares raw/ with itself only — no vault access — so it is safe to run anywhere, any time.",
+    mechanics:[
+      "Every file under raw/notes/<vault>/ must match its manifest hash; no orphans, no missing entries.",
+      "Healthy-empty projections exit 0 — emptiness is a valid state.",
+      "Repo-sourced projections are additionally freshness-checked (--fail-on-stale)."
+    ],
+    components:[
+      ["check-raw.ts","The coherence check: one line per problem, repo-relative paths, exit 1 on any."]
+    ]
+  },
+  dashboard: {
+    title:"dashboard/", tag:"runtime", launchers:"bin/dashboard",
+    role:"A static KPI page over the data repo's existing artifacts. Read-only; regenerated after each successful cycle; opens offline.",
+    mechanics:[
+      "Strict pipeline: collect (thin I/O) → kpis (pure functions) → render (self-contained HTML).",
+      "KPI functions take plain data and return numbers — fully unit-testable, no I/O.",
+      "Inputs are artifacts that already exist: wiki pages, raw manifest, snapshot, git history, last-query."
+    ],
+    components:[
+      ["generate.ts","Regenerates the dashboard HTML."],
+      ["collect.ts","Reads the data repo's artifacts into a pure DashboardInput."],
+      ["kpis.ts","Pure KPI computations."],
+      ["render.ts","One self-contained offline HTML template (inline CSS/SVG)."]
+    ]
+  },
+  quality: {
+    title:"quality/", tag:"dev", launchers:"dev/refactor-metrics · dev/mutation-*",
+    role:"The development-side instrument panel: the refactor-metrics counters behind the structure budgets, the complexity gate, and the Stryker mutation chunking machinery.",
+    mechanics:[
+      "A zero-dependency regex scan counts structural facts; .structureguard.json holds one budget per counter.",
+      "The complexity gate runs in changed-mode: functions touching a diff hunk must stay ≤ 10.",
+      "Mutation runs are chunked and scoped to changed hunks; survivors live in a ledger + registry, never inline suppressions."
+    ],
+    components:[
+      ["refactor-metrics.ts","The measuring instrument: counts structure facts over a TS tree."],
+      ["structure.ts","The structure budget gate (fails naming counter, budget, fresh value, offenders)."],
+      ["complexity.ts","The cyclomatic-complexity gate."],
+      ["mutation-scope.ts / mutation-chunk.ts","Changed-hunk selection and chunking for mutation runs."],
+      ["mutation-merge.ts / mutation-identity.ts","Merging chunk results; stable mutant identity."],
+      ["mutation-registry.ts","Per-mutant adjudications with receipts (equivalent/artifact)."],
+      ["mutation-ledger.ts","The rolling survivors ledger."],
+      ["mutation-survivors.ts","Re-lists the last report without re-running."],
+      ["mutation-report.ts","Report generation."]
+    ]
+  },
+  board: {
+    title:"board/", tag:"dev", launchers:"dev/board-triage",
+    role:"Board-triage decisions and the gh/GraphQL infrastructure for the GitHub Projects board. Dev-only: reachable through dev/ launchers, never the runtime surface.",
+    mechanics:[
+      "Mechanical verdict rules decide lane moves; infrastructure only fetches and paginates.",
+      "Decisions and infrastructure are separate modules so rules stay testable without network."
+    ],
+    components:[
+      ["triage-board.ts","gh api graphql client, board pagination, item collection."],
+      ["triage-rules.ts","The mechanical verdict for one board item."],
+      ["triage-decode.ts","Decodes board item payloads."],
+      ["board-triage.ts","The triage entry point."]
+    ]
+  },
+  fixtures: {
+    title:"fixtures/", tag:"dev", launchers:"dev/generate",
+    role:"The deterministic synthetic vault used by unit and e2e tests — the selected, excluded, edited, deleted and noise cases in one generator.",
+    mechanics:[
+      "generateFixtureVault(target) writes the same bytes every time; tests/fixtures/Documents is its byte-exact reference snapshot.",
+      "Shared infrastructure: any test or e2e run may use it instead of hand-built fixtures."
+    ],
+    components:[
+      ["generate.ts","The deterministic fixture-vault generator."]
+    ]
+  },
+  launchers: {
+    title:"bin/ + dev/ launchers", tag:"runtime", launchers:"the doors themselves",
+    role:"Every CLI runs through a shebanged launcher of its class: bin/ for the wiki runtime (maintenance tier nested in bin/libexec/), dev/ for development-lifecycle tooling. Libraries never invoke main() at import.",
+    mechanics:[
+      "Launcher class razor: is the module meaningful outside this repo? Then bin/, else dev/.",
+      "Every launcher answers -h/--help before touching anything — no filesystem side effects.",
+      "npm scripts always invoke through the launcher, never bare node src/…."
+    ],
+    groups:[
+      ["bin/ — runtime door", [
+        ["k-wiki","Front door: status, list, read, query, health, propose, completion."],
+        ["sync-vault","Project vault(s) → raw/."],
+        ["wiki-sync","The full cycle: sync → ingest → lint → checks → dashboard."],
+        ["wiki-ingest","Headless agent run over raw/ changes."],
+        ["wiki-query","Ask the wiki."],
+        ["wiki-lint","Standalone lint run."],
+        ["writer-lease","Lease operations for the shared writer."],
+        ["enable-shared-writer","Opt into shared-writer mode (probe first)."],
+        ["recover-fix-surface","Recover a failed shared-writer cycle."],
+        ["scheduled-run","Unattended cycle wrapper."],
+        ["setup-schedule","Install/uninstall the OS schedule."],
+        ["setup-meta-sync","Meta-wiki post-merge hook installer."],
+        ["sync-repo","Repo-as-source projection."],
+        ["init-data-repo","Seed the data repo."],
+        ["dashboard","Regenerate the KPI page."],
+        ["libexec/ — maintenance tier","check-raw, check-links, check-crosslinks, check-provenance, check-citations, check-fidelity, anchor-citations, link-sources, invert-log, backfill-origin, open-origin, wiki-promote, sync-watchdog."]
+      ]],
+      ["dev/ — development door", [
+        ["generate","Write the fixture vault."],
+        ["board-triage","GitHub board triage."],
+        ["refactor-metrics","Print the structure counters."],
+        ["mutation-changed (.sh)","Mutation run over changed hunks."],
+        ["mutation-chunk / merge / report / scope / survivors","Chunked mutation machinery."]
+      ]]
+    ],
+    components:[]
+  },
+  raw: {
+    title:"raw/", tag:"data", launchers:"generated by bin/sync-vault — never hand-edited",
+    role:"The immutable projection of the source vault inside the data repo. A cache with provenance: byte-exact copies plus a hash manifest, so every downstream run diffs against known state.",
+    mechanics:[
+      "Written only by sync; every file's SHA-256 lives in raw/manifest.json.",
+      "Excluded notes (frontmatter `<key>: false`) never appear here.",
+      "Versioned by the data repo — history is the audit trail."
+    ],
+    components:[
+      ["notes/<vault>/…","The projected markdown, byte-exact from the vault."],
+      ["manifest.json","Per-file SHA-256 + last-sync time; the diff baseline for ingest."]
+    ]
+  },
+  wikistore: {
+    title:"wiki/ (store)", tag:"data", launchers:"written only through the gate — sandbox commits, guardrailed runs, promote",
+    role:"The LLM-owned knowledge wiki: a derived Obsidian vault of structured, interlinked pages. Disposable by design — rebuildable from raw/ + the prompts.",
+    mechanics:[
+      "AGENTS.md inside the wiki is the operating contract the agent loads — and never edits mid-run.",
+      "log.md is the prepend-only audit trail of every meaningful run.",
+      "Agent writes land in wiki/sandbox/ first; the main namespaces change via guardrailed runs or deliberate promotion."
+    ],
+    components:[
+      ["AGENTS.md","The wiki agent's operating contract (schema, write rules)."],
+      ["index.md / overview.md","Entry pages maintained by the agent."],
+      ["log.md","Newest-first audit trail of runs."],
+      ["concepts/ entities/ sources/ queries/ comparisons/","The page namespaces of the schema."],
+      ["sandbox/","The agent-write namespace: stamped, TTL'd, promoted by humans only."]
+    ]
+  }
+};
+
+/* ---------- breadcrumb + view switching ---------- */
+const views = ["context","containers","components"];
+const crumb = document.getElementById("crumb");
+let current = {view:"context", container:null};
+const stack = [];
+
+function setCrumb(){
+  const parts = [];
+  parts.push(mk("context","1 · System context"));
+  parts.push(mk("containers","2 · Containers"));
+  if(current.view==="components") parts.push(mk("components","3 · Components — "+CONTAINERS[current.container].title,true));
+  crumb.innerHTML = parts.join('<span class="sep">/</span>');
+  function mk(v,label,here){
+    const active = (current.view===v && (v!=="components" || true));
+    if(here) return `<span class="here">${label}</span>`;
+    return `<button data-nav="${v}">${label}</button>`;
+  }
+}
+
+function show(view, container){
+  if(current.view==="components" && view!=="components") stack.push({...current});
+  current = {view, container};
+  views.forEach(v=>{
+    document.getElementById("view-"+v).classList.toggle("active", v===view);
+  });
+  if(view==="components") renderComponents(container);
+  setCrumb();
+  if(view==="context") drawWires("context", contextWires());
+  if(view==="containers") drawWires("containers", containerWires());
+}
+
+document.addEventListener("click", e=>{
+  const nav = e.target.closest("[data-nav]");
+  if(nav){ show(nav.dataset.nav); return; }
+  const box = e.target.closest("[data-goto]");
+  if(box){
+    const dest = box.dataset.goto;
+    if(dest==="containers") show("containers");
+    else show("components", dest);
+  }
+});
+document.getElementById("back-btn").addEventListener("click", ()=>{
+  const prev = stack.pop();
+  if(prev && prev.view==="components") show("components", prev.container);
+  else show("containers");
+});
+document.addEventListener("keydown", e=>{
+  if(e.key==="Escape"){
+    if(current.view==="components"){ stack.length=0; show("containers"); }
+    else if(current.view==="containers") show("context");
+  }
+});
+
+/* ---------- component view rendering ---------- */
+function renderComponents(id){
+  const c = CONTAINERS[id]; if(!c) return;
+  const root = document.getElementById("comp-root");
+  let html = `<div class="comp-head">
+    <h2>${c.title} <span class="tag ${c.tag==="dev"?"dev":c.tag==="data"?"data":"run"}">${c.tag}</span></h2>
+    <p class="role">${c.role}</p>
+    <b style="font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)">Main mechanics</b>
+    <ul>${c.mechanics.map(m=>`<li>${m}</li>`).join("")}</ul>
+    <span class="mono" style="font-family:var(--mono);font-size:11px;color:var(--muted);display:block;margin-top:8px">${c.launchers}</span>
+  </div>`;
+  if(c.groups){
+    for(const [gname, items] of c.groups){
+      html += `<div class="comp-group">${gname}</div><div class="comp-grid">` +
+        items.map(([f,d])=>`<div class="comp"><code>${f}</code><span>${d}</span></div>`).join("") +
+        `</div>`;
+    }
+  }
+  if(c.components.length){
+    html += `<div class="comp-grid">` +
+      c.components.map(([f,d])=>`<div class="comp"><code>${f}</code><span>${d}</span></div>`).join("") +
+      `</div>`;
+  }
+  html += `<footer>Source of truth: src/ module headers + the architecture ledger in AGENTS.md. Arrow semantics and budgets are enforced by tests/quality gates.</footer>`;
+  root.innerHTML = html;
+  window.scrollTo({top:0});
+}
+
+/* ---------- arrow drawing ---------- */
+const NORMALS = {left:[-1,0], right:[1,0], top:[0,-1], bottom:[0,1]};
+function drawWires(canvasId, specs){
+  const svg = document.getElementById("wires-"+canvasId);
+  const grid = document.getElementById("grid-"+canvasId);
+  if(!svg || !grid) return;
+  const gb = grid.getBoundingClientRect();
+  svg.setAttribute("viewBox", `0 0 ${gb.width} ${gb.height}`);
+  svg.innerHTML = `<defs>
+    <marker id="ah-flow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#334155"/></marker>
+    <marker id="ah-orch" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#b45309"/></marker>
+    <marker id="ah-lib" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/></marker>
+  </defs>`;
+  let out = "";
+  for(const s of specs){
+    const fe = document.getElementById(s.from), te = document.getElementById(s.to);
+    if(!fe || !te) continue;
+    const fr = fe.getBoundingClientRect(), tr = te.getBoundingClientRect();
+    const fp = anchor(fr, s.fromSide, s.fs ?? .5), tp = anchor(tr, s.toSide, s.ts ?? .5);
+    const d = Math.min(120, Math.max(28, dist(fp,tp)*0.42));
+    const c1 = [fp[0]+NORMALS[s.fromSide][0]*d, fp[1]+NORMALS[s.fromSide][1]*d];
+    const c2 = [tp[0]+NORMALS[s.toSide][0]*d, tp[1]+NORMALS[s.toSide][1]*d];
+    const color = s.kind==="orch" ? "#b45309" : s.kind==="lib" ? "#94a3b8" : "#334155";
+    const marker = s.kind==="orch" ? "ah-orch" : s.kind==="lib" ? "ah-lib" : "ah-flow";
+    const dash = s.kind==="lib" ? `stroke-dasharray="3 4"` : "";
+    out += `<path d="M${fp[0]},${fp[1]} C${c1[0]},${c1[1]} ${c2[0]},${c2[1]} ${tp[0]},${tp[1]}"
+      fill="none" stroke="${color}" stroke-width="1.6" ${dash} marker-end="url(#${marker})" opacity=".85"/>`;
+    if(s.label){
+      const mx=(fp[0]+3*c1[0]+3*c2[0]+tp[0])/8, my=(fp[1]+3*c1[1]+3*c2[1]+tp[1])/8;
+      out += `<text x="${mx}" y="${my-4}" text-anchor="middle" font-size="10" fill="#475569"
+        style="paint-order:stroke;stroke:#f4f6f8;stroke-width:4px">${s.label}</text>`;
+    }
+  }
+  svg.innerHTML += out;
+
+  function anchor(r, side, t){
+    if(side==="left")  return [r.left-gb.left,  r.top-gb.top + r.height*t];
+    if(side==="right") return [r.right-gb.left, r.top-gb.top + r.height*t];
+    if(side==="top")   return [r.left-gb.left + r.width*t, r.top-gb.top];
+    return [r.left-gb.left + r.width*t, r.bottom-gb.top];
+  }
+  function dist(a,b){ return Math.hypot(b[0]-a[0], b[1]-a[1]); }
+}
+
+function contextWires(){
+  return [
+    {from:"ext-vault", to:"sys-kwiki", fromSide:"right", toSide:"left", fs:.25, ts:.3, kind:"flow", label:"deterministic sync (read-only)"},
+    {from:"sys-kwiki", to:"ext-datarepo", fromSide:"right", toSide:"left", fs:.35, ts:.35, kind:"flow", label:"reads / writes raw/ + wiki/"},
+    {from:"sys-kwiki", to:"ext-llm", fromSide:"right", toSide:"left", fs:.6, ts:.4, kind:"flow", label:"prompted agent runs"},
+    {from:"sys-kwiki", to:"ext-github", fromSide:"right", toSide:"left", fs:.85, ts:.5, kind:"flow", label:"board triage · git remote"},
+    {from:"ext-launchd", to:"sys-kwiki", fromSide:"left", toSide:"right", fs:.5, ts:.92, kind:"orch", label:"fires scheduled cycle"},
+    {from:"sys-kwiki", to:"ext-vault", fromSide:"left", toSide:"right", fs:.12, ts:.75, kind:"lib", label:"spawns agents under wiki/AGENTS.md"}
+  ];
+}
+function containerWires(){
+  return [
+    {from:"ext-vault2", to:"c-sync", fromSide:"right", toSide:"left", fs:.3, ts:.18, kind:"flow", label:"read vault"},
+    {from:"c-sync", to:"s-raw", fromSide:"right", toSide:"left", fs:.2, ts:.35, kind:"flow", label:"project raw/"},
+    {from:"s-raw", to:"c-ingest", fromSide:"left", toSide:"right", fs:.75, ts:.18, kind:"flow", label:"manifest diff"},
+    {from:"c-ingest", to:"c-sandbox", fromSide:"bottom", toSide:"top", fs:.5, ts:.5, kind:"flow", label:"gated writes"},
+    {from:"c-sandbox", to:"s-wiki", fromSide:"right", toSide:"left", fs:.4, ts:.4, kind:"flow", label:"sandbox: commits"},
+    {from:"c-query", to:"s-wiki", fromSide:"right", toSide:"left", fs:.5, ts:.75, kind:"flow", label:"read verbs"},
+    {from:"s-wiki", to:"c-dashboard", fromSide:"left", toSide:"right", fs:.9, ts:.6, kind:"flow", label:"pages + links"},
+    {from:"s-raw", to:"c-health", fromSide:"left", toSide:"right", fs:.15, ts:.5, kind:"flow", label:"coherence check"},
+    {from:"ext-llm2", to:"c-ingest", fromSide:"right", toSide:"left", fs:.4, ts:.75, kind:"flow", label:"headless runs"},
+    {from:"ext-llm2", to:"c-query", fromSide:"right", toSide:"left", fs:.75, ts:.6, kind:"flow", label:"query + --web"},
+    {from:"ext-launchd2", to:"c-schedule", fromSide:"right", toSide:"left", fs:.5, ts:.7, kind:"orch", label:"interval"},
+    {from:"c-schedule", to:"c-writer", fromSide:"top", toSide:"bottom", fs:.5, ts:.5, kind:"orch", label:"delegates remote work"},
+    {from:"c-writer", to:"c-sync", fromSide:"top", toSide:"bottom", fs:.5, ts:.6, kind:"orch", label:"runs the cycle"},
+    {from:"c-writer", to:"c-data", fromSide:"right", toSide:"left", fs:.85, ts:.35, kind:"lib", label:"git plumbing"},
+    {from:"c-binlaunch", to:"c-cli", fromSide:"bottom", toSide:"top", fs:.4, ts:.5, kind:"lib", label:"verb dispatch"},
+    {from:"c-cli", to:"c-wiki", fromSide:"bottom", toSide:"top", fs:.4, ts:.4, kind:"lib", label:"domain library"}
+  ];
+}
+
+let resizeTimer;
+window.addEventListener("resize", ()=>{
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(()=>{
+    if(current.view==="context") drawWires("context", contextWires());
+    if(current.view==="containers") drawWires("containers", containerWires());
+  }, 120);
+});
+
+/* init */
+setCrumb();
+requestAnimationFrame(()=>drawWires("context", contextWires()));
+</script>
+</body>
+</html>
