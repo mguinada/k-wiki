@@ -666,7 +666,6 @@ describe("finalizeWithLeaseRelease", () => {
       expect(thief.status).toBe("acquired");
 
       // The branch never moved and the thief's lease survives.
-      gitRunnerFor(remoteHost(world.remoteDir));
     } finally {
       await world.cleanup();
     }
@@ -723,7 +722,6 @@ describe("finalizeWithLeaseRelease", () => {
       ).rejects.toThrow(/failed/);
 
       // The branch never moved and the thief's lease survives.
-      gitRunnerFor(remoteHost(world.remoteDir));
     } finally {
       await world.cleanup();
     }

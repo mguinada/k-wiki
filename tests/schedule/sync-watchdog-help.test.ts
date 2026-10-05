@@ -22,13 +22,9 @@ describe("sync-watchdog help (printed by the launcher)", () => {
 
   it("documents the staleness override in the help", () => {
     expect(text()).toContain("--stale-after <duration>");
-
-    text();
   });
 
   it("states the default staleness threshold", () => {
-    text();
-
     expect(text()).toContain("the default: three 30-minute run intervals");
   });
 

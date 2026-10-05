@@ -370,8 +370,6 @@ describe("gateRemovals", () => {
     }
 
     expect(gate.reason.join("\n")).toContain("--removal-receipt");
-
-    const receiptPath = join(dataRoot, "outputs/shared-writer-receipt.json");
   });
 
   it("names the missing receipt flag", async () => {
@@ -393,8 +391,6 @@ describe("gateRemovals", () => {
     }
 
     expect(gate.reason.join("\n")).toContain("V/gone.md");
-
-    const receiptPath = join(dataRoot, "outputs/shared-writer-receipt.json");
   });
 
   it("names the removed path", async () => {
@@ -452,8 +448,6 @@ describe("gateRemovals", () => {
 
     const base = "a".repeat(40);
 
-    const receiptPath = join(dataRoot, "receipt.json");
-
     const { buildReceipt, writeReceipt } = await import(
       "../../src/writer/receipts.ts"
     );
@@ -468,15 +462,6 @@ describe("gateRemovals", () => {
     });
 
     expect(ok.status).toBe("pass");
-
-    await writeFile(receiptPath, "unused");
-
-    await gateRemovals({
-      run,
-      base: "b".repeat(40),
-      plans: PLANS,
-      receipt: await readReceipt(path),
-    });
   });
 
   it("refuses a receipt staged against a stale base", async () => {
@@ -488,22 +473,11 @@ describe("gateRemovals", () => {
 
     const base = "a".repeat(40);
 
-    const receiptPath = join(dataRoot, "receipt.json");
-
     const { buildReceipt, writeReceipt } = await import(
       "../../src/writer/receipts.ts"
     );
 
     const path = await writeReceipt(dataRoot, buildReceipt(base, PLANS));
-
-    await gateRemovals({
-      run,
-      base,
-      plans: PLANS,
-      receipt: await readReceipt(path),
-    });
-
-    await writeFile(receiptPath, "unused");
 
     const stale = await gateRemovals({
       run,

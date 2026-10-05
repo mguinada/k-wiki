@@ -123,15 +123,13 @@ describe("readExpiresStamp", () => {
 
 describe("reapExpiredSandboxNotes", () => {
   it("reaps a note whose expiry is past", async () => {
-    const { dataRoot, run } = await makeRepo({
+    const { run } = await makeRepo({
       "past-note.md": page("2026-08-19"),
     });
 
     const result = await reapExpiredSandboxNotes(run);
 
     expect(result.reaped).toEqual(["wiki/sandbox/past-note.md"]);
-
-    await textOrNull(join(dataRoot, "wiki", "sandbox", "past-note.md"));
   });
 
   it("deletes the expired note", async () => {
@@ -147,15 +145,13 @@ describe("reapExpiredSandboxNotes", () => {
   });
 
   it("reaps nothing for a note expiring today", async () => {
-    const { dataRoot, run } = await makeRepo({
+    const { run } = await makeRepo({
       "today-note.md": page("2026-08-20"),
     });
 
     const result = await reapExpiredSandboxNotes(run);
 
     expect(result.reaped).toEqual([]);
-
-    await textOrNull(join(dataRoot, "wiki", "sandbox", "today-note.md"));
   });
 
   it("keeps today's note", async () => {

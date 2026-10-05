@@ -286,8 +286,6 @@ describe("launchdPlist", () => {
       }),
     );
 
-    arrayOf(weird.ProgramArguments);
-
     expect(dictOf(weird.EnvironmentVariables).HOME).toBe("/Users/me<home>");
   });
 
@@ -301,8 +299,6 @@ describe("launchdPlist", () => {
         intervalSeconds: 1800,
       }),
     );
-
-    arrayOf(weird.ProgramArguments);
 
     expect(weird.StandardOutPath).toBe(
       "/Users/me/Library&Logs/k-wiki/launchd-stdout.log",
@@ -319,8 +315,6 @@ describe("launchdPlist", () => {
         intervalSeconds: 1800,
       }),
     );
-
-    arrayOf(weird.ProgramArguments);
 
     expect(weird.StandardErrorPath).toBe(
       "/Users/me/Library&Logs/k-wiki/launchd-stderr.log",
@@ -390,13 +384,9 @@ describe("launchdCalendarPlist", () => {
       Hour: 3,
       Minute: 0,
     });
-
-    arrayOf(plist.ProgramArguments);
   });
 
   it("passes --lint-full to the sweep arguments", () => {
-    dictOf(plist.StartCalendarInterval);
-
     expect(arrayOf(plist.ProgramArguments)).toEqual([
       "/opt/node/bin/node",
       "/Users/me/Lab/k-wiki/bin/scheduled-run",

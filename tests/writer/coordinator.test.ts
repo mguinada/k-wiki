@@ -267,8 +267,6 @@ describe("no-op cycle under lease", () => {
     const outcome = await runSharedCycle(optionsFor(cw, dataRoot));
 
     expect(outcome.status).toBe("completed");
-
-    gitRunnerFor(remoteHost(world.remoteDir));
   }, 30000);
 
   it("advances nothing on a no-op cycle", async () => {
@@ -1647,8 +1645,6 @@ describe("ambiguous finalize recovery (test 18)", () => {
     );
 
     expect(outcome.status).toBe("completed");
-
-    gitRunnerFor(remoteHost(world.remoteDir));
   }, 30000);
 
   it("releases the lease on proven success", async () => {

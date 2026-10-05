@@ -96,9 +96,7 @@ describe("hasLeadingDocblock", () => {
 });
 
 describe("architecture ledger (live tree)", () => {
-  it("names every src/ domain in the Bounded contexts table", async ({
-    skip,
-  }) => {
+  it("carries a parseable Bounded contexts table", async ({ skip }) => {
     if (insideStrykerSandbox()) {
       skip(skipNote);
 

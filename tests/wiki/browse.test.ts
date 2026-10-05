@@ -85,14 +85,10 @@ describe("listablePages", () => {
     const wikiDir = await makeWiki("plain.md", undefined, undefined);
 
     expect(slugs(await listablePages(wikiDir))).toEqual(["plain"]);
-
-    await listablePages(wikiDir);
   });
 
   it("leaves its type undefined", async () => {
     const wikiDir = await makeWiki("plain.md", undefined, undefined);
-
-    slugs(await listablePages(wikiDir));
 
     expect((await listablePages(wikiDir))[0]?.type).toBeUndefined();
   });

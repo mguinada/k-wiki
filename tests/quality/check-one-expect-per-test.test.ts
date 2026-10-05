@@ -374,9 +374,7 @@ describe("checkTree and rendering", () => {
     );
   });
 
-  it("runCheck prints the prescription once and returns 1 on violations", async ({
-    onTestFinished,
-  }) => {
+  it("runCheck returns 1 on violations", async ({ onTestFinished }) => {
     const root = await fixtureDir(
       "broken.test.ts",
       `it("loads the board", () => {\n  expect(load()).toBeDefined();\n  expect(load().rows).toHaveLength(3);\n});\n`,
@@ -540,9 +538,7 @@ describe("runCheck in-process", () => {
     expect(await runCheck(root)).toBe(0);
   });
 
-  it("returns 1 and prints every locator plus the prescription", async ({
-    onTestFinished,
-  }) => {
+  it("returns 1 with violations present", async ({ onTestFinished }) => {
     onTestFinished(() => {
       delete process.env.NO_COLOR;
     });

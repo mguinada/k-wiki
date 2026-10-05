@@ -1275,10 +1275,6 @@ describe("runWikiQuery --web", () => {
     expect(invocation(plainHarness, 0).args).toEqual(
       invocation(webHarness, 0).args,
     );
-
-    await readQueryArtifact(join(plainHarness.outputsDir, "last-query.md"));
-
-    await readQueryArtifact(join(webHarness.outputsDir, "last-query.md"));
   });
 
   it("answers the core question in both runs", async () => {
@@ -1307,10 +1303,6 @@ describe("runWikiQuery --web", () => {
     await runWeb(webHarness, twoPhaseRunner("A.", OK_STREAM));
 
     expect(plain.answer).toBe("A.");
-
-    await readQueryArtifact(join(plainHarness.outputsDir, "last-query.md"));
-
-    await readQueryArtifact(join(webHarness.outputsDir, "last-query.md"));
   });
 
   it("saves the same core answer in both artifacts", async () => {
@@ -1569,8 +1561,6 @@ describe("runWikiQuery --web", () => {
     });
 
     expect(h.invocations).toHaveLength(1);
-
-    await readQueryArtifact(join(h.outputsDir, "last-query.md"));
   });
 
   it("degrades to a normal wiki-only run with the exact warning", async () => {
@@ -1598,8 +1588,6 @@ describe("runWikiQuery --web", () => {
     expect(result.warning).toBe(
       "WARNING — `--web` requested, but the pi-web-access plugin is not available — continuing in wiki-only mode.",
     );
-
-    await readQueryArtifact(join(h.outputsDir, "last-query.md"));
   });
 
   it("records the degradation warning in the artifact", async () => {
@@ -1697,8 +1685,6 @@ describe("runWikiQuery --web", () => {
     const result = await runWeb(h, failingEnrichment);
 
     expect(result.answer).toBe("A.");
-
-    await readQueryArtifact(join(h.outputsDir, "last-query.md"));
   });
 
   it("warns with the enrichment-failure wording", async () => {
@@ -1717,8 +1703,6 @@ describe("runWikiQuery --web", () => {
     expect(result.warning).toBe(
       "WARNING — `--web` enrichment failed (web-call or tool failure) — continuing with the wiki-only core answer.",
     );
-
-    await readQueryArtifact(join(h.outputsDir, "last-query.md"));
   });
 
   it("records the failure warning in the artifact", async () => {

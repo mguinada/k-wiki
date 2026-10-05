@@ -198,7 +198,7 @@ describe("matchReceipt", () => {
 });
 
 describe("receipt file", () => {
-  it("writes the receipt at the per-machine path", async () => {
+  it("reads the receipt back with its plans", async () => {
     const dataRoot = await tempDataRoot();
 
     const path = await writeReceipt(dataRoot, buildReceipt(base0(), PLAN));
@@ -212,12 +212,10 @@ describe("receipt file", () => {
     }
   });
 
-  it("reads the receipt back with its plans", async () => {
+  it("writes the receipt at the per-machine path", async () => {
     const dataRoot = await tempDataRoot();
 
     const path = await writeReceipt(dataRoot, buildReceipt(base0(), PLAN));
-
-    await readReceipt(path);
 
     expect(path).toContain(RECEIPT_FILENAME);
 
