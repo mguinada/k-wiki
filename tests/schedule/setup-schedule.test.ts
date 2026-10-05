@@ -1657,8 +1657,6 @@ describe("calendar registration (issue #359)", () => {
       canonicalGit,
     );
 
-    join(home, "Library", "LaunchAgents", "com.kwiki.scheduled-lint.plist");
-
     expect(calls[2]?.[1]).toContain("com.kwiki.scheduled-lint");
 
     await main(
@@ -1725,8 +1723,6 @@ describe("calendar registration (issue #359)", () => {
       home,
       canonicalGit,
     );
-
-    join(home, "Library", "LaunchAgents", "com.kwiki.scheduled-lint.plist");
 
     expect(await pathExists(plistPath(home))).toBe(false);
 

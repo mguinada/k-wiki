@@ -916,12 +916,6 @@ describe("k-wiki status", () => {
     const lines = out.split("\n").filter((line) => /^[a-z ]+:/.test(line));
 
     expect(lines).toHaveLength(9);
-
-    lines.map((line) => {
-      const match = /^([a-z ]+:\s+)/.exec(line);
-
-      return match?.[1]?.length ?? -1;
-    });
   });
 
   it("aligns every status value in the same column", async () => {

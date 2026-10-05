@@ -188,11 +188,9 @@ describe("writer-lease status", () => {
 
     const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
 
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {});
 
     await main(argv("status", cw));
-
-    logSpy.mock.calls.map((call) => String(call[0])).join("\n");
 
     expect(process.exitCode).not.toBe(1);
 

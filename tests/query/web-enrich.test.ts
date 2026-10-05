@@ -40,8 +40,6 @@ describe("webEnrichAgentArgs", () => {
   it("leads with the ambient isolation flags", () => {
     const args = webEnrichAgentArgs(SETTINGS, [...ISOLATION_FLAGS], "PROMPT");
 
-    args.indexOf("-e");
-
     expect(args.slice(0, 3)).toEqual([
       "--no-context-files",
       "--no-extensions",

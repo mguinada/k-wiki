@@ -157,8 +157,6 @@ describe("partitioned body codec", () => {
   it("uses the markdown break, not the box character", () => {
     const body = renderWebArtifactBody("The core answer.", web);
 
-    body.split("\n");
-
     expect(body).not.toContain("─");
   });
 
