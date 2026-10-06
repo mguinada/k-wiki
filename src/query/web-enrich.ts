@@ -78,6 +78,7 @@ export interface WebEnrichmentSpawn {
   readonly grantDisplay: string;
   args(composed: string): readonly string[];
   stdin?(composed: string): string | undefined;
+  reportPath?(args: readonly string[]): string | undefined;
   env?(): NodeJS.ProcessEnv | undefined;
 }
 
@@ -91,6 +92,7 @@ export type AgentSpawn = (
     env: NodeJS.ProcessEnv;
     timeoutMs?: number | undefined;
     stdin?: string | undefined;
+    reportPath?: string | undefined;
   },
 ) => Promise<{ stdout: string; stderr: string }>;
 
@@ -198,6 +200,8 @@ export async function runWebEnrichment(
   let stdout: string;
 
   try {
+    const args = spawn.args(composed);
+
     ({ stdout } = await withHeartbeat(
       {
         onProgress: run.onProgress,
@@ -205,10 +209,11 @@ export async function runWebEnrichment(
         intervalMs: options.heartbeatMs,
       },
       () =>
-        options.runAgent(spawn.command, spawn.args(composed), {
+        options.runAgent(spawn.command, args, {
           cwd: run.dataRoot,
           env: spawn.env?.() ?? run.env,
           stdin: spawn.stdin?.(composed),
+          reportPath: spawn.reportPath?.(args),
           timeoutMs: options.timeoutMs,
         }),
     ));

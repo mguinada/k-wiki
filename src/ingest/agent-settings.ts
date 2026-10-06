@@ -19,7 +19,6 @@ import {
   type LoadAgentSettingsContext,
   preflightSettings,
   runnerForAgent,
-  UnsupportedRunnerCapabilityError,
 } from "./agent-runner.ts";
 
 /** The agent-neutral invocation descriptor (issue #434): the
@@ -429,7 +428,9 @@ function validateCodexSettings(
   }
 
   if ((lists[EXTENSIONS_KEY]?.length ?? 0) > 0) {
-    throw new UnsupportedRunnerCapabilityError("codex", "extensions");
+    throw new Error(
+      `invalid agent settings at ${origin}: codex runner does not support extensions`,
+    );
   }
 
   const names = new Set<string>();

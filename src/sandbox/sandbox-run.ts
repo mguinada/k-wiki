@@ -215,16 +215,17 @@ async function agentStep(plan: SandboxPlan): Promise<AgentOutcome> {
 
   try {
     const runner = runnerFor(settings);
-    await (plan.options.runAgent ?? spawnAgent)(
-      settings.command,
-      runner.args(settings, plan.options.prompt, { root: run.dataRoot }),
-      {
-        cwd: run.dataRoot,
-        env: runnerEnv(settings, run.env),
-        stdin: runner.stdin(plan.options.prompt),
-        timeoutMs: plan.options.timeoutMs,
-      },
-    );
+    const args = runner.args(settings, plan.options.prompt, {
+      root: run.dataRoot,
+    });
+
+    await (plan.options.runAgent ?? spawnAgent)(settings.command, args, {
+      cwd: run.dataRoot,
+      env: runnerEnv(settings, run.env),
+      stdin: runner.stdin(plan.options.prompt),
+      reportPath: runner.reportPath(args),
+      timeoutMs: plan.options.timeoutMs,
+    });
   } catch (caught) {
     error = caught;
   }

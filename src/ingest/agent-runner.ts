@@ -50,14 +50,6 @@ export interface RunnerContext {
   readonly root: string;
 }
 
-/** Codex refuses capability categories it cannot implement safely. */
-export class UnsupportedRunnerCapabilityError extends Error {
-  constructor(agent: string, category: string) {
-    super(`${agent} runner does not support ${category}`);
-    this.name = "UnsupportedRunnerCapabilityError";
-  }
-}
-
 /** The per-agent Runner adapter (issue #434): everything the
  *  pipeline may assume about a coding-agent CLI, named here. */
 export interface AgentRunner {
@@ -121,6 +113,12 @@ export interface AgentRunner {
   /** (3) The agent's stdout into the final report the guardrails
    *  consume. Identity for pi — the reply is the report. */
   report(stdout: string): string;
+
+  /** The output file this argv captures the final report into, when
+   *  the agent writes its report to a file; undefined when the run
+   *  reports on stdout. The spawner reads the file after the child
+   *  settles and serves it as stdout. */
+  reportPath(args: readonly string[]): string | undefined;
 }
 
 /** The pi isolation flags (issue #118): mechanically disable every
@@ -301,6 +299,8 @@ export const piRunner: AgentRunner = {
   },
 
   report: (stdout) => stdout,
+
+  reportPath: () => undefined,
 };
 
 /** A temporary output file outside the data repo: Codex's -o report must
@@ -449,6 +449,14 @@ export const codexRunner: AgentRunner = {
   },
 
   report: (stdout) => stdout,
+
+  reportPath: (args) => {
+    const index = args.findIndex(
+      (arg) => arg === "-o" || arg === "--output-last-message",
+    );
+
+    return index < 0 ? undefined : args[index + 1];
+  },
 };
 
 /** Build Codex's managed environment after settings parsing. */

@@ -167,6 +167,7 @@ async function spawnWithHeartbeat(
         cwd: run.dataRoot,
         env: runnerEnv(settings, run.env),
         stdin: runnerFor(settings).stdin(prompt),
+        reportPath: runnerFor(settings).reportPath(args),
         timeoutMs: options.timeoutMs,
       }),
   );
@@ -314,6 +315,7 @@ export async function runWikiQuery(
             root: dataRoot,
           }),
         stdin: (composed: string) => runnerFor(settings).stdin(composed),
+        reportPath: runnerFor(settings).reportPath,
         env: () => runnerEnv(settings, env),
       },
       question: options.question,

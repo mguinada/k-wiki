@@ -34,6 +34,7 @@ export type AgentRunner = (
     env: NodeJS.ProcessEnv;
     timeoutMs?: number | undefined;
     stdin?: string | undefined;
+    reportPath?: string | undefined;
   },
 ) => Promise<{ stdout: string; stderr: string }>;
 
@@ -63,6 +64,7 @@ export function spawnAgent(
     env: NodeJS.ProcessEnv;
     timeoutMs?: number | undefined;
     stdin?: string | undefined;
+    reportPath?: string | undefined;
   },
 ): Promise<{ stdout: string; stderr: string }> {
   const timeoutMs = options.timeoutMs ?? AGENT_TIMEOUT_MS;
@@ -120,10 +122,7 @@ export function spawnAgent(
       const errText = Buffer.concat(stderr).toString("utf8");
 
       if (code === 0) {
-        const outputIndex = args.findIndex(
-          (arg) => arg === "-o" || arg === "--output-last-message",
-        );
-        const outputPath = outputIndex < 0 ? undefined : args[outputIndex + 1];
+        const outputPath = options.reportPath;
 
         if (outputPath === undefined) {
           disposeManagedTemp();
@@ -217,16 +216,14 @@ async function attemptTarget(
 ): Promise<{ stdout: string; error: unknown }> {
   try {
     const runner = runnerFor(targetSettings);
-    const { stdout } = await options.runAgent(
-      command,
-      runner.args(targetSettings, prompt, { root: options.root }),
-      {
-        cwd: options.root,
-        env: runnerEnv(targetSettings, options.environment),
-        stdin: runner.stdin(prompt),
-        timeoutMs: options.timeoutMs,
-      },
-    );
+    const args = runner.args(targetSettings, prompt, { root: options.root });
+    const { stdout } = await options.runAgent(command, args, {
+      cwd: options.root,
+      env: runnerEnv(targetSettings, options.environment),
+      stdin: runner.stdin(prompt),
+      reportPath: runner.reportPath(args),
+      timeoutMs: options.timeoutMs,
+    });
 
     return { stdout: runner.report(stdout), error: undefined };
   } catch (error) {

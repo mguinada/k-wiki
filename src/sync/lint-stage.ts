@@ -152,6 +152,7 @@ async function invokeLintAgent(
   command: string,
   args: readonly string[],
   stdin: string | undefined,
+  reportPath: string | undefined,
   env: NodeJS.ProcessEnv,
 ): Promise<LintAgentRun> {
   const startedAt = run.now().getTime();
@@ -169,6 +170,7 @@ async function invokeLintAgent(
       cwd: run.dataRoot,
       env,
       stdin,
+      reportPath,
       timeoutMs: options.timeoutMs,
     }));
   } catch (caught) {
@@ -376,6 +378,7 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
     command,
     args,
     runner.stdin(promptText),
+    runner.reportPath(args),
     runnerEnv(settings, env),
   );
 

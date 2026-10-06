@@ -152,6 +152,22 @@ describe("spawnAgent", () => {
     expect(message).toContain("agent exited with code 3");
   });
 
+  it("keeps a stdout run's stdout when its argv carries a -o lookalike", async () => {
+    const result = await spawnAgent(
+      process.execPath,
+      [
+        "-e",
+        "console.log('plain stdout')",
+        "--",
+        "-o",
+        "/nonexistent-report-path",
+      ],
+      noOptions,
+    );
+
+    expect(result.stdout).toContain("plain stdout");
+  });
+
   it("clears the run timeout once the child settles", async () => {
     vi.useFakeTimers();
 
@@ -212,6 +228,7 @@ async function runStubbedCodex(): Promise<{ home: string; report: string }> {
       cwd: fixture,
       env,
       stdin: "PROMPT",
+      reportPath: codexRunner.reportPath(args),
     },
   );
 
