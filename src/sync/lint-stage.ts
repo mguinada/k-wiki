@@ -27,7 +27,7 @@ import {
   readPrompt,
   spawnAgent,
 } from "../ingest/agent-run.ts";
-import { codexEnv } from "../ingest/agent-runner.ts";
+import { runnerEnv } from "../ingest/agent-runner.ts";
 import {
   type AgentSettings,
   type AgentTarget,
@@ -376,7 +376,7 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
     command,
     args,
     runner.stdin(promptText),
-    settings.agent === "codex" ? codexEnv(env, settings) : runner.env(env),
+    runnerEnv(settings, env),
   );
 
   const post = await runGuardrails(dataRoot, env, pre);

@@ -168,6 +168,46 @@ describe("parseSettings", () => {
     ).toThrow("codex runner does not support extensions");
   });
 
+  it("refuses a provider/model scalar model on the Codex lane", () => {
+    expect(() =>
+      parseSettings(
+        "command: codex\nagent: codex\nmodel: openai/gpt-5.6-terra\nreasoning: high\n",
+        "s",
+      ),
+    ).toThrow("codex targets must be OpenAI model names, not provider/model");
+  });
+
+  it("refuses isolate: false on the Codex lane", () => {
+    expect(() =>
+      parseSettings(
+        "command: codex\nagent: codex\nmodel: gpt-5.6-terra\nreasoning: high\nisolate: false\n",
+        "s",
+      ),
+    ).toThrow(
+      "codex runner is always managed-home isolated; isolate: false is unsupported",
+    );
+  });
+
+  it("refuses duplicate-basename skills on the Codex lane", () => {
+    expect(() =>
+      parseSettings(
+        "command: codex\nagent: codex\nmodel: gpt-5.6-terra\nreasoning: high\nisolate.skills: [a/skill, b/skill]\n",
+        "s",
+      ),
+    ).toThrow(
+      'codex isolate.skills entries must have distinct names; duplicate "skill"',
+    );
+  });
+
+  it("parses duplicate-basename skills on the pi lane", () => {
+    const settings = parseSettings(
+      "command: pi\nmodel: m\nreasoning: h\nisolate.skills: [a/skill, b/skill]\n",
+      "s",
+    );
+
+    expect(settings.isolateSkills).toEqual(["a/skill", "b/skill"]);
+  });
+
   it("parses an explicit isolate: false opt-out", () => {
     const settings = parseSettings(
       "command: pi\nmodel: m\nreasoning: h\nisolate: false\n",

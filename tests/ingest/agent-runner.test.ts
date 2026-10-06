@@ -8,9 +8,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
-  codexEnv,
   codexRunner,
   defaultAuthStorePath,
   ISOLATION_FLAGS,
@@ -18,6 +17,7 @@ import {
   npmExtensionDir,
   piInstallRootFromEnv,
   piRunner,
+  runnerEnv,
   WEB_EXTENSION_SOURCE,
   WEB_TOOL_ALLOWLIST,
 } from "../../src/ingest/agent-runner.ts";
@@ -901,9 +901,9 @@ describe("codex Runner adapter", () => {
     mkdirSync(source, { recursive: true });
     mkdirSync(skill, { recursive: true });
     writeFileSync(join(source, "auth.json"), '{"openai":"seeded"}\n');
-    const env = codexEnv(
-      { CODEX_HOME: source },
+    const env = runnerEnv(
       { ...settings, isolateSkills: [skill] },
+      { CODEX_HOME: source },
     );
     const home = env.CODEX_HOME ?? "";
     const managedSkill = join(home, ".agents", "skills", "obsidian-markdown");
@@ -922,5 +922,30 @@ describe("codex Runner adapter", () => {
       home,
       skillLink: true,
     });
+  });
+
+  it("reports auth not seeded when the host has no auth store", () => {
+    const fixture = mkdtempSync(join(tmpdir(), "k-wiki-codex-posture-"));
+    vi.stubEnv("CODEX_HOME", fixture);
+
+    const posture = codexRunner.invocation(settings).posture ?? "";
+
+    vi.unstubAllEnvs();
+    rmSync(fixture, { recursive: true, force: true });
+
+    expect(posture).toContain("auth not seeded");
+  });
+
+  it("reports auth seeded when the host auth store exists", () => {
+    const fixture = mkdtempSync(join(tmpdir(), "k-wiki-codex-posture-"));
+    vi.stubEnv("CODEX_HOME", fixture);
+    writeFileSync(join(fixture, "auth.json"), "{}\n");
+
+    const posture = codexRunner.invocation(settings).posture ?? "";
+
+    vi.unstubAllEnvs();
+    rmSync(fixture, { recursive: true, force: true });
+
+    expect(posture).toContain("auth seeded");
   });
 });

@@ -1,3 +1,4 @@
+import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -6,6 +7,7 @@ import {
   runAgentTargets,
   spawnAgent,
 } from "../../src/ingest/agent-run.ts";
+import { codexRunner, runnerEnv } from "../../src/ingest/agent-runner.ts";
 
 describe("spawnAgent", () => {
   const noOptions = { cwd: tmpdir(), env: process.env };
@@ -135,6 +137,21 @@ describe("spawnAgent", () => {
     expect(result.stdout).toContain("stdin-eof");
   });
 
+  it("survives a child that exits without consuming a large stdin prompt", async () => {
+    let message = "";
+
+    try {
+      await spawnAgent(process.execPath, ["-e", "process.exit(3)"], {
+        ...noOptions,
+        stdin: "P".repeat(1024 * 1024),
+      });
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(message).toContain("agent exited with code 3");
+  });
+
   it("clears the run timeout once the child settles", async () => {
     vi.useFakeTimers();
 
@@ -159,6 +176,59 @@ describe("spawnAgent", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+/** One codex-lane spawn against a stub that writes the -o report and
+ *  exits: the managed home and report paths come back for assertion. */
+async function runStubbedCodex(): Promise<{ home: string; report: string }> {
+  const fixture = mkdtempSync(join(tmpdir(), "k-wiki-agent-run-"));
+  const settings = {
+    command: process.execPath,
+    agent: "codex",
+    model: "gpt-5.6-terra",
+    reasoning: "high",
+  } as const;
+  const args = codexRunner.args(settings, "PROMPT", { root: fixture });
+  const report = args[args.indexOf("-o") + 1];
+
+  if (report === undefined) {
+    throw new Error("codex argv carries no -o report path");
+  }
+
+  const env = runnerEnv(settings, {
+    ...process.env,
+    CODEX_HOME: join(fixture, "auth-home"),
+    REPORT_PATH: report,
+  });
+
+  await spawnAgent(
+    process.execPath,
+    [
+      "-e",
+      'require("node:fs").writeFileSync(process.env.REPORT_PATH, "report")',
+    ],
+    {
+      cwd: fixture,
+      env,
+      stdin: "PROMPT",
+    },
+  );
+
+  return { home: env.CODEX_HOME ?? "", report };
+}
+
+describe("spawnAgent managed temp disposal", () => {
+  it("removes the managed home once the run settles", async () => {
+    const { home } = await runStubbedCodex();
+
+    expect(existsSync(home)).toBe(false);
+  });
+
+  it("removes the report file once the report is read", async () => {
+    const { report } = await runStubbedCodex();
+
+    expect(existsSync(report)).toBe(false);
   });
 });
 

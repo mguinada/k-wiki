@@ -24,7 +24,7 @@ import {
   readPrompt,
   spawnAgent,
 } from "../ingest/agent-run.ts";
-import { codexEnv } from "../ingest/agent-runner.ts";
+import { runnerEnv } from "../ingest/agent-runner.ts";
 import {
   type AgentSettings,
   formatInvocation,
@@ -165,10 +165,7 @@ async function spawnWithHeartbeat(
     () =>
       runAgent(settings.command, args, {
         cwd: run.dataRoot,
-        env:
-          settings.agent === "codex"
-            ? codexEnv(run.env, settings)
-            : runnerFor(settings).env(run.env),
+        env: runnerEnv(settings, run.env),
         stdin: runnerFor(settings).stdin(prompt),
         timeoutMs: options.timeoutMs,
       }),
@@ -317,10 +314,7 @@ export async function runWikiQuery(
             root: dataRoot,
           }),
         stdin: (composed: string) => runnerFor(settings).stdin(composed),
-        env:
-          settings.agent === "codex"
-            ? codexEnv(env, settings)
-            : runnerFor(settings).env(env),
+        env: () => runnerEnv(settings, env),
       },
       question: options.question,
       promptText: await readPrompt(

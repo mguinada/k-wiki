@@ -12,7 +12,7 @@ import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { pluralized } from "../cli/shared.ts";
 import { changedPaths } from "../data/git.ts";
-import { codexEnv } from "./agent-runner.ts";
+import { disposeManagedTemp, runnerEnv } from "./agent-runner.ts";
 import {
   type AgentSettings,
   type AgentTarget,
@@ -74,6 +74,7 @@ export function spawnAgent(
       stdio: [options.stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"],
     });
     if (options.stdin !== undefined) {
+      child.stdin?.on("error", () => {});
       child.stdin?.write(options.stdin);
       child.stdin?.end();
     }
@@ -109,6 +110,7 @@ export function spawnAgent(
     child.stderr?.on("data", (chunk: Buffer) => collect(stderr, chunk));
     child.on("error", (error: Error) => {
       clearTimeout(timer);
+      disposeManagedTemp();
       reject(new Error(`agent ${command} could not start: ${error.message}`));
     });
     child.on("close", (code, signal) => {
@@ -124,17 +126,22 @@ export function spawnAgent(
         const outputPath = outputIndex < 0 ? undefined : args[outputIndex + 1];
 
         if (outputPath === undefined) {
+          disposeManagedTemp();
           resolve({ stdout: out, stderr: errText });
         } else {
           readFile(outputPath, "utf8")
-            .then((report) => resolve({ stdout: report, stderr: errText }))
-            .catch((error: Error) =>
+            .then((report) => {
+              disposeManagedTemp();
+              resolve({ stdout: report, stderr: errText });
+            })
+            .catch((error: Error) => {
+              disposeManagedTemp();
               reject(
                 new Error(
                   `agent did not write output report ${outputPath}: ${error.message}`,
                 ),
-              ),
-            );
+              );
+            });
         }
 
         return;
@@ -145,6 +152,7 @@ export function spawnAgent(
           ? `killed with ${signal} (output over ${AGENT_MAX_BUFFER} bytes, or wrapper shutdown)`
           : `exited with code ${code}`;
 
+      disposeManagedTemp();
       reject(new Error(`agent ${why}: ${tail(errText)}`));
     });
   });
@@ -214,10 +222,7 @@ async function attemptTarget(
       runner.args(targetSettings, prompt, { root: options.root }),
       {
         cwd: options.root,
-        env:
-          targetSettings.agent === "codex"
-            ? codexEnv(options.environment, targetSettings)
-            : runner.env(options.environment),
+        env: runnerEnv(targetSettings, options.environment),
         stdin: runner.stdin(prompt),
         timeoutMs: options.timeoutMs,
       },

@@ -23,6 +23,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -88,10 +89,6 @@ export interface AgentRunner {
     composed: string,
     context?: RunnerContext,
   ): readonly string[];
-
-  /** The environment a spawned run inherits: pi passes the caller's
-   *  environment through untouched. */
-  env(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv;
 
   /** Prompt bytes for stdin. pi carries its prompt in argv; Codex reads stdin. */
   stdin(prompt: string): string | undefined;
@@ -280,8 +277,6 @@ export const piRunner: AgentRunner = {
     composed,
   ],
 
-  env: (environment) => environment,
-
   stdin: () => undefined,
 
   invocation: (settings, options) => ({
@@ -312,7 +307,38 @@ export const piRunner: AgentRunner = {
 /** A temporary output file outside the data repo: Codex's -o report must
  * not appear as an untracked wiki change for the deterministic guardrails. */
 function codexReportPath(): string {
-  return join(tmpdir(), `k-wiki-codex-${process.pid}-${Date.now()}.txt`);
+  const path = join(tmpdir(), `k-wiki-codex-${process.pid}-${Date.now()}.txt`);
+
+  trackManagedTemp(path);
+
+  return path;
+}
+
+/** Per-spawn managed temp state (the Codex home, the report file):
+ *  removed when the spawned run settles (disposeManagedTemp, called
+ *  by the shared spawner) and, for an artifact whose spawn never
+ *  happens, at process exit. */
+const managedTempPaths = new Set<string>();
+
+let exitSweepArmed = false;
+
+function trackManagedTemp(path: string): void {
+  managedTempPaths.add(path);
+
+  if (!exitSweepArmed) {
+    exitSweepArmed = true;
+    process.once("exit", disposeManagedTemp);
+  }
+}
+
+/** Remove every managed temp artifact still registered: the one
+ *  cleanup boundary a spawned run settles through. */
+export function disposeManagedTemp(): void {
+  for (const path of managedTempPaths) {
+    rmSync(path, { force: true, recursive: true });
+  }
+
+  managedTempPaths.clear();
 }
 
 function codexContext(context: RunnerContext | undefined): RunnerContext {
@@ -323,6 +349,12 @@ function codexContext(context: RunnerContext | undefined): RunnerContext {
   return context;
 }
 
+/** The host auth store a managed home seeds from: the caller's
+ * CODEX_HOME, else ~/.codex. The seed and the posture label share it. */
+function codexSourceAuthPath(environment: NodeJS.ProcessEnv): string {
+  return join(environment.CODEX_HOME ?? homedir(), "auth.json");
+}
+
 /** Codex's managed home is built per spawn. Redirecting HOME as well as
  * CODEX_HOME closes the user-scope skill-discovery path. The only linked
  * skills are the configured whitelist; auth is copied, never linked. */
@@ -331,6 +363,9 @@ function codexManagedHome(
   settings: AgentSettings,
 ): string {
   const home = mkdtempSync(join(tmpdir(), "k-wiki-codex-home-"));
+
+  trackManagedTemp(home);
+
   const skills = join(home, ".agents", "skills");
 
   mkdirSync(skills, { recursive: true });
@@ -343,8 +378,7 @@ function codexManagedHome(
     join(home, "config.toml"),
     'web_search = "disabled"\napproval_policy = "never"\n',
   );
-  const sourceHome = environment.CODEX_HOME ?? join(homedir(), ".codex");
-  const sourceAuth = join(sourceHome, "auth.json");
+  const sourceAuth = codexSourceAuthPath(environment);
 
   if (existsSync(sourceAuth)) {
     cpSync(sourceAuth, join(home, "auth.json"));
@@ -385,12 +419,6 @@ export const codexRunner: AgentRunner = {
     "--web",
   ],
 
-  env: (environment) => {
-    // The settings object is unavailable at this interface point; the spawn
-    // sites pass the managed environment created through prepareCodexEnv.
-    return environment;
-  },
-
   stdin: (prompt) => prompt,
 
   invocation: (settings, options) => ({
@@ -405,7 +433,11 @@ export const codexRunner: AgentRunner = {
             (settings.isolateSkills?.length ?? 0) > 0
               ? ` +${pluralized(settings.isolateSkills?.length ?? 0, "skill")}`
               : ""
-          }; sandbox workspace-write; web disabled; auth seeded`,
+          }; sandbox workspace-write; web disabled; auth ${
+            existsSync(codexSourceAuthPath(process.env))
+              ? "seeded"
+              : "not seeded"
+          }`,
         }),
   }),
 
@@ -420,14 +452,28 @@ export const codexRunner: AgentRunner = {
   report: (stdout) => stdout,
 };
 
-/** Build Codex's managed environment after settings parsing. Exported for
- * model-free conformance tests and for every spawn site. */
-export function codexEnv(
+/** Build Codex's managed environment after settings parsing. */
+function codexEnv(
   environment: NodeJS.ProcessEnv,
   settings: AgentSettings,
 ): NodeJS.ProcessEnv {
   const home = codexManagedHome(environment, settings);
   return { ...environment, CODEX_HOME: home, HOME: home };
+}
+
+/** The environment one spawned run inherits (issue #434): pi passes
+ * the caller's environment through untouched; Codex spawns inside a
+ * fresh managed home. The one resolver every spawn site goes
+ * through — the pipeline never spells agent specifics itself. */
+export function runnerEnv(
+  settings: AgentSettings,
+  environment: NodeJS.ProcessEnv,
+): NodeJS.ProcessEnv {
+  if ((settings.agent ?? piRunner.id) !== codexRunner.id) {
+    return environment;
+  }
+
+  return codexEnv(environment, settings);
 }
 
 export const AGENT_IDS: readonly string[] = [piRunner.id, codexRunner.id];

@@ -78,7 +78,7 @@ export interface WebEnrichmentSpawn {
   readonly grantDisplay: string;
   args(composed: string): readonly string[];
   stdin?(composed: string): string | undefined;
-  readonly env?: NodeJS.ProcessEnv | undefined;
+  env?(): NodeJS.ProcessEnv | undefined;
 }
 
 /** The agent spawn the enrichment run goes through, structurally:
@@ -207,7 +207,7 @@ export async function runWebEnrichment(
       () =>
         options.runAgent(spawn.command, spawn.args(composed), {
           cwd: run.dataRoot,
-          env: spawn.env ?? run.env,
+          env: spawn.env?.() ?? run.env,
           stdin: spawn.stdin?.(composed),
           timeoutMs: options.timeoutMs,
         }),

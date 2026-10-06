@@ -10,7 +10,7 @@
  */
 
 import { readFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { basename, dirname } from "node:path";
 import { AGENT_COMMAND_ENV } from "../cli/env.ts";
 import { unquote } from "../wiki/pages.ts";
 import {
@@ -80,9 +80,10 @@ export interface AgentSettings {
   /** Quota pre-flight mode for unattended scheduled runs. */
   readonly quotaPreflight?: "auto" | "off" | string;
   /** False opts out of the pi isolation flags (issue #118);
-   *  unset means isolated — the safe default. Agent-agnostic: the
-   *  setting becomes flags at the spawn site (agentArgs), so a
-   *  non-pi agent's settings simply omit it or opt out. */
+   *  unset means isolated — the safe default. The opt-out is
+   *  pi-only: the codex lane's managed-home isolation is
+   *  structural, and `isolate: false` there is a named settings
+   *  error. */
   readonly isolate?: boolean;
   /** Whitelisted skill dirs for isolated runs (issue #144),
    *  loaded additively via `--skill` even under `--no-skills`.
@@ -396,14 +397,53 @@ function validateAgentSetting(
     );
   }
 
-  if (agent === "codex" && values.has("provider")) {
+  if (agent === "codex") {
+    validateCodexSettings(values, lists, origin);
+  }
+}
+
+/** The Codex lane's settings contradictions, each a named error:
+ *  OpenAI models only, structural managed-home isolation, and a
+ *  skill whitelist representable as managed `.agents/skills` links. */
+function validateCodexSettings(
+  values: Map<SettingKey, string>,
+  lists: Partial<Record<ListKey, readonly string[]>>,
+  origin: string,
+): void {
+  if (values.has("provider")) {
     throw new Error(
       `invalid agent settings at ${origin}: codex runner accepts OpenAI models only; provider is unsupported`,
     );
   }
 
-  if (agent === "codex" && (lists[EXTENSIONS_KEY]?.length ?? 0) > 0) {
+  if ((values.get("model") ?? "").includes("/")) {
+    throw new Error(
+      `invalid agent settings at ${origin}: codex targets must be OpenAI model names, not provider/model`,
+    );
+  }
+
+  if (values.get("isolate") === "false") {
+    throw new Error(
+      `invalid agent settings at ${origin}: codex runner is always managed-home isolated; isolate: false is unsupported`,
+    );
+  }
+
+  if ((lists[EXTENSIONS_KEY]?.length ?? 0) > 0) {
     throw new UnsupportedRunnerCapabilityError("codex", "extensions");
+  }
+
+  const names = new Set<string>();
+
+  for (const skill of lists[SKILLS_KEY] ?? []) {
+    const name = basename(skill);
+
+    if (names.has(name)) {
+      throw new Error(
+        `invalid agent settings at ${origin}: codex isolate.skills entries must have distinct names; duplicate ${JSON.stringify(name)}`,
+      );
+    }
+
+    names.add(name);
   }
 }
 

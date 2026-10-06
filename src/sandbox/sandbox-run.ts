@@ -36,7 +36,7 @@ import {
   tryGit,
 } from "../data/git.ts";
 import { type AgentRunner, spawnAgent } from "../ingest/agent-run.ts";
-import { codexEnv } from "../ingest/agent-runner.ts";
+import { runnerEnv } from "../ingest/agent-runner.ts";
 import {
   type AgentSettings,
   formatInvocation,
@@ -220,10 +220,7 @@ async function agentStep(plan: SandboxPlan): Promise<AgentOutcome> {
       runner.args(settings, plan.options.prompt, { root: run.dataRoot }),
       {
         cwd: run.dataRoot,
-        env:
-          settings.agent === "codex"
-            ? codexEnv(run.env, settings)
-            : runner.env(run.env),
+        env: runnerEnv(settings, run.env),
         stdin: runner.stdin(plan.options.prompt),
         timeoutMs: plan.options.timeoutMs,
       },
