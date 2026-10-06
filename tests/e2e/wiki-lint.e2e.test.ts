@@ -168,6 +168,11 @@ describe("wiki-lint e2e", () => {
     ]);
     // stdin is closed (EOF, no bytes) — the pinned spawn semantic.
     expect(recording?.stdin).toBe("");
+    // The rendered invocation line, byte-exact (issue #434 golden):
+    // the door relabels the stage line, posture included.
+    expect(result.err).toContain(
+      `wiki-lint — invoking agent: ${join(repo.dataRoot, "stub-agent.mjs")} --model E2E-MODEL --thinking low (isolated)`,
+    );
   });
 
   it("keeps the lint edits uncommitted for the next cycle", async () => {

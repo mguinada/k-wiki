@@ -185,7 +185,11 @@ describe("wiki-query e2e", () => {
     expect(result.out).toContain(
       "Prefer RAG when the knowledge base changes often.",
     );
-    expect(result.err).toContain("wiki-query: invoking agent");
+    // The answer-only query line, byte-exact (issue #434 golden):
+    // no isolation posture on this surface.
+    expect(result.err).toContain(
+      `wiki-query: invoking agent: ${join(repo.dataRoot, "stub-agent.mjs")} --model E2E-MODEL --thinking low`,
+    );
     expect(result.err).toContain("wiki-query --file-last");
 
     expect(await wikiStatus(repo)).toBe("");
@@ -698,6 +702,15 @@ describe("wiki-query --web e2e", () => {
     expect(result.out).toContain("## Web calls audit");
     expect(result.err).toContain(
       "this run makes two agent passes and will be slower and may cost more",
+    );
+    // Both phases' rendered lines, byte-exact (issue #434 golden):
+    // the answer-only core line, then the grant line naming the web
+    // extension and its tool allowlist.
+    expect(result.err).toContain(
+      `wiki-query: invoking agent: ${join(repo.dataRoot, "stub-agent.mjs")} --model E2E-MODEL --thinking low`,
+    );
+    expect(result.err).toContain(
+      `wiki-query: web enrichment run: ${join(repo.dataRoot, "stub-agent.mjs")} -e npm:pi-web-access --tools web_search,source_check,fetch_content`,
     );
 
     const artifact = await readFile(

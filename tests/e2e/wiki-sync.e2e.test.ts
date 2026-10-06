@@ -477,6 +477,11 @@ describe("wiki-sync e2e", () => {
     expect(result.out).toContain(
       `**Lint:** full audit, report \`${lintPath}\``,
     );
+    // The cycle's lint stage invocation line, byte-exact (issue #434
+    // golden): the lint-window audit through the pi adapter.
+    expect(result.err).toContain(
+      `wiki-sync: lint — invoking agent: ${join(repo.dataRoot, "stub-agent.mjs")} --model E2E-MODEL --thinking low (isolated)`,
+    );
     expect(result.out).toMatch(
       /- \*\*Fidelity:\*\* ok — \d+ tokens? trace to origins, \d+ titles? match(?:es)? across \d+ pages?/,
     );

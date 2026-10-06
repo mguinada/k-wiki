@@ -242,6 +242,11 @@ describe("k-wiki propose e2e", () => {
     expect(result.out).toContain("proposed wiki/sandbox/when-to-prefer-rag.md");
     expect(result.err).toContain("door: agent (from .k-wiki.json)");
     expect(result.err).toContain("instance: default");
+    // The gate's rendered invocation line, byte-exact (issue #434
+    // golden): sandbox label, identity, and the isolation posture.
+    expect(result.err).toContain(
+      `sandbox: invoking agent: ${join(setup.checkout, "stub-agent.mjs")} --model E2E-MODEL --thinking low (isolated)`,
+    );
 
     const note = await readFile(
       join(setup.dataRoot, "wiki", "sandbox", "when-to-prefer-rag.md"),

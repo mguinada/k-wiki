@@ -261,3 +261,124 @@ describe("golden argv (pre-refactor capture, issue #434)", () => {
     ]);
   });
 });
+
+/**
+ * Golden rendered lines (pre-refactor capture, issue #434): the
+ * operator-facing invocation lines, captured from the pre-refactor
+ * pi rendering BEFORE the invocation-descriptor refactor. The
+ * refactor routes rendering through the descriptor + one rendering
+ * site; these fixtures and the per-operation e2e assertions must
+ * then match byte-for-byte. The tails are computed through the
+ * exported pre-refactor builders (formatAgentInvocation); the
+ * wrapper prefixes are the literals the spawn sites render. The
+ * lines whose composition is not exported pre-refactor are pinned
+ * byte-exact where they are produced: the answer-only query line by
+ * tests/query/wiki-query.test.ts, the enrichment run line by
+ * tests/query/web-enrich.test.ts, the ingest and expunge heartbeats
+ * by tests/ingest/wiki-ingest.test.ts, and every composed line
+ * end-to-end by the recording-stub e2e assertions.
+ */
+
+describe("golden rendered lines (pre-refactor capture, issue #434)", () => {
+  it("formatAgentInvocation: the plain isolated tail", () => {
+    expect(
+      formatAgentInvocation({
+        command: "pi",
+        model: "GLM-5.2",
+        reasoning: "high",
+      }),
+    ).toBe("pi --model GLM-5.2 --thinking high (isolated)");
+  });
+
+  it("formatAgentInvocation: the whitelisted tail with provider", () => {
+    expect(
+      formatAgentInvocation({
+        command: "pi",
+        model: "GLM-5.2",
+        reasoning: "high",
+        provider: "zai",
+        isolateSkills: ["/a", "/b"],
+        isolateExtensions: ["npm:x", "npm:y"],
+      }),
+    ).toBe(
+      "pi --provider zai --model GLM-5.2 --thinking high (isolated +2 skills +2 extensions)",
+    );
+  });
+
+  it("formatAgentInvocation: the not-isolated tail on the opt-out", () => {
+    expect(
+      formatAgentInvocation({
+        command: "pi",
+        model: "m",
+        reasoning: "h",
+        isolate: false,
+      }),
+    ).toBe("pi --model m --thinking h (not isolated)");
+  });
+
+  it("formatAgentInvocation: the not-isolated tail drops whitelist counts", () => {
+    expect(
+      formatAgentInvocation({
+        command: "pi",
+        model: "m",
+        reasoning: "h",
+        isolate: false,
+        isolateSkills: ["/a"],
+        isolateExtensions: ["npm:x"],
+      }),
+    ).toBe("pi --model m --thinking h (not isolated)");
+  });
+
+  it("the ingest line carries the mode and the audited tail", () => {
+    const tail = formatAgentInvocation({
+      command: "pi",
+      model: "GLM-5.2",
+      reasoning: "high",
+    });
+
+    expect(`wiki-ingest: mode full, invoking agent: ${tail}`).toBe(
+      "wiki-ingest: mode full, invoking agent: pi --model GLM-5.2 --thinking high (isolated)",
+    );
+  });
+
+  it("the lint-stage line keeps the em-dash label and the audited tail", () => {
+    const tail = formatAgentInvocation({
+      command: "pi",
+      model: "GLM-5.2",
+      reasoning: "high",
+    });
+
+    expect(`wiki-sync: lint \u2014 invoking agent: ${tail}`).toBe(
+      "wiki-sync: lint \u2014 invoking agent: pi --model GLM-5.2 --thinking high (isolated)",
+    );
+  });
+
+  it("the standalone lint door re-labels the stage line", () => {
+    const tail = formatAgentInvocation({
+      command: "pi",
+      model: "GLM-5.2",
+      reasoning: "high",
+    });
+
+    expect(
+      `wiki-sync: lint \u2014 invoking agent: ${tail}`.replaceAll(
+        "wiki-sync: lint",
+        "wiki-lint",
+      ),
+    ).toBe(
+      "wiki-lint \u2014 invoking agent: pi --model GLM-5.2 --thinking high (isolated)",
+    );
+  });
+
+  it("the propose line prefixes the sandbox label", () => {
+    const tail = formatAgentInvocation({
+      command: "pi",
+      model: "GLM-5.2",
+      reasoning: "high",
+    });
+
+    expect(`sandbox: invoking agent: ${tail}`).toBe(
+      "sandbox: invoking agent: pi --model GLM-5.2 --thinking high (isolated)",
+    );
+  });
+});

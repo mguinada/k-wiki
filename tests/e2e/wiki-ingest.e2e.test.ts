@@ -348,6 +348,11 @@ describe("wiki-ingest e2e", () => {
     ]);
     // stdin is closed (EOF, no bytes) — the pinned spawn semantic.
     expect(recording?.stdin).toBe("");
+    // The rendered invocation line, byte-exact (issue #434 golden):
+    // mode label, command, identity, and the isolation posture.
+    expect(result.err).toContain(
+      `wiki-ingest: mode full, invoking agent: ${join(repo.dataRoot, "stub-agent.mjs")} --model E2E-MODEL --thinking low (isolated)`,
+    );
     // The spawn passes the wrapper's environment through untouched:
     // the pipeline's own keys with values, nothing else leaks values.
     expect(recording?.env.NO_COLOR).toBe("1");
@@ -541,6 +546,9 @@ describe("wiki-ingest e2e", () => {
 
     expect(result.out).toContain("**Mode:** incremental");
     expect(result.out).toContain("~ Engineering/AI/RAG.md");
+    expect(result.err).toContain(
+      `wiki-ingest: mode incremental, invoking agent: ${join(repo.dataRoot, "stub-agent.mjs")} --model E2E-MODEL --thinking low (isolated)`,
+    );
 
     const prompt = await readFile(
       join(repo.dataRoot, "outputs", "stub-prompt.txt"),
@@ -1338,6 +1346,9 @@ describe("wiki-ingest expunge e2e (sync-driven)", () => {
     expect(result.out).toContain("Deleted:");
     expect(result.out).toContain("- wiki/concepts/cites.md");
     expect(result.err).toContain("wiki-ingest: expunge — 1 removed source");
+    expect(result.err).toContain(
+      `wiki-ingest: mode expunge, invoking agent: ${join(repo.dataRoot, "stub-agent.mjs")} --model E2E-MODEL --thinking low (isolated)`,
+    );
 
     const prompt = await readFile(
       join(repo.dataRoot, "outputs", "stub-prompt.txt"),
