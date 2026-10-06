@@ -149,6 +149,67 @@ export async function hashFile(path: string): Promise<string> {
     .digest("hex");
 }
 
+/** The recording prelude every wiring-recording stub agent embeds
+ *  (issue #434): one JSON line per invocation — the child argv, the
+ *  stdin content (empty: the wrapper closes stdin), a secret-safe
+ *  env projection (values only for the pipeline's own keys, names
+ *  only for everything else), and the spawn cwd — appended to
+ *  <cwd>/outputs/agent-recordings.jsonl. Embed at the top of a stub
+ *  source, right after the shebang; the imports are namespaced so
+ *  embedders keep their own. */
+export const STUB_RECORD_PRELUDE = `import { appendFile as __appendFile, mkdir as __mkdir } from "node:fs/promises";
+await __mkdir("outputs", { recursive: true });
+const __stdin = await new Promise((resolve) => {
+  let data = "";
+  process.stdin.setEncoding("utf8");
+  process.stdin.on("data", (chunk) => { data += chunk; });
+  process.stdin.on("end", () => resolve(data));
+  process.stdin.on("error", () => resolve(data));
+});
+const __safe = /^(NO_COLOR|PI_CODING_AGENT_DIR|KWIKI_[A-Z0-9_]+|HOME|PATH|PWD|TMPDIR|SHELL|USER|LANG|LC_ALL)$/;
+const __env = {};
+const __envPresent = {};
+for (const [key, value] of Object.entries(process.env)) {
+  if (__safe.test(key)) __env[key] = value ?? "";
+  else __envPresent[key] = true;
+}
+await __appendFile(
+  "outputs/agent-recordings.jsonl",
+  JSON.stringify({
+    argv: process.argv.slice(2),
+    stdin: __stdin,
+    env: __env,
+    envPresentKeys: Object.keys(__envPresent).sort(),
+    cwd: process.cwd(),
+  }) + "\\n",
+);
+`;
+
+/** One recorded stub-agent invocation (issue #434): the wiring the
+ *  pipeline handed the child, per run. */
+export interface AgentRecording {
+  readonly argv: readonly string[];
+  readonly stdin: string;
+  readonly env: Readonly<Record<string, string>>;
+  readonly envPresentKeys: readonly string[];
+  readonly cwd: string;
+}
+
+/** Parse the recordings the stub agents appended under <dir>/outputs. */
+export async function readAgentRecordings(
+  dir: string,
+): Promise<AgentRecording[]> {
+  const text = await readFile(
+    join(dir, "outputs", "agent-recordings.jsonl"),
+    "utf8",
+  );
+
+  return text
+    .trimEnd()
+    .split("\n")
+    .map((line) => JSON.parse(line) as AgentRecording);
+}
+
 /** Recursively collect POSIX-style relative file paths under root. */
 export async function collectFiles(
   root: string,

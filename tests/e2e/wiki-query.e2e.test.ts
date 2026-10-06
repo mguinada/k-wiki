@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, describe, expect, it } from "vitest";
-import { QUERY_SCRIPT, runCli } from "./helpers.ts";
+import {
+  QUERY_SCRIPT,
+  readAgentRecordings,
+  runCli,
+  STUB_RECORD_PRELUDE,
+} from "./helpers.ts";
 
 /**
  * wiki-query e2e: the real CLI as a child process, driving a stub
@@ -534,7 +539,7 @@ const DEFAULT_WEB_MESSAGES = [
 const webStub = (messages: object[]) => `#!/usr/bin/env node
 import { appendFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-
+${STUB_RECORD_PRELUDE}
 const args = process.argv.slice(2);
 
 if (args.includes("--mode")) {
@@ -724,6 +729,16 @@ describe("wiki-query --web e2e", () => {
       "web_search,source_check,fetch_content",
     );
     expect(webArgv).toContain("--no-extensions");
+
+    // The recording stub's per-run dump (issue #434): two spawns,
+    // both stdin-closed (EOF, no bytes), and the spawn env passed
+    // through untouched — the pi install root reaches the install
+    // probe.
+    const recordings = await readAgentRecordings(repo.dataRoot);
+
+    expect(recordings).toHaveLength(2);
+    expect(recordings[0]?.stdin).toBe("");
+    expect(recordings[1]?.env.PI_CODING_AGENT_DIR).toBe(piRoot);
 
     expect(await wikiStatus(repo)).toBe("");
   });

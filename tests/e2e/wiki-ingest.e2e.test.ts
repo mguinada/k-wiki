@@ -10,8 +10,10 @@ import {
   cleanupWorkspaces,
   collectFiles,
   INGEST_SCRIPT,
+  readAgentRecordings,
   repoRoot,
   runCli,
+  STUB_RECORD_PRELUDE,
   SYNC_SCRIPT,
 } from "./helpers.ts";
 
@@ -307,6 +309,48 @@ describe("wiki-ingest e2e", () => {
       "--no-extensions",
       "--no-skills",
     ]);
+  });
+
+  it("records the golden ingest wiring per run (issue #434)", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag" });
+
+    await writeFile(
+      join(repo.dataRoot, "stub-agent.mjs"),
+      `#!/usr/bin/env node\n${STUB_RECORD_PRELUDE}\nconsole.log("stub agent: sources processed; no contradictions; no unresolved questions");\n`,
+      { mode: 0o755 },
+    );
+
+    const result = await ingest(repo);
+
+    expect(result.code).toBe(0);
+
+    const recordings = await readAgentRecordings(repo.dataRoot);
+
+    expect(recordings).toHaveLength(1);
+
+    const recording = recordings[0];
+
+    // Golden ingest argv: ambient isolation, then identity, then the
+    // composed prompt as the --print payload. Byte-identical to the
+    // pre-refactor wiring (issue #434).
+    expect(recording?.argv).toEqual([
+      "--no-context-files",
+      "--no-extensions",
+      "--no-skills",
+      "--model",
+      "E2E-MODEL",
+      "--thinking",
+      "low",
+      "--print",
+      expect.stringContaining(
+        "You are maintaining a structured knowledge wiki",
+      ),
+    ]);
+    // stdin is closed (EOF, no bytes) — the pinned spawn semantic.
+    expect(recording?.stdin).toBe("");
+    // The spawn passes the wrapper's environment through untouched:
+    // the pipeline's own keys with values, nothing else leaks values.
+    expect(recording?.env.NO_COLOR).toBe("1");
   });
 
   it("passes the whitelisted --skill/-e flags on the child argv with the prompt verbatim (issue #144)", async () => {
