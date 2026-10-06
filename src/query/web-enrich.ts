@@ -77,6 +77,8 @@ export interface WebEnrichmentSpawn {
    *  web_search,source_check,fetch_content`. */
   readonly grantDisplay: string;
   args(composed: string): readonly string[];
+  stdin?(composed: string): string | undefined;
+  readonly env?: NodeJS.ProcessEnv | undefined;
 }
 
 /** The agent spawn the enrichment run goes through, structurally:
@@ -88,6 +90,7 @@ export type AgentSpawn = (
     cwd: string;
     env: NodeJS.ProcessEnv;
     timeoutMs?: number | undefined;
+    stdin?: string | undefined;
   },
 ) => Promise<{ stdout: string; stderr: string }>;
 
@@ -204,7 +207,8 @@ export async function runWebEnrichment(
       () =>
         options.runAgent(spawn.command, spawn.args(composed), {
           cwd: run.dataRoot,
-          env: run.env,
+          env: spawn.env ?? run.env,
+          stdin: spawn.stdin?.(composed),
           timeoutMs: options.timeoutMs,
         }),
     ));

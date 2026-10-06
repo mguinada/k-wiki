@@ -24,7 +24,7 @@ import {
   readPrompt,
   spawnAgent,
 } from "../ingest/agent-run.ts";
-
+import { codexEnv } from "../ingest/agent-runner.ts";
 import {
   type AgentSettings,
   formatInvocation,
@@ -152,6 +152,7 @@ async function spawnWithHeartbeat(
   options: QueryOptions,
   settings: AgentSettings,
   args: readonly string[],
+  prompt: string,
   runAgent: AgentRunner,
 ): Promise<string> {
   const { run } = options;
@@ -164,7 +165,11 @@ async function spawnWithHeartbeat(
     () =>
       runAgent(settings.command, args, {
         cwd: run.dataRoot,
-        env: run.env,
+        env:
+          settings.agent === "codex"
+            ? codexEnv(run.env, settings)
+            : runnerFor(settings).env(run.env),
+        stdin: runnerFor(settings).stdin(prompt),
         timeoutMs: options.timeoutMs,
       }),
   );
@@ -197,7 +202,9 @@ async function corePhase(
   const { run } = options;
   const promptText = await readPrompt(join(options.promptsDir, "query.md"));
   const composed = composeQueryPrompt(promptText, options.question);
-  const args = runnerFor(settings).answerArgs(settings, composed);
+  const args = runnerFor(settings).answerArgs(settings, composed, {
+    root: run.dataRoot,
+  });
   run.onProgress(
     `wiki-query: invoking agent: ${formatInvocation(
       // The answer-only surface omits the isolation posture: a run
@@ -206,7 +213,13 @@ async function corePhase(
     )}`,
   );
 
-  const stdout = await spawnWithHeartbeat(options, settings, args, runAgent);
+  const stdout = await spawnWithHeartbeat(
+    options,
+    settings,
+    args,
+    composed,
+    runAgent,
+  );
 
   run.onProgress("wiki-query: agent finished");
 
@@ -300,7 +313,14 @@ export async function runWikiQuery(
         command: settings.command,
         grantDisplay: runnerFor(settings).capabilities.web.grantArgs.join(" "),
         args: (composed: string) =>
-          runnerFor(settings).webEnrichArgs(settings, composed),
+          runnerFor(settings).webEnrichArgs(settings, composed, {
+            root: dataRoot,
+          }),
+        stdin: (composed: string) => runnerFor(settings).stdin(composed),
+        env:
+          settings.agent === "codex"
+            ? codexEnv(env, settings)
+            : runnerFor(settings).env(env),
       },
       question: options.question,
       promptText: await readPrompt(

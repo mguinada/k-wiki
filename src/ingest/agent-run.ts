@@ -12,6 +12,7 @@ import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { pluralized } from "../cli/shared.ts";
 import { changedPaths } from "../data/git.ts";
+import { codexEnv } from "./agent-runner.ts";
 import {
   type AgentSettings,
   type AgentTarget,
@@ -32,6 +33,7 @@ export type AgentRunner = (
     cwd: string;
     env: NodeJS.ProcessEnv;
     timeoutMs?: number | undefined;
+    stdin?: string | undefined;
   },
 ) => Promise<{ stdout: string; stderr: string }>;
 
@@ -60,6 +62,7 @@ export function spawnAgent(
     cwd: string;
     env: NodeJS.ProcessEnv;
     timeoutMs?: number | undefined;
+    stdin?: string | undefined;
   },
 ): Promise<{ stdout: string; stderr: string }> {
   const timeoutMs = options.timeoutMs ?? AGENT_TIMEOUT_MS;
@@ -68,8 +71,13 @@ export function spawnAgent(
     const child = spawn(command, [...args], {
       cwd: options.cwd,
       env: options.env,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: [options.stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"],
     });
+    if (options.stdin !== undefined) {
+      child.stdin?.write(options.stdin);
+      child.stdin?.end();
+    }
+
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     let bytes = 0;
@@ -97,8 +105,8 @@ export function spawnAgent(
       chunks.push(chunk);
     };
 
-    child.stdout.on("data", (chunk: Buffer) => collect(stdout, chunk));
-    child.stderr.on("data", (chunk: Buffer) => collect(stderr, chunk));
+    child.stdout?.on("data", (chunk: Buffer) => collect(stdout, chunk));
+    child.stderr?.on("data", (chunk: Buffer) => collect(stderr, chunk));
     child.on("error", (error: Error) => {
       clearTimeout(timer);
       reject(new Error(`agent ${command} could not start: ${error.message}`));
@@ -110,7 +118,24 @@ export function spawnAgent(
       const errText = Buffer.concat(stderr).toString("utf8");
 
       if (code === 0) {
-        resolve({ stdout: out, stderr: errText });
+        const outputIndex = args.findIndex(
+          (arg) => arg === "-o" || arg === "--output-last-message",
+        );
+        const outputPath = outputIndex < 0 ? undefined : args[outputIndex + 1];
+
+        if (outputPath === undefined) {
+          resolve({ stdout: out, stderr: errText });
+        } else {
+          readFile(outputPath, "utf8")
+            .then((report) => resolve({ stdout: report, stderr: errText }))
+            .catch((error: Error) =>
+              reject(
+                new Error(
+                  `agent did not write output report ${outputPath}: ${error.message}`,
+                ),
+              ),
+            );
+        }
 
         return;
       }
@@ -186,10 +211,14 @@ async function attemptTarget(
     const runner = runnerFor(targetSettings);
     const { stdout } = await options.runAgent(
       command,
-      runner.args(targetSettings, prompt),
+      runner.args(targetSettings, prompt, { root: options.root }),
       {
         cwd: options.root,
-        env: runner.env(options.environment),
+        env:
+          targetSettings.agent === "codex"
+            ? codexEnv(options.environment, targetSettings)
+            : runner.env(options.environment),
+        stdin: runner.stdin(prompt),
         timeoutMs: options.timeoutMs,
       },
     );

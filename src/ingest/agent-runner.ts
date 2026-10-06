@@ -18,8 +18,16 @@
  * settings loader in agent-settings.ts.
  */
 
-import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { basename, join, resolve } from "node:path";
 import { pathExists, pluralized } from "../cli/shared.ts";
 import { expandHome } from "../sync/config.ts";
 import type {
@@ -36,6 +44,19 @@ export type RunnerIdentity = Pick<
   "command" | "model" | "reasoning" | "provider" | "isolate"
 >;
 
+/** The data-repository context a runner needs for a concrete CLI invocation. */
+export interface RunnerContext {
+  readonly root: string;
+}
+
+/** Codex refuses capability categories it cannot implement safely. */
+export class UnsupportedRunnerCapabilityError extends Error {
+  constructor(agent: string, category: string) {
+    super(`${agent} runner does not support ${category}`);
+    this.name = "UnsupportedRunnerCapabilityError";
+  }
+}
+
 /** The per-agent Runner adapter (issue #434): everything the
  *  pipeline may assume about a coding-agent CLI, named here. */
 export interface AgentRunner {
@@ -45,20 +66,35 @@ export interface AgentRunner {
   /** The spawn argv for one non-interactive run — ambient isolation,
    *  whitelist, provider identity, prompt payload (the ingest, lint,
    *  and propose shape). */
-  args(settings: AgentSettings, prompt: string): readonly string[];
+  args(
+    settings: AgentSettings,
+    prompt: string,
+    context?: RunnerContext,
+  ): readonly string[];
 
   /** The query core phase's argv: ambient isolation, identity,
    *  prompt — never the whitelist (the query spawn grants nothing
    *  beyond its own phase-2 argv). */
-  answerArgs(settings: AgentSettings, prompt: string): readonly string[];
+  answerArgs(
+    settings: AgentSettings,
+    prompt: string,
+    context?: RunnerContext,
+  ): readonly string[];
 
   /** The query enrichment phase's argv: ambient isolation, the web
    *  grant, the JSON output mode, identity, prompt. */
-  webEnrichArgs(identity: RunnerIdentity, composed: string): readonly string[];
+  webEnrichArgs(
+    identity: RunnerIdentity,
+    composed: string,
+    context?: RunnerContext,
+  ): readonly string[];
 
   /** The environment a spawned run inherits: pi passes the caller's
    *  environment through untouched. */
   env(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv;
+
+  /** Prompt bytes for stdin. pi carries its prompt in argv; Codex reads stdin. */
+  stdin(prompt: string): string | undefined;
 
   /** The invocation descriptor for one run: the structured fields
    *  the rendering site formats (issue #434). */
@@ -246,6 +282,8 @@ export const piRunner: AgentRunner = {
 
   env: (environment) => environment,
 
+  stdin: () => undefined,
+
   invocation: (settings, options) => ({
     agent: "pi",
     command: options?.command ?? settings.command,
@@ -271,7 +309,128 @@ export const piRunner: AgentRunner = {
 };
 
 /** The known agent ids, for the settings validator's named errors. */
-export const AGENT_IDS: readonly string[] = [piRunner.id];
+/** A temporary output file outside the data repo: Codex's -o report must
+ * not appear as an untracked wiki change for the deterministic guardrails. */
+function codexReportPath(): string {
+  return join(tmpdir(), `k-wiki-codex-${process.pid}-${Date.now()}.txt`);
+}
+
+function codexContext(context: RunnerContext | undefined): RunnerContext {
+  if (context === undefined) {
+    throw new Error("codex runner needs a data-repository context");
+  }
+
+  return context;
+}
+
+/** Codex's managed home is built per spawn. Redirecting HOME as well as
+ * CODEX_HOME closes the user-scope skill-discovery path. The only linked
+ * skills are the configured whitelist; auth is copied, never linked. */
+function codexManagedHome(
+  environment: NodeJS.ProcessEnv,
+  settings: AgentSettings,
+): string {
+  const home = mkdtempSync(join(tmpdir(), "k-wiki-codex-home-"));
+  const skills = join(home, ".agents", "skills");
+
+  mkdirSync(skills, { recursive: true });
+  for (const skill of settings.isolateSkills ?? []) {
+    const link = join(skills, basename(skill));
+    symlinkSync(skill, link, "dir");
+  }
+
+  writeFileSync(
+    join(home, "config.toml"),
+    'web_search = "disabled"\napproval_policy = "never"\n',
+  );
+  const sourceHome = environment.CODEX_HOME ?? join(homedir(), ".codex");
+  const sourceAuth = join(sourceHome, "auth.json");
+
+  if (existsSync(sourceAuth)) {
+    cpSync(sourceAuth, join(home, "auth.json"));
+  }
+
+  return home;
+}
+
+/** Codex is OpenAI-native only. Its prompt is deliberately absent from argv:
+ * the shared spawner feeds it on stdin and reads -o after exit. */
+export const codexRunner: AgentRunner = {
+  id: "codex",
+
+  args: (settings, _prompt, context) => {
+    const { root } = codexContext(context);
+    return [
+      "exec",
+      "-C",
+      root,
+      "--sandbox",
+      "workspace-write",
+      "--ephemeral",
+      "--skip-git-repo-check",
+      "-m",
+      settings.model,
+      "-c",
+      `model_reasoning_effort=${settings.reasoning}`,
+      "-o",
+      codexReportPath(),
+    ];
+  },
+
+  answerArgs: (settings, prompt, context) =>
+    codexRunner.args(settings, prompt, context),
+
+  webEnrichArgs: (settings, prompt, context) => [
+    ...codexRunner.args(settings, prompt, context),
+    "--web",
+  ],
+
+  env: (environment) => {
+    // The settings object is unavailable at this interface point; the spawn
+    // sites pass the managed environment created through prepareCodexEnv.
+    return environment;
+  },
+
+  stdin: (prompt) => prompt,
+
+  invocation: (settings, options) => ({
+    agent: "codex",
+    command: options?.command ?? settings.command,
+    model: settings.model,
+    reasoning: settings.reasoning,
+    ...(options?.posture === false
+      ? {}
+      : {
+          posture: `managed-home isolated${
+            (settings.isolateSkills?.length ?? 0) > 0
+              ? ` +${pluralized(settings.isolateSkills?.length ?? 0, "skill")}`
+              : ""
+          }; sandbox workspace-write; web disabled; auth seeded`,
+        }),
+  }),
+
+  capabilities: {
+    web: { grantArgs: ["--web"], installed: async () => true },
+    credentials: {
+      defaultAuthStorePath: (home = homedir()) =>
+        join(home, ".codex", "auth.json"),
+    },
+  },
+
+  report: (stdout) => stdout,
+};
+
+/** Build Codex's managed environment after settings parsing. Exported for
+ * model-free conformance tests and for every spawn site. */
+export function codexEnv(
+  environment: NodeJS.ProcessEnv,
+  settings: AgentSettings,
+): NodeJS.ProcessEnv {
+  const home = codexManagedHome(environment, settings);
+  return { ...environment, CODEX_HOME: home, HOME: home };
+}
+
+export const AGENT_IDS: readonly string[] = [piRunner.id, codexRunner.id];
 
 /** The adapter for one `agent:` settings value: a named error for
  *  anything unknown — a typo must never silently change the agent. */
@@ -280,7 +439,13 @@ export function runnerForAgent(id: string): AgentRunner {
     return piRunner;
   }
 
-  throw new Error(`unknown agent ${JSON.stringify(id)} — known agents: pi`);
+  if (id === codexRunner.id) {
+    return codexRunner;
+  }
+
+  throw new Error(
+    `unknown agent ${JSON.stringify(id)} — known agents: ${AGENT_IDS.join(", ")}`,
+  );
 }
 
 /** Resolve skill entries against the settings file's directory,

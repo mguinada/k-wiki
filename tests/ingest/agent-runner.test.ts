@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  codexRunner,
   defaultAuthStorePath,
   ISOLATION_FLAGS,
   isolationLabel,
@@ -835,5 +836,49 @@ describe("invocation descriptor (issue #434)", () => {
         reasoning: "low",
       }),
     ).toBe("pi --model M --thinking low");
+  });
+});
+
+describe("codex Runner adapter", () => {
+  const settings = {
+    command: "codex",
+    agent: "codex",
+    model: "gpt-5.6-terra",
+    reasoning: "high",
+  } as const;
+
+  it("maps settings to Codex exec argv with report capture", () => {
+    const args = codexRunner.args(settings, "PROMPT", { root: "/data" });
+
+    expect(args.slice(0, 12)).toEqual([
+      "exec",
+      "-C",
+      "/data",
+      "--sandbox",
+      "workspace-write",
+      "--ephemeral",
+      "--skip-git-repo-check",
+      "-m",
+      "gpt-5.6-terra",
+      "-c",
+      "model_reasoning_effort=high",
+      "-o",
+    ]);
+  });
+
+  it("keeps the Codex prompt off argv for stdin delivery", () => {
+    expect(
+      codexRunner.args(settings, "PROMPT", { root: "/data" }),
+    ).not.toContain("PROMPT");
+  });
+
+  it("delivers the prompt on stdin", () => {
+    expect(codexRunner.stdin("PROMPT")).toBe("PROMPT");
+  });
+
+  it("adds the query-only web grant only to enrichment argv", () => {
+    expect(
+      codexRunner.webEnrichArgs(settings, "PROMPT", { root: "/data" }),
+    ).toContain("--web");
   });
 });

@@ -998,7 +998,11 @@ model-specific stays in settings (`targets`, `reasoning`): switching
 a knob is a settings edit, never code. The wrapper renders the
 operator-facing `invoking agent:` line from the adapter's structured
 invocation descriptor through one rendering site, so every surface
-formats identity and isolation posture identically.
+formats identity and isolation posture identically. See
+[Agent Runner adapters](docs/references/agent-adapters.md) for the Codex
+OpenAI-only lane, its managed-home isolation, and the model-free operator
+smoke probe. The shipped settings keep the Pi lane active; this documentation
+does not enable Codex for an instance.
 
 `targets` is an ordered provider/model list: the first entry is the
 primary target, and when a target fails before producing any kept

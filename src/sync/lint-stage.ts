@@ -27,6 +27,7 @@ import {
   readPrompt,
   spawnAgent,
 } from "../ingest/agent-run.ts";
+import { codexEnv } from "../ingest/agent-runner.ts";
 import {
   type AgentSettings,
   type AgentTarget,
@@ -150,6 +151,8 @@ async function invokeLintAgent(
   options: LintOptions,
   command: string,
   args: readonly string[],
+  stdin: string | undefined,
+  env: NodeJS.ProcessEnv,
 ): Promise<LintAgentRun> {
   const startedAt = run.now().getTime();
   const heartbeat = setInterval(() => {
@@ -164,7 +167,8 @@ async function invokeLintAgent(
   try {
     ({ stdout } = await (options.runAgent ?? spawnAgent)(command, args, {
       cwd: run.dataRoot,
-      env: run.env,
+      env,
+      stdin,
       timeoutMs: options.timeoutMs,
     }));
   } catch (caught) {
@@ -351,7 +355,8 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
     windowPages,
     wikiDir: run.wikiDir,
   });
-  const args = runnerFor(settings).args(settings, promptText);
+  const runner = runnerFor(settings);
+  const args = runner.args(settings, promptText, { root: dataRoot });
   const pre = options.pre ?? (await capturePreRunState(dataRoot, env));
 
   // A launcher that already resolved the agent binary (issue #399)
@@ -370,6 +375,8 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
     options,
     command,
     args,
+    runner.stdin(promptText),
+    settings.agent === "codex" ? codexEnv(env, settings) : runner.env(env),
   );
 
   const post = await runGuardrails(dataRoot, env, pre);
