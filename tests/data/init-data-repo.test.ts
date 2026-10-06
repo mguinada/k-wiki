@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { runGit } from "../../src/data/git.ts";
 import {
+  refreshDataRepoContract,
   seedDataRepo,
   seedStandingIgnores,
 } from "../../src/data/init-data-repo.ts";
@@ -469,5 +470,145 @@ describe("seedDataRepo meta contract (issue #74)", () => {
     expect(await readFile(join(dataRoot, "wiki/AGENTS.md"), "utf8")).toBe(
       "# wiki contract\n",
     );
+  });
+});
+
+describe("refreshDataRepoContract (issue #433)", () => {
+  it("refreshes a domain data repo's contract copy to byte-match the canonical contract", async () => {
+    const repoRoot = await makeCodeRepoFixture();
+    const dataRoot = await makeTempDir();
+
+    await seedDataRepo({ dataRoot, repoRoot, env: GIT_ENV });
+    await writeFile(
+      join(repoRoot, "wiki", "AGENTS.md"),
+      "# wiki contract, evolved\n",
+    );
+    await refreshDataRepoContract({ dataRoot, repoRoot, env: GIT_ENV });
+
+    expect(await readFile(join(dataRoot, "wiki/AGENTS.md"), "utf8")).toBe(
+      "# wiki contract, evolved\n",
+    );
+  });
+
+  it("refreshes a meta data repo's contract copy from the canonical meta contract", async () => {
+    const repoRoot = await makeCodeRepoFixture();
+    const dataRoot = await makeTempDir();
+
+    await seedDataRepo({ dataRoot, repoRoot, env: GIT_ENV, meta: true });
+    await writeFile(
+      join(repoRoot, "wiki", "AGENTS.meta.md"),
+      "# meta contract, evolved\n",
+    );
+    await refreshDataRepoContract({
+      dataRoot,
+      repoRoot,
+      env: GIT_ENV,
+      meta: true,
+    });
+
+    expect(await readFile(join(dataRoot, "wiki/AGENTS.md"), "utf8")).toBe(
+      "# meta contract, evolved\n",
+    );
+  });
+
+  it('returns "refreshed" when the copy changed', async () => {
+    const repoRoot = await makeCodeRepoFixture();
+    const dataRoot = await makeTempDir();
+
+    await seedDataRepo({ dataRoot, repoRoot, env: GIT_ENV });
+    await writeFile(join(repoRoot, "wiki", "AGENTS.md"), "# evolved\n");
+
+    const result = await refreshDataRepoContract({
+      dataRoot,
+      repoRoot,
+      env: GIT_ENV,
+    });
+
+    expect(result).toBe("refreshed");
+  });
+
+  it('returns "unchanged" and makes no commit when the copy already matches', async () => {
+    const repoRoot = await makeCodeRepoFixture();
+    const dataRoot = await makeTempDir();
+
+    await seedDataRepo({ dataRoot, repoRoot, env: GIT_ENV });
+
+    const before = (
+      await git(dataRoot, "rev-list", "--count", "HEAD")
+    ).stdout.trim();
+
+    const result = await refreshDataRepoContract({
+      dataRoot,
+      repoRoot,
+      env: GIT_ENV,
+    });
+
+    const after = (
+      await git(dataRoot, "rev-list", "--count", "HEAD")
+    ).stdout.trim();
+
+    expect(`${result}:${after}`).toBe(`unchanged:${before}`);
+  });
+
+  it("commits the refreshed copy", async () => {
+    const repoRoot = await makeCodeRepoFixture();
+    const dataRoot = await makeTempDir();
+
+    await seedDataRepo({ dataRoot, repoRoot, env: GIT_ENV });
+    await writeFile(join(repoRoot, "wiki", "AGENTS.md"), "# evolved\n");
+    await refreshDataRepoContract({ dataRoot, repoRoot, env: GIT_ENV });
+
+    const { stdout } = await git(dataRoot, "status", "--porcelain");
+
+    expect(stdout).toBe("");
+  });
+
+  it("refuses an uninitialized target with a named error", async () => {
+    const dataRoot = await makeTempDir();
+
+    await expect(
+      refreshDataRepoContract({
+        dataRoot,
+        repoRoot: await makeCodeRepoFixture(),
+        env: GIT_ENV,
+      }),
+    ).rejects.toThrow(
+      "is not a seeded data repo; refusing to refresh the contract copy — run data:init first",
+    );
+  });
+
+  it("refuses a target with an uncommitted contract-copy change", async () => {
+    const repoRoot = await makeCodeRepoFixture();
+    const dataRoot = await makeTempDir();
+
+    await seedDataRepo({ dataRoot, repoRoot, env: GIT_ENV });
+    await writeFile(
+      join(dataRoot, "wiki", "AGENTS.md"),
+      "hand-edited derived copy\n",
+    );
+    await writeFile(join(repoRoot, "wiki", "AGENTS.md"), "# evolved\n");
+
+    await expect(
+      refreshDataRepoContract({ dataRoot, repoRoot, env: GIT_ENV }),
+    ).rejects.toThrow(
+      "has uncommitted changes to wiki/AGENTS.md; refusing to refresh the contract copy",
+    );
+  });
+
+  it("ignores uncommitted changes elsewhere when refreshing", async () => {
+    const repoRoot = await makeCodeRepoFixture();
+    const dataRoot = await makeTempDir();
+
+    await seedDataRepo({ dataRoot, repoRoot, env: GIT_ENV });
+    await writeFile(join(dataRoot, "wiki", "index.md"), "# hand edit\n");
+    await writeFile(join(repoRoot, "wiki", "AGENTS.md"), "# evolved\n");
+
+    const result = await refreshDataRepoContract({
+      dataRoot,
+      repoRoot,
+      env: GIT_ENV,
+    });
+
+    expect(result).toBe("refreshed");
   });
 });
