@@ -3,6 +3,12 @@
 # nothing is hardcoded. Top-level `key: value` scalars only, plus
 # comma-separated list settings.
 
+# The Runner adapter serving this file (issue #434): the agent CLI's
+# flag language (argv/env, isolation, whitelist, web grant,
+# credential probe) lives behind it. Default and only adapter today:
+# pi. An unknown value is a named settings error.
+agent: pi
+
 command: pi        # agent CLI, run non-interactively in the data repo
 # Ordered ingest targets: a failed target is retried only before it
 # produces a kept output surface. The first target is the primary.

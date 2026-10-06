@@ -38,8 +38,8 @@ import {
 import { type AgentRunner, spawnAgent } from "../ingest/agent-run.ts";
 import {
   type AgentSettings,
-  agentArgs,
-  formatAgentInvocation,
+  formatInvocation,
+  runnerFor,
 } from "../ingest/agent-settings.ts";
 import { capturePreRunState, type PreRunState } from "../ingest/guardrails.ts";
 import type { WikiInstance } from "../sync/instance.ts";
@@ -206,14 +206,16 @@ interface AgentOutcome {
 async function agentStep(plan: SandboxPlan): Promise<AgentOutcome> {
   const { run, settings } = plan.options;
 
-  run.onProgress(`sandbox: invoking agent: ${formatAgentInvocation(settings)}`);
+  run.onProgress(
+    `sandbox: invoking agent: ${formatInvocation(runnerFor(settings).invocation(settings))}`,
+  );
 
   let error: unknown;
 
   try {
     await (plan.options.runAgent ?? spawnAgent)(
       settings.command,
-      agentArgs(settings, plan.options.prompt),
+      runnerFor(settings).args(settings, plan.options.prompt),
       { cwd: run.dataRoot, env: run.env, timeoutMs: plan.options.timeoutMs },
     );
   } catch (caught) {

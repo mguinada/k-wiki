@@ -4,7 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, describe, expect, it } from "vitest";
-import { K_WIKI_SCRIPT, repoRoot, runCli } from "./helpers.ts";
+import {
+  K_WIKI_SCRIPT,
+  readAgentRecordings,
+  repoRoot,
+  runCli,
+  STUB_RECORD_PRELUDE,
+} from "./helpers.ts";
 
 /**
  * propose e2e (issue #340): the agent write verb as a real k-wiki
@@ -242,6 +248,11 @@ describe("k-wiki propose e2e", () => {
     expect(result.out).toContain("proposed wiki/sandbox/when-to-prefer-rag.md");
     expect(result.err).toContain("door: agent (from .k-wiki.json)");
     expect(result.err).toContain("instance: default");
+    // The gate's rendered invocation line, byte-exact (issue #434
+    // golden): sandbox label, identity, and the isolation posture.
+    expect(result.err).toContain(
+      `sandbox: invoking agent: ${join(setup.checkout, "stub-agent.mjs")} --model E2E-MODEL --thinking low (isolated)`,
+    );
 
     const note = await readFile(
       join(setup.dataRoot, "wiki", "sandbox", "when-to-prefer-rag.md"),
@@ -279,6 +290,63 @@ describe("k-wiki propose e2e", () => {
     );
 
     expect(status).toBe("");
+  });
+
+  it("records the golden gate wiring per run (issue #434)", async () => {
+    const setup = await makeSetup();
+
+    await bind(setup);
+    await writeFile(join(setup.project, "note.md"), NOTE_FILE_BODY);
+    // The accept-gate reverts every non-sandbox write inside the data
+    // repo, so the stub records to the checkout instead — outside the
+    // gate's revert surface, same recorded protocol.
+    await mkdir(join(setup.checkout, "outputs"), { recursive: true });
+    await writeFile(
+      join(setup.checkout, "stub-agent.mjs"),
+      [
+        "#!/usr/bin/env node",
+        STUB_RECORD_PRELUDE.replace(
+          '"outputs/agent-recordings.jsonl"',
+          JSON.stringify(
+            join(setup.checkout, "outputs", "agent-recordings.jsonl"),
+          ),
+        ),
+        STUB_AGENT.replace("#!/usr/bin/env node\n", ""),
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+
+    const result = await runCli(
+      K_WIKI_SCRIPT,
+      ["propose", "when-to-prefer-rag", "note.md"],
+      { cwd: setup.project },
+    );
+
+    expect(result.code).toBe(0);
+
+    const recordings = await readAgentRecordings(setup.checkout);
+
+    expect(recordings).toHaveLength(1);
+
+    const recording = recordings[0];
+
+    // Golden gate argv: ambient isolation, identity, then the propose
+    // prompt (target path + fenced note) as the --print payload.
+    expect(recording?.argv).toEqual([
+      "--no-context-files",
+      "--no-extensions",
+      "--no-skills",
+      "--model",
+      "E2E-MODEL",
+      "--thinking",
+      "low",
+      "--print",
+      expect.stringContaining(
+        "Target path: wiki/sandbox/when-to-prefer-rag.md",
+      ),
+    ]);
+    expect(recording?.stdin).toBe("");
+    expect(recording?.env.NO_COLOR).toBe("1");
   });
 
   it("reverts a main-tree write and fails loudly", async () => {

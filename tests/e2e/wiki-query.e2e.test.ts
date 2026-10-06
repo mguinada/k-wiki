@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, describe, expect, it } from "vitest";
-import { QUERY_SCRIPT, runCli } from "./helpers.ts";
+import {
+  QUERY_SCRIPT,
+  readAgentRecordings,
+  runCli,
+  STUB_RECORD_PRELUDE,
+} from "./helpers.ts";
 
 /**
  * wiki-query e2e: the real CLI as a child process, driving a stub
@@ -180,7 +185,11 @@ describe("wiki-query e2e", () => {
     expect(result.out).toContain(
       "Prefer RAG when the knowledge base changes often.",
     );
-    expect(result.err).toContain("wiki-query: invoking agent");
+    // The answer-only query line, byte-exact (issue #434 golden):
+    // no isolation posture on this surface.
+    expect(result.err).toContain(
+      `wiki-query: invoking agent: ${join(repo.dataRoot, "stub-agent.mjs")} --model E2E-MODEL --thinking low`,
+    );
     expect(result.err).toContain("wiki-query --file-last");
 
     expect(await wikiStatus(repo)).toBe("");
@@ -534,7 +543,7 @@ const DEFAULT_WEB_MESSAGES = [
 const webStub = (messages: object[]) => `#!/usr/bin/env node
 import { appendFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-
+${STUB_RECORD_PRELUDE}
 const args = process.argv.slice(2);
 
 if (args.includes("--mode")) {
@@ -694,6 +703,15 @@ describe("wiki-query --web e2e", () => {
     expect(result.err).toContain(
       "this run makes two agent passes and will be slower and may cost more",
     );
+    // Both phases' rendered lines, byte-exact (issue #434 golden):
+    // the answer-only core line, then the grant line naming the web
+    // extension and its tool allowlist.
+    expect(result.err).toContain(
+      `wiki-query: invoking agent: ${join(repo.dataRoot, "stub-agent.mjs")} --model E2E-MODEL --thinking low`,
+    );
+    expect(result.err).toContain(
+      `wiki-query: web enrichment run: ${join(repo.dataRoot, "stub-agent.mjs")} -e npm:pi-web-access --tools web_search,source_check,fetch_content`,
+    );
 
     const artifact = await readFile(
       join(repo.outputsDir, "last-query.md"),
@@ -724,6 +742,16 @@ describe("wiki-query --web e2e", () => {
       "web_search,source_check,fetch_content",
     );
     expect(webArgv).toContain("--no-extensions");
+
+    // The recording stub's per-run dump (issue #434): two spawns,
+    // both stdin-closed (EOF, no bytes), and the spawn env passed
+    // through untouched — the pi install root reaches the install
+    // probe.
+    const recordings = await readAgentRecordings(repo.dataRoot);
+
+    expect(recordings).toHaveLength(2);
+    expect(recordings[0]?.stdin).toBe("");
+    expect(recordings[1]?.env.PI_CODING_AGENT_DIR).toBe(piRoot);
 
     expect(await wikiStatus(repo)).toBe("");
   });

@@ -3,7 +3,13 @@ import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, describe, expect, it } from "vitest";
-import { makeStubDataRepo, repoRoot, runCli } from "./helpers.ts";
+import {
+  makeStubDataRepo,
+  readAgentRecordings,
+  repoRoot,
+  runCli,
+  STUB_RECORD_PRELUDE,
+} from "./helpers.ts";
 
 /**
  * wiki-lint e2e: the standalone lint door as a real child process,
@@ -108,6 +114,65 @@ describe("wiki-lint e2e", () => {
     expect(result.out).toContain("# wiki-lint digest");
     expect(result.out).toContain("lint: all pages audited");
     expect(report).toBe("# lint report\n");
+  });
+
+  it("records the golden lint wiring per run (issue #434)", async () => {
+    const repo = await makeStubDataRepo({
+      stubAgent: [
+        "#!/usr/bin/env node",
+        `import { writeFile } from "node:fs/promises";`,
+        STUB_RECORD_PRELUDE,
+        `const promptIndex = process.argv.indexOf("--print");`,
+        `const prompt = promptIndex === -1 ? "" : process.argv[promptIndex + 1];`,
+        `const reportPath = prompt.match(/outputs\\/lint-\\d{4}-\\d{2}-\\d{2}(-full)?\\.md/)?.[0];`,
+        "if (reportPath === undefined) process.exit(6);",
+        `await writeFile(reportPath, "# lint report\\n");`,
+        `console.log("lint: all pages audited, no problems");`,
+        "",
+      ].join("\n"),
+      prefix: "k-wiki-lint-e2e-",
+      model: "E2E-MODEL",
+    });
+
+    tempDirs.push(repo.tmp);
+
+    const result = await runLint({
+      dataRoot: repo.dataRoot,
+      rawDir: repo.rawDir,
+      settingsPath: repo.settingsPath,
+      reportFile: join(repo.dataRoot, repo.reportPath),
+      fullReportFile: join(repo.dataRoot, repo.fullReportPath),
+    });
+
+    expect(result.code).toBe(0);
+
+    const recordings = await readAgentRecordings(repo.dataRoot);
+
+    expect(recordings).toHaveLength(1);
+
+    const recording = recordings[0];
+
+    // Golden lint argv: ambient isolation, then identity, then the
+    // composed audit prompt as the --print payload. Byte-identical
+    // to the pre-refactor wiring (issue #434).
+    expect(recording?.argv).toEqual([
+      "--no-context-files",
+      "--no-extensions",
+      "--no-skills",
+      "--model",
+      "E2E-MODEL",
+      "--thinking",
+      "low",
+      "--print",
+      expect.stringContaining("Audit the wiki"),
+    ]);
+    // stdin is closed (EOF, no bytes) — the pinned spawn semantic.
+    expect(recording?.stdin).toBe("");
+    // The rendered invocation line, byte-exact (issue #434 golden):
+    // the door relabels the stage line, posture included.
+    expect(result.err).toContain(
+      `wiki-lint — invoking agent: ${join(repo.dataRoot, "stub-agent.mjs")} --model E2E-MODEL --thinking low (isolated)`,
+    );
   });
 
   it("keeps the lint edits uncommitted for the next cycle", async () => {

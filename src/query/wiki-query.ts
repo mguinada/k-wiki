@@ -18,7 +18,6 @@
 import { join } from "node:path";
 import { withHeartbeat } from "../cli/progress.ts";
 import type { RunContext } from "../cli/run-context.ts";
-import { pathExists } from "../cli/shared.ts";
 import { statusSince } from "../data/git.ts";
 import {
   type AgentRunner,
@@ -28,10 +27,9 @@ import {
 
 import {
   type AgentSettings,
-  ISOLATION_FLAGS,
+  formatInvocation,
   loadAgentSettings,
-  npmExtensionDir,
-  piInstallRootFromEnv,
+  runnerFor,
 } from "../ingest/agent-settings.ts";
 import {
   capturePreRunState,
@@ -47,19 +45,9 @@ import {
   enrichmentArtifact,
   GAP_HINT_LINE,
   WEB_ENRICH_PROMPT_FILE,
-  WEB_EXTENSION_SOURCE,
   WEB_UNAVAILABLE_WARNING,
   withGapHint,
 } from "./web-enrich.ts";
-
-/** Whether pi-web-access is installed under the pi install root. */
-async function webExtensionInstalled(
-  environment: NodeJS.ProcessEnv,
-): Promise<boolean> {
-  return pathExists(
-    npmExtensionDir(WEB_EXTENSION_SOURCE, piInstallRootFromEnv(environment)),
-  );
-}
 
 /**
  * Compose the agent message: the query prompt, the question, and the
@@ -121,24 +109,6 @@ export interface QueryResult {
   /** A degraded `--web` run's warning, for the caller to render in
    *  the warning color; undefined otherwise. */
   readonly warning?: string;
-}
-
-/** The agent CLI argument list for one answer-only run. The ambient
- *  isolation flags close the ambient hole: no extension is loadable
- *  unless this run's argv grants it (the `--web` grant appends to
- *  the phase-2 spawn path only). `isolate: false` is the documented
- *  operator opt-out, as for ingest and lint. */
-function queryAgentArgs(settings: AgentSettings, composed: string): string[] {
-  return [
-    ...(settings.isolate === false ? [] : [...ISOLATION_FLAGS]),
-    ...(settings.provider ? ["--provider", settings.provider] : []),
-    "--model",
-    settings.model,
-    "--thinking",
-    settings.reasoning,
-    "--print",
-    composed,
-  ];
 }
 
 /** Fail the run when the answer-only contract was violated: revert, then throw. */
@@ -227,13 +197,13 @@ async function corePhase(
   const { run } = options;
   const promptText = await readPrompt(join(options.promptsDir, "query.md"));
   const composed = composeQueryPrompt(promptText, options.question);
-  const args = queryAgentArgs(settings, composed);
-  const providerFlag = settings.provider
-    ? ` --provider ${settings.provider}`
-    : "";
-
+  const args = runnerFor(settings).answerArgs(settings, composed);
   run.onProgress(
-    `wiki-query: invoking agent: ${settings.command}${providerFlag} --model ${settings.model} --thinking ${settings.reasoning}`,
+    `wiki-query: invoking agent: ${formatInvocation(
+      // The answer-only surface omits the isolation posture: a run
+      // that cannot write needs no isolation signal (issue #434).
+      runnerFor(settings).invocation(settings, { posture: false }),
+    )}`,
   );
 
   const stdout = await spawnWithHeartbeat(options, settings, args, runAgent);
@@ -268,7 +238,8 @@ export async function runWikiQuery(
   onProgress(`wiki-query: data repo ${dataRoot}`);
 
   const webRequested = options.web === true;
-  const webAvailable = webRequested && (await webExtensionInstalled(env));
+  const webAvailable =
+    webRequested && (await runnerFor(settings).capabilities.web.installed(env));
 
   if (webRequested && webAvailable) {
     onProgress(
@@ -325,8 +296,12 @@ export async function runWikiQuery(
       answer: coreAnswer,
     },
     {
-      identity: settings,
-      isolationFlags: settings.isolate === false ? [] : [...ISOLATION_FLAGS],
+      spawn: {
+        command: settings.command,
+        grantDisplay: runnerFor(settings).capabilities.web.grantArgs.join(" "),
+        args: (composed: string) =>
+          runnerFor(settings).webEnrichArgs(settings, composed),
+      },
       question: options.question,
       promptText: await readPrompt(
         join(options.promptsDir, WEB_ENRICH_PROMPT_FILE),

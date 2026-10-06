@@ -74,6 +74,29 @@ describe("runWikiQuery", () => {
     expect(invocation(h, 0).args.at(-1)).toContain("QUERY PROMPT");
   });
 
+  it("spawns the core phase with the golden answer-only argv", async () => {
+    const h = await makeHarness();
+
+    await runWikiQuery(optionsFor(h));
+
+    // Golden (issue #434): captured from the pre-refactor wiring —
+    // the adapter refactor must reproduce it byte-identically.
+    expect(invocation(h, 0).args).toEqual([
+      "--no-context-files",
+      "--no-extensions",
+      "--no-skills",
+      "--model",
+      "GLM-5.2",
+      "--thinking",
+      "high",
+      "--print",
+      composeQueryPrompt(
+        "QUERY PROMPT",
+        "When should I prefer RAG over fine-tuning?",
+      ),
+    ]);
+  });
+
   it("sends the question line in the agent payload", async () => {
     const h = await makeHarness();
 

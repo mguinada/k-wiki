@@ -1232,6 +1232,40 @@ paths into a job that must outlive them. `--print` stays available
 everywhere (it writes nothing). The README's
 Scheduling the pipeline section documents the wrapper's contract.
 
+### Agent adapters
+
+The pipeline never spells an agent CLI's flag language itself. One
+per-agent Runner adapter owns everything agent-specific (issue
+#434): the argv and env built from settings for each spawn shape
+(ingest/lint/propose, the answer-only query core, the `--web`
+enrichment grant), the capability manifest — the isolation mechanism
+and its whitelist mechanics, the web policy, the credential probe —
+and the normalization of the agent's stdout into the report the
+guardrails consume. The settings file names the adapter with the
+`agent:` key beside `command:`; the default and first adapter is
+`pi`, and an unknown value is a named settings error, never a silent
+fallback. Model and reasoning effort stay in the existing
+`targets:`/`reasoning:` settings — switching them is a settings
+edit, never code.
+
+The operator-facing `invoking agent:` line is rendered from the
+adapter's structured invocation descriptor (agent, command, model,
+reasoning, provider, isolation posture, whitelist counts) through
+one rendering site — no spawn site interpolates argv fragments into
+progress lines. The answer-only query surface omits the posture
+tail: a run that cannot write needs no isolation signal.
+
+The seam is verifiable model-free. Golden argv and golden rendered
+line snapshots captured from the pre-refactor pi wiring pin flags,
+order, values, and operator-facing output byte-for-byte; a recording
+stub in the e2e suite dumps argv, stdin, and env per run and asserts
+the recorded wiring and the rendered lines per operation; negative
+wiring tests pin the failure semantics (a whitelist miss warns and
+omits, a timeout kills and reports failed, a non-zero exit reports
+the error path). pi's observable behavior is byte-identical to the
+pre-refactor wiring. Additional adapters (the first planned: Codex,
+issue #435) implement the same interface; no pipeline module changes.
+
 ### Ingest modes
 
 Two modes are planned for `wiki-ingest`:

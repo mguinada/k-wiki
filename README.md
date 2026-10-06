@@ -984,9 +984,21 @@ hardcoded:
 
 ```yaml
 command: pi        # agent CLI, run non-interactively in the data repo
+agent: pi          # the Runner adapter serving this file (default: pi)
 targets: [zai/GLM-5.2, openrouter/moonshotai/kimi-k2.6]
 reasoning: high    # pi thinking level, passed as --thinking
 ```
+
+`agent` names the Runner adapter that owns the agent CLI's flag
+language — argv and env building, the isolation posture, the
+whitelist mechanics, the web grant, and the credential probe. The
+default and only adapter today is `pi`; an unknown value is a named
+settings error, never a silent fallback. Everything
+model-specific stays in settings (`targets`, `reasoning`): switching
+a knob is a settings edit, never code. The wrapper renders the
+operator-facing `invoking agent:` line from the adapter's structured
+invocation descriptor through one rendering site, so every surface
+formats identity and isolation posture identically.
 
 `targets` is an ordered provider/model list: the first entry is the
 primary target, and when a target fails before producing any kept

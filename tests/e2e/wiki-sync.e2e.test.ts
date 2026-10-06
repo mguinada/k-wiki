@@ -8,7 +8,12 @@ import {
   generateFixtureVault,
   vaultName,
 } from "../../src/fixtures/generate.ts";
-import { runCli, SYNC_CYCLE_SCRIPT } from "./helpers.ts";
+import {
+  readAgentRecordings,
+  runCli,
+  STUB_RECORD_PRELUDE,
+  SYNC_CYCLE_SCRIPT,
+} from "./helpers.ts";
 
 /**
  * wiki-sync e2e: the real orchestrator CLI as a child process, driving
@@ -477,6 +482,11 @@ describe("wiki-sync e2e", () => {
     expect(result.out).toContain(
       `**Lint:** full audit, report \`${lintPath}\``,
     );
+    // The cycle's lint stage invocation line, byte-exact (issue #434
+    // golden): the lint-window audit through the pi adapter.
+    expect(result.err).toContain(
+      `wiki-sync: lint — invoking agent: ${join(repo.dataRoot, "stub-agent.mjs")} --model E2E-MODEL --thinking low (isolated)`,
+    );
     expect(result.out).toMatch(
       /- \*\*Fidelity:\*\* ok — \d+ tokens? trace to origins, \d+ titles? match(?:es)? across \d+ pages?/,
     );
@@ -512,6 +522,45 @@ describe("wiki-sync e2e", () => {
         "utf8",
       ),
     ).resolves.toContain("RAG");
+  });
+
+  it("records the golden lint-stage wiring per run (issue #434)", async () => {
+    const repo = await makeRepo();
+
+    await writeFile(
+      join(repo.dataRoot, "stub-agent.mjs"),
+      `#!/usr/bin/env node\n${STUB_RECORD_PRELUDE}\n${STUB_AGENT.replace("#!/usr/bin/env node\n", "")}`,
+      { mode: 0o755 },
+    );
+
+    const result = await runCycle(repo);
+
+    expect(result.code).toBe(0);
+
+    const recordings = await readAgentRecordings(repo.dataRoot);
+    const lint = recordings.filter((recording) =>
+      recording.argv.at(-1)?.startsWith("Audit the wiki"),
+    );
+
+    expect(lint).toHaveLength(1);
+
+    const recording = lint[0];
+
+    // Golden lint-window argv: identical wiring to the ingest run —
+    // only the --print payload switches to the audit prompt.
+    expect(recording?.argv).toEqual([
+      "--no-context-files",
+      "--no-extensions",
+      "--no-skills",
+      "--model",
+      "E2E-MODEL",
+      "--thinking",
+      "low",
+      "--print",
+      expect.stringContaining("Audit the wiki"),
+    ]);
+    expect(recording?.stdin).toBe("");
+    expect(recording?.env.NO_COLOR).toBe("1");
   });
 
   it("prints the cycle's commit hash in the digest", async () => {
