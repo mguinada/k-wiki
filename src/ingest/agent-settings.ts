@@ -12,11 +12,10 @@
 import { readFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { AGENT_COMMAND_ENV } from "../cli/env.ts";
-import { pluralized } from "../cli/shared.ts";
 import { unquote } from "../wiki/pages.ts";
 import {
-  type AgentRunner,
   AGENT_IDS,
+  type AgentRunner,
   type LoadAgentSettingsContext,
   preflightSettings,
   runnerForAgent,
@@ -567,16 +566,6 @@ export function formatInvocation(invocation: AgentInvocation): string {
  *  by the one site. */
 export function formatAgentInvocation(settings: AgentSettings): string {
   return formatInvocation(runnerFor(settings).invocation(settings));
-}
-
-/** Resolve a run's invocation descriptor (issue #434): the
- *  launcher-resolved command and the surface's posture choice folded
- *  in by the Runner adapter. */
-export function agentInvocation(
-  settings: AgentSettings,
-  options?: InvocationOptions,
-): AgentInvocation {
-  return runnerFor(settings).invocation(settings, options);
 }
 
 /** Read and parse the agent settings file; missing values are errors.

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { runContext } from "../../src/cli/run-context.ts";
 import { piRunner } from "../../src/ingest/agent-runner.ts";
-import { type AgentSettings } from "../../src/ingest/agent-settings.ts";
+import type { AgentSettings } from "../../src/ingest/agent-settings.ts";
 import { WEB_SOURCES_HEADING } from "../../src/query/web-artifact.ts";
 import {
   composeEnrichmentPrompt,

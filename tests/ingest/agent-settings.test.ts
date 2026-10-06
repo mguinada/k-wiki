@@ -3,11 +3,10 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { AGENT_COMMAND_ENV } from "../../src/cli/env.ts";
-import { isolationLabel, piRunner } from "../../src/ingest/agent-runner.ts";
+import { piRunner } from "../../src/ingest/agent-runner.ts";
 import {
   agentCommandOverride,
   formatAgentInvocation,
-  formatInvocation,
   loadAgentSettings,
   parseSettings,
   runnerFor,

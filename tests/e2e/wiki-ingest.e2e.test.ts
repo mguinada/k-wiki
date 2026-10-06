@@ -358,6 +358,45 @@ describe("wiki-ingest e2e", () => {
     expect(recording?.env.NO_COLOR).toBe("1");
   });
 
+  it("records the golden incremental wiring per run (issue #434)", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag" });
+
+    await writeFile(
+      join(repo.dataRoot, "stub-agent.mjs"),
+      `#!/usr/bin/env node\n${STUB_RECORD_PRELUDE}\nconsole.log("stub agent: sources processed; no contradictions; no unresolved questions");\n`,
+      { mode: 0o755 },
+    );
+
+    await ingest(repo);
+    await setNotes(repo, { "AI/RAG.md": "rag v2" });
+
+    const result = await ingest(repo);
+
+    expect(result.code).toBe(0);
+
+    const recordings = await readAgentRecordings(repo.dataRoot);
+
+    expect(recordings).toHaveLength(2);
+
+    const recording = recordings[1];
+
+    // Golden incremental argv: identical wiring to the full run —
+    // only the --print payload switches to the incremental prompt.
+    expect(recording?.argv).toEqual([
+      "--no-context-files",
+      "--no-extensions",
+      "--no-skills",
+      "--model",
+      "E2E-MODEL",
+      "--thinking",
+      "low",
+      "--print",
+      expect.stringContaining("Changed sources since the previous ingestion"),
+    ]);
+    expect(recording?.stdin).toBe("");
+    expect(recording?.env.NO_COLOR).toBe("1");
+  });
+
   it("passes the whitelisted --skill/-e flags on the child argv with the prompt verbatim (issue #144)", async () => {
     const repo = await makeRepo({ "AI/RAG.md": "rag" });
     const skillDir = join(repo.dataRoot, "skills", "obsidian-markdown");
@@ -1365,6 +1404,54 @@ describe("wiki-ingest expunge e2e (sync-driven)", () => {
     const snapshot = await readFile(snapshotAt(repo.dataRoot), "utf8");
 
     expect(snapshot).not.toContain("Scratch/temp-research.md");
+  });
+
+  it("records the golden expunge wiring per run (issue #434)", async () => {
+    const repo = await makeSyncedRepo();
+
+    await writeFile(
+      join(repo.dataRoot, "stub-agent.mjs"),
+      `#!/usr/bin/env node\n${STUB_RECORD_PRELUDE}\nconsole.log("stub agent: sources processed; no contradictions; no unresolved questions");\n`,
+      { mode: 0o755 },
+    );
+
+    const first = await ingestSynced(repo);
+
+    expect(first.code).toBe(0);
+    await git(repo.dataRoot, "add", "-A");
+    await git(repo.dataRoot, "commit", "--quiet", "-m", "after first ingest");
+
+    await rm(join(repo.dataRoot, "Documents", "Scratch", "temp-research.md"));
+    const sync = await runCli(SYNC_SCRIPT, [repo.configPath, repo.rawDir]);
+
+    expect(sync.code).toBe(0);
+
+    const result = await ingestSynced(repo);
+
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("**Mode:** expunge");
+
+    const recordings = await readAgentRecordings(repo.dataRoot);
+
+    expect(recordings).toHaveLength(2);
+
+    const recording = recordings[1];
+
+    // Golden expunge argv: identical wiring to the full run — only
+    // the --print payload switches to the expunge prompt.
+    expect(recording?.argv).toEqual([
+      "--no-context-files",
+      "--no-extensions",
+      "--no-skills",
+      "--model",
+      "E2E-MODEL",
+      "--thinking",
+      "low",
+      "--print",
+      expect.stringContaining("deleted from the vault"),
+    ]);
+    expect(recording?.stdin).toBe("");
+    expect(recording?.env.NO_COLOR).toBe("1");
   });
 
   it("treats a same-content rename as a change, not an expunge", async () => {
