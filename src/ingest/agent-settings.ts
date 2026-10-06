@@ -36,11 +36,12 @@ export interface AgentInvocation {
   readonly model: string;
   readonly reasoning: string;
   readonly provider?: string;
-  /** The isolation posture, as the line renders it: `isolated`,
-   *  `isolated +N skills +M extensions`, or `not isolated`.
-   *  Undefined when the surface's line omits the posture — the
-   *  answer-only query spawn, a run that cannot write and needs no
-   *  isolation signal. */
+  /** The isolation posture, as the line renders it: pi's
+   *  `isolated`, `isolated +N skills +M extensions`, or
+   *  `not isolated`; codex's managed-home/sandbox/web/auth posture
+   *  string. Undefined when the surface's line omits the posture —
+   *  the answer-only query spawn, a run that cannot write and needs
+   *  no isolation signal. */
   readonly posture?: string;
 }
 
@@ -63,14 +64,16 @@ export interface AgentSettings {
   /** Agent CLI command; run non-interactively in the data repo root. */
   readonly command: string;
   /** The Runner adapter serving this file (issue #434): the id
-   *  runnerFor resolves. Default: pi — the only adapter today; an
-   *  unknown value is a named settings error. */
+   *  runnerFor resolves. Default: pi; an unknown value is a named
+   *  settings error. */
   readonly agent?: string;
-  /** Passed to the agent as `--model`; the first target's model. */
+  /** Passed to the agent as `--model` (pi) or `-m` (codex); the
+   *  first target's model. */
   readonly model: string;
-  /** Reasoning level; passed to the agent as `--thinking`. */
+  /** Reasoning level; pi `--thinking`, codex `-c model_reasoning_effort=`. */
   readonly reasoning: string;
-  /** Passed to the agent as `--provider` when set; the first target's provider. */
+  /** Passed to the agent as `--provider` when set; the first
+   *  target's provider. Pi-only — the codex lane rejects it. */
   readonly provider?: string;
   /** Ordered targets for ingest fallback: Pi uses provider/model;
    *  Codex uses OpenAI model names. The wiki-sync cycle's lint stage
@@ -84,8 +87,9 @@ export interface AgentSettings {
    *  structural, and `isolate: false` there is a named settings
    *  error. */
   readonly isolate?: boolean;
-  /** Whitelisted skill dirs for isolated runs (issue #144),
-   *  loaded additively via `--skill` even under `--no-skills`.
+  /** Whitelisted skill dirs for isolated runs (issue #144): pi
+   *  loads them additively via `--skill` even under `--no-skills`;
+   *  codex symlinks them into the managed home's `.agents/skills`.
    *  Entries are resolved against the settings file's directory
    *  (with `~` expansion) by loadAgentSettings; ignored when
    *  `isolate: false`. */
@@ -93,7 +97,8 @@ export interface AgentSettings {
   /** Whitelisted extension sources for isolated runs (issue #144),
    *  loaded additively via `-e` even under `--no-extensions` — a
    *  path, `npm:<package>`, or `git:<repo>`; each entry is a
-   *  deliberate trust grant. Ignored when `isolate: false`. */
+   *  deliberate trust grant. Pi-only: the codex lane rejects
+   *  extensions. Ignored when `isolate: false`. */
   readonly isolateExtensions?: readonly string[];
   /** Domain wiki dirs for the cycle's crosslink audit (wiki-sync,
    *  issue #96); undefined leaves the stage out entirely. Paths are
@@ -640,8 +645,8 @@ export function formatAgentInvocation(settings: AgentSettings): string {
 /** Read and parse the agent settings file; missing values are errors.
  *  Whitelist skill paths resolve against the settings file's
  *  directory and every whitelist entry is pre-flighted (absent
- *  entries warn and drop, issue #144) — the pi Runner adapter's
- *  pre-flight (agent-runner.ts), applied to every parse. */
+ *  entries warn and drop, issue #144) — the shared pre-flight in
+ *  agent-runner.ts, applied to every parse. */
 export async function loadAgentSettings(
   path: string,
   context: LoadAgentSettingsContext = {},

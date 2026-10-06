@@ -70,7 +70,8 @@ export function withGapHint(
  *  (issue #434): the agent command, the grant tail the progress line
  *  names, and the argv builder for a composed prompt — the adapter
  *  owns the grant's flag language (ambient isolation, the web
- *  extension grant, the JSON output mode, identity, prompt). */
+ *  extension grant, identity — plus pi's JSON output mode; the
+ *  prompt rides argv or stdin). */
 export interface WebEnrichmentSpawn {
   readonly command: string;
   /** The grant's display tail, e.g. `-e npm:pi-web-access --tools

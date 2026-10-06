@@ -12,10 +12,11 @@
  * The pi adapter is byte-identical to the pre-refactor wiring: the
  * golden snapshots in tests/ingest/agent-runner.test.ts, captured
  * from the pre-refactor code, pin flags, order, and values. The
- * module also carries pi's whitelist pre-flight and install-root
- * resolution — the whitelist is a pi capability (skill dirs, `-e`
- * extension sources under pi's install root), applied by the
- * settings loader in agent-settings.ts.
+ * module also carries the shared whitelist pre-flight and pi's
+ * install-root resolution — skill whitelists are a capability of
+ * both lanes (pi `--skill` dirs, codex managed-home symlinks),
+ * `-e` extension sources are pi-only, and the settings loader in
+ * agent-settings.ts applies the pre-flight to every parse.
  */
 
 import {
@@ -56,18 +57,18 @@ export interface AgentRunner {
   /** The settings `agent:` key the adapter serves. */
   readonly id: string;
 
-  /** The spawn argv for one non-interactive run — ambient isolation,
-   *  whitelist, provider identity, prompt payload (the ingest, lint,
-   *  and propose shape). */
+  /** The spawn argv for one non-interactive run (the ingest, lint,
+   *  and propose shape) — ambient isolation, whitelist, provider
+   *  identity; pi carries the prompt payload here, codex on stdin. */
   args(
     settings: AgentSettings,
     prompt: string,
     context?: RunnerContext,
   ): readonly string[];
 
-  /** The query core phase's argv: ambient isolation, identity,
-   *  prompt — never the whitelist (the query spawn grants nothing
-   *  beyond its own phase-2 argv). */
+  /** The query core phase's argv: ambient isolation, identity —
+   *  never the whitelist (the query spawn grants nothing beyond its
+   *  own phase-2 argv); the prompt rides argv (pi) or stdin (codex). */
   answerArgs(
     settings: AgentSettings,
     prompt: string,
@@ -75,7 +76,8 @@ export interface AgentRunner {
   ): readonly string[];
 
   /** The query enrichment phase's argv: ambient isolation, the web
-   *  grant, the JSON output mode, identity, prompt. */
+   *  grant, identity — plus pi's JSON output mode; the prompt rides
+   *  argv (pi) or stdin (codex). */
   webEnrichArgs(
     identity: RunnerIdentity,
     composed: string,

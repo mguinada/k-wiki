@@ -15,7 +15,7 @@ isolate: true
 isolate.skills: [.agents/skills/obsidian-markdown, .agents/skills/obsidian-bases]
 ```
 
-Codex accepts OpenAI model names only. Do not set `provider:` or `isolate.extensions:` for this lane. Switching a live instance to Codex is an operator decision; this documentation does not enable a lane.
+Codex accepts OpenAI model names only. `provider:`, `isolate.extensions:`, `isolate: false`, and `provider/model` targets are each named settings errors on this lane, as are duplicate `isolate.skills` names. Switching a live instance to Codex is an operator decision; this documentation does not enable a lane.
 
 ## Pi-to-Codex mapping
 
