@@ -2,12 +2,12 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { defaultAuthStorePath } from "../../src/ingest/agent-runner.ts";
 import { parseSettings } from "../../src/ingest/agent-settings.ts";
 import {
   type CredentialPreflightOptions,
   credentialGate,
   credentialPreflight,
-  defaultAuthStorePath,
   providerEnvVar,
 } from "../../src/schedule/credential-preflight.ts";
 

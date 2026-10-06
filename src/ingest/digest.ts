@@ -17,7 +17,8 @@ import {
   wikilinkTarget,
 } from "../wiki/pages.ts";
 import { buildPageIndex } from "../wiki/wiki-links.ts";
-import { type AgentSettings, isolationLabel } from "./agent-settings.ts";
+import { type AgentSettings } from "./agent-settings.ts";
+import { isolationLabel } from "./agent-runner.ts";
 import type { GuardrailFailure } from "./guardrails.ts";
 import {
   type ManifestDiff,

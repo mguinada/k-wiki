@@ -20,9 +20,13 @@
 
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { pathExists } from "../cli/shared.ts";
+import { pathExists, pluralized } from "../cli/shared.ts";
 import { expandHome } from "../sync/config.ts";
-import type { AgentSettings } from "./agent-settings.ts";
+import type {
+  AgentInvocation,
+  AgentSettings,
+  InvocationOptions,
+} from "./agent-settings.ts";
 
 /** The agent identity the enrichment argv builds from: the
  *  settings' own fields, the whole loaded settings object in the
@@ -55,6 +59,13 @@ export interface AgentRunner {
   /** The environment a spawned run inherits: pi passes the caller's
    *  environment through untouched. */
   env(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv;
+
+  /** The invocation descriptor for one run: the structured fields
+   *  the rendering site formats (issue #434). */
+  invocation(
+    settings: AgentSettings,
+    options?: InvocationOptions,
+  ): AgentInvocation;
 
   /** (2) The capability manifest: what this agent can do, as data
    *  and probes the pipeline routes through instead of hardcoding. */
@@ -106,6 +117,27 @@ export const WEB_TOOL_ALLOWLIST = "web_search,source_check,fetch_content";
 /** The machine-readable output mode of the enrichment run: pi's
  *  `--mode json` stream, which the audit parses. */
 export const WEB_OUTPUT_MODE = "json";
+
+/** The isolation state of a spawned run, for progress and digest
+ *  lines (issues #118, #144): `isolated` (plus the whitelist
+ *  counts) unless the operator opted out. */
+export function isolationLabel(settings: AgentSettings): string {
+  if (settings.isolate === false) {
+    return "not isolated";
+  }
+
+  const skills = settings.isolateSkills?.length ?? 0;
+  const extensions =
+    settings.isolateExtensions?.filter(
+      (source) => !source.includes(WEB_GRANT_SOURCE),
+    ).length ?? 0;
+  const parts = [
+    ...(skills > 0 ? [`+${pluralized(skills, "skill")}`] : []),
+    ...(extensions > 0 ? [`+${pluralized(extensions, "extension")}`] : []),
+  ];
+
+  return parts.length > 0 ? `isolated ${parts.join(" ")}` : "isolated";
+}
 
 /** The whitelisted `--skill`/`-e` flags of an isolated run
  *  (issue #144): additive even under the `--no-*` flags, so exactly
@@ -213,6 +245,17 @@ export const piRunner: AgentRunner = {
   ],
 
   env: (environment) => environment,
+
+  invocation: (settings, options) => ({
+    agent: "pi",
+    command: options?.command ?? settings.command,
+    model: settings.model,
+    reasoning: settings.reasoning,
+    ...(settings.provider ? { provider: settings.provider } : {}),
+    ...(options?.posture === false
+      ? {}
+      : { posture: isolationLabel(settings) }),
+  }),
 
   capabilities: {
     web: {

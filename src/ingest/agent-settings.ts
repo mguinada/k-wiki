@@ -1,18 +1,59 @@
 /**
  * The agent settings (settings.yml): the AgentSettings type, the
- * YAML-subset parser (loadAgentSettings/parseSettings), and the
- * non-interactive agent argv builders (agentArgs,
- * formatAgentInvocation). Shared by wiki-ingest, wiki-sync, and
- * wiki-query (extracted from wiki-ingest.ts, issue #129).
+ * YAML-subset parser (loadAgentSettings/parseSettings) and the one
+ * invocation-line rendering site (formatInvocation over the
+ * AgentInvocation descriptor, issue #434). The per-agent argv/env
+ * builders and the posture builder live with the Runner adapters
+ * (agent-runner.ts), resolved through runnerFor. Shared by
+ * wiki-ingest, wiki-sync, and wiki-query (extracted from
+ * wiki-ingest.ts, issue #129).
  */
 
 import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname } from "node:path";
 import { AGENT_COMMAND_ENV } from "../cli/env.ts";
-import { pathExists, pluralized } from "../cli/shared.ts";
-import { expandHome } from "../sync/config.ts";
+import { pluralized } from "../cli/shared.ts";
 import { unquote } from "../wiki/pages.ts";
+import {
+  type AgentRunner,
+  AGENT_IDS,
+  type LoadAgentSettingsContext,
+  preflightSettings,
+  runnerForAgent,
+} from "./agent-runner.ts";
+
+/** The agent-neutral invocation descriptor (issue #434): the
+ *  structured fields one rendering site (formatInvocation, below)
+ *  formats into the operator-facing "invoking agent:" line. No spawn
+ *  site interpolates argv fragments into progress lines; each
+ *  resolves a descriptor through its Runner adapter and renders
+ *  here. */
+export interface AgentInvocation {
+  /** The Runner adapter serving the run: the settings `agent:` key. */
+  readonly agent: string;
+  /** The spawned CLI command: the launcher-resolved absolute path
+   *  when the environment overrides, else the settings command. */
+  readonly command: string;
+  readonly model: string;
+  readonly reasoning: string;
+  readonly provider?: string;
+  /** The isolation posture, as the line renders it: `isolated`,
+   *  `isolated +N skills +M extensions`, or `not isolated`.
+   *  Undefined when the surface's line omits the posture — the
+   *  answer-only query spawn, a run that cannot write and needs no
+   *  isolation signal. */
+  readonly posture?: string;
+}
+
+/** The descriptor builder's options: the launcher's command
+ *  override and whether the surface renders the posture tail. */
+export interface InvocationOptions {
+  /** The spawned command when the launcher resolved an override
+   *  (KWIKI_AGENT_COMMAND); default: the settings command. */
+  readonly command?: string | undefined;
+  /** Render the isolation posture tail; default: true. */
+  readonly posture?: boolean | undefined;
+}
 
 export interface AgentTarget {
   readonly provider?: string;
@@ -22,6 +63,10 @@ export interface AgentTarget {
 export interface AgentSettings {
   /** Agent CLI command; run non-interactively in the data repo root. */
   readonly command: string;
+  /** The Runner adapter serving this file (issue #434): the id
+   *  runnerFor resolves. Default: pi — the only adapter today; an
+   *  unknown value is a named settings error. */
+  readonly agent?: string;
   /** Passed to the agent as `--model`; the first target's model. */
   readonly model: string;
   /** Reasoning level; passed to the agent as `--thinking`. */
@@ -58,6 +103,7 @@ export interface AgentSettings {
 
 const REQUIRED_KEYS = ["command", "reasoning"] as const;
 const OPTIONAL_KEYS = [
+  "agent",
   "provider",
   "model",
   "isolate",
@@ -282,6 +328,60 @@ function validateTargetSettings(
   }
 }
 
+/** The scalar settings whose values come from a closed domain:
+ *  each entry names the key, the predicate its value must satisfy,
+ *  and the domain wording for the error. A violated domain is a
+ *  named error — a typo must never silently change the agent
+ *  configuration. */
+const SETTING_DOMAINS: readonly (readonly [
+  SettingKey,
+  (value: string) => boolean,
+  string,
+])[] = [
+  [
+    "isolate",
+    (value) => value === "true" || value === "false",
+    "true or false",
+  ],
+  [
+    "quotaPreflight",
+    (value) => value === "auto" || value === "off" || value.includes("/"),
+    "auto, off, or a CLI path",
+  ],
+];
+
+/** The closed-domain scalars: a value outside its domain is a named
+ *  error. */
+function validateScalarDomains(
+  values: Map<SettingKey, string>,
+  origin: string,
+): void {
+  for (const [key, holds, domain] of SETTING_DOMAINS) {
+    const value = values.get(key);
+
+    if (value !== undefined && !holds(value)) {
+      throw new Error(
+        `invalid agent settings at ${origin}: setting ${JSON.stringify(key)} must be ${domain}, got ${JSON.stringify(value)}`,
+      );
+    }
+  }
+}
+
+/** The agent key names a Runner adapter (issue #434): an unknown
+ *  agent is a named error, not a silent fallback. */
+function validateAgentSetting(
+  values: Map<SettingKey, string>,
+  origin: string,
+): void {
+  const agent = values.get("agent");
+
+  if (agent !== undefined && !AGENT_IDS.includes(agent)) {
+    throw new Error(
+      `invalid agent settings at ${origin}: unknown agent ${JSON.stringify(agent)} — known agents: ${AGENT_IDS.join(", ")}`,
+    );
+  }
+}
+
 /** After the loop: every required key present, isolate a boolean. */
 function validateSettings(
   values: Map<SettingKey, string>,
@@ -297,26 +397,8 @@ function validateSettings(
   }
 
   validateTargetSettings(values, lists, origin);
-
-  const isolate = values.get("isolate");
-  const quotaPreflight = values.get("quotaPreflight");
-
-  if (isolate !== undefined && isolate !== "true" && isolate !== "false") {
-    throw new Error(
-      `invalid agent settings at ${origin}: setting ${JSON.stringify("isolate")} must be true or false, got ${JSON.stringify(isolate)}`,
-    );
-  }
-
-  if (
-    quotaPreflight !== undefined &&
-    quotaPreflight !== "auto" &&
-    quotaPreflight !== "off" &&
-    !quotaPreflight.includes("/")
-  ) {
-    throw new Error(
-      `invalid agent settings at ${origin}: setting ${JSON.stringify("quotaPreflight")} must be auto, off, or a CLI path`,
-    );
-  }
+  validateScalarDomains(values, origin);
+  validateAgentSetting(values, origin);
 }
 
 function targetList(
@@ -371,6 +453,7 @@ function finalizeSettings(
 
   const isolate = values.get("isolate");
   const quotaPreflight = values.get("quotaPreflight");
+  const agent = values.get("agent");
 
   return {
     command: values.get("command") ?? "",
@@ -380,6 +463,7 @@ function finalizeSettings(
     ...(configuredTargets !== undefined && { targets }),
     ...(quotaPreflight !== undefined && { quotaPreflight }),
     ...(isolate !== undefined && { isolate: isolate === "true" }),
+    ...(agent !== undefined && { agent }),
     ...optionalListSettings(lists),
   };
 }
@@ -391,6 +475,8 @@ function finalizeSettings(
  * list-valued keys
  * `secondBrain.domains`, `isolate.skills`, and `isolate.extensions`, plus
  * `targets` as comma-separated provider/model pairs for ingest fallback.
+ * The `agent:` key names the Runner adapter (issue #434); an unknown
+ * value is rejected so a typo cannot silently change the agent.
  * Anything else (nesting, other lists, legacy `model`/`provider` beside
  * `targets`) is rejected so a typo cannot silently change the agent
  * configuration.
@@ -418,49 +504,6 @@ export function parseSettings(text: string, origin: string): AgentSettings {
   return finalizeSettings(values, lists, origin);
 }
 
-/** The pi isolation flags (issue #118): mechanically disable every
- *  ambient configuration source — context files (AGENTS.md/CLAUDE.md
- *  discovery), extensions, skills — so a spawned run cannot inherit
- *  globally installed persona, tools, or prompts. Available since
- *  pi 0.67.4. Shared by every spawn site that must close the ambient
- *  hole, wiki-query's included. */
-export const ISOLATION_FLAGS = [
-  "--no-context-files",
-  "--no-extensions",
-  "--no-skills",
-] as const;
-
-/** The web extension's grant is a query-only, per-run argv injection
- *  (`--web`): the shared whitelist never carries it into ingest,
- *  lint, or scoped re-ingest argv — an operator settings entry for
- *  it is dropped here, whatever its spelling. */
-const WEB_GRANT_SOURCE = "pi-web-access";
-
-/** The whitelisted `--skill`/`-e` flags of an isolated run
- *  (issue #144): additive even under the `--no-*` flags, so exactly
- *  the named entries load — minus the query-only web grant, which
- *  never reaches these argv (the `--web` design). Empty with
- *  `isolate: false`. */
-function whitelistFlags(settings: AgentSettings): string[] {
-  if (settings.isolate === false) {
-    return [];
-  }
-
-  return [
-    ...(settings.isolateSkills ?? []).flatMap((skill) => ["--skill", skill]),
-    ...(settings.isolateExtensions ?? [])
-      .filter((source) => !source.includes(WEB_GRANT_SOURCE))
-      .flatMap((source) => ["-e", source]),
-  ];
-}
-
-/** The non-interactive agent argv (issue #118): the isolation flags
- *  (unless the operator opted out with `isolate: false`), then the
- *  whitelisted `--skill`/`-e` entries (issue #144), then the
- *  settings' provider, model, and reasoning, with the prompt as the
- *  `--print` payload. With `isolate: false` the argv is
- *  byte-identical to the pre-isolation one — whitelist keys
- *  ignored. */
 export function settingsForTarget(
   settings: AgentSettings,
   target: AgentTarget,
@@ -502,240 +545,45 @@ export function agentCommandOverride(
   return value === undefined || value === "" ? undefined : value;
 }
 
-export function agentArgs(settings: AgentSettings, prompt: string): string[] {
-  return [
-    ...(settings.isolate === false
-      ? []
-      : [...ISOLATION_FLAGS, ...whitelistFlags(settings)]),
-    ...(settings.provider ? ["--provider", settings.provider] : []),
-    "--model",
-    settings.model,
-    "--thinking",
-    settings.reasoning,
-    "--print",
-    prompt,
-  ];
-}
+/** The one rendering site for the operator-facing invocation line
+ *  (issue #434): `<command> [--provider P] --model M --thinking T`,
+ *  plus the ` (posture)` tail when the descriptor carries one. Every
+ *  spawn site resolves a descriptor through its Runner adapter and
+ *  renders here — no site interpolates argv fragments into progress
+ *  lines itself. */
+export function formatInvocation(invocation: AgentInvocation): string {
+  const providerFlag = invocation.provider
+    ? ` --provider ${invocation.provider}`
+    : "";
+  const posture =
+    invocation.posture === undefined ? "" : ` (${invocation.posture})`;
 
-/** The isolation state of a spawned run, for progress and digest
- *  lines (issues #118, #144): `isolated` (plus the whitelist
- *  counts) unless the operator opted out. */
-export function isolationLabel(settings: AgentSettings): string {
-  if (settings.isolate === false) {
-    return "not isolated";
-  }
-
-  const skills = settings.isolateSkills?.length ?? 0;
-  const extensions =
-    settings.isolateExtensions?.filter(
-      (source) => !source.includes(WEB_GRANT_SOURCE),
-    ).length ?? 0;
-  const parts = [
-    ...(skills > 0 ? [`+${pluralized(skills, "skill")}`] : []),
-    ...(extensions > 0 ? [`+${pluralized(extensions, "extension")}`] : []),
-  ];
-
-  return parts.length > 0 ? `isolated ${parts.join(" ")}` : "isolated";
+  return `${invocation.command}${providerFlag} --model ${invocation.model} --thinking ${invocation.reasoning}${posture}`;
 }
 
 /** The `command [--provider P] --model M --thinking T (state)` tail
  *  the spawn sites print when invoking the agent (issue #118) — the
- *  auditable counterpart of agentArgs, one source for both. */
+ *  descriptor resolved through the settings' Runner adapter, rendered
+ *  by the one site. */
 export function formatAgentInvocation(settings: AgentSettings): string {
-  const providerFlag = settings.provider
-    ? ` --provider ${settings.provider}`
-    : "";
-
-  return `${settings.command}${providerFlag} --model ${settings.model} --thinking ${settings.reasoning} (${isolationLabel(settings)})`;
+  return formatInvocation(runnerFor(settings).invocation(settings));
 }
 
-/** Context for loadAgentSettings: where warnings go and where
- *  `npm:` extension sources must already be installed (pi's install
- *  root). Defaults: no warnings, ~/.pi/agent. */
-export interface LoadAgentSettingsContext {
-  /** Receives one WARNING line per absent whitelist entry. */
-  readonly onProgress?: ((message: string) => void) | undefined;
-  /** pi's install root for `npm:` extension pre-flights; defaults
-   *  to `PI_CODING_AGENT_DIR` when set (pi's own override), else
-   *  ~/.pi/agent (issue #144). */
-  readonly piInstallRoot?: string | undefined;
-}
-
-/** pi's install root for `npm:` extension resolution: the
- *  `PI_CODING_AGENT_DIR` override when set (pi's own override),
- *  else ~/.pi/agent (issue #144). Shared with spawn sites that must
- *  pre-flight an `npm:` extension source themselves. */
-export function piInstallRootFromEnv(environment: NodeJS.ProcessEnv): string {
-  return expandHome(
-    environment.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent"),
-  );
-}
-
-/** The `npm:<package>` dir under pi's install root; pi installs
- *  under the bare package name, so any `@version` suffix in the
- *  spec is stripped (parseNpmSpec). */
-export function npmExtensionDir(source: string, piInstallRoot: string): string {
-  const spec = source.slice(4);
-  const name = /^(@?[^@]+(?:\/[^@]+)?)(?:@(.+))?$/.exec(spec)?.[1] ?? spec;
-
-  return join(piInstallRoot, "npm", "node_modules", name);
-}
-
-/** Resolve skill entries against the settings file's directory,
- *  with `~` expansion (issue #144): the agent spawns with
- *  cwd = the data repo, so cwd-relative paths would silently miss. */
-function resolveSkillPaths(
+/** Resolve a run's invocation descriptor (issue #434): the
+ *  launcher-resolved command and the surface's posture choice folded
+ *  in by the Runner adapter. */
+export function agentInvocation(
   settings: AgentSettings,
-  settingsDir: string,
-): AgentSettings {
-  if (settings.isolateSkills === undefined) {
-    return settings;
-  }
-
-  return {
-    ...settings,
-    isolateSkills: settings.isolateSkills.map((entry) =>
-      resolve(settingsDir, expandHome(entry)),
-    ),
-  };
-}
-
-/** What one isolate.extensions entry is and how it pre-flights:
- *  `check` is the path to stat (undefined = trusted passthrough,
- *  used for `git:` sources), `value` the argv entry, `missingName`
- *  and `reason` the WARNING wording. */
-interface ExtensionEntry {
-  readonly check: string | undefined;
-  readonly value: string;
-  readonly missingName: string;
-  readonly reason: string;
-}
-
-/** Classify one extension source (issue #144): `npm:<package>`
- *  installs under pi's root, `git:<repo>` cannot be verified offline
- *  and passes through (pi fails loudly when the clone fails),
- *  anything else is a path resolved against the settings dir
- *  (with `~` expansion, like skill entries). */
-function extensionEntry(
-  source: string,
-  settingsDir: string,
-  piInstallRoot: string,
-): ExtensionEntry {
-  if (source.startsWith("npm:")) {
-    return {
-      check: npmExtensionDir(source, piInstallRoot),
-      value: source,
-      missingName: source,
-      reason: "not installed under the pi install root",
-    };
-  }
-
-  if (source.startsWith("git:")) {
-    return {
-      check: undefined,
-      value: source,
-      missingName: source,
-      reason: "not found",
-    };
-  }
-
-  const resolved = resolve(settingsDir, expandHome(source));
-
-  return {
-    check: resolved,
-    value: resolved,
-    missingName: resolved,
-    reason: "not found",
-  };
-}
-
-/** Pre-flight the whitelisted skills: keep the present entries, one
- *  WARNING per absent one (issue #144). */
-async function preflightSkills(
-  skills: readonly string[],
-  warn: (message: string) => void,
-): Promise<string[]> {
-  const kept: string[] = [];
-
-  for (const entry of skills) {
-    if (await pathExists(entry)) {
-      kept.push(entry);
-    } else {
-      warn(
-        `WARNING — isolate.skills entry ${JSON.stringify(entry)} not found; omitted`,
-      );
-    }
-  }
-
-  return kept;
-}
-
-/** Pre-flight the whitelisted extensions: keep the present entries,
- *  one WARNING per absent one (issue #144). */
-async function preflightExtensions(
-  sources: readonly string[],
-  settingsDir: string,
-  piInstallRoot: string,
-  warn: (message: string) => void,
-): Promise<string[]> {
-  const kept: string[] = [];
-
-  for (const source of sources) {
-    const entry = extensionEntry(source, settingsDir, piInstallRoot);
-
-    if (entry.check === undefined || (await pathExists(entry.check))) {
-      kept.push(entry.value);
-    } else {
-      warn(
-        `WARNING — isolate.extensions entry ${JSON.stringify(entry.missingName)} ${entry.reason}; omitted`,
-      );
-    }
-  }
-
-  return kept;
-}
-
-/** Pre-flight the isolation whitelist (issue #144): a missing entry
- *  warns and is omitted — the run proceeds without it. pi hard-errors
- *  on an unresolvable `-e npm:…` source (verified against pi
- *  0.84.4: it tries an on-demand npm install into a temp prefix and
- *  crashes when that fails), so `npm:` sources are checked against
- *  pi's install root; path entries are stat'ed. `git:` sources pass
- *  through — they cannot be verified offline, and pi fails loudly
- *  when the clone fails. Ignored entirely with `isolate: false`. */
-async function preflightWhitelist(
-  settings: AgentSettings,
-  context: LoadAgentSettingsContext,
-  settingsDir: string,
-): Promise<AgentSettings> {
-  if (settings.isolate === false) {
-    return settings;
-  }
-
-  const warn = context.onProgress ?? (() => {});
-  const piInstallRoot =
-    context.piInstallRoot ?? piInstallRootFromEnv(process.env);
-  const skills = await preflightSkills(settings.isolateSkills ?? [], warn);
-  const extensions = await preflightExtensions(
-    settings.isolateExtensions ?? [],
-    settingsDir,
-    piInstallRoot,
-    warn,
-  );
-
-  return {
-    ...settings,
-    ...(settings.isolateSkills !== undefined && { isolateSkills: skills }),
-    ...(settings.isolateExtensions !== undefined && {
-      isolateExtensions: extensions,
-    }),
-  };
+  options?: InvocationOptions,
+): AgentInvocation {
+  return runnerFor(settings).invocation(settings, options);
 }
 
 /** Read and parse the agent settings file; missing values are errors.
  *  Whitelist skill paths resolve against the settings file's
  *  directory and every whitelist entry is pre-flighted (absent
- *  entries warn and drop, issue #144). */
+ *  entries warn and drop, issue #144) — the pi Runner adapter's
+ *  pre-flight (agent-runner.ts), applied to every parse. */
 export async function loadAgentSettings(
   path: string,
   context: LoadAgentSettingsContext = {},
@@ -748,8 +596,13 @@ export async function loadAgentSettings(
     throw new Error(`cannot read agent settings at ${path}`, { cause });
   }
 
-  const settingsDir = dirname(path);
-  const settings = resolveSkillPaths(parseSettings(text, path), settingsDir);
+  return preflightSettings(parseSettings(text, path), context, dirname(path));
+}
 
-  return preflightWhitelist(settings, context, settingsDir);
+/** The Runner adapter the settings select (issue #434): the `agent:`
+ *  key's adapter, pi by default. A named error for an unknown agent —
+ *  belt and suspenders beside the parser's validation, for settings
+ *  objects built programmatically. */
+export function runnerFor(settings: AgentSettings): AgentRunner {
+  return runnerForAgent(settings.agent ?? "pi");
 }

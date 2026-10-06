@@ -15,10 +15,10 @@ import { changedPaths } from "../data/git.ts";
 import {
   type AgentSettings,
   type AgentTarget,
-  agentArgs,
   agentCommandOverride,
   agentTargets,
-  formatAgentInvocation,
+  formatInvocation,
+  runnerFor,
   settingsForTarget,
   targetLabel,
 } from "./agent-settings.ts";
@@ -183,17 +183,18 @@ async function attemptTarget(
   prompt: string,
 ): Promise<{ stdout: string; error: unknown }> {
   try {
+    const runner = runnerFor(targetSettings);
     const { stdout } = await options.runAgent(
       command,
-      agentArgs(targetSettings, prompt),
+      runner.args(targetSettings, prompt),
       {
         cwd: options.root,
-        env: options.environment,
+        env: runner.env(options.environment),
         timeoutMs: options.timeoutMs,
       },
     );
 
-    return { stdout, error: undefined };
+    return { stdout: runner.report(stdout), error: undefined };
   } catch (error) {
     return { stdout: "", error };
   }
@@ -264,10 +265,9 @@ export async function runAgentTargets(
     const command = override ?? targetSettings.command;
 
     options.onProgress(
-      `wiki-ingest: invoking agent: ${formatAgentInvocation({
-        ...targetSettings,
-        command,
-      })}`,
+      `wiki-ingest: invoking agent: ${formatInvocation(
+        runnerFor(targetSettings).invocation(targetSettings, { command }),
+      )}`,
     );
 
     const attempt = await attemptTarget(

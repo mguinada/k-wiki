@@ -30,11 +30,11 @@ import {
 import {
   type AgentSettings,
   type AgentTarget,
-  agentArgs,
   agentCommandOverride,
   agentTargets,
-  formatAgentInvocation,
+  formatInvocation,
   loadAgentSettings,
+  runnerFor,
   settingsForTarget,
   targetLabel,
 } from "../ingest/agent-settings.ts";
@@ -351,7 +351,7 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
     windowPages,
     wikiDir: run.wikiDir,
   });
-  const args = agentArgs(settings, promptText);
+  const args = runnerFor(settings).args(settings, promptText);
   const pre = options.pre ?? (await capturePreRunState(dataRoot, env));
 
   // A launcher that already resolved the agent binary (issue #399)
@@ -360,10 +360,9 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
   const command = agentCommandOverride(env) ?? settings.command;
 
   onProgress(
-    `wiki-sync: lint — invoking agent: ${formatAgentInvocation({
-      ...settings,
-      command,
-    })}`,
+    `wiki-sync: lint — invoking agent: ${formatInvocation(
+      runnerFor(settings).invocation(settings, { command }),
+    )}`,
   );
 
   const { stdout, error: agentError } = await invokeLintAgent(

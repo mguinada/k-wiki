@@ -1,38 +1,40 @@
 import { describe, expect, it } from "vitest";
 import {
-  agentArgs,
-  formatAgentInvocation,
+  defaultAuthStorePath,
+  ISOLATION_FLAGS,
+  isolationLabel,
   npmExtensionDir,
   piInstallRootFromEnv,
-  ISOLATION_FLAGS,
-} from "../../src/ingest/agent-settings.ts";
-import {
+  piRunner,
   WEB_EXTENSION_SOURCE,
   WEB_TOOL_ALLOWLIST,
-  webEnrichAgentArgs,
-} from "../../src/query/web-enrich.ts";
+} from "../../src/ingest/agent-runner.ts";
 import {
-  defaultAuthStorePath,
-  providerEnvVar,
-} from "../../src/schedule/credential-preflight.ts";
+  type AgentSettings,
+  formatAgentInvocation,
+  formatInvocation,
+} from "../../src/ingest/agent-settings.ts";
+import { providerEnvVar } from "../../src/schedule/credential-preflight.ts";
 
 /**
  * Golden argv snapshots (issue #434): every array below was captured
  * from the pre-refactor pi wiring BEFORE the agent-runner adapter
  * extraction — the refactor's safety net. The post-refactor wiring
  * must reproduce each snapshot byte-identically: same flags, same
- * order, same values. Only this file's import block may move when
- * the pinned symbols relocate to the pi adapter
- * (src/ingest/agent-runner.ts); the assertions themselves are
- * frozen. The query core phase and the end-to-end spawn wiring have
- * their own goldens: tests/query/wiki-query.test.ts (core argv) and
- * the e2e recording stub (argv/stdin/env per operation).
+ * order, same values. The assertions are frozen; only the call
+ * shapes follow the Runner surface (the pi adapter's
+ * args/webEnrichArgs methods replace the pre-refactor free
+ * functions agentArgs and webEnrichAgentArgs, whose isolationFlags
+ * parameter the adapter now derives from the identity itself). The
+ * query core phase and the end-to-end spawn wiring have their own
+ * goldens: tests/query/wiki-query.test.ts (core argv) and the e2e
+ * recording stub (argv/stdin/env per operation).
  */
 
 describe("golden argv (pre-refactor capture, issue #434)", () => {
   it("agentArgs: the minimal isolated ingest argv", () => {
     expect(
-      agentArgs(
+      piRunner.args(
         { command: "pi", model: "GLM-5.2", reasoning: "high" },
         "PROMPT",
       ),
@@ -51,7 +53,7 @@ describe("golden argv (pre-refactor capture, issue #434)", () => {
 
   it("agentArgs: the full isolated argv with provider and whitelist", () => {
     expect(
-      agentArgs(
+      piRunner.args(
         {
           command: "pi",
           model: "GLM-5.2",
@@ -84,7 +86,7 @@ describe("golden argv (pre-refactor capture, issue #434)", () => {
 
   it("agentArgs: the isolate:false opt-out argv drops isolation and whitelist", () => {
     expect(
-      agentArgs(
+      piRunner.args(
         {
           command: "pi",
           model: "m",
@@ -100,7 +102,7 @@ describe("golden argv (pre-refactor capture, issue #434)", () => {
 
   it("agentArgs: the query-only web grant never reaches ingest argv", () => {
     expect(
-      agentArgs(
+      piRunner.args(
         {
           command: "pi",
           model: "m",
@@ -134,14 +136,13 @@ describe("golden argv (pre-refactor capture, issue #434)", () => {
 
   it("webEnrichAgentArgs: the enrichment argv with provider and ambient isolation", () => {
     expect(
-      webEnrichAgentArgs(
+      piRunner.webEnrichArgs(
         {
           command: "pi",
           model: "M",
           reasoning: "high",
           provider: "zai",
         },
-        [...ISOLATION_FLAGS],
         "COMPOSED",
       ),
     ).toEqual([
@@ -167,9 +168,8 @@ describe("golden argv (pre-refactor capture, issue #434)", () => {
 
   it("webEnrichAgentArgs: the enrichment argv without a provider", () => {
     expect(
-      webEnrichAgentArgs(
+      piRunner.webEnrichArgs(
         { command: "pi", model: "M", reasoning: "low" },
-        [...ISOLATION_FLAGS],
         "COMPOSED",
       ),
     ).toEqual([
@@ -193,9 +193,8 @@ describe("golden argv (pre-refactor capture, issue #434)", () => {
 
   it("webEnrichAgentArgs: the isolate:false opt-out drops the ambient isolation prefix", () => {
     expect(
-      webEnrichAgentArgs(
+      piRunner.webEnrichArgs(
         { command: "pi", model: "M", reasoning: "low", isolate: false },
-        [],
         "COMPOSED",
       ),
     ).toEqual([
@@ -262,6 +261,356 @@ describe("golden argv (pre-refactor capture, issue #434)", () => {
   });
 });
 
+describe("agentArgs", () => {
+  it("prepends the pi isolation flags by default", () => {
+    const args = piRunner.args(
+      { command: "pi", model: "GLM-5.2", reasoning: "high" },
+      "PROMPT",
+    );
+
+    expect(args.slice(0, 3)).toEqual([
+      "--no-context-files",
+      "--no-extensions",
+      "--no-skills",
+    ]);
+  });
+
+  it("prepends the pi isolation flags on an explicit isolate: true", () => {
+    const args = piRunner.args(
+      { command: "pi", model: "GLM-5.2", reasoning: "high", isolate: true },
+      "PROMPT",
+    );
+
+    expect(args.slice(0, 3)).toEqual([
+      "--no-context-files",
+      "--no-extensions",
+      "--no-skills",
+    ]);
+  });
+
+  it("keeps the isolation flags ahead of the provider flag", () => {
+    const args = piRunner.args(
+      { command: "pi", model: "m", reasoning: "h", provider: "zai" },
+      "PROMPT",
+    );
+
+    expect(args.slice(0, 5)).toEqual([
+      "--no-context-files",
+      "--no-extensions",
+      "--no-skills",
+      "--provider",
+      "zai",
+    ]);
+  });
+
+  it("builds the exact pre-isolation argv on an isolate: false opt-out", () => {
+    const args = piRunner.args(
+      { command: "pi", model: "GLM-5.2", reasoning: "high", isolate: false },
+      "PROMPT",
+    );
+
+    expect(args).toEqual([
+      "--model",
+      "GLM-5.2",
+      "--thinking",
+      "high",
+      "--print",
+      "PROMPT",
+    ]);
+  });
+
+  it("carries the prompt as the --print payload in every mode", () => {
+    const args = piRunner.args(
+      { command: "pi", model: "m", reasoning: "h", isolate: false },
+      "THE PROMPT",
+    );
+
+    expect(args[args.indexOf("--print") + 1]).toBe("THE PROMPT");
+  });
+
+  it("appends one --skill flag per whitelisted skill after the isolation flags", () => {
+    const args = piRunner.args(
+      {
+        command: "pi",
+        model: "m",
+        reasoning: "h",
+        isolateSkills: ["/repo/.agents/skills/a", "/repo/.agents/skills/b"],
+      },
+      "PROMPT",
+    );
+
+    expect(args.slice(0, 7)).toEqual([
+      "--no-context-files",
+      "--no-extensions",
+      "--no-skills",
+      "--skill",
+      "/repo/.agents/skills/a",
+      "--skill",
+      "/repo/.agents/skills/b",
+    ]);
+  });
+
+  it("appends one -e flag per whitelisted extension after the skills", () => {
+    const args = piRunner.args(
+      {
+        command: "pi",
+        model: "m",
+        reasoning: "h",
+        isolateSkills: ["/repo/.agents/skills/a"],
+        isolateExtensions: ["npm:pi-context-view", "npm:pi-subagents"],
+      },
+      "PROMPT",
+    );
+
+    expect(args.slice(3, 9)).toEqual([
+      "--skill",
+      "/repo/.agents/skills/a",
+      "-e",
+      "npm:pi-context-view",
+      "-e",
+      "npm:pi-subagents",
+    ]);
+  });
+
+  it("drops the query-only web grant from a whitelisted isolate.extensions entry", () => {
+    const args = piRunner.args(
+      {
+        command: "pi",
+        model: "m",
+        reasoning: "h",
+        isolateExtensions: ["npm:pi-web-access", "npm:pi-subagents"],
+      },
+      "PROMPT",
+    );
+
+    expect(args).toEqual([
+      "--no-context-files",
+      "--no-extensions",
+      "--no-skills",
+      "-e",
+      "npm:pi-subagents",
+      "--model",
+      "m",
+      "--thinking",
+      "h",
+      "--print",
+      "PROMPT",
+    ]);
+  });
+
+  it("drops a path-spelled pi-web-access entry from the args", () => {
+    const args = piRunner.args(
+      {
+        command: "pi",
+        model: "m",
+        reasoning: "h",
+        isolateExtensions: ["/opt/pi/npm/node_modules/pi-web-access/index.ts"],
+      },
+      "PROMPT",
+    );
+
+    expect(args.join("\u0000")).not.toContain("pi-web-access");
+  });
+
+  it("grants no extension for a path-spelled entry", () => {
+    const args = piRunner.args(
+      {
+        command: "pi",
+        model: "m",
+        reasoning: "h",
+        isolateExtensions: ["/opt/pi/npm/node_modules/pi-web-access/index.ts"],
+      },
+      "PROMPT",
+    );
+
+    expect(args).not.toContain("-e");
+  });
+
+  it("keeps the whitelist flags ahead of the provider flag", () => {
+    const args = piRunner.args(
+      {
+        command: "pi",
+        model: "m",
+        reasoning: "h",
+        provider: "zai",
+        isolateSkills: ["/s"],
+        isolateExtensions: ["npm:x"],
+      },
+      "PROMPT",
+    );
+
+    expect(args.slice(0, 8)).toEqual([
+      "--no-context-files",
+      "--no-extensions",
+      "--no-skills",
+      "--skill",
+      "/s",
+      "-e",
+      "npm:x",
+      "--provider",
+    ]);
+  });
+
+  it("builds the exact pre-isolation argv on isolate: false even with whitelist keys set", () => {
+    const args = piRunner.args(
+      {
+        command: "pi",
+        model: "GLM-5.2",
+        reasoning: "high",
+        isolate: false,
+        isolateSkills: ["/s"],
+        isolateExtensions: ["npm:x"],
+      },
+      "PROMPT",
+    );
+
+    expect(args).toEqual([
+      "--model",
+      "GLM-5.2",
+      "--thinking",
+      "high",
+      "--print",
+      "PROMPT",
+    ]);
+  });
+});
+
+describe("agentArgs web-grant isolation", () => {
+  const CONFIGURATIONS = [
+    {
+      name: "default",
+      settings: { command: "pi", model: "GLM-5.2", reasoning: "high" },
+    },
+    {
+      name: "isolate true",
+      settings: {
+        command: "pi",
+        model: "GLM-5.2",
+        reasoning: "high",
+        isolate: true,
+      },
+    },
+    {
+      name: "isolate false",
+      settings: {
+        command: "pi",
+        model: "GLM-5.2",
+        reasoning: "high",
+        isolate: false,
+      },
+    },
+    {
+      name: "extension whitelist present",
+      settings: {
+        command: "pi",
+        model: "GLM-5.2",
+        reasoning: "high",
+        isolateExtensions: ["npm:some-extension"],
+      },
+    },
+    {
+      name: "web extension whitelisted by the operator",
+      settings: {
+        command: "pi",
+        model: "GLM-5.2",
+        reasoning: "high",
+        isolateExtensions: ["npm:pi-web-access"],
+      },
+    },
+  ] as const;
+
+  for (const { name, settings } of CONFIGURATIONS) {
+    it(`keeps pi-web-access out of the ingest/lint/scoped argv (${name})`, () => {
+      expect(piRunner.args(settings, "PROMPT").join("\u0000")).not.toContain(
+        "pi-web-access",
+      );
+    });
+  }
+});
+
+const SETTINGS: AgentSettings = {
+  command: "pi",
+  model: "GLM-5.2",
+  reasoning: "high",
+};
+
+describe("piRunner.webEnrichArgs", () => {
+  it("leads with the ambient isolation flags", () => {
+    const args = piRunner.webEnrichArgs(SETTINGS, "PROMPT");
+
+    expect(args.slice(0, 3)).toEqual([
+      "--no-context-files",
+      "--no-extensions",
+      "--no-skills",
+    ]);
+  });
+
+  it("places the web grant after the isolation flags", () => {
+    const args = piRunner.webEnrichArgs(SETTINGS, "PROMPT");
+
+    const grant = args.indexOf("-e");
+
+    expect(grant).toBeGreaterThan(2);
+  });
+
+  it("grants exactly the pi-web-access extension", () => {
+    const args = piRunner.webEnrichArgs(SETTINGS, "PROMPT");
+
+    expect(args[args.indexOf("-e") + 1]).toBe(WEB_EXTENSION_SOURCE);
+  });
+
+  it("grants exactly the search+fetch tool allowlist", () => {
+    const args = piRunner.webEnrichArgs(SETTINGS, "PROMPT");
+
+    expect(args[args.indexOf("--tools") + 1]).toBe(WEB_TOOL_ALLOWLIST);
+  });
+
+  it("exposes no other extension tool than the allowlist names", () => {
+    const args = piRunner.webEnrichArgs(SETTINGS, "PROMPT").join(" ");
+
+    expect(args).not.toContain("get_search_content");
+  });
+
+  it("runs the enrichment in json output mode", () => {
+    const args = piRunner.webEnrichArgs(SETTINGS, "PROMPT");
+
+    expect(args[args.indexOf("--mode") + 1]).toBe("json");
+  });
+
+  it("carries the composed prompt as the print payload", () => {
+    const args = piRunner.webEnrichArgs(SETTINGS, "PROMPT");
+
+    expect(args[args.indexOf("--print") + 1]).toBe("PROMPT");
+  });
+
+  it("drops the isolation flags under isolate: false", () => {
+    const args = piRunner.webEnrichArgs(
+      { ...SETTINGS, isolate: false },
+      "PROMPT",
+    );
+
+    expect(args).not.toContain("--no-extensions");
+  });
+
+  it("still grants the web extension under isolate: false", () => {
+    const args = piRunner.webEnrichArgs(
+      { ...SETTINGS, isolate: false },
+      "PROMPT",
+    );
+
+    expect(args).toContain("-e");
+  });
+
+  it("keeps the provider flag when the settings carry one", () => {
+    const args = piRunner.webEnrichArgs(
+      { ...SETTINGS, provider: "zai" },
+      "PROMPT",
+    );
+
+    expect(args[args.indexOf("--provider") + 1]).toBe("zai");
+  });
+});
+
 /**
  * Golden rendered lines (pre-refactor capture, issue #434): the
  * operator-facing invocation lines, captured from the pre-refactor
@@ -288,21 +637,6 @@ describe("golden rendered lines (pre-refactor capture, issue #434)", () => {
         reasoning: "high",
       }),
     ).toBe("pi --model GLM-5.2 --thinking high (isolated)");
-  });
-
-  it("formatAgentInvocation: the whitelisted tail with provider", () => {
-    expect(
-      formatAgentInvocation({
-        command: "pi",
-        model: "GLM-5.2",
-        reasoning: "high",
-        provider: "zai",
-        isolateSkills: ["/a", "/b"],
-        isolateExtensions: ["npm:x", "npm:y"],
-      }),
-    ).toBe(
-      "pi --provider zai --model GLM-5.2 --thinking high (isolated +2 skills +2 extensions)",
-    );
   });
 
   it("formatAgentInvocation: the not-isolated tail on the opt-out", () => {
@@ -380,5 +714,126 @@ describe("golden rendered lines (pre-refactor capture, issue #434)", () => {
     expect(`sandbox: invoking agent: ${tail}`).toBe(
       "sandbox: invoking agent: pi --model GLM-5.2 --thinking high (isolated)",
     );
+  });
+});
+
+describe("isolationLabel", () => {
+  it("stays plain isolated with no whitelist", () => {
+    expect(isolationLabel({ command: "pi", model: "m", reasoning: "h" })).toBe(
+      "isolated",
+    );
+  });
+
+  it("counts whitelisted skills and extensions", () => {
+    expect(
+      isolationLabel({
+        command: "pi",
+        model: "m",
+        reasoning: "h",
+        isolateSkills: ["/a", "/b"],
+        isolateExtensions: ["npm:x", "npm:y"],
+      }),
+    ).toBe("isolated +2 skills +2 extensions");
+  });
+
+  it("uses the singular for one skill and one extension", () => {
+    expect(
+      isolationLabel({
+        command: "pi",
+        model: "m",
+        reasoning: "h",
+        isolateSkills: ["/a"],
+        isolateExtensions: ["npm:x"],
+      }),
+    ).toBe("isolated +1 skill +1 extension");
+  });
+
+  it("ignores the whitelist keys on an isolate: false opt-out", () => {
+    expect(
+      isolationLabel({
+        command: "pi",
+        model: "m",
+        reasoning: "h",
+        isolate: false,
+        isolateSkills: ["/a"],
+        isolateExtensions: ["npm:x"],
+      }),
+    ).toBe("not isolated");
+  });
+});
+
+describe("invocation descriptor (issue #434)", () => {
+  it("carries the adapter id, identity, and the isolation posture", () => {
+    expect(
+      piRunner.invocation({
+        command: "pi",
+        model: "GLM-5.2",
+        reasoning: "high",
+        provider: "zai",
+        isolateSkills: ["/a"],
+      }),
+    ).toEqual({
+      agent: "pi",
+      command: "pi",
+      model: "GLM-5.2",
+      reasoning: "high",
+      provider: "zai",
+      posture: "isolated +1 skill",
+    });
+  });
+
+  it("reports the not-isolated posture on the opt-out", () => {
+    expect(
+      piRunner.invocation({
+        command: "pi",
+        model: "m",
+        reasoning: "h",
+        isolate: false,
+      }).posture,
+    ).toBe("not isolated");
+  });
+
+  it("folds the launcher's command override into the descriptor", () => {
+    expect(
+      piRunner.invocation(
+        { command: "pi", model: "m", reasoning: "h" },
+        { command: "/abs/resolved/pi" },
+      ).command,
+    ).toBe("/abs/resolved/pi");
+  });
+
+  it("omits the posture on an answer-only surface", () => {
+    const invocation = piRunner.invocation(
+      { command: "pi", model: "m", reasoning: "h" },
+      { posture: false },
+    );
+
+    expect(invocation.posture).toBeUndefined();
+  });
+
+  it("formatInvocation renders the descriptor as the invoking-agent tail", () => {
+    expect(
+      formatInvocation({
+        agent: "pi",
+        command: "/abs/resolved/pi",
+        model: "M",
+        reasoning: "low",
+        provider: "zai",
+        posture: "isolated +2 skills",
+      }),
+    ).toBe(
+      "/abs/resolved/pi --provider zai --model M --thinking low (isolated +2 skills)",
+    );
+  });
+
+  it("formatInvocation omits the posture tail when the descriptor carries none", () => {
+    expect(
+      formatInvocation({
+        agent: "pi",
+        command: "pi",
+        model: "M",
+        reasoning: "low",
+      }),
+    ).toBe("pi --model M --thinking low");
   });
 });

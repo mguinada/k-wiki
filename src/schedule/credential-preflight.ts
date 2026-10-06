@@ -32,8 +32,6 @@
  * gate's env-var clause.
  */
 
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { errorMessage } from "../cli/colors.ts";
 import { readTextIfExists } from "../cli/shared.ts";
 import {
@@ -41,6 +39,7 @@ import {
   type AgentTarget,
   agentTargets,
   loadAgentSettings,
+  runnerFor,
   targetLabel,
 } from "../ingest/agent-settings.ts";
 import {
@@ -72,8 +71,9 @@ export interface CredentialPreflightOptions {
    *  false — an env-var-only target then counts as
    *  unauthenticatable. */
   readonly envReachesCycle?: boolean | undefined;
-  /** pi's auth store; default: the default resolution against this
-   *  process's HOME (<home>/.pi/agent/auth.json). */
+  /** The agent's on-disk auth store; default: the settings' Runner
+   *  adapter's default resolution against this process's HOME (pi:
+   *  <home>/.pi/agent/auth.json). */
   readonly authStorePath?: string | undefined;
   /** The store reader; injected in tests. Default: read and
    *  shape-check the file. */
@@ -99,16 +99,6 @@ export function providerEnvVar(provider: string): string {
   const snake = provider.replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 
   return `${snake.toUpperCase()}_API_KEY`;
-}
-
-/** pi's on-disk auth store, resolved the way pi resolves it by
- *  default: against the cycle's HOME (os.homedir() honors the plist
- *  HOME under launchd). The scheduled plist never sets pi's
- *  PI_CODING_AGENT_DIR override, so the default location is the
- *  store the spawned agent reads; relocated installs inject the
- *  path through the probe's options. */
-export function defaultAuthStorePath(home: string = homedir()): string {
-  return join(home, ".pi", "agent", "auth.json");
 }
 
 /** The default store reader: absent when the file is missing (a
@@ -201,7 +191,12 @@ export async function credentialPreflight(
   }
 
   const read = options.readAuthStore ?? readAuthStoreFile;
-  const store = await read(options.authStorePath ?? defaultAuthStorePath());
+  const store = await read(
+    options.authStorePath ??
+      runnerFor(
+        options.settings,
+      ).capabilities.credentials.defaultAuthStorePath(),
+  );
 
   if (store.kind === "unreadable") {
     options.log(

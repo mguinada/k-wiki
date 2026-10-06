@@ -3,13 +3,14 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { AGENT_COMMAND_ENV } from "../../src/cli/env.ts";
+import { isolationLabel, piRunner } from "../../src/ingest/agent-runner.ts";
 import {
-  agentArgs,
   agentCommandOverride,
   formatAgentInvocation,
-  isolationLabel,
+  formatInvocation,
   loadAgentSettings,
   parseSettings,
+  runnerFor,
   settingsForTarget,
 } from "../../src/ingest/agent-settings.ts";
 
@@ -119,6 +120,21 @@ describe("parseSettings", () => {
     );
 
     expect(settings.isolate).toBe(true);
+  });
+
+  it("parses an explicit agent key beside the command", () => {
+    const settings = parseSettings(
+      "command: pi\nagent: pi\nmodel: m\nreasoning: h\n",
+      "s",
+    );
+
+    expect(settings.agent).toBe("pi");
+  });
+
+  it("rejects an unknown agent key value", () => {
+    expect(() =>
+      parseSettings("command: pi\nagent: codex\nmodel: m\nreasoning: h\n", "s"),
+    ).toThrow('unknown agent "codex" — known agents: pi');
   });
 
   it("parses an explicit isolate: false opt-out", () => {
@@ -541,214 +557,39 @@ describe("parseSettings", () => {
   });
 });
 
-describe("agentArgs", () => {
-  it("prepends the pi isolation flags by default", () => {
-    const args = agentArgs(
-      { command: "pi", model: "GLM-5.2", reasoning: "high" },
-      "PROMPT",
+describe("runnerFor", () => {
+  it("resolves pi by default", () => {
+    expect(runnerFor({ command: "pi", model: "m", reasoning: "h" }).id).toBe(
+      "pi",
     );
+  });
 
-    expect(args.slice(0, 3)).toEqual([
+  it("resolves the adapter the agent key names", () => {
+    expect(
+      runnerFor({ command: "pi", agent: "pi", model: "m", reasoning: "h" }).id,
+    ).toBe("pi");
+  });
+
+  it("names the unknown agent in the error", () => {
+    expect(() =>
+      runnerFor({ command: "pi", agent: "codex", model: "m", reasoning: "h" }),
+    ).toThrow('unknown agent "codex" — known agents: pi');
+  });
+
+  it("builds the golden argv through the resolved adapter", () => {
+    expect(
+      runnerFor({ command: "pi", model: "m", reasoning: "h" }).args(
+        { command: "pi", model: "m", reasoning: "h" },
+        "PROMPT",
+      ),
+    ).toEqual([
       "--no-context-files",
       "--no-extensions",
       "--no-skills",
-    ]);
-  });
-
-  it("prepends the pi isolation flags on an explicit isolate: true", () => {
-    const args = agentArgs(
-      { command: "pi", model: "GLM-5.2", reasoning: "high", isolate: true },
-      "PROMPT",
-    );
-
-    expect(args.slice(0, 3)).toEqual([
-      "--no-context-files",
-      "--no-extensions",
-      "--no-skills",
-    ]);
-  });
-
-  it("keeps the isolation flags ahead of the provider flag", () => {
-    const args = agentArgs(
-      { command: "pi", model: "m", reasoning: "h", provider: "zai" },
-      "PROMPT",
-    );
-
-    expect(args.slice(0, 5)).toEqual([
-      "--no-context-files",
-      "--no-extensions",
-      "--no-skills",
-      "--provider",
-      "zai",
-    ]);
-  });
-
-  it("builds the exact pre-isolation argv on an isolate: false opt-out", () => {
-    const args = agentArgs(
-      { command: "pi", model: "GLM-5.2", reasoning: "high", isolate: false },
-      "PROMPT",
-    );
-
-    expect(args).toEqual([
-      "--model",
-      "GLM-5.2",
-      "--thinking",
-      "high",
-      "--print",
-      "PROMPT",
-    ]);
-  });
-
-  it("carries the prompt as the --print payload in every mode", () => {
-    const args = agentArgs(
-      { command: "pi", model: "m", reasoning: "h", isolate: false },
-      "THE PROMPT",
-    );
-
-    expect(args[args.indexOf("--print") + 1]).toBe("THE PROMPT");
-  });
-
-  it("appends one --skill flag per whitelisted skill after the isolation flags", () => {
-    const args = agentArgs(
-      {
-        command: "pi",
-        model: "m",
-        reasoning: "h",
-        isolateSkills: ["/repo/.agents/skills/a", "/repo/.agents/skills/b"],
-      },
-      "PROMPT",
-    );
-
-    expect(args.slice(0, 7)).toEqual([
-      "--no-context-files",
-      "--no-extensions",
-      "--no-skills",
-      "--skill",
-      "/repo/.agents/skills/a",
-      "--skill",
-      "/repo/.agents/skills/b",
-    ]);
-  });
-
-  it("appends one -e flag per whitelisted extension after the skills", () => {
-    const args = agentArgs(
-      {
-        command: "pi",
-        model: "m",
-        reasoning: "h",
-        isolateSkills: ["/repo/.agents/skills/a"],
-        isolateExtensions: ["npm:pi-context-view", "npm:pi-subagents"],
-      },
-      "PROMPT",
-    );
-
-    expect(args.slice(3, 9)).toEqual([
-      "--skill",
-      "/repo/.agents/skills/a",
-      "-e",
-      "npm:pi-context-view",
-      "-e",
-      "npm:pi-subagents",
-    ]);
-  });
-
-  it("drops the query-only web grant from a whitelisted isolate.extensions entry", () => {
-    const args = agentArgs(
-      {
-        command: "pi",
-        model: "m",
-        reasoning: "h",
-        isolateExtensions: ["npm:pi-web-access", "npm:pi-subagents"],
-      },
-      "PROMPT",
-    );
-
-    expect(args).toEqual([
-      "--no-context-files",
-      "--no-extensions",
-      "--no-skills",
-      "-e",
-      "npm:pi-subagents",
       "--model",
       "m",
       "--thinking",
       "h",
-      "--print",
-      "PROMPT",
-    ]);
-  });
-
-  it("drops a path-spelled pi-web-access entry from the args", () => {
-    const args = agentArgs(
-      {
-        command: "pi",
-        model: "m",
-        reasoning: "h",
-        isolateExtensions: ["/opt/pi/npm/node_modules/pi-web-access/index.ts"],
-      },
-      "PROMPT",
-    );
-
-    expect(args.join("\u0000")).not.toContain("pi-web-access");
-  });
-
-  it("grants no extension for a path-spelled entry", () => {
-    const args = agentArgs(
-      {
-        command: "pi",
-        model: "m",
-        reasoning: "h",
-        isolateExtensions: ["/opt/pi/npm/node_modules/pi-web-access/index.ts"],
-      },
-      "PROMPT",
-    );
-
-    expect(args).not.toContain("-e");
-  });
-
-  it("keeps the whitelist flags ahead of the provider flag", () => {
-    const args = agentArgs(
-      {
-        command: "pi",
-        model: "m",
-        reasoning: "h",
-        provider: "zai",
-        isolateSkills: ["/s"],
-        isolateExtensions: ["npm:x"],
-      },
-      "PROMPT",
-    );
-
-    expect(args.slice(0, 8)).toEqual([
-      "--no-context-files",
-      "--no-extensions",
-      "--no-skills",
-      "--skill",
-      "/s",
-      "-e",
-      "npm:x",
-      "--provider",
-    ]);
-  });
-
-  it("builds the exact pre-isolation argv on isolate: false even with whitelist keys set", () => {
-    const args = agentArgs(
-      {
-        command: "pi",
-        model: "GLM-5.2",
-        reasoning: "high",
-        isolate: false,
-        isolateSkills: ["/s"],
-        isolateExtensions: ["npm:x"],
-      },
-      "PROMPT",
-    );
-
-    expect(args).toEqual([
-      "--model",
-      "GLM-5.2",
-      "--thinking",
-      "high",
       "--print",
       "PROMPT",
     ]);
@@ -761,7 +602,7 @@ describe("settingsForTarget", () => {
       "command: pi\nmodel: m\nprovider: zai\nreasoning: h\n",
       "s",
     );
-    const args = agentArgs(
+    const args = piRunner.args(
       settingsForTarget(settings, { provider: "or", model: "m2" }),
       "PROMPT",
     );
@@ -774,7 +615,7 @@ describe("settingsForTarget", () => {
       "command: pi\nmodel: m\nprovider: zai\nreasoning: h\n",
       "s",
     );
-    const args = agentArgs(
+    const args = piRunner.args(
       settingsForTarget(settings, { model: "m2" }),
       "PROMPT",
     );
@@ -807,51 +648,6 @@ describe("formatAgentInvocation", () => {
     ).toBe(
       "pi --model GLM-5.2 --thinking high (isolated +2 skills +2 extensions)",
     );
-  });
-});
-
-describe("isolationLabel", () => {
-  it("stays plain isolated with no whitelist", () => {
-    expect(isolationLabel({ command: "pi", model: "m", reasoning: "h" })).toBe(
-      "isolated",
-    );
-  });
-
-  it("counts whitelisted skills and extensions", () => {
-    expect(
-      isolationLabel({
-        command: "pi",
-        model: "m",
-        reasoning: "h",
-        isolateSkills: ["/a", "/b"],
-        isolateExtensions: ["npm:x", "npm:y"],
-      }),
-    ).toBe("isolated +2 skills +2 extensions");
-  });
-
-  it("uses the singular for one skill and one extension", () => {
-    expect(
-      isolationLabel({
-        command: "pi",
-        model: "m",
-        reasoning: "h",
-        isolateSkills: ["/a"],
-        isolateExtensions: ["npm:x"],
-      }),
-    ).toBe("isolated +1 skill +1 extension");
-  });
-
-  it("ignores the whitelist keys on an isolate: false opt-out", () => {
-    expect(
-      isolationLabel({
-        command: "pi",
-        model: "m",
-        reasoning: "h",
-        isolate: false,
-        isolateSkills: ["/a"],
-        isolateExtensions: ["npm:x"],
-      }),
-    ).toBe("not isolated");
   });
 });
 
@@ -1506,57 +1302,4 @@ describe("agentCommandOverride (issue #399)", () => {
   it("treats an empty value as no override", () => {
     expect(agentCommandOverride({ [AGENT_COMMAND_ENV]: "" })).toBeUndefined();
   });
-});
-
-describe("agentArgs web-grant isolation", () => {
-  const CONFIGURATIONS = [
-    {
-      name: "default",
-      settings: { command: "pi", model: "GLM-5.2", reasoning: "high" },
-    },
-    {
-      name: "isolate true",
-      settings: {
-        command: "pi",
-        model: "GLM-5.2",
-        reasoning: "high",
-        isolate: true,
-      },
-    },
-    {
-      name: "isolate false",
-      settings: {
-        command: "pi",
-        model: "GLM-5.2",
-        reasoning: "high",
-        isolate: false,
-      },
-    },
-    {
-      name: "extension whitelist present",
-      settings: {
-        command: "pi",
-        model: "GLM-5.2",
-        reasoning: "high",
-        isolateExtensions: ["npm:some-extension"],
-      },
-    },
-    {
-      name: "web extension whitelisted by the operator",
-      settings: {
-        command: "pi",
-        model: "GLM-5.2",
-        reasoning: "high",
-        isolateExtensions: ["npm:pi-web-access"],
-      },
-    },
-  ] as const;
-
-  for (const { name, settings } of CONFIGURATIONS) {
-    it(`keeps pi-web-access out of the ingest/lint/scoped argv (${name})`, () => {
-      expect(agentArgs(settings, "PROMPT").join("\u0000")).not.toContain(
-        "pi-web-access",
-      );
-    });
-  }
 });

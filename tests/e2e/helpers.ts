@@ -81,6 +81,16 @@ export function runCli(
     delete env.NO_COLOR;
   }
 
+  // Task runners (firstmate worktrees) inject a scoped core.hooksPath
+  // through the GIT_CONFIG_COUNT/KEY_n/VALUE_n mechanism; every child
+  // here must see stock git, so the injection never crosses the spawn
+  // boundary unless a test passes its own env explicitly.
+  for (const key of Object.keys(env)) {
+    if (/^GIT_CONFIG_(COUNT|KEY_\d+|VALUE_\d+)$/.test(key)) {
+      delete env[key];
+    }
+  }
+
   Object.assign(env, options.env);
 
   return new Promise((resolve, reject) => {

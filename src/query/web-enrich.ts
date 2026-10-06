@@ -5,7 +5,9 @@
  * the shared isolate.extensions list is never touched — and any
  * failure lands in the degradation path without touching the core.
  * The audit itself lives in web-audit.ts; this module composes the
- * run and renders its outcome.
+ * prompt, runs the caller-wired spawn (the agent's grant and flag
+ * language is the Runner adapter's, issue #434), and renders the
+ * outcome.
  */
 
 import { withHeartbeat } from "../cli/progress.ts";
@@ -26,18 +28,9 @@ import {
   type WebSource,
 } from "./web-audit.ts";
 
-/** The web extension source, as the pi grant names it. */
-export const WEB_EXTENSION_SOURCE = "npm:pi-web-access";
-
-/** The grant width: search + fetch, pi `--tools` allowlist. */
-export const WEB_TOOL_ALLOWLIST = "web_search,source_check,fetch_content";
-
 /** Liveness prefix of the enrichment phase's heartbeat; the animated
  *  sink keeps these on one line, like the core phase's. */
 export const WEB_ENRICH_HEARTBEAT_PREFIX = "wiki-query: web enrichment running";
-
-/** The machine-readable output mode of the enrichment run. */
-export const WEB_OUTPUT_MODE = "json";
 
 /** Degradation warning, plugin state: verbatim design wording. */
 export const WEB_UNAVAILABLE_WARNING =
@@ -73,14 +66,17 @@ export function withGapHint(
   return isGapAnswer(answer) ? `${answer}\n\n${hint}` : answer;
 }
 
-/** The agent identity the enrichment run spawns with, structurally:
- *  the caller passes its loaded agent settings. */
-export interface WebAgentIdentity {
+/** The enrichment spawn, wired by the caller's Runner adapter
+ *  (issue #434): the agent command, the grant tail the progress line
+ *  names, and the argv builder for a composed prompt — the adapter
+ *  owns the grant's flag language (ambient isolation, the web
+ *  extension grant, the JSON output mode, identity, prompt). */
+export interface WebEnrichmentSpawn {
   readonly command: string;
-  readonly model: string;
-  readonly reasoning: string;
-  readonly provider?: string;
-  readonly isolate?: boolean;
+  /** The grant's display tail, e.g. `-e npm:pi-web-access --tools
+   *  web_search,source_check,fetch_content`. */
+  readonly grantDisplay: string;
+  args(composed: string): readonly string[];
 }
 
 /** The agent spawn the enrichment run goes through, structurally:
@@ -94,35 +90,6 @@ export type AgentSpawn = (
     timeoutMs?: number | undefined;
   },
 ) => Promise<{ stdout: string; stderr: string }>;
-
-/** The enrichment run's argv: ambient isolation first (the caller's
- *  isolation flags, the same ones every closed-world spawn site
- *  uses), then this run's deliberate web grant — extension plus tool
- *  allowlist — then the JSON output mode the audit parses, then the
- *  agent identity and prompt. Never the shared isolate.extensions
- *  list. */
-export function webEnrichAgentArgs(
-  identity: WebAgentIdentity,
-  isolationFlags: readonly string[],
-  composed: string,
-): string[] {
-  return [
-    ...(identity.isolate === false ? [] : [...isolationFlags]),
-    "-e",
-    WEB_EXTENSION_SOURCE,
-    "--tools",
-    WEB_TOOL_ALLOWLIST,
-    ...(identity.provider ? ["--provider", identity.provider] : []),
-    "--model",
-    identity.model,
-    "--thinking",
-    identity.reasoning,
-    "--mode",
-    WEB_OUTPUT_MODE,
-    "--print",
-    composed,
-  ];
-}
 
 /** The enrichment prompt file, beside query.md in the prompts dir. */
 export const WEB_ENRICH_PROMPT_FILE = "web-enrich.md";
@@ -174,10 +141,9 @@ export interface WebEnrichmentFailure {
 export type WebEnrichmentOutcome = WebEnrichmentOk | WebEnrichmentFailure;
 
 export interface WebEnrichmentOptions {
-  /** The agent identity to spawn (the loaded agent settings). */
-  readonly identity: WebAgentIdentity;
-  /** The caller's ambient isolation flags for the phase-2 argv. */
-  readonly isolationFlags: readonly string[];
+  /** The enrichment spawn, wired by the caller's Runner adapter
+   *  (issue #434). */
+  readonly spawn: WebEnrichmentSpawn;
   readonly question: string;
   /** The finished core document, read-only input. */
   readonly coreAnswer: string;
@@ -213,7 +179,7 @@ function newestCallIso(calls: readonly WebCall[], now: () => Date): string {
 export async function runWebEnrichment(
   options: WebEnrichmentOptions,
 ): Promise<WebEnrichmentOutcome> {
-  const { run, identity } = options;
+  const { run, spawn } = options;
 
   const composed = composeEnrichmentPrompt(
     options.promptText,
@@ -223,7 +189,7 @@ export async function runWebEnrichment(
   );
 
   run.onProgress(
-    `wiki-query: web enrichment run: ${identity.command} -e ${WEB_EXTENSION_SOURCE} --tools ${WEB_TOOL_ALLOWLIST}`,
+    `wiki-query: web enrichment run: ${spawn.command} ${spawn.grantDisplay}`,
   );
 
   let stdout: string;
@@ -236,15 +202,11 @@ export async function runWebEnrichment(
         intervalMs: options.heartbeatMs,
       },
       () =>
-        options.runAgent(
-          identity.command,
-          webEnrichAgentArgs(identity, options.isolationFlags, composed),
-          {
-            cwd: run.dataRoot,
-            env: run.env,
-            timeoutMs: options.timeoutMs,
-          },
-        ),
+        options.runAgent(spawn.command, spawn.args(composed), {
+          cwd: run.dataRoot,
+          env: run.env,
+          timeoutMs: options.timeoutMs,
+        }),
     ));
   } catch (error) {
     return { kind: "failed", reason: (error as Error).message };
@@ -296,8 +258,7 @@ export interface CoreArtifactFields {
 export async function enrichmentArtifact(
   core: CoreArtifactFields,
   options: {
-    readonly identity: WebAgentIdentity;
-    readonly isolationFlags: readonly string[];
+    readonly spawn: WebEnrichmentSpawn;
     readonly question: string;
     /** The read enrichment prompt text; undefined degrades the run. */
     readonly promptText: string | undefined;
@@ -317,8 +278,7 @@ export async function enrichmentArtifact(
           reason: `${WEB_ENRICH_PROMPT_FILE} is unavailable`,
         }
       : await runWebEnrichment({
-          identity: options.identity,
-          isolationFlags: options.isolationFlags,
+          spawn: options.spawn,
           question: options.question,
           coreAnswer: core.answer,
           promptText: options.promptText,
