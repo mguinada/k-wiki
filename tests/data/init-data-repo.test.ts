@@ -563,6 +563,30 @@ describe("refreshDataRepoContract (issue #433)", () => {
     expect(stdout).toBe("");
   });
 
+  it("keeps a staged unrelated change out of the refresh commit", async () => {
+    const repoRoot = await makeCodeRepoFixture();
+    const dataRoot = await makeTempDir();
+
+    await seedDataRepo({ dataRoot, repoRoot, env: GIT_ENV });
+    await writeFile(join(dataRoot, "wiki", "note.md"), "operator work\n");
+    await git(dataRoot, "add", "--", "wiki/note.md");
+    await writeFile(join(repoRoot, "wiki", "AGENTS.md"), "# evolved\n");
+    await refreshDataRepoContract({ dataRoot, repoRoot, env: GIT_ENV });
+
+    const committed = (
+      await git(
+        dataRoot,
+        "diff-tree",
+        "--no-commit-id",
+        "--name-only",
+        "-r",
+        "HEAD",
+      )
+    ).stdout.trim();
+
+    expect(committed).toBe("wiki/AGENTS.md");
+  });
+
   it("refuses an uninitialized target with a named error", async () => {
     const dataRoot = await makeTempDir();
 

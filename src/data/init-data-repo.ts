@@ -1,5 +1,7 @@
 /**
- * data:init — seed the data repo at a given `dataRoot` (issue #29).
+ * data:init — seed the data repo at a given `dataRoot` (issue #29),
+ * and refresh a seeded data repo's contract copy from the canonical
+ * contract (issue #433).
  * The code repo versions only the directory skeleton; the contents
  * of `raw/` and `wiki/` live in, and are versioned by, the data repo.
  * Seeding copies the skeleton (`git ls-files`, so the copy cannot
@@ -211,7 +213,7 @@ export async function refreshDataRepoContract(
   await runGit(dataRoot, ["add", "--", CONTRACT_COPY], env);
   await runGit(
     dataRoot,
-    ["commit", "--quiet", "-m", REFRESH_COMMIT_MESSAGE],
+    ["commit", "--quiet", "-m", REFRESH_COMMIT_MESSAGE, "--", CONTRACT_COPY],
     env,
   );
 
@@ -246,7 +248,7 @@ async function seed(options: {
   if (options.meta) {
     await copyFile(
       join(repoRoot, META_CONTRACT),
-      join(dataRoot, "wiki", "AGENTS.md"),
+      join(dataRoot, CONTRACT_COPY),
     );
   }
 
