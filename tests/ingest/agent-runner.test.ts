@@ -1,5 +1,16 @@
+import {
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  codexEnv,
   codexRunner,
   defaultAuthStorePath,
   ISOLATION_FLAGS,
@@ -880,5 +891,36 @@ describe("codex Runner adapter", () => {
     expect(
       codexRunner.webEnrichArgs(settings, "PROMPT", { root: "/data" }),
     ).toContain("--web");
+  });
+
+  it("assembles a managed home with only symlinked skills, auth, and web disabled", () => {
+    const fixture = mkdtempSync(join(tmpdir(), "k-wiki-codex-runner-"));
+    const source = join(fixture, "source");
+    const skill = join(fixture, "obsidian-markdown");
+
+    mkdirSync(source, { recursive: true });
+    mkdirSync(skill, { recursive: true });
+    writeFileSync(join(source, "auth.json"), '{"openai":"seeded"}\n');
+    const env = codexEnv(
+      { CODEX_HOME: source },
+      { ...settings, isolateSkills: [skill] },
+    );
+    const home = env.CODEX_HOME ?? "";
+    const managedSkill = join(home, ".agents", "skills", "obsidian-markdown");
+    const result = {
+      auth: readFileSync(join(home, "auth.json"), "utf8"),
+      config: readFileSync(join(home, "config.toml"), "utf8"),
+      home: env.HOME,
+      skillLink: lstatSync(managedSkill).isSymbolicLink(),
+    };
+
+    rmSync(fixture, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+    expect(result).toEqual({
+      auth: '{"openai":"seeded"}\n',
+      config: 'web_search = "disabled"\napproval_policy = "never"\n',
+      home,
+      skillLink: true,
+    });
   });
 });
