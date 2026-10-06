@@ -303,7 +303,6 @@ export const piRunner: AgentRunner = {
   report: (stdout) => stdout,
 };
 
-/** The known agent ids, for the settings validator's named errors. */
 /** A temporary output file outside the data repo: Codex's -o report must
  * not appear as an untracked wiki change for the deterministic guardrails. */
 function codexReportPath(): string {
@@ -476,6 +475,7 @@ export function runnerEnv(
   return codexEnv(environment, settings);
 }
 
+/** The known agent ids, for the settings validator's named errors. */
 export const AGENT_IDS: readonly string[] = [piRunner.id, codexRunner.id];
 
 /** The adapter for one `agent:` settings value: a named error for
