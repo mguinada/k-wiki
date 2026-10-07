@@ -1041,8 +1041,9 @@ the named entries load — each one a deliberate trust grant. A missing
 entry warns and is omitted; the run proceeds. One entry never
 whitelists: an `isolate.extensions` source naming `pi-web-access` is
 dropped whatever its spelling — the web grant is `wiki-query --web`'s
-per-run argv injection, never an ingest or lint trust grant. Both
-keys are ignored with `isolate: false`.
+per-run grant (pi's argv extension injection, codex's managed-home
+posture), never an ingest or lint trust grant. Both keys are ignored
+with `isolate: false`.
 
 The per-run digest — the human's review surface while runs are
 unsupervised — is written to `outputs/runs/<timestamp>.md` (gitignored

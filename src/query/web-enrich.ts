@@ -1,9 +1,11 @@
 /**
  * The `--web` enrichment run (the query surface of the web access
  * design): the phase-2 spawn whose core answer stays web-blind. The
- * web grant is per-run argv injection on the query spawn path only —
- * the shared isolate.extensions list is never touched — and any
- * failure lands in the degradation path without touching the core.
+ * web grant rides the query spawn path only — pi's per-run argv
+ * extension injection, codex's managed-home live posture via
+ * runnerEnv's web option — the shared isolate.extensions list is
+ * never touched, and any failure lands in the degradation path
+ * without touching the core.
  * The audit itself lives in web-audit.ts; this module composes the
  * prompt, runs the caller-wired spawn (the agent's grant and flag
  * language is the Runner adapter's, issue #434), and renders the
