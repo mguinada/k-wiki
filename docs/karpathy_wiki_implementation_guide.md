@@ -1263,8 +1263,13 @@ the recorded wiring and the rendered lines per operation; negative
 wiring tests pin the failure semantics (a whitelist miss warns and
 omits, a timeout kills and reports failed, a non-zero exit reports
 the error path). pi's observable behavior is byte-identical to the
-pre-refactor wiring. Additional adapters (the first planned: Codex,
-issue #435) implement the same interface; no pipeline module changes.
+pre-refactor wiring. Additional adapters (the second, the Codex lane:
+issue #435) implement the same interface — its settings schema,
+Pi-to-Codex mapping, and operator smoke probe live in
+`docs/references/agent-adapters.md` — and a lane whose transport the
+interface lacked (codex reads its prompt on stdin and reports through
+an output file) extends the seam once, at the shared spawner, not in
+stage logic.
 
 ### Ingest modes
 

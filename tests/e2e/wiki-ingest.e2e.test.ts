@@ -257,6 +257,65 @@ async function setNotes(repo: Repo, notes: Record<string, string>) {
 }
 
 describe("wiki-ingest e2e", () => {
+  it("runs a Codex-shaped conformance stub with its managed home", async () => {
+    const repo = await makeRepo({ "AI/RAG.md": "rag" });
+    const skills = join(repo.dataRoot, "skills", "obsidian-markdown");
+    const authHome = await mkdtemp(join(tmpdir(), "k-wiki-codex-auth-"));
+
+    tempDirs.push(authHome);
+    await mkdir(skills, { recursive: true });
+    await writeFile(join(skills, "SKILL.md"), "# skill\n");
+    await writeFile(join(authHome, "auth.json"), '{"openai":"seeded"}\n');
+    await writeFile(
+      join(repo.dataRoot, "codex-conformance.mjs"),
+      `#!/usr/bin/env node
+import { lstat, readFile, readdir, realpath, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+const args = process.argv.slice(2);
+const value = (flag) => args[args.indexOf(flag) + 1];
+const prompt = await new Promise((resolve) => {
+  let text = "";
+  process.stdin.setEncoding("utf8");
+  process.stdin.on("data", (chunk) => { text += chunk; });
+  process.stdin.on("end", () => resolve(text));
+});
+const home = process.env.CODEX_HOME;
+const skills = join(home, ".agents", "skills");
+const config = await readFile(join(home, "config.toml"), "utf8");
+const auth = await readFile(join(home, "auth.json"), "utf8");
+const checks = { exec: args[0] === "exec", root: (await realpath(value("-C"))) === (await realpath(process.cwd())),  sandbox: value("--sandbox") === "workspace-write", ephemeral: args.includes("--ephemeral"), git: args.includes("--skip-git-repo-check"), model: value("-m") === "gpt-5.6-terra", reasoning: value("-c") === "model_reasoning_effort=high", pi: !args.includes("--print"), prompt: prompt.includes("maintaining a structured knowledge wiki"), web: config.includes('web_search = "disabled"'), approval: config.includes('approval_policy = "never"'), auth: auth.includes("seeded"), skills: (await readdir(skills)).join(",") === "obsidian-markdown", link: (await lstat(join(skills, "obsidian-markdown"))).isSymbolicLink() };
+if (!Object.values(checks).every(Boolean)) { throw new Error("codex conformance failed: " + JSON.stringify(checks)); }
+await writeFile(value("-o"), "codex conformance report\\n");
+`,
+      { mode: 0o755 },
+    );
+    await writeFile(
+      repo.settingsPath,
+      [
+        `command: ${join(repo.dataRoot, "codex-conformance.mjs")}`,
+        "agent: codex",
+        "targets: [gpt-5.6-terra]",
+        "reasoning: high",
+        "isolate.skills: [skills/obsidian-markdown]",
+        "",
+      ].join("\n"),
+    );
+
+    const result = await runCli(
+      INGEST_SCRIPT,
+      [
+        "--settings",
+        repo.settingsPath,
+        "--outputs",
+        repo.outputsDir,
+        join(repo.dataRoot, "raw"),
+      ],
+      { env: { CODEX_HOME: authHome } },
+    );
+
+    expect(result.code).toBe(0);
+  });
+
   it("answers --help with usage and exit 0", async () => {
     const result = await runCli(INGEST_SCRIPT, ["--help"]);
 

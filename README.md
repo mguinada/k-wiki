@@ -992,16 +992,21 @@ reasoning: high    # pi thinking level, passed as --thinking
 `agent` names the Runner adapter that owns the agent CLI's flag
 language — argv and env building, the isolation posture, the
 whitelist mechanics, the web grant, and the credential probe. The
-default and only adapter today is `pi`; an unknown value is a named
-settings error, never a silent fallback. Everything
+default adapter is `pi`; an unknown value is a named settings
+error, never a silent fallback. Everything
 model-specific stays in settings (`targets`, `reasoning`): switching
 a knob is a settings edit, never code. The wrapper renders the
 operator-facing `invoking agent:` line from the adapter's structured
 invocation descriptor through one rendering site, so every surface
-formats identity and isolation posture identically.
+formats identity and isolation posture identically. See
+[Agent Runner adapters](docs/references/agent-adapters.md) for the Codex
+OpenAI-only lane, its managed-home isolation, and the model-free operator
+smoke probe. The shipped settings keep the Pi lane active; this documentation
+does not enable Codex for an instance.
 
-`targets` is an ordered provider/model list: the first entry is the
-primary target, and when a target fails before producing any kept
+`targets` is an ordered provider/model list (bare OpenAI model names
+on the Codex lane): the first entry is the primary target, and when a
+target fails before producing any kept
 output the next entry is tried — once a target keeps output the run is
 never retried, and each tried target gets the full `--timeout` budget.
 Within a [`wiki-sync`](#running-the-full-cycle-wiki-sync) cycle the
@@ -1014,7 +1019,8 @@ with the cycle, so the next cycle starts from the primary target
 again. An unrelated failure (crash, timeout) says nothing about the
 target's balance and carries nothing over. The single-target legacy
 form (`provider:` and `model:` scalars, as in the instances above)
-remains valid; the two forms cannot be combined.
+remains valid; the two forms cannot be combined, and the Codex lane
+rejects `provider:`.
 
 Unless `isolate: false` opts out, every spawned ingest and lint run
 is isolated from the host's global agent setup: the

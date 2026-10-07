@@ -70,13 +70,22 @@ export function withGapHint(
  *  (issue #434): the agent command, the grant tail the progress line
  *  names, and the argv builder for a composed prompt — the adapter
  *  owns the grant's flag language (ambient isolation, the web
- *  extension grant, the JSON output mode, identity, prompt). */
+ *  extension grant, identity — plus pi's JSON output mode; the
+ *  prompt rides argv or stdin). */
 export interface WebEnrichmentSpawn {
   readonly command: string;
   /** The grant's display tail, e.g. `-e npm:pi-web-access --tools
    *  web_search,source_check,fetch_content`. */
   readonly grantDisplay: string;
   args(composed: string): readonly string[];
+  stdin?(composed: string): string | undefined;
+  reportPath?(args: readonly string[]): string | undefined;
+  /** The caller's runner-managed environment: the env the child
+   *  inherits plus the managed temp paths the run owns — the shared
+   *  spawner disposes exactly these when the run settles. */
+  env?():
+    | { readonly env: NodeJS.ProcessEnv; readonly temp: readonly string[] }
+    | undefined;
 }
 
 /** The agent spawn the enrichment run goes through, structurally:
@@ -88,6 +97,9 @@ export type AgentSpawn = (
     cwd: string;
     env: NodeJS.ProcessEnv;
     timeoutMs?: number | undefined;
+    stdin?: string | undefined;
+    reportPath?: string | undefined;
+    managedTemp?: readonly string[] | undefined;
   },
 ) => Promise<{ stdout: string; stderr: string }>;
 
@@ -195,6 +207,9 @@ export async function runWebEnrichment(
   let stdout: string;
 
   try {
+    const args = spawn.args(composed);
+    const managed = spawn.env?.();
+
     ({ stdout } = await withHeartbeat(
       {
         onProgress: run.onProgress,
@@ -202,9 +217,12 @@ export async function runWebEnrichment(
         intervalMs: options.heartbeatMs,
       },
       () =>
-        options.runAgent(spawn.command, spawn.args(composed), {
+        options.runAgent(spawn.command, args, {
           cwd: run.dataRoot,
-          env: run.env,
+          env: managed?.env ?? run.env,
+          managedTemp: managed?.temp,
+          stdin: spawn.stdin?.(composed),
+          reportPath: spawn.reportPath?.(args),
           timeoutMs: options.timeoutMs,
         }),
     ));

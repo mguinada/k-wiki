@@ -1,11 +1,23 @@
-import { describe, expect, it } from "vitest";
 import {
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it, vi } from "vitest";
+import {
+  codexRunner,
   defaultAuthStorePath,
   ISOLATION_FLAGS,
   isolationLabel,
   npmExtensionDir,
   piInstallRootFromEnv,
   piRunner,
+  runnerEnv,
   WEB_EXTENSION_SOURCE,
   WEB_TOOL_ALLOWLIST,
 } from "../../src/ingest/agent-runner.ts";
@@ -835,5 +847,106 @@ describe("invocation descriptor (issue #434)", () => {
         reasoning: "low",
       }),
     ).toBe("pi --model M --thinking low");
+  });
+});
+
+describe("codex Runner adapter", () => {
+  const settings = {
+    command: "codex",
+    agent: "codex",
+    model: "gpt-5.6-terra",
+    reasoning: "high",
+  } as const;
+
+  it("maps settings to Codex exec argv with report capture", () => {
+    const args = codexRunner.args(settings, "PROMPT", { root: "/data" });
+
+    expect(args.slice(0, 12)).toEqual([
+      "exec",
+      "-C",
+      "/data",
+      "--sandbox",
+      "workspace-write",
+      "--ephemeral",
+      "--skip-git-repo-check",
+      "-m",
+      "gpt-5.6-terra",
+      "-c",
+      "model_reasoning_effort=high",
+      "-o",
+    ]);
+  });
+
+  it("keeps the Codex prompt off argv for stdin delivery", () => {
+    expect(
+      codexRunner.args(settings, "PROMPT", { root: "/data" }),
+    ).not.toContain("PROMPT");
+  });
+
+  it("delivers the prompt on stdin", () => {
+    expect(codexRunner.stdin("PROMPT")).toBe("PROMPT");
+  });
+
+  it("adds the query-only web grant only to enrichment argv", () => {
+    expect(
+      codexRunner.webEnrichArgs(settings, "PROMPT", { root: "/data" }),
+    ).toContain("--web");
+  });
+
+  it("assembles a managed home with only symlinked skills, auth, and web disabled", () => {
+    const fixture = mkdtempSync(join(tmpdir(), "k-wiki-codex-runner-"));
+    const source = join(fixture, "source");
+    const skill = join(fixture, "obsidian-markdown");
+
+    mkdirSync(source, { recursive: true });
+    mkdirSync(skill, { recursive: true });
+    writeFileSync(join(source, "auth.json"), '{"openai":"seeded"}\n');
+    const managed = runnerEnv(
+      { ...settings, isolateSkills: [skill] },
+      { CODEX_HOME: source },
+    );
+    const env = managed.env;
+    const home = env.CODEX_HOME ?? "";
+    const managedSkill = join(home, ".agents", "skills", "obsidian-markdown");
+    const result = {
+      auth: readFileSync(join(home, "auth.json"), "utf8"),
+      config: readFileSync(join(home, "config.toml"), "utf8"),
+      home: env.HOME,
+      skillLink: lstatSync(managedSkill).isSymbolicLink(),
+    };
+
+    rmSync(fixture, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+    expect(result).toEqual({
+      auth: '{"openai":"seeded"}\n',
+      config: 'web_search = "disabled"\napproval_policy = "never"\n',
+      home,
+      skillLink: true,
+    });
+  });
+
+  it("reports auth not seeded when the host has no auth store", () => {
+    const fixture = mkdtempSync(join(tmpdir(), "k-wiki-codex-posture-"));
+    vi.stubEnv("CODEX_HOME", fixture);
+
+    const posture = codexRunner.invocation(settings).posture ?? "";
+
+    vi.unstubAllEnvs();
+    rmSync(fixture, { recursive: true, force: true });
+
+    expect(posture).toContain("auth not seeded");
+  });
+
+  it("reports auth seeded when the host auth store exists", () => {
+    const fixture = mkdtempSync(join(tmpdir(), "k-wiki-codex-posture-"));
+    vi.stubEnv("CODEX_HOME", fixture);
+    writeFileSync(join(fixture, "auth.json"), "{}\n");
+
+    const posture = codexRunner.invocation(settings).posture ?? "";
+
+    vi.unstubAllEnvs();
+    rmSync(fixture, { recursive: true, force: true });
+
+    expect(posture).toContain("auth seeded");
   });
 });

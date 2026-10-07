@@ -10,7 +10,7 @@
  */
 
 import { readFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { basename, dirname } from "node:path";
 import { AGENT_COMMAND_ENV } from "../cli/env.ts";
 import { unquote } from "../wiki/pages.ts";
 import {
@@ -36,11 +36,12 @@ export interface AgentInvocation {
   readonly model: string;
   readonly reasoning: string;
   readonly provider?: string;
-  /** The isolation posture, as the line renders it: `isolated`,
-   *  `isolated +N skills +M extensions`, or `not isolated`.
-   *  Undefined when the surface's line omits the posture — the
-   *  answer-only query spawn, a run that cannot write and needs no
-   *  isolation signal. */
+  /** The isolation posture, as the line renders it: pi's
+   *  `isolated`, `isolated +N skills +M extensions`, or
+   *  `not isolated`; codex's managed-home/sandbox/web/auth posture
+   *  string. Undefined when the surface's line omits the posture —
+   *  the answer-only query spawn, a run that cannot write and needs
+   *  no isolation signal. */
   readonly posture?: string;
 }
 
@@ -63,28 +64,32 @@ export interface AgentSettings {
   /** Agent CLI command; run non-interactively in the data repo root. */
   readonly command: string;
   /** The Runner adapter serving this file (issue #434): the id
-   *  runnerFor resolves. Default: pi — the only adapter today; an
-   *  unknown value is a named settings error. */
+   *  runnerFor resolves. Default: pi; an unknown value is a named
+   *  settings error. */
   readonly agent?: string;
-  /** Passed to the agent as `--model`; the first target's model. */
+  /** Passed to the agent as `--model` (pi) or `-m` (codex); the
+   *  first target's model. */
   readonly model: string;
-  /** Reasoning level; passed to the agent as `--thinking`. */
+  /** Reasoning level; pi `--thinking`, codex `-c model_reasoning_effort=`. */
   readonly reasoning: string;
-  /** Passed to the agent as `--provider` when set; the first target's provider. */
+  /** Passed to the agent as `--provider` when set; the first
+   *  target's provider. Pi-only — the codex lane rejects it. */
   readonly provider?: string;
-  /** Ordered provider/model targets for ingest fallback; the
-   *  wiki-sync cycle's lint stage also serves from it via the
-   *  per-cycle affordability memory (issue #408). */
+  /** Ordered targets for ingest fallback: Pi uses provider/model;
+   *  Codex uses OpenAI model names. The wiki-sync cycle's lint stage
+   *  also serves from it via the per-cycle affordability memory. */
   readonly targets?: readonly AgentTarget[];
   /** Quota pre-flight mode for unattended scheduled runs. */
   readonly quotaPreflight?: "auto" | "off" | string;
   /** False opts out of the pi isolation flags (issue #118);
-   *  unset means isolated — the safe default. Agent-agnostic: the
-   *  setting becomes flags at the spawn site (agentArgs), so a
-   *  non-pi agent's settings simply omit it or opt out. */
+   *  unset means isolated — the safe default. The opt-out is
+   *  pi-only: the codex lane's managed-home isolation is
+   *  structural, and `isolate: false` there is a named settings
+   *  error. */
   readonly isolate?: boolean;
-  /** Whitelisted skill dirs for isolated runs (issue #144),
-   *  loaded additively via `--skill` even under `--no-skills`.
+  /** Whitelisted skill dirs for isolated runs (issue #144): pi
+   *  loads them additively via `--skill` even under `--no-skills`;
+   *  codex symlinks them into the managed home's `.agents/skills`.
    *  Entries are resolved against the settings file's directory
    *  (with `~` expansion) by loadAgentSettings; ignored when
    *  `isolate: false`. */
@@ -92,7 +97,8 @@ export interface AgentSettings {
   /** Whitelisted extension sources for isolated runs (issue #144),
    *  loaded additively via `-e` even under `--no-extensions` — a
    *  path, `npm:<package>`, or `git:<repo>`; each entry is a
-   *  deliberate trust grant. Ignored when `isolate: false`. */
+   *  deliberate trust grant. Pi-only: the codex lane rejects
+   *  extensions. Ignored when `isolate: false`. */
   readonly isolateExtensions?: readonly string[];
   /** Domain wiki dirs for the cycle's crosslink audit (wiki-sync,
    *  issue #96); undefined leaves the stage out entirely. Paths are
@@ -123,8 +129,22 @@ const SETTING_KEYS = [...REQUIRED_KEYS, ...OPTIONAL_KEYS] as const;
 type SettingKey = (typeof SETTING_KEYS)[number];
 type ListKey = (typeof LIST_KEYS)[number];
 
-function parseTarget(value: string, origin: string): AgentTarget {
+function parseTarget(
+  value: string,
+  origin: string,
+  agent: string | undefined,
+): AgentTarget {
   const separator = value.indexOf("/");
+
+  if (agent === "codex") {
+    if (separator >= 0) {
+      throw new Error(
+        `invalid agent settings at ${origin}: codex targets must be OpenAI model names, not provider/model`,
+      );
+    }
+
+    return { model: value };
+  }
 
   if (separator < 1 || separator === value.length - 1) {
     throw new Error(
@@ -370,6 +390,7 @@ function validateScalarDomains(
  *  agent is a named error, not a silent fallback. */
 function validateAgentSetting(
   values: Map<SettingKey, string>,
+  lists: Partial<Record<ListKey, readonly string[]>>,
   origin: string,
 ): void {
   const agent = values.get("agent");
@@ -378,6 +399,57 @@ function validateAgentSetting(
     throw new Error(
       `invalid agent settings at ${origin}: unknown agent ${JSON.stringify(agent)} — known agents: ${AGENT_IDS.join(", ")}`,
     );
+  }
+
+  if (agent === "codex") {
+    validateCodexSettings(values, lists, origin);
+  }
+}
+
+/** The Codex lane's settings contradictions, each a named error:
+ *  OpenAI models only, structural managed-home isolation, and a
+ *  skill whitelist representable as managed `.agents/skills` links. */
+function validateCodexSettings(
+  values: Map<SettingKey, string>,
+  lists: Partial<Record<ListKey, readonly string[]>>,
+  origin: string,
+): void {
+  if (values.has("provider")) {
+    throw new Error(
+      `invalid agent settings at ${origin}: codex runner accepts OpenAI models only; provider is unsupported`,
+    );
+  }
+
+  if ((values.get("model") ?? "").includes("/")) {
+    throw new Error(
+      `invalid agent settings at ${origin}: codex targets must be OpenAI model names, not provider/model`,
+    );
+  }
+
+  if (values.get("isolate") === "false") {
+    throw new Error(
+      `invalid agent settings at ${origin}: codex runner is always managed-home isolated; isolate: false is unsupported`,
+    );
+  }
+
+  if ((lists[EXTENSIONS_KEY]?.length ?? 0) > 0) {
+    throw new Error(
+      `invalid agent settings at ${origin}: codex runner does not support extensions`,
+    );
+  }
+
+  const names = new Set<string>();
+
+  for (const skill of lists[SKILLS_KEY] ?? []) {
+    const name = basename(skill);
+
+    if (names.has(name)) {
+      throw new Error(
+        `invalid agent settings at ${origin}: codex isolate.skills entries must have distinct names; duplicate ${JSON.stringify(name)}`,
+      );
+    }
+
+    names.add(name);
   }
 }
 
@@ -397,7 +469,7 @@ function validateSettings(
 
   validateTargetSettings(values, lists, origin);
   validateScalarDomains(values, origin);
-  validateAgentSetting(values, origin);
+  validateAgentSetting(values, lists, origin);
 }
 
 function targetList(
@@ -408,7 +480,9 @@ function targetList(
   const configured = lists[TARGETS_KEY];
 
   if (configured !== undefined) {
-    return configured.map((target) => parseTarget(target, origin));
+    return configured.map((target) =>
+      parseTarget(target, origin, values.get("agent")),
+    );
   }
 
   const provider = values.get("provider");
@@ -571,8 +645,8 @@ export function formatAgentInvocation(settings: AgentSettings): string {
 /** Read and parse the agent settings file; missing values are errors.
  *  Whitelist skill paths resolve against the settings file's
  *  directory and every whitelist entry is pre-flighted (absent
- *  entries warn and drop, issue #144) — the pi Runner adapter's
- *  pre-flight (agent-runner.ts), applied to every parse. */
+ *  entries warn and drop, issue #144) — the shared pre-flight in
+ *  agent-runner.ts, applied to every parse. */
 export async function loadAgentSettings(
   path: string,
   context: LoadAgentSettingsContext = {},

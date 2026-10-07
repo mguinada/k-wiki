@@ -12,6 +12,7 @@ import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { pluralized } from "../cli/shared.ts";
 import { changedPaths } from "../data/git.ts";
+import { disposeManagedTemp, runnerEnv } from "./agent-runner.ts";
 import {
   type AgentSettings,
   type AgentTarget,
@@ -32,6 +33,9 @@ export type AgentRunner = (
     cwd: string;
     env: NodeJS.ProcessEnv;
     timeoutMs?: number | undefined;
+    stdin?: string | undefined;
+    reportPath?: string | undefined;
+    managedTemp?: readonly string[] | undefined;
   },
 ) => Promise<{ stdout: string; stderr: string }>;
 
@@ -48,10 +52,11 @@ function tail(text: string): string {
 
 /**
  * Run the agent CLI non-interactively, capturing its final output.
- * stdin is closed ("ignore"): an open pipe never reaching EOF makes
- * the agent wait on stdin forever — verified against pi 0.84.2, whose
- * `-p` mode reads stdin even when the prompt arrives via `--print`.
- * A run exceeding AGENT_TIMEOUT_MS is killed and reported as failed.
+ * stdin stays closed ("ignore") unless provided: an open pipe never
+ * reaching EOF makes the agent wait on stdin forever — verified
+ * against pi 0.84.2, whose `-p` mode reads stdin even when the prompt
+ * arrives via `--print`; provided stdin is written and ended. A run
+ * exceeding AGENT_TIMEOUT_MS is killed and reported as failed.
  */
 export function spawnAgent(
   command: string,
@@ -60,16 +65,26 @@ export function spawnAgent(
     cwd: string;
     env: NodeJS.ProcessEnv;
     timeoutMs?: number | undefined;
+    stdin?: string | undefined;
+    reportPath?: string | undefined;
+    managedTemp?: readonly string[] | undefined;
   },
 ): Promise<{ stdout: string; stderr: string }> {
   const timeoutMs = options.timeoutMs ?? AGENT_TIMEOUT_MS;
 
   return new Promise((resolve, reject) => {
+    const ownTemp = options.managedTemp ?? [];
     const child = spawn(command, [...args], {
       cwd: options.cwd,
       env: options.env,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: [options.stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"],
     });
+    if (options.stdin !== undefined) {
+      child.stdin?.on("error", () => {});
+      child.stdin?.write(options.stdin);
+      child.stdin?.end();
+    }
+
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     let bytes = 0;
@@ -97,10 +112,11 @@ export function spawnAgent(
       chunks.push(chunk);
     };
 
-    child.stdout.on("data", (chunk: Buffer) => collect(stdout, chunk));
-    child.stderr.on("data", (chunk: Buffer) => collect(stderr, chunk));
+    child.stdout?.on("data", (chunk: Buffer) => collect(stdout, chunk));
+    child.stderr?.on("data", (chunk: Buffer) => collect(stderr, chunk));
     child.on("error", (error: Error) => {
       clearTimeout(timer);
+      disposeManagedTemp(ownTemp, options.reportPath);
       reject(new Error(`agent ${command} could not start: ${error.message}`));
     });
     child.on("close", (code, signal) => {
@@ -110,7 +126,26 @@ export function spawnAgent(
       const errText = Buffer.concat(stderr).toString("utf8");
 
       if (code === 0) {
-        resolve({ stdout: out, stderr: errText });
+        const outputPath = options.reportPath;
+
+        if (outputPath === undefined) {
+          disposeManagedTemp(ownTemp, options.reportPath);
+          resolve({ stdout: out, stderr: errText });
+        } else {
+          readFile(outputPath, "utf8")
+            .then((report) => {
+              disposeManagedTemp(ownTemp, options.reportPath);
+              resolve({ stdout: report, stderr: errText });
+            })
+            .catch((error: Error) => {
+              disposeManagedTemp(ownTemp, options.reportPath);
+              reject(
+                new Error(
+                  `agent did not write output report ${outputPath}: ${error.message}`,
+                ),
+              );
+            });
+        }
 
         return;
       }
@@ -120,6 +155,7 @@ export function spawnAgent(
           ? `killed with ${signal} (output over ${AGENT_MAX_BUFFER} bytes, or wrapper shutdown)`
           : `exited with code ${code}`;
 
+      disposeManagedTemp(ownTemp, options.reportPath);
       reject(new Error(`agent ${why}: ${tail(errText)}`));
     });
   });
@@ -184,15 +220,16 @@ async function attemptTarget(
 ): Promise<{ stdout: string; error: unknown }> {
   try {
     const runner = runnerFor(targetSettings);
-    const { stdout } = await options.runAgent(
-      command,
-      runner.args(targetSettings, prompt),
-      {
-        cwd: options.root,
-        env: runner.env(options.environment),
-        timeoutMs: options.timeoutMs,
-      },
-    );
+    const args = runner.args(targetSettings, prompt, { root: options.root });
+    const { env, temp } = runnerEnv(targetSettings, options.environment);
+    const { stdout } = await options.runAgent(command, args, {
+      cwd: options.root,
+      env,
+      managedTemp: temp,
+      stdin: runner.stdin(prompt),
+      reportPath: runner.reportPath(args),
+      timeoutMs: options.timeoutMs,
+    });
 
     return { stdout: runner.report(stdout), error: undefined };
   } catch (error) {

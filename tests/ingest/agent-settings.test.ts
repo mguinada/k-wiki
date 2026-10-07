@@ -132,8 +132,80 @@ describe("parseSettings", () => {
 
   it("rejects an unknown agent key value", () => {
     expect(() =>
-      parseSettings("command: pi\nagent: codex\nmodel: m\nreasoning: h\n", "s"),
-    ).toThrow('unknown agent "codex" — known agents: pi');
+      parseSettings(
+        "command: pi\nagent: unknown\nmodel: m\nreasoning: h\n",
+        "s",
+      ),
+    ).toThrow('unknown agent "unknown" — known agents: pi, codex');
+  });
+
+  it("parses a Codex OpenAI target", () => {
+    const settings = parseSettings(
+      "command: codex\nagent: codex\ntargets: [gpt-5.6-terra]\nreasoning: high\n",
+      "s",
+    );
+
+    expect(settings.model).toBe("gpt-5.6-terra");
+  });
+
+  it("refuses a provider on the Codex lane", () => {
+    expect(() =>
+      parseSettings(
+        "command: codex\nagent: codex\nprovider: openai\nmodel: gpt-5.6-terra\nreasoning: high\n",
+        "s",
+      ),
+    ).toThrow(
+      "codex runner accepts OpenAI models only; provider is unsupported",
+    );
+  });
+
+  it("refuses extensions on the Codex lane", () => {
+    expect(() =>
+      parseSettings(
+        "command: codex\nagent: codex\nmodel: gpt-5.6-terra\nreasoning: high\nisolate.extensions: [npm:x]\n",
+        "s",
+      ),
+    ).toThrow("codex runner does not support extensions");
+  });
+
+  it("refuses a provider/model scalar model on the Codex lane", () => {
+    expect(() =>
+      parseSettings(
+        "command: codex\nagent: codex\nmodel: openai/gpt-5.6-terra\nreasoning: high\n",
+        "s",
+      ),
+    ).toThrow("codex targets must be OpenAI model names, not provider/model");
+  });
+
+  it("refuses isolate: false on the Codex lane", () => {
+    expect(() =>
+      parseSettings(
+        "command: codex\nagent: codex\nmodel: gpt-5.6-terra\nreasoning: high\nisolate: false\n",
+        "s",
+      ),
+    ).toThrow(
+      "codex runner is always managed-home isolated; isolate: false is unsupported",
+    );
+  });
+
+  it("refuses duplicate-basename skills on the Codex lane", () => {
+    expect(() =>
+      parseSettings(
+        "command: codex\nagent: codex\nmodel: gpt-5.6-terra\nreasoning: high\nisolate.skills: [a/skill, b/skill]\n",
+        "s",
+      ),
+    ).toThrow(
+      'codex isolate.skills entries must have distinct names; duplicate "skill"',
+    );
+  });
+
+  it("parses duplicate-basename skills on the pi lane", () => {
+    const settings = parseSettings(
+      "command: pi\nmodel: m\nreasoning: h\nisolate.skills: [a/skill, b/skill]\n",
+      "s",
+    );
+
+    expect(settings.isolateSkills).toEqual(["a/skill", "b/skill"]);
   });
 
   it("parses an explicit isolate: false opt-out", () => {
@@ -571,8 +643,13 @@ describe("runnerFor", () => {
 
   it("names the unknown agent in the error", () => {
     expect(() =>
-      runnerFor({ command: "pi", agent: "codex", model: "m", reasoning: "h" }),
-    ).toThrow('unknown agent "codex" — known agents: pi');
+      runnerFor({
+        command: "pi",
+        agent: "unknown",
+        model: "m",
+        reasoning: "h",
+      }),
+    ).toThrow('unknown agent "unknown" — known agents: pi, codex');
   });
 
   it("builds the golden argv through the resolved adapter", () => {

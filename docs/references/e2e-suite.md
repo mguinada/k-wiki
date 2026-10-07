@@ -16,7 +16,16 @@ e2e run or diagnosing a failing one.
   path, issue #338; outputs-resolution runs (issue #414): a changed
   page's `[[outputs/…]]` citation resolves against the data root's
   `outputs/` directory — an existing target commits, a missing target
-  and a `../` escape auto-revert the run naming the path).
+  and a `../` escape auto-revert the run naming the path; a
+  Codex-shaped conformance stub run (issue #435): the stub validates
+  its own invocation (`exec -C` the data repo, `--sandbox
+  workspace-write`, `--ephemeral`, `--skip-git-repo-check`,
+  `-m gpt-5.6-terra`, `-c model_reasoning_effort=high`, the prompt on
+  stdin, no pi argv) and its managed home (the whitelisted skill
+  symlinked into `.agents/skills`, `web_search = "disabled"`,
+  `approval_policy = "never"`, `auth.json` seeded from the cycle
+  env's `CODEX_HOME`), then writes the `-o` report the run completes
+  on).
 - **sync-repo** — repo-as-source projection runs in temp source repos
   (verbatim copy, commit stamping, untracked scratch proceeds and
   untracked-selectable refuses, gitignored allowlisted files skipped
