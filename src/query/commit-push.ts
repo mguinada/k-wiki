@@ -113,7 +113,9 @@ export async function confirmPush(io: PushAskIo): Promise<boolean> {
           rl.once("close", () => resolve(null));
         }),
       ])
-    )?.trim().toLowerCase();
+    )
+      ?.trim()
+      .toLowerCase();
 
     return answer === "y" || answer === "yes";
   } finally {
