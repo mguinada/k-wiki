@@ -91,7 +91,9 @@ describe("parseCodexReport", () => {
 
     const parsed = parseCodexReport(report, NOW);
 
-    expect(parsed.calls[0]?.target).toBe("rag vs fine-tuning | 2026 comparison");
+    expect(parsed.calls[0]?.target).toBe(
+      "rag vs fine-tuning | 2026 comparison",
+    );
   });
 
   it("reads the tool from before the first pipe", () => {
