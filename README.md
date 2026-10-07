@@ -1041,8 +1041,9 @@ the named entries load — each one a deliberate trust grant. A missing
 entry warns and is omitted; the run proceeds. One entry never
 whitelists: an `isolate.extensions` source naming `pi-web-access` is
 dropped whatever its spelling — the web grant is `wiki-query --web`'s
-per-run argv injection, never an ingest or lint trust grant. Both
-keys are ignored with `isolate: false`.
+per-run grant (pi's argv extension injection, codex's managed-home
+posture), never an ingest or lint trust grant. Both keys are ignored
+with `isolate: false`.
 
 The per-run digest — the human's review surface while runs are
 unsupervised — is written to `outputs/runs/<timestamp>.md` (gitignored
@@ -1684,10 +1685,15 @@ omitted flag can never produce wiki writes:
   extension is loadable and the core answer is web-blind by
   construction (it ends with a rerun-with-`--web` hint when the wiki
   cannot answer). The second pass runs only because `--web` was
-  passed, receives the `pi-web-access` extension restricted by pi's
-  `--tools` allowlist to the search and fetch tools, and produces an
-  enrichment section the wrapper audits and machine-assembles after
-  the core answer: a `---` thematic break, `## Web enrichment`,
+  passed, and its web access is lane-shaped: the pi lane receives
+  the `pi-web-access` extension restricted by pi's `--tools`
+  allowlist to the search and fetch tools; the codex lane runs its
+  enrichment in the managed home with `web_search = "live"` and
+  closes its final report with the fenced `k-wiki-web-audit` block
+  the wrapper parses per the codex report contract. Either lane
+  produces an enrichment section the wrapper audits and
+  machine-assembles after the core answer: a `---` thematic break,
+  `## Web enrichment`,
   `## Web sources` (computed from the recorded tool calls, never
   model output), and `## Web calls audit` (which also records any
   citation the audit could not account for — the wrapper prunes the
@@ -1696,11 +1702,13 @@ omitted flag can never produce wiki writes:
   artifact header gains the mode (`query (--web)`), the web
   reference count, and the retrieval timestamp. The flag prints a
   cost-and-slowness disclosure first, and its degradations never
-  fail the query: with the plugin unavailable the run continues as a
-  normal wiki-only run with the warning persisted in the artifact
-  header; when the enrichment fails — the agent run, the audit
-  reconciliation (a pruning that empties the enrichment), or the
-  missing `prompts/web-enrich.md` prompt — the artifact keeps the
+  fail the query: with the pi lane's extension unavailable the run
+  continues as a normal wiki-only run with the warning persisted in
+  the artifact header; when the enrichment fails — the agent run, a
+  report that cannot yield the lane's contract-shaped result (the
+  named contract-parse failure), the audit reconciliation (a
+  pruning that empties the enrichment), or the missing
+  `prompts/web-enrich.md` prompt — the artifact keeps the
   wiki-only core answer with the failure warning and the concrete
   reason persisted in the header.
   `--file-last` on a `--web` artifact files the core answer only —

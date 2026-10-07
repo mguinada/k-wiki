@@ -1,128 +1,40 @@
 import { describe, expect, it } from "vitest";
 import {
   extractUrls,
-  parseAgentJsonStream,
   reconcileWebSources,
   type WebCall,
 } from "../../src/query/web-audit.ts";
-import { assistantTextLine, toolCallLine, toolResultLine } from "./helpers.ts";
 
-describe("parseAgentJsonStream", () => {
-  it("records every web tool call in order", () => {
-    const stream = [
-      toolCallLine("c1", { query: "first query" }),
-      toolResultLine("c1", "results one", { totalResults: 5 }),
-      toolCallLine("c2", { url: "https://example.com/b" }),
-      toolResultLine("c2", "fetched b"),
-      assistantTextLine("- done"),
-    ].join("\n");
-
-    const parsed = parseAgentJsonStream(stream);
-
-    expect(parsed.calls.map((call) => call.tool)).toEqual([
-      "web_search",
-      "web_search",
-    ]);
-  });
-
-  it("records the first call's target", () => {
-    const stream = [
-      toolCallLine("c1", { query: "first query" }),
-      toolResultLine("c1", "results one", { totalResults: 5 }),
-      toolCallLine("c2", { url: "https://example.com/b" }),
-      toolResultLine("c2", "fetched b"),
-      assistantTextLine("- done"),
-    ].join("\n");
-
-    const parsed = parseAgentJsonStream(stream);
-
-    expect(parsed.calls[0]?.target).toBe("first query");
-  });
-
-  it("records the first call's result count", () => {
-    const stream = [
-      toolCallLine("c1", { query: "first query" }),
-      toolResultLine("c1", "results one", { totalResults: 5 }),
-      toolCallLine("c2", { url: "https://example.com/b" }),
-      toolResultLine("c2", "fetched b"),
-      assistantTextLine("- done"),
-    ].join("\n");
-
-    const parsed = parseAgentJsonStream(stream);
-
-    expect(parsed.calls[0]?.results).toBe(5);
-  });
-
-  it("records the second call's target", () => {
-    const stream = [
-      toolCallLine("c1", { query: "first query" }),
-      toolResultLine("c1", "results one", { totalResults: 5 }),
-      toolCallLine("c2", { url: "https://example.com/b" }),
-      toolResultLine("c2", "fetched b"),
-      assistantTextLine("- done"),
-    ].join("\n");
-
-    const parsed = parseAgentJsonStream(stream);
-
-    expect(parsed.calls[1]?.target).toBe("https://example.com/b");
-  });
-
-  it("collects fetch targets and result-text URLs into the call's URL set", () => {
-    const stream = [
-      toolCallLine("c1", { url: "https://example.com/a" }),
-      toolResultLine(
-        "c1",
-        "see https://example.com/a and https://example.com/z",
-      ),
-      assistantTextLine("- done"),
-    ].join("\n");
-    const parsed = parseAgentJsonStream(stream);
-
-    expect(parsed.calls[0]?.urls).toEqual([
-      "https://example.com/a",
-      "https://example.com/z",
-    ]);
-  });
-
-  it("takes the enrichment text from the final assistant message", () => {
-    const stream = [
-      assistantTextLine("narration", 1791000000000),
-      assistantTextLine("- the answer bullets"),
-    ].join("\n");
-    const parsed = parseAgentJsonStream(stream);
-
-    expect(parsed.enrichment).toBe("- the answer bullets");
-  });
-
-  it("keeps the enrichment from non-JSON lines", () => {
-    const parsed = parseAgentJsonStream(
-      ["not json", assistantTextLine("- ok")].join("\n"),
-    );
-
-    expect(parsed.enrichment).toBe("- ok");
-  });
-
-  it("records no calls from non-JSON lines", () => {
-    const parsed = parseAgentJsonStream(
-      ["not json", assistantTextLine("- ok")].join("\n"),
-    );
-
-    expect(parsed.calls).toEqual([]);
-  });
-
-  it("marks failed calls from the tool result's error flag", () => {
-    const stream = [
-      toolCallLine("c1", { query: "doomed" }),
-      toolResultLine("c1", "boom", { isError: true }),
-      assistantTextLine("- done"),
-    ].join("\n");
-    const parsed = parseAgentJsonStream(stream);
-
-    expect(parsed.calls[0]?.failed).toBe(true);
-  });
-});
+/** One recorded call: a search surfacing the traceable URL. */
+const SEARCH_CALL: WebCall = {
+  tool: "web_search",
+  target: "rag vs fine-tuning",
+  results: 1,
+  timestamp: 1791000000000,
+  urls: ["https://example.com/a"],
+  failed: false,
+};
 
 describe("reconcileWebSources", () => {
+  it("reconciles a codex-parsed audit without failure", () => {
+    const reconciliation = reconcileWebSources(
+      "- [a](https://example.com/a) confirms the topic.",
+      [SEARCH_CALL],
+    );
+
+    expect(reconciliation.failure).toBeUndefined();
+  });
+
+  it("credits the audited search's url as the source with its retrieval date", () => {
+    const reconciliation = reconcileWebSources(
+      "- [a](https://example.com/a) confirms the topic.",
+      [SEARCH_CALL],
+    );
+
+    expect(reconciliation.sources).toEqual([
+      { url: "https://example.com/a", retrieved: "2026-10-03" },
+    ]);
+  });
   const fetchCall: WebCall = {
     tool: "fetch_content",
     target: "https://example.com/a",

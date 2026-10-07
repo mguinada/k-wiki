@@ -31,6 +31,11 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { pathExists, pluralized } from "../cli/shared.ts";
+import {
+  type ParsedWebReport,
+  parseAgentJsonStream,
+  parseCodexReport,
+} from "../query/web-report.ts";
 import { expandHome } from "../sync/config.ts";
 import type {
   AgentInvocation,
@@ -67,14 +72,28 @@ export interface AgentRunner {
     context?: RunnerContext,
   ): readonly string[];
 
-  /** The query enrichment phase's argv: ambient isolation, the web
-   *  grant, the settings' identity — plus pi's JSON output mode; the
-   *  prompt rides argv (pi) or stdin (codex). */
+  /** The query enrichment phase's argv: the lane's ambient isolation,
+   *  web posture, and identity — pi's extension grant and JSON
+   *  output mode; codex's exec shape (the live web search rides the
+   *  managed home runnerEnv builds for this spawn). The prompt rides
+   *  argv (pi) or stdin (codex). */
   webEnrichArgs(
     settings: AgentSettings,
     composed: string,
     context?: RunnerContext,
   ): readonly string[];
+
+  /** The enrichment run's output contract: the reply shape the
+   *  lane's report parse reads, as the sentence the enrichment
+   *  prompt's `Output contract:` line carries. */
+  webOutputContract(): string;
+
+  /** The enrichment run's output, parsed: the final text plus the
+   *  recorded web calls. The adapter reads its own output language —
+   *  pi's `--mode json` event stream, codex's report contract. A
+   *  run output that cannot yield a contract-shaped report throws
+   *  the named failure. */
+  parseWebReport(stdout: string, now: () => Date): ParsedWebReport;
 
   /** Prompt bytes for stdin. pi carries its prompt in argv; Codex reads stdin. */
   stdin(prompt: string): string | undefined;
@@ -89,12 +108,12 @@ export interface AgentRunner {
   /** (2) The capability manifest: what this agent can do, as data
    *  and probes the pipeline routes through instead of hardcoding. */
   readonly capabilities: {
-    /** The web policy: the query-only grant, as the argv segment the
-     *  progress line names, and whether the grant's extension is
-     *  installed in the judged environment. `unsupportedReason`
-     *  carries the lane's named refusal when it cannot serve the
-     *  web grant at all — the query surface refuses `--web` before
-     *  any spawn (issue #442). */
+    /** The web policy: the query-only grant, as the display segment
+     *  the progress line names (pi's argv grant; codex's
+     *  managed-home posture), and whether the environment can serve
+     *  the grant. `unsupportedReason` carries a lane's named
+     *  refusal when it cannot serve the web grant at all — the
+     *  query surface refuses `--web` before any spawn. */
     readonly web: {
       readonly grantArgs: readonly string[];
       installed(environment: NodeJS.ProcessEnv): Promise<boolean>;
@@ -146,15 +165,22 @@ export const WEB_EXTENSION_SOURCE = "npm:pi-web-access";
 export const WEB_TOOL_ALLOWLIST = "web_search,source_check,fetch_content";
 
 /** The machine-readable output mode of the enrichment run: pi's
- *  `--mode json` stream, which the audit parses. */
+ *  `--mode json` stream, which pi's report parse reads. */
 export const WEB_OUTPUT_MODE = "json";
 
-/** The codex lane's named `--web` refusal (issue #442): the lane
- *  cannot serve the web enrichment grant until a Codex-shaped
- *  enrichment contract exists (issue #441) — the query surface
- *  refuses before any spawn, so no model pass is ever paid. */
-export const CODEX_WEB_UNSUPPORTED_REASON =
-  "codex web enrichment unsupported; see issue #441";
+/** pi's enrichment output contract: bullets only — the audit comes
+ *  from the `--mode json` event stream the wrapper parses. The
+ *  sentence rides the enrichment prompt's `Output contract:` line. */
+export const PI_WEB_OUTPUT_CONTRACT =
+  "reply with only the enrichment bullets — no headings of your own, no sources list, no audit table; the wrapper writes those sections and computes them from the recorded tool calls.";
+
+/** codex's enrichment output contract: bullets first, then the
+ *  fenced web-audit block the wrapper parses — codex has no event
+ *  stream to audit, so the report itself carries the recorded
+ *  calls. The sentence rides the enrichment prompt's `Output
+ *  contract:` line. */
+export const CODEX_WEB_OUTPUT_CONTRACT =
+  "reply with the enrichment bullets first — no headings of your own, no sources list — then close with one fenced ```k-wiki-web-audit block recording every web tool call you made, one line per call in the form `tool | target | urls`: the tool name, the query or URL the call targeted, then every URL the call surfaced, space-separated (empty when it surfaced none); the wrapper writes the artifact sections and computes them from these recorded calls.";
 
 /** The isolation state of a spawned run, for progress and digest
  *  lines (issues #118, #144): `isolated` (plus the whitelist
@@ -282,6 +308,10 @@ export const piRunner: AgentRunner = {
     composed,
   ],
 
+  webOutputContract: () => PI_WEB_OUTPUT_CONTRACT,
+
+  parseWebReport: (stdout) => parseAgentJsonStream(stdout),
+
   stdin: () => undefined,
 
   invocation: (settings, options) => ({
@@ -378,10 +408,14 @@ function codexSourceAuthPath(environment: NodeJS.ProcessEnv): string {
 
 /** Codex's managed home is built per spawn. Redirecting HOME as well as
  * CODEX_HOME closes the user-scope skill-discovery path. The only linked
- * skills are the configured whitelist; auth is copied, never linked. */
+ * skills are the configured whitelist; auth is copied, never linked. The
+ * home's `web_search` config mode is the web posture source: disabled
+ * for every spawn except the query enrichment's, where the `--web`
+ * opt-in runs live web search. */
 function codexManagedHome(
   environment: NodeJS.ProcessEnv,
   settings: AgentSettings,
+  web: boolean,
 ): string {
   const home = mkdtempSync(join(tmpdir(), "k-wiki-codex-home-"));
 
@@ -397,7 +431,7 @@ function codexManagedHome(
 
   writeFileSync(
     join(home, "config.toml"),
-    'web_search = "disabled"\napproval_policy = "never"\n',
+    `web_search = "${web ? "live" : "disabled"}"\napproval_policy = "never"\n`,
   );
   const sourceAuth = codexSourceAuthPath(environment);
 
@@ -435,11 +469,16 @@ export const codexRunner: AgentRunner = {
   answerArgs: (settings, prompt, context) =>
     codexRunner.args(settings, prompt, context),
 
-  // Issue #442: the codex lane refuses `--web` with a named error
-  // until a Codex-shaped enrichment contract exists (issue #441).
-  webEnrichArgs: () => {
-    throw new Error(CODEX_WEB_UNSUPPORTED_REASON);
-  },
+  // The web grant is the managed home's `web_search = "live"`
+  // posture (runnerEnv's web option), not argv: the enrichment
+  // spawn's exec shape matches every codex run — prompt on stdin,
+  // report captured with -o.
+  webEnrichArgs: (settings, prompt, context) =>
+    codexRunner.args(settings, prompt, context),
+
+  webOutputContract: () => CODEX_WEB_OUTPUT_CONTRACT,
+
+  parseWebReport: (stdout, now) => parseCodexReport(stdout, now),
 
   stdin: (prompt) => prompt,
 
@@ -465,9 +504,8 @@ export const codexRunner: AgentRunner = {
 
   capabilities: {
     web: {
-      grantArgs: ["--web"],
+      grantArgs: ['web_search="live"'],
       installed: async () => true,
-      unsupportedReason: CODEX_WEB_UNSUPPORTED_REASON,
     },
     credentials: {
       defaultAuthStorePath: (home = homedir()) =>
@@ -495,12 +533,16 @@ export interface ManagedEnv {
   readonly temp: readonly string[];
 }
 
-/** Build Codex's managed environment after settings parsing. */
+/** Build Codex's managed environment after settings parsing. The web
+ * option switches the managed home's `web_search` posture to live —
+ * the query enrichment's `--web` opt-in; every other spawn stays
+ * disabled. */
 function codexEnv(
   environment: NodeJS.ProcessEnv,
   settings: AgentSettings,
+  web: boolean,
 ): ManagedEnv {
-  const home = codexManagedHome(environment, settings);
+  const home = codexManagedHome(environment, settings, web);
 
   return {
     env: { ...environment, CODEX_HOME: home, HOME: home },
@@ -512,16 +554,19 @@ function codexEnv(
  * the caller's environment through untouched; Codex spawns inside a
  * fresh managed home, returned with the env as the run's temp for
  * the spawner's settle disposal. The one resolver every spawn site
- * goes through — the pipeline never spells agent specifics itself. */
+ * goes through — the pipeline never spells agent specifics itself.
+ * The web option is the query enrichment's opt-in: a codex lane
+ * serves it with the managed home's live web search posture. */
 export function runnerEnv(
   settings: AgentSettings,
   environment: NodeJS.ProcessEnv,
+  options?: { readonly web?: boolean },
 ): ManagedEnv {
   if ((settings.agent ?? piRunner.id) !== codexRunner.id) {
     return { env: environment, temp: [] };
   }
 
-  return codexEnv(environment, settings);
+  return codexEnv(environment, settings, options?.web === true);
 }
 
 /** The known agent ids, for the settings validator's named errors. */

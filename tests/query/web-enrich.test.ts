@@ -3,7 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { runContext } from "../../src/cli/run-context.ts";
-import { piRunner } from "../../src/ingest/agent-runner.ts";
+import {
+  CODEX_WEB_OUTPUT_CONTRACT,
+  codexRunner,
+  PI_WEB_OUTPUT_CONTRACT,
+  piRunner,
+} from "../../src/ingest/agent-runner.ts";
 import type { AgentSettings } from "../../src/ingest/agent-settings.ts";
 import { WEB_SOURCES_HEADING } from "../../src/query/web-artifact.ts";
 import {
@@ -13,8 +18,11 @@ import {
   WEB_ENRICH_HEARTBEAT_PREFIX,
   WEB_ENRICH_PROMPT_FILE,
   WEB_FAILED_WARNING,
+  type WebEnrichmentOutcome,
+  type WebEnrichmentSpawn,
   withGapHint,
 } from "../../src/query/web-enrich.ts";
+import { parseAgentJsonStream } from "../../src/query/web-report.ts";
 import { assistantTextLine, toolCallLine, toolResultLine } from "./helpers.ts";
 
 const SETTINGS: AgentSettings = {
@@ -22,6 +30,44 @@ const SETTINGS: AgentSettings = {
   model: "GLM-5.2",
   reasoning: "high",
 };
+
+/** The pi-wired enrichment spawn: the adapter's argv, output
+ *  contract, and report parse — the wiring runWikiQuery builds. */
+const piSpawn: WebEnrichmentSpawn = {
+  command: SETTINGS.command,
+  grantDisplay: piRunner.capabilities.web.grantArgs.join(" "),
+  args: (composed: string) => piRunner.webEnrichArgs(SETTINGS, composed),
+  outputContract: () => PI_WEB_OUTPUT_CONTRACT,
+  parse: (stdout: string) => parseAgentJsonStream(stdout),
+};
+
+const CODEX_SETTINGS: AgentSettings = {
+  command: "codex",
+  agent: "codex",
+  model: "gpt-5.6-terra",
+  reasoning: "high",
+};
+
+/** The codex-wired enrichment spawn, the same wiring for the codex
+ *  lane: exec argv, the report-contract sentence, the report parse. */
+const codexSpawn: WebEnrichmentSpawn = {
+  command: CODEX_SETTINGS.command,
+  grantDisplay: codexRunner.capabilities.web.grantArgs.join(" "),
+  args: (composed: string) =>
+    codexRunner.webEnrichArgs(CODEX_SETTINGS, composed, { root: "/data" }),
+  outputContract: () => CODEX_WEB_OUTPUT_CONTRACT,
+  parse: (stdout: string, now: () => Date) =>
+    codexRunner.parseWebReport(stdout, now),
+};
+
+/** A contract-shaped codex report: one search, its URL cited. */
+const OK_CODEX_REPORT = [
+  "- [a](https://example.com/a) confirms the topic.",
+  "",
+  "```k-wiki-web-audit",
+  "web_search | rag vs fine-tuning | https://example.com/a",
+  "```",
+].join("\n");
 
 const tempDirs: string[] = [];
 
@@ -38,6 +84,7 @@ describe("composeEnrichmentPrompt", () => {
       "What is X?",
       "CORE ANSWER",
       "2026-10-03",
+      PI_WEB_OUTPUT_CONTRACT,
     );
 
     expect(composed).toContain("POLICY");
@@ -49,6 +96,7 @@ describe("composeEnrichmentPrompt", () => {
       "What is X?",
       "CORE ANSWER",
       "2026-10-03",
+      PI_WEB_OUTPUT_CONTRACT,
     );
 
     expect(composed).toContain("Question: What is X?");
@@ -60,6 +108,7 @@ describe("composeEnrichmentPrompt", () => {
       "What is X?",
       "CORE ANSWER",
       "2026-10-03",
+      PI_WEB_OUTPUT_CONTRACT,
     );
 
     expect(composed).toContain("CORE ANSWER");
@@ -71,19 +120,32 @@ describe("composeEnrichmentPrompt", () => {
       "What is X?",
       "CORE ANSWER",
       "2026-10-03",
+      PI_WEB_OUTPUT_CONTRACT,
     );
 
     expect(composed).toContain("Today's date is 2026-10-03");
   });
 
   it("declares the enrichment read-only", () => {
-    const composed = composeEnrichmentPrompt("POLICY", "Q", "CORE", "2026");
+    const composed = composeEnrichmentPrompt(
+      "POLICY",
+      "Q",
+      "CORE",
+      "2026",
+      PI_WEB_OUTPUT_CONTRACT,
+    );
 
     expect(composed).toContain("read-only");
   });
 
   it("forbids rewriting the core document", () => {
-    const composed = composeEnrichmentPrompt("POLICY", "Q", "CORE", "2026");
+    const composed = composeEnrichmentPrompt(
+      "POLICY",
+      "Q",
+      "CORE",
+      "2026",
+      PI_WEB_OUTPUT_CONTRACT,
+    );
 
     expect(composed).toContain("never rewrite");
   });
@@ -151,11 +213,7 @@ describe("runWebEnrichment", () => {
 
   it("reports a reconciled outcome", async () => {
     const outcome = await runWebEnrichment({
-      spawn: {
-        command: SETTINGS.command,
-        grantDisplay: piRunner.capabilities.web.grantArgs.join(" "),
-        args: (composed: string) => piRunner.webEnrichArgs(SETTINGS, composed),
-      },
+      spawn: piSpawn,
       question: "Q",
       coreAnswer: "CORE",
       promptText: await makePromptsDir(),
@@ -168,11 +226,7 @@ describe("runWebEnrichment", () => {
 
   it("renders the enrichment section from the audit", async () => {
     const outcome = await runWebEnrichment({
-      spawn: {
-        command: SETTINGS.command,
-        grantDisplay: piRunner.capabilities.web.grantArgs.join(" "),
-        args: (composed: string) => piRunner.webEnrichArgs(SETTINGS, composed),
-      },
+      spawn: piSpawn,
       question: "Q",
       coreAnswer: "CORE",
       promptText: await makePromptsDir(),
@@ -191,11 +245,7 @@ describe("runWebEnrichment", () => {
 
   it("renders the sources section from the audit", async () => {
     const outcome = await runWebEnrichment({
-      spawn: {
-        command: SETTINGS.command,
-        grantDisplay: piRunner.capabilities.web.grantArgs.join(" "),
-        args: (composed: string) => piRunner.webEnrichArgs(SETTINGS, composed),
-      },
+      spawn: piSpawn,
       question: "Q",
       coreAnswer: "CORE",
       promptText: await makePromptsDir(),
@@ -214,11 +264,7 @@ describe("runWebEnrichment", () => {
 
   it("renders the audit table rows", async () => {
     const outcome = await runWebEnrichment({
-      spawn: {
-        command: SETTINGS.command,
-        grantDisplay: piRunner.capabilities.web.grantArgs.join(" "),
-        args: (composed: string) => piRunner.webEnrichArgs(SETTINGS, composed),
-      },
+      spawn: piSpawn,
       question: "Q",
       coreAnswer: "CORE",
       promptText: await makePromptsDir(),
@@ -235,11 +281,7 @@ describe("runWebEnrichment", () => {
 
   it("extracts the cited sources with retrieval stamps", async () => {
     const outcome = await runWebEnrichment({
-      spawn: {
-        command: SETTINGS.command,
-        grantDisplay: piRunner.capabilities.web.grantArgs.join(" "),
-        args: (composed: string) => piRunner.webEnrichArgs(SETTINGS, composed),
-      },
+      spawn: piSpawn,
       question: "Q",
       coreAnswer: "CORE",
       promptText: await makePromptsDir(),
@@ -258,11 +300,7 @@ describe("runWebEnrichment", () => {
 
   it("renders the three machine-owned sections from the recorded audit", async () => {
     const outcome = await runWebEnrichment({
-      spawn: {
-        command: SETTINGS.command,
-        grantDisplay: piRunner.capabilities.web.grantArgs.join(" "),
-        args: (composed: string) => piRunner.webEnrichArgs(SETTINGS, composed),
-      },
+      spawn: piSpawn,
       question: "Q",
       coreAnswer: "CORE",
       promptText: await makePromptsDir(),
@@ -281,11 +319,7 @@ describe("runWebEnrichment", () => {
 
   it("degrades when the enrichment run fails to spawn", async () => {
     const outcome = await runWebEnrichment({
-      spawn: {
-        command: SETTINGS.command,
-        grantDisplay: piRunner.capabilities.web.grantArgs.join(" "),
-        args: (composed: string) => piRunner.webEnrichArgs(SETTINGS, composed),
-      },
+      spawn: piSpawn,
       question: "Q",
       coreAnswer: "CORE",
       promptText: await makePromptsDir(),
@@ -303,11 +337,7 @@ describe("runWebEnrichment", () => {
 
   it("degrades when the enrichment run produces no output", async () => {
     const outcome = await runWebEnrichment({
-      spawn: {
-        command: SETTINGS.command,
-        grantDisplay: piRunner.capabilities.web.grantArgs.join(" "),
-        args: (composed: string) => piRunner.webEnrichArgs(SETTINGS, composed),
-      },
+      spawn: piSpawn,
       question: "Q",
       coreAnswer: "CORE",
       promptText: await makePromptsDir(),
@@ -327,11 +357,7 @@ describe("runWebEnrichment", () => {
       ),
     ].join("\n");
     const outcome = await runWebEnrichment({
-      spawn: {
-        command: SETTINGS.command,
-        grantDisplay: piRunner.capabilities.web.grantArgs.join(" "),
-        args: (composed: string) => piRunner.webEnrichArgs(SETTINGS, composed),
-      },
+      spawn: piSpawn,
       question: "Q",
       coreAnswer: "CORE",
       promptText: await makePromptsDir(),
@@ -348,11 +374,7 @@ describe("runWebEnrichment", () => {
 
   it("stays ok when a drifted citation is pruned to the traceable remainder", async () => {
     const outcome = await runWebEnrichment({
-      spawn: {
-        command: SETTINGS.command,
-        grantDisplay: piRunner.capabilities.web.grantArgs.join(" "),
-        args: (composed: string) => piRunner.webEnrichArgs(SETTINGS, composed),
-      },
+      spawn: piSpawn,
       question: "Q",
       coreAnswer: "CORE",
       promptText: await makePromptsDir(),
@@ -365,11 +387,7 @@ describe("runWebEnrichment", () => {
 
   it("keeps the enrichment section to the traceable remainder", async () => {
     const outcome = await runWebEnrichment({
-      spawn: {
-        command: SETTINGS.command,
-        grantDisplay: piRunner.capabilities.web.grantArgs.join(" "),
-        args: (composed: string) => piRunner.webEnrichArgs(SETTINGS, composed),
-      },
+      spawn: piSpawn,
       question: "Q",
       coreAnswer: "CORE",
       promptText: await makePromptsDir(),
@@ -386,11 +404,7 @@ describe("runWebEnrichment", () => {
 
   it("renders the pruning record with the drifted URL in the audit section", async () => {
     const outcome = await runWebEnrichment({
-      spawn: {
-        command: SETTINGS.command,
-        grantDisplay: piRunner.capabilities.web.grantArgs.join(" "),
-        args: (composed: string) => piRunner.webEnrichArgs(SETTINGS, composed),
-      },
+      spawn: piSpawn,
       question: "Q",
       coreAnswer: "CORE",
       promptText: await makePromptsDir(),
@@ -409,11 +423,7 @@ describe("runWebEnrichment", () => {
 
   it("counts only the traceable remainder's sources after pruning", async () => {
     const outcome = await runWebEnrichment({
-      spawn: {
-        command: SETTINGS.command,
-        grantDisplay: piRunner.capabilities.web.grantArgs.join(" "),
-        args: (composed: string) => piRunner.webEnrichArgs(SETTINGS, composed),
-      },
+      spawn: piSpawn,
       question: "Q",
       coreAnswer: "CORE",
       promptText: await makePromptsDir(),
@@ -441,11 +451,7 @@ describe("runWebEnrichment", () => {
       ),
     ].join("\n");
     const outcome = await runWebEnrichment({
-      spawn: {
-        command: SETTINGS.command,
-        grantDisplay: piRunner.capabilities.web.grantArgs.join(" "),
-        args: (composed: string) => piRunner.webEnrichArgs(SETTINGS, composed),
-      },
+      spawn: piSpawn,
       question: "Q",
       coreAnswer: "CORE",
       promptText: await makePromptsDir(),
@@ -470,11 +476,7 @@ describe("runWebEnrichment", () => {
     ].join("\n");
 
     const outcome = await runWebEnrichment({
-      spawn: {
-        command: SETTINGS.command,
-        grantDisplay: piRunner.capabilities.web.grantArgs.join(" "),
-        args: (composed: string) => piRunner.webEnrichArgs(SETTINGS, composed),
-      },
+      spawn: piSpawn,
       question: "Q",
       coreAnswer: "CORE",
       promptText: await makePromptsDir(),
@@ -499,11 +501,7 @@ describe("runWebEnrichment", () => {
     ].join("\n");
 
     const outcome = await runWebEnrichment({
-      spawn: {
-        command: SETTINGS.command,
-        grantDisplay: piRunner.capabilities.web.grantArgs.join(" "),
-        args: (composed: string) => piRunner.webEnrichArgs(SETTINGS, composed),
-      },
+      spawn: piSpawn,
       question: "Q",
       coreAnswer: "CORE",
       promptText: await makePromptsDir(),
@@ -532,11 +530,7 @@ describe("runWebEnrichment", () => {
     ].join("\n");
 
     const outcome = await runWebEnrichment({
-      spawn: {
-        command: SETTINGS.command,
-        grantDisplay: piRunner.capabilities.web.grantArgs.join(" "),
-        args: (composed: string) => piRunner.webEnrichArgs(SETTINGS, composed),
-      },
+      spawn: piSpawn,
       question: "Q",
       coreAnswer: "CORE",
       promptText: await makePromptsDir(),
@@ -557,11 +551,7 @@ describe("runWebEnrichment", () => {
     const invocations: { command: string; args: readonly string[] }[] = [];
 
     await runWebEnrichment({
-      spawn: {
-        command: SETTINGS.command,
-        grantDisplay: piRunner.capabilities.web.grantArgs.join(" "),
-        args: (composed: string) => piRunner.webEnrichArgs(SETTINGS, composed),
-      },
+      spawn: piSpawn,
       question: "Q",
       coreAnswer: "CORE",
       promptText: await makePromptsDir(),
@@ -582,11 +572,7 @@ describe("runWebEnrichment", () => {
     const invocations: { command: string; args: readonly string[] }[] = [];
 
     await runWebEnrichment({
-      spawn: {
-        command: SETTINGS.command,
-        grantDisplay: piRunner.capabilities.web.grantArgs.join(" "),
-        args: (composed: string) => piRunner.webEnrichArgs(SETTINGS, composed),
-      },
+      spawn: piSpawn,
       question: "Q",
       coreAnswer: "CORE",
       promptText: await makePromptsDir(),
@@ -607,11 +593,7 @@ describe("runWebEnrichment", () => {
     const invocations: { command: string; args: readonly string[] }[] = [];
 
     await runWebEnrichment({
-      spawn: {
-        command: SETTINGS.command,
-        grantDisplay: piRunner.capabilities.web.grantArgs.join(" "),
-        args: (composed: string) => piRunner.webEnrichArgs(SETTINGS, composed),
-      },
+      spawn: piSpawn,
       question: "Q",
       coreAnswer: "CORE",
       promptText: await makePromptsDir(),
@@ -632,11 +614,7 @@ describe("runWebEnrichment", () => {
     const messages: string[] = [];
 
     await runWebEnrichment({
-      spawn: {
-        command: SETTINGS.command,
-        grantDisplay: piRunner.capabilities.web.grantArgs.join(" "),
-        args: (composed: string) => piRunner.webEnrichArgs(SETTINGS, composed),
-      },
+      spawn: piSpawn,
       question: "Q",
       coreAnswer: "CORE",
       promptText: await makePromptsDir(),
@@ -663,11 +641,7 @@ describe("runWebEnrichment", () => {
     const messages: string[] = [];
 
     await runWebEnrichment({
-      spawn: {
-        command: SETTINGS.command,
-        grantDisplay: piRunner.capabilities.web.grantArgs.join(" "),
-        args: (composed: string) => piRunner.webEnrichArgs(SETTINGS, composed),
-      },
+      spawn: piSpawn,
       question: "Q",
       coreAnswer: "CORE",
       promptText: await makePromptsDir(),
@@ -687,6 +661,82 @@ describe("runWebEnrichment", () => {
       ),
     ).toEqual([]);
   });
+
+  /** The codex-wired run's outcome, run once for the sibling its. */
+  let codexOutcome: Promise<WebEnrichmentOutcome> | undefined;
+
+  const runCodexOnce = () => {
+    codexOutcome ??= makePromptsDir().then((promptText) =>
+      runWebEnrichment({
+        spawn: codexSpawn,
+        question: "Q",
+        coreAnswer: "CORE",
+        promptText,
+        run: runContext({ rawDir: join(tmpdir(), "k-wiki-web-run-raw") }),
+        runAgent: canned(OK_CODEX_REPORT),
+      }),
+    );
+
+    return codexOutcome;
+  };
+
+  it("reports a reconciled outcome through the codex report contract", async () => {
+    const outcome = await runCodexOnce();
+
+    expect(outcome.kind).toBe("ok");
+  });
+
+  it("renders the codex report's enrichment section", async () => {
+    const outcome = await runCodexOnce();
+
+    if (outcome.kind !== "ok") {
+      return;
+    }
+
+    expect(outcome.web.enrichment).toContain(
+      "- [a](https://example.com/a) confirms the topic",
+    );
+  });
+
+  it("renders the codex report's sources section from the audit", async () => {
+    const outcome = await runCodexOnce();
+
+    if (outcome.kind !== "ok") {
+      return;
+    }
+
+    expect(outcome.web.sources).toContain(
+      "- https://example.com/a — retrieved",
+    );
+  });
+
+  it("renders the codex report's audit table row", async () => {
+    const outcome = await runCodexOnce();
+
+    if (outcome.kind !== "ok") {
+      return;
+    }
+
+    expect(outcome.web.audit).toContain(
+      "| 1 | web_search | rag vs fine-tuning |",
+    );
+  });
+
+  it("degrades with the named reason when the report cannot parse", async () => {
+    const outcome = await runWebEnrichment({
+      spawn: codexSpawn,
+      question: "Q",
+      coreAnswer: "CORE",
+      promptText: await makePromptsDir(),
+      run: runContext({ rawDir: join(tmpdir(), "k-wiki-web-run-raw") }),
+      runAgent: canned("- done, no audit block."),
+    });
+
+    expect(outcome).toEqual({
+      kind: "failed",
+      reason: "the codex report carried no ```k-wiki-web-audit block",
+    });
+  });
 });
 
 describe("enrichmentArtifact", () => {
@@ -701,12 +751,7 @@ describe("enrichmentArtifact", () => {
         answer: "CORE",
       },
       {
-        spawn: {
-          command: SETTINGS.command,
-          grantDisplay: piRunner.capabilities.web.grantArgs.join(" "),
-          args: (composed: string) =>
-            piRunner.webEnrichArgs(SETTINGS, composed),
-        },
+        spawn: piSpawn,
         question: "Q",
         promptText: undefined,
         run: runContext({ rawDir: join(tmpdir(), "k-wiki-web-run-raw") }),
@@ -730,12 +775,7 @@ describe("enrichmentArtifact", () => {
         answer: "CORE",
       },
       {
-        spawn: {
-          command: SETTINGS.command,
-          grantDisplay: piRunner.capabilities.web.grantArgs.join(" "),
-          args: (composed: string) =>
-            piRunner.webEnrichArgs(SETTINGS, composed),
-        },
+        spawn: piSpawn,
         question: "Q",
         promptText: undefined,
         run: runContext({ rawDir: join(tmpdir(), "k-wiki-web-run-raw") }),
@@ -755,12 +795,7 @@ describe("enrichmentArtifact", () => {
         answer: "CORE",
       },
       {
-        spawn: {
-          command: SETTINGS.command,
-          grantDisplay: piRunner.capabilities.web.grantArgs.join(" "),
-          args: (composed: string) =>
-            piRunner.webEnrichArgs(SETTINGS, composed),
-        },
+        spawn: piSpawn,
         question: "Q",
         promptText: undefined,
         run: runContext({ rawDir: join(tmpdir(), "k-wiki-web-run-raw") }),
@@ -780,12 +815,7 @@ describe("enrichmentArtifact", () => {
         answer: "CORE",
       },
       {
-        spawn: {
-          command: SETTINGS.command,
-          grantDisplay: piRunner.capabilities.web.grantArgs.join(" "),
-          args: (composed: string) =>
-            piRunner.webEnrichArgs(SETTINGS, composed),
-        },
+        spawn: piSpawn,
         question: "Q",
         promptText: undefined,
         run: runContext({ rawDir: join(tmpdir(), "k-wiki-web-run-raw") }),
@@ -812,12 +842,7 @@ describe("enrichmentArtifact", () => {
         answer: "CORE",
       },
       {
-        spawn: {
-          command: SETTINGS.command,
-          grantDisplay: piRunner.capabilities.web.grantArgs.join(" "),
-          args: (composed: string) =>
-            piRunner.webEnrichArgs(SETTINGS, composed),
-        },
+        spawn: piSpawn,
         question: "Q",
         promptText: "PROMPT",
         run: runContext({ rawDir: join(tmpdir(), "k-wiki-web-run-raw") }),

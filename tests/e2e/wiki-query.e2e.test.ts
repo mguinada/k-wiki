@@ -673,25 +673,62 @@ async function makePiRoot(withPlugin: boolean): Promise<string> {
 }
 
 describe("wiki-query --web e2e", () => {
-  it("refuses --web on a codex lane with the named error and spawns nothing", async () => {
+  it("runs a codex lane's --web through the codex report contract", async () => {
     const repo = await makeRepo();
 
-    // A codex stub that would record any spawn: the refusal must
-    // land before the core phase, so no record may exist.
+    // The codex conformance stub: every phase arrives in the exec
+    // shape with its managed home. The core phase answers plainly;
+    // the enrichment phase must carry the live-search home and the
+    // report contract, and its report is contract-shaped — one
+    // search call, its URL cited. Model-free: no network, one stub.
     await writeFile(
-      join(repo.dataRoot, "codex-stub.mjs"),
+      join(repo.dataRoot, "codex-web.mjs"),
       `#!/usr/bin/env node
-import { appendFile } from "node:fs/promises";
+import { readFile, writeFile, realpath } from "node:fs/promises";
 import { join } from "node:path";
-await appendFile(join(process.cwd(), "codex-spawn.log"), process.argv.join("\\n") + "\\n");
-process.exit(0);
+const args = process.argv.slice(2);
+const value = (flag) => args[args.indexOf(flag) + 1];
+const prompt = await new Promise((resolve) => {
+  let text = "";
+  process.stdin.setEncoding("utf8");
+  process.stdin.on("data", (chunk) => { text += chunk; });
+  process.stdin.on("end", () => resolve(text));
+});
+if (!prompt.includes("k-wiki-web-audit")) {
+  await writeFile(value("-o"), "Prefer RAG when the knowledge base changes often. See [[retrieval-augmented-generation]].\\n");
+  process.exit(0);
+}
+const home = process.env.CODEX_HOME;
+const config = await readFile(join(home, "config.toml"), "utf8");
+const checks = {
+  exec: args[0] === "exec",
+  root: (await realpath(value("-C"))) === (await realpath(process.cwd())),
+  sandbox: value("--sandbox") === "workspace-write",
+  ephemeral: args.includes("--ephemeral"),
+  git: args.includes("--skip-git-repo-check"),
+  model: value("-m") === "gpt-5.6-terra",
+  reasoning: value("-c") === "model_reasoning_effort=high",
+  live: config.includes('web_search = "live"'),
+  approval: config.includes('approval_policy = "never"'),
+  noPiArgs: !args.includes("--print") && !args.includes("--mode"),
+  core: prompt.includes("Prefer RAG"),
+};
+if (!Object.values(checks).every(Boolean)) { throw new Error("codex --web conformance failed: " + JSON.stringify(checks)); }
+await writeFile(value("-o"), [
+  "- [Example A](https://example.com/a) reinforces the topic (retrieved today).",
+  "",
+  "\`\`\`k-wiki-web-audit",
+  "web_search | rag vs fine-tuning | https://example.com/a",
+  "\`\`\`",
+  "",
+].join("\\n"));
 `,
       { mode: 0o755 },
     );
     await writeFile(
       repo.settingsPath,
       [
-        `command: ${join(repo.dataRoot, "codex-stub.mjs")}`,
+        `command: ${join(repo.dataRoot, "codex-web.mjs")}`,
         "agent: codex",
         "targets: [gpt-5.6-terra]",
         "reasoning: high",
@@ -714,14 +751,94 @@ process.exit(0);
       { env: { CODEX_HOME: join(repo.dataRoot, "no-auth-home") } },
     );
 
-    expect(result.code).toBe(1);
+    expect(result.code).toBe(0);
     expect(result.err).toContain(
-      "codex web enrichment unsupported; see issue #441",
+      "this run makes two agent passes and will be slower and may cost more",
     );
-    await expect(
-      readFile(join(repo.dataRoot, "codex-spawn.log"), "utf8"),
-    ).rejects.toMatchObject({ code: "ENOENT" });
+    // The grant display names the managed-home posture, not pi argv.
+    expect(result.err).toContain(
+      `wiki-query: web enrichment run: ${join(repo.dataRoot, "codex-web.mjs")} web_search="live"`,
+    );
+
+    const artifact = await readFile(
+      join(repo.outputsDir, "last-query.md"),
+      "utf8",
+    );
+
+    expect(artifact).toContain('mode: "query (--web)"');
+    expect(artifact).toContain("webSources: 1");
+    expect(artifact).toContain("## Web enrichment");
+    expect(artifact).toContain("- https://example.com/a — retrieved");
+    expect(artifact).toContain("| 1 | web_search | rag vs fine-tuning | 1 |");
     expect(await wikiStatus(repo)).toBe("");
+  });
+
+  it("degrades a codex lane's --web with the named failure when the report carries no audit block", async () => {
+    const repo = await makeRepo();
+
+    // The contract-violating stub: the report has no audit block, so
+    // the parse fails named and the run degrades — the core answer
+    // stands, the reason lands in the artifact header.
+    await writeFile(
+      join(repo.dataRoot, "codex-web.mjs"),
+      `#!/usr/bin/env node
+import { writeFile } from "node:fs/promises";
+const args = process.argv.slice(2);
+const value = (flag) => args[args.indexOf(flag) + 1];
+const prompt = await new Promise((resolve) => {
+  let text = "";
+  process.stdin.setEncoding("utf8");
+  process.stdin.on("data", (chunk) => { text += chunk; });
+  process.stdin.on("end", () => resolve(text));
+});
+if (!prompt.includes("k-wiki-web-audit")) {
+  await writeFile(value("-o"), "Prefer RAG when the knowledge base changes often. See [[retrieval-augmented-generation]].\\n");
+  process.exit(0);
+}
+await writeFile(value("-o"), "- [Absent](https://example.com/absent) was never audited.\\n");
+`,
+      { mode: 0o755 },
+    );
+    await writeFile(
+      repo.settingsPath,
+      [
+        `command: ${join(repo.dataRoot, "codex-web.mjs")}`,
+        "agent: codex",
+        "targets: [gpt-5.6-terra]",
+        "reasoning: high",
+        "",
+      ].join("\n"),
+    );
+
+    const result = await runCli(
+      QUERY_SCRIPT,
+      [
+        "--settings",
+        repo.settingsPath,
+        "--raw-dir",
+        join(repo.dataRoot, "raw"),
+        "--outputs",
+        repo.outputsDir,
+        "--web",
+        "When should I prefer RAG over fine-tuning?",
+      ],
+      { env: { CODEX_HOME: join(repo.dataRoot, "no-auth-home") } },
+    );
+
+    expect(result.code).toBe(0);
+    expect(result.err).toContain(
+      "WARNING — `--web` enrichment failed (web-call or tool failure) — continuing with the wiki-only core answer.",
+    );
+
+    const artifact = await readFile(
+      join(repo.outputsDir, "last-query.md"),
+      "utf8",
+    );
+
+    expect(artifact).toContain(
+      'webFailureReason: "the codex report carried no ```k-wiki-web-audit block"',
+    );
+    expect(artifact).not.toContain("## Web enrichment");
   });
 
   it("runs two phases, partitions the artifact, and audits the web calls", async () => {

@@ -41,21 +41,27 @@ Stage 1 with web enrichment: wiki-query "<question>" --web
   Two agent passes. The first is the ordinary wiki-only core run —
   no web extension is loadable, so the core answer is web-blind by
   construction. The second, spawned only because --web was passed,
-  gets the pi-web-access extension restricted to the search and
-  fetch tools and produces an enrichment section the wrapper
+  has lane-shaped web access — pi gets the pi-web-access extension
+  restricted to the search and fetch tools; codex runs its
+  enrichment in a managed home whose config enables live web
+  search (web_search = "live") and closes its report with the
+  fenced k-wiki-web-audit block the wrapper parses per the codex
+  report contract — and produces an enrichment section the wrapper
   audits, machine-assembles, and partitions after the core answer:
   never inside it, never in any wiki page. The saved artifact gains
   the mode, the web reference count, the retrieval timestamp, the
   Web enrichment and Web sources sections (computed from the
   recorded tool calls, not model output), and a Web calls audit
   table. The run prints a cost-and-slowness disclosure first.
-  Degradations never fail the query: with the pi-web-access plugin
-  unavailable the run continues as a normal wiki-only run with the
-  warning persisted in the artifact header; a citation the audit
-  cannot account for is pruned from the enrichment, leaving the
-  traceable remainder with the prune recorded in the audit section;
-  when the enrichment still fails (network or tool failure, or the
-  pruning leaves nothing) the artifact keeps the wiki-only core
+  Degradations never fail the query: with the pi lane's web
+  extension unavailable the run continues as a normal wiki-only run
+  with the warning persisted in the artifact header; a citation the
+  audit cannot account for is pruned from the enrichment, leaving
+  the traceable remainder with the prune recorded in the audit
+  section; when the enrichment still fails — the agent run, a
+  report that cannot yield the lane's contract-shaped result (the
+  named contract-parse failure), network or tool failure, or the
+  pruning leaves nothing — the artifact keeps the wiki-only core
   answer with the failure warning and its concrete reason persisted
   in the header. --file-last on a --web artifact files the core
   answer only — the web sections never enter the wiki.
@@ -100,11 +106,13 @@ Switches and arguments:
                     wiki/queries/<slug>.md, wiki/index.md, wiki/log.md.
   --web             Stage 1 only: opt-in web enrichment (two agent
                     passes — a web-blind wiki-only core run, then an
-                    audited, partitioned enrichment run granted the
-                    pi-web-access search and fetch tools). Slower and
-                    may cost more. Default: off — the plain run is
-                    web-blind by construction and byte-identical to
-                    a closed-world run.
+                    audited, partitioned enrichment run; pi is
+                    granted the pi-web-access search and fetch
+                    tools, codex runs live web search in its
+                    managed home). Slower and may cost more.
+                    Default: off — the plain run is web-blind by
+                    construction and byte-identical to a
+                    closed-world run.
   --settings <path> Agent settings file, stage 1 only. Default: the
                     instance's settings.yml — or settings-<stem>.yml
                     under --wiki; an explicit flag overrides the
