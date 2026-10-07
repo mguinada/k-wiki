@@ -103,7 +103,9 @@ async function makeRepo(): Promise<Repo> {
     "---\ntype: source\n---\nRAG source\n",
   );
 
-  await run("git", ["init", "--quiet"], { cwd: dataRoot });
+  await run("git", ["init", "--quiet", "--initial-branch=main"], {
+    cwd: dataRoot,
+  });
   await run("git", ["config", "user.email", "t@t"], { cwd: dataRoot });
   await run("git", ["config", "user.name", "t"], { cwd: dataRoot });
   await run("git", ["add", "-A"], { cwd: dataRoot });
