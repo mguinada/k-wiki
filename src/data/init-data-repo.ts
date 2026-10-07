@@ -1,5 +1,7 @@
 /**
- * data:init — seed the data repo at a given `dataRoot` (issue #29).
+ * data:init — seed the data repo at a given `dataRoot` (issue #29),
+ * and refresh a seeded data repo's contract copy from the canonical
+ * contract (issue #433).
  * The code repo versions only the directory skeleton; the contents
  * of `raw/` and `wiki/` live in, and are versioned by, the data repo.
  * Seeding copies the skeleton (`git ls-files`, so the copy cannot
@@ -76,6 +78,13 @@ async function isSeeded(
  *  repo as its wiki/AGENTS.md, never shipped as itself. */
 const META_CONTRACT = "wiki/AGENTS.meta.md";
 
+/** The contract copy refresh writes: both instance kinds hold the
+ *  contract at wiki/AGENTS.md — the meta contract under that name
+ *  (issue #74), never shipped as itself. */
+const CONTRACT_COPY = "wiki/AGENTS.md";
+
+const REFRESH_COMMIT_MESSAGE = "Refresh wiki contract from k-wiki skeleton";
+
 /** List the skeleton paths the code repo versions under raw/ and wiki/,
  *  minus the meta contract template. */
 async function listSkeletonPaths(
@@ -142,6 +151,75 @@ export async function seedStandingIgnores(dataRoot: string): Promise<void> {
   await writeFile(ignorePath, `${body}${additions.join("\n")}\n`, "utf8");
 }
 
+export interface RefreshContractOptions {
+  /** Data repo root to refresh. */
+  readonly dataRoot: string;
+  /** Code repo root; defaults to this module's repository. */
+  readonly repoRoot?: string;
+  /** Environment for git child processes; defaults to `process.env`. */
+  readonly env?: NodeJS.ProcessEnv;
+  /** Refresh from the canonical meta contract (issue #74) instead of
+   *  the canonical wiki contract: for a data repo initialized with
+   *  `--meta`. */
+  readonly meta?: boolean;
+}
+
+/** Refresh the contract copy in an already-initialized data repo
+ *  (issue #433): the smallest sanctioned delivery route for contract
+ *  evolution, for the operator to invoke — never a pipeline stage.
+ *  Refuses an uninitialized target and a target with uncommitted
+ *  changes touching the contract copy, then overwrites the copy
+ *  byte-matching the code repo's canonical file and commits it — the
+ *  copy is derived data, and a refresh that left it dirty would trip
+ *  this very guard on the next run. A copy that already matches is
+ *  left untouched: no commit, "unchanged". */
+export async function refreshDataRepoContract(
+  options: RefreshContractOptions,
+): Promise<"refreshed" | "unchanged"> {
+  const root = options.repoRoot ?? repoRoot;
+  const env = options.env ?? process.env;
+  const dataRoot = options.dataRoot;
+  const source = options.meta === true ? META_CONTRACT : CONTRACT_COPY;
+
+  if (!(await isSeeded(dataRoot, env))) {
+    throw new Error(
+      `${dataRoot} is not a seeded data repo; refusing to refresh ` +
+        "the contract copy — run data:init first",
+    );
+  }
+
+  const { stdout } = await runGit(
+    dataRoot,
+    ["status", "--porcelain", "--", CONTRACT_COPY],
+    env,
+  );
+
+  if (stdout.trim() !== "") {
+    throw new Error(
+      `${dataRoot} has uncommitted changes to ${CONTRACT_COPY}; ` +
+        "refusing to refresh the contract copy — commit or discard them first",
+    );
+  }
+
+  const canonical = await readFile(join(root, source), "utf8");
+  const target = join(dataRoot, CONTRACT_COPY);
+
+  if ((await readFile(target, "utf8")) === canonical) {
+    return "unchanged";
+  }
+
+  await copyFile(join(root, source), target);
+
+  await runGit(dataRoot, ["add", "--", CONTRACT_COPY], env);
+  await runGit(
+    dataRoot,
+    ["commit", "--quiet", "-m", REFRESH_COMMIT_MESSAGE, "--", CONTRACT_COPY],
+    env,
+  );
+
+  return "refreshed";
+}
+
 /** Copy the skeleton and commit it as the data repo's first commit. */
 async function seed(options: {
   readonly dataRoot: string;
@@ -170,7 +248,7 @@ async function seed(options: {
   if (options.meta) {
     await copyFile(
       join(repoRoot, META_CONTRACT),
-      join(dataRoot, "wiki", "AGENTS.md"),
+      join(dataRoot, CONTRACT_COPY),
     );
   }
 
