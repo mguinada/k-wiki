@@ -247,6 +247,10 @@ describe("confirmPush", () => {
     expect(await confirmPush(io("n\n"))).toBe(false);
   });
 
+  it("treats stdin EOF at the ask as no", async () => {
+    expect(await confirmPush(io(undefined))).toBe(false);
+  });
+
   it("defaults to no without a terminal", async () => {
     expect(await confirmPush(io("", false))).toBe(false);
   });

@@ -106,7 +106,14 @@ export async function confirmPush(io: PushAskIo): Promise<boolean> {
   const rl = createInterface({ input: io.input, output: io.output });
 
   try {
-    const answer = (await rl.question("push now? [y/N] ")).trim().toLowerCase();
+    const answer = (
+      await Promise.race([
+        rl.question("push now? [y/N] "),
+        new Promise<null>((resolve) => {
+          rl.once("close", () => resolve(null));
+        }),
+      ])
+    )?.trim().toLowerCase();
 
     return answer === "y" || answer === "yes";
   } finally {
