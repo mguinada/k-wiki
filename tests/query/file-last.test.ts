@@ -956,6 +956,8 @@ async function makeCommittedRepo(): Promise<string> {
   await mkdir(join(dataRoot, "wiki"), { recursive: true });
   await writeFile(join(dataRoot, "wiki", "index.md"), "# Index\n");
   await run("git", ["init", "--quiet"], { cwd: dataRoot });
+  await run("git", ["config", "user.email", "t@t"], { cwd: dataRoot });
+  await run("git", ["config", "user.name", "t"], { cwd: dataRoot });
   await commitAll(dataRoot, "init", [["wiki/index.md", "# Index\n"]]);
 
   return dataRoot;
