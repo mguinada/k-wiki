@@ -156,6 +156,7 @@ async function spawnWithHeartbeat(
   runAgent: AgentRunner,
 ): Promise<string> {
   const { run } = options;
+  const { env, temp } = runnerEnv(settings, run.env);
   const { stdout } = await withHeartbeat(
     {
       onProgress: run.onProgress,
@@ -165,7 +166,8 @@ async function spawnWithHeartbeat(
     () =>
       runAgent(settings.command, args, {
         cwd: run.dataRoot,
-        env: runnerEnv(settings, run.env),
+        env,
+        managedTemp: temp,
         stdin: runnerFor(settings).stdin(prompt),
         reportPath: runnerFor(settings).reportPath(args),
         timeoutMs: options.timeoutMs,

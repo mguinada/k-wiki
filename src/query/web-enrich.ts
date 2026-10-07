@@ -80,7 +80,12 @@ export interface WebEnrichmentSpawn {
   args(composed: string): readonly string[];
   stdin?(composed: string): string | undefined;
   reportPath?(args: readonly string[]): string | undefined;
-  env?(): NodeJS.ProcessEnv | undefined;
+  /** The caller's runner-managed environment: the env the child
+   *  inherits plus the managed temp paths the run owns — the shared
+   *  spawner disposes exactly these when the run settles. */
+  env?():
+    | { readonly env: NodeJS.ProcessEnv; readonly temp: readonly string[] }
+    | undefined;
 }
 
 /** The agent spawn the enrichment run goes through, structurally:
@@ -94,6 +99,7 @@ export type AgentSpawn = (
     timeoutMs?: number | undefined;
     stdin?: string | undefined;
     reportPath?: string | undefined;
+    managedTemp?: readonly string[] | undefined;
   },
 ) => Promise<{ stdout: string; stderr: string }>;
 
@@ -202,6 +208,7 @@ export async function runWebEnrichment(
 
   try {
     const args = spawn.args(composed);
+    const managed = spawn.env?.();
 
     ({ stdout } = await withHeartbeat(
       {
@@ -212,7 +219,8 @@ export async function runWebEnrichment(
       () =>
         options.runAgent(spawn.command, args, {
           cwd: run.dataRoot,
-          env: spawn.env?.() ?? run.env,
+          env: managed?.env ?? run.env,
+          managedTemp: managed?.temp,
           stdin: spawn.stdin?.(composed),
           reportPath: spawn.reportPath?.(args),
           timeoutMs: options.timeoutMs,

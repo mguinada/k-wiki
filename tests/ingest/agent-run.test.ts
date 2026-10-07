@@ -197,6 +197,10 @@ describe("spawnAgent", () => {
 
 /** One codex-lane spawn against a stub that writes the -o report and
  *  exits: the managed home and report paths come back for assertion. */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function runStubbedCodex(): Promise<{ home: string; report: string }> {
   const fixture = mkdtempSync(join(tmpdir(), "k-wiki-agent-run-"));
   const settings = {
@@ -212,7 +216,7 @@ async function runStubbedCodex(): Promise<{ home: string; report: string }> {
     throw new Error("codex argv carries no -o report path");
   }
 
-  const env = runnerEnv(settings, {
+  const { env, temp } = runnerEnv(settings, {
     ...process.env,
     CODEX_HOME: join(fixture, "auth-home"),
     REPORT_PATH: report,
@@ -227,6 +231,7 @@ async function runStubbedCodex(): Promise<{ home: string; report: string }> {
     {
       cwd: fixture,
       env,
+      managedTemp: temp,
       stdin: "PROMPT",
       reportPath: codexRunner.reportPath(args),
     },
@@ -246,6 +251,74 @@ describe("spawnAgent managed temp disposal", () => {
     const { report } = await runStubbedCodex();
 
     expect(existsSync(report)).toBe(false);
+  });
+
+  it("keeps a later spawn's managed home when an earlier run settles late", async () => {
+    const fixture = mkdtempSync(join(tmpdir(), "k-wiki-agent-run-"));
+    const settings = {
+      command: process.execPath,
+      agent: "codex",
+      model: "gpt-5.6-terra",
+      reasoning: "high",
+    } as const;
+
+    const lateArgs = codexRunner.args(settings, "PROMPT", { root: fixture });
+    const lateEnv = runnerEnv(settings, {
+      ...process.env,
+      CODEX_HOME: join(fixture, "late-auth"),
+    });
+
+    // The timed-out child's grandchild inherits the stdio pipes, so
+    // the killed run's close — and its disposal — lands only after
+    // the fallback target's artifacts exist.
+    const timedOut = spawnAgent(
+      process.execPath,
+      [
+        "-e",
+        'require("node:child_process").spawn("sleep", ["1"], { stdio: ["ignore", "inherit", "inherit"] }); setInterval(() => {}, 1_000);',
+      ],
+      {
+        cwd: fixture,
+        env: lateEnv.env,
+        managedTemp: lateEnv.temp,
+        reportPath: codexRunner.reportPath(lateArgs),
+        timeoutMs: 150,
+      },
+    ).catch(() => "timed out");
+
+    await sleep(250);
+
+    const nextArgs = codexRunner.args(settings, "PROMPT", { root: fixture });
+    const nextEnv = runnerEnv(settings, {
+      ...process.env,
+      CODEX_HOME: join(fixture, "next-auth"),
+      REPORT_PATH: codexRunner.reportPath(nextArgs) ?? "",
+    });
+
+    const next = spawnAgent(
+      process.execPath,
+      [
+        "-e",
+        'setTimeout(() => { require("node:fs").writeFileSync(process.env.REPORT_PATH, "report"); }, 2_500);',
+      ],
+      {
+        cwd: fixture,
+        env: nextEnv.env,
+        managedTemp: nextEnv.temp,
+        reportPath: nextEnv.env.REPORT_PATH,
+        timeoutMs: 30_000,
+      },
+    );
+
+    const deadline = Date.now() + 2_000;
+
+    while (existsSync(lateEnv.env.CODEX_HOME ?? "") && Date.now() < deadline) {
+      await sleep(25);
+    }
+
+    expect(existsSync(nextEnv.env.CODEX_HOME ?? "")).toBe(true);
+    await timedOut;
+    await next;
   });
 });
 

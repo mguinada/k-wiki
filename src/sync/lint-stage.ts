@@ -27,7 +27,7 @@ import {
   readPrompt,
   spawnAgent,
 } from "../ingest/agent-run.ts";
-import { runnerEnv } from "../ingest/agent-runner.ts";
+import { type ManagedEnv, runnerEnv } from "../ingest/agent-runner.ts";
 import {
   type AgentSettings,
   type AgentTarget,
@@ -153,7 +153,7 @@ async function invokeLintAgent(
   args: readonly string[],
   stdin: string | undefined,
   reportPath: string | undefined,
-  env: NodeJS.ProcessEnv,
+  managed: ManagedEnv,
 ): Promise<LintAgentRun> {
   const startedAt = run.now().getTime();
   const heartbeat = setInterval(() => {
@@ -168,7 +168,8 @@ async function invokeLintAgent(
   try {
     ({ stdout } = await (options.runAgent ?? spawnAgent)(command, args, {
       cwd: run.dataRoot,
-      env,
+      env: managed.env,
+      managedTemp: managed.temp,
       stdin,
       reportPath,
       timeoutMs: options.timeoutMs,

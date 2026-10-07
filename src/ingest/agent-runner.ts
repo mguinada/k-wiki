@@ -38,14 +38,6 @@ import type {
   InvocationOptions,
 } from "./agent-settings.ts";
 
-/** The agent identity the enrichment argv builds from: the
- *  settings' own fields, the whole loaded settings object in the
- *  caller's hand. */
-export type RunnerIdentity = Pick<
-  AgentSettings,
-  "command" | "model" | "reasoning" | "provider" | "isolate"
->;
-
 /** The data-repository context a runner needs for a concrete CLI invocation. */
 export interface RunnerContext {
   readonly root: string;
@@ -76,10 +68,10 @@ export interface AgentRunner {
   ): readonly string[];
 
   /** The query enrichment phase's argv: ambient isolation, the web
-   *  grant, identity — plus pi's JSON output mode; the prompt rides
-   *  argv (pi) or stdin (codex). */
+   *  grant, the settings' identity — plus pi's JSON output mode; the
+   *  prompt rides argv (pi) or stdin (codex). */
   webEnrichArgs(
-    identity: RunnerIdentity,
+    settings: AgentSettings,
     composed: string,
     context?: RunnerContext,
   ): readonly string[];
@@ -260,17 +252,17 @@ export const piRunner: AgentRunner = {
     prompt,
   ],
 
-  webEnrichArgs: (identity, composed) => [
-    ...(identity.isolate === false ? [] : [...ISOLATION_FLAGS]),
+  webEnrichArgs: (settings, composed) => [
+    ...(settings.isolate === false ? [] : [...ISOLATION_FLAGS]),
     "-e",
     WEB_EXTENSION_SOURCE,
     "--tools",
     WEB_TOOL_ALLOWLIST,
-    ...(identity.provider ? ["--provider", identity.provider] : []),
+    ...(settings.provider ? ["--provider", settings.provider] : []),
     "--model",
-    identity.model,
+    settings.model,
     "--thinking",
-    identity.reasoning,
+    settings.reasoning,
     "--mode",
     WEB_OUTPUT_MODE,
     "--print",
@@ -316,9 +308,9 @@ function codexReportPath(): string {
 }
 
 /** Per-spawn managed temp state (the Codex home, the report file):
- *  removed when the spawned run settles (disposeManagedTemp, called
- *  by the shared spawner) and, for an artifact whose spawn never
- *  happens, at process exit. */
+ *  each artifact is removed when its own run settles — the shared
+ *  spawner disposes exactly that run's paths — and, for an artifact
+ *  whose spawn never happens, at process exit. */
 const managedTempPaths = new Set<string>();
 
 let exitSweepArmed = false;
@@ -328,13 +320,28 @@ function trackManagedTemp(path: string): void {
 
   if (!exitSweepArmed) {
     exitSweepArmed = true;
-    process.once("exit", disposeManagedTemp);
+    process.once("exit", sweepManagedTempAtExit);
   }
 }
 
-/** Remove every managed temp artifact still registered: the one
- *  cleanup boundary a spawned run settles through. */
-export function disposeManagedTemp(): void {
+/** Remove the given managed temp artifacts — one settled spawn's
+ *  own managed home and report file — and drop them from the exit
+ *  sweep's registry. */
+export function disposeManagedTemp(
+  temp: readonly string[],
+  reportPath?: string | undefined,
+): void {
+  const paths = reportPath === undefined ? temp : [...temp, reportPath];
+
+  for (const path of paths) {
+    rmSync(path, { force: true, recursive: true });
+    managedTempPaths.delete(path);
+  }
+}
+
+/** Remove every managed temp artifact still registered: the
+ *  process-exit backstop for artifacts whose spawn never settles. */
+function sweepManagedTempAtExit(): void {
   for (const path of managedTempPaths) {
     rmSync(path, { force: true, recursive: true });
   }
@@ -461,25 +468,39 @@ export const codexRunner: AgentRunner = {
   },
 };
 
+/** One spawned run's managed environment: the env the child
+ *  inherits and the managed temp paths the run owns — the shared
+ *  spawner removes exactly these, with the report file, when the
+ *  run settles. */
+export interface ManagedEnv {
+  readonly env: NodeJS.ProcessEnv;
+  readonly temp: readonly string[];
+}
+
 /** Build Codex's managed environment after settings parsing. */
 function codexEnv(
   environment: NodeJS.ProcessEnv,
   settings: AgentSettings,
-): NodeJS.ProcessEnv {
+): ManagedEnv {
   const home = codexManagedHome(environment, settings);
-  return { ...environment, CODEX_HOME: home, HOME: home };
+
+  return {
+    env: { ...environment, CODEX_HOME: home, HOME: home },
+    temp: [home],
+  };
 }
 
 /** The environment one spawned run inherits (issue #434): pi passes
  * the caller's environment through untouched; Codex spawns inside a
- * fresh managed home. The one resolver every spawn site goes
- * through — the pipeline never spells agent specifics itself. */
+ * fresh managed home, returned with the env as the run's temp for
+ * the spawner's settle disposal. The one resolver every spawn site
+ * goes through — the pipeline never spells agent specifics itself. */
 export function runnerEnv(
   settings: AgentSettings,
   environment: NodeJS.ProcessEnv,
-): NodeJS.ProcessEnv {
+): ManagedEnv {
   if ((settings.agent ?? piRunner.id) !== codexRunner.id) {
-    return environment;
+    return { env: environment, temp: [] };
   }
 
   return codexEnv(environment, settings);

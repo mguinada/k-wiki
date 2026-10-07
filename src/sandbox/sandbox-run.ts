@@ -218,10 +218,12 @@ async function agentStep(plan: SandboxPlan): Promise<AgentOutcome> {
     const args = runner.args(settings, plan.options.prompt, {
       root: run.dataRoot,
     });
+    const { env, temp } = runnerEnv(settings, run.env);
 
     await (plan.options.runAgent ?? spawnAgent)(settings.command, args, {
       cwd: run.dataRoot,
-      env: runnerEnv(settings, run.env),
+      env,
+      managedTemp: temp,
       stdin: runner.stdin(plan.options.prompt),
       reportPath: runner.reportPath(args),
       timeoutMs: plan.options.timeoutMs,

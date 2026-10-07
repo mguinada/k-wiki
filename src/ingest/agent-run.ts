@@ -35,6 +35,7 @@ export type AgentRunner = (
     timeoutMs?: number | undefined;
     stdin?: string | undefined;
     reportPath?: string | undefined;
+    managedTemp?: readonly string[] | undefined;
   },
 ) => Promise<{ stdout: string; stderr: string }>;
 
@@ -51,10 +52,11 @@ function tail(text: string): string {
 
 /**
  * Run the agent CLI non-interactively, capturing its final output.
- * stdin is closed ("ignore"): an open pipe never reaching EOF makes
- * the agent wait on stdin forever — verified against pi 0.84.2, whose
- * `-p` mode reads stdin even when the prompt arrives via `--print`.
- * A run exceeding AGENT_TIMEOUT_MS is killed and reported as failed.
+ * stdin stays closed ("ignore") unless provided: an open pipe never
+ * reaching EOF makes the agent wait on stdin forever — verified
+ * against pi 0.84.2, whose `-p` mode reads stdin even when the prompt
+ * arrives via `--print`; provided stdin is written and ended. A run
+ * exceeding AGENT_TIMEOUT_MS is killed and reported as failed.
  */
 export function spawnAgent(
   command: string,
@@ -65,11 +67,13 @@ export function spawnAgent(
     timeoutMs?: number | undefined;
     stdin?: string | undefined;
     reportPath?: string | undefined;
+    managedTemp?: readonly string[] | undefined;
   },
 ): Promise<{ stdout: string; stderr: string }> {
   const timeoutMs = options.timeoutMs ?? AGENT_TIMEOUT_MS;
 
   return new Promise((resolve, reject) => {
+    const ownTemp = options.managedTemp ?? [];
     const child = spawn(command, [...args], {
       cwd: options.cwd,
       env: options.env,
@@ -112,7 +116,7 @@ export function spawnAgent(
     child.stderr?.on("data", (chunk: Buffer) => collect(stderr, chunk));
     child.on("error", (error: Error) => {
       clearTimeout(timer);
-      disposeManagedTemp();
+      disposeManagedTemp(ownTemp, options.reportPath);
       reject(new Error(`agent ${command} could not start: ${error.message}`));
     });
     child.on("close", (code, signal) => {
@@ -125,16 +129,16 @@ export function spawnAgent(
         const outputPath = options.reportPath;
 
         if (outputPath === undefined) {
-          disposeManagedTemp();
+          disposeManagedTemp(ownTemp, options.reportPath);
           resolve({ stdout: out, stderr: errText });
         } else {
           readFile(outputPath, "utf8")
             .then((report) => {
-              disposeManagedTemp();
+              disposeManagedTemp(ownTemp, options.reportPath);
               resolve({ stdout: report, stderr: errText });
             })
             .catch((error: Error) => {
-              disposeManagedTemp();
+              disposeManagedTemp(ownTemp, options.reportPath);
               reject(
                 new Error(
                   `agent did not write output report ${outputPath}: ${error.message}`,
@@ -151,7 +155,7 @@ export function spawnAgent(
           ? `killed with ${signal} (output over ${AGENT_MAX_BUFFER} bytes, or wrapper shutdown)`
           : `exited with code ${code}`;
 
-      disposeManagedTemp();
+      disposeManagedTemp(ownTemp, options.reportPath);
       reject(new Error(`agent ${why}: ${tail(errText)}`));
     });
   });
@@ -217,9 +221,11 @@ async function attemptTarget(
   try {
     const runner = runnerFor(targetSettings);
     const args = runner.args(targetSettings, prompt, { root: options.root });
+    const { env, temp } = runnerEnv(targetSettings, options.environment);
     const { stdout } = await options.runAgent(command, args, {
       cwd: options.root,
-      env: runnerEnv(targetSettings, options.environment),
+      env,
+      managedTemp: temp,
       stdin: runner.stdin(prompt),
       reportPath: runner.reportPath(args),
       timeoutMs: options.timeoutMs,

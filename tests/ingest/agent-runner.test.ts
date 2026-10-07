@@ -901,10 +901,11 @@ describe("codex Runner adapter", () => {
     mkdirSync(source, { recursive: true });
     mkdirSync(skill, { recursive: true });
     writeFileSync(join(source, "auth.json"), '{"openai":"seeded"}\n');
-    const env = runnerEnv(
+    const managed = runnerEnv(
       { ...settings, isolateSkills: [skill] },
       { CODEX_HOME: source },
     );
+    const env = managed.env;
     const home = env.CODEX_HOME ?? "";
     const managedSkill = join(home, ".agents", "skills", "obsidian-markdown");
     const result = {
