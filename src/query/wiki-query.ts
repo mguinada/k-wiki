@@ -239,7 +239,7 @@ function assertWebSupported(settings: AgentSettings): void {
   const refusal = runnerFor(settings).capabilities.web.unsupportedReason;
 
   if (refusal !== undefined) {
-    throw new Error(`wiki-query: --web refused — ${refusal}`);
+    throw new Error(`--web refused — ${refusal}`);
   }
 }
 

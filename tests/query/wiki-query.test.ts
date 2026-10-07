@@ -1157,7 +1157,7 @@ describe("runWikiQuery --web", () => {
     );
 
     await expect(runWikiQuery({ ...optionsFor(h), web: true })).rejects.toThrow(
-      "wiki-query: --web refused — codex web enrichment unsupported; see issue #441",
+      "--web refused — codex web enrichment unsupported; see issue #441",
     );
   });
 
