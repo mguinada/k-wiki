@@ -722,7 +722,7 @@ console.log("An answer.");
     const { err } = await runCli(fileLastArgs(h));
 
     expect(err).toBe(
-      "Not pushed — the commit stays local; push it soon (git push): a shared-writer cycle refuses a local-ahead history",
+      "Not pushed — the commit stays local; push it soon (git push): a shared-writer cycle refuses a local-ahead history and a dirty tree — stage 1's saved answer (outputs/last-query.md) counts as dirt, keep the per-machine outputs dir gitignored",
     );
   });
 

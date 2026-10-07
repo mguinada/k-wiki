@@ -89,9 +89,11 @@ Stage 2 (human-only): wiki-query --file-last
   preconditions, fetch first, fast-forward-only exact refspec of
   the filing commit, and a clean refusal — never force, never a
   merge — on a remote that moved since the filing, on dirt beyond
-  it (guidance: run the sync cycle or pull), or on unshared local
-  commits ahead of the filing (guidance: git push); shared-writer
-  mode must be enabled (enable-shared-writer). --no-commit skips the
+  it (stage 1's saved answer, outputs/last-query.md, counts as
+  dirt — keep the per-machine outputs dir gitignored; guidance:
+  run the sync cycle or pull), or on unshared local commits ahead
+  of the filing (guidance: git push); shared-writer mode must be
+  enabled (enable-shared-writer). --no-commit skips the
   commit — the filing stays uncommitted, a rebuild will lose the
   page, and nothing is pushed. Fails cleanly when no saved answer
   exists. Warns when the data repo's raw/ or wiki/ changed after the
@@ -128,8 +130,11 @@ Switches and arguments:
                     interactive ask. The push rides the shared-writer
                     lease — fetch first, fast-forward only, never
                     forced; it refuses a moved remote, dirt beyond
-                    the filing, or unshared local commits. Requires
-                    shared-writer mode (enable-shared-writer).
+                    the filing (stage 1's saved answer,
+                    outputs/last-query.md, counts as dirt — keep the
+                    per-machine outputs dir gitignored), or unshared
+                    local commits. Requires shared-writer mode
+                    (enable-shared-writer).
   --no-commit       Stage 2 only: skip the commit — the filing stays
                     uncommitted (a rebuild will lose the page) and
                     nothing is pushed.
@@ -284,7 +289,7 @@ async function fileLastStage(
     }))
   ) {
     console.error(
-      "Not pushed — the commit stays local; push it soon (git push): a shared-writer cycle refuses a local-ahead history",
+      "Not pushed — the commit stays local; push it soon (git push): a shared-writer cycle refuses a local-ahead history and a dirty tree — stage 1's saved answer (outputs/last-query.md) counts as dirt, keep the per-machine outputs dir gitignored",
     );
 
     return;

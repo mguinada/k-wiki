@@ -226,7 +226,7 @@ async function preparePush(options: {
   if (dirty !== undefined) {
     return {
       kind: "refused",
-      reason: `push refused — the data repo is dirty beyond the filed commit; run the sync cycle or resolve it first: ${dirty}`,
+      reason: `push refused — the data repo is dirty beyond the filed commit; run the sync cycle or resolve it first: ${dirty} (stage 1's saved answer, outputs/last-query.md, counts as dirt — keep the per-machine outputs dir gitignored)`,
     };
   }
 

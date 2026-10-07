@@ -390,6 +390,17 @@ describe("pushFiledCommit", () => {
     ).rejects.toThrow("dirty beyond the filed commit");
   });
 
+  it("names the stage-1 artifact in the dirty refusal", async () => {
+    const { dataRoot } = await makeSharedRepo();
+
+    await mkdir(join(dataRoot, "outputs"), { recursive: true });
+    await writeFile(join(dataRoot, "outputs", "last-query.md"), "saved\n");
+
+    await expect(
+      pushFiledCommit({ dataRoot, env: process.env }),
+    ).rejects.toThrow("outputs/last-query.md");
+  });
+
   it("refuses when shared-writer mode is not enabled", async () => {
     const root = await mkdtemp(join(tmpdir(), "k-wiki-plain-"));
 
