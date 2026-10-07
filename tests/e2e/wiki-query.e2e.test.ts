@@ -394,7 +394,7 @@ describe("wiki-query e2e", () => {
     );
   });
 
-  it("stage 2 prints nothing to stderr when nothing drifted", async () => {
+  it("stage 2 prints only the not-pushed guidance to stderr when nothing drifted", async () => {
     const repo = await makeRepo();
     await stage1(repo);
 

@@ -835,6 +835,22 @@ describe("fileLastQuery rollback (issue #245)", () => {
     expect(await readFile(logPath, "utf8")).toBe(before);
   });
 
+  it("keeps the operator's staged entry when the write phase fails", async () => {
+    const repo = await makeIndexBlockedRepo();
+    const logPath = join(repo.dataRoot, "wiki", "log.md");
+
+    await writeFile(logPath, "# Log staged\n");
+    await run("git", ["add", "wiki/log.md"], { cwd: repo.dataRoot });
+
+    await runFailedFiling(repo);
+
+    const { stdout } = await run("git", ["status", "--porcelain"], {
+      cwd: repo.dataRoot,
+    });
+
+    expect(stdout).toContain("M  wiki/log.md");
+  });
+
   it("leaves a directory blocking index.md untouched when its write fails", async () => {
     const repo = await makeIndexBlockedRepo();
     const indexPath = join(repo.dataRoot, "wiki", "index.md");

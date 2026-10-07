@@ -783,6 +783,7 @@ export async function fileLastQuery(
 
   const commitDisabled = options.commit === false;
   let oid: string | undefined;
+  let commitStarted = false;
 
   try {
     await writeFile(
@@ -807,6 +808,8 @@ export async function fileLastQuery(
     );
 
     if (!commitDisabled) {
+      commitStarted = true;
+
       oid = await commitFiling({
         dataRoot: options.dataRoot,
         pagePath,
@@ -815,11 +818,13 @@ export async function fileLastQuery(
       });
     }
   } catch (cause) {
-    await runGit(
-      options.dataRoot,
-      ["reset", "-q", "--", ...filingPaths(pagePath)],
-      env,
-    ).catch(() => {});
+    if (commitStarted) {
+      await runGit(
+        options.dataRoot,
+        ["reset", "-q", "--", ...filingPaths(pagePath)],
+        env,
+      ).catch(() => {});
+    }
 
     await rollbackFiling({ pageFile, index, log });
     onProgress(

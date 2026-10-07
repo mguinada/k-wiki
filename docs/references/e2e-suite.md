@@ -166,8 +166,12 @@ e2e run or diagnosing a failing one.
   nothing under `wiki/`, the artifact saved, the composed prompt
   carrying the answer-only mode — and echoes `--wiki` in the filing
   hint under both spellings, stage 2 files byte-exactly with the
-  `index.md` and `log.md` entries, prints nothing to stderr when
-  nothing drifted, and warns-but-files on drift; the guardrail
+  `index.md` and `log.md` entries, commits exactly the three filed
+  paths with the pinned `query: file <slug>` message, prints only
+  the not-pushed guidance to stderr when nothing drifted, skips the
+  commit with the rebuild-loss warning under `--no-commit`, refuses
+  a diverged stub remote under `--push` with the remote left
+  untouched, and warns-but-files on drift; the guardrail
   revert for a rogue stub, unknown and invalid `--wiki` names
   (exit 1 listing the known names), the missing saved answer, and
   the agent failure; and `--web` (issue #422): the two-phase run —
