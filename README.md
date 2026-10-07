@@ -1560,12 +1560,12 @@ repo can instead opt in through `k-wiki enable-shared-writer`. The
 command probes the remote's live capabilities, then commits and
 pushes a tracked marker — `.k-wiki/shared-writer.json` at the data
 repo root — and from then on every compliant writer on any machine
-(manual `wiki-sync` and `scheduled-run` alike) serializes through
-one remote lease: it refuses a dirty, ahead, or diverged checkout
-before any scan, acquires the lease (taking over only an expired one
-by exact OID), fast-forwards to the canonical remote tree,
-re-baselines the ingest snapshot from that tree, and advances the
-branch and releases the lease in one atomic push. Cross-machine
+serializes through one remote lease: a cycle refuses a dirty, ahead, or
+diverged checkout before any scan, acquires the lease (taking over
+only an expired one by exact OID), fast-forwards to the canonical
+remote tree, re-baselines the ingest snapshot from that tree, and
+advances the branch and releases the lease in one atomic push.
+Cross-machine
 overlap is prevented, not merely recovered. Proposed source
 removals/renames stop the cycle until a human confirms a receipt,
 so a stale iCloud view can never become a shared expunge.

@@ -940,8 +940,16 @@ Use this when asking questions against the wiki. Asking is two-stage
   code, no LLM: the saved answer is templated byte-exactly into
   `wiki/queries/<slug>.md`, and `index.md` and `log.md` get their
   entries. The three writes are a unit — a failure anywhere rolls
-  all of them back (issue #245). A drift warning fires when `raw/`
-  or `wiki/` changed after the saved timestamp.
+  all of them back (issue #245). Filing is durable (issue #436):
+  the three files land as one atomic commit, message exactly
+  `query: file <slug>`, staged by path so unrelated edits elsewhere
+  stay uncommitted; after it the command asks `push now? [y/N]`
+  (default no, terminals only; `--push` pre-answers yes) and that
+  push rides the shared-writer lease — fetch first, fast-forward
+  only, never force, never a merge — while `--no-commit` skips the
+  commit and leaves an uncommitted filing a rebuild will lose. A
+  drift warning fires when `raw/` or `wiki/` changed after the
+  saved timestamp.
 
 The agent-facing CLI `k-wiki` (issue #76) exposes stage 1 plus four
 read-only commands, from any project: a `.k-wiki.json` binding at
