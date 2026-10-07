@@ -88,9 +88,10 @@ Stage 2 (human-only): wiki-query --file-last
   pre-answers yes. The push rides the shared-writer machinery:
   preconditions, fetch first, fast-forward-only exact refspec of
   the filing commit, and a clean refusal — never force, never a
-  merge — on a remote that moved since the filing or on dirt beyond
-  it (guidance: run the sync cycle or pull); shared-writer mode
-  must be enabled (enable-shared-writer). --no-commit skips the
+  merge — on a remote that moved since the filing, on dirt beyond
+  it (guidance: run the sync cycle or pull), or on unshared local
+  commits ahead of the filing (guidance: git push); shared-writer
+  mode must be enabled (enable-shared-writer). --no-commit skips the
   commit — the filing stays uncommitted, a rebuild will lose the
   page, and nothing is pushed. Fails cleanly when no saved answer
   exists. Warns when the data repo's raw/ or wiki/ changed after the
@@ -126,9 +127,9 @@ Switches and arguments:
   --push            Stage 2 only: push after filing without the
                     interactive ask. The push rides the shared-writer
                     lease — fetch first, fast-forward only, never
-                    forced; it refuses a moved remote or dirt beyond
-                    the filing. Requires shared-writer mode
-                    (enable-shared-writer).
+                    forced; it refuses a moved remote, dirt beyond
+                    the filing, or unshared local commits. Requires
+                    shared-writer mode (enable-shared-writer).
   --no-commit       Stage 2 only: skip the commit — the filing stays
                     uncommitted (a rebuild will lose the page) and
                     nothing is pushed.

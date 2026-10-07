@@ -24,7 +24,7 @@ import {
 } from "../wiki/pages.ts";
 import { buildPageIndex, extractWikilinks } from "../wiki/wiki-links.ts";
 import { prependWikiLog } from "../wiki/wiki-log.ts";
-import { commitFiling } from "./commit-push.ts";
+import { commitFiling, filingPaths } from "./commit-push.ts";
 import {
   looksPartitionedWeb,
   parseWebArtifactBody,
@@ -781,6 +781,9 @@ export async function fileLastQuery(
 
   await mkdir(join(wikiDir, "queries"), { recursive: true });
 
+  const commitDisabled = options.commit === false;
+  let oid: string | undefined;
+
   try {
     await writeFile(
       pageFile,
@@ -802,7 +805,22 @@ export async function fileLastQuery(
       prependWikiLog(textOrEmpty(log.state), logEntry(artifact.question, date)),
       "utf8",
     );
+
+    if (!commitDisabled) {
+      oid = await commitFiling({
+        dataRoot: options.dataRoot,
+        pagePath,
+        slug,
+        env,
+      });
+    }
   } catch (cause) {
+    await runGit(
+      options.dataRoot,
+      ["reset", "-q", "--", ...filingPaths(pagePath)],
+      env,
+    ).catch(() => {});
+
     await rollbackFiling({ pageFile, index, log });
     onProgress(
       "wiki-query: filing failed — rolled back the query page, index.md, and log.md; nothing was filed",
@@ -813,16 +831,6 @@ export async function fileLastQuery(
       { cause },
     );
   }
-
-  const commitDisabled = options.commit === false;
-  const oid = commitDisabled
-    ? undefined
-    : await commitFiling({
-        dataRoot: options.dataRoot,
-        pagePath,
-        slug,
-        env,
-      });
 
   return { pagePath, warning, slug, commit: oid };
 }

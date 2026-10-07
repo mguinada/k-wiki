@@ -1,12 +1,10 @@
 /**
- * Filing durability (issue #436): the atomic query-filing commit and
- * the lease-guarded push. Committing is what filing means — one
- * commit path-staging exactly the query page, `index.md`, and
- * `log.md`, message `query: file <slug>` — immune to unrelated dirt
+ * Filing durability (issue #436): committing is what filing means —
+ * one commit path-staging exactly the query page, `index.md`, and
+ * `log.md`, message `query: file <slug>`, immune to unrelated dirt
  * elsewhere in the tree. The push is the guarded ask: it rides the
- * shared-writer lease machinery as-is (marker, preconditions, fetch
- * first, fast-forward-only exact refspec, clean refusal on a moved
- * remote or dirt beyond the filing) — never force, never a merge.
+ * shared-writer lease machinery as-is — fetch first, fast-forward-only
+ * exact refspec, clean refusals — never force, never a merge.
  */
 
 import { createInterface } from "node:readline/promises";
@@ -19,6 +17,7 @@ import {
   fetchRefspec,
   type GitRunner,
   gitRunnerFor,
+  isAncestor,
   lsRemoteOid,
   revParseOid,
 } from "../writer/git-remote.ts";
@@ -258,12 +257,15 @@ async function requireFilingDescendant(
   git: GitRunner,
   branchRef: string,
   remoteOid: string,
+  head: string,
 ): Promise<string | undefined> {
   const parent = await revParseOid(git, "HEAD^");
 
   return remoteOid === parent
     ? undefined
-    : `push refused — ${branchRef} moved since the filing commit (non-fast-forward); run the sync cycle or pull, and never force`;
+    : (await isAncestor(git, remoteOid, head))
+      ? `push refused — local history is ahead of ${branchRef} with unshared commits (the filing commit is not the remote's direct child); push them manually (git push) — never force`
+      : `push refused — ${branchRef} moved since the filing commit (non-fast-forward); run the sync cycle or pull, and never force`;
 }
 
 /**
@@ -298,14 +300,15 @@ export async function pushFiledCommit(options: {
     return;
   }
 
-  const nonFastForward = await requireFilingDescendant(
+  const refusal = await requireFilingDescendant(
     git,
     branchRef,
     remoteOid,
+    head,
   );
 
-  if (nonFastForward !== undefined) {
-    throw new Error(nonFastForward);
+  if (refusal !== undefined) {
+    throw new Error(refusal);
   }
 
   const lease = await acquirePushLease({ git, marker, base: remoteOid });

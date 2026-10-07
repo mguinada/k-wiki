@@ -317,6 +317,48 @@ describe("pushFiledCommit", () => {
     expect(await remoteMain(remoteDir)).toBe(before);
   });
 
+  it("refuses unshared local commits with push-first guidance", async () => {
+    const { dataRoot } = await makeSharedRepo();
+
+    await mkdir(join(dataRoot, "wiki", "queries"), { recursive: true });
+    await writeFile(
+      join(dataRoot, "wiki", "queries", "embeddings.md"),
+      "---\ntype: query\n---\nEmbeddings\n",
+    );
+    await run("git", ["add", "-A"], { cwd: dataRoot });
+    await run(
+      "git",
+      ["commit", "-q", "-m", queryCommitMessage("embeddings"), "--", "wiki"],
+      { cwd: dataRoot },
+    );
+
+    await expect(
+      pushFiledCommit({ dataRoot, env: process.env }),
+    ).rejects.toThrow("unshared");
+  });
+
+  it("leaves the remote untouched when unshared commits precede the filing", async () => {
+    const { dataRoot, remoteDir } = await makeSharedRepo();
+
+    await mkdir(join(dataRoot, "wiki", "queries"), { recursive: true });
+    await writeFile(
+      join(dataRoot, "wiki", "queries", "embeddings.md"),
+      "---\ntype: query\n---\nEmbeddings\n",
+    );
+    await run("git", ["add", "-A"], { cwd: dataRoot });
+    await run(
+      "git",
+      ["commit", "-q", "-m", queryCommitMessage("embeddings"), "--", "wiki"],
+      { cwd: dataRoot },
+    );
+
+    const before = await remoteMain(remoteDir);
+
+    await pushFiledCommit({ dataRoot, env: process.env }).catch(() => {});
+
+    expect(await remoteMain(remoteDir)).toBe(before);
+  });
+
   it("refuses a live lease, naming the holder", async () => {
     const { dataRoot } = await makeSharedRepo();
     const git = gitRunnerFor({ dir: dataRoot, env: process.env });

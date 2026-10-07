@@ -1734,8 +1734,9 @@ omitted flag can never produce wiki writes:
   command asks `push now? [y/N]` (default no, terminals only);
   `--push` pre-answers yes. The push rides the shared-writer lease —
   fetch first, fast-forward-only exact refspec, clean refusal on a
-  moved remote or dirt beyond the filing; never force, never a
-  merge; shared-writer mode must be enabled. `--no-commit` skips the
+  moved remote, dirt beyond the filing, or unshared local commits
+  ahead of it; never force, never a merge; shared-writer mode must
+  be enabled. `--no-commit` skips the
   commit — the filing stays uncommitted (a rebuild will lose the
   page) and nothing is pushed.
 
