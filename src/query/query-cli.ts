@@ -24,7 +24,7 @@ import { runQueryCli } from "./query-shell.ts";
 import { LAST_QUERY_FILE } from "./wiki-query.ts";
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
-const HELP = `Usage: wiki-query [-h | --help] [--file-last] [--web] [--wiki, -w <name>] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>
+const HELP = `Usage: wiki-query [-h | --help] [--file-last] [--push] [--no-commit] [--web] [--wiki, -w <name>] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>
 
 Ask the built wiki one question headless. Filing is
 two-stage: stage 1 answers and saves; stage 2 files
@@ -371,7 +371,7 @@ function usageError(
   );
 }
 
-/** wiki-query entry point: `wiki-query [-h | --help] [--file-last] [--web] [--wiki, -w <name>] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>`. */
+/** wiki-query entry point: `wiki-query [-h | --help] [--file-last] [--push] [--no-commit] [--web] [--wiki, -w <name>] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>`. */
 export async function main(
   args: readonly string[] = process.argv.slice(2),
 ): Promise<void> {

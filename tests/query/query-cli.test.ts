@@ -114,7 +114,7 @@ console.log("Prefer RAG when the knowledge base changes often. See [[retrieval-a
 
   it("prints the usage line for --help", async () => {
     expect((await runCli(["--help"])).out).toContain(
-      "wiki-query [-h | --help] [--file-last] [--web] [--wiki, -w <name>] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>",
+      "wiki-query [-h | --help] [--file-last] [--push] [--no-commit] [--web] [--wiki, -w <name>] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>",
     );
   });
 
