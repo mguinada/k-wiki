@@ -10,7 +10,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
-  CODEX_WEB_UNSUPPORTED_REASON,
   codexRunner,
   defaultAuthStorePath,
   ISOLATION_FLAGS,
@@ -888,16 +887,92 @@ describe("codex Runner adapter", () => {
     expect(codexRunner.stdin("PROMPT")).toBe("PROMPT");
   });
 
-  it("refuses the web grant with the named error in the capability manifest", () => {
-    expect(codexRunner.capabilities.web.unsupportedReason).toBe(
-      CODEX_WEB_UNSUPPORTED_REASON,
+  it("keeps the capability manifest without a web refusal", () => {
+    expect(codexRunner.capabilities.web.unsupportedReason).toBeUndefined();
+  });
+
+  it("displays the web grant as the live-search posture", () => {
+    expect(codexRunner.capabilities.web.grantArgs).toEqual([
+      'web_search="live"',
+    ]);
+  });
+
+  it("builds the enrichment argv in the exec shape with report capture", () => {
+    const enrichArgs = codexRunner.webEnrichArgs(settings, "PROMPT", {
+      root: "/data",
+    });
+
+    expect(enrichArgs.slice(0, 12)).toEqual([
+      "exec",
+      "-C",
+      "/data",
+      "--sandbox",
+      "workspace-write",
+      "--ephemeral",
+      "--skip-git-repo-check",
+      "-m",
+      "gpt-5.6-terra",
+      "-c",
+      "model_reasoning_effort=high",
+      "-o",
+    ]);
+  });
+
+  it("serves the output contract that names the audit fence", () => {
+    expect(codexRunner.webOutputContract()).toContain("k-wiki-web-audit");
+  });
+
+  it("parses its own report shape into calls and enrichment", () => {
+    const report = [
+      "- [a](https://example.com/a) confirms the topic.",
+      "",
+      "```k-wiki-web-audit",
+      "web_search | rag vs fine-tuning | https://example.com/a",
+      "```",
+    ].join("\n");
+
+    const parsed = codexRunner.parseWebReport(
+      report,
+      () => new Date(1791000000000),
+    );
+
+    expect(parsed.enrichment).toBe(
+      "- [a](https://example.com/a) confirms the topic.",
     );
   });
 
-  it("throws the named error from enrichment argv instead of building a spawn", () => {
-    expect(() =>
-      codexRunner.webEnrichArgs(settings, "PROMPT", { root: "/data" }),
-    ).toThrow(CODEX_WEB_UNSUPPORTED_REASON);
+  it("records the report's audited call", () => {
+    const report = [
+      "- [a](https://example.com/a) confirms the topic.",
+      "",
+      "```k-wiki-web-audit",
+      "web_search | rag vs fine-tuning | https://example.com/a",
+      "```",
+    ].join("\n");
+
+    const parsed = codexRunner.parseWebReport(
+      report,
+      () => new Date(1791000000000),
+    );
+
+    expect(parsed.calls).toHaveLength(1);
+  });
+
+  it("records the audited call's urls", () => {
+    const report = [
+      "- [a](https://example.com/a) confirms the topic.",
+      "",
+      "```k-wiki-web-audit",
+      "web_search | rag vs fine-tuning | https://example.com/a",
+      "```",
+    ].join("\n");
+
+    const parsed = codexRunner.parseWebReport(
+      report,
+      () => new Date(1791000000000),
+    );
+
+    expect(parsed.calls[0]?.urls).toEqual(["https://example.com/a"]);
   });
 
   it("leaves the pi capability manifest without a web refusal", () => {
@@ -934,6 +1009,21 @@ describe("codex Runner adapter", () => {
       home,
       skillLink: true,
     });
+  });
+
+  it("switches the managed home's web_search posture to live for the web opt-in", () => {
+    const fixture = mkdtempSync(join(tmpdir(), "k-wiki-codex-runner-"));
+    const source = join(fixture, "source");
+
+    mkdirSync(source, { recursive: true });
+    const managed = runnerEnv(settings, { CODEX_HOME: source }, { web: true });
+    const home = managed.env.CODEX_HOME ?? "";
+    const config = readFileSync(join(home, "config.toml"), "utf8");
+
+    rmSync(fixture, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+
+    expect(config).toBe('web_search = "live"\napproval_policy = "never"\n');
   });
 
   it("reports auth not seeded when the host has no auth store", () => {

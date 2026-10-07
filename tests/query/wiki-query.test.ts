@@ -5,7 +5,10 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { type RunContextInput, runContext } from "../../src/cli/run-context.ts";
 import type { AgentRunner } from "../../src/ingest/agent-run.ts";
 import { readQueryArtifact } from "../../src/query/file-last.ts";
-import { WEB_ENRICH_HEARTBEAT_PREFIX } from "../../src/query/web-enrich.ts";
+import {
+  WEB_ENRICH_HEARTBEAT_PREFIX,
+  WEB_FAILED_WARNING,
+} from "../../src/query/web-enrich.ts";
 import {
   composeQueryPrompt,
   QUERY_HEARTBEAT_PREFIX,
@@ -25,6 +28,16 @@ afterEach(() => {
   process.exitCode = undefined;
   vi.restoreAllMocks();
 });
+
+/** A contract-shaped codex enrichment report: one search, its URL
+ *  cited by the single bullet. */
+const OK_CODEX_REPORT = [
+  "- [a](https://example.com/a) confirms the topic.",
+  "",
+  "```k-wiki-web-audit",
+  "web_search | rag vs fine-tuning | https://example.com/a",
+  "```",
+].join("\n");
 
 describe("composeQueryPrompt", () => {
   it("carries the prompt text into the composed prompt", () => {
@@ -1148,33 +1161,208 @@ describe("runWikiQuery --web", () => {
     });
   }
 
-  it("refuses --web on a codex lane with the named error before any spawn", async () => {
-    const h = await makeHarness();
+  /** One codex-lane --web run, memoized for the sibling its: the
+   *  harness's stub answers the core plainly and serves the
+   *  contract-shaped report to the enrichment phase. */
+  let codexRun:
+    | Promise<{
+        h: Harness;
+        result: Awaited<ReturnType<typeof runWikiQuery>>;
+        enrichStdin: string | undefined;
+      }>
+    | undefined;
 
-    await writeFile(
-      h.settingsPath,
-      "command: codex\nagent: codex\ntargets: [gpt-5.6-terra]\nreasoning: high\n",
-    );
+  const runCodexWeb = () => {
+    codexRun ??= (async () => {
+      const h = await makeHarness();
 
-    await expect(runWikiQuery({ ...optionsFor(h), web: true })).rejects.toThrow(
-      "--web refused — codex web enrichment unsupported; see issue #441",
+      await writeFile(
+        h.settingsPath,
+        "command: codex\nagent: codex\ntargets: [gpt-5.6-terra]\nreasoning: high\n",
+      );
+      await writeFile(
+        join(h.promptsDir, "web-enrich.md"),
+        "Enrich the topic from the web.",
+      );
+
+      let enrichStdin: string | undefined;
+
+      const twoPhase: AgentRunner = async (command, args, options) => {
+        h.invocations.push({
+          command,
+          args,
+          cwd: options.cwd,
+          env: options.env,
+        });
+
+        if (options.stdin?.includes("k-wiki-web-audit")) {
+          enrichStdin = options.stdin;
+
+          return { stdout: OK_CODEX_REPORT, stderr: "" };
+        }
+
+        return {
+          stdout:
+            "Prefer RAG when the knowledge base changes often. See [[retrieval-augmented-generation]].",
+          stderr: "",
+        };
+      };
+
+      const result = await runWikiQuery({
+        ...optionsFor(h),
+        web: true,
+        runAgent: twoPhase,
+      });
+
+      return { h, result, enrichStdin };
+    })();
+
+    return codexRun;
+  };
+
+  it("runs two phases on a codex lane's --web", async () => {
+    const { h } = await runCodexWeb();
+
+    expect(h.invocations).toHaveLength(2);
+  });
+
+  it("carries the report contract in the enrichment prompt", async () => {
+    const { enrichStdin } = await runCodexWeb();
+
+    expect(enrichStdin).toContain("k-wiki-web-audit");
+  });
+
+  it("keeps the codex enrichment argv in the exec shape", async () => {
+    const { h } = await runCodexWeb();
+
+    expect(invocation(h, 1).args[0]).toBe("exec");
+  });
+
+  it("delivers no pi argv to the codex enrichment spawn", async () => {
+    const { h } = await runCodexWeb();
+
+    expect(invocation(h, 1).args).not.toContain("--print");
+  });
+
+  it("keeps the core run's managed home web-blind", async () => {
+    const { h } = await runCodexWeb();
+
+    expect(
+      await readFile(
+        join(invocation(h, 0).env.CODEX_HOME ?? "", "config.toml"),
+        "utf8",
+      ),
+    ).toBe('web_search = "disabled"\napproval_policy = "never"\n');
+  });
+
+  it("runs the enrichment in the live-search managed home", async () => {
+    const { h } = await runCodexWeb();
+
+    expect(
+      await readFile(
+        join(invocation(h, 1).env.CODEX_HOME ?? "", "config.toml"),
+        "utf8",
+      ),
+    ).toBe('web_search = "live"\napproval_policy = "never"\n');
+  });
+
+  it("answers with the core answer and the enrichment sections", async () => {
+    const { result } = await runCodexWeb();
+
+    expect(result.answer).toContain(
+      "Prefer RAG when the knowledge base changes often. See [[retrieval-augmented-generation]].",
     );
   });
 
-  it("spawns nothing when a codex lane's --web is refused", async () => {
-    const h = await makeHarness();
+  it("saves the artifact's web sections", async () => {
+    const { result } = await runCodexWeb();
 
-    await writeFile(
-      h.settingsPath,
-      "command: codex\nagent: codex\ntargets: [gpt-5.6-terra]\nreasoning: high\n",
+    expect(await readFile(result.artifactPath, "utf8")).toContain(
+      "## Web enrichment",
     );
+  });
 
-    const outcome = await runWikiQuery({ ...optionsFor(h), web: true }).then(
-      () => "answered" as const,
-      () => "refused" as const,
+  it("saves the artifact's sources section", async () => {
+    const { result } = await runCodexWeb();
+
+    expect(await readFile(result.artifactPath, "utf8")).toContain(
+      "## Web sources",
     );
+  });
 
-    expect([outcome, h.invocations]).toEqual(["refused", []]);
+  it("saves the artifact's audit section", async () => {
+    const { result } = await runCodexWeb();
+
+    expect(await readFile(result.artifactPath, "utf8")).toContain(
+      "## Web calls audit",
+    );
+  });
+
+  /** One codex-lane --web run whose enrichment report carries no
+   *  audit block, memoized for the sibling its. */
+  let degradedRun:
+    | Promise<{
+        result: Awaited<ReturnType<typeof runWikiQuery>>;
+        saved: Awaited<ReturnType<typeof readQueryArtifact>>;
+      }>
+    | undefined;
+
+  const runDegradedCodexWeb = () => {
+    degradedRun ??= (async () => {
+      const h = await makeHarness();
+
+      await writeFile(
+        h.settingsPath,
+        "command: codex\nagent: codex\ntargets: [gpt-5.6-terra]\nreasoning: high\n",
+      );
+      await writeFile(
+        join(h.promptsDir, "web-enrich.md"),
+        "Enrich the topic from the web.",
+      );
+
+      const twoPhase: AgentRunner = async (command, args, options) => {
+        h.invocations.push({
+          command,
+          args,
+          cwd: options.cwd,
+          env: options.env,
+        });
+
+        if (options.stdin?.includes("k-wiki-web-audit")) {
+          return { stdout: "- done, no audit block.", stderr: "" };
+        }
+
+        return {
+          stdout:
+            "Prefer RAG when the knowledge base changes often. See [[retrieval-augmented-generation]].",
+          stderr: "",
+        };
+      };
+
+      const result = await runWikiQuery({
+        ...optionsFor(h),
+        web: true,
+        runAgent: twoPhase,
+      });
+
+      return { result, saved: await readQueryArtifact(result.artifactPath) };
+    })();
+
+    return degradedRun;
+  };
+
+  it("warns the wiki-only degradation on an unparsable codex report", async () => {
+    const { result } = await runDegradedCodexWeb();
+
+    expect(result.warning).toBe(WEB_FAILED_WARNING);
+  });
+
+  it("persists the named parse failure in the artifact header", async () => {
+    const { saved } = await runDegradedCodexWeb();
+
+    expect(saved.webFailureReason).toBe(
+      "the codex report carried no ```k-wiki-web-audit block",
+    );
   });
 
   it("strips context, extensions, and skills from the core argv", async () => {

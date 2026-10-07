@@ -177,8 +177,13 @@ e2e run or diagnosing a failing one.
   `webSources`, the three machine sections, the audit table),
   `--file-last` on it files the core answer only, and a missing
   pi-web-access install degrades to the wiki-only run with the
-  warning, while a codex lane refuses `--web` with the named error
-  before any spawn (issue #442); and the pruning semantics (issue #425): a drifted
+  warning; a codex lane runs the same two-phase `--web` through the
+  codex report contract — the conformance stub asserts the exec
+  argv and the live-search managed home (`web_search = "live"`)
+  model-free, a contract-shaped report reconciles through the
+  citation gate, and a report without the audit block degrades with
+  the named parse failure in the artifact's `webFailureReason`
+  header; and the pruning semantics (issue #425): a drifted
   citation is pruned with the machine prune line in the artifact's
   audit section while the traceable bullet survives, an uncited
   fetch stays non-fatal, and an enrichment pruned empty is the

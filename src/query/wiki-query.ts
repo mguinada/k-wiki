@@ -233,8 +233,8 @@ async function corePhase(
 }
 
 /** Refuse `--web` up front on a lane whose capability manifest
- *  cannot serve the web grant (issue #442): the failure lands
- *  before any spawn, so no model pass is ever paid. */
+ *  cannot serve the web grant: the failure lands before any spawn,
+ *  so no model pass is ever paid. */
 function assertWebSupported(settings: AgentSettings): void {
   const refusal = runnerFor(settings).capabilities.web.unsupportedReason;
 
@@ -264,10 +264,10 @@ export async function runWikiQuery(
   const webRequested = options.web === true;
 
   // A lane whose capability manifest refuses the web grant fails the
-  // run here, before any spawn — no model pass is ever paid (issue
-  // #442). Distinct from the degradation path below: the plugin
-  // absent on a lane that can serve the grant degrades; a lane that
-  // cannot serve it at all refuses.
+  // run here, before any spawn — no model pass is ever paid. Distinct
+  // from the degradation path below: the web capability absent on a
+  // lane that can serve the grant degrades; a lane that cannot serve
+  // it at all refuses.
   if (webRequested) {
     assertWebSupported(settings);
   }
@@ -339,7 +339,10 @@ export async function runWikiQuery(
           }),
         stdin: (composed: string) => runnerFor(settings).stdin(composed),
         reportPath: runnerFor(settings).reportPath,
-        env: () => runnerEnv(settings, env),
+        env: () => runnerEnv(settings, env, { web: true }),
+        outputContract: () => runnerFor(settings).webOutputContract(),
+        parse: (stdout: string, now: () => Date) =>
+          runnerFor(settings).parseWebReport(stdout, now),
       },
       question: options.question,
       promptText: await readPrompt(

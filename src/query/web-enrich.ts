@@ -22,11 +22,11 @@ import {
   type WebArtifactSections,
 } from "./web-artifact.ts";
 import {
-  parseAgentJsonStream,
   reconcileWebSources,
   type WebCall,
   type WebSource,
 } from "./web-audit.ts";
+import type { ParsedWebReport } from "./web-report.ts";
 
 /** Liveness prefix of the enrichment phase's heartbeat; the animated
  *  sink keeps these on one line, like the core phase's. */
@@ -70,8 +70,9 @@ export function withGapHint(
  *  (issue #434): the agent command, the grant tail the progress line
  *  names, and the argv builder for a composed prompt — the adapter
  *  owns the grant's flag language (ambient isolation, the web
- *  extension grant, identity — plus pi's JSON output mode; the
- *  prompt rides argv or stdin). */
+ *  posture, identity — plus the lane's output mode; the prompt
+ *  rides argv or stdin) and the report language: the output
+ *  contract the prompt carries and the parse of the run's output. */
 export interface WebEnrichmentSpawn {
   readonly command: string;
   /** The grant's display tail, e.g. `-e npm:pi-web-access --tools
@@ -86,6 +87,13 @@ export interface WebEnrichmentSpawn {
   env?():
     | { readonly env: NodeJS.ProcessEnv; readonly temp: readonly string[] }
     | undefined;
+  /** The lane's output contract: the reply shape its parse reads,
+   *  as the sentence the prompt's `Output contract:` line carries. */
+  outputContract(): string;
+  /** The lane's parse of its own run output: the final text plus
+   *  the recorded web calls. Throws the named failure when the
+   *  output cannot yield a contract-shaped report. */
+  parse(stdout: string, now: () => Date): ParsedWebReport;
 }
 
 /** The agent spawn the enrichment run goes through, structurally:
@@ -108,13 +116,14 @@ export const WEB_ENRICH_PROMPT_FILE = "web-enrich.md";
 
 /** Compose the enrichment prompt: the prompt file's policy text,
  *  the question, and the finished core document as read-only input,
- *  plus the output contract. The egress policy ships verbatim in
- *  the prompt file; nothing here paraphrases it. */
+ *  plus the lane's output contract. The egress policy ships verbatim
+ *  in the prompt file; nothing here paraphrases it. */
 export function composeEnrichmentPrompt(
   promptText: string,
   question: string,
   coreAnswer: string,
   todayUtc: string,
+  outputContract: string,
 ): string {
   return [
     promptText,
@@ -125,7 +134,7 @@ export function composeEnrichmentPrompt(
     "",
     coreAnswer,
     "",
-    `Output contract: reply with only the enrichment bullets — no headings of your own, no sources list, no audit table; the wrapper writes those sections and computes them from the recorded tool calls. Today's date is ${todayUtc} (UTC): tag every link you cite with it as the retrieval date. Write nothing to disk; the reply is your only output.`,
+    `Output contract: ${outputContract} Today's date is ${todayUtc} (UTC): tag every link you cite with it as the retrieval date. Write nothing to disk; the reply is your only output.`,
   ].join("\n");
 }
 
@@ -181,13 +190,14 @@ function newestCallIso(calls: readonly WebCall[], now: () => Date): string {
   ).toISOString();
 }
 
-/** Run the enrichment phase: compose, spawn with the web grant,
- *  parse the audit from the event stream, reconcile the sources —
- *  pruning untraceable citations down to the traceable remainder —
- *  and render the three machine-owned sections. Any failure —
- *  spawn, timeout, empty output, a pruning that empties the
- *  enrichment — lands in the degradation path; it never touches the
- *  core answer. */
+/** Run the enrichment phase: compose with the lane's output
+ *  contract, spawn with the web grant, parse the run's output
+ *  through the lane's report parse, reconcile the sources — pruning
+ *  untraceable citations down to the traceable remainder — and
+ *  render the three machine-owned sections. Any failure — spawn,
+ *  timeout, a report that cannot yield a contract-shaped result,
+ *  empty output, a pruning that empties the enrichment — lands in
+ *  the degradation path; it never touches the core answer. */
 export async function runWebEnrichment(
   options: WebEnrichmentOptions,
 ): Promise<WebEnrichmentOutcome> {
@@ -198,6 +208,7 @@ export async function runWebEnrichment(
     options.question,
     options.coreAnswer,
     run.now().toISOString().slice(0, 10),
+    spawn.outputContract(),
   );
 
   run.onProgress(
@@ -205,6 +216,7 @@ export async function runWebEnrichment(
   );
 
   let stdout: string;
+  let parsed: ParsedWebReport;
 
   try {
     const args = spawn.args(composed);
@@ -226,11 +238,11 @@ export async function runWebEnrichment(
           timeoutMs: options.timeoutMs,
         }),
     ));
+
+    parsed = spawn.parse(stdout, run.now);
   } catch (error) {
     return { kind: "failed", reason: (error as Error).message };
   }
-
-  const parsed = parseAgentJsonStream(stdout);
 
   const enrichment = sanitizeEnrichment(parsed.enrichment);
 
