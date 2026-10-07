@@ -91,10 +91,16 @@ export interface AgentRunner {
   readonly capabilities: {
     /** The web policy: the query-only grant, as the argv segment the
      *  progress line names, and whether the grant's extension is
-     *  installed in the judged environment. */
+     *  installed in the judged environment. `unsupportedReason`
+     *  carries the lane's named refusal when it cannot serve the
+     *  web grant at all — the query surface refuses `--web` before
+     *  any spawn (issue #442). */
     readonly web: {
       readonly grantArgs: readonly string[];
       installed(environment: NodeJS.ProcessEnv): Promise<boolean>;
+      /** The named refusal reason when the lane cannot serve the
+       *  web grant; undefined when it can. */
+      readonly unsupportedReason?: string;
     };
     /** The credential probe: the on-disk auth store the agent reads
      *  by default, resolved against a home (os.homedir() when
@@ -142,6 +148,13 @@ export const WEB_TOOL_ALLOWLIST = "web_search,source_check,fetch_content";
 /** The machine-readable output mode of the enrichment run: pi's
  *  `--mode json` stream, which the audit parses. */
 export const WEB_OUTPUT_MODE = "json";
+
+/** The codex lane's named `--web` refusal (issue #442): the lane
+ *  cannot serve the web enrichment grant until a Codex-shaped
+ *  enrichment contract exists (issue #441) — the query surface
+ *  refuses before any spawn, so no model pass is ever paid. */
+export const CODEX_WEB_UNSUPPORTED_REASON =
+  "codex web enrichment unsupported; see issue #441";
 
 /** The isolation state of a spawned run, for progress and digest
  *  lines (issues #118, #144): `isolated` (plus the whitelist
@@ -422,10 +435,11 @@ export const codexRunner: AgentRunner = {
   answerArgs: (settings, prompt, context) =>
     codexRunner.args(settings, prompt, context),
 
-  webEnrichArgs: (settings, prompt, context) => [
-    ...codexRunner.args(settings, prompt, context),
-    "--web",
-  ],
+  // Issue #442: the codex lane refuses `--web` with a named error
+  // until a Codex-shaped enrichment contract exists (issue #441).
+  webEnrichArgs: () => {
+    throw new Error(CODEX_WEB_UNSUPPORTED_REASON);
+  },
 
   stdin: (prompt) => prompt,
 
@@ -450,7 +464,11 @@ export const codexRunner: AgentRunner = {
   }),
 
   capabilities: {
-    web: { grantArgs: ["--web"], installed: async () => true },
+    web: {
+      grantArgs: ["--web"],
+      installed: async () => true,
+      unsupportedReason: CODEX_WEB_UNSUPPORTED_REASON,
+    },
     credentials: {
       defaultAuthStorePath: (home = homedir()) =>
         join(home, ".codex", "auth.json"),

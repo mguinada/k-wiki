@@ -232,6 +232,17 @@ async function corePhase(
   return trimmed;
 }
 
+/** Refuse `--web` up front on a lane whose capability manifest
+ *  cannot serve the web grant (issue #442): the failure lands
+ *  before any spawn, so no model pass is ever paid. */
+function assertWebSupported(settings: AgentSettings): void {
+  const refusal = runnerFor(settings).capabilities.web.unsupportedReason;
+
+  if (refusal !== undefined) {
+    throw new Error(`--web refused — ${refusal}`);
+  }
+}
+
 /**
  * One headless answer-only query run: capture the pre-run state,
  * compose, invoke, then verify mechanically that wiki/ did not move —
@@ -251,6 +262,16 @@ export async function runWikiQuery(
   onProgress(`wiki-query: data repo ${dataRoot}`);
 
   const webRequested = options.web === true;
+
+  // A lane whose capability manifest refuses the web grant fails the
+  // run here, before any spawn — no model pass is ever paid (issue
+  // #442). Distinct from the degradation path below: the plugin
+  // absent on a lane that can serve the grant degrades; a lane that
+  // cannot serve it at all refuses.
+  if (webRequested) {
+    assertWebSupported(settings);
+  }
+
   const webAvailable =
     webRequested && (await runnerFor(settings).capabilities.web.installed(env));
 
