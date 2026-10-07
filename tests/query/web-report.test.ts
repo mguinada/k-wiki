@@ -74,6 +74,77 @@ describe("parseCodexReport", () => {
     expect(parsed.calls[0]?.urls).toEqual([]);
   });
 
+  it("keeps one call record when the target carries pipes", () => {
+    const report = codexReport("- done.", [
+      "web_search | rag vs fine-tuning | 2026 comparison | https://example.com/a",
+    ]);
+
+    const parsed = parseCodexReport(report, NOW);
+
+    expect(parsed.calls).toHaveLength(1);
+  });
+
+  it("reads a pipe-bearing target from between the outer pipes", () => {
+    const report = codexReport("- done.", [
+      "web_search | rag vs fine-tuning | 2026 comparison | https://example.com/a",
+    ]);
+
+    const parsed = parseCodexReport(report, NOW);
+
+    expect(parsed.calls[0]?.target).toBe("rag vs fine-tuning | 2026 comparison");
+  });
+
+  it("reads the tool from before the first pipe", () => {
+    const report = codexReport("- done.", [
+      "web_search | rag vs fine-tuning | 2026 comparison | https://example.com/a",
+    ]);
+
+    const parsed = parseCodexReport(report, NOW);
+
+    expect(parsed.calls[0]?.tool).toBe("web_search");
+  });
+
+  it("reads the urls field from after the last pipe", () => {
+    const report = codexReport("- done.", [
+      "web_search | rag vs fine-tuning | 2026 | https://example.com/a https://example.com/b",
+    ]);
+
+    const parsed = parseCodexReport(report, NOW);
+
+    expect(parsed.calls[0]?.urls).toEqual([
+      "https://example.com/a",
+      "https://example.com/b",
+    ]);
+  });
+
+  it("finds the opening fence when the line carries leading whitespace", () => {
+    const report = [
+      "- done.",
+      "",
+      `  ${CODEX_AUDIT_FENCE}`,
+      "web_search | q | https://example.com/a",
+      "```",
+    ].join("\n");
+
+    const parsed = parseCodexReport(report, NOW);
+
+    expect(parsed.calls).toHaveLength(1);
+  });
+
+  it("finds the closing fence when the line carries trailing whitespace", () => {
+    const report = [
+      "- done.",
+      "",
+      CODEX_AUDIT_FENCE,
+      "web_search | q | https://example.com/a",
+      "```  ",
+    ].join("\n");
+
+    const parsed = parseCodexReport(report, NOW);
+
+    expect(parsed.calls).toHaveLength(1);
+  });
+
   it("skips blank lines inside the audit block", () => {
     const report = [
       "- done.",
@@ -119,11 +190,19 @@ describe("parseCodexReport", () => {
     );
   });
 
-  it("fails named when a call line does not split into three fields", () => {
+  it("fails named when a call line carries no field boundaries", () => {
     const report = codexReport("- done.", ["web_search missing pipes"]);
 
     expect(() => parseCodexReport(report, NOW)).toThrow(
       "the codex ```k-wiki-web-audit block carried a malformed call line: web_search missing pipes",
+    );
+  });
+
+  it("fails named when a call line carries only one field boundary", () => {
+    const report = codexReport("- done.", ["web_search | just a target"]);
+
+    expect(() => parseCodexReport(report, NOW)).toThrow(
+      "the codex ```k-wiki-web-audit block carried a malformed call line: web_search | just a target",
     );
   });
 

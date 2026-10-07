@@ -245,31 +245,35 @@ export const CODEX_AUDIT_FENCE = "```k-wiki-web-audit";
 /** The closing fence of a fenced code block. */
 const CODE_FENCE = "```";
 
-/** Where the report splits: the opening fence's line index, as far
- *  as the contract cares — the block must exist at all. */
-function auditFenceIndex(lines: readonly string[]): number {
-  const index = lines.indexOf(CODEX_AUDIT_FENCE);
-
-  if (index < 0) {
-    throw new Error(`the codex report carried no ${CODEX_AUDIT_FENCE} block`);
-  }
-
-  return index;
+/** The index of the first line at or after `from` that is the fence
+ *  once the line's leading and trailing whitespace is ignored. */
+function fenceIndex(
+  lines: readonly string[],
+  fence: string,
+  from: number,
+): number {
+  return lines.findIndex((line, at) => at >= from && line.trim() === fence);
 }
 
 /** One audit-block line as a call: `tool | target | urls`, the urls
- *  space-separated; a malformed line is a named failure, not a
- *  silent gap in the audit. */
+ *  space-separated. The boundaries anchor on the outer pipes — the
+ *  first `|` ends the tool, the last `|` starts the urls — so the
+ *  target's free text may itself carry pipes and the line still
+ *  yields exactly one record; a line without both boundaries is a
+ *  named failure, not a silent gap in the audit. */
 function auditCall(line: string, at: number): WebCall {
-  const fields = line.split("|").map((field) => field.trim());
+  const toolEnd = line.indexOf("|");
+  const urlsStart = line.lastIndexOf("|");
 
-  if (fields.length !== 3) {
+  if (toolEnd < 0 || urlsStart <= toolEnd) {
     throw new Error(
       `the codex ${CODEX_AUDIT_FENCE} block carried a malformed call line: ${line}`,
     );
   }
 
-  const [tool, target, urlsField] = fields as [string, string, string];
+  const tool = line.slice(0, toolEnd).trim();
+  const target = line.slice(toolEnd + 1, urlsStart).trim();
+  const urlsField = line.slice(urlsStart + 1);
   const urls = [...new Set(urlsField.split(/\s+/).filter((url) => url !== ""))];
 
   return {
@@ -294,8 +298,13 @@ export function parseCodexReport(
   now: () => Date,
 ): ParsedWebReport {
   const lines = report.split("\n");
-  const open = auditFenceIndex(lines);
-  const close = lines.indexOf(CODE_FENCE, open + 1);
+  const open = fenceIndex(lines, CODEX_AUDIT_FENCE, 0);
+
+  if (open < 0) {
+    throw new Error(`the codex report carried no ${CODEX_AUDIT_FENCE} block`);
+  }
+
+  const close = fenceIndex(lines, CODE_FENCE, open + 1);
 
   if (close < 0) {
     throw new Error(`the codex ${CODEX_AUDIT_FENCE} block never closed`);
