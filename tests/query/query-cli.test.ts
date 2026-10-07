@@ -175,6 +175,35 @@ console.log("Prefer RAG when the knowledge base changes often. See [[retrieval-a
     expect(process.exitCode).toBe(1);
   });
 
+  it("rejects --no-commit with --push: there is nothing to push", async () => {
+    const { err } = await runCli(["--file-last", "--push", "--no-commit"]);
+
+    expect(err).toContain("--no-commit skips the commit");
+  });
+
+  it("rejects the durability flags outside --file-last", async () => {
+    const h = await makeCliHarness();
+
+    const { err } = await runCli([
+      "--push",
+      "--raw-dir",
+      join(h.dataRoot, "raw"),
+      "--outputs",
+      h.outputsDir,
+      "some question",
+    ]);
+
+    expect(err).toContain("--push and --no-commit belong to --file-last");
+  });
+
+  it("documents the --push switch in the help", async () => {
+    expect((await runCli(["--help"])).out).toContain("--push");
+  });
+
+  it("documents the --no-commit switch in the help", async () => {
+    expect((await runCli(["--help"])).out).toContain("--no-commit");
+  });
+
   it("documents the --settings switch in the help", async () => {
     expect((await runCli(["--help"])).out).toContain("--settings");
   });
@@ -688,11 +717,13 @@ console.log("An answer.");
     );
   });
 
-  it("prints nothing on stderr when filing succeeds", async () => {
+  it("prints only the not-pushed guidance on stderr when filing succeeds unattended", async () => {
     const h = await harnessWithSavedAnswer();
     const { err } = await runCli(fileLastArgs(h));
 
-    expect(err).toBe("");
+    expect(err).toBe(
+      "Not pushed — the commit stays local; push it soon (git push): a shared-writer cycle refuses a local-ahead history",
+    );
   });
 
   it("leaves the exit code unset when filing without a settings file", async () => {
@@ -888,7 +919,7 @@ console.log("An answer.");
     expect(process.exitCode).toBe(1);
   });
 
-  it("makes no console.error call in stage 2 when nothing drifted", async () => {
+  it("makes one not-pushed guidance call in stage 2 when nothing drifted", async () => {
     const h = await makeCliHarness();
 
     await runCli(queryArgs(h));
@@ -911,7 +942,7 @@ console.log("An answer.");
       logSpy.mockRestore();
     }
 
-    expect(calls).toBe(0);
+    expect(calls).toBe(1);
   });
 
   it("fails at the data repo guardrail, not at settings, when --settings is omitted", async () => {

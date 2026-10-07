@@ -14,6 +14,11 @@ import { runContext } from "../cli/run-context.ts";
 import { repoRoot } from "../cli/shared.ts";
 import { type AgentRunFlags, agentRunFlags, parseArgs } from "../cli/shell.ts";
 import { resolveWikiInstance, wikiArgError } from "../sync/instance.ts";
+import {
+  confirmPush,
+  pushFiledCommit,
+  queryCommitMessage,
+} from "./commit-push.ts";
 import { fileLastQuery } from "./file-last.ts";
 import { runQueryCli } from "./query-shell.ts";
 import { LAST_QUERY_FILE } from "./wiki-query.ts";
@@ -75,7 +80,19 @@ Stage 2 (human-only): wiki-query --file-last
   the # Wiki Log header and any standing comment; older entries
   stay untouched. The three writes are a unit: a
   failure anywhere in the filing rolls all of them back — no
-  half-filed wiki is left behind. Fails cleanly when no saved answer
+  half-filed wiki is left behind. Filing is durable: the three
+  files land as one atomic commit, message exactly
+  "query: file <slug>", staged by path so unrelated edits elsewhere
+  in the data repo stay uncommitted. After the commit the CLI asks
+  "push now? [y/N]" — default no, and only on a terminal; --push
+  pre-answers yes. The push rides the shared-writer machinery:
+  preconditions, fetch first, fast-forward-only exact refspec of
+  the filing commit, and a clean refusal — never force, never a
+  merge — on a remote that moved since the filing or on dirt beyond
+  it (guidance: run the sync cycle or pull); shared-writer mode
+  must be enabled (enable-shared-writer). --no-commit skips the
+  commit — the filing stays uncommitted, a rebuild will lose the
+  page, and nothing is pushed. Fails cleanly when no saved answer
   exists. Warns when the data repo's raw/ or wiki/ changed after the
   saved timestamp (the answer cites pages that may have moved); the
   warning does not block the filing.
@@ -103,7 +120,18 @@ Switches and arguments:
                     alias of --wiki. Default: the default instance.
   --file-last       Run stage 2: file the saved answer. Takes no
                     <question>; reads outputs/last-query.md, writes
-                    wiki/queries/<slug>.md, wiki/index.md, wiki/log.md.
+                    wiki/queries/<slug>.md, wiki/index.md, wiki/log.md,
+                    and commits the three atomically
+                    ("query: file <slug>") unless --no-commit.
+  --push            Stage 2 only: push after filing without the
+                    interactive ask. The push rides the shared-writer
+                    lease — fetch first, fast-forward only, never
+                    forced; it refuses a moved remote or dirt beyond
+                    the filing. Requires shared-writer mode
+                    (enable-shared-writer).
+  --no-commit       Stage 2 only: skip the commit — the filing stays
+                    uncommitted (a rebuild will lose the page) and
+                    nothing is pushed.
   --web             Stage 1 only: opt-in web enrichment (two agent
                     passes — a web-blind wiki-only core run, then an
                     audited, partitioned enrichment run; pi is
@@ -141,8 +169,11 @@ What it writes: stage 1 writes outputs/last-query.md (the selected
 instance's outputs dir) and prints the answer to stdout (plus a
 filing hint on stderr, echoing --wiki when one was used); it never
 writes wiki/ — enforced mechanically, with revert. Stage 2 writes
-the three wiki files named above and prints "Filed: <path>"; the
-drift warning, if any, goes to stderr. Errors print red, prefixed
+the three wiki files named above, commits them ("query: file
+<slug>"), and prints "Filed: <path>" then "Committed: <oid>"; the
+drift warning, if any, goes to stderr, as do the push-ask prompt and
+push progress. Under --no-commit nothing is committed and a loud
+rebuild-loss warning goes to stderr. Errors print red, prefixed
 "wiki-query:", and exit 1. On a terminal (TTY, color enabled) the
 agent run shows one animated status line - braille spinner plus
 elapsed time - rewritten in place; piped, redirected, CI, or
@@ -193,15 +224,36 @@ function webFlagError(fileLast: boolean, web: boolean): string | undefined {
   return undefined;
 }
 
-/** Stage 2: file the saved answer and print the Filed line. */
+/** The usage errors when the stage-2 durability flags appear where
+ *  they mean nothing. */
+function durabilityFlagError(
+  fileLast: boolean,
+  push: boolean,
+  noCommit: boolean,
+): string | undefined {
+  if (!fileLast && (push || noCommit)) {
+    return "--push and --no-commit belong to --file-last";
+  }
+
+  if (push && noCommit) {
+    return "--no-commit skips the commit — there is nothing to push (drop one of the two)";
+  }
+
+  return undefined;
+}
+
+/** Stage 2: file the saved answer, commit it durably, and offer the
+ *  guarded push. */
 async function fileLastStage(
   colors: ReturnType<typeof terminalColors>,
   dataRoot: string,
   outputsDir: string,
+  filing: { readonly push: boolean; readonly noCommit: boolean },
 ): Promise<void> {
   const result = await fileLastQuery({
     artifactPath: join(outputsDir, LAST_QUERY_FILE),
     dataRoot,
+    commit: !filing.noCommit,
   });
 
   console.log(colors.bold(`Filed: ${result.pagePath}`));
@@ -209,6 +261,39 @@ async function fileLastStage(
   if (result.warning !== undefined) {
     console.error(result.warning);
   }
+
+  if (filing.noCommit) {
+    console.error(
+      "WARNING: --no-commit left the filing uncommitted — git history is its record, and a rebuild will lose this page",
+    );
+
+    return;
+  }
+
+  console.log(
+    `Committed: ${result.commit?.slice(0, 8)} — ${queryCommitMessage(result.slug)}`,
+  );
+
+  if (
+    !filing.push &&
+    !(await confirmPush({
+      input: process.stdin,
+      output: process.stderr,
+      isTTY: Boolean(process.stdin.isTTY),
+    }))
+  ) {
+    console.error(
+      "Not pushed — the commit stays local; push it soon (git push): a shared-writer cycle refuses a local-ahead history",
+    );
+
+    return;
+  }
+
+  await pushFiledCommit({
+    dataRoot,
+    env: process.env,
+    onProgress: (message) => console.error(message),
+  });
 }
 
 /** The stage-1 filing hint, echoing the --wiki flag when one was
@@ -244,7 +329,10 @@ async function dispatchStage(
   const run = runContext({ rawDir });
 
   if (parsed.flags.has("--file-last")) {
-    await fileLastStage(terminalColors(process.env), run.dataRoot, outputsDir);
+    await fileLastStage(terminalColors(process.env), run.dataRoot, outputsDir, {
+      push: parsed.flags.has("--push"),
+      noCommit: parsed.flags.has("--no-commit"),
+    });
 
     return;
   }
@@ -262,6 +350,27 @@ async function dispatchStage(
   });
 }
 
+/** The first usage error in the parsed arguments, if any: instance,
+ *  run flags, stage-flag placement, then the positional question. */
+function usageError(
+  parsed: ReturnType<typeof parseArgs>,
+  runFlags: AgentRunFlags,
+): string | undefined {
+  const fileLast = parsed.flags.has("--file-last");
+
+  return (
+    wikiArgError(parsed.values) ??
+    runFlags.error ??
+    webFlagError(fileLast, parsed.flags.has("--web")) ??
+    durabilityFlagError(
+      fileLast,
+      parsed.flags.has("--push"),
+      parsed.flags.has("--no-commit"),
+    ) ??
+    questionError(parsed.positional, fileLast)
+  );
+}
+
 /** wiki-query entry point: `wiki-query [-h | --help] [--file-last] [--web] [--wiki, -w <name>] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>`. */
 export async function main(
   args: readonly string[] = process.argv.slice(2),
@@ -274,7 +383,7 @@ export async function main(
 
   const parsed = parseArgs(args, {
     value: ["--settings", "--outputs", "--raw-dir", "--timeout", "--wiki"],
-    boolean: ["--file-last", "--web"],
+    boolean: ["--file-last", "--web", "--push", "--no-commit"],
     alias: new Map([["-w", "--wiki"]]),
   });
 
@@ -284,22 +393,15 @@ export async function main(
     return;
   }
 
-  const fileLast = parsed.flags.has("--file-last");
-  const web = parsed.flags.has("--web");
-  const wikiError = wikiArgError(parsed.values);
   const pathValues = new Map(parsed.values);
 
   pathValues.delete("--wiki");
 
   const runFlags = agentRunFlags(pathValues);
-  const usageError =
-    wikiError ??
-    runFlags.error ??
-    webFlagError(fileLast, web) ??
-    questionError(parsed.positional, fileLast);
+  const usage = usageError(parsed, runFlags);
 
-  if (usageError !== undefined) {
-    fail(usageError);
+  if (usage !== undefined) {
+    fail(usage);
 
     return;
   }

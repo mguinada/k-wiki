@@ -1926,3 +1926,57 @@ describe("degraded --web artifacts", () => {
     expect(page).not.toContain("WARNING");
   });
 });
+
+describe("fileLastQuery commit", () => {
+  it("commits the filing with the pinned message by default", async () => {
+    const { dataRoot, artifactPath } = await makeFiledRepo();
+
+    const result = await fileLastQuery({
+      artifactPath,
+      dataRoot,
+      now: () => new Date("2026-08-21T09:00:00Z"),
+    });
+
+    const { stdout } = await run("git", ["log", "-1", "--format=%s"], {
+      cwd: dataRoot,
+    });
+
+    expect(stdout.trim()).toBe(`query: file ${result.slug}`);
+  });
+
+  it("returns the filing commit's OID", async () => {
+    const { dataRoot, artifactPath } = await makeFiledRepo();
+
+    const result = await fileLastQuery({
+      artifactPath,
+      dataRoot,
+      now: () => new Date("2026-08-21T09:00:00Z"),
+    });
+
+    const head = (
+      await run("git", ["rev-parse", "HEAD"], { cwd: dataRoot })
+    ).stdout.trim();
+
+    expect(result.commit).toBe(head);
+  });
+
+  it("leaves the filing uncommitted under commit: false", async () => {
+    const { dataRoot, artifactPath } = await makeFiledRepo();
+
+    const before = (
+      await run("git", ["rev-parse", "HEAD"], { cwd: dataRoot })
+    ).stdout.trim();
+    const result = await fileLastQuery({
+      artifactPath,
+      dataRoot,
+      commit: false,
+      now: () => new Date("2026-08-21T09:00:00Z"),
+    });
+
+    const after = (
+      await run("git", ["rev-parse", "HEAD"], { cwd: dataRoot })
+    ).stdout.trim();
+
+    expect(`${result.commit} ${before === after}`).toBe("undefined true");
+  });
+});
