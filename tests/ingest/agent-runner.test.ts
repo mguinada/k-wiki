@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
+  CODEX_WEB_UNSUPPORTED_REASON,
   codexRunner,
   defaultAuthStorePath,
   ISOLATION_FLAGS,
@@ -887,10 +888,20 @@ describe("codex Runner adapter", () => {
     expect(codexRunner.stdin("PROMPT")).toBe("PROMPT");
   });
 
-  it("adds the query-only web grant only to enrichment argv", () => {
-    expect(
+  it("refuses the web grant with the named error in the capability manifest", () => {
+    expect(codexRunner.capabilities.web.unsupportedReason).toBe(
+      CODEX_WEB_UNSUPPORTED_REASON,
+    );
+  });
+
+  it("throws the named error from enrichment argv instead of building a spawn", () => {
+    expect(() =>
       codexRunner.webEnrichArgs(settings, "PROMPT", { root: "/data" }),
-    ).toContain("--web");
+    ).toThrow(CODEX_WEB_UNSUPPORTED_REASON);
+  });
+
+  it("leaves the pi capability manifest without a web refusal", () => {
+    expect(piRunner.capabilities.web.unsupportedReason).toBeUndefined();
   });
 
   it("assembles a managed home with only symlinked skills, auth, and web disabled", () => {

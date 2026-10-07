@@ -1148,6 +1148,35 @@ describe("runWikiQuery --web", () => {
     });
   }
 
+  it("refuses --web on a codex lane with the named error before any spawn", async () => {
+    const h = await makeHarness();
+
+    await writeFile(
+      h.settingsPath,
+      "command: codex\nagent: codex\ntargets: [gpt-5.6-terra]\nreasoning: high\n",
+    );
+
+    await expect(runWikiQuery({ ...optionsFor(h), web: true })).rejects.toThrow(
+      "wiki-query: --web refused — codex web enrichment unsupported; see issue #441",
+    );
+  });
+
+  it("spawns nothing when a codex lane's --web is refused", async () => {
+    const h = await makeHarness();
+
+    await writeFile(
+      h.settingsPath,
+      "command: codex\nagent: codex\ntargets: [gpt-5.6-terra]\nreasoning: high\n",
+    );
+
+    const outcome = await runWikiQuery({ ...optionsFor(h), web: true }).then(
+      () => "answered" as const,
+      () => "refused" as const,
+    );
+
+    expect([outcome, h.invocations]).toEqual(["refused", []]);
+  });
+
   it("strips context, extensions, and skills from the core argv", async () => {
     const h = await makeHarness();
 

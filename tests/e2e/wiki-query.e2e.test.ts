@@ -673,6 +673,57 @@ async function makePiRoot(withPlugin: boolean): Promise<string> {
 }
 
 describe("wiki-query --web e2e", () => {
+  it("refuses --web on a codex lane with the named error and spawns nothing", async () => {
+    const repo = await makeRepo();
+
+    // A codex stub that would record any spawn: the refusal must
+    // land before the core phase, so no record may exist.
+    await writeFile(
+      join(repo.dataRoot, "codex-stub.mjs"),
+      `#!/usr/bin/env node
+import { appendFile } from "node:fs/promises";
+import { join } from "node:path";
+await appendFile(join(process.cwd(), "codex-spawn.log"), process.argv.join("\\n") + "\\n");
+process.exit(0);
+`,
+      { mode: 0o755 },
+    );
+    await writeFile(
+      repo.settingsPath,
+      [
+        `command: ${join(repo.dataRoot, "codex-stub.mjs")}`,
+        "agent: codex",
+        "targets: [gpt-5.6-terra]",
+        "reasoning: high",
+        "",
+      ].join("\n"),
+    );
+
+    const result = await runCli(
+      QUERY_SCRIPT,
+      [
+        "--settings",
+        repo.settingsPath,
+        "--raw-dir",
+        join(repo.dataRoot, "raw"),
+        "--outputs",
+        repo.outputsDir,
+        "--web",
+        "When should I prefer RAG over fine-tuning?",
+      ],
+      { env: { CODEX_HOME: join(repo.dataRoot, "no-auth-home") } },
+    );
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain(
+      "codex web enrichment unsupported; see issue #441",
+    );
+    await expect(
+      readFile(join(repo.dataRoot, "codex-spawn.log"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await wikiStatus(repo)).toBe("");
+  });
+
   it("runs two phases, partitions the artifact, and audits the web calls", async () => {
     const repo = await makeRepo();
     const piRoot = await makePiRoot(true);
