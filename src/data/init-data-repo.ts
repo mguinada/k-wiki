@@ -108,7 +108,9 @@ async function listSkeletonPaths(
  *  #146): the ones both live data repos converged on by hand after
  *  incidents — Obsidian UI state (an open Obsidian writing into the
  *  repo trips guardrail 1, so the rule must predate the files) and
- *  the wiki-ingest snapshot (per-instance state, issue #112).
+ *  the wiki-ingest snapshot (per-instance state, issue #112), and the
+ *  transient wiki-query review artifact (issue #445). Other outputs remain
+ *  visible to Git for their own cycle-owned or operator-managed handling.
  *  gitignore does not apply to already-tracked files; wiki-ingest
  *  warns pre-flight when that happens. */
 const STANDING_IGNORE_BLOCKS = [
@@ -121,6 +123,11 @@ const STANDING_IGNORE_BLOCKS = [
     comment:
       "# wiki-ingest manifest snapshot: per-instance state, never committed (issue #112)",
     entries: ["outputs/last-ingested-manifest.json"],
+  },
+  {
+    comment:
+      "# wiki-query last answer: transient per-machine review artifact, never committed (issue #445)",
+    entries: ["outputs/last-query.md"],
   },
 ] as const;
 

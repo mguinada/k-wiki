@@ -403,7 +403,7 @@ describe("wiki-query e2e", () => {
     const result = await stage2(repo);
 
     expect(result.err.trim()).toBe(
-      "Not pushed — the commit stays local; push it soon (git push): a shared-writer cycle refuses a local-ahead history and a dirty tree — stage 1's saved answer (outputs/last-query.md) counts as dirt, keep the per-machine outputs dir gitignored",
+      "Not pushed — the commit stays local; push it soon (git push): a shared-writer cycle refuses a local-ahead history and a dirty tree — stage 1's saved answer (outputs/last-query.md) counts as dirt; a fresh seed ignores that artifact only, while other outputs remain visible to Git",
     );
   });
 

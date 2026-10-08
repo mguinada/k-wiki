@@ -84,7 +84,9 @@ async function enableSharedWriter(
 }
 
 /** A shared-writer data repo with a fresh filed commit on top. */
-async function makeSharedRepo(): Promise<{
+async function makeSharedRepo(
+  options: { queryArtifactIgnored?: boolean } = {},
+): Promise<{
   readonly root: string;
   readonly dataRoot: string;
   readonly remoteDir: string;
@@ -95,6 +97,12 @@ async function makeSharedRepo(): Promise<{
 
   const remoteDir = await makeBareRemote(root);
   const dataRoot = await makeDataRepo(root, "data");
+
+  if (options.queryArtifactIgnored === true) {
+    await writeFile(join(dataRoot, ".gitignore"), "outputs/last-query.md\n");
+    await run("git", ["add", ".gitignore"], { cwd: dataRoot });
+    await run("git", ["commit", "-q", "-m", "seed ignore"], { cwd: dataRoot });
+  }
 
   await enableSharedWriter(dataRoot, remoteDir);
 
@@ -392,6 +400,17 @@ describe("pushFiledCommit", () => {
     await expect(
       pushFiledCommit({ dataRoot, env: process.env }),
     ).rejects.toThrow("dirty beyond the filed commit");
+  });
+
+  it("pushes a filing when the transient query artifact is ignored", async () => {
+    const { dataRoot } = await makeSharedRepo({ queryArtifactIgnored: true });
+
+    await mkdir(join(dataRoot, "outputs"), { recursive: true });
+    await writeFile(join(dataRoot, "outputs", "last-query.md"), "saved\n");
+
+    await expect(
+      pushFiledCommit({ dataRoot, env: process.env }),
+    ).resolves.toBeUndefined();
   });
 
   it("names the stage-1 artifact in the dirty refusal", async () => {

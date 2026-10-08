@@ -944,8 +944,10 @@ Use this when asking questions against the wiki. Asking is two-stage
   the three files land as one atomic commit, message exactly
   `query: file <slug>`, staged by path so unrelated edits elsewhere
   stay uncommitted; after it the command asks `push now? [y/N]`
-  (default no, terminals only; `--push` pre-answers yes) and that
-  push rides the shared-writer lease — fetch first, fast-forward
+  (default no, terminals only; `--push` pre-answers yes). A fresh
+  data repo ignores only the transient `outputs/last-query.md` artifact;
+  other `outputs/` files remain visible to Git. That push rides the
+  shared-writer lease — fetch first, fast-forward
   only, never force, never a merge — while `--no-commit` skips the
   commit and leaves an uncommitted filing a rebuild will lose. A
   drift warning fires when `raw/` or `wiki/` changed after the
