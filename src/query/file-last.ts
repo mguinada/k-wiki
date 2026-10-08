@@ -24,6 +24,7 @@ import {
 } from "../wiki/pages.ts";
 import { buildPageIndex, extractWikilinks } from "../wiki/wiki-links.ts";
 import { prependWikiLog } from "../wiki/wiki-log.ts";
+import { commitFiling, filingPaths } from "./commit-push.ts";
 import {
   looksPartitionedWeb,
   parseWebArtifactBody,
@@ -725,6 +726,9 @@ export interface FileLastOptions {
   readonly now?: () => Date;
   /** Progress sink (uncolored messages); default: silent. */
   readonly onProgress?: (message: string) => void;
+  /** Commit the three filed files atomically (issue #436);
+   *  default true — committing is what filing means. */
+  readonly commit?: boolean;
 }
 
 export interface FileLastResult {
@@ -732,12 +736,19 @@ export interface FileLastResult {
   readonly pagePath: string;
   /** The drift warning, when the wiki moved since the answer. */
   readonly warning: string | undefined;
+  /** The filed page's slug (the commit message names it). */
+  readonly slug: string;
+  /** The filing commit's OID; undefined when the commit was
+   *  skipped (`commit: false`). */
+  readonly commit: string | undefined;
 }
 
 /**
  * File the saved answer: read the artifact, warn on drift, claim a
- * free slug, template the page, and update index.md and log.md. Zero
- * LLM involvement; every input comes from the artifact and the wiki.
+ * free slug, template the page, update index.md and log.md, and
+ * commit the three files atomically (message `query: file <slug>`;
+ * skipped under `commit: false`). Zero LLM involvement; every input
+ * comes from the artifact and the wiki.
  */
 export async function fileLastQuery(
   options: FileLastOptions,
@@ -770,6 +781,10 @@ export async function fileLastQuery(
 
   await mkdir(join(wikiDir, "queries"), { recursive: true });
 
+  const commitDisabled = options.commit === false;
+  let oid: string | undefined;
+  let commitStarted = false;
+
   try {
     await writeFile(
       pageFile,
@@ -791,7 +806,26 @@ export async function fileLastQuery(
       prependWikiLog(textOrEmpty(log.state), logEntry(artifact.question, date)),
       "utf8",
     );
+
+    if (!commitDisabled) {
+      commitStarted = true;
+
+      oid = await commitFiling({
+        dataRoot: options.dataRoot,
+        pagePath,
+        slug,
+        env,
+      });
+    }
   } catch (cause) {
+    if (commitStarted) {
+      await runGit(
+        options.dataRoot,
+        ["reset", "-q", "--", ...filingPaths(pagePath)],
+        env,
+      ).catch(() => {});
+    }
+
     await rollbackFiling({ pageFile, index, log });
     onProgress(
       "wiki-query: filing failed — rolled back the query page, index.md, and log.md; nothing was filed",
@@ -803,5 +837,5 @@ export async function fileLastQuery(
     );
   }
 
-  return { pagePath, warning };
+  return { pagePath, warning, slug, commit: oid };
 }

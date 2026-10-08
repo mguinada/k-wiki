@@ -24,7 +24,10 @@ The marker is operator-owned (`k-wiki enable-shared-writer` is the
 only writer) and tracked — the policy is visible in every checkout.
 There is no per-machine switch to forget: a repo without the marker
 keeps the local/no-remote behavior; a repo with it runs the shared
-protocol for manual `wiki-sync` and `scheduled-run` alike. The marker
+protocol for manual `wiki-sync`, `scheduled-run`, and the
+`wiki-query --file-last` push alike — that last writer holds the
+lease only for its own tenure: acquire, one fast-forward-only
+refspec push of the filing commit, exact-OID release. The marker
 contains no hostname, path, or scheduler identity — any current
 checkout can hold the write.
 

@@ -103,7 +103,11 @@ async function makeRepo(): Promise<Repo> {
     "---\ntype: source\n---\nRAG source\n",
   );
 
-  await run("git", ["init", "--quiet"], { cwd: dataRoot });
+  await run("git", ["init", "--quiet", "--initial-branch=main"], {
+    cwd: dataRoot,
+  });
+  await run("git", ["config", "user.email", "t@t"], { cwd: dataRoot });
+  await run("git", ["config", "user.name", "t"], { cwd: dataRoot });
   await run("git", ["add", "-A"], { cwd: dataRoot });
   await run(
     "git",
@@ -392,13 +396,155 @@ describe("wiki-query e2e", () => {
     );
   });
 
-  it("stage 2 prints nothing to stderr when nothing drifted", async () => {
+  it("stage 2 prints only the not-pushed guidance to stderr when nothing drifted", async () => {
     const repo = await makeRepo();
     await stage1(repo);
 
     const result = await stage2(repo);
 
-    expect(result.err).toBe("");
+    expect(result.err.trim()).toBe(
+      "Not pushed — the commit stays local; push it soon (git push): a shared-writer cycle refuses a local-ahead history and a dirty tree — stage 1's saved answer (outputs/last-query.md) counts as dirt, keep the per-machine outputs dir gitignored",
+    );
+  });
+
+  it("stage 2 commits the three filed paths with the pinned message", async () => {
+    const repo = await makeRepo();
+    await stage1(repo);
+
+    const result = await stage2(repo);
+
+    expect(result.out).toContain(
+      "query: file when-should-i-prefer-rag-over-fine-tuning",
+    );
+
+    const { stdout } = await run(
+      "git",
+      ["-C", repo.dataRoot, "show", "--name-only", "--format=", "HEAD"],
+      { env: process.env },
+    );
+
+    expect(stdout.trim().split("\n")).toEqual([
+      "wiki/index.md",
+      "wiki/log.md",
+      "wiki/queries/when-should-i-prefer-rag-over-fine-tuning.md",
+    ]);
+  });
+
+  it("stage 2 --no-commit skips the commit and warns the rebuild loss", async () => {
+    const repo = await makeRepo();
+    await stage1(repo);
+
+    const before = (
+      await run("git", ["-C", repo.dataRoot, "rev-parse", "HEAD"], {
+        env: process.env,
+      })
+    ).stdout.trim();
+    const result = await stage2(repo, ["--no-commit"]);
+
+    const after = (
+      await run("git", ["-C", repo.dataRoot, "rev-parse", "HEAD"], {
+        env: process.env,
+      })
+    ).stdout.trim();
+
+    expect(`${result.code} ${before === after}`).toBe("0 true");
+
+    expect(result.err).toContain("rebuild will lose this page");
+  });
+
+  it("stage 2 --push refuses a diverged stub remote and never forces", async () => {
+    const root = await mkdtemp(join(tmpdir(), "k-wiki-query-push-e2e-"));
+
+    tempDirs.push(root);
+
+    const remoteDir = join(root, "remote.git");
+
+    await run("git", [
+      "init",
+      "--bare",
+      "--initial-branch=main",
+      "-q",
+      remoteDir,
+    ]);
+
+    const repo = await makeRepo();
+
+    await run("git", [
+      "-C",
+      repo.dataRoot,
+      "remote",
+      "add",
+      "origin",
+      remoteDir,
+    ]);
+    await mkdir(join(repo.dataRoot, ".k-wiki"), { recursive: true });
+    await writeFile(
+      join(repo.dataRoot, ".k-wiki", "shared-writer.json"),
+      `${JSON.stringify(
+        {
+          version: 1,
+          remote: "origin",
+          branch: "main",
+          leaseRef: "refs/k-wiki/leases/data",
+          sourceRemovalPolicy: "confirm",
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    await run("git", ["-C", repo.dataRoot, "add", "-A"]);
+    await run("git", ["-C", repo.dataRoot, "commit", "-q", "-m", "marker"]);
+    await run("git", ["-C", repo.dataRoot, "push", "-q", "origin", "main"]);
+
+    // Per-machine artifacts (the saved answer, the stub's capture)
+    // are gitignored, so the push precondition sees a clean tree.
+    await writeFile(
+      join(repo.dataRoot, ".gitignore"),
+      "outputs/\nstub-prompt.txt\n",
+    );
+    await run("git", ["-C", repo.dataRoot, "add", "-A"]);
+    await run("git", [
+      "-C",
+      repo.dataRoot,
+      "commit",
+      "-q",
+      "-m",
+      "ignore per-machine artifacts",
+    ]);
+    await run("git", ["-C", repo.dataRoot, "push", "-q", "origin", "main"]);
+
+    // Another writer moves the remote past the data repo's head.
+    const moved = join(root, "moved");
+
+    await run("git", ["clone", "-q", remoteDir, moved]);
+    await run("git", ["-C", moved, "config", "user.email", "t@t"]);
+    await run("git", ["-C", moved, "config", "user.name", "t"]);
+    await writeFile(join(moved, "wiki", "other.md"), "moved\n");
+    await run("git", ["-C", moved, "add", "-A"]);
+    await run("git", ["-C", moved, "commit", "-q", "-m", "moved"]);
+    await run("git", ["-C", moved, "push", "-q", "origin", "main"]);
+
+    const remoteBefore = (
+      await run("git", ["-C", remoteDir, "rev-parse", "main"], {
+        env: process.env,
+      })
+    ).stdout.trim();
+
+    await stage1(repo);
+
+    const result = await stage2(repo, ["--push"]);
+
+    expect(result.code).toBe(1);
+
+    expect(result.err).toContain("non-fast-forward");
+
+    const remoteAfter = (
+      await run("git", ["-C", remoteDir, "rev-parse", "main"], {
+        env: process.env,
+      })
+    ).stdout.trim();
+
+    expect(remoteAfter).toBe(remoteBefore);
   });
 
   it("stage 2 warns on drift but still files", async () => {

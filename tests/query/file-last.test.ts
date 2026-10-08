@@ -835,6 +835,22 @@ describe("fileLastQuery rollback (issue #245)", () => {
     expect(await readFile(logPath, "utf8")).toBe(before);
   });
 
+  it("keeps the operator's staged entry when the write phase fails", async () => {
+    const repo = await makeIndexBlockedRepo();
+    const logPath = join(repo.dataRoot, "wiki", "log.md");
+
+    await writeFile(logPath, "# Log staged\n");
+    await run("git", ["add", "wiki/log.md"], { cwd: repo.dataRoot });
+
+    await runFailedFiling(repo);
+
+    const { stdout } = await run("git", ["status", "--porcelain"], {
+      cwd: repo.dataRoot,
+    });
+
+    expect(stdout).toContain("M  wiki/log.md");
+  });
+
   it("leaves a directory blocking index.md untouched when its write fails", async () => {
     const repo = await makeIndexBlockedRepo();
     const indexPath = join(repo.dataRoot, "wiki", "index.md");
@@ -956,6 +972,8 @@ async function makeCommittedRepo(): Promise<string> {
   await mkdir(join(dataRoot, "wiki"), { recursive: true });
   await writeFile(join(dataRoot, "wiki", "index.md"), "# Index\n");
   await run("git", ["init", "--quiet"], { cwd: dataRoot });
+  await run("git", ["config", "user.email", "t@t"], { cwd: dataRoot });
+  await run("git", ["config", "user.name", "t"], { cwd: dataRoot });
   await commitAll(dataRoot, "init", [["wiki/index.md", "# Index\n"]]);
 
   return dataRoot;
@@ -1924,5 +1942,178 @@ describe("degraded --web artifacts", () => {
     const page = await readFile(join(dataRoot, result.pagePath), "utf8");
 
     expect(page).not.toContain("WARNING");
+  });
+});
+
+describe("fileLastQuery commit", () => {
+  it("commits the filing with the pinned message by default", async () => {
+    const { dataRoot, artifactPath } = await makeFiledRepo();
+
+    const result = await fileLastQuery({
+      artifactPath,
+      dataRoot,
+      now: () => new Date("2026-08-21T09:00:00Z"),
+    });
+
+    const { stdout } = await run("git", ["log", "-1", "--format=%s"], {
+      cwd: dataRoot,
+    });
+
+    expect(stdout.trim()).toBe(`query: file ${result.slug}`);
+  });
+
+  it("returns the filing commit's OID", async () => {
+    const { dataRoot, artifactPath } = await makeFiledRepo();
+
+    const result = await fileLastQuery({
+      artifactPath,
+      dataRoot,
+      now: () => new Date("2026-08-21T09:00:00Z"),
+    });
+
+    const head = (
+      await run("git", ["rev-parse", "HEAD"], { cwd: dataRoot })
+    ).stdout.trim();
+
+    expect(result.commit).toBe(head);
+  });
+
+  it("leaves the filing uncommitted under commit: false", async () => {
+    const { dataRoot, artifactPath } = await makeFiledRepo();
+
+    const before = (
+      await run("git", ["rev-parse", "HEAD"], { cwd: dataRoot })
+    ).stdout.trim();
+    const result = await fileLastQuery({
+      artifactPath,
+      dataRoot,
+      commit: false,
+      now: () => new Date("2026-08-21T09:00:00Z"),
+    });
+
+    const after = (
+      await run("git", ["rev-parse", "HEAD"], { cwd: dataRoot })
+    ).stdout.trim();
+
+    expect(`${result.commit} ${before === after}`).toBe("undefined true");
+  });
+});
+
+describe("fileLastQuery commit-failure rollback", () => {
+  /** A repo whose git commit fails: a pre-commit hook exits 1 after
+   *  the three writes landed and staged cleanly. */
+  async function makeCommitBlockedRepo(): Promise<{
+    readonly dataRoot: string;
+    readonly artifactPath: string;
+  }> {
+    const repo = await makeFiledRepo();
+    const hook = join(repo.dataRoot, ".git", "hooks", "pre-commit");
+
+    await writeFile(hook, "#!/bin/sh\nexit 1\n");
+    await chmod(hook, 0o755);
+
+    return repo;
+  }
+
+  /** Run the failing filing once, collecting the progress messages
+   *  and the rejection; every rollback expectation reuses it. */
+  async function runFailedCommit(repo: {
+    readonly dataRoot: string;
+    readonly artifactPath: string;
+  }): Promise<{ readonly messages: readonly string[]; readonly error: Error }> {
+    const messages: string[] = [];
+    let error: Error | undefined;
+
+    try {
+      await fileLastQuery({
+        artifactPath: repo.artifactPath,
+        dataRoot: repo.dataRoot,
+        now: () => new Date("2026-08-21T09:00:00Z"),
+        onProgress: (message) => messages.push(message),
+      });
+    } catch (caught) {
+      error = caught as Error;
+    }
+
+    if (error === undefined) {
+      throw new Error("the filing was expected to fail but succeeded");
+    }
+
+    return { messages, error };
+  }
+
+  /** True when the path exists (file or directory). */
+  async function pathExists(path: string): Promise<boolean> {
+    try {
+      await access(path);
+
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  it("rejects naming the failure and the rollback when the commit fails", async () => {
+    const { error } = await runFailedCommit(await makeCommitBlockedRepo());
+
+    expect(error.message).toContain(
+      "filing failed — rolled back, no wiki file was changed",
+    );
+  });
+
+  it("leaves no query page behind when the commit fails", async () => {
+    const repo = await makeCommitBlockedRepo();
+
+    await runFailedCommit(repo);
+
+    expect(
+      await pathExists(
+        join(
+          repo.dataRoot,
+          "wiki",
+          "queries",
+          "when-should-i-prefer-rag-over-fine-tuning.md",
+        ),
+      ),
+    ).toBe(false);
+  });
+
+  it("restores index.md and log.md byte-exactly when the commit fails", async () => {
+    const repo = await makeCommitBlockedRepo();
+    const before = {
+      index: await readFile(join(repo.dataRoot, "wiki", "index.md"), "utf8"),
+      log: await readFile(join(repo.dataRoot, "wiki", "log.md"), "utf8"),
+    };
+
+    await runFailedCommit(repo);
+
+    expect({
+      index: await readFile(join(repo.dataRoot, "wiki", "index.md"), "utf8"),
+      log: await readFile(join(repo.dataRoot, "wiki", "log.md"), "utf8"),
+    }).toEqual(before);
+  });
+
+  it("unstages the staged filing when the commit fails after staging", async () => {
+    const repo = await makeCommitBlockedRepo();
+
+    await runFailedCommit(repo);
+
+    const { stdout } = await run("git", ["status", "--porcelain"], {
+      cwd: repo.dataRoot,
+    });
+
+    expect(stdout.split("\n").filter((line) => line.includes("wiki/"))).toEqual(
+      [],
+    );
+  });
+
+  it("reports the rollback on progress when the commit fails", async () => {
+    const { messages } = await runFailedCommit(await makeCommitBlockedRepo());
+
+    expect(messages).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^wiki-query: filing failed — rolled back/),
+      ]),
+    );
   });
 });

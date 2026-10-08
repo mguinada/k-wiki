@@ -261,7 +261,11 @@ reverts any wiki write; the human reviews the answer and files it
 with `wiki-query --file-last`, which templates the saved answer
 byte-exactly into `queries/<slug>.md` (`type: query` frontmatter) and
 updates `index.md` and `log.md` — deterministic code, no agent
-involved. Never file a query yourself.
+involved. Filing is durable: the three files are committed atomically
+(message `query: file <slug>`), then the command offers a push that
+rides the shared-writer lease — fast-forward only, never forced.
+`--no-commit` skips the commit; an uncommitted filing does not exist
+in git, and a rebuild will lose it. Never file a query yourself.
 
 A `wiki-query --web` run is the sole opt-in door to the web, and its
 enrichment is partitioned, audited output — never wiki content. The

@@ -147,7 +147,8 @@ bin/k-wiki wiki-query --file-last                                # file the revi
 
 `query` prints the answer (stdout) and saves the run for review;
 `--file-last` is the human step that files the reviewed answer into
-the wiki ([details](#running-queries-wiki-query)). Everything else —
+the wiki — one atomic commit, message `query: file <slug>`, then a
+guarded push ask — ([details](#running-queries-wiki-query)). Everything else —
 checks, failure semantics, further instances — is documented in the
 sections below.
 
@@ -597,7 +598,7 @@ every edit. Queries complete the daily loop:
 | Command | Tool | Purpose |
 |---|---|---|
 | `bin/k-wiki wiki-sync [-h \| --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--removal-receipt <path>] [<sync.json>] [<raw-dir>]` | cycle orchestrator | Run the whole cycle — sync (sync-vault for vault sources, sync-repo for repo-sourced configs, [§9](#9-the-meta-wiki-a-repository-as-source)) → ingest → lint → crosslink audit (configured second brains) → citation wall (sandbox one-way audit) → verification (check-fidelity + check-provenance) → the data-repo commit (the cycle digest follows as its own commit on real-work cycles) → mirror publish (configured `publish` section) — and print the digest (reads `settings.yml`, including its optional `secondBrain.domains` list; [details below](#running-the-full-cycle-wiki-sync)); in shared-writer mode (the data repo carries the marker `.k-wiki/shared-writer.json`) the same command serializes through the remote lease and pushes — [shared-writer mode](docs/references/shared-writer.md) |
-| `bin/k-wiki wiki-query [-h \| --help] [--file-last] [--web] [--wiki, -w <name>] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>` | query wrapper | Ask the built wiki one question headless: print the answer, save it for review (stage 1, default); `--file-last` files the reviewed answer deterministically (stage 2); `--web` opts stage 1 into web enrichment — a web-blind wiki-only core run plus an audited, partitioned enrichment run; `--wiki <name>` selects the instance — aliases then `sync-<name>.json` stems, both stages, derived paths from the resolved config (stage 1 reads the instance's settings; [details below](#running-queries-wiki-query)) |
+| `bin/k-wiki wiki-query [-h \| --help] [--file-last] [--push] [--no-commit] [--web] [--wiki, -w <name>] [--settings <path>] [--outputs <dir>] [--raw-dir <dir>] [--timeout <secs>] <question>` | query wrapper | Ask the built wiki one question headless: print the answer, save it for review (stage 1, default); `--file-last` files the reviewed answer deterministically (stage 2) — one atomic `query: file <slug>` commit of the query page, `index.md`, and `log.md`, then a guarded push ask (`--push` pre-answers; the push rides the shared-writer lease, fast-forward only; `--no-commit` skips the commit with a rebuild-loss warning); `--web` opts stage 1 into web enrichment — a web-blind wiki-only core run plus an audited, partitioned enrichment run; `--wiki <name>` selects the instance — aliases then `sync-<name>.json` stems, both stages, derived paths from the resolved config (stage 1 reads the instance's settings; [details below](#running-queries-wiki-query)) |
 | `bin/k-wiki <read verb>` — `query "<question>"`, `status`, `list [<type>]`, `read <slug>`, `health` | read verbs (both doors) | Ask the wiki bound to the current project from any cwd — zero flags once `.k-wiki.json` binds it; `status` (binding + paths), `list` (pages by type), `read` (one page verbatim), `health` (projection check); `-w <name>` selects the instance (aliases then `sync-<name>.json` stems) and overrides the binding's `wiki` key — `k-wiki query -w meta` and `k-wiki -w meta query` are the same command; answer-only, no filing passthrough ([details below](#querying-from-any-project-k-wiki)) |
 | `bin/k-wiki propose [-h \| --help] [-w, --wiki <name>] [--checkout <path>] [--timeout <secs>] [--title <text>] [--type <type>] <slug> [<file>]` | agent write verb (both doors) | File one candidate note for the wiki: the body from `<file>` (or stdin), wrapped in the deterministic template, landed under `wiki/sandbox/` of the resolved instance as one gated run — accept-gate (only sandbox deltas survive; anything else reverts the run and fails it), `via: agent` + `expires:` stamps, one atomic `sandbox: <slug>` commit with a `wiki/log.md` audit entry; `-w <name>` overrides the binding's `wiki` key; a human reviews and promotes the note (filing reviewed pages stays `--file-last`) |
 
@@ -1559,12 +1560,12 @@ repo can instead opt in through `k-wiki enable-shared-writer`. The
 command probes the remote's live capabilities, then commits and
 pushes a tracked marker — `.k-wiki/shared-writer.json` at the data
 repo root — and from then on every compliant writer on any machine
-(manual `wiki-sync` and `scheduled-run` alike) serializes through
-one remote lease: it refuses a dirty, ahead, or diverged checkout
-before any scan, acquires the lease (taking over only an expired one
-by exact OID), fast-forwards to the canonical remote tree,
-re-baselines the ingest snapshot from that tree, and advances the
-branch and releases the lease in one atomic push. Cross-machine
+serializes through one remote lease: a cycle refuses a dirty, ahead, or
+diverged checkout before any scan, acquires the lease (taking over
+only an expired one by exact OID), fast-forwards to the canonical
+remote tree, re-baselines the ingest snapshot from that tree, and
+advances the branch and releases the lease in one atomic push.
+Cross-machine
 overlap is prevented, not merely recovered. Proposed source
 removals/renames stop the cycle until a human confirms a receipt,
 so a stale iCloud view can never become a shared expunge.
@@ -1727,7 +1728,19 @@ omitted flag can never produce wiki writes:
   cleanly when no saved answer exists, and warns when the data
   repo's `raw/` or `wiki/` changed after the saved timestamp — the
   answer cites pages that may have moved; the warning does not block
-  the filing.
+  the filing. Filing is durable: the three files land as one atomic
+  commit, message exactly `query: file <slug>`, staged by path so
+  unrelated edits elsewhere stay uncommitted. After the commit the
+  command asks `push now? [y/N]` (default no, terminals only);
+  `--push` pre-answers yes. The push rides the shared-writer lease —
+  fetch first, fast-forward-only exact refspec, clean refusal on a
+  moved remote, dirt beyond the filing (stage 1's saved answer,
+  `outputs/last-query.md`, counts as dirt — keep the per-machine
+  `outputs/` dir gitignored), or unshared local commits ahead of
+  it; never force, never a merge; shared-writer mode must
+  be enabled. `--no-commit` skips the
+  commit — the filing stays uncommitted (a rebuild will lose the
+  page) and nothing is pushed.
 
 The old `--no-filing` switch is gone (superseded): answer-only is
 the default, and there is exactly one filing path (`--file-last`).

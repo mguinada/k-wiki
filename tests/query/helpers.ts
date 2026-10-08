@@ -56,6 +56,8 @@ function committedDataRepoTemplate(): Promise<string> {
     await writeFile(join(template, "wiki", "concepts", "rag.md"), "RAG\n");
 
     await run("git", ["init", "--quiet"], { cwd: template });
+    await run("git", ["config", "user.email", "t@t"], { cwd: template });
+    await run("git", ["config", "user.name", "t"], { cwd: template });
     await run("git", ["add", "-A"], { cwd: template });
     await run(
       "git",
