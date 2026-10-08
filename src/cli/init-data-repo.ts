@@ -18,9 +18,10 @@ const HELP = `Usage: init-data-repo [-h | --help] [--second-brain] [--meta] [<co
 
 Create and seed the data repo at the config's dataRoot: git init, copy
 the raw/ and wiki/ skeleton from the code repo, write the standing
-.gitignore (Obsidian UI state and the ingest snapshot — gitignore
-does not apply to tracked files, so the rules must precede the
-files), first commit.
+.gitignore (Obsidian UI state, the ingest snapshot, and the transient
+outputs/last-query.md; other outputs/ files stay visible to Git —
+gitignore does not apply to tracked files, so the rules must precede
+the files), first commit.
 Idempotent — an already-seeded data repo is left untouched. After adding an
 origin, run \`k-wiki enable-shared-writer\` to opt into one remote lease for all
 writers; \`k-wiki enable-shared-writer --help\` explains.
