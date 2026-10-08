@@ -354,6 +354,8 @@ describe("data:init standing .gitignore (issue #146)", () => {
     "wiki/.obsidian/",
     "# wiki-ingest manifest snapshot: per-instance state, never committed (issue #112)",
     "outputs/last-ingested-manifest.json",
+    "# wiki-query last answer: transient per-machine review artifact, never committed (issue #445)",
+    "outputs/last-query.md",
     "",
   ].join("\n");
 
@@ -369,6 +371,44 @@ describe("data:init standing .gitignore (issue #146)", () => {
     expect(await readFile(join(dataRoot, ".gitignore"), "utf8")).toBe(
       STANDING_GITIGNORE,
     );
+  });
+
+  it("ignores the transient query artifact in a fresh data repo", async () => {
+    const dataRoot = await makeTempDir();
+
+    await seedDataRepo({
+      dataRoot,
+      repoRoot: await makeCodeRepoFixture(),
+      env: GIT_ENV,
+    });
+
+    await mkdir(join(dataRoot, "outputs"), { recursive: true });
+    await writeFile(join(dataRoot, "outputs", "last-query.md"), "answer\n");
+
+    const { stdout } = await git(
+      dataRoot,
+      "check-ignore",
+      "outputs/last-query.md",
+    );
+
+    expect(stdout.trim()).toBe("outputs/last-query.md");
+  });
+
+  it("keeps unrelated output files visible to Git", async () => {
+    const dataRoot = await makeTempDir();
+
+    await seedDataRepo({
+      dataRoot,
+      repoRoot: await makeCodeRepoFixture(),
+      env: GIT_ENV,
+    });
+
+    await mkdir(join(dataRoot, "outputs"), { recursive: true });
+    await writeFile(join(dataRoot, "outputs", "cycle-report.md"), "report\n");
+
+    const { stdout } = await git(dataRoot, "status", "--porcelain", "-uall");
+
+    expect(stdout.trim()).toBe("?? outputs/cycle-report.md");
   });
 
   it("commits the seeded .gitignore with the skeleton", async () => {
@@ -424,7 +464,7 @@ describe("data:init standing .gitignore (issue #146)", () => {
     await seedStandingIgnores(dataRoot);
 
     expect(await readFile(join(dataRoot, ".gitignore"), "utf8")).toBe(
-      `  .obsidian/  \n# Obsidian UI state: never part of the wiki (external writer; guardrail 1 hazard)\nwiki/.obsidian/\n# wiki-ingest manifest snapshot: per-instance state, never committed (issue #112)\noutputs/last-ingested-manifest.json\n`,
+      `  .obsidian/  \n# Obsidian UI state: never part of the wiki (external writer; guardrail 1 hazard)\nwiki/.obsidian/\n# wiki-ingest manifest snapshot: per-instance state, never committed (issue #112)\noutputs/last-ingested-manifest.json\n# wiki-query last answer: transient per-machine review artifact, never committed (issue #445)\noutputs/last-query.md\n`,
     );
   });
 });

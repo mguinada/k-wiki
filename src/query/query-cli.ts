@@ -90,7 +90,8 @@ Stage 2 (human-only): wiki-query --file-last
   the filing commit, and a clean refusal — never force, never a
   merge — on a remote that moved since the filing, on dirt beyond
   it (stage 1's saved answer, outputs/last-query.md, counts as
-  dirt — keep the per-machine outputs dir gitignored; guidance:
+  dirt — a fresh seed ignores that artifact only; other outputs
+  remain visible to Git; guidance:
   run the sync cycle or pull), or on unshared local commits ahead
   of the filing (guidance: git push); shared-writer mode must be
   enabled (enable-shared-writer). --no-commit skips the
@@ -131,8 +132,9 @@ Switches and arguments:
                     lease — fetch first, fast-forward only, never
                     forced; it refuses a moved remote, dirt beyond
                     the filing (stage 1's saved answer,
-                    outputs/last-query.md, counts as dirt — keep the
-                    per-machine outputs dir gitignored), or unshared
+                    outputs/last-query.md, counts as dirt — a fresh
+                    seed ignores that artifact only; other outputs remain
+                    visible to Git), or unshared
                     local commits. Requires shared-writer mode
                     (enable-shared-writer).
   --no-commit       Stage 2 only: skip the commit — the filing stays
@@ -289,7 +291,7 @@ async function fileLastStage(
     }))
   ) {
     console.error(
-      "Not pushed — the commit stays local; push it soon (git push): a shared-writer cycle refuses a local-ahead history and a dirty tree — stage 1's saved answer (outputs/last-query.md) counts as dirt, keep the per-machine outputs dir gitignored",
+      "Not pushed — the commit stays local; push it soon (git push): a shared-writer cycle refuses a local-ahead history and a dirty tree — stage 1's saved answer (outputs/last-query.md) counts as dirt; a fresh seed ignores that artifact only, while other outputs remain visible to Git",
     );
 
     return;
