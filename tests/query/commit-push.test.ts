@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { promisify } from "node:util";
 import { afterAll, describe, expect, it } from "vitest";
+import { seedStandingIgnores } from "../../src/data/init-data-repo.ts";
 import {
   commitFiling,
   confirmPush,
@@ -99,7 +100,7 @@ async function makeSharedRepo(
   const dataRoot = await makeDataRepo(root, "data");
 
   if (options.queryArtifactIgnored === true) {
-    await writeFile(join(dataRoot, ".gitignore"), "outputs/last-query.md\n");
+    await seedStandingIgnores(dataRoot);
     await run("git", ["add", ".gitignore"], { cwd: dataRoot });
     await run("git", ["commit", "-q", "-m", "seed ignore"], { cwd: dataRoot });
   }
