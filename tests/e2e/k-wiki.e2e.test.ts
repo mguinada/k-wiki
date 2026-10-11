@@ -258,7 +258,7 @@ describe("k-wiki e2e", () => {
     expect(result.code).toBe(0);
     expect(result.out).toContain("The wiki cannot answer this question");
     expect(result.out).toContain(
-      'To enrich from the web (human step): k-wiki wiki-query --web "<question>"',
+      'To enrich from the web: k-wiki query --web "<question>"',
     );
     expect(result.out).not.toContain(
       "rerunning with `--web` may enrich the topic from the web",
