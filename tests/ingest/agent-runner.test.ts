@@ -1,4 +1,5 @@
 import {
+  existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -1008,6 +1009,48 @@ describe("codex Runner adapter", () => {
       config: 'web_search = "disabled"\napproval_policy = "never"\n',
       home,
       skillLink: true,
+    });
+  });
+
+  it("seeds the managed home from the default host auth store", () => {
+    const fixture = mkdtempSync(join(tmpdir(), "k-wiki-codex-runner-"));
+    const source = join(fixture, ".codex");
+
+    mkdirSync(source, { recursive: true });
+    writeFileSync(join(source, "auth.json"), '{"openai":"seeded"}\n');
+    vi.stubEnv("HOME", fixture);
+    vi.stubEnv("CODEX_HOME", undefined);
+    const managed = runnerEnv(settings, {});
+    const home = managed.env.CODEX_HOME ?? "";
+    const auth = readFileSync(join(home, "auth.json"), "utf8");
+
+    vi.unstubAllEnvs();
+    rmSync(fixture, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+
+    expect(auth).toBe('{"openai":"seeded"}\n');
+  });
+
+  it("leaves the managed home unseeded when the default host auth store is absent", () => {
+    const fixture = mkdtempSync(join(tmpdir(), "k-wiki-codex-runner-"));
+
+    vi.stubEnv("HOME", fixture);
+    vi.stubEnv("CODEX_HOME", undefined);
+    const managed = runnerEnv(settings, {});
+    const home = managed.env.CODEX_HOME ?? "";
+    const result = {
+      authSeeded: existsSync(join(home, "auth.json")),
+      posture: codexRunner.invocation(settings).posture,
+    };
+
+    vi.unstubAllEnvs();
+    rmSync(fixture, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+
+    expect(result).toEqual({
+      authSeeded: false,
+      posture:
+        "managed-home isolated; sandbox workspace-write; web disabled; auth not seeded",
     });
   });
 

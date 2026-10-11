@@ -400,10 +400,17 @@ function codexContext(context: RunnerContext | undefined): RunnerContext {
   return context;
 }
 
+/** The default Codex auth store beneath one host home. */
+function codexDefaultAuthStorePath(home: string = homedir()): string {
+  return join(home, ".codex", "auth.json");
+}
+
 /** The host auth store a managed home seeds from: the caller's
  * CODEX_HOME, else ~/.codex. The seed and the posture label share it. */
 function codexSourceAuthPath(environment: NodeJS.ProcessEnv): string {
-  return join(environment.CODEX_HOME ?? homedir(), "auth.json");
+  return environment.CODEX_HOME === undefined
+    ? codexDefaultAuthStorePath()
+    : join(environment.CODEX_HOME, "auth.json");
 }
 
 /** Codex's managed home is built per spawn. Redirecting HOME as well as
@@ -508,8 +515,7 @@ export const codexRunner: AgentRunner = {
       installed: async () => true,
     },
     credentials: {
-      defaultAuthStorePath: (home = homedir()) =>
-        join(home, ".codex", "auth.json"),
+      defaultAuthStorePath: codexDefaultAuthStorePath,
     },
   },
 
