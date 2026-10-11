@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, describe, expect, it } from "vitest";
 import { type VerbSpec, verbTable } from "../../src/cli/verb-table.ts";
-import { K_WIKI_SCRIPT, repoRoot, runCli } from "./helpers.ts";
+import { K_WIKI_SCRIPT, QUERY_SCRIPT, repoRoot, runCli } from "./helpers.ts";
 
 /**
  * k-wiki e2e (issue #76): the agent-facing query entry point as a
@@ -45,6 +45,39 @@ console.log("ALT-AGENT answered.");
 
 const GAP_STUB_AGENT = `#!/usr/bin/env node
 console.log("The wiki cannot answer this question. Suggested sources: nodejs.org.");
+`;
+
+/** The one-shot `--web` stub: the web-blind core run answers with a
+ *  gap; the enrichment run (`--mode json`) emits one canned,
+ *  citation-reconciled stream. */
+const GAP_WEB_STUB = `#!/usr/bin/env node
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
+const args = process.argv.slice(2);
+
+if (args.includes("--mode")) {
+  const call = (message) => ({ type: "message_end", message });
+  const stream = [
+    call({ role: "assistant", content: [{ type: "toolCall", id: "c1", name: "web_search", arguments: { query: "rag vs fine-tuning" } }], stopReason: "toolUse", timestamp: 1791000000000 }),
+    call({ role: "toolResult", toolCallId: "c1", toolName: "web_search", content: [{ type: "text", text: "https://example.com/a" }], isError: false, details: { totalResults: 4 }, timestamp: 1791000001000 }),
+    call({ role: "assistant", content: [{ type: "toolCall", id: "c2", name: "fetch_content", arguments: { url: "https://example.com/a" } }], timestamp: 1791000002000 }),
+    call({ role: "toolResult", toolCallId: "c2", toolName: "fetch_content", content: [{ type: "text", text: "page" }], isError: false, timestamp: 1791000003000 }),
+    call({ role: "assistant", content: [{ type: "text", text: "- [Example A](https://example.com/a) reinforces the topic (retrieved 2026-10-03)." }], stopReason: "stop", timestamp: 1791000004000 }),
+  ].map((event) => JSON.stringify(event)).join("\\n");
+  console.log(stream);
+
+  process.exit(0);
+}
+
+const index = args.indexOf("--print");
+const prompt = index === -1 ? undefined : args[index + 1];
+
+if (prompt === undefined || prompt === "") {
+  process.exit(3);
+}
+
+await writeFile(join(process.cwd(), "stub-prompt.txt"), prompt);
+console.log("I cannot answer this question from the wiki. See [[retrieval-augmented-generation]].");
 `;
 
 const ROGUE_STUB = `#!/usr/bin/env node
@@ -246,7 +279,7 @@ describe("k-wiki e2e", () => {
     expect(result.out).toContain("ALT-AGENT answered.");
   });
 
-  it("answers a gap with the enrichment hint naming the wiki-query CLI", async () => {
+  it("answers a gap with the enrichment hint naming k-wiki query --web", async () => {
     const setup = await makeSetup();
 
     await bind(setup, "settings-gap.yml");
@@ -263,6 +296,65 @@ describe("k-wiki e2e", () => {
     expect(result.out).not.toContain(
       "rerunning with `--web` may enrich the topic from the web",
     );
+  });
+
+  it("files a one-shot --web gap answer with the partition and no stale hint", async () => {
+    const setup = await makeSetup();
+
+    await bind(setup, "settings-web.yml");
+
+    const piRoot = await mkdtemp(join(tmpdir(), "k-wiki-e2e-pi-"));
+
+    tempDirs.push(piRoot);
+    await mkdir(join(piRoot, "npm", "node_modules", "pi-web-access"), {
+      recursive: true,
+    });
+    await writeFile(join(setup.dataRoot, "stub-web.mjs"), GAP_WEB_STUB, {
+      mode: 0o755,
+    });
+    await writeFile(
+      join(setup.checkout, "settings-web.yml"),
+      `command: ${join(setup.dataRoot, "stub-web.mjs")}\nmodel: WEB\nreasoning: low\n`,
+    );
+    await writeFile(
+      join(setup.checkout, "prompts", "web-enrich.md"),
+      await readFile(join(repoRoot, "prompts", "web-enrich.md"), "utf8"),
+    );
+
+    const stage1 = await runCli(K_WIKI_SCRIPT, ["query", "--web", QUESTION], {
+      cwd: setup.project,
+      env: { PI_CODING_AGENT_DIR: piRoot },
+    });
+
+    expect(stage1.code).toBe(0);
+    expect(stage1.out).toContain("## Web enrichment");
+
+    const result = await runCli(QUERY_SCRIPT, [
+      "--file-last",
+      "--raw-dir",
+      join(setup.dataRoot, "raw"),
+      "--outputs",
+      join(setup.checkout, "outputs"),
+    ]);
+
+    expect(result.code).toBe(0);
+
+    const page = await readFile(
+      join(
+        setup.dataRoot,
+        "wiki",
+        "queries",
+        "when-should-i-prefer-rag-over-fine-tuning.md",
+      ),
+      "utf8",
+    );
+
+    expect(page).toContain("I cannot answer this question from the wiki.");
+    expect(page).toContain("Web enrichment included below.");
+    expect(page).toContain("## Web enrichment");
+    expect(page).toContain("## Web sources");
+    expect(page).not.toContain("To enrich from the web:");
+    expect(page).not.toContain("rerunning with `--web`");
   });
 
   it("resolves the checkout from the env var without a binding", async () => {

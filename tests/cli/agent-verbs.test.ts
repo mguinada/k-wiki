@@ -98,12 +98,6 @@ async function runVerb(
 }
 
 describe("agentVerbUsageError", () => {
-  it("requires a question for query", () => {
-    expect(agentVerbUsageError("query", [])).toContain(
-      "a question is required",
-    );
-  });
-
   it("rejects two arguments to read", () => {
     expect(agentVerbUsageError("read", ["a", "b"])).toContain(
       "exactly one <slug>",

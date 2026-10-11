@@ -1788,6 +1788,24 @@ describe("partitioned --web artifacts", () => {
     expect(page).toContain("Web enrichment included below.");
   });
 
+  it("replaces the one-shot door's gap hint too (issue #452)", async () => {
+    const page = await filedWebPage({
+      ...WEB_ARTIFACT,
+      answer: `${ANSWER}\n\nTo enrich from the web: k-wiki query --web "<question>"`,
+    });
+
+    expect(page).toContain("Web enrichment included below.");
+  });
+
+  it("keeps no one-shot enrichment hint on the filed page", async () => {
+    const page = await filedWebPage({
+      ...WEB_ARTIFACT,
+      answer: `${ANSWER}\n\nTo enrich from the web: k-wiki query --web "<question>"`,
+    });
+
+    expect(page).not.toContain("k-wiki query --web");
+  });
+
   it("drops the stale rerun hint from the filed page", async () => {
     const page = await filedWebPage({
       ...WEB_ARTIFACT,
