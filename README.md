@@ -1771,6 +1771,11 @@ k-wiki health                                               # projection coheren
 k-wiki propose my-candidate note.md                        # hand one candidate note to the human (sandboxed)
 ```
 
+`k-wiki query --web` opts the one-shot ask into the same two-pass
+web enrichment as `wiki-query --web` — the same lane-shaped grant,
+the same partitioned, audited enrichment; without web access it
+answers wiki-only with a warning.
+
 Every verb answers `k-wiki <verb> --help` — or `-h`, in either
 position — with its own scoped help: usage, switches, defaults,
 what it writes, exit semantics. `k-wiki --help` on its own stays

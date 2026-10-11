@@ -21,7 +21,7 @@ const SHARED_OPTIONS = `  -w, --wiki <name>   Select the wiki instance — an al
 
 export const READ_VERB_HELP: Readonly<Record<string, string>> = {
   query: `Usage: k-wiki query [-h | --help] [-w, --wiki <name>] [--checkout <path>]
-       [--timeout <secs>] "<question>"
+       [--timeout <secs>] [--web] "<question>"
 
 Ask the bound wiki one question — the only LLM verb. The agent
 reads the wiki's pages and writes one cited answer, printed to
@@ -36,12 +36,21 @@ Options:
 ${SHARED_OPTIONS}
   --timeout <secs>    Kill the agent run after this many seconds
                       and fail it. Default: 1800.
+  --web               Opt in to web enrichment: two agent passes —
+                      a web-blind wiki-only core run, then an
+                      audited, partitioned enrichment run printed
+                      after the core answer (never inside it).
+                      Slower and may cost more. Without web
+                      access the run answers wiki-only with a
+                      warning. Default: off.
   -h, --help          This help; no side effects.
 
 What it writes: the answer goes to stdout, progress to stderr;
 the saved copy lands in the resolved instance's outputs directory
 (outputs/last-query.md for the default instance,
-outputs-<stem>/last-query.md for a named one). Filing the answer
+outputs-<stem>/last-query.md for a named one). With --web the
+saved copy carries the partitioned web sections (enrichment,
+sources, audit). Filing the answer
 into the wiki is a human step (k-wiki wiki-query --file-last, run
 inside the checkout). Exit 0 always carries an answer — if the
 wiki cannot answer, the answer says so; Exit 1 means the run

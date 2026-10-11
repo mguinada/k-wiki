@@ -125,6 +125,32 @@ describe("agentVerbUsageError", () => {
   });
 });
 
+describe("runAgentVerbs with --web", () => {
+  it("rejects --web on a verb other than query", async () => {
+    const checkout = await makeCheckout();
+    const { err } = await runVerb(
+      "status",
+      ["--web"],
+      resolution(checkout, undefined),
+      tmpdir(),
+    );
+
+    expect(err).toContain("--web belongs to k-wiki query");
+  });
+
+  it("parses --web for query and reaches the run machinery", async () => {
+    const checkout = await makeCheckout();
+    const { err } = await runVerb(
+      "query",
+      ["a question?", "--web"],
+      resolution(checkout, undefined),
+      tmpdir(),
+    );
+
+    expect(err).toContain("cannot read agent settings");
+  });
+});
+
 describe("runAgentVerbs with -w/--wiki", () => {
   it("lets the explicit flag beat the binding's wiki key", async () => {
     const checkout = await makeCheckout();

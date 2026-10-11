@@ -2513,6 +2513,12 @@ describe("k-wiki in-context verb help", () => {
     expect(out).toContain("--timeout <secs>");
   });
 
+  it("documents --web with its two-pass cost in query's help", async () => {
+    const out = (await runKWiki(process.cwd(), ["query", "--help"])).out;
+
+    expect(out).toContain("two agent passes");
+  });
+
   it("states the --timeout default", async () => {
     const out = (await runKWiki(process.cwd(), ["query", "--help"])).out;
 

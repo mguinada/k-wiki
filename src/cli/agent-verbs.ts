@@ -288,6 +288,16 @@ async function runReadOnlyVerb(
   return false;
 }
 
+/** Usage error when --web appears on a verb other than query:
+ *  enrichment belongs to the one-shot ask. */
+function webVerbError(verb: string, web: boolean): string | undefined {
+  if (web && verb !== "query") {
+    return "--web belongs to k-wiki query";
+  }
+
+  return undefined;
+}
+
 /** Run the one LLM verb: query — the shared query shell. The
  *  settings and outputs paths follow the resolved instance; the
  *  binding's explicit settings key still wins. */
@@ -297,6 +307,7 @@ async function runQueryVerb(
   instance: WikiInstance,
   timeoutMs: number | undefined,
   question: string,
+  web: boolean,
 ): Promise<void> {
   const wiki = instance.name === undefined ? "" : `--wiki ${instance.name} `;
   const hint = `To file this answer (human step): k-wiki wiki-query ${wiki}--file-last, run inside the checkout`;
@@ -312,6 +323,7 @@ async function runQueryVerb(
     timeoutMs,
     hint,
     gapHint,
+    web,
   });
 }
 
@@ -324,7 +336,7 @@ export async function runAgentVerbs(
 ): Promise<void> {
   const cli = parseArgs(args, {
     value: ["--checkout", "--timeout", "--wiki"],
-    boolean: ["--fail-on-stale"],
+    boolean: ["--fail-on-stale", "--web"],
     alias: new Map([["-w", "--wiki"]]),
   });
 
@@ -342,6 +354,7 @@ export async function runAgentVerbs(
   const usageError =
     wikiArgError(cli.values) ??
     runFlags.error ??
+    webVerbError(verb, cli.flags.has("--web")) ??
     agentVerbUsageError(verb, cli.positional);
 
   if (usageError !== undefined) {
@@ -376,6 +389,7 @@ export async function runAgentVerbs(
       instance,
       runFlags.timeoutMs,
       cli.positional[0] ?? "",
+      cli.flags.has("--web"),
     );
   } catch (error) {
     fail(errorMessage(error));
