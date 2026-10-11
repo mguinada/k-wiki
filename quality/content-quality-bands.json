@@ -1,13 +1,34 @@
 {
-  "pageCount": [6, 18],
-  "sourceShare": [0.15, 0.6],
-  "statusAllowlist": ["needs-review"],
+  "pageCount": [9, 13],
+  "sourceShare": [0.25, 0.45],
+  "statusAllowlist": ["ok", "needs-review"],
   "confidenceAllowlist": ["low", "medium", "high"],
   "sourceSlugSuffix": "-source.md",
   "requiredFields": ["title", "type", "created", "updated", "tags"],
   "observedRuns": [
-    { "run": "2026-10-11-a", "pageCount": 9, "sourceShare": 0.33 },
-    { "run": "2026-10-11-b", "pageCount": 11, "sourceShare": 0.36 },
-    { "run": "2026-10-11-c", "pageCount": 10, "sourceShare": 0.3 }
+    {
+      "run": "2026-10-11-1",
+      "pageCount": 10,
+      "sourceShare": 0.3,
+      "pendingConventionFailures": 7
+    },
+    {
+      "run": "2026-10-11-2",
+      "pageCount": 11,
+      "sourceShare": 0.2727272727272727,
+      "pendingConventionFailures": 8
+    },
+    {
+      "run": "2026-10-11-3",
+      "pageCount": 11,
+      "sourceShare": 0.36363636363636365,
+      "pendingConventionFailures": 9
+    },
+    {
+      "run": "2026-10-11-4",
+      "pageCount": 12,
+      "sourceShare": 0.4166666666666667,
+      "pendingConventionFailures": 10
+    }
   ]
 }

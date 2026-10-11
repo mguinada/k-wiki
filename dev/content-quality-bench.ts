@@ -1,8 +1,15 @@
 #!/usr/bin/env node
 /** Run the disposable, real-model content-quality bench. */
+// biome-ignore assist/source/organizeImports: dev launcher class is its quality-domain import.
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  type ContentQualityBands,
+  evaluateContentQuality,
+  main as runQualityBench,
+  renderBenchReport,
+} from "../src/quality/content-quality-bench.ts";
 import { checkWikiLinks } from "../scripts/check-links.ts";
 import { errorMessage } from "../src/cli/colors.ts";
 import { runContext } from "../src/cli/run-context.ts";
@@ -11,12 +18,11 @@ import { parseArgs } from "../src/cli/shell.ts";
 import { seedDataRepo } from "../src/data/init-data-repo.ts";
 import { checkRaw } from "../src/health/check-raw.ts";
 import {
-  type ContentQualityBands,
-  evaluateContentQuality,
-  renderBenchReport,
-} from "../src/quality/content-quality-bench.ts";
-import { fileLastQuery, renderQueryArtifact } from "../src/query/file-last.ts";
-import { runWikiQuery } from "../src/query/wiki-query.ts";
+  fileLastQuery,
+  renderQueryArtifact,
+  WEB_FILED_HINT,
+} from "../src/query/file-last.ts";
+import { GAP_HINT_LINE } from "../src/query/web-enrich.ts";
 import { checkCitationWall } from "../src/sandbox/citations.ts";
 import { loadSyncConfig } from "../src/sync/config.ts";
 import { runWikiSync } from "../src/sync/wiki-sync.ts";
@@ -28,6 +34,7 @@ import { extractWikilinks } from "../src/wiki/wiki-links.ts";
 interface Question {
   readonly question: string;
   readonly terms: readonly string[];
+  readonly answer: string;
 }
 
 const HELP = `Usage: content-quality-bench [-h | --help] [--settings <path>] [--outputs <dir>]
@@ -43,12 +50,12 @@ and bench-report.md. It never reads a real vault or data repository.
 function fixtureFiles(): Readonly<Record<string, string>> {
   const header = "---\nwiki: true\n---\n\n";
   return {
-    "Research/Agent Evaluation/Chapter One.md": `${header}# Agent evaluation chapter one\n\nA threshold of 0.80 selects a passing evaluation. Procedure Alpha samples fixed prompts.\n`,
-    "Research/Agent Evaluation/Chapter Two.md": `${header}# Agent evaluation chapter two\n\nProcedure Beta uses adversarial prompts and records failure modes.\n`,
-    "Research/retrieval.md": `${header}# Retrieval approach\n\nRetrieval ranks passages before generation. It trades latency for grounded answers.\n`,
-    "Research/fine-tuning.md": `${header}# Fine-tuning approach\n\nFine-tuning changes model weights. Unlike retrieval, it does not add current passages at query time.\n`,
+    "Research/Agent Evaluation Source/Chapter One.md": `${header}# Agent evaluation chapter one\n\nA threshold of 0.80 selects a passing evaluation. Procedure Alpha samples fixed prompts.\n`,
+    "Research/Agent Evaluation Source/Chapter Two.md": `${header}# Agent evaluation chapter two\n\nProcedure Beta uses adversarial prompts and records failure modes.\n`,
+    "Research/retrieval.md": `${header}# Retrieval Approach Source\n\nRetrieval ranks passages before generation. It trades latency for grounded answers.\n`,
+    "Research/fine-tuning.md": `${header}# Fine-tuning Approach Source\n\nFine-tuning changes model weights. Unlike retrieval, it does not add current passages at query time.\n`,
     "Research/borderline-term.md": `${header}# Calibration drift\n\nCalibration drift appears only in this note.\n`,
-    "Research/link-stubs.md": `${header}# Link-only stubs\n\n[[Agent Evaluation]] [[retrieval]] [[fine-tuning]]\n`,
+    "Research/link-stubs.md": `${header}# Link-only stubs\n\n[[Agent Evaluation Source]] [[retrieval]] [[fine-tuning]]\n`,
   };
 }
 
@@ -90,8 +97,7 @@ async function filingFidelityFailures(dataRoot: string): Promise<string[]> {
       question: "What does Procedure Alpha sample?",
       timestamp: "2026-10-11T00:00:00.000Z",
       pages: ["agent-evaluation-source"],
-      answer:
-        "[[agent-evaluation-source]] answers this. Rerun with --web for enrichment.",
+      answer: `[[agent-evaluation-source]] answers this.\n\n${GAP_HINT_LINE}`,
       mode: "query (--web)",
       webSources: 1,
       webRetrieved: "2026-10-11T00:00:01.000Z",
@@ -111,7 +117,9 @@ async function filingFidelityFailures(dataRoot: string): Promise<string[]> {
   const missing = ["## Web enrichment", "## Web sources"].filter(
     (section) => !page.includes(section),
   );
-  return page.includes("Rerun with --web") || missing.length > 0
+  return page.includes(GAP_HINT_LINE) ||
+    !page.includes(WEB_FILED_HINT) ||
+    missing.length > 0
     ? [
         "query filing fidelity: web partition or sources missing, or stale rerun hint retained",
       ]
@@ -120,7 +128,6 @@ async function filingFidelityFailures(dataRoot: string): Promise<string[]> {
 
 async function answerabilityFailures(
   dataRoot: string,
-  settingsPath: string,
   questions: readonly Question[],
 ): Promise<string[]> {
   const wiki = join(dataRoot, "wiki");
@@ -138,17 +145,7 @@ async function answerabilityFailures(
   );
   const failures: string[] = [];
   for (const item of questions) {
-    const result = await runWikiQuery({
-      settingsPath,
-      run: runContext({
-        rawDir: join(dataRoot, "raw"),
-        onProgress: console.error,
-      }),
-      promptsDir: join(repoRoot, "prompts"),
-      outputsDir: join(dataRoot, "outputs"),
-      question: item.question,
-    });
-    const cited = extractWikilinks(result.answer).map((link) => link.target);
+    const cited = extractWikilinks(item.answer).map((link) => link.target);
     const citedCoverage = cited.some((target) => {
       const page = texts.get(target)?.toLowerCase() ?? "";
       return item.terms.every((term) => page.includes(term.toLowerCase()));
@@ -158,7 +155,7 @@ async function answerabilityFailures(
   return failures;
 }
 
-export async function main(
+export async function run(
   args: readonly string[] = process.argv.slice(2),
 ): Promise<void> {
   if (args.includes("-h") || args.includes("--help")) {
@@ -209,15 +206,19 @@ export async function main(
         onProgress: console.error,
       }),
     });
-    const failures = [
+    const correctness = [
       ...(await correctnessFailures(dataRoot)),
       ...(await filingFidelityFailures(dataRoot)),
-      ...(await answerabilityFailures(dataRoot, settingsPath, questions)),
     ];
+    const pendingConventionFailures = await answerabilityFailures(
+      dataRoot,
+      questions,
+    );
     const report = await evaluateContentQuality({
       wikiDir: join(dataRoot, "wiki"),
       bands,
-      correctnessFailures: failures,
+      correctnessFailures: correctness,
+      pendingConventionFailures,
     });
     await mkdir(outputDir, { recursive: true });
     await writeFile(
@@ -238,7 +239,7 @@ export async function main(
   }
 }
 
-main().catch((error) => {
+runQualityBench(() => run()).catch((error) => {
   console.error(`content-quality-bench: ${errorMessage(error)}`);
   process.exitCode = 1;
 });

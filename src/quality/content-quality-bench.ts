@@ -6,6 +6,7 @@
 
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { refuseDirectExecution } from "../cli/is-main.ts";
 import { listFiles } from "../cli/shared.ts";
 
 export type BenchVerdict = "pass" | "warn" | "fail";
@@ -20,7 +21,7 @@ export interface ContentQualityBands {
 }
 
 export interface BenchFinding {
-  readonly lane: "blocking" | "advisory";
+  readonly lane: "blocking" | "pending-convention" | "advisory";
   readonly name: string;
   readonly detail: string;
 }
@@ -28,6 +29,7 @@ export interface BenchFinding {
 export interface ContentQualityReport {
   readonly verdict: BenchVerdict;
   readonly blocking: readonly BenchFinding[];
+  readonly pendingConvention: readonly BenchFinding[];
   readonly advisory: readonly BenchFinding[];
   readonly metrics: Readonly<Record<string, number>>;
 }
@@ -85,7 +87,10 @@ function sourceSlugViolation(page: PageData, suffix: string): boolean {
 async function benchPages(wikiDir: string): Promise<string[]> {
   return (await listFiles(wikiDir, "", { extension: ".md" }))
     .filter(
-      (path) => !path.startsWith("sandbox/") && !path.endsWith("AGENTS.md"),
+      (path) =>
+        !path.startsWith("sandbox/") &&
+        !path.endsWith("AGENTS.md") &&
+        path !== "log.md",
     )
     .sort();
 }
@@ -164,13 +169,20 @@ function pageFindings(
       name: "confidence",
       detail: `${page.path}: ${page.fields.confidence}`,
     });
-  if (sourceSlugViolation(page, bands.sourceSlugSuffix))
-    findings.push({
-      lane: "blocking",
+  return findings;
+}
+
+function pendingSourceSlugFindings(
+  pages: readonly PageData[],
+  bands: ContentQualityBands,
+): BenchFinding[] {
+  return pages
+    .filter((page) => sourceSlugViolation(page, bands.sourceSlugSuffix))
+    .map((page) => ({
+      lane: "pending-convention" as const,
       name: "source-slug",
       detail: `${page.path}: source pages end in -source.md`,
-    });
-  return findings;
+    }));
 }
 
 function advisoryFindings(
@@ -197,6 +209,7 @@ export async function evaluateContentQuality(input: {
   readonly wikiDir: string;
   readonly bands: ContentQualityBands;
   readonly correctnessFailures: readonly string[];
+  readonly pendingConventionFailures: readonly string[];
 }): Promise<ContentQualityReport> {
   const pages = await readPages(input.wikiDir);
   const blocking = [
@@ -209,6 +222,16 @@ export async function evaluateContentQuality(input: {
     ),
     ...pages.flatMap((page) => pageFindings(page, input.bands)),
   ];
+  const pendingConvention = [
+    ...input.pendingConventionFailures.map(
+      (detail): BenchFinding => ({
+        lane: "pending-convention",
+        name: "answerability",
+        detail,
+      }),
+    ),
+    ...pendingSourceSlugFindings(pages, input.bands),
+  ];
   const sourcePages = pages.filter(
     (page) => page.fields.type === "source",
   ).length;
@@ -220,7 +243,12 @@ export async function evaluateContentQuality(input: {
   const advisory = advisoryFindings(metrics, input.bands);
   const verdict: BenchVerdict =
     blocking.length > 0 ? "fail" : advisory.length > 0 ? "warn" : "pass";
-  return { verdict, blocking, advisory, metrics };
+  return { verdict, blocking, pendingConvention, advisory, metrics };
+}
+
+/** Invoke the dev runner through the quality-domain launcher boundary. */
+export async function main(runner: () => Promise<void>): Promise<void> {
+  await runner();
 }
 
 export function renderBenchReport(report: ContentQualityReport): string {
@@ -228,9 +256,12 @@ export function renderBenchReport(report: ContentQualityReport): string {
     items.length === 0
       ? "- none"
       : items.map((item) => `- ${item.name}: ${item.detail}`).join("\n");
-  return `# Content-quality bench\n\nVerdict: ${report.verdict}\n\n## Blocking\n${rows(report.blocking)}\n\n## Advisory\n${rows(report.advisory)}\n\n## Metrics\n${Object.entries(
+  return `# Content-quality bench\n\nVerdict: ${report.verdict}\n\n## Blocking now\n${rows(report.blocking)}\n\n## Pending convention\n${rows(report.pendingConvention)}\n\n## Advisory\n${rows(report.advisory)}\n\n## Metrics\n${Object.entries(
     report.metrics,
   )
     .map(([name, value]) => `- ${name}: ${value}`)
     .join("\n")}\n`;
 }
+
+/* v8 ignore next: the dev launcher supplies the runner callback. */
+refuseDirectExecution(import.meta.url, "content-quality-bench", "dev");

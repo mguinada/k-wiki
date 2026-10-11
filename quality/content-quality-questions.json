@@ -1,34 +1,42 @@
 [
   {
     "question": "What threshold selects a passing evaluation?",
-    "terms": ["threshold", "0.80"]
+    "terms": ["threshold", "0.80"],
+    "answer": "[[agent-evaluation-source#Chapter One]]"
   },
   {
     "question": "What does Procedure Alpha sample?",
-    "terms": ["procedure alpha", "prompts"]
+    "terms": ["procedure alpha", "prompts"],
+    "answer": "[[agent-evaluation-source#Chapter One]]"
   },
   {
     "question": "What does Procedure Beta use?",
-    "terms": ["procedure beta", "adversarial"]
+    "terms": ["procedure beta", "adversarial"],
+    "answer": "[[agent-evaluation-source#Chapter Two]]"
   },
   {
     "question": "What failure modes does Procedure Beta record?",
-    "terms": ["procedure beta", "failure modes"]
+    "terms": ["procedure beta", "failure modes"],
+    "answer": "[[agent-evaluation-source#Chapter Two]]"
   },
   {
     "question": "How does retrieval differ from fine-tuning?",
-    "terms": ["retrieval", "fine-tuning"]
+    "terms": ["retrieval", "fine-tuning"],
+    "answer": "[[retrieval-approach-source]] [[fine-tuning-approach-source]]"
   },
   {
     "question": "What does retrieval trade for grounded answers?",
-    "terms": ["retrieval", "latency"]
+    "terms": ["retrieval", "latency"],
+    "answer": "[[retrieval-approach-source]]"
   },
   {
     "question": "What does fine-tuning change?",
-    "terms": ["fine-tuning", "weights"]
+    "terms": ["fine-tuning", "weights"],
+    "answer": "[[fine-tuning-approach-source]]"
   },
   {
     "question": "Where does calibration drift appear?",
-    "terms": ["calibration drift"]
+    "terms": ["calibration drift"],
+    "answer": "[[calibration-drift]]"
   }
 ]

@@ -59,6 +59,7 @@ describe("evaluateContentQuality", () => {
       wikiDir: wiki,
       bands,
       correctnessFailures: [],
+      pendingConventionFailures: [],
     });
     expect(report.verdict).toBe("fail");
   });
@@ -74,16 +75,18 @@ describe("evaluateContentQuality", () => {
       wikiDir: wiki,
       bands,
       correctnessFailures: [],
+      pendingConventionFailures: [],
     });
     expect(report.verdict).toBe("warn");
   });
 
   it("renders a durable human-readable verdict", async () => {
-    const wiki = await wikiWith(valid);
+    const wiki = await wikiWith(valid.replace("type: concept", "type: source"));
     const report = await evaluateContentQuality({
       wikiDir: wiki,
       bands: { ...bands, pageCount: [1, 4] },
       correctnessFailures: [],
+      pendingConventionFailures: ["query answerability: fixture question"],
     });
     expect(renderBenchReport(report)).toContain("Verdict: pass");
   });
