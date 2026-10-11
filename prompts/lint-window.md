@@ -31,6 +31,19 @@ Check the listed pages for:
     — each is an error.
 15. Pages that should carry `status: needs-review` under the
     corroboration lifecycle but do not.
+16. `confidence` values outside the categorical scale
+    `low`/`medium`/`high`, and `status` values outside the Page
+    Shape allowlist in wiki/AGENTS.md — each a violation, not a
+    style call.
+17. Source pages whose name lacks the `-source` suffix (Page Shape,
+    Source-page names): a listed page was touched, so it must adopt
+    the convention — report the rename, never auto-rename.
+18. Optional source fields: `author`/`published` present but not
+    stated by the source (invented), or stated by the source but
+    absent (dropped).
+19. Existing prose rephrased or removed on an inherited page without
+    a recorded cause in the run's log entry (Page Shape,
+    Incremental edits).
 
 Do not make speculative corrections.
 Never modify wiki/AGENTS.md.

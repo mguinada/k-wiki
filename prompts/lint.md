@@ -32,6 +32,19 @@ Check for:
     substantively in two or more source pages but having no
     concept/comparison page, report it (term + source pages). Report
     only — never auto-create.
+19. `confidence` values outside the categorical scale
+    `low`/`medium`/`high`, and `status` values outside the Page
+    Shape allowlist in wiki/AGENTS.md — each a violation, not a
+    style call.
+20. Source pages whose name lacks the `-source` suffix (Page Shape,
+    Source-page names): inherited names persist until the page is
+    touched, so report each — never auto-rename.
+21. Optional source fields: `author`/`published` present but not
+    stated by the source (invented), or stated by the source but
+    absent (dropped).
+22. Existing prose rephrased or removed on an inherited page without
+    a recorded cause in the run's log entry (Page Shape,
+    Incremental edits).
 
 Do not make speculative corrections.
 Never modify wiki/AGENTS.md.

@@ -437,7 +437,7 @@ related:
   - "[[vector-database]]"
 
 confidence: high
-status: active
+status: stable
 
 description: "A technique that augments LLM generation with retrieved external information."
 ---
@@ -471,7 +471,7 @@ tags:
   - "memory"
 
 confidence: high
-status: active
+status: ingested
 ---
 ```
 
@@ -553,7 +553,7 @@ related:
   - "[[kv-cache]]"
 
 confidence: high
-status: active
+status: stable
 ---
 ```
 
@@ -578,7 +578,7 @@ related:
   - "[[fine-tuning]]"
 
 confidence: high
-status: active
+status: filed
 ---
 ```
 
@@ -638,6 +638,26 @@ Put these in the Markdown body:
 12. `sources` frontmatter lists only `type: source` pages; never cite an
     intermediate concept, entity, comparison, or query page (no derivative
     citation).
+13. `confidence` uses the categorical scale `low` / `medium` / `high`;
+    free-form and numeric values are violations.
+14. `status` comes from the contract's closed allowlist — `ingested`
+    (source pages), `stable` (corroborated derived pages), `needs-review`
+    (the review flag), `filed` (filed queries); invented values are
+    violations.
+15. A source page's name carries the `-source` suffix and its title the
+    matching ` (source)` suffix, so the title still file-kebabs to the
+    name under the page-slug rule (a source titled "GPU Memory Math"
+    lands as `gpu-memory-math-source.md`); applied on create and retitle,
+    adopted by touched inherited pages.
+16. `author` and `published` are recorded when the source states them and
+    absent when it does not — never invented, never dropped.
+17. On inherited pages, additions are preferred; rephrasing existing prose
+    requires a recorded cause in the run's log entry (lint repairs keep
+    their own path).
+18. Concept and source pages extract the concrete specifics their sources
+    state — numbers, thresholds, procedures, named methods, failure modes,
+    constraints — each with per-claim attribution (minimum extraction;
+    trial-first: advisory until the trial reports).
 
 ---
 
@@ -647,7 +667,11 @@ The wiki operating contract is `wiki/AGENTS.md` — the canonical text;
 this guide does not reproduce it. The root `AGENTS.md` is a thin router plus
 development conventions, defined in Section 1; the contract consolidates all
 wiki-agent rules, including the source-metadata rules from Section 5, the
-rebuild procedure, and the expungement section added with Section 14a. The
+page-shape conventions (issue #432: the categorical confidence scale, the
+closed status allowlist, the `-source` slug convention, the optional source
+fields rule, the incremental-edit boundary, and trial-first minimum
+extraction), the rebuild procedure, and the expungement section added with
+Section 14a. The
 copy shipped into the data repository is derived from the canonical file
 (Section 19). For multi-vault wikis, the contract gains the
 `## Multiple Source Vaults` addendum defined in Section 25 (Scenario A).
@@ -1080,7 +1104,12 @@ guardrail 3 + check-links, cross-wiki targets, citation fidelity,
 provenance, the sandbox wall — are no LLM checks at all: no
 duplication between the agent and the gates. The global report-only
 checks (missing comparisons, unfiled multi-source concepts) live in
-the full prompt — the weekly sweep's business.
+the full prompt — the weekly sweep's business. The page-shape
+conventions (issue #432) ride the same audit list as
+judgment-weighted items — the categorical confidence scale, the
+closed status allowlist, the `-source` slug convention, the optional
+source fields, and the incremental-edit boundary; minimum extraction
+stays out until its trial reports.
 
 Intent: audit the wiki for quality problems — fix the clear mechanical
 ones automatically, report the ambiguous ones instead of guessing,

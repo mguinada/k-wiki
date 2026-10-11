@@ -141,6 +141,81 @@ such a page, revisit it: corroborate → raise `status` and
 `confidence`; contradict → add or update a `CONTRADICTION` callout;
 unrelated → leave flagged.
 
+## Page Shape
+
+Page shape conventions keep the wiki's document form coherent when
+ingest runs move between models or harnesses. They are mechanical,
+vocabulary-level rules; they do not contract style — linking density,
+list-vs-prose ratio, and emphasis stay out of scope. No
+meta-instance overrides: this wiki follows the conventions as
+written.
+
+### Confidence scale
+
+`confidence` uses the categorical vocabulary `low`, `medium`, `high`.
+Free-form and numeric values are violations.
+
+### Status allowlist
+
+`status` comes from the closed allowlist:
+
+- `ingested` — a source page's standing: captured from its `raw/`
+  note, restating what that note states.
+- `stable` — a derived page's standing: its claims hold against the
+  sources it cites, with no review flag open.
+- `needs-review` — the review flag: single-source, contradicted, or
+  uncertain, pending resolution through the corroboration lifecycle.
+- `filed` — a filed query page's standing.
+
+Values outside the allowlist are violations, however plausible the
+invention (`active` and `established` were both observed). Raise a
+`needs-review` page to its standing through the corroboration
+lifecycle, never by renaming to an off-list value. Inherited pages
+keep an off-list legacy value until touched; a touched page adopts
+the allowlist in the same edit.
+
+### Source-page names
+
+A source page's name carries the `-source` suffix, and its title
+carries the matching ` (source)` suffix, so the title still
+file-kebabs to the name under the page-slug rule: a source titled
+`"GPU Memory Math"` lands as `gpu-memory-math-source.md` with title
+`"GPU Memory Math (source)"`. Every run and lane applies the
+convention when creating or retitling a source page. Inherited
+source pages keep their name until touched; a touched page adopts
+the convention in the same edit. When the 80-character slug cap
+would cut the `-source` suffix, shorten the base title so the
+suffix survives.
+
+### Optional source fields
+
+`author` and `published` are recorded when the source states them
+and absent when it does not: never invented, never dropped. A
+publication date the source omits stays absent; it is never guessed.
+
+### Incremental edits
+
+On an inherited page — one an earlier run wrote — additions are
+preferred: new prose beside the existing text, new sections beside
+the existing ones. Rephrasing or removing existing prose requires a
+recorded cause: the run's log entry states why the rewrite was
+needed. Lint repairs keep their own path — a lint fix is recorded
+in the lint report, not per edit in the log.
+
+### Minimum extraction
+
+Concept and source pages surface the concrete specifics their
+sources state — numbers, thresholds, procedures, named methods,
+failure modes, constraints — each with per-claim attribution to the
+source page or anchored hub section. A page that summarizes without
+extracting is incomplete even when every quote verifies.
+
+The rule is trial-first: runs follow it now, its mechanical
+enforcement stays advisory while the minimum-extraction trial runs,
+and it hardens into the enforced contract — with its thin-page lint
+worklist item — only when the trial reports. It prescribes
+extraction of what sources state; it does not contract style.
+
 ## Naming
 
 Use lowercase kebab-case filenames for concepts, comparisons, and queries.
