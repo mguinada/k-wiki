@@ -737,7 +737,7 @@ prompt text. Index of the nine operational prompts:
 | `prompts/expunge.md` | A sync removes notes (manifest diff has `removed` entries; §14a) | Re-derive affected pages from their remaining sources |
 | `prompts/rebuild.md` | Rebuilding the wiki from scratch (§15); the expunge threshold (§14a) | Rebuild the whole wiki from `raw/` |
 | `prompts/query.md` | Asking questions against the built wiki (§16) | Synthesize a cited answer; the wrapper saves it for human-gated filing |
-| `prompts/web-enrich.md` | The opt-in `--web` enrichment pass of `wiki-query` (§16) | Enrich the finished answer's topic from the web under the prompt's egress policy; the output is partitioned after the answer and files only through the human's `--file-last` |
+| `prompts/web-enrich.md` | The opt-in `--web` enrichment pass of either query door — `wiki-query` or the one-shot `k-wiki query` (§16) | Enrich the finished answer's topic from the web under the prompt's egress policy; the output is partitioned after the answer and files only through the human's `--file-last` |
 | `prompts/lint.md` | The whole-wiki audit (§17): a first run with no snapshot, `wiki-lint --full`, or the weekly full sweep | Audit wiki quality; fix mechanical problems, report the rest |
 | `prompts/lint-window.md` | The cycle's lint stage and the default `wiki-lint` run once a snapshot exists (§17) | The same contract, scoped to the windowed audit's explicit page list |
 | `prompts/comparison-harvest.md` | One-shot harvest run manually (trial) | File comparisons where two or more sources explicitly contrast named approaches |
