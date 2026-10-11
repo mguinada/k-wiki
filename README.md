@@ -1712,14 +1712,17 @@ omitted flag can never produce wiki writes:
   `prompts/web-enrich.md` prompt — the artifact keeps the
   wiki-only core answer with the failure warning and the concrete
   reason persisted in the header.
-  `--file-last` on a `--web` artifact files the core answer only —
-  the web sections never enter the wiki.
+  `--file-last` on a `--web` artifact files the whole partition —
+  the answer, the clearly-marked enrichment (not wiki provenance),
+  sources, and audit table — with the stale gap hint replaced.
 - **Stage 2 (`--file-last`, human-only)** is deterministic code, no
   agent, zero tokens: it templates the saved answer byte-exactly
   into `wiki/queries/<slug>.md` (kebab-case slug from the question,
   `-2`/`-3` suffixes on collision; `type: query` frontmatter with
   `sources` derived from the answer's citations of `type: source`
-  pages), appends the `index.md` entry under `## Queries`, and
+  pages; a partitioned `--web` artifact files its whole partition
+  with the stale gap hint replaced), appends the `index.md` entry
+  under `## Queries`, and
   prepends the `log.md` entry (`## [date] query | <question>`) as
   the new topmost entry — below the `# Wiki Log` header and any
   standing comment; older entries stay untouched. The

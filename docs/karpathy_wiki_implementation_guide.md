@@ -737,7 +737,7 @@ prompt text. Index of the nine operational prompts:
 | `prompts/expunge.md` | A sync removes notes (manifest diff has `removed` entries; §14a) | Re-derive affected pages from their remaining sources |
 | `prompts/rebuild.md` | Rebuilding the wiki from scratch (§15); the expunge threshold (§14a) | Rebuild the whole wiki from `raw/` |
 | `prompts/query.md` | Asking questions against the built wiki (§16) | Synthesize a cited answer; the wrapper saves it for human-gated filing |
-| `prompts/web-enrich.md` | The opt-in `--web` enrichment pass of `wiki-query` (§16) | Enrich the finished answer's topic from the web under the prompt's egress policy; the output is partitioned after the answer and never filed |
+| `prompts/web-enrich.md` | The opt-in `--web` enrichment pass of `wiki-query` (§16) | Enrich the finished answer's topic from the web under the prompt's egress policy; the output is partitioned after the answer and files only through the human's `--file-last` |
 | `prompts/lint.md` | The whole-wiki audit (§17): a first run with no snapshot, `wiki-lint --full`, or the weekly full sweep | Audit wiki quality; fix mechanical problems, report the rest |
 | `prompts/lint-window.md` | The cycle's lint stage and the default `wiki-lint` run once a snapshot exists (§17) | The same contract, scoped to the windowed audit's explicit page list |
 | `prompts/comparison-harvest.md` | One-shot harvest run manually (trial) | File comparisons where two or more sources explicitly contrast named approaches |
@@ -938,8 +938,10 @@ Use this when asking questions against the wiki. Asking is two-stage
 - **Stage 2 — file (human-only):** after reviewing the printed
   answer, the human runs `wiki-query --file-last`. Deterministic
   code, no LLM: the saved answer is templated byte-exactly into
-  `wiki/queries/<slug>.md`, and `index.md` and `log.md` get their
-  entries. The three writes are a unit — a failure anywhere rolls
+  `wiki/queries/<slug>.md` (a partitioned `--web` artifact instead
+  files its whole partition — the stale gap hint replaced, the
+  enrichment, sources, and audit appended, clearly marked as not
+  wiki provenance), and `index.md` and `log.md` get their entries. The three writes are a unit — a failure anywhere rolls
   all of them back (issue #245). Filing is durable (issue #436):
   the three files land as one atomic commit, message exactly
   `query: file <slug>`, staged by path so unrelated edits elsewhere

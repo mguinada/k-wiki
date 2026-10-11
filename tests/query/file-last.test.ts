@@ -1620,6 +1620,25 @@ describe("readHeaders order and shape", () => {
   });
 });
 
+/** File one artifact into a fresh committed repo and return the
+ *  filed page's text — the shared setup of the filing-fidelity
+ *  tests. */
+async function filedWebPage(artifact: QueryArtifact): Promise<string> {
+  const dataRoot = await makeCommittedRepo();
+  const artifactPath = join(dataRoot, "outputs", "last-query.md");
+
+  await mkdir(join(dataRoot, "outputs"), { recursive: true });
+  await writeFile(artifactPath, renderQueryArtifact(artifact), "utf8");
+
+  const result = await fileLastQuery({
+    artifactPath,
+    dataRoot,
+    now: () => new Date("2026-10-04T09:00:00Z"),
+  });
+
+  return readFile(join(dataRoot, result.pagePath), "utf8");
+}
+
 describe("partitioned --web artifacts", () => {
   const WEB_ARTIFACT: QueryArtifact = {
     question: QUESTION,
@@ -1710,7 +1729,7 @@ describe("partitioned --web artifacts", () => {
     expect(() => parseQueryArtifact(text)).toThrow("not a wiki-query artifact");
   });
 
-  it("files the core answer into the wiki page", async () => {
+  it("files the core answer into the wiki page verbatim", async () => {
     const dataRoot = await makeCommittedRepo();
 
     const artifactPath = join(dataRoot, "outputs", "last-query.md");
@@ -1730,104 +1749,73 @@ describe("partitioned --web artifacts", () => {
     expect(page).toContain(ANSWER);
   });
 
-  it("keeps web URLs out of the filed page", async () => {
-    const dataRoot = await makeCommittedRepo();
-
-    const artifactPath = join(dataRoot, "outputs", "last-query.md");
-
-    await mkdir(join(dataRoot, "outputs"), { recursive: true });
-
-    await writeFile(artifactPath, renderQueryArtifact(WEB_ARTIFACT), "utf8");
-
-    const result = await fileLastQuery({
-      artifactPath,
-      dataRoot,
-      now: () => new Date("2026-10-04T09:00:00Z"),
-    });
-
-    const page = await readFile(join(dataRoot, result.pagePath), "utf8");
-
-    expect(page).not.toContain("https://example.com/a");
+  it("files the enrichment, sources, and audit sections below the core answer", async () => {
+    expect(await filedWebPage(WEB_ARTIFACT)).toContain("## Web enrichment");
   });
 
-  it("keeps the enrichment heading out", async () => {
-    const dataRoot = await makeCommittedRepo();
-
-    const artifactPath = join(dataRoot, "outputs", "last-query.md");
-
-    await mkdir(join(dataRoot, "outputs"), { recursive: true });
-
-    await writeFile(artifactPath, renderQueryArtifact(WEB_ARTIFACT), "utf8");
-
-    const result = await fileLastQuery({
-      artifactPath,
-      dataRoot,
-      now: () => new Date("2026-10-04T09:00:00Z"),
-    });
-
-    const page = await readFile(join(dataRoot, result.pagePath), "utf8");
-
-    expect(page).not.toContain("## Web enrichment");
+  it("files the web sources list", async () => {
+    expect(await filedWebPage(WEB_ARTIFACT)).toContain(
+      "- https://example.com/a — retrieved 2026-10-03",
+    );
   });
 
-  it("keeps the sources heading out", async () => {
-    const dataRoot = await makeCommittedRepo();
-
-    const artifactPath = join(dataRoot, "outputs", "last-query.md");
-
-    await mkdir(join(dataRoot, "outputs"), { recursive: true });
-
-    await writeFile(artifactPath, renderQueryArtifact(WEB_ARTIFACT), "utf8");
-
-    const result = await fileLastQuery({
-      artifactPath,
-      dataRoot,
-      now: () => new Date("2026-10-04T09:00:00Z"),
-    });
-
-    const page = await readFile(join(dataRoot, result.pagePath), "utf8");
-
-    expect(page).not.toContain("## Web sources");
+  it("files the audit table", async () => {
+    expect(await filedWebPage(WEB_ARTIFACT)).toContain(
+      "| 1 | web_search | rag | 4 |",
+    );
   });
 
-  it("keeps the audit heading out", async () => {
-    const dataRoot = await makeCommittedRepo();
-
-    const artifactPath = join(dataRoot, "outputs", "last-query.md");
-
-    await mkdir(join(dataRoot, "outputs"), { recursive: true });
-
-    await writeFile(artifactPath, renderQueryArtifact(WEB_ARTIFACT), "utf8");
-
-    const result = await fileLastQuery({
-      artifactPath,
-      dataRoot,
-      now: () => new Date("2026-10-04T09:00:00Z"),
-    });
-
-    const page = await readFile(join(dataRoot, result.pagePath), "utf8");
-
-    expect(page).not.toContain("## Web calls audit");
+  it("keeps the enrichment partition clearly marked as not wiki provenance", async () => {
+    expect(await filedWebPage(WEB_ARTIFACT)).toContain(
+      "_Independent of the answer above; not part of wiki provenance._",
+    );
   });
 
-  it("caps the filed page at the artifact's breaks", async () => {
-    const dataRoot = await makeCommittedRepo();
+  it("files the web sources heading", async () => {
+    expect(await filedWebPage(WEB_ARTIFACT)).toContain("## Web sources");
+  });
 
-    const artifactPath = join(dataRoot, "outputs", "last-query.md");
+  it("files the audit heading", async () => {
+    expect(await filedWebPage(WEB_ARTIFACT)).toContain("## Web calls audit");
+  });
 
-    await mkdir(join(dataRoot, "outputs"), { recursive: true });
-
-    await writeFile(artifactPath, renderQueryArtifact(WEB_ARTIFACT), "utf8");
-
-    const result = await fileLastQuery({
-      artifactPath,
-      dataRoot,
-      now: () => new Date("2026-10-04T09:00:00Z"),
+  it("replaces the stale gap hint with the filed-enrichment line", async () => {
+    const page = await filedWebPage({
+      ...WEB_ARTIFACT,
+      answer: `${ANSWER}\n\nThe wiki could not answer this question — rerunning with \`--web\` may enrich the topic from the web.`,
     });
 
-    const page = await readFile(join(dataRoot, result.pagePath), "utf8");
+    expect(page).toContain("Web enrichment included below.");
+  });
 
-    expect(page.split("\n").filter((line) => line === "---")).toHaveLength(2);
+  it("drops the stale rerun hint from the filed page", async () => {
+    const page = await filedWebPage({
+      ...WEB_ARTIFACT,
+      answer: `${ANSWER}\n\nThe wiki could not answer this question — rerunning with \`--web\` may enrich the topic from the web.`,
+    });
+
+    expect(page).not.toContain(
+      "rerunning with `--web` may enrich the topic from the web",
+    );
+  });
+
+  it("keeps the core answer verbatim beside the replaced hint", async () => {
+    const page = await filedWebPage({
+      ...WEB_ARTIFACT,
+      answer: `${ANSWER}\n\nThe wiki could not answer this question — rerunning with \`--web\` may enrich the topic from the web.`,
+    });
+
+    expect(page).toContain(ANSWER);
+  });
+
+  it("keeps the filed-enrichment line off a plain artifact", async () => {
+    expect(await filedWebPage(ARTIFACT)).not.toContain(
+      "Web enrichment included below.",
+    );
+  });
+
+  it("keeps the enrichment heading off a plain artifact", async () => {
+    expect(await filedWebPage(ARTIFACT)).not.toContain("## Web enrichment");
   });
 });
 

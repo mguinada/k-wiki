@@ -268,7 +268,8 @@ rides the shared-writer lease — fast-forward only, never forced.
 in git, and a rebuild will lose it. Never file a query yourself.
 
 A `wiki-query --web` run is the sole opt-in door to the web, and its
-enrichment is partitioned, audited output — never wiki content. The
+enrichment is partitioned, audited output — a filed page carries it
+only as clearly-marked sections that are not wiki provenance. The
 prompt-policy lines, which the query and enrichment prompts carry:
 
 - The core answer stays wiki-only: it is produced web-blind, every
@@ -285,9 +286,10 @@ prompt-policy lines, which the query and enrichment prompts carry:
   citation that cannot be traced to a recorded call is pruned from
   the enrichment by the wrapper; keep every citation traceable.
 - The enrichment is independent of the core answer: it is
-  partitioned after it, never rewrites or restates it, and is never
-  filed — `--file-last` on a `--web` artifact files the core answer
-  only.
+  partitioned after it and never rewrites or restates it —
+  `--file-last` on a `--web` artifact files the core answer plus the
+  enrichment partition and web sources as a clearly-marked section
+  that is not wiki provenance.
 
 In a second brain, read `wiki/second-brain/profile.md` before
 answering and let it shape the answer: questions about the subject's

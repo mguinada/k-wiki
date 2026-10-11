@@ -179,9 +179,10 @@ e2e run or diagnosing a failing one.
   the enrichment argv carries `-e npm:pi-web-access` restricted by
   pi's `--tools` allowlist — partitions the artifact (mode,
   `webSources`, the three machine sections, the audit table),
-  `--file-last` on it files the core answer only, and a missing
-  pi-web-access install degrades to the wiki-only run with the
-  warning; a codex lane runs the same two-phase `--web` through the
+  `--file-last` on it files the whole partition with the stale gap
+  hint replaced, and a missing pi-web-access install degrades to
+  the wiki-only run with the warning; a codex lane runs the same
+  two-phase `--web` through the
   codex report contract — the conformance stub asserts the exec
   argv and the live-search managed home (`web_search = "live"`)
   model-free, a contract-shaped report reconciles through the

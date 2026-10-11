@@ -1114,7 +1114,7 @@ await writeFile(value("-o"), "- [Absent](https://example.com/absent) was never a
     expect(artifact).not.toContain("mode:");
   });
 
-  it("files a --web artifact's core answer only", async () => {
+  it("files a --web artifact's full partition below the core answer", async () => {
     const repo = await makeRepo();
     const piRoot = await makePiRoot(true);
 
@@ -1152,8 +1152,61 @@ await writeFile(value("-o"), "- [Absent](https://example.com/absent) was never a
     );
 
     expect(page).toContain("Prefer RAG when the knowledge base changes often.");
-    expect(page).not.toContain("https://example.com/a");
-    expect(page).not.toContain("## Web enrichment");
+    expect(page).toContain("## Web enrichment");
+    expect(page).toContain("## Web sources");
+    expect(page).toContain("https://example.com/a");
+    expect(page).toContain("## Web calls audit");
+  });
+
+  it("replaces the stale gap hint on a filed --web page", async () => {
+    const repo = await makeRepo();
+    const piRoot = await makePiRoot(true);
+
+    const gapStub = webStub(DEFAULT_WEB_MESSAGES).replace(
+      'console.log("Prefer RAG when the knowledge base changes often. See [[retrieval-augmented-generation]].");',
+      'console.log("I cannot answer this question from the wiki. See [[retrieval-augmented-generation]].");',
+    );
+
+    await writeFile(join(repo.dataRoot, "stub-agent.mjs"), gapStub, {
+      mode: 0o755,
+    });
+
+    await runCli(
+      QUERY_SCRIPT,
+      [
+        "--settings",
+        repo.settingsPath,
+        "--raw-dir",
+        join(repo.dataRoot, "raw"),
+        "--outputs",
+        repo.outputsDir,
+        "--web",
+        "When should I prefer RAG over fine-tuning?",
+      ],
+      { env: { PI_CODING_AGENT_DIR: piRoot } },
+    );
+
+    const result = await stage2(repo);
+
+    expect(result.code).toBe(0);
+
+    const page = await readFile(
+      join(
+        repo.dataRoot,
+        "wiki",
+        "queries",
+        "when-should-i-prefer-rag-over-fine-tuning.md",
+      ),
+      "utf8",
+    );
+
+    expect(page).toContain("I cannot answer this question from the wiki.");
+    expect(page).toContain("Web enrichment included below.");
+    expect(page).not.toContain(
+      "rerunning with `--web` may enrich the topic from the web",
+    );
+    expect(page).toContain("## Web enrichment");
+    expect(page).toContain("## Web sources");
   });
 
   it("prunes the drifted citation in the artifact and keeps the traceable bullet", async () => {

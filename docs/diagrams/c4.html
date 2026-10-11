@@ -426,14 +426,14 @@ const CONTAINERS = {
     title:"query/", tag:"runtime", launchers:"bin/wiki-query · k-wiki query",
     role:"The read side: ask questions against the built wiki, save answers deterministically, enrich with web access when asked, and promote sandbox notes into the main wiki.",
     mechanics:[
-      "Two-stage filing: stage 1 is the LLM answer saved to outputs/last-query.md; stage 2 files it byte-exactly into wiki/queries/ — no LLM.",
+      "Two-stage filing: stage 1 is the LLM answer saved to outputs/last-query.md; stage 2 files it byte-exactly into wiki/queries/ — no LLM (a partitioned --web artifact files its whole partition, stale gap hint replaced).",
       "wiki-promote is the sandbox's only exit — a deliberate human act that grants real provenance.",
       "--web is a separate phase-2 run: the core answer stays web-blind; every web tool call is audited."
     ],
     components:[
       ["wiki-query.ts","Terminal front-end for asking the wiki."],
       ["query-shell.ts","Shared query runner: progress sink, spawn path, shell plumbing."],
-      ["file-last.ts","Stage 2: deterministic, byte-exact filing of the saved answer."],
+      ["file-last.ts","Stage 2: deterministic, byte-exact filing of the saved answer; a --web artifact files its whole partition, stale gap hint replaced."],
       ["promote.ts","Promotion core: sandbox note → main wiki page with provenance."],
       ["wiki-promote.ts","wiki-promote CLI: help, flags, main()."],
       ["web-enrich.ts","Phase-2 --web run; the web grant is the Runner adapter's."],

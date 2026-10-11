@@ -52,8 +52,8 @@ Stage 1 with web enrichment: wiki-query "<question>" --web
   search (web_search = "live") and closes its report with the
   fenced k-wiki-web-audit block the wrapper parses per the codex
   report contract — and produces an enrichment section the wrapper
-  audits, machine-assembles, and partitions after the core answer:
-  never inside it, never in any wiki page. The saved artifact gains
+  audits, machine-assembles, and partitions after the core answer,
+  never inside it. The saved artifact gains
   the mode, the web reference count, the retrieval timestamp, the
   Web enrichment and Web sources sections (computed from the
   recorded tool calls, not model output), and a Web calls audit
@@ -68,13 +68,17 @@ Stage 1 with web enrichment: wiki-query "<question>" --web
   named contract-parse failure), network or tool failure, or the
   pruning leaves nothing — the artifact keeps the wiki-only core
   answer with the failure warning and its concrete reason persisted
-  in the header. --file-last on a --web artifact files the core
-  answer only — the web sections never enter the wiki.
+  in the header. --file-last on a --web artifact files the whole
+  partition — the answer, the clearly-marked enrichment (not wiki
+  provenance), sources, and audit table — with the stale gap hint
+  replaced.
 
 Stage 2 (human-only): wiki-query --file-last
   Deterministic code, no agent, zero tokens: template the saved
   answer byte-exactly into wiki/queries/<slug>.md (slug derived from
-  the question; -2, -3, … suffixes on collision), append the
+  the question; -2, -3, … suffixes on collision; a partitioned
+  --web artifact files its whole partition with the stale gap hint
+  replaced, as stage 1 describes), append the
   index.md entry under ## Queries, and prepend the log.md entry
   (## [date] query | <question>) as the new topmost entry — below
   the # Wiki Log header and any standing comment; older entries
