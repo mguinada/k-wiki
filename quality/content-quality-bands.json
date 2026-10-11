@@ -1,0 +1,13 @@
+{
+  "pageCount": [6, 18],
+  "sourceShare": [0.15, 0.6],
+  "statusAllowlist": ["needs-review"],
+  "confidenceAllowlist": ["low", "medium", "high"],
+  "sourceSlugSuffix": "-source.md",
+  "requiredFields": ["title", "type", "created", "updated", "tags"],
+  "observedRuns": [
+    { "run": "2026-10-11-a", "pageCount": 9, "sourceShare": 0.33 },
+    { "run": "2026-10-11-b", "pageCount": 11, "sourceShare": 0.36 },
+    { "run": "2026-10-11-c", "pageCount": 10, "sourceShare": 0.3 }
+  ]
+}

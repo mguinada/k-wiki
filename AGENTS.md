@@ -116,6 +116,12 @@ Two principles govern this:
 <!-- Dev agent: you may extend this block only. The router and the shared
      invariants above are human-only (see Write Authority). -->
 
+### Content-quality bench
+
+Changes to `prompts/`, wiki contracts, `src/ingest/`, runner adapters,
+`settings*`, or pipeline configuration run `npm run content-quality-bench`
+before done.
+
 ### Quality gates
 
 Type check, lint, and unit tests are quality gates: a change is not done

@@ -1,0 +1,34 @@
+[
+  {
+    "question": "What threshold selects a passing evaluation?",
+    "terms": ["threshold", "0.80"]
+  },
+  {
+    "question": "What does Procedure Alpha sample?",
+    "terms": ["procedure alpha", "prompts"]
+  },
+  {
+    "question": "What does Procedure Beta use?",
+    "terms": ["procedure beta", "adversarial"]
+  },
+  {
+    "question": "What failure modes does Procedure Beta record?",
+    "terms": ["procedure beta", "failure modes"]
+  },
+  {
+    "question": "How does retrieval differ from fine-tuning?",
+    "terms": ["retrieval", "fine-tuning"]
+  },
+  {
+    "question": "What does retrieval trade for grounded answers?",
+    "terms": ["retrieval", "latency"]
+  },
+  {
+    "question": "What does fine-tuning change?",
+    "terms": ["fine-tuning", "weights"]
+  },
+  {
+    "question": "Where does calibration drift appear?",
+    "terms": ["calibration drift"]
+  }
+]
