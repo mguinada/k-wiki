@@ -9,6 +9,7 @@ import {
   evaluateContentQuality,
   main as runQualityBench,
   renderBenchReport,
+  worklistFloorFailures,
 } from "../src/quality/content-quality-bench.ts";
 import { checkWikiLinks } from "../scripts/check-links.ts";
 import { errorMessage } from "../src/cli/colors.ts";
@@ -30,6 +31,7 @@ import { checkWikiFidelity } from "../src/wiki/fidelity.ts";
 import { listWikiPages } from "../src/wiki/pages.ts";
 import { checkWikiProvenance } from "../src/wiki/provenance.ts";
 import { extractWikilinks } from "../src/wiki/wiki-links.ts";
+import { computeWikiWorklists } from "../src/wiki/worklists.ts";
 
 interface Question {
   readonly question: string;
@@ -86,6 +88,10 @@ async function correctnessFailures(dataRoot: string): Promise<string[]> {
     ...health.problems.map((item) => `check-raw: ${item}`),
     ...citations.problems.map((item) => `citation-wall: ${item}`),
   ];
+}
+
+async function worklistFailures(wiki: string): Promise<string[]> {
+  return worklistFloorFailures(await computeWikiWorklists(wiki));
 }
 
 async function filingFidelityFailures(dataRoot: string): Promise<string[]> {
@@ -209,6 +215,7 @@ export async function run(
     const correctness = [
       ...(await correctnessFailures(dataRoot)),
       ...(await filingFidelityFailures(dataRoot)),
+      ...(await worklistFailures(join(dataRoot, "wiki"))),
     ];
     const pendingConventionFailures = await answerabilityFailures(
       dataRoot,

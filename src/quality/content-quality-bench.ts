@@ -99,11 +99,61 @@ function linkCount(text: string): number {
   return text.match(/\[\[[^\]]+\]\]/g)?.length ?? 0;
 }
 
+function pageStem(path: string): string {
+  return path.replace(/\.md$/, "").split("/").pop() ?? path;
+}
+
+function linkTargets(text: string): string[] {
+  return [...text.matchAll(/\[\[([^\]]+)\]\]/g)]
+    .map((match) => (match[1] ?? "").split("|")[0]?.split("#")[0]?.trim())
+    .filter(
+      (target): target is string => target !== "" && target !== undefined,
+    );
+}
+
+function linkSymmetry(pages: readonly PageData[]): number {
+  const indexByStem = new Map(
+    pages.map((page, index) => [pageStem(page.path), index] as const),
+  );
+  const edges = new Set<string>();
+
+  for (const [index, page] of pages.entries()) {
+    for (const target of linkTargets(body(page.text))) {
+      const to = indexByStem.get(target);
+      if (to !== undefined && to !== index) edges.add(`${index}:${to}`);
+    }
+  }
+
+  let reciprocated = 0;
+
+  for (const edge of edges) {
+    const [from, to] = edge.split(":");
+    if (edges.has(`${to}:${from}`)) reciprocated += 1;
+  }
+
+  return ratio(reciprocated, edges.size);
+}
+
+const NUMBER = /\b\d+(?:\.\d+)?\b/g;
+const THRESHOLD =
+  /(?:[<>]=?|[≥≤])\s*\d+(?:\.\d+)?|\d+(?:\.\d+)?\s*(?:[<>]=?|[≥≤])/g;
+const NAMED_PROCEDURE = /\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b/g;
+const WIKILINK_CITATION = /\[\[[^\]]+\]\]/;
+
+function countMatches(lines: readonly string[], pattern: RegExp): number {
+  return lines.reduce(
+    (sum, line) => sum + (line.match(pattern)?.length ?? 0),
+    0,
+  );
+}
+
 function textureMetrics(
   pages: readonly PageData[],
 ): Readonly<Record<string, number>> {
   const bodies = pages.map((page) => body(page.text));
   const lines = bodies.flatMap((value) => value.split("\n")).filter(Boolean);
+  const proseLines = lines.filter((line) => !/^#{1,6}\s/.test(line));
+  const citedLines = proseLines.filter((line) => WIKILINK_CITATION.test(line));
   const listLines = lines.filter((line) => /^\s*[-*+]\s+/.test(line)).length;
   const emphasis = bodies.reduce(
     (count, value) => count + (value.match(/\*\*[^*]+\*\*/g)?.length ?? 0),
@@ -114,17 +164,22 @@ function textureMetrics(
     (count, value) => count + (value.match(/^#{1,6}\s+/gm)?.length ?? 0),
     0,
   );
-  const specifics = bodies.reduce(
-    (count, value) => count + (value.match(/\b\d+(?:\.\d+)?\b/g)?.length ?? 0),
-    0,
-  );
+  const anchored =
+    countMatches(citedLines, NUMBER) +
+    countMatches(citedLines, THRESHOLD) +
+    countMatches(citedLines, NAMED_PROCEDURE);
+  const procedures = countMatches(proseLines, NAMED_PROCEDURE);
 
   return {
     listShare: ratio(listLines, lines.length),
     emphasisPerPage: ratio(emphasis, pages.length),
     linksPerPage: ratio(links, pages.length),
     headingsPerPage: ratio(headings, pages.length),
-    specificsPerPage: ratio(specifics, pages.length),
+    specificsPerPage: ratio(countMatches(bodies, NUMBER), pages.length),
+    thresholdsPerPage: ratio(countMatches(bodies, THRESHOLD), pages.length),
+    proceduresPerPage: ratio(procedures, pages.length),
+    anchoredSpecificsPerPage: ratio(anchored, pages.length),
+    linkSymmetry: linkSymmetry(pages),
   };
 }
 
@@ -203,6 +258,32 @@ function advisoryFindings(
       detail: `${metrics.sourceShare} outside ${bands.sourceShare.join("–")}`,
     });
   return findings;
+}
+
+/** The worklists the correctness floor consumes — the mechanically
+ *  defective ones. The single-source open set and the tag inventory
+ *  stay out: candidates the lint agent judges, never verdicts. */
+export interface BenchWorklists {
+  readonly orphans: readonly { page: string; detail: string }[];
+  readonly nonSourceEdges: readonly { page: string; detail: string }[];
+  readonly frontmatterMisses: readonly { page: string; detail: string }[];
+  readonly indexMisses: readonly { page: string; detail: string }[];
+  readonly duplicateTitles: readonly { page: string; detail: string }[];
+  readonly danglingIndexEntries: readonly string[];
+}
+
+export function worklistFloorFailures(worklists: BenchWorklists): string[] {
+  const line = (entry: { page: string; detail: string }) =>
+    `lint-worklists: ${entry.page} — ${entry.detail}`;
+
+  return [
+    ...worklists.orphans.map(line),
+    ...worklists.nonSourceEdges.map(line),
+    ...worklists.frontmatterMisses.map(line),
+    ...worklists.indexMisses.map(line),
+    ...worklists.duplicateTitles.map(line),
+    ...worklists.danglingIndexEntries.map((d) => `lint-worklists: ${d}`),
+  ];
 }
 
 export async function evaluateContentQuality(input: {
