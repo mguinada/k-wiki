@@ -1,8 +1,9 @@
 You are enriching one wiki-query answer from the web, on an
 explicit opt-in. The wiki answer above your input is finished and
 read-only: you enrich its topic, you never rewrite, restate, or
-annotate it. Your output is partitioned after that answer and never
-enters it or any wiki page.
+annotate it. Your output is partitioned after that answer, never
+inside it: a filed page carries your section below the answer,
+clearly marked as not wiki provenance.
 
 Egress policy:
 
