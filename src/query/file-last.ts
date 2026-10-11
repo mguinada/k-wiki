@@ -31,6 +31,7 @@ import {
   renderWebArtifactBody,
   type WebArtifactSections,
 } from "./web-artifact.ts";
+import { GAP_HINT_LINE } from "./web-enrich.ts";
 
 /** What stage 1 persisted to outputs/last-query.md. */
 export interface QueryArtifact {
@@ -41,8 +42,8 @@ export interface QueryArtifact {
   /** The wikilink page names the answer cites, sorted. */
   readonly pages: readonly string[];
   /** The answer, byte-exact. For a `--web` artifact: the core
-   *  answer only — the enrichment is partitioned after it and never
-   *  enters the filed page. */
+   *  answer only — the enrichment is partitioned after it and files
+   *  below it as clearly-marked web sections (issue #453). */
   readonly answer: string;
   /** The run mode of a `--web` artifact (`query (--web)`). */
   readonly mode?: string;
@@ -445,6 +446,37 @@ function oneLine(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
+/** The line that replaces the core pass's stale gap hint on a
+ *  filed `--web` page (issue #453): the enrichment below answers
+ *  the rerun suggestion. */
+export const WEB_FILED_HINT = "Web enrichment included below.";
+
+/** The core answer as filed: on a partitioned `--web` artifact the
+ *  stale gap hint (issue #453) is replaced — the run already
+ *  enriched from the web — and everything else stays byte-exact. */
+function filedAnswer(answer: string, web: WebArtifactSections | undefined) {
+  if (web === undefined || !answer.includes(GAP_HINT_LINE)) {
+    return answer;
+  }
+
+  return answer.split(GAP_HINT_LINE).join(WEB_FILED_HINT);
+}
+
+/** The filed page's body (issue #453): a partitioned `--web`
+ *  artifact files its whole partition — the core answer, the
+ *  clearly-marked enrichment, sources, and audit sections, the
+ *  machine-owned render — with the stale gap hint replaced; a plain
+ *  artifact files the answer alone, unchanged. */
+export function filedPageBody(artifact: QueryArtifact): string {
+  const answer = filedAnswer(artifact.answer, artifact.web);
+
+  if (artifact.web === undefined) {
+    return answer;
+  }
+
+  return renderWebArtifactBody(answer, artifact.web);
+}
+
 /** Render the filed query page: guide §9 frontmatter, then the answer. */
 export function templateQueryPage(
   artifact: QueryArtifact,
@@ -471,7 +503,7 @@ export function templateQueryPage(
     "",
     `# ${oneLine(artifact.question)}`,
     "",
-    artifact.answer,
+    filedPageBody(artifact),
     "",
   ].join("\n");
 }

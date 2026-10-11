@@ -1710,7 +1710,7 @@ describe("partitioned --web artifacts", () => {
     expect(() => parseQueryArtifact(text)).toThrow("not a wiki-query artifact");
   });
 
-  it("files the core answer into the wiki page", async () => {
+  it("files the core answer into the wiki page verbatim", async () => {
     const dataRoot = await makeCommittedRepo();
 
     const artifactPath = join(dataRoot, "outputs", "last-query.md");
@@ -1730,7 +1730,7 @@ describe("partitioned --web artifacts", () => {
     expect(page).toContain(ANSWER);
   });
 
-  it("keeps web URLs out of the filed page", async () => {
+  it("files the enrichment, sources, and audit sections below the core answer", async () => {
     const dataRoot = await makeCommittedRepo();
 
     const artifactPath = join(dataRoot, "outputs", "last-query.md");
@@ -1747,17 +1747,29 @@ describe("partitioned --web artifacts", () => {
 
     const page = await readFile(join(dataRoot, result.pagePath), "utf8");
 
-    expect(page).not.toContain("https://example.com/a");
+    expect(page).toContain("## Web enrichment");
+    expect(page).toContain("## Web sources");
+    expect(page).toContain("- https://example.com/a — retrieved 2026-10-03");
+    expect(page).toContain("## Web calls audit");
+    expect(page).toContain("| 1 | web_search | rag | 4 |");
+    expect(page).toContain(
+      "_Independent of the answer above; not part of wiki provenance._",
+    );
   });
 
-  it("keeps the enrichment heading out", async () => {
+  it("replaces the stale gap hint with the filed-enrichment line", async () => {
     const dataRoot = await makeCommittedRepo();
 
     const artifactPath = join(dataRoot, "outputs", "last-query.md");
 
     await mkdir(join(dataRoot, "outputs"), { recursive: true });
 
-    await writeFile(artifactPath, renderQueryArtifact(WEB_ARTIFACT), "utf8");
+    const hinted: QueryArtifact = {
+      ...WEB_ARTIFACT,
+      answer: `${ANSWER}\n\nThe wiki could not answer this question — rerunning with \`--web\` may enrich the topic from the web.`,
+    };
+
+    await writeFile(artifactPath, renderQueryArtifact(hinted), "utf8");
 
     const result = await fileLastQuery({
       artifactPath,
@@ -1767,67 +1779,32 @@ describe("partitioned --web artifacts", () => {
 
     const page = await readFile(join(dataRoot, result.pagePath), "utf8");
 
+    expect(page).toContain("Web enrichment included below.");
+    expect(page).not.toContain(
+      "rerunning with `--web` may enrich the topic from the web",
+    );
+    expect(page).toContain(ANSWER);
+  });
+
+  it("keeps the stale-gap-hint replacement off a plain artifact", async () => {
+    const dataRoot = await makeCommittedRepo();
+
+    const artifactPath = join(dataRoot, "outputs", "last-query.md");
+
+    await mkdir(join(dataRoot, "outputs"), { recursive: true });
+
+    await writeFile(artifactPath, renderQueryArtifact(ARTIFACT), "utf8");
+
+    const result = await fileLastQuery({
+      artifactPath,
+      dataRoot,
+      now: () => new Date("2026-10-04T09:00:00Z"),
+    });
+
+    const page = await readFile(join(dataRoot, result.pagePath), "utf8");
+
+    expect(page).not.toContain("Web enrichment included below.");
     expect(page).not.toContain("## Web enrichment");
-  });
-
-  it("keeps the sources heading out", async () => {
-    const dataRoot = await makeCommittedRepo();
-
-    const artifactPath = join(dataRoot, "outputs", "last-query.md");
-
-    await mkdir(join(dataRoot, "outputs"), { recursive: true });
-
-    await writeFile(artifactPath, renderQueryArtifact(WEB_ARTIFACT), "utf8");
-
-    const result = await fileLastQuery({
-      artifactPath,
-      dataRoot,
-      now: () => new Date("2026-10-04T09:00:00Z"),
-    });
-
-    const page = await readFile(join(dataRoot, result.pagePath), "utf8");
-
-    expect(page).not.toContain("## Web sources");
-  });
-
-  it("keeps the audit heading out", async () => {
-    const dataRoot = await makeCommittedRepo();
-
-    const artifactPath = join(dataRoot, "outputs", "last-query.md");
-
-    await mkdir(join(dataRoot, "outputs"), { recursive: true });
-
-    await writeFile(artifactPath, renderQueryArtifact(WEB_ARTIFACT), "utf8");
-
-    const result = await fileLastQuery({
-      artifactPath,
-      dataRoot,
-      now: () => new Date("2026-10-04T09:00:00Z"),
-    });
-
-    const page = await readFile(join(dataRoot, result.pagePath), "utf8");
-
-    expect(page).not.toContain("## Web calls audit");
-  });
-
-  it("caps the filed page at the artifact's breaks", async () => {
-    const dataRoot = await makeCommittedRepo();
-
-    const artifactPath = join(dataRoot, "outputs", "last-query.md");
-
-    await mkdir(join(dataRoot, "outputs"), { recursive: true });
-
-    await writeFile(artifactPath, renderQueryArtifact(WEB_ARTIFACT), "utf8");
-
-    const result = await fileLastQuery({
-      artifactPath,
-      dataRoot,
-      now: () => new Date("2026-10-04T09:00:00Z"),
-    });
-
-    const page = await readFile(join(dataRoot, result.pagePath), "utf8");
-
-    expect(page.split("\n").filter((line) => line === "---")).toHaveLength(2);
   });
 });
 
