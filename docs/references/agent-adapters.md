@@ -26,7 +26,7 @@ Codex accepts OpenAI model names only. `provider:`, `isolate.extensions:`, `isol
 | Skill whitelist | Repeated `--skill` paths | Whitelisted directories symlinked into managed `.agents/skills/` |
 | Extensions | Repeated `-e` sources | Unsupported; settings fail with a named error |
 | Web | Query-only Pi extension and tool allowlist | Contract-backed: the `--web` enrichment spawn runs in a managed home whose `web_search` config mode is `"live"` — the posture source, still `"disabled"` for ingest, lint, and the core run — and its final report carries the fenced `k-wiki-web-audit` block the wrapper parses through the same citation gate as Pi's event stream |
-| Auth | Pi auth store | Host `auth.json` seeded into managed `CODEX_HOME` when present; `OPENAI_API_KEY` may authenticate Codex |
+| Auth | Pi auth store | Managed `CODEX_HOME` is seeded from `$CODEX_HOME/auth.json` when set, otherwise `~/.codex/auth.json`; `OPENAI_API_KEY` may authenticate Codex |
 | Report | stdout | `-o` final-message file, then passed to the existing report flow |
 | Progress | Invocation descriptor rendered centrally | Invocation descriptor rendered centrally with Codex sandbox, managed-home, web, and auth posture |
 
