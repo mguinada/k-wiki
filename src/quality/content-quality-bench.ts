@@ -1,7 +1,13 @@
 /**
  * Deterministic measurement and verdict logic for the content-quality bench.
- * The dev runner owns the disposable real-model cycle; this module only reads
- * the produced wiki and therefore remains model-free and testable.
+ * The runner module (content-quality-runner.ts) owns the disposable
+ * real-model cycle; this module only reads the produced wiki and therefore
+ * remains model-free and testable.
+ *
+ * The pending-convention lane is the ratified pre-#432 containment:
+ * source-slug and canonical-answerability findings count without failing
+ * the verdict until the #432 conventions ship flips the lane to blocking
+ * in its own diff.
  */
 
 import { readFile } from "node:fs/promises";
@@ -327,11 +333,6 @@ export async function evaluateContentQuality(input: {
   return { verdict, blocking, pendingConvention, advisory, metrics };
 }
 
-/** Invoke the dev runner through the quality-domain launcher boundary. */
-export async function main(runner: () => Promise<void>): Promise<void> {
-  await runner();
-}
-
 export function renderBenchReport(report: ContentQualityReport): string {
   const rows = (items: readonly BenchFinding[]) =>
     items.length === 0
@@ -344,5 +345,5 @@ export function renderBenchReport(report: ContentQualityReport): string {
     .join("\n")}\n`;
 }
 
-/* v8 ignore next: the dev launcher supplies the runner callback. */
+/* v8 ignore next: covered only under direct `node src/quality/content-quality-bench.ts` runs */
 refuseDirectExecution(import.meta.url, "content-quality-bench", "dev");

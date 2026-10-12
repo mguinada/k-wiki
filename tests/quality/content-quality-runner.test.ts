@@ -1,0 +1,168 @@
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { seedDataRepo } from "../../src/data/init-data-repo.ts";
+import {
+  answerabilityFailures,
+  correctnessFailures,
+  filingFidelityFailures,
+  fixtureFiles,
+  main,
+  worklistFailures,
+  writeFixture,
+} from "../../src/quality/content-quality-runner.ts";
+
+const dirs: string[] = [];
+
+async function tempRoot(): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), "k-wiki-quality-runner-"));
+  dirs.push(root);
+  return root;
+}
+
+async function seededDataRoot(): Promise<string> {
+  const root = await tempRoot();
+  await seedDataRepo({ dataRoot: join(root, "data") });
+  return join(root, "data");
+}
+
+afterEach(async () => {
+  vi.restoreAllMocks();
+  await Promise.all(
+    dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
+  );
+});
+
+describe("writeFixture", () => {
+  it("writes every pinned fixture note under the vault root", async () => {
+    const root = await tempRoot();
+    const vault = await writeFixture(root);
+    const written = (await readdir(vault, { recursive: true }))
+      .filter((entry) => entry.endsWith(".md"))
+      .sort();
+    expect(written).toEqual([
+      "Research/Agent Evaluation Source/Chapter One.md",
+      "Research/Agent Evaluation Source/Chapter Two.md",
+      "Research/borderline-term.md",
+      "Research/fine-tuning.md",
+      "Research/link-stubs.md",
+      "Research/retrieval.md",
+    ]);
+  });
+
+  it("writes fixture notes that opt every page into the wiki", async () => {
+    const root = await tempRoot();
+    const vault = await writeFixture(root);
+    const chapter = await readFile(
+      join(vault, "Research/Agent Evaluation Source/Chapter One.md"),
+      "utf8",
+    );
+    expect(chapter).toMatch(/^---\nwiki: true\n---/);
+  });
+});
+
+describe("correctnessFailures", () => {
+  it("finds no floor violations in the freshly seeded skeleton repo", async () => {
+    const dataRoot = await seededDataRoot();
+    expect(await correctnessFailures(dataRoot)).toEqual([]);
+  });
+});
+
+describe("filingFidelityFailures", () => {
+  it("passes a web partition that files with its sources", async () => {
+    const dataRoot = await seededDataRoot();
+    expect(await filingFidelityFailures(dataRoot)).toEqual([]);
+  });
+});
+
+describe("worklistFailures", () => {
+  it("finds no mechanical defects in a contract-conforming wiki", async () => {
+    const root = await tempRoot();
+    const wiki = join(root, "wiki");
+    await mkdir(wiki, { recursive: true });
+    await writeFile(
+      join(wiki, "index.md"),
+      `---
+title: Index
+type: index
+created: 2026-10-11
+updated: 2026-10-11
+tags:
+  - test
+---
+
+Navigate: [[drift]].
+`,
+      "utf8",
+    );
+    await writeFile(
+      join(wiki, "drift.md"),
+      `---
+title: Drift
+type: source
+created: 2026-10-11
+updated: 2026-10-11
+tags:
+  - test
+---
+
+Calibration drift content.
+`,
+      "utf8",
+    );
+    expect(await worklistFailures(wiki)).toEqual([]);
+  });
+});
+
+describe("answerabilityFailures", () => {
+  it("reports only the questions no cited page covers", async () => {
+    const root = await tempRoot();
+    const wiki = join(root, "wiki");
+    await mkdir(wiki, { recursive: true });
+    await writeFile(
+      join(wiki, "calibration-drift.md"),
+      "---\ntitle: Calibration drift\n---\n\nCalibration drift appears only here.\n",
+      "utf8",
+    );
+    const failures = await answerabilityFailures(root, [
+      {
+        question: "Where does calibration drift appear?",
+        terms: ["calibration drift"],
+        answer: "[[calibration-drift]]",
+      },
+      {
+        question: "What does Procedure Beta use?",
+        terms: ["procedure beta"],
+        answer: "[[calibration-drift]]",
+      },
+    ]);
+    expect(failures).toEqual([
+      "query answerability: What does Procedure Beta use?",
+    ]);
+  });
+});
+
+describe("main", () => {
+  it("prints the usage and exits cleanly on --help", async () => {
+    const logged: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((...line: unknown[]) => {
+      logged.push(line.map(String).join(" "));
+    });
+    await main(["--help"]);
+    expect(logged.join("\n")).toContain("Usage: content-quality-bench");
+  });
+});
+
+describe("fixtureFiles", () => {
+  it("names every fixture note with its vault-relative path", () => {
+    expect(Object.keys(fixtureFiles()).length).toBe(6);
+  });
+});
