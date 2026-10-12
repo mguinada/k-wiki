@@ -6,7 +6,7 @@
   },
   {
     "question": "What does Procedure Alpha sample?",
-    "terms": ["procedure alpha", "prompts"],
+    "terms": ["procedure alpha", "prompt"],
     "answer": "[[agent-evaluation-source#Chapter One]]"
   },
   {
@@ -16,7 +16,7 @@
   },
   {
     "question": "What failure modes does Procedure Beta record?",
-    "terms": ["procedure beta", "failure modes"],
+    "terms": ["procedure beta", "failure mode"],
     "answer": "[[agent-evaluation-source#Chapter Two]]"
   },
   {
