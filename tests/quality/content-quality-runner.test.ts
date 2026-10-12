@@ -72,6 +72,7 @@ describe("writeFixture", () => {
     const written = (await readdir(vault, { recursive: true }))
       .filter((entry) => entry.endsWith(".md"))
       .sort();
+
     expect(written).toEqual([
       "Research/Agent Evaluation Source/Chapter One.md",
       "Research/Agent Evaluation Source/Chapter Two.md",
@@ -89,6 +90,7 @@ describe("writeFixture", () => {
       join(vault, "Research/Agent Evaluation Source/Chapter One.md"),
       "utf8",
     );
+
     expect(chapter).toMatch(/^---\nwiki: true\n---/);
   });
 });
@@ -96,6 +98,7 @@ describe("writeFixture", () => {
 describe("correctnessFailures", () => {
   it("finds no floor violations in the freshly seeded skeleton repo", async () => {
     const dataRoot = await seededDataRoot();
+
     expect(await correctnessFailures(dataRoot)).toEqual([]);
   });
 });
@@ -103,6 +106,7 @@ describe("correctnessFailures", () => {
 describe("filingFidelityFailures", () => {
   it("passes a web partition that files with its sources", async () => {
     const dataRoot = await seededDataRoot();
+
     expect(await filingFidelityFailures(dataRoot)).toEqual([]);
   });
 });
@@ -142,6 +146,7 @@ Calibration drift content.
 `,
       "utf8",
     );
+
     expect(await worklistFailures(wiki)).toEqual([]);
   });
 });
@@ -168,6 +173,7 @@ describe("answerabilityFailures", () => {
         answer: "[[calibration-drift]]",
       },
     ]);
+
     expect(failures).toEqual([
       "query answerability: What does Procedure Beta use?",
     ]);
@@ -189,6 +195,7 @@ describe("answerabilityFailures", () => {
         answer: "[[calibration-drift]]",
       },
     ]);
+
     expect(failures).toEqual([]);
   });
 });
@@ -200,6 +207,7 @@ describe("main", () => {
       logged.push(line.map(String).join(" "));
     });
     await main(["--help"]);
+
     expect(logged.join("\n")).toContain("Usage: content-quality-bench");
   });
 

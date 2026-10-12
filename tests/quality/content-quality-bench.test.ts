@@ -123,6 +123,7 @@ describe("evaluateContentQuality", () => {
         "A cited page.\n\n```md\nA mere example: [[page]].\n```\n",
       ),
     });
+
     expect(report.metrics.linkSymmetry).toBe(0);
   });
 
@@ -133,6 +134,7 @@ describe("evaluateContentQuality", () => {
         "status: needs-review\n--- \n",
       ),
     });
+
     expect(report.blocking).toEqual([]);
   });
 
@@ -143,21 +145,25 @@ describe("evaluateContentQuality", () => {
         "Real prose.\n\n```\n- fenced item\n```\n",
       ),
     });
+
     expect(report.metrics.listShare).toBe(0);
   });
 
   it("counts comparison-anchored numbers as thresholds", async () => {
     const report = await reportFor({ "page.md": specific });
+
     expect(report.metrics.thresholdsPerPage).toBe(1);
   });
 
   it("counts capitalized phrases as named procedures", async () => {
     const report = await reportFor({ "page.md": specific });
+
     expect(report.metrics.proceduresPerPage).toBe(1);
   });
 
   it("counts specifics on cited lines as anchored attribution", async () => {
     const report = await reportFor({ "page.md": specific });
+
     expect(report.metrics.anchoredSpecificsPerPage).toBe(3);
   });
 
@@ -171,6 +177,7 @@ describe("evaluateContentQuality", () => {
       correctnessFailures: [],
       pendingConventionFailures: ["query answerability: fixture question"],
     });
+
     expect(renderBenchReport(report)).toContain("Verdict: pass");
   });
 });
