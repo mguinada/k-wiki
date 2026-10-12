@@ -1,3 +1,4 @@
+import { execFile } from "node:child_process";
 import {
   mkdir,
   mkdtemp,
@@ -8,6 +9,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { seedDataRepo } from "../../src/data/init-data-repo.ts";
 import {
@@ -22,6 +24,23 @@ import {
 
 const dirs: string[] = [];
 
+const run = promisify(execFile);
+
+/** A hermetic git identity for the seeded data repo: its commits (the
+ *  seed commit and the query-filing commit) must not depend on the
+ *  ambient machine's git identity config (CI runners carry none). The
+ *  env seeds the initial commit; local config covers every later
+ *  commit run inside the repo. Same pattern as
+ *  tests/data/init-data-repo.test.ts and tests/schedule/sync-watchdog.test.ts. */
+const GIT_ENV = {
+  PATH: process.env.PATH,
+  GIT_AUTHOR_NAME: "k-wiki test",
+  GIT_AUTHOR_EMAIL: "test@example.com",
+  GIT_COMMITTER_NAME: "k-wiki test",
+  GIT_COMMITTER_EMAIL: "test@example.com",
+  HOME: process.env.HOME,
+};
+
 async function tempRoot(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "k-wiki-quality-runner-"));
   dirs.push(root);
@@ -30,8 +49,13 @@ async function tempRoot(): Promise<string> {
 
 async function seededDataRoot(): Promise<string> {
   const root = await tempRoot();
-  await seedDataRepo({ dataRoot: join(root, "data") });
-  return join(root, "data");
+  const dataRoot = join(root, "data");
+  await seedDataRepo({ dataRoot, env: GIT_ENV });
+  await run("git", ["config", "user.name", "k-wiki test"], { cwd: dataRoot });
+  await run("git", ["config", "user.email", "test@example.com"], {
+    cwd: dataRoot,
+  });
+  return dataRoot;
 }
 
 afterEach(async () => {
