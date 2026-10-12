@@ -132,6 +132,12 @@ describe("parsePageFields updated and status", () => {
 });
 
 describe("parsePageFields", () => {
+  it("reads the confidence scalar", () => {
+    expect(parsePageFields("---\nconfidence: high\n---\n").confidence).toBe(
+      "high",
+    );
+  });
+
   it("reads a plain origin scalar", () => {
     expect(
       parsePageFields(

@@ -76,7 +76,7 @@ exists without a row, or a row names no domain.
 | `wiki/` | wikilink/crosslink parsing, page walking, wiki-domain reports | pipeline orchestration | review-enforced only |
 | `board/` (dev) | board-triage decisions and the gh/GraphQL infrastructure | runtime surface — `dev/` launchers only | `tests/bin/bin-structure.test.ts` |
 | `fixtures/` (dev) | the synthetic fixture vault | runtime reach — `dev/` launchers only | `tests/bin/bin-structure.test.ts` |
-| `quality/` (dev) | the refactor-metrics instrument, mutation tooling, the gates | runtime reach — `dev/` launchers only | `tests/bin/bin-structure.test.ts` |
+| `quality/` (dev) | the refactor-metrics instrument, mutation tooling, the gates, the content-quality bench | runtime reach — `dev/` launchers only | `tests/bin/bin-structure.test.ts` |
 
 ### Simple stays simple
 
@@ -115,6 +115,12 @@ Two principles govern this:
 
 <!-- Dev agent: you may extend this block only. The router and the shared
      invariants above are human-only (see Write Authority). -->
+
+### Content-quality bench
+
+Changes to `prompts/`, wiki contracts, `src/ingest/`, runner adapters,
+`settings*`, or pipeline configuration run `npm run content-quality-bench`
+before done.
 
 ### Quality gates
 
@@ -251,6 +257,7 @@ infrastructure, free to use for any unit or e2e work; the snapshot at
 - Use the blank line to mark a slight change of context inside the
   function. A blank line does not block extraction: when a step needs
   a name, a test, or reuse, extract it into a helper function.
+- Code paragraphing: use vertical whitespace so the logical structure of the code is visible. Separate preparation, execution, and result: declarations and variable setup first, then the processing step, then the value or outcome - each stage its own paragraph, separated by a blank line. Tests follow the same shape: arrange (fixture and inputs), act (the exercising call), assert (expectations) - with a blank line between act and assert. If a reader must parse line by line to find the steps, paragraphing is required.
 
 ### Comment blast radius
 

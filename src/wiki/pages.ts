@@ -2,12 +2,12 @@
  * Deterministic wiki-page reading, shared by the expunge seed
  * (wiki-ingest) and the dead-provenance check (scripts/): which pages
  * exist, and the frontmatter fields the pipeline reads — `title`,
- * `type`, `updated`, `status`, `origin`, `sources`, and `tags`. The one
- * wiki walker (issue #338): the sandbox root never lists, so listings,
- * coverage, dashboards, and checkers never count a sandbox page.
- * Agent-written frontmatter is tolerant input: a page whose fields
- * cannot be read simply contributes nothing to the deterministic
- * layer.
+ * `type`, `updated`, `status`, `confidence`, `origin`, `sources`, and
+ * `tags`. The one wiki walker (issue #338): the sandbox root never
+ * lists, so listings, coverage, dashboards, and checkers never count
+ * a sandbox page. Agent-written frontmatter is tolerant input: a page
+ * whose fields cannot be read simply contributes nothing to the
+ * deterministic layer.
  */
 
 import { readFile } from "node:fs/promises";
@@ -28,6 +28,8 @@ export interface PageFields {
   readonly updated: string | undefined;
   /** The `status` scalar (e.g. `needs-review`), as written. */
   readonly status: string | undefined;
+  /** The `confidence` scalar (e.g. `high`), as written. */
+  readonly confidence: string | undefined;
   /** The raw projection path backing a source page, as written. */
   readonly origin: string | undefined;
   /** `sources` list entries as written (wikilinks still bracketed). */
@@ -93,6 +95,7 @@ const EMPTY_FIELDS: PageFields = {
   type: undefined,
   updated: undefined,
   status: undefined,
+  confidence: undefined,
   origin: undefined,
   sources: [],
   tags: [],
@@ -164,6 +167,7 @@ interface MutablePageFields {
   type: string | undefined;
   updated: string | undefined;
   status: string | undefined;
+  confidence: string | undefined;
   origin: string | undefined;
   sources: string[];
   tags: string[];
@@ -201,6 +205,10 @@ function applyKeyLine(line: string, fields: MutablePageFields): boolean {
 
   if (key[1] === "status") {
     fields.status = scalar(key[2]);
+  }
+
+  if (key[1] === "confidence") {
+    fields.confidence = scalar(key[2]);
   }
 
   if (key[1] === "origin") {
@@ -241,6 +249,7 @@ function parseFrontmatterBody(lines: readonly string[]): PageFields {
     type: undefined,
     updated: undefined,
     status: undefined,
+    confidence: undefined,
     origin: undefined,
     sources: [],
     tags: [],
@@ -256,6 +265,7 @@ function parseFrontmatterBody(lines: readonly string[]): PageFields {
         type: fields.type,
         updated: fields.updated,
         status: fields.status,
+        confidence: fields.confidence,
         origin: fields.origin,
         sources: fields.sources,
         tags: fields.tags,
@@ -270,10 +280,10 @@ function parseFrontmatterBody(lines: readonly string[]): PageFields {
   return EMPTY_FIELDS;
 }
 
-/** Parse `title`, `created`, `type`, `updated`, `status`, `origin`,
- * `sources`, and `tags` from a wiki page's YAML frontmatter: top-level
- * scalars and two lists of single-line items, nothing more. Returns
- * empty fields when there is no closed frontmatter block. */
+/** Parse `title`, `created`, `type`, `updated`, `status`,
+ * `confidence`, `origin`, `sources`, and `tags` from a wiki page's
+ * YAML frontmatter: top-level scalars and two lists of single-line
+ * items, nothing more; empty fields when the block never closes. */
 export function parsePageFields(text: string): PageFields {
   const lines = text.split("\n");
 
