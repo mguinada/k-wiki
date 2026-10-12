@@ -236,6 +236,34 @@ describe("parsePageFields", () => {
     expect(fields.sources).toEqual(["[[A]]"]);
   });
 
+  it("reads a flow-style tags array like the block form", () => {
+    const fields = parsePageFields(
+      "---\ntitle: T\ntags: [source, evaluation, agents]\n---\n",
+    );
+
+    expect(fields.tags).toEqual(["source", "evaluation", "agents"]);
+  });
+
+  it("reads a flow-style sources array with quoted wikilinks", () => {
+    const fields = parsePageFields(
+      '---\ntitle: T\nsources: ["[[hub-source]]", "[[retrieval-source]]"]\n---\n',
+    );
+
+    expect(fields.sources).toEqual(["[[hub-source]]", "[[retrieval-source]]"]);
+  });
+
+  it("reads an empty flow-style list as present but empty", () => {
+    const fields = parsePageFields("---\ntitle: T\nsources: []\n---\n");
+
+    expect(fields.sources).toEqual([]);
+  });
+
+  it("does not append block items after a flow-style list value", () => {
+    const fields = parsePageFields("---\ntitle: T\ntags: [a, b]\n  - c\n---\n");
+
+    expect(fields.tags).toEqual(["a", "b"]);
+  });
+
   it("ignores list items under keys other than sources", () => {
     const fields = parsePageFields(
       '---\nrelated:\n  - "[[A]]"\nauthor: someone\n---\n',

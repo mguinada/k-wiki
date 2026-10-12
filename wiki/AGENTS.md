@@ -173,7 +173,11 @@ A source page's name carries the `-source` suffix, and its title
 carries the matching ` (source)` suffix, so the title still
 file-kebabs to the name under the page-slug rule: a source titled
 `"GPU Memory Math"` lands as `gpu-memory-math-source.md` with title
-`"GPU Memory Math (source)"`. Every run and lane applies the
+`"GPU Memory Math (source)"`. The name ends with exactly one
+`-source`: a base title that already ends in `source` keeps its
+title unchanged — `"Retrieval Approach Source"` lands as
+`retrieval-approach-source.md` with no second suffix — and the
+suffix is never doubled. Every run and lane applies the
 convention when creating or retitling a source page. Inherited
 source pages keep their name until touched; a touched page adopts
 the convention in the same edit. When the 80-character slug cap

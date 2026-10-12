@@ -77,6 +77,15 @@ describe("page shape section (issue #432)", () => {
     );
   });
 
+  it("contract never doubles the -source suffix", () => {
+    expect(
+      missingPhrases(contract, [
+        "The name ends with exactly one `-source`",
+        "the suffix is never doubled",
+      ]),
+    ).toEqual([]);
+  });
+
   it("contract carries the optional-fields rule", () => {
     expect(
       missingPhrases(contract, [
