@@ -76,7 +76,7 @@ exists without a row, or a row names no domain.
 | `wiki/` | wikilink/crosslink parsing, page walking, wiki-domain reports | pipeline orchestration | review-enforced only |
 | `board/` (dev) | board-triage decisions and the gh/GraphQL infrastructure | runtime surface — `dev/` launchers only | `tests/bin/bin-structure.test.ts` |
 | `fixtures/` (dev) | the synthetic fixture vault | runtime reach — `dev/` launchers only | `tests/bin/bin-structure.test.ts` |
-| `quality/` (dev) | the refactor-metrics instrument, mutation tooling, the gates | runtime reach — `dev/` launchers only | `tests/bin/bin-structure.test.ts` |
+| `quality/` (dev) | the refactor-metrics instrument, mutation tooling, the gates, the content-quality bench | runtime reach — `dev/` launchers only | `tests/bin/bin-structure.test.ts` |
 
 ### Simple stays simple
 
