@@ -123,10 +123,12 @@ function textureMetrics(
     .flatMap((page) => [...unfencedLines(bodyAfterFrontmatter(page.text))])
     .map(([, line]) => line)
     .filter(Boolean);
+
   const proseLines = lines.filter((line) => !/^#{1,6}\s/.test(line));
   const citedLines = proseLines.filter(
     (line) => extractWikilinks(line).length > 0,
   );
+
   const listLines = lines.filter((line) => /^\s*[-*+]\s+/.test(line)).length;
   const emphasis = countMatches(lines, EMPHASIS);
   const links = pages.reduce(
@@ -135,6 +137,7 @@ function textureMetrics(
     0,
   );
   const headings = countMatches(lines, HEADING);
+
   const anchored =
     countMatches(citedLines, NUMBER) +
     countMatches(citedLines, THRESHOLD) +
