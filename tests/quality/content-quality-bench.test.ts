@@ -76,6 +76,7 @@ describe("evaluateContentQuality", () => {
     const report = await reportFor({
       "page.md": valid.replace("confidence: high", "confidence: certain"),
     });
+
     expect(report.verdict).toBe("fail");
   });
 
@@ -86,6 +87,7 @@ describe("evaluateContentQuality", () => {
         "- one\n- two\n- three\n",
       ),
     });
+
     expect(report.verdict).toBe("warn");
   });
 
@@ -97,6 +99,7 @@ describe("evaluateContentQuality", () => {
         "A standalone page without links.",
       ),
     });
+
     expect(report.metrics.linkSymmetry).toBe(0);
   });
 
@@ -108,6 +111,7 @@ describe("evaluateContentQuality", () => {
         "A linked page back to [[page]].",
       ),
     });
+
     expect(report.metrics.linkSymmetry).toBe(1);
   });
 
