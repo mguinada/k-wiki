@@ -1,7 +1,7 @@
 {
   "pageCount": [9, 13],
   "sourceShare": [0.25, 0.45],
-  "statusAllowlist": ["ok", "needs-review"],
+  "statusAllowlist": ["ingested", "stable", "needs-review", "filed"],
   "confidenceAllowlist": ["low", "medium", "high"],
   "sourceSlugSuffix": "-source.md",
   "requiredFields": ["title", "type", "created", "updated", "tags"],

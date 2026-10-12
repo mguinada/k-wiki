@@ -29,7 +29,7 @@ async function reportFor(files: Readonly<Record<string, string>>) {
     wikiDir: await wikiWith(files),
     bands,
     correctnessFailures: [],
-    pendingConventionFailures: [],
+    answerabilityFailures: [],
   });
 }
 
@@ -168,17 +168,36 @@ describe("evaluateContentQuality", () => {
   });
 
   it("renders a durable human-readable verdict", async () => {
-    const wiki = await wikiWith({
-      "page.md": valid.replace("type: concept", "type: source"),
-    });
     const report = await evaluateContentQuality({
-      wikiDir: wiki,
+      wikiDir: await wikiWith({ "page.md": valid }),
       bands: { ...bands, pageCount: [1, 4] },
       correctnessFailures: [],
-      pendingConventionFailures: ["query answerability: fixture question"],
+      answerabilityFailures: [],
     });
 
     expect(renderBenchReport(report)).toContain("Verdict: pass");
+  });
+
+  it("fails the verdict when the answerability smoke reports an uncovered question", async () => {
+    const report = await evaluateContentQuality({
+      wikiDir: await wikiWith({ "page.md": valid }),
+      bands,
+      correctnessFailures: [],
+      answerabilityFailures: ["query answerability: fixture question"],
+    });
+
+    expect(report.verdict).toBe("fail");
+  });
+
+  it("routes a source page off the -source slug convention into the blocking lane", async () => {
+    const report = await reportFor({
+      "page.md": valid,
+      "bare-named.md": valid.replace("type: concept", "type: source"),
+    });
+
+    expect(report.blocking.map((finding) => finding.name)).toContain(
+      "source-slug",
+    );
   });
 });
 
