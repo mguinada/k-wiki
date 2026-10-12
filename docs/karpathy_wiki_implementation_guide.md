@@ -430,14 +430,14 @@ tags:
   - "rag"
 
 sources:
-  - "[[RAG Notes]]"
+  - "[[RAG Notes (source)]]"
 
 related:
   - "[[embeddings]]"
   - "[[vector-database]]"
 
 confidence: high
-status: stable
+status: needs-review
 
 description: "A technique that augments LLM generation with retrieved external information."
 ---
@@ -451,7 +451,7 @@ A page representing an external source can use:
 
 ```yaml
 ---
-title: "GPU Memory Math for LLMs (2026 Edition)"
+title: "GPU Memory Math for LLMs (2026 Edition) (source)"
 type: source
 
 source: "https://x.com/TheAhmadOsman/status/2040103488714068245"
@@ -534,8 +534,8 @@ title: "LLM GPU Memory"
 type: concept
 
 sources:
-  - "[[GPU Memory Math for LLMs (2026 Edition)]]"
-  - "[[LLM Quantization]]"
+  - "[[GPU Memory Math for LLMs (2026 Edition) (source)]]"
+  - "[[LLM Quantization (source)]]"
 
 created: 2026-08-16
 updated: 2026-08-16
@@ -571,7 +571,7 @@ created: 2026-08-16
 updated: 2026-08-16
 
 sources:
-  - "[[GPU Memory Math for LLMs (2026 Edition)]]"
+  - "[[GPU Memory Math for LLMs (2026 Edition) (source)]]"
 
 related:
   - "[[retrieval-augmented-generation]]"
