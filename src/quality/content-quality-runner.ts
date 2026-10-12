@@ -88,6 +88,7 @@ export async function correctnessFailures(dataRoot: string): Promise<string[]> {
     checkRaw(raw),
     checkCitationWall(wiki),
   ]);
+
   return [
     ...links.broken.map((item) => `check-links: ${item}`),
     ...fidelity.problems.map((item) => `check-fidelity: ${item}`),
@@ -132,6 +133,7 @@ export async function filingFidelityFailures(
   const missing = ["## Web enrichment", "## Web sources"].filter(
     (section) => !page.includes(section),
   );
+
   return page.includes(GAP_HINT_LINE) ||
     !page.includes(WEB_FILED_HINT) ||
     missing.length > 0
@@ -155,15 +157,21 @@ export async function answerabilityFailures(
       ),
     ),
   );
+
   const failures: string[] = [];
+
   for (const item of questions) {
     const cited = extractWikilinks(item.answer).map((link) => link.target);
     const citedCoverage = cited.some((target) => {
       const page = texts.get(target)?.toLowerCase() ?? "";
       return item.terms.every((term) => page.includes(term.toLowerCase()));
     });
-    if (!citedCoverage) failures.push(`query answerability: ${item.question}`);
+
+    if (!citedCoverage) {
+      failures.push(`query answerability: ${item.question}`);
+    }
   }
+
   return failures;
 }
 
