@@ -130,6 +130,13 @@ async function makeSetup(): Promise<Setup> {
   });
 
   await run("git", ["init", "--quiet"], { cwd: dataRoot });
+  // Repo-local committer identity: the new --web test files through
+  // wiki-query --file-last, whose filing commit is a bare git commit
+  // (commitFiling) — CI runners carry no global identity, so an
+  // identity-less fixture dies there (every production-committed
+  // e2e fixture sets this; see wiki-query.e2e's setup).
+  await run("git", ["config", "user.email", "t@t"], { cwd: dataRoot });
+  await run("git", ["config", "user.name", "t"], { cwd: dataRoot });
   await run("git", ["add", "-A"], { cwd: dataRoot });
   await run(
     "git",
