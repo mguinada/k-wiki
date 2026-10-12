@@ -14,7 +14,12 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { listFiles } from "../cli/shared.ts";
-import { extractWikilinks, stem } from "../wiki/wiki-links.ts";
+import {
+  bodyAfterFrontmatter,
+  type PageFields,
+  parsePageFields,
+} from "../wiki/pages.ts";
+import { extractWikilinks, stem, unfencedLines } from "../wiki/wiki-links.ts";
 
 export type BenchVerdict = "pass" | "warn" | "fail";
 
@@ -43,40 +48,8 @@ export interface ContentQualityReport {
 
 interface PageData {
   readonly path: string;
-  readonly fields: Readonly<Record<string, string | undefined>>;
+  readonly fields: PageFields;
   readonly text: string;
-}
-
-function fieldValue(key: string, value: string): string | undefined {
-  const unquoted = value.replace(/^['"]|['"]$/g, "");
-  if (unquoted !== "") return unquoted;
-  return key === "tags" || key === "sources" ? "[list]" : undefined;
-}
-
-function addField(
-  line: string,
-  fields: Record<string, string | undefined>,
-): void {
-  const match = /^([A-Za-z][\w-]*):\s*(.*)$/.exec(line);
-  if (match === null) return;
-  fields[match[1] ?? ""] = fieldValue(match[1] ?? "", match[2] ?? "");
-}
-
-function frontmatter(
-  text: string,
-): Readonly<Record<string, string | undefined>> {
-  const lines = text.split("\n");
-  const close = lines[0] === "---" ? lines.indexOf("---", 1) : -1;
-  const fields: Record<string, string | undefined> = {};
-  if (close === -1) return fields;
-  for (const line of lines.slice(1, close)) addField(line, fields);
-  return fields;
-}
-
-function body(text: string): string {
-  const lines = text.split("\n");
-  const close = lines[0] === "---" ? lines.indexOf("---", 1) : -1;
-  return close === -1 ? text : lines.slice(close + 1).join("\n");
 }
 
 function ratio(numerator: number, denominator: number): number {
@@ -109,7 +82,7 @@ function linkSymmetry(pages: readonly PageData[]): number {
   const edges = new Set<string>();
 
   for (const [index, page] of pages.entries()) {
-    const targets = extractWikilinks(body(page.text)).map(
+    const targets = extractWikilinks(bodyAfterFrontmatter(page.text)).map(
       (link) => link.target,
     );
 
@@ -133,6 +106,8 @@ const NUMBER = /\b\d+(?:\.\d+)?\b/g;
 const THRESHOLD =
   /(?:[<>]=?|[≥≤])\s*\d+(?:\.\d+)?|\d+(?:\.\d+)?\s*(?:[<>]=?|[≥≤])/g;
 const NAMED_PROCEDURE = /\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b/g;
+const EMPHASIS = /\*\*[^*]+\*\*/g;
+const HEADING = /^#{1,6}\s+/gm;
 
 function countMatches(lines: readonly string[], pattern: RegExp): number {
   return lines.reduce(
@@ -144,25 +119,22 @@ function countMatches(lines: readonly string[], pattern: RegExp): number {
 function textureMetrics(
   pages: readonly PageData[],
 ): Readonly<Record<string, number>> {
-  const bodies = pages.map((page) => body(page.text));
-  const lines = bodies.flatMap((value) => value.split("\n")).filter(Boolean);
+  const lines = pages
+    .flatMap((page) => [...unfencedLines(bodyAfterFrontmatter(page.text))])
+    .map(([, line]) => line)
+    .filter(Boolean);
   const proseLines = lines.filter((line) => !/^#{1,6}\s/.test(line));
   const citedLines = proseLines.filter(
     (line) => extractWikilinks(line).length > 0,
   );
   const listLines = lines.filter((line) => /^\s*[-*+]\s+/.test(line)).length;
-  const emphasis = bodies.reduce(
-    (count, value) => count + (value.match(/\*\*[^*]+\*\*/g)?.length ?? 0),
+  const emphasis = countMatches(lines, EMPHASIS);
+  const links = pages.reduce(
+    (count, page) =>
+      count + extractWikilinks(bodyAfterFrontmatter(page.text)).length,
     0,
   );
-  const links = bodies.reduce(
-    (count, value) => count + extractWikilinks(value).length,
-    0,
-  );
-  const headings = bodies.reduce(
-    (count, value) => count + (value.match(/^#{1,6}\s+/gm)?.length ?? 0),
-    0,
-  );
+  const headings = countMatches(lines, HEADING);
   const anchored =
     countMatches(citedLines, NUMBER) +
     countMatches(citedLines, THRESHOLD) +
@@ -174,8 +146,8 @@ function textureMetrics(
     emphasisPerPage: ratio(emphasis, pages.length),
     linksPerPage: ratio(links, pages.length),
     headingsPerPage: ratio(headings, pages.length),
-    specificsPerPage: ratio(countMatches(bodies, NUMBER), pages.length),
-    thresholdsPerPage: ratio(countMatches(bodies, THRESHOLD), pages.length),
+    specificsPerPage: ratio(countMatches(lines, NUMBER), pages.length),
+    thresholdsPerPage: ratio(countMatches(lines, THRESHOLD), pages.length),
     proceduresPerPage: ratio(procedures, pages.length),
     anchoredSpecificsPerPage: ratio(anchored, pages.length),
     linkSymmetry: linkSymmetry(pages),
@@ -186,7 +158,7 @@ async function readPages(wikiDir: string): Promise<PageData[]> {
   return await Promise.all(
     (await benchPages(wikiDir)).map(async (path) => {
       const text = await readFile(join(wikiDir, path), "utf8");
-      return { path, text, fields: frontmatter(text) };
+      return { path, text, fields: parsePageFields(text) };
     }),
   );
 }
@@ -196,9 +168,15 @@ function pageFindings(
   bands: ContentQualityBands,
 ): BenchFinding[] {
   const findings: BenchFinding[] = [];
-  const missing = bands.requiredFields.filter(
-    (field) => page.fields[field] === undefined,
-  );
+  const missing = bands.requiredFields.filter((field) => {
+    const value = page.fields[field as keyof PageFields];
+
+    return (
+      value === undefined ||
+      value === "" ||
+      (Array.isArray(value) && value.length === 0)
+    );
+  });
   if (missing.length > 0)
     findings.push({
       lane: "blocking",

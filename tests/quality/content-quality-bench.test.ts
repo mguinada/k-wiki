@@ -122,6 +122,26 @@ describe("evaluateContentQuality", () => {
     expect(report.metrics.linkSymmetry).toBe(0);
   });
 
+  it("accepts a frontmatter fence closed with trailing space", async () => {
+    const report = await reportFor({
+      "page.md": valid.replace(
+        "status: needs-review\n---\n",
+        "status: needs-review\n--- \n",
+      ),
+    });
+    expect(report.blocking).toEqual([]);
+  });
+
+  it("excludes fenced code from the texture metrics", async () => {
+    const report = await reportFor({
+      "page.md": valid.replace(
+        "A **linked** page [[source-source]].",
+        "Real prose.\n\n```\n- fenced item\n```\n",
+      ),
+    });
+    expect(report.metrics.listShare).toBe(0);
+  });
+
   it("counts comparison-anchored numbers as thresholds", async () => {
     const report = await reportFor({ "page.md": specific });
     expect(report.metrics.thresholdsPerPage).toBe(1);
