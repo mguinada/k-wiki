@@ -98,12 +98,6 @@ async function runVerb(
 }
 
 describe("agentVerbUsageError", () => {
-  it("requires a question for query", () => {
-    expect(agentVerbUsageError("query", [])).toContain(
-      "a question is required",
-    );
-  });
-
   it("rejects two arguments to read", () => {
     expect(agentVerbUsageError("read", ["a", "b"])).toContain(
       "exactly one <slug>",
@@ -122,6 +116,32 @@ describe("agentVerbUsageError", () => {
 
   it("accepts one slug for read", () => {
     expect(agentVerbUsageError("read", ["rag"])).toBeUndefined();
+  });
+});
+
+describe("runAgentVerbs with --web", () => {
+  it("rejects --web on a verb other than query", async () => {
+    const checkout = await makeCheckout();
+    const { err } = await runVerb(
+      "status",
+      ["--web"],
+      resolution(checkout, undefined),
+      tmpdir(),
+    );
+
+    expect(err).toContain("--web belongs to k-wiki query");
+  });
+
+  it("parses --web for query and reaches the run machinery", async () => {
+    const checkout = await makeCheckout();
+    const { err } = await runVerb(
+      "query",
+      ["a question?", "--web"],
+      resolution(checkout, undefined),
+      tmpdir(),
+    );
+
+    expect(err).toContain("cannot read agent settings");
   });
 });
 

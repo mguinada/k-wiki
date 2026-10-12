@@ -506,6 +506,8 @@ export function buildHelp(): string {
     "                       and fail it (query and propose). Default:",
     "                       1800.",
     "  --fail-on-stale      Make a stale projection fail health (exit 1).",
+    "  --web                Opt query into web enrichment (two agent",
+    "                       passes; slower, may cost more). Default: off.",
     "",
     "Binding file .k-wiki.json (at the bound project's root):",
     '  { "checkout": "~/k-wiki", "wiki": "meta", "settings": "settings-meta.yml" }',

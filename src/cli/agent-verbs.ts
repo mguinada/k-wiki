@@ -10,7 +10,6 @@
 
 import { join } from "node:path";
 import { checkRaw, printHealthReport } from "../health/check-raw.ts";
-import { runQueryCli } from "../query/query-shell.ts";
 import {
   resolveWikiInstance,
   type WikiInstance,
@@ -28,6 +27,7 @@ import {
 import { cliFail, errorMessage } from "./colors.ts";
 import { CHECKOUT_ENV, type CheckoutResolution } from "./k-wiki-binding.ts";
 import { lastChangeLine, lastCommitDate } from "./last-change.ts";
+import { queryUsageError, runQueryVerb, webVerbError } from "./query-verb.ts";
 import { type RunContext, runContext } from "./run-context.ts";
 import { agentRunFlags, parseArgs } from "./shell.ts";
 
@@ -174,21 +174,6 @@ function arityErrorFor(
   return undefined;
 }
 
-/** Usage error for k-wiki query's question, undefined when valid. */
-function queryUsageError(rest: readonly string[]): string | undefined {
-  const question = rest[0] ?? "";
-
-  if (question.trim() === "") {
-    return 'a question is required: k-wiki query "<question>"';
-  }
-
-  if (rest.length > 1) {
-    return `expected exactly one <question> argument, got ${rest.length}`;
-  }
-
-  return undefined;
-}
-
 /** Usage error for one read verb's arguments, undefined when
  *  valid (the verb is already stripped). */
 export function agentVerbUsageError(
@@ -288,33 +273,6 @@ async function runReadOnlyVerb(
   return false;
 }
 
-/** Run the one LLM verb: query — the shared query shell. The
- *  settings and outputs paths follow the resolved instance; the
- *  binding's explicit settings key still wins. */
-async function runQueryVerb(
-  resolution: CheckoutResolution,
-  run: RunContext,
-  instance: WikiInstance,
-  timeoutMs: number | undefined,
-  question: string,
-): Promise<void> {
-  const wiki = instance.name === undefined ? "" : `--wiki ${instance.name} `;
-  const hint = `To file this answer (human step): k-wiki wiki-query ${wiki}--file-last, run inside the checkout`;
-  const gapHint = `To enrich from the web (human step): k-wiki wiki-query ${wiki}--web "<question>", run inside the checkout`;
-
-  await runQueryCli({
-    prefix: "k-wiki",
-    settingsPath: bindingSettings(resolution, instance),
-    rawDir: run.rawDir,
-    promptsDir: join(resolution.checkout, "prompts"),
-    outputsDir: instance.outputsDir,
-    question,
-    timeoutMs,
-    hint,
-    gapHint,
-  });
-}
-
 /** Run one agent-door verb (query, status, list, read, health) with
  *  its argv — the verb already stripped by the dispatcher. */
 export async function runAgentVerbs(
@@ -324,7 +282,7 @@ export async function runAgentVerbs(
 ): Promise<void> {
   const cli = parseArgs(args, {
     value: ["--checkout", "--timeout", "--wiki"],
-    boolean: ["--fail-on-stale"],
+    boolean: ["--fail-on-stale", "--web"],
     alias: new Map([["-w", "--wiki"]]),
   });
 
@@ -342,6 +300,7 @@ export async function runAgentVerbs(
   const usageError =
     wikiArgError(cli.values) ??
     runFlags.error ??
+    webVerbError(verb, cli.flags.has("--web")) ??
     agentVerbUsageError(verb, cli.positional);
 
   if (usageError !== undefined) {
@@ -371,11 +330,13 @@ export async function runAgentVerbs(
     }
 
     await runQueryVerb(
-      input.resolution,
       run,
       instance,
+      bindingSettings(input.resolution, instance),
+      input.resolution.checkout,
       runFlags.timeoutMs,
       cli.positional[0] ?? "",
+      cli.flags.has("--web"),
     );
   } catch (error) {
     fail(errorMessage(error));

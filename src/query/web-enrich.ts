@@ -47,6 +47,35 @@ export const WEB_FAILED_WARNING =
 export const GAP_HINT_LINE =
   "The wiki could not answer this question — rerunning with `--web` may enrich the topic from the web.";
 
+/** The stem every surface's gap-hint wording starts with: the
+ *  filing replacement matches any producer's hint by it (issue
+ *  #452). */
+export const GAP_HINT_STEM = "To enrich from the web:";
+
+/** The one-shot door's gap hint: names k-wiki query --web directly —
+ *  no checkout step, no human step (issue #452). Co-located with
+ *  GAP_HINT_LINE so a filed `--web` page replaces either producer's
+ *  hint (the #453 invariant, every producer). */
+export function queryGapHint(wiki: string | undefined): string {
+  const wikiFlag = wiki === undefined ? "" : `--wiki ${wiki} `;
+
+  return `${GAP_HINT_STEM} k-wiki query ${wikiFlag}--web "<question>"`;
+}
+
+/** Replace every gap-hint line — the wiki-query wording or any
+ *  producer's stem-prefixed hint — with `replacement` (issue #453,
+ *  extended to every producer by issue #452). */
+export function replaceGapHints(answer: string, replacement: string): string {
+  return answer
+    .split("\n")
+    .map((line) =>
+      line === GAP_HINT_LINE || line.trimStart().startsWith(GAP_HINT_STEM)
+        ? replacement
+        : line,
+    )
+    .join("\n");
+}
+
 /** The gap marker the query prompt already mandates ("If the wiki
  *  cannot answer the question, say so"): a gap answer says so. */
 const GAP_MARKER = /cannot answer/i;

@@ -267,9 +267,11 @@ rides the shared-writer lease — fast-forward only, never forced.
 `--no-commit` skips the commit; an uncommitted filing does not exist
 in git, and a rebuild will lose it. Never file a query yourself.
 
-A `wiki-query --web` run is the sole opt-in door to the web, and its
-enrichment is partitioned, audited output — a filed page carries it
-only as clearly-marked sections that are not wiki provenance. The
+A `--web` query run — the two-stage `wiki-query --web` or the
+one-shot `k-wiki query --web` — is the sole opt-in door to the web,
+and its enrichment is partitioned, audited output — a filed page
+carries it only as clearly-marked sections that are not wiki
+provenance. The
 prompt-policy lines, which the query and enrichment prompts carry:
 
 - The core answer stays wiki-only: it is produced web-blind, every
@@ -396,8 +398,9 @@ dead-provenance check, recurring lint, periodic rebuild.
 ## Residual Risk
 
 The wiki is a closed-world system: it verifies consistency against
-what it has already ingested. **Sole exception: `wiki-query --web`
-runs may read the web for an opt-in enrichment section. Enrichment
+what it has already ingested. **Sole exception: `--web` query runs
+(`wiki-query --web`, the one-shot `k-wiki query --web`) may read the
+web for an opt-in enrichment section. Enrichment
 output is structurally partitioned after the core answer, never
 enters the core answer or any wiki page, and every web call is
 recorded in the run artifact. Ingest, lint, and scoped re-ingest

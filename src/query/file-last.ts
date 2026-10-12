@@ -31,7 +31,7 @@ import {
   renderWebArtifactBody,
   type WebArtifactSections,
 } from "./web-artifact.ts";
-import { GAP_HINT_LINE } from "./web-enrich.ts";
+import { replaceGapHints } from "./web-enrich.ts";
 
 /** What stage 1 persisted to outputs/last-query.md. */
 export interface QueryArtifact {
@@ -455,11 +455,11 @@ export const WEB_FILED_HINT = "Web enrichment included below.";
  *  stale gap hint (issue #453) is replaced — the run already
  *  enriched from the web — and everything else stays byte-exact. */
 function filedAnswer(answer: string, web: WebArtifactSections | undefined) {
-  if (web === undefined || !answer.includes(GAP_HINT_LINE)) {
+  if (web === undefined) {
     return answer;
   }
 
-  return answer.split(GAP_HINT_LINE).join(WEB_FILED_HINT);
+  return replaceGapHints(answer, WEB_FILED_HINT);
 }
 
 /** The filed page's body (issue #453): a partitioned `--web`

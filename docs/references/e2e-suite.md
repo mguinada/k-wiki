@@ -199,7 +199,9 @@ e2e run or diagnosing a failing one.
   (agent door via `.k-wiki.json`, human door from the checkout
   cwd), the guardrail revert for a rogue agent, a gap answer
   through the agent door carrying the enrichment hint that names
-  the wiki-query CLI (the door parses no `--web` itself),
+  `k-wiki query --web` (the wiki-query wording asserted absent),
+  and a one-shot `--web` gap artifact filing with the full
+  partition and no stale hint (issue #452),
   binding-key and alias instance resolution, the leading-global reordering
   (`k-wiki -w meta <verb>` ≡ `k-wiki <verb> -w meta` for every
   verb that takes it — the read verbs plus the verbatim-argv

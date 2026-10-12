@@ -1031,9 +1031,9 @@ cannot leak into headless runs. Set `false` only to debug with the
 ambient global setup. Query runs are isolated the same way — both
 phases of a `--web` run included — and honor the same opt-out, but
 they take no whitelist entries: the only extension a query spawn can
-load is the `wiki-query --web` enrichment grant. Under isolation,
-two optional list keys whitelist named entries back in for ingest
-and lint:
+load is the `--web` enrichment grant, shared by both query doors.
+Under isolation, two optional list keys whitelist named entries back
+in for ingest and lint:
 `isolate.skills` (paths, resolved against the settings file's
 directory, `~` allowed) and `isolate.extensions` (pi `-e` sources —
 a path, `npm:<package>`, or `git:<repo>`); the wrapper appends one
@@ -1041,10 +1041,11 @@ a path, `npm:<package>`, or `git:<repo>`); the wrapper appends one
 the named entries load — each one a deliberate trust grant. A missing
 entry warns and is omitted; the run proceeds. One entry never
 whitelists: an `isolate.extensions` source naming `pi-web-access` is
-dropped whatever its spelling — the web grant is `wiki-query --web`'s
-per-run grant (pi's argv extension injection, codex's managed-home
-posture), never an ingest or lint trust grant. Both keys are ignored
-with `isolate: false`.
+dropped whatever its spelling — the web grant is the query doors'
+`--web` per-run grant (`wiki-query --web`, the one-shot
+`k-wiki query --web`; pi's argv extension injection, codex's
+managed-home posture), never an ingest or lint trust grant. Both
+keys are ignored with `isolate: false`.
 
 The per-run digest — the human's review surface while runs are
 unsupervised — is written to `outputs/runs/<timestamp>.md` (gitignored
@@ -1770,6 +1771,11 @@ k-wiki read retrieval-augmented-generation                 # one page verbatim
 k-wiki health                                               # projection coherence/freshness
 k-wiki propose my-candidate note.md                        # hand one candidate note to the human (sandboxed)
 ```
+
+`k-wiki query --web` opts the one-shot ask into the same two-pass
+web enrichment as `wiki-query --web` — the same lane-shaped grant,
+the same partitioned, audited enrichment; without web access it
+answers wiki-only with a warning.
 
 Every verb answers `k-wiki <verb> --help` — or `-h`, in either
 position — with its own scoped help: usage, switches, defaults,
