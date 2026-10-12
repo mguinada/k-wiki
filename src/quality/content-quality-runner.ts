@@ -184,35 +184,51 @@ export async function main(
       value: ["--settings", "--outputs"],
       positionals: { max: 0, error: (arg) => `unexpected argument ${arg}` },
     });
-    if (parsed.error !== undefined) throw new Error(parsed.error);
+
+    if (parsed.error !== undefined) {
+      throw new Error(parsed.error);
+    }
+
     const agentFlags = agentRunFlags(parsed.values);
-    if (agentFlags.error !== undefined) throw new Error(agentFlags.error);
+
+    if (agentFlags.error !== undefined) {
+      throw new Error(agentFlags.error);
+    }
+
     const settingsPath = agentFlags.settings ?? join(repoRoot, "settings.yml");
     const outputDir =
       agentFlags.outputs ?? join(repoRoot, "outputs", "content-quality-bench");
+
     const bands = JSON.parse(
       await readFile(
         join(repoRoot, "quality", "content-quality-bands.json"),
         "utf8",
       ),
     ) as ContentQualityBands;
+
     const questions = JSON.parse(
       await readFile(
         join(repoRoot, "quality", "content-quality-questions.json"),
         "utf8",
       ),
     ) as Question[];
+
     const root = await mkdtemp(join(tmpdir(), "k-wiki-content-quality-"));
     const dataRoot = join(root, "data");
+
     try {
       const vault = await writeFixture(root);
+
       await seedDataRepo({ dataRoot });
+
       const configPath = join(root, "sync.json");
       await writeFile(
         configPath,
         `${JSON.stringify({ dataRoot, vaults: [{ name: "Content Quality Fixture", root: vault, exclude: "wiki:false" }] })}\n`,
       );
+
       const config = await loadSyncConfig(configPath);
+
       await runWikiSync({
         configPath,
         config,
@@ -224,33 +240,40 @@ export async function main(
           onProgress: console.error,
         }),
       });
+
       const correctness = [
         ...(await correctnessFailures(dataRoot)),
         ...(await filingFidelityFailures(dataRoot)),
         ...(await worklistFailures(join(dataRoot, "wiki"))),
       ];
+
       const pendingConventionFailures = await answerabilityFailures(
         dataRoot,
         questions,
       );
+
       const report = await evaluateContentQuality({
         wikiDir: join(dataRoot, "wiki"),
         bands,
         correctnessFailures: correctness,
         pendingConventionFailures,
       });
+
       await mkdir(outputDir, { recursive: true });
       await writeFile(
         join(outputDir, "bench-report.json"),
         `${JSON.stringify(report, null, 2)}\n`,
       );
+
       await writeFile(
         join(outputDir, "bench-report.md"),
         renderBenchReport(report),
       );
+
       console.log(
         `${report.verdict} — ${report.blocking.length} blocking, ${report.advisory.length} advisory`,
       );
+
       process.exitCode =
         report.verdict === "fail" ? 1 : report.verdict === "warn" ? 2 : 0;
     } finally {

@@ -177,30 +177,36 @@ function pageFindings(
       (Array.isArray(value) && value.length === 0)
     );
   });
-  if (missing.length > 0)
+  if (missing.length > 0) {
     findings.push({
       lane: "blocking",
       name: "frontmatter",
       detail: `${page.path}: missing ${missing.join(", ")}`,
     });
+  }
+
   if (
     page.fields.status !== undefined &&
     !new Set(bands.statusAllowlist).has(page.fields.status)
-  )
+  ) {
     findings.push({
       lane: "blocking",
       name: "status",
       detail: `${page.path}: ${page.fields.status}`,
     });
+  }
+
   if (
     page.fields.confidence !== undefined &&
     !new Set(bands.confidenceAllowlist).has(page.fields.confidence)
-  )
+  ) {
     findings.push({
       lane: "blocking",
       name: "confidence",
       detail: `${page.path}: ${page.fields.confidence}`,
     });
+  }
+
   return findings;
 }
 
@@ -222,18 +228,23 @@ function advisoryFindings(
   bands: ContentQualityBands,
 ): BenchFinding[] {
   const findings: BenchFinding[] = [];
-  if (outside(metrics.pageCount ?? 0, bands.pageCount))
+
+  if (outside(metrics.pageCount ?? 0, bands.pageCount)) {
     findings.push({
       lane: "advisory",
       name: "page-count",
       detail: `${metrics.pageCount} outside ${bands.pageCount.join("–")}`,
     });
-  if (outside(metrics.sourceShare ?? 0, bands.sourceShare))
+  }
+
+  if (outside(metrics.sourceShare ?? 0, bands.sourceShare)) {
     findings.push({
       lane: "advisory",
       name: "source-share",
       detail: `${metrics.sourceShare} outside ${bands.sourceShare.join("–")}`,
     });
+  }
+
   return findings;
 }
 
@@ -270,6 +281,7 @@ export async function evaluateContentQuality(input: {
   readonly pendingConventionFailures: readonly string[];
 }): Promise<ContentQualityReport> {
   const pages = await readPages(input.wikiDir);
+
   const blocking = [
     ...input.correctnessFailures.map(
       (detail): BenchFinding => ({
@@ -280,6 +292,7 @@ export async function evaluateContentQuality(input: {
     ),
     ...pages.flatMap((page) => pageFindings(page, input.bands)),
   ];
+
   const pendingConvention = [
     ...input.pendingConventionFailures.map(
       (detail): BenchFinding => ({
@@ -290,17 +303,21 @@ export async function evaluateContentQuality(input: {
     ),
     ...pendingSourceSlugFindings(pages, input.bands),
   ];
+
   const sourcePages = pages.filter(
     (page) => page.fields.type === "source",
   ).length;
+
   const metrics = {
     pageCount: pages.length,
     sourceShare: ratio(sourcePages, pages.length),
     ...textureMetrics(pages),
   };
+
   const advisory = advisoryFindings(metrics, input.bands);
   const verdict: BenchVerdict =
     blocking.length > 0 ? "fail" : advisory.length > 0 ? "warn" : "pass";
+
   return { verdict, blocking, pendingConvention, advisory, metrics };
 }
 
