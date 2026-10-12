@@ -16,7 +16,7 @@ import { errorMessage } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { runContext } from "../cli/run-context.ts";
 import { repoRoot } from "../cli/shared.ts";
-import { parseArgs } from "../cli/shell.ts";
+import { agentRunFlags, parseArgs } from "../cli/shell.ts";
 import { seedDataRepo } from "../data/init-data-repo.ts";
 import { checkRaw } from "../health/check-raw.ts";
 import {
@@ -31,7 +31,7 @@ import { runWikiSync } from "../sync/wiki-sync.ts";
 import { checkWikiFidelity } from "../wiki/fidelity.ts";
 import { listWikiPages } from "../wiki/pages.ts";
 import { checkWikiProvenance } from "../wiki/provenance.ts";
-import { extractWikilinks } from "../wiki/wiki-links.ts";
+import { extractWikilinks, stem } from "../wiki/wiki-links.ts";
 import { computeWikiWorklists } from "../wiki/worklists.ts";
 import {
   type ContentQualityBands,
@@ -151,10 +151,7 @@ export async function answerabilityFailures(
     await Promise.all(
       pages.map(
         async (path) =>
-          [
-            path.replace(/\.md$/, ""),
-            await readFile(join(wiki, path), "utf8"),
-          ] as const,
+          [stem(path), await readFile(join(wiki, path), "utf8")] as const,
       ),
     ),
   );
@@ -188,11 +185,11 @@ export async function main(
       positionals: { max: 0, error: (arg) => `unexpected argument ${arg}` },
     });
     if (parsed.error !== undefined) throw new Error(parsed.error);
-    const settingsPath =
-      parsed.values.get("--settings") ?? join(repoRoot, "settings.yml");
+    const agentFlags = agentRunFlags(parsed.values);
+    if (agentFlags.error !== undefined) throw new Error(agentFlags.error);
+    const settingsPath = agentFlags.settings ?? join(repoRoot, "settings.yml");
     const outputDir =
-      parsed.values.get("--outputs") ??
-      join(repoRoot, "outputs", "content-quality-bench");
+      agentFlags.outputs ?? join(repoRoot, "outputs", "content-quality-bench");
     const bands = JSON.parse(
       await readFile(
         join(repoRoot, "quality", "content-quality-bands.json"),

@@ -148,6 +148,25 @@ describe("answerabilityFailures", () => {
       "query answerability: What does Procedure Beta use?",
     ]);
   });
+
+  it("resolves citations into typed directories by page name", async () => {
+    const root = await tempRoot();
+    const wiki = join(root, "wiki", "concepts");
+    await mkdir(wiki, { recursive: true });
+    await writeFile(
+      join(wiki, "calibration-drift.md"),
+      "---\ntitle: Calibration drift\n---\n\nCalibration drift appears only here.\n",
+      "utf8",
+    );
+    const failures = await answerabilityFailures(root, [
+      {
+        question: "Where does calibration drift appear?",
+        terms: ["calibration drift"],
+        answer: "[[calibration-drift]]",
+      },
+    ]);
+    expect(failures).toEqual([]);
+  });
 });
 
 describe("main", () => {
@@ -158,6 +177,22 @@ describe("main", () => {
     });
     await main(["--help"]);
     expect(logged.join("\n")).toContain("Usage: content-quality-bench");
+  });
+
+  it("rejects a value flag left without its value", async () => {
+    const errors: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...line: unknown[]) => {
+      errors.push(line.map(String).join(" "));
+    });
+    const previous = process.exitCode;
+
+    try {
+      await main(["--settings"]);
+    } finally {
+      process.exitCode = previous;
+    }
+
+    expect(errors.join("\n")).toContain("--settings needs a path value");
   });
 });
 

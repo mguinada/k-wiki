@@ -14,6 +14,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { listFiles } from "../cli/shared.ts";
+import { extractWikilinks, stem } from "../wiki/wiki-links.ts";
 
 export type BenchVerdict = "pass" | "warn" | "fail";
 
@@ -101,30 +102,18 @@ async function benchPages(wikiDir: string): Promise<string[]> {
     .sort();
 }
 
-function linkCount(text: string): number {
-  return text.match(/\[\[[^\]]+\]\]/g)?.length ?? 0;
-}
-
-function pageStem(path: string): string {
-  return path.replace(/\.md$/, "").split("/").pop() ?? path;
-}
-
-function linkTargets(text: string): string[] {
-  return [...text.matchAll(/\[\[([^\]]+)\]\]/g)]
-    .map((match) => (match[1] ?? "").split("|")[0]?.split("#")[0]?.trim())
-    .filter(
-      (target): target is string => target !== "" && target !== undefined,
-    );
-}
-
 function linkSymmetry(pages: readonly PageData[]): number {
   const indexByStem = new Map(
-    pages.map((page, index) => [pageStem(page.path), index] as const),
+    pages.map((page, index) => [stem(page.path), index] as const),
   );
   const edges = new Set<string>();
 
   for (const [index, page] of pages.entries()) {
-    for (const target of linkTargets(body(page.text))) {
+    const targets = extractWikilinks(body(page.text)).map(
+      (link) => link.target,
+    );
+
+    for (const target of targets) {
       const to = indexByStem.get(target);
       if (to !== undefined && to !== index) edges.add(`${index}:${to}`);
     }
@@ -144,7 +133,6 @@ const NUMBER = /\b\d+(?:\.\d+)?\b/g;
 const THRESHOLD =
   /(?:[<>]=?|[≥≤])\s*\d+(?:\.\d+)?|\d+(?:\.\d+)?\s*(?:[<>]=?|[≥≤])/g;
 const NAMED_PROCEDURE = /\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b/g;
-const WIKILINK_CITATION = /\[\[[^\]]+\]\]/;
 
 function countMatches(lines: readonly string[], pattern: RegExp): number {
   return lines.reduce(
@@ -159,13 +147,18 @@ function textureMetrics(
   const bodies = pages.map((page) => body(page.text));
   const lines = bodies.flatMap((value) => value.split("\n")).filter(Boolean);
   const proseLines = lines.filter((line) => !/^#{1,6}\s/.test(line));
-  const citedLines = proseLines.filter((line) => WIKILINK_CITATION.test(line));
+  const citedLines = proseLines.filter(
+    (line) => extractWikilinks(line).length > 0,
+  );
   const listLines = lines.filter((line) => /^\s*[-*+]\s+/.test(line)).length;
   const emphasis = bodies.reduce(
     (count, value) => count + (value.match(/\*\*[^*]+\*\*/g)?.length ?? 0),
     0,
   );
-  const links = bodies.reduce((count, value) => count + linkCount(value), 0);
+  const links = bodies.reduce(
+    (count, value) => count + extractWikilinks(value).length,
+    0,
+  );
   const headings = bodies.reduce(
     (count, value) => count + (value.match(/^#{1,6}\s+/gm)?.length ?? 0),
     0,

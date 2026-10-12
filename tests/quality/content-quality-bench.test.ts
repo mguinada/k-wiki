@@ -79,7 +79,7 @@ describe("evaluateContentQuality", () => {
     expect(report.verdict).toBe("fail");
   });
 
-  it("warns when a texture metric is outside its observed band", async () => {
+  it("warns when the page count is outside its band", async () => {
     const report = await reportFor({
       "page.md": valid.replace(
         "A **linked** page [[source-source]].",
@@ -109,6 +109,17 @@ describe("evaluateContentQuality", () => {
       ),
     });
     expect(report.metrics.linkSymmetry).toBe(1);
+  });
+
+  it("ignores wikilinks inside fenced code when measuring symmetry", async () => {
+    const report = await reportFor({
+      "page.md": valid,
+      "source-source.md": valid.replace(
+        "A **linked** page [[source-source]].",
+        "A cited page.\n\n```md\nA mere example: [[page]].\n```\n",
+      ),
+    });
+    expect(report.metrics.linkSymmetry).toBe(0);
   });
 
   it("counts comparison-anchored numbers as thresholds", async () => {
