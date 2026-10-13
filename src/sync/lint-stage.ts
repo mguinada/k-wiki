@@ -56,8 +56,8 @@ import {
 import {
   cycleBackReferenceLine,
   planLintAppend,
-  STANDALONE_MARKER,
 } from "./cycle-reports.ts";
+import { STANDALONE_MARKER } from "./report-references.ts";
 import {
   deriveLintWindow,
   lintWindowPath,
@@ -432,6 +432,25 @@ async function restoreReportFile(
   await writeFile(file, preRun);
 }
 
+/** A completed run that did not cleanly append its section — the
+ *  report missing (the agent deleted it) or still exactly the
+ *  preamble (the agent wrote nothing) — leaves the day file exactly
+ *  as found: prior committed sections cannot vanish and no empty
+ *  section is committed. */
+async function restoreUnwrittenReport(
+  dataRoot: string,
+  reportPath: string,
+  preReport: string | undefined,
+  reportContent: string | undefined,
+  planPrefix: string,
+): Promise<void> {
+  if (reportContent !== undefined && reportContent !== planPrefix) {
+    return;
+  }
+
+  await restoreReportFile(dataRoot, reportPath, preReport);
+}
+
 /** The stage's result once the audit completed: the planned section
  *  title, and "written" only when the file exists and grew past the
  *  preamble. */
@@ -549,9 +568,13 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
 
   const reportContent = await readTextIfExists(join(dataRoot, reportPath));
 
-  if (reportContent === undefined || reportContent === contract.plan.prefix) {
-    await restoreReportFile(dataRoot, reportPath, preReport);
-  }
+  await restoreUnwrittenReport(
+    dataRoot,
+    reportPath,
+    preReport,
+    reportContent,
+    contract.plan.prefix,
+  );
 
   // The snapshot advances only after a completed audit: a failed or
   // timed-out run leaves it untouched, so the next run retries the

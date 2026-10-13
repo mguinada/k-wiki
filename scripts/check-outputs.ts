@@ -6,15 +6,17 @@ import { listFiles } from "../src/cli/shared.ts";
 import { type CliSpec, parseArgs } from "../src/cli/shell.ts";
 import {
   cycleDayTitle,
-  cycleLintReference,
   type DayFamily,
   type DaySection,
   lintDayTitle,
-  lintRunReference,
   type ParsedDayFile,
   parseDayFile,
-  scannedLines,
 } from "../src/sync/cycle-reports.ts";
+import { scannedLines } from "../src/sync/fence-state.ts";
+import {
+  cycleLintReference,
+  lintRunReference,
+} from "../src/sync/report-references.ts";
 import { outputsRelativeTarget } from "../src/wiki/outputs-links.ts";
 
 /**

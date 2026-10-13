@@ -129,10 +129,9 @@ import {
 import {
   cycleBackReferenceLine,
   dayDate,
-  fenceSeal,
   planCycleAppend,
-  scannedLines,
 } from "./cycle-reports.ts";
+import { fenceSeal, scannedLines } from "./fence-state.ts";
 import {
   affordabilityExclusion,
   LINT_HEARTBEAT_PREFIX,

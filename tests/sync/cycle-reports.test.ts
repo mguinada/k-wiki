@@ -2,17 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   cycleBackReferenceLine,
   cycleDayTitle,
-  cycleLintReference,
   cycleSectionTitle,
   lintDayTitle,
-  lintRunReference,
   lintSectionTitle,
   localIsoTimestamp,
   parseDayFile,
   planCycleAppend,
   planLintAppend,
-  STANDALONE_MARKER,
-  scannedLines,
 } from "../../src/sync/cycle-reports.ts";
 
 /** The `±HH:MM` suffix of the machine's offset at the instant — the
@@ -429,128 +425,5 @@ describe("parseDayFile", () => {
     expect(parseDayFile(`${TITLE}\n\n- unsectioned\n`, "cycle", TITLE)).toEqual(
       { kind: "legacy" },
     );
-  });
-});
-
-describe("lintRunReference", () => {
-  it("recognizes the standalone marker", () => {
-    expect(lintRunReference(`\n${STANDALONE_MARKER}\n\nbody\n`)).toEqual({
-      kind: "standalone",
-    });
-  });
-
-  it("extracts the cycle back-reference's path and section title", () => {
-    expect(
-      lintRunReference(
-        `\n${cycleBackReferenceLine("outputs/cycle-2026-10-12.md", "Cycle 2 — 2026-10-12T18:00:59+01:00")}\n`,
-      ),
-    ).toEqual({
-      kind: "cycle",
-      path: "outputs/cycle-2026-10-12.md",
-      sectionTitle: "Cycle 2 — 2026-10-12T18:00:59+01:00",
-    });
-  });
-
-  it("reports neither marker nor reference", () => {
-    expect(lintRunReference("\nno contract line here\n")).toEqual({
-      kind: "none",
-    });
-  });
-
-  it("ignores a back-reference line quoted inside a fence", () => {
-    const quoted = cycleBackReferenceLine(
-      "outputs/cycle-2026-10-12.md",
-      "Cycle 2 — 2026-10-12T18:00:59+01:00",
-    );
-
-    expect(lintRunReference(`\`\`\`\n${quoted}\n\`\`\`\n`)).toEqual({
-      kind: "none",
-    });
-  });
-
-  it("ignores the standalone marker quoted inside a fence", () => {
-    expect(lintRunReference(`\`\`\`\n${STANDALONE_MARKER}\n\`\`\`\n`)).toEqual({
-      kind: "none",
-    });
-  });
-});
-
-describe("cycleLintReference", () => {
-  it("extracts the lint bullet's report path and section title", () => {
-    expect(
-      cycleLintReference(
-        '- **Lint:** window audit (34 pages: changed this cycle plus reverse neighbors) — report `outputs/lint-2026-10-12.md` — section "Lint run 1 — 2026-10-12T14:54:53+01:00 (window audit, 34 pages)" — summary below',
-      ),
-    ).toEqual({
-      path: "outputs/lint-2026-10-12.md",
-      sectionTitle:
-        "Lint run 1 — 2026-10-12T14:54:53+01:00 (window audit, 34 pages)",
-    });
-  });
-
-  it("returns undefined without a lint-run reference", () => {
-    expect(
-      cycleLintReference("- **Lint:** window empty (this cycle)"),
-    ).toBeUndefined();
-  });
-
-  it("ignores a lint bullet quoted inside a fence", () => {
-    const quoted =
-      '- **Lint:** full audit — report `outputs/lint-2026-10-12.md` — section "Lint run 1 — 2026-10-12T14:54:52+01:00 (full audit)" — summary below';
-
-    expect(cycleLintReference(`\`\`\`\n${quoted}\n\`\`\`\n`)).toBeUndefined();
-  });
-});
-
-describe("scannedLines", () => {
-  it("carries heading depth 0 for lines inside a backtick fence", () => {
-    expect(
-      scannedLines("```bash\n# rebuild the index\n```\n").map(
-        (scanned) => scanned.hashes,
-      ),
-    ).toEqual([0, 0, 0, 0]);
-  });
-
-  it("carries heading depth 0 for lines inside a tilde fence", () => {
-    expect(
-      scannedLines("~~~\n## example\n~~~\n").map((scanned) => scanned.hashes),
-    ).toEqual([0, 0, 0, 0]);
-  });
-
-  it("carries a non-fenced heading's depth", () => {
-    const scanned = scannedLines("## Cycle 1 — x\n\nbody\n");
-
-    expect(scanned.map(({ hashes }) => hashes)).toEqual([2, 0, 0, 0]);
-  });
-
-  it("stays fenced across a nested different-character marker line", () => {
-    expect(
-      scannedLines("~~~\n```bash\n## Heading\n```\n~~~\n# After\n").map(
-        (scanned) => scanned.hashes,
-      ),
-    ).toEqual([0, 0, 0, 0, 0, 1, 0]);
-  });
-
-  it("stays fenced across a shorter marker and closes on a matching one", () => {
-    expect(
-      scannedLines("````\ntext\n```\ntext\n````\n## Heading\n").map(
-        (scanned) => scanned.hashes,
-      ),
-    ).toEqual([0, 0, 0, 0, 0, 2, 0]);
-  });
-
-  it("carries an indented heading's depth and indent", () => {
-    const scanned = scannedLines(" ## Findings\n");
-
-    expect(scanned.map(({ hashes, indent }) => ({ hashes, indent }))).toEqual([
-      { hashes: 2, indent: 1 },
-      { hashes: 0, indent: 0 },
-    ]);
-  });
-
-  it("treats a backtick marker with a backtick info string as prose", () => {
-    expect(
-      scannedLines("``` `\n## Findings\n").map((scanned) => scanned.hashes),
-    ).toEqual([0, 2, 0]);
   });
 });
