@@ -6,7 +6,8 @@
  */
 
 import { execFile } from "node:child_process";
-import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,6 +37,7 @@ export async function withDefaultOutputsLock<T>(
   fn: () => Promise<T>,
 ): Promise<T> {
   const lockDir = join(repoRoot, "outputs", ".default-outputs.lock");
+  const ownerToken = join(lockDir, "owner");
   let deadline = Date.now() + 120_000;
 
   await mkdir(dirname(lockDir), { recursive: true });
@@ -57,10 +59,21 @@ export async function withDefaultOutputsLock<T>(
     await new Promise((resolveSleep) => setTimeout(resolveSleep, 100));
   }
 
+  const id = randomUUID();
+
+  await writeFile(ownerToken, id);
+
   try {
     return await fn();
   } finally {
-    await rm(lockDir, { recursive: true, force: true });
+    const owned = await readFile(ownerToken, "utf8").then(
+      (read) => read === id,
+      () => false,
+    );
+
+    if (owned) {
+      await rm(lockDir, { recursive: true, force: true });
+    }
   }
 }
 

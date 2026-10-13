@@ -64,6 +64,9 @@ outputs/last-ingested-manifest.json
 outputs/last-query.md
 outputs/content-quality-bench/
 
+# Cross-process query-test lock (transient; see tests/query/helpers.ts)
+outputs/.default-outputs.lock/
+
 # Second-brain instance state (guide 25, Scenario D): per-machine
 # outputs, config, and snapshot for additional wiki instances are
 # untracked by design (operator rule 8), and may hold personal
