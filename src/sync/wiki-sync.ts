@@ -130,6 +130,7 @@ import {
   cycleBackReferenceLine,
   dayDate,
   planCycleAppend,
+  scannedLines,
 } from "./cycle-reports.ts";
 import {
   affordabilityExclusion,
@@ -1106,7 +1107,12 @@ export function formatFinalDigest(result: WikiSyncResult): string {
   }
 
   if (lint !== undefined && lint.skipped === undefined) {
-    lines.push("", "#### Lint summary", "", lint.summary.trimEnd());
+    lines.push(
+      "",
+      "#### Lint summary",
+      "",
+      demoteHeadings(lint.summary.trimEnd(), 2),
+    );
   }
 
   if (ingest.status === "ran") {
@@ -1124,13 +1130,10 @@ export function formatFinalDigest(result: WikiSyncResult): string {
 /** Demote every ATX heading by `levels` levels (H1→H3, H2→H4, …,
  *  clamped at H6): the embed-time transform keeping a composed
  *  digest's headings strictly inside its Cycle section (issue #459,
- *  Design 3). */
+ *  Design 3). Code-fenced lines pass through untouched. */
 export function demoteHeadings(text: string, levels: number): string {
-  return text
-    .split("\n")
-    .map((line) => {
-      const hashes = /^#{1,6} /.exec(line)?.[0].trim().length ?? 0;
-
+  return scannedLines(text)
+    .map(({ line, hashes }) => {
       if (hashes === 0) {
         return line;
       }

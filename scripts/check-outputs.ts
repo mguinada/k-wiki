@@ -13,6 +13,7 @@ import {
   lintRunReference,
   type ParsedDayFile,
   parseDayFile,
+  scannedLines,
 } from "../src/sync/cycle-reports.ts";
 import { outputsRelativeTarget } from "../src/wiki/outputs-links.ts";
 
@@ -129,8 +130,16 @@ export async function checkOutputs(
       continue;
     }
 
+    const day = fileDate(name);
+
+    if (day === undefined) {
+      problems.push(`${name}: unparseable date in name`);
+
+      continue;
+    }
+
     const text = await readFile(join(outputsDir, name), "utf8");
-    const expectedTitle = dayTitleOf(family, fileDate(name));
+    const expectedTitle = dayTitleOf(family, day);
     const parsed = parseDayFile(text, family.kind, expectedTitle);
 
     if (parsed.kind === "append") {
@@ -204,11 +213,24 @@ function hasGrammarSection(text: string, family: Family): boolean {
   );
 }
 
-/** The file-family UTC day from the name. */
-function fileDate(name: string): Date {
-  const day = /\d{4}-\d{2}-\d{2}/.exec(name)?.[0] ?? "1970-01-01";
+/** The file-family UTC day from the name, or undefined when the
+ *  name's calendar date does not exist: a rolled-over or rejected
+ *  parse both fail the round-trip against the name's digits. */
+function fileDate(name: string): Date | undefined {
+  const match = /(\d{4})-(\d{2})-(\d{2})/.exec(name);
 
-  return new Date(`${day}T00:00:00.000Z`);
+  if (match === null) {
+    return undefined;
+  }
+
+  const [y, m, d] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const day = new Date(`${match[0]}T00:00:00.000Z`);
+  const valid =
+    day.getUTCFullYear() === y &&
+    day.getUTCMonth() === m - 1 &&
+    day.getUTCDate() === d;
+
+  return valid ? day : undefined;
 }
 
 /** The shape-mode problems of one append-shape day file. */
@@ -273,16 +295,14 @@ function lastMeaningfulLine(body: string): string | undefined {
 }
 
 /** A non-pre-append section's containment problems: every heading
- *  strictly deeper than the section's H2. */
+ *  strictly deeper than the section's H2, code-fenced lines exempt. */
 function containmentProblems(
   name: string,
   section: DaySection,
 ): readonly string[] {
   const problems: string[] = [];
 
-  for (const line of section.body.split("\n")) {
-    const hashes = /^#{1,6} /.exec(line)?.[0].trim().length ?? 0;
-
+  for (const { line, hashes } of scannedLines(section.body)) {
     if (hashes > 0 && hashes < 3) {
       problems.push(`${name}: heading escapes its section — "${line.trim()}"`);
     }

@@ -181,6 +181,36 @@ describe("checkOutputs shape mode", () => {
     ]);
   });
 
+  it("exempts code-fenced lines from the containment scan", async () => {
+    const dir = await makeOutputs({
+      "cycle-2026-10-12.md": cycleDayFile("- only sync facts"),
+      "lint-2026-10-12.md": [
+        LINT_TITLE,
+        "",
+        `## Lint run 1 — ${LINT_1}`,
+        "",
+        backReference(`Cycle 1 — ${CYCLE_1}`),
+        "",
+        "```",
+        "## example",
+        "```",
+        "",
+      ].join("\n"),
+    });
+
+    expect(await checkOutputs(dir, "all")).toEqual([]);
+  });
+
+  it("reports a family-named file whose date cannot exist", async () => {
+    const dir = await makeOutputs({
+      "cycle-2026-02-30.md": "# wiki-sync cycle digest — 2026-02-30\n",
+    });
+
+    expect(await checkOutputs(dir, "all")).toEqual([
+      "cycle-2026-02-30.md: unparseable date in name",
+    ]);
+  });
+
   it("rejects a lint run heading carrying supersession prose", async () => {
     const dir = await makeOutputs({
       "lint-2026-10-12.md": [

@@ -174,7 +174,7 @@ the commit hash, the publish summary (configured mirror), and the full
 ingest digest — plus git log -1 in the data repo tell the whole story
 of the run. On a cycle that did real work the same digest is committed
 into the data repo as outputs/cycle-<YYYY-MM-DD>.md, in its own commit
-naming the path (a same-day rerun overwrites); no-op cycles write and
+naming the path (a same-day rerun appends its section); no-op cycles write and
 commit nothing. The ingest prompt names that path so the agent's log
 entry can cite it; a cycle failing after ingest still writes the file,
 recording the failure. Live progress goes to stderr. Unattended

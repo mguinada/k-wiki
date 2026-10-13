@@ -1470,6 +1470,18 @@ describe("demoteHeadings", () => {
   it("clamps the deepest headings at H6", () => {
     expect(demoteHeadings("##### deep\n", 2)).toBe("###### deep\n");
   });
+
+  it("leaves lines inside a backtick fence untouched", () => {
+    const fenced = "```bash\n# rebuild the index\n```\n";
+
+    expect(demoteHeadings(fenced, 2)).toBe(fenced);
+  });
+
+  it("leaves lines inside a tilde fence untouched", () => {
+    const fenced = "~~~\n## example\n~~~\n";
+
+    expect(demoteHeadings(fenced, 2)).toBe(fenced);
+  });
 });
 
 describe("formatFinalDigest", () => {
@@ -3813,6 +3825,14 @@ describe("formatFinalDigest sections", () => {
     expect(digest).not.toContain("padded summary  ");
   });
 
+  it("demotes a heading-bearing lint summary like the ingest digest", () => {
+    const digest = formatFinalDigest(
+      ranResult({ lintSummary: "# Audit verdict\n" }),
+    );
+
+    expect(digest).toContain("\n### Audit verdict\n");
+  });
+
   it("separates the lint summary from the ingest digest", () => {
     const digest = formatFinalDigest(
       ranResult({ lintSummary: "  padded summary  \n" }),
@@ -4039,7 +4059,7 @@ describe("runWikiSync cycle digest (issue #385)", () => {
     expect(digest).toContain(contentHash.slice(0, 8));
   });
 
-  it("overwrites the same-day cycle digest when a rerun does new work", async () => {
+  it("appends the rerun's section after the same-day digest", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 
     await runWikiSync(optionsFor(h));
@@ -4051,7 +4071,7 @@ describe("runWikiSync cycle digest (issue #385)", () => {
 
     const secondDigest = await readFile(join(h.dataRoot, DIGEST_PATH), "utf8");
 
-    expect(secondDigest).not.toBe(firstDigest);
+    expect(secondDigest).toContain(firstDigest.trimEnd());
   });
 
   it("leaves HEAD untouched when a no-op cycle follows real work", async () => {

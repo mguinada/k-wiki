@@ -16,7 +16,7 @@
  * composed prompt — the agent judges, never scans.
  */
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { formatDuration } from "../cli/progress.ts";
 import type { RunContext } from "../cli/run-context.ts";
@@ -413,8 +413,28 @@ async function writeReportPreamble(
   await writeFile(join(dataRoot, reportPath), prefix);
 }
 
+/** Restore the report day file to its pre-run state: absent means
+ *  deleted, present means rewritten to its captured bytes — no
+ *  stage-written section outlives a failed agent. */
+async function restoreReportFile(
+  dataRoot: string,
+  reportPath: string,
+  preRun: string | undefined,
+): Promise<void> {
+  const file = join(dataRoot, reportPath);
+
+  if (preRun === undefined) {
+    await rm(file, { force: true });
+
+    return;
+  }
+
+  await writeFile(file, preRun);
+}
+
 /** The stage's result once the audit completed: the planned section
- *  title, and "written" only when the file grew past the preamble. */
+ *  title, and "written" only when the file exists and grew past the
+ *  preamble. */
 async function lintStageResult(
   resolved: Awaited<ReturnType<typeof resolveWindow>>,
   contract: LintSectionContract,
@@ -424,14 +444,15 @@ async function lintStageResult(
   entries: readonly StatusEntry[],
   windowPages: readonly string[] | undefined,
 ): Promise<LintResult> {
-  const reportContent = await readFile(join(dataRoot, reportPath), "utf8");
+  const reportContent = await readTextIfExists(join(dataRoot, reportPath));
 
   return {
     mode: resolved.mode,
     skipped: undefined,
     reportPath,
     sectionTitle: contract.plan.sectionTitle,
-    reportWritten: reportContent !== contract.plan.prefix,
+    reportWritten:
+      reportContent !== undefined && reportContent !== contract.plan.prefix,
     summary: stdout,
     entries,
     windowPages,
@@ -450,7 +471,8 @@ async function lintStageResult(
  *  on first append — and writes the day title and section heading to
  *  the file before the agent runs, so the writer owns the heading
  *  contract and the agent owns only its section body. A guardrail
- *  revert removes the preamble with the rest of the run's edits. */
+ *  revert removes the preamble with the rest of the run's edits; a
+ *  failed agent's error restores the file's pre-run bytes first. */
 export async function runLintStage(options: LintOptions): Promise<LintResult> {
   const { run } = options;
   const { env, now, onProgress, dataRoot } = run;
@@ -487,6 +509,7 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
   const runner = runnerFor(settings);
   const args = runner.args(settings, promptText, { root: dataRoot });
   const pre = options.pre ?? (await capturePreRunState(dataRoot, env));
+  const preReport = await readTextIfExists(join(dataRoot, reportPath));
 
   await writeReportPreamble(dataRoot, reportPath, contract.plan.prefix);
 
@@ -520,6 +543,8 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
   onProgress("wiki-sync: lint — guardrails passed");
 
   if (agentError !== undefined) {
+    await restoreReportFile(dataRoot, reportPath, preReport);
+
     throw agentError;
   }
 

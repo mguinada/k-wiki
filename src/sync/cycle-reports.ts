@@ -331,10 +331,39 @@ export function cycleLintReference(
   return { path, sectionTitle };
 }
 
-/** Whether a cycle section is a failure section: its first bullet is
- *  the failed result line (result plus cause). A lint run whose
- *  citing cycle's section is a failure section resolves against it
- *  normally; failure sections carry no lint reference to verify. */
-export function isFailureSection(body: string): boolean {
-  return /^- \*\*Result:\*\* failed — \S/m.test(body);
+/** One scanned body line: the text verbatim plus its ATX heading
+ *  depth (0 for a non-heading). */
+export interface ScannedLine {
+  readonly line: string;
+  readonly hashes: number;
+}
+
+/** The lines a code fence opens and closes with: an indent of up to
+ *  three spaces, then three or more backticks or tildes. */
+const FENCE_MARKER = /^ {0,3}(```|~~~)/;
+
+/** Scan a text's lines with code-fence state tracked: a fence marker
+ *  line toggles the fence, and lines inside a fence — the markers
+ *  included — carry heading depth 0. The one line scan the digest
+ *  embed's demotion transform and the checker's containment scan
+ *  both consume, so fenced report content is never read as section
+ *  structure. */
+export function scannedLines(text: string): readonly ScannedLine[] {
+  let fenced = false;
+
+  return text.split("\n").map((line) => {
+    if (FENCE_MARKER.test(line)) {
+      fenced = !fenced;
+
+      return { line, hashes: 0 };
+    }
+
+    if (fenced) {
+      return { line, hashes: 0 };
+    }
+
+    const hashes = /^#{1,6} /.exec(line)?.[0].trim().length ?? 0;
+
+    return { line, hashes };
+  });
 }

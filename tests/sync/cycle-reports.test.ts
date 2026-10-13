@@ -4,7 +4,6 @@ import {
   cycleDayTitle,
   cycleLintReference,
   cycleSectionTitle,
-  isFailureSection,
   lintDayTitle,
   lintRunReference,
   lintSectionTitle,
@@ -13,6 +12,7 @@ import {
   planCycleAppend,
   planLintAppend,
   STANDALONE_MARKER,
+  scannedLines,
 } from "../../src/sync/cycle-reports.ts";
 
 /** The `±HH:MM` suffix of the machine's offset at the instant — the
@@ -386,16 +386,24 @@ describe("cycleLintReference", () => {
   });
 });
 
-describe("isFailureSection", () => {
-  it("recognizes the failed result line", () => {
+describe("scannedLines", () => {
+  it("carries heading depth 0 for lines inside a backtick fence", () => {
     expect(
-      isFailureSection("\n- **Result:** failed — verification failed\n"),
-    ).toBe(true);
+      scannedLines("```bash\n# rebuild the index\n```\n").map(
+        (scanned) => scanned.hashes,
+      ),
+    ).toEqual([0, 0, 0, 0]);
   });
 
-  it("rejects a success-shaped section", () => {
+  it("carries heading depth 0 for lines inside a tilde fence", () => {
     expect(
-      isFailureSection("\n- **Sync:** 1 source copied (this cycle)\n"),
-    ).toBe(false);
+      scannedLines("~~~\n## example\n~~~\n").map((scanned) => scanned.hashes),
+    ).toEqual([0, 0, 0, 0]);
+  });
+
+  it("carries a non-fenced heading's depth", () => {
+    const scanned = scannedLines("## Cycle 1 — x\n\nbody\n");
+
+    expect(scanned.map(({ hashes }) => hashes)).toEqual([2, 0, 0, 0]);
   });
 });
