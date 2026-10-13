@@ -16,10 +16,11 @@
  * composed prompt — the agent judges, never scans.
  */
 
-import { join } from "node:path";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { formatDuration } from "../cli/progress.ts";
 import type { RunContext } from "../cli/run-context.ts";
-import { pathExists } from "../cli/shared.ts";
+import { readTextIfExists } from "../cli/shared.ts";
 import type { StatusEntry } from "../data/git.ts";
 import {
   type AgentRunner,
@@ -53,12 +54,16 @@ import {
   renderWorklists,
 } from "../wiki/worklists.ts";
 import {
+  cycleBackReferenceLine,
+  planLintAppend,
+  STANDALONE_MARKER,
+} from "./cycle-reports.ts";
+import {
   deriveLintWindow,
   lintWindowPath,
   readLintWindowSnapshot,
   writeLintWindowSnapshot,
 } from "./lint-window.ts";
-import { toAbsolute } from "./projection.ts";
 import type { WikiSyncOptions } from "./wiki-sync.ts";
 
 /** Liveness line while the lint agent runs (one animated line on a TTY). */
@@ -80,6 +85,10 @@ export interface LintResult {
   readonly skipped: "empty-window" | undefined;
   /** The data-repo-relative path the prompt told the agent to write. */
   readonly reportPath: string;
+  /** The exact section heading this run's report carries — the
+   *  writer-stated `Lint run N — <timestamp> (<window>)` title the
+   *  cycle digest cites (issue #459); undefined on a skip. */
+  readonly sectionTitle: string | undefined;
   /** False when the agent finished without writing the report. */
   readonly reportWritten: boolean;
   /** The agent's final report (stdout). */
@@ -115,6 +124,15 @@ export interface LintOptions {
    *  loads once and threads them (R-1, one settings.yml parse per
    *  run); loaded from `settingsPath` otherwise. */
   readonly settings?: AgentSettings | undefined;
+  /** The citing cycle's context (issue #459): the cycle report path
+   *  and the exact cycle section title the digest will carry, so the
+   *  run's back-reference can name the section before the digest
+   *  exists. Absent for a standalone run (the wiki-lint door, the
+   *  weekly sweep) — the section carries the explicit standalone
+   *  marker instead. */
+  readonly cycle?:
+    | { readonly path: string; readonly sectionTitle: string }
+    | undefined;
   /** The run context: raw dir, data root, wiki dir, environment,
    *  clock, progress sink — built once at the CLI boundary (issue
    *  #257). The agent runs in the context's data root. */
@@ -225,14 +243,17 @@ async function resolveWindow(
 }
 
 /** Compose the agent message: the mode's prompt with the report path
- *  substituted, the windowed page list, and the deterministic
- *  worklists (window-filtered for a windowed audit). */
+ *  substituted, the windowed page list, the deterministic worklists
+ *  (window-filtered for a windowed audit), and the append contract —
+ *  the exact back-reference or standalone marker line the report's
+ *  section body must open with (issue #459). */
 async function composeLintPrompt(options: {
   readonly promptsDir: string;
   readonly mode: "window" | "full";
   readonly reportPath: string;
   readonly windowPages: readonly string[] | undefined;
   readonly wikiDir: string;
+  readonly referenceLine: string;
 }): Promise<string> {
   const promptFile = options.mode === "window" ? "lint-window.md" : "lint.md";
   const placeholder =
@@ -247,7 +268,21 @@ async function composeLintPrompt(options: {
     options.windowPages === undefined
       ? worklists
       : filterWorklistsToWindow(worklists, options.windowPages);
-  const lines = [promptText, "", renderWorklists(scoped)];
+  const lines = [
+    promptText,
+    "",
+    "Report format (append contract):",
+    "",
+    "The report file accumulates one bounded section per run, and this",
+    "run's section heading is already written at the end of the file.",
+    "Write your report below that heading; change nothing above it.",
+    `Start the section body with this exact line: ${options.referenceLine}`,
+    "Every heading in your report stays at depth 3 (###) or deeper —",
+    "the section heading is the level-2 heading and the day title the",
+    "level-1 heading.",
+    "",
+    renderWorklists(scoped),
+  ];
 
   if (options.windowPages !== undefined) {
     lines.push(
@@ -288,6 +323,7 @@ async function skipEmptyWindow(
     mode: "window",
     skipped: "empty-window",
     reportPath,
+    sectionTitle: undefined,
     reportWritten: false,
     summary: "",
     entries: pre.status,
@@ -327,11 +363,94 @@ async function failGuardrailed(
   );
 }
 
+/** The run's section contract: the planned day-file append (day
+ *  title, heading, transition) plus the exact contract line the
+ *  report's section body must open with (issue #459). */
+interface LintSectionContract {
+  readonly plan: ReturnType<typeof planLintAppend>;
+  readonly referenceLine: string;
+}
+
+/** Plan the run's section from the day file's current state: window
+ *  definition inline, the run's own execution instant in the heading,
+ *  and the back-reference or standalone marker per the citing-cycle
+ *  context. */
+async function lintSectionContract(
+  options: LintOptions,
+  resolved: Awaited<ReturnType<typeof resolveWindow>>,
+  reportPath: string,
+  now: () => Date,
+): Promise<LintSectionContract> {
+  const windowText =
+    resolved.mode === "window"
+      ? `window audit, ${pluralizePages(resolved.window.pages.length)}`
+      : "full audit";
+  const existing = await readTextIfExists(
+    join(options.run.dataRoot, reportPath),
+  );
+
+  return {
+    plan: planLintAppend(existing, now(), resolved.mode, windowText),
+    referenceLine:
+      options.cycle === undefined
+        ? STANDALONE_MARKER
+        : cycleBackReferenceLine(
+            options.cycle.path,
+            options.cycle.sectionTitle,
+          ),
+  };
+}
+
+/** Write the day title and section heading the agent appends its
+ *  report below (after the pre-run capture, so a guardrail revert
+ *  removes the preamble with the run's edits). */
+async function writeReportPreamble(
+  dataRoot: string,
+  reportPath: string,
+  prefix: string,
+): Promise<void> {
+  await mkdir(join(dataRoot, dirname(reportPath)), { recursive: true });
+  await writeFile(join(dataRoot, reportPath), prefix);
+}
+
+/** The stage's result once the audit completed: the planned section
+ *  title, and "written" only when the file grew past the preamble. */
+async function lintStageResult(
+  resolved: Awaited<ReturnType<typeof resolveWindow>>,
+  contract: LintSectionContract,
+  reportPath: string,
+  dataRoot: string,
+  stdout: string,
+  entries: readonly StatusEntry[],
+  windowPages: readonly string[] | undefined,
+): Promise<LintResult> {
+  const reportContent = await readFile(join(dataRoot, reportPath), "utf8");
+
+  return {
+    mode: resolved.mode,
+    skipped: undefined,
+    reportPath,
+    sectionTitle: contract.plan.sectionTitle,
+    reportWritten: reportContent !== contract.plan.prefix,
+    summary: stdout,
+    entries,
+    windowPages,
+  };
+}
+
 /** One headless lint run (guide §17): pick the audit window, compose
  *  the prompt with the deterministic worklists, invoke the agent in
  *  the data repo root, guardrail the result, auto-revert on a tripped
  *  check, and — only on a completed audit — advance the window
- *  snapshot. Same guardrail contract as the ingest stage. */
+ *  snapshot. Same guardrail contract as the ingest stage.
+ *
+ *  The report day file is append-only (issue #459): after the pre-run
+ *  capture, the stage plans this run's bounded `Lint run N` section —
+ *  numbering by section position, transitioning a legacy-shape file
+ *  on first append — and writes the day title and section heading to
+ *  the file before the agent runs, so the writer owns the heading
+ *  contract and the agent owns only its section body. A guardrail
+ *  revert removes the preamble with the rest of the run's edits. */
 export async function runLintStage(options: LintOptions): Promise<LintResult> {
   const { run } = options;
   const { env, now, onProgress, dataRoot } = run;
@@ -346,6 +465,12 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
     return await skipEmptyWindow(run, options, reportPath);
   }
 
+  const contract = await lintSectionContract(
+    options,
+    resolved,
+    reportPath,
+    now,
+  );
   const windowPages =
     resolved.mode === "window" ? resolved.window.pages : undefined;
 
@@ -357,10 +482,13 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
     reportPath,
     windowPages,
     wikiDir: run.wikiDir,
+    referenceLine: contract.referenceLine,
   });
   const runner = runnerFor(settings);
   const args = runner.args(settings, promptText, { root: dataRoot });
   const pre = options.pre ?? (await capturePreRunState(dataRoot, env));
+
+  await writeReportPreamble(dataRoot, reportPath, contract.plan.prefix);
 
   // A launcher that already resolved the agent binary (issue #399)
   // hands it over through the environment; it wins over the
@@ -405,17 +533,20 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
     dataRoot,
   );
 
-  const reportWritten = await pathExists(toAbsolute(dataRoot, reportPath));
-
-  return {
-    mode: resolved.mode,
-    skipped: undefined,
+  return await lintStageResult(
+    resolved,
+    contract,
     reportPath,
-    reportWritten,
-    summary: stdout,
-    entries: post.entries,
+    dataRoot,
+    stdout,
+    post.entries,
     windowPages,
-  };
+  );
+}
+
+/** The window size for the heading's window definition. */
+function pluralizePages(count: number): string {
+  return `${count} ${count === 1 ? "page" : "pages"}`;
 }
 
 /** The per-failure callback the ingest stage reports through (issue
@@ -469,7 +600,10 @@ function lintSettingsForCycle(
 /** Stage 3 of the wiki-sync cycle: lint what the ingest agent
  *  produced, or skip with it when no ingest ran. Runs with the
  *  cycle's affordability memory (issue #408): an attempt that 402'd
- *  on ingest is skipped; the memory dies with the cycle. */
+ *  on ingest is skipped; the memory dies with the cycle. The citing
+ *  cycle's context (report path plus the section title this cycle's
+ *  digest will carry, issue #459) rides to the stage so the lint
+ *  run's back-reference names the section before the digest exists. */
 export async function runCycleLint(
   options: WikiSyncOptions,
   ingest: { readonly status: "ran" | "skipped" },
@@ -477,6 +611,7 @@ export async function runCycleLint(
   preLint: PreRunState,
   settings: AgentSettings,
   excluded: ReadonlySet<number>,
+  cycle: { readonly path: string; readonly sectionTitle: string },
 ): Promise<LintResult | undefined> {
   const { run } = options;
 
@@ -499,5 +634,6 @@ export async function runCycleLint(
     timeoutMs: options.timeoutMs,
     heartbeatMs: options.heartbeatMs,
     pre: preLint,
+    cycle,
   });
 }

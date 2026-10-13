@@ -35,7 +35,7 @@ afterAll(async () => {
  *  the tests can assert the audit mode; STUB_MODE rebel writes a
  *  forbidden raw/ file (guardrail 1). */
 const STUB_AGENT = `#!/usr/bin/env node
-import { mkdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, writeFile } from "node:fs/promises";
 
 if (process.env.STUB_MODE === "rebel") {
   await writeFile("raw/rogue.md", "forbidden\\n");
@@ -53,7 +53,7 @@ const reportPath = prompt
 
 if (reportPath === undefined) process.exit(6);
 
-await writeFile(reportPath, "# lint report\\n");
+await appendFile(reportPath, "Standalone — no citing cycle.\\n");
 await writeFile("wiki/index.md", [
   "---",
   'title: "Index"',
@@ -113,7 +113,34 @@ describe("wiki-lint e2e", () => {
     expect(result.code).toBe(0);
     expect(result.out).toContain("# wiki-lint digest");
     expect(result.out).toContain("lint: all pages audited");
-    expect(report).toBe("# lint report\n");
+    expect(report).toContain("Standalone — no citing cycle.");
+  });
+
+  it("appends a second standalone run numbered by position (issue #459)", async () => {
+    const repo = await makeRepo();
+
+    const first = await runLint(repo);
+
+    expect(first.code).toBe(0);
+
+    const firstReport = await readFile(repo.fullReportFile, "utf8");
+
+    expect(firstReport).toContain("## Lint run 1 — ");
+    expect(firstReport).toContain("Standalone — no citing cycle.");
+
+    const second = await runCli(LINT_SCRIPT, [
+      "--full",
+      "--settings",
+      repo.settingsPath,
+      repo.rawDir,
+    ]);
+
+    expect(second.code).toBe(0);
+
+    const report = await readFile(repo.fullReportFile, "utf8");
+
+    expect(report).toContain("## Lint run 2 — ");
+    expect(report.startsWith(firstReport.trimEnd())).toBe(true);
   });
 
   it("records the golden lint wiring per run (issue #434)", async () => {

@@ -48,7 +48,7 @@ afterAll(async () => {
  * e2e stub, trimmed to the no-second-brain flow.
  */
 const STUB_AGENT = `#!/usr/bin/env node
-import { mkdir, readdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const index = process.argv.indexOf("--print");
@@ -121,10 +121,12 @@ await writeFile(
 if (prompt.startsWith("Audit the wiki")) {
   const reportPath = prompt.match(/outputs\\/lint-\\d{4}-\\d{2}-\\d{2}(-full)?\\.md/)?.[0];
   if (reportPath === undefined) process.exit(6);
+  const referenceLine = /^Start the section body with this exact line: (.+)$/m.exec(prompt)?.[1];
+  if (referenceLine === undefined) process.exit(7);
   await mkdir(join(process.cwd(), "outputs"), { recursive: true });
-  await writeFile(
+  await appendFile(
     join(process.cwd(), reportPath),
-    "# Lint report\\n\\nAll checks passed.\\n",
+    referenceLine + "\\n\\nAll checks passed.\\n",
   );
   console.log("lint: all pages audited, no problems");
 } else {

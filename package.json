@@ -24,6 +24,7 @@
     "check-citations": "node bin/libexec/check-citations",
     "check-provenance": "node bin/libexec/check-provenance",
     "check-fidelity": "node bin/libexec/check-fidelity",
+    "check-outputs": "node bin/libexec/check-outputs",
     "backfill-origin": "node bin/libexec/backfill-origin",
     "link-sources": "node bin/libexec/link-sources",
     "anchor-citations": "node bin/libexec/anchor-citations",
