@@ -53,17 +53,14 @@ import {
   filterWorklistsToWindow,
   renderWorklists,
 } from "../wiki/worklists.ts";
-import {
-  cycleBackReferenceLine,
-  planLintAppend,
-} from "./cycle-reports.ts";
-import { STANDALONE_MARKER } from "./report-references.ts";
+import { cycleBackReferenceLine, planLintAppend } from "./cycle-reports.ts";
 import {
   deriveLintWindow,
   lintWindowPath,
   readLintWindowSnapshot,
   writeLintWindowSnapshot,
 } from "./lint-window.ts";
+import { STANDALONE_MARKER } from "./report-references.ts";
 import type { WikiSyncOptions } from "./wiki-sync.ts";
 
 /** Liveness line while the lint agent runs (one animated line on a TTY). */
@@ -106,10 +103,7 @@ export interface LintResult {
  *  mode: the windowed audit keeps the standing per-date path, the
  *  full audit writes its own `-full` report so a same-day windowed
  *  audit never overwrites the sweep's record. */
-export function lintReportPath(
-  instant: Date,
-  mode: "window" | "full",
-): string {
+export function lintReportPath(instant: Date, mode: "window" | "full"): string {
   const date = instant.toISOString().slice(0, 10);
 
   return mode === "full"

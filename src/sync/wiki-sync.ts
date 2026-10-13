@@ -1121,23 +1121,13 @@ export function formatFinalDigest(result: WikiSyncResult): string {
   if (lint !== undefined && lint.skipped === undefined) {
     const summary = demoteHeadings(lint.summary.trimEnd(), 2);
 
-    lines.push(
-      "",
-      "#### Lint summary",
-      "",
-      `${summary}${fenceSeal(summary)}`,
-    );
+    lines.push("", "#### Lint summary", "", `${summary}${fenceSeal(summary)}`);
   }
 
   if (ingest.status === "ran") {
     const digest = demoteHeadings(ingest.digest.trimEnd(), 2);
 
-    lines.push(
-      "",
-      "#### Ingest digest",
-      "",
-      `${digest}${fenceSeal(digest)}`,
-    );
+    lines.push("", "#### Ingest digest", "", `${digest}${fenceSeal(digest)}`);
   }
 
   return `${lines.join("\n")}\n`;

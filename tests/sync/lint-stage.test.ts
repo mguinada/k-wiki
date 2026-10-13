@@ -581,10 +581,7 @@ describe("runLintStage report day file", () => {
     const pathDay = /lint-(\d{4}-\d{2}-\d{2})-full\.md$/.exec(
       result.reportPath,
     )?.[1];
-    const report = await readFile(
-      join(h.dataRoot, result.reportPath),
-      "utf8",
-    );
+    const report = await readFile(join(h.dataRoot, result.reportPath), "utf8");
 
     expect(report.split("\n")[0]).toBe(`# Full lint — ${pathDay}`);
   });
