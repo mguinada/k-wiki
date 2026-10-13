@@ -216,6 +216,30 @@ describe("planLintAppend", () => {
         `## Lint run 2 — ${secondStamp} (window audit, 2 pages)\n\n`,
     );
   });
+
+  it("numbers the next run past a quoted heading inside a fence", () => {
+    const stamp = `2026-10-12T18:00:59${offsetSuffix(LOCAL_LATER)}`;
+    const existing = [
+      lintDayTitle("window", LOCAL_LATER),
+      "",
+      `## Lint run 1 — ${stamp} (window audit, 34 pages)`,
+      "",
+      "```",
+      `## Lint run 2 — ${stamp} (window audit, 34 pages)`,
+      "```",
+      "",
+    ].join("\n");
+    const plan = planLintAppend(
+      existing,
+      LOCAL_LATER,
+      "window",
+      "window audit, 34 pages",
+    );
+
+    expect(plan.sectionTitle).toBe(
+      `Lint run 2 — ${stamp} (window audit, 34 pages)`,
+    );
+  });
 });
 
 describe("parseDayFile", () => {
@@ -261,6 +285,26 @@ describe("parseDayFile", () => {
     }
 
     expect(parsed.file.sections).toHaveLength(2);
+  });
+
+  it("keeps a heading quoted inside a fence from splitting a section", () => {
+    const quoted = [
+      "# Windowed lint — 2026-10-12",
+      "",
+      "## Lint run 1 — 2026-10-12T14:54:52+01:00 (window audit, 34 pages)",
+      "",
+      "```",
+      "## Lint run 2 — 2026-10-12T18:00:58+01:00 (window audit, 2 pages)",
+      "```",
+      "",
+    ].join("\n");
+    const parsed = parseDayFile(quoted, "lint", "# Windowed lint — 2026-10-12");
+
+    if (parsed.kind !== "append") {
+      throw new Error("expected an append-shape parse");
+    }
+
+    expect(parsed.file.sections).toHaveLength(1);
   });
 
   it("keeps the mid-content rule inside the first section's body", () => {
@@ -364,6 +408,23 @@ describe("lintRunReference", () => {
       kind: "none",
     });
   });
+
+  it("ignores a back-reference line quoted inside a fence", () => {
+    const quoted = cycleBackReferenceLine(
+      "outputs/cycle-2026-10-12.md",
+      "Cycle 2 — 2026-10-12T18:00:59+01:00",
+    );
+
+    expect(lintRunReference(`\`\`\`\n${quoted}\n\`\`\`\n`)).toEqual({
+      kind: "none",
+    });
+  });
+
+  it("ignores the standalone marker quoted inside a fence", () => {
+    expect(lintRunReference(`\`\`\`\n${STANDALONE_MARKER}\n\`\`\`\n`)).toEqual({
+      kind: "none",
+    });
+  });
 });
 
 describe("cycleLintReference", () => {
@@ -383,6 +444,13 @@ describe("cycleLintReference", () => {
     expect(
       cycleLintReference("- **Lint:** window empty (this cycle)"),
     ).toBeUndefined();
+  });
+
+  it("ignores a lint bullet quoted inside a fence", () => {
+    const quoted =
+      '- **Lint:** full audit — report `outputs/lint-2026-10-12.md` — section "Lint run 1 — 2026-10-12T14:54:52+01:00 (full audit)" — summary below';
+
+    expect(cycleLintReference(`\`\`\`\n${quoted}\n\`\`\`\n`)).toBeUndefined();
   });
 });
 

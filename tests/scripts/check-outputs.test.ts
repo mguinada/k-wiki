@@ -213,6 +213,25 @@ describe("checkOutputs shape mode", () => {
     expect(await checkOutputs(dir, "all")).toEqual([]);
   });
 
+  it("keeps a quoted grammar-matching heading from splitting a section", async () => {
+    const dir = await makeOutputs({
+      "lint-2026-10-12.md": [
+        LINT_TITLE,
+        "",
+        `## Lint run 1 — ${LINT_1}`,
+        "",
+        "Standalone — no citing cycle.",
+        "",
+        "```",
+        `## Lint run 2 — ${LINT_1}`,
+        "```",
+        "",
+      ].join("\n"),
+    });
+
+    expect(await checkOutputs(dir, "all")).toEqual([]);
+  });
+
   it("exempts code-fenced lines from the containment scan", async () => {
     const dir = await makeOutputs({
       "cycle-2026-10-12.md": cycleDayFile("- only sync facts"),

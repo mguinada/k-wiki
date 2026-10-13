@@ -243,7 +243,9 @@ function isSectionHeading(line: string, family: DayFamily): boolean {
  *  title and it carries at least one family-grammar section heading;
  *  anything else is a legacy (overwrite-era) file the transition
  *  rule owns. Section bodies run to the next section heading — a
- *  `---` line inside agent content never splits a section. */
+ *  `---` line inside agent content never splits a section, and a
+ *  grammar-matching heading quoted inside a code fence never
+ *  becomes one. */
 export function parseDayFile(
   text: string,
   family: DayFamily,
@@ -256,23 +258,26 @@ export function parseDayFile(
     return { kind: "legacy" };
   }
 
-  const marks = lines
-    .map((line, index) => ({ line, index }))
-    .filter(({ line }) => isSectionHeading(line, family));
+  const marks = scannedLines(text)
+    .map((scanned, index) => ({ scanned, index }))
+    .filter(
+      ({ scanned }) =>
+        !scanned.fenced && isSectionHeading(scanned.line, family),
+    );
 
   if (marks.length === 0) {
     return { kind: "legacy" };
   }
 
-  const sections = marks.map(({ line, index }, position) => {
+  const sections = marks.map(({ scanned, index }, position) => {
     const next = marks.at(position + 1);
     const end = next?.index ?? lines.length;
     const bodyLines = lines.slice(index + 1, end);
-    const title = line.slice("## ".length);
+    const title = scanned.line.slice("## ".length);
 
     return {
       title,
-      heading: line,
+      heading: scanned.line,
       preAppend: title.endsWith(" (pre-append)"),
       body: bodyLines.join("\n"),
     };
@@ -296,13 +301,25 @@ export type LintRunReference =
     }
   | { readonly kind: "none" };
 
-/** Extract a lint run section's declared citing-cycle reference. */
+/** A lint run's back-reference contract line: the exact shape the
+ *  prompt dictates. */
+const BACK_REFERENCE_LINE = /^Cycle audited: `([^`\n]+)` — section "([^"]+)"/;
+
+/** Extract a lint run section's declared citing-cycle reference;
+ *  a fenced line is quoted content, never a declaration. */
 export function lintRunReference(body: string): LintRunReference {
-  if (body.includes(STANDALONE_MARKER)) {
+  const standalone = scannedLines(body).some(
+    (scanned) => !scanned.fenced && scanned.line.includes(STANDALONE_MARKER),
+  );
+
+  if (standalone) {
     return { kind: "standalone" };
   }
 
-  const match = /^Cycle audited: `([^`\n]+)` — section "([^"]+)"/m.exec(body);
+  const line = scannedLines(body).find(
+    (scanned) => !scanned.fenced && BACK_REFERENCE_LINE.test(scanned.line),
+  )?.line;
+  const match = BACK_REFERENCE_LINE.exec(line ?? "");
   const path = match?.[1];
   const sectionTitle = match?.[2];
 
@@ -313,14 +330,23 @@ export function lintRunReference(body: string): LintRunReference {
   return { kind: "none" };
 }
 
+/** The lint bullet's reference tail: the exact shape the digest's
+ *  lint line carries. */
+const LINT_BULLET = /— report `([^`\n]+)` — section "([^"]+)"/;
+
 /** The cycle section's lint reference: the report path plus the
  *  exact lint run section title it audited, or undefined when the
  *  section carries no lint-run reference (lint skipped, empty
- *  window, failure section). */
+ *  window, failure section); a fenced line is quoted content, never
+ *  a reference. */
 export function cycleLintReference(
   body: string,
 ): { readonly path: string; readonly sectionTitle: string } | undefined {
-  const match = /— report `([^`\n]+)` — section "([^"]+)"/.exec(body);
+  const line = scannedLines(body).find(
+    (scanned) => !scanned.fenced && LINT_BULLET.test(scanned.line),
+  )?.line;
+
+  const match = LINT_BULLET.exec(line ?? "");
   const path = match?.[1];
   const sectionTitle = match?.[2];
 
@@ -332,12 +358,14 @@ export function cycleLintReference(
 }
 
 /** One scanned body line: the text verbatim, its ATX heading depth
- *  (0 for a non-heading or fenced line), and that heading's leading
- *  spaces (0 for a non-heading). */
+ *  (0 for a non-heading or fenced line), that heading's leading
+ *  spaces (0 for a non-heading), and whether the line lives inside
+ *  a code fence (openers, closers, and fenced lines all do). */
 export interface ScannedLine {
   readonly line: string;
   readonly hashes: number;
   readonly indent: number;
+  readonly fenced: boolean;
 }
 
 /** A line's open code fence: the marker character and the minimum
@@ -388,10 +416,11 @@ function headingOf(
 /** Scan a text's lines with code-fence state tracked: a fence opens
  *  on its marker line and closes only on a marker of the same
  *  character at least as long; lines inside a fence — the markers
- *  included — carry heading depth 0. The one line scan the digest
- *  embed's demotion transform and the checker's containment scan
- *  both consume, so fenced report content is never read as section
- *  structure. */
+ *  included — carry heading depth 0. The one line scan every
+ *  structural reader of the report day files consumes (the digest
+ *  embed's demotion, the checker's containment scan, the section
+ *  parser, the pair-reference extractors), so fenced report content
+ *  is never read as section structure. */
 export function scannedLines(text: string): readonly ScannedLine[] {
   let fence: OpenFence | undefined;
 
@@ -401,7 +430,7 @@ export function scannedLines(text: string): readonly ScannedLine[] {
         fence = undefined;
       }
 
-      return { line, hashes: 0, indent: 0 };
+      return { line, hashes: 0, indent: 0, fenced: true };
     }
 
     const marker = FENCE_OPENER.exec(line)?.[1];
@@ -409,11 +438,16 @@ export function scannedLines(text: string): readonly ScannedLine[] {
     if (marker !== undefined) {
       fence = { char: marker.charAt(0), length: marker.length };
 
-      return { line, hashes: 0, indent: 0 };
+      return { line, hashes: 0, indent: 0, fenced: true };
     }
 
     const heading = headingOf(line) ?? { hashes: 0, indent: 0 };
 
-    return { line, hashes: heading.hashes, indent: heading.indent };
+    return {
+      line,
+      hashes: heading.hashes,
+      indent: heading.indent,
+      fenced: false,
+    };
   });
 }
