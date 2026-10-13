@@ -181,6 +181,38 @@ describe("checkOutputs shape mode", () => {
     ]);
   });
 
+  it("rejects an indented heading at the section's own level", async () => {
+    const dir = await makeOutputs({
+      "cycle-2026-10-12.md": cycleDayFile(" ## Ingest digest\n\ndigest body"),
+    });
+
+    expect(await checkOutputs(dir, "shape")).toEqual([
+      'cycle-2026-10-12.md: heading escapes its section — "## Ingest digest"',
+    ]);
+  });
+
+  it("exempts content fenced inside a different-character outer fence", async () => {
+    const dir = await makeOutputs({
+      "cycle-2026-10-12.md": cycleDayFile("- only sync facts"),
+      "lint-2026-10-12.md": [
+        LINT_TITLE,
+        "",
+        `## Lint run 1 — ${LINT_1}`,
+        "",
+        backReference(`Cycle 1 — ${CYCLE_1}`),
+        "",
+        "~~~",
+        "```bash",
+        "## example",
+        "```",
+        "~~~",
+        "",
+      ].join("\n"),
+    });
+
+    expect(await checkOutputs(dir, "all")).toEqual([]);
+  });
+
   it("exempts code-fenced lines from the containment scan", async () => {
     const dir = await makeOutputs({
       "cycle-2026-10-12.md": cycleDayFile("- only sync facts"),

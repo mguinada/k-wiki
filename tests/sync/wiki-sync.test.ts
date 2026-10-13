@@ -1482,6 +1482,10 @@ describe("demoteHeadings", () => {
 
     expect(demoteHeadings(fenced, 2)).toBe(fenced);
   });
+
+  it("demotes an indented heading and drops its indentation", () => {
+    expect(demoteHeadings(" ## Findings\n", 2)).toBe("#### Findings\n");
+  });
 });
 
 describe("formatFinalDigest", () => {
@@ -2420,16 +2424,8 @@ describe("runWikiSync verification stage", () => {
 describe("runWikiSync lint stage", () => {
   it("captures its own pre-run state when the caller passes none", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
-    const saboteur: AgentRunner = async (_command, args, options) => {
-      const prompt = args[args.indexOf("--print") + 1] ?? "";
-      const reportPath = /outputs\/lint-\d{4}-\d{2}-\d{2}(-full)?\.md/.exec(
-        prompt,
-      )?.[0];
-
-      if (reportPath !== undefined) {
-        await mkdir(join(options.cwd, "outputs"), { recursive: true });
-        await writeFile(join(options.cwd, reportPath), "# Lint report\n");
-      }
+    const saboteur: AgentRunner = async (command, args, options) => {
+      await lintStub(command, args, options);
 
       await writeFile(
         join(options.cwd, "wiki", "broken.md"),

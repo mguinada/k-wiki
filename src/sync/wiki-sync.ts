@@ -1130,15 +1130,19 @@ export function formatFinalDigest(result: WikiSyncResult): string {
 /** Demote every ATX heading by `levels` levels (H1→H3, H2→H4, …,
  *  clamped at H6): the embed-time transform keeping a composed
  *  digest's headings strictly inside its Cycle section (issue #459,
- *  Design 3). Code-fenced lines pass through untouched. */
+ *  Design 3). Code-fenced lines pass through untouched; a heading's
+ *  leading indentation is dropped (CommonMark renders it
+ *  identically). */
 export function demoteHeadings(text: string, levels: number): string {
   return scannedLines(text)
-    .map(({ line, hashes }) => {
+    .map(({ line, hashes, indent }) => {
       if (hashes === 0) {
         return line;
       }
 
-      return `${"#".repeat(Math.min(hashes + levels, 6))} ${line.slice(hashes + 1)}`;
+      const demoted = "#".repeat(Math.min(hashes + levels, 6));
+
+      return `${demoted} ${line.slice(indent + hashes + 1)}`;
     })
     .join("\n");
 }

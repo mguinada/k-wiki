@@ -331,39 +331,89 @@ export function cycleLintReference(
   return { path, sectionTitle };
 }
 
-/** One scanned body line: the text verbatim plus its ATX heading
- *  depth (0 for a non-heading). */
+/** One scanned body line: the text verbatim, its ATX heading depth
+ *  (0 for a non-heading or fenced line), and that heading's leading
+ *  spaces (0 for a non-heading). */
 export interface ScannedLine {
   readonly line: string;
   readonly hashes: number;
+  readonly indent: number;
 }
 
-/** The lines a code fence opens and closes with: an indent of up to
- *  three spaces, then three or more backticks or tildes. */
-const FENCE_MARKER = /^ {0,3}(```|~~~)/;
+/** A line's open code fence: the marker character and the minimum
+ *  length that closes it. */
+interface OpenFence {
+  readonly char: string;
+  readonly length: number;
+}
 
-/** Scan a text's lines with code-fence state tracked: a fence marker
- *  line toggles the fence, and lines inside a fence — the markers
+/** The fence a line opens with: an indent of up to three spaces,
+ *  then three or more backticks or tildes. */
+const FENCE_OPENER = /^ {0,3}(`{3,}|~{3,})/;
+
+/** Whether the line closes an open fence: up to three leading
+ *  spaces, then a marker of the same character at least as long as
+ *  the opener's, then nothing but whitespace. */
+function closesFence(line: string, fence: OpenFence): boolean {
+  const stripped = line.replace(/^ {0,3}/, "");
+  const marker = /^(`+|~+)/.exec(stripped)?.[0];
+
+  return (
+    marker !== undefined &&
+    marker[0] === fence.char &&
+    marker.length >= fence.length &&
+    stripped.slice(marker.length).trim() === ""
+  );
+}
+
+/** The heading a non-fenced line carries — up to three leading
+ *  spaces, then one to six hashes, then a space — undefined for a
+ *  non-heading. */
+function headingOf(
+  line: string,
+): { hashes: number; indent: number } | undefined {
+  const match = /^ {0,3}(#{1,6}) /.exec(line);
+  const hashes = match?.[1];
+
+  if (match === null || hashes === undefined) {
+    return undefined;
+  }
+
+  return {
+    hashes: hashes.length,
+    indent: match[0].length - hashes.length - 1,
+  };
+}
+
+/** Scan a text's lines with code-fence state tracked: a fence opens
+ *  on its marker line and closes only on a marker of the same
+ *  character at least as long; lines inside a fence — the markers
  *  included — carry heading depth 0. The one line scan the digest
  *  embed's demotion transform and the checker's containment scan
  *  both consume, so fenced report content is never read as section
  *  structure. */
 export function scannedLines(text: string): readonly ScannedLine[] {
-  let fenced = false;
+  let fence: OpenFence | undefined;
 
   return text.split("\n").map((line) => {
-    if (FENCE_MARKER.test(line)) {
-      fenced = !fenced;
+    if (fence !== undefined) {
+      if (closesFence(line, fence)) {
+        fence = undefined;
+      }
 
-      return { line, hashes: 0 };
+      return { line, hashes: 0, indent: 0 };
     }
 
-    if (fenced) {
-      return { line, hashes: 0 };
+    const marker = FENCE_OPENER.exec(line)?.[1];
+
+    if (marker !== undefined) {
+      fence = { char: marker.charAt(0), length: marker.length };
+
+      return { line, hashes: 0, indent: 0 };
     }
 
-    const hashes = /^#{1,6} /.exec(line)?.[0].trim().length ?? 0;
+    const heading = headingOf(line) ?? { hashes: 0, indent: 0 };
 
-    return { line, hashes };
+    return { line, hashes: heading.hashes, indent: heading.indent };
   });
 }
