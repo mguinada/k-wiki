@@ -27,6 +27,41 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 /** The CLI's default saved-answer path (outputs/ is per-machine). */
 export const defaultLastQuery = join(repoRoot, "outputs", "last-query.md");
 
+/** Serialize the tests that touch the checkout's default outputs/
+ *  directory across processes: two concurrent coverage runs share
+ *  this repo, and an unsynchronized writer made the other run's
+ *  reader see a saved answer it must not (issue #430 rehearsal).
+ *  A mkdir lock — atomic, stale-broken after the timeout. */
+export async function withDefaultOutputsLock<T>(
+  fn: () => Promise<T>,
+): Promise<T> {
+  const lockDir = join(repoRoot, "outputs", ".default-outputs.lock");
+  const deadline = Date.now() + 120_000;
+
+  await mkdir(dirname(lockDir), { recursive: true });
+
+  while (
+    !(await mkdir(lockDir).then(
+      () => true,
+      () => false,
+    ))
+  ) {
+    if (Date.now() > deadline) {
+      await rm(lockDir, { recursive: true, force: true });
+
+      continue;
+    }
+
+    await new Promise((resolveSleep) => setTimeout(resolveSleep, 100));
+  }
+
+  try {
+    return await fn();
+  } finally {
+    await rm(lockDir, { recursive: true, force: true });
+  }
+}
+
 /** Remove every temp dir the harness created; each test file hooks
  *  this into its own afterAll. */
 export function cleanTempDirs(): Promise<unknown> {

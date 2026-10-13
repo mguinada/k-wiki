@@ -1,10 +1,11 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
-import { cp, mkdir, rm, symlink } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { afterAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 /**
  * Spawn-every-entry wiring (issue #135): the shebanged launchers —
@@ -239,10 +240,16 @@ describe("library modules refuse direct execution (issue #135)", () => {
   }
 });
 
-const stagingRoot = join(
-  dirname(fileURLToPath(import.meta.url)),
-  ".bin-wiring-staging",
-);
+// A per-process temp staging root, not a path inside tests/: two
+// concurrent coverage runs share this repo checkout, and a shared
+// staging parent let one run's afterAll rm delete the other run's
+// in-flight staged copy (Cannot find module mid-import, issue #430
+// rehearsal). mkdtemp gives each process its own parent.
+let stagingRoot: string;
+
+beforeAll(async () => {
+  stagingRoot = await mkdtemp(join(tmpdir(), "bin-wiring-staging-"));
+});
 
 afterAll(async () => {
   await rm(stagingRoot, { recursive: true, force: true });
