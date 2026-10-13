@@ -80,6 +80,7 @@ import {
   agentRunFlags,
   parseSyncRunArgs,
 } from "../cli/shell.ts";
+
 import { parseStatus, runGit } from "../data/git.ts";
 import type { AgentRunner } from "../ingest/agent-run.ts";
 import {
@@ -107,26 +108,30 @@ import {
   type CitationWallStageResult,
   runCitationWallStage,
 } from "../sandbox/citations.ts";
-import { checkCrossWikiLinks } from "../wiki/crosslinks.ts";
-import {
-  checkWikiFidelity,
-  type FidelityReport,
-  summarizeFidelity,
-} from "../wiki/fidelity.ts";
-import {
-  checkWikiProvenance,
-  type ProvenanceReport,
-  summarizeProvenance,
-} from "../wiki/provenance.ts";
+
 import { readSharedWriterMarker } from "../writer/marker.ts";
 import {
-  expandHome,
   loadSyncConfig,
   type PublishConfig,
   resolveRawDir,
   type SourceConfig,
   type SyncConfig,
 } from "./config.ts";
+import {
+  type CrosslinksResult,
+  runCrosslinksStage,
+} from "./crosslinks-stage.ts";
+import {
+  type CommitResult,
+  type CommitSummary,
+  formatCommitMessage,
+} from "./cycle-commit.ts";
+import {
+  cycleBackReferenceLine,
+  dayDate,
+  planCycleAppend,
+} from "./cycle-reports.ts";
+import { fenceSeal, scannedLines } from "./fence-state.ts";
 import {
   affordabilityExclusion,
   LINT_HEARTBEAT_PREFIX,
@@ -140,6 +145,7 @@ import type {
   SyncReport,
   VaultRemovalPlan,
 } from "./projection.ts";
+import { toAbsolute } from "./projection.ts";
 import { type PublishResult, runPublishStage } from "./publish.ts";
 import {
   acquireLock,
@@ -150,166 +156,18 @@ import {
 } from "./run-lock.ts";
 import { planRepoRemovals, runRepoSync } from "./sync-repo.ts";
 import { planVaultRemovals, runVaultSync } from "./sync-vault.ts";
+import {
+  runVerificationStage,
+  type VerificationResult,
+} from "./verification-stage.ts";
 import { HELP } from "./wiki-sync-help.ts";
-
-/** What the crosslink stage reports back to the cycle digest. */
-export interface CrosslinksResult {
-  /** The expanded domain wiki dirs the audit ran against. */
-  readonly domains: readonly string[];
-  /** Cross-wiki links found in the audited wiki. */
-  readonly external: number;
-  /** Markdown pages scanned across the domain wikis. */
-  readonly domainPages: number;
-}
-
-export interface CrosslinksOptions {
-  /** The run context: the audit runs over the context's wiki dir.
-   *  Built once at the CLI boundary (issue #257). */
-  readonly run: RunContext;
-  /** Domain wiki dirs from the settings' `secondBrain.domains`;
-   *  undefined or absent (the key missing) skips the stage entirely. */
-  readonly domains?: readonly string[] | undefined;
-  /** Home dir for `~` expansion in domains; default: `os.homedir()`. */
-  readonly home?: string;
-}
-
-/**
- * The crosslink stage (issue #96): run the check-crosslinks core
- * over the data repo's wiki against every configured domain wiki —
- * every cycle, after lint, whatever the ingest stage did. A broken
- * or forbidden link throws (one `file:line -> [[link]]` item per
- * problem), stopping the cycle before the commit like a lint
- * failure; a misconfigured domain dir (no sibling manifest) fails
- * the same way. Nothing reverts: the agent run already passed its
- * guardrails, and the uncommitted diff is the fix surface.
- */
-export async function runCrosslinksStage(
-  options: CrosslinksOptions,
-): Promise<CrosslinksResult | undefined> {
-  if (options.domains === undefined) {
-    return undefined;
-  }
-
-  const { run } = options;
-  const domains = options.domains.map((dir) => expandHome(dir, options.home));
-
-  run.onProgress(
-    `wiki-sync: crosslinks — auditing against ${pluralized(domains.length, "domain wiki")}`,
-  );
-
-  const report = await checkCrossWikiLinks(run.wikiDir, ...domains);
-
-  if (report.problems.length > 0) {
-    throw new Error(`crosslink audit failed — ${report.problems.join("; ")}`);
-  }
-
-  return {
-    domains,
-    external: report.external,
-    domainPages: report.domainPages,
-  };
-}
-
-/** What the verification stage reports back to the cycle digest. */
-export interface VerificationResult {
-  readonly fidelity: FidelityReport;
-  readonly provenance: ProvenanceReport;
-}
-
-export interface VerificationOptions {
-  /** The run context: the checks run over the context's wiki dir and
-   *  raw dir. Built once at the CLI boundary (issue #257). */
-  readonly run: RunContext;
-}
-
-/**
- * The verification stage (issue #138): run the deterministic
- * check-fidelity (issue #125) and check-provenance (issue #65) cores
- * over the data repo's wiki/ and raw/ — every cycle, after lint, the
- * crosslink audit, and the citation wall, whatever the ingest stage did. One problem
- * line per finding throws (fidelity first, provenance second),
- * stopping the cycle before the commit; the caller owns the revert.
- */
-export async function runVerificationStage(
-  options: VerificationOptions,
-): Promise<VerificationResult> {
-  const { run } = options;
-
-  run.onProgress(
-    "wiki-sync: verification — checking citation fidelity and provenance",
-  );
-
-  const fidelity = await checkWikiFidelity(run.wikiDir, run.rawDir);
-
-  failProblems("fidelity", fidelity.problems);
-
-  const provenance = await checkWikiProvenance(run.wikiDir, run.rawDir);
-
-  failProblems("provenance", provenance.problems);
-
-  return { fidelity, provenance };
-}
-
-/** Fail the cycle naming one problem line per finding: the shared
- *  failure shape of the stage's two checks. */
-function failProblems(
-  check: "fidelity" | "provenance",
-  problems: readonly string[],
-): void {
-  if (problems.length > 0) {
-    throw new Error(`${check} check failed:\n${problems.join("\n")}`);
-  }
-}
-
-/** One cycle commit: what the message summarizes. */
-export interface CommitSummary {
-  readonly sourcesCount: number;
-  /** e.g. `1 added, 0 changed, 0 removed, 0 renamed`. */
-  readonly sourcesLine: string;
-  readonly pagesCreated: number;
-  readonly pagesUpdated: number;
-  /** Data-repo-relative lint report path; undefined when none was written. */
-  readonly lintReport: string | undefined;
-}
-
-/** The commit message: sources processed, pages touched, lint report. */
-export function formatCommitMessage(summary: CommitSummary): string {
-  const sources =
-    summary.sourcesCount === 1
-      ? "1 source processed"
-      : `${summary.sourcesCount} sources processed`;
-  const pagesTouched = summary.pagesCreated + summary.pagesUpdated;
-  const pages =
-    pagesTouched === 1 ? "1 page touched" : `${pagesTouched} pages touched`;
-  const lines = [
-    `wiki-sync: ${sources}, ${pages}`,
-    "",
-    `- sources: ${summary.sourcesLine}`,
-    `- pages: ${summary.pagesCreated} created, ${summary.pagesUpdated} updated`,
-  ];
-
-  if (summary.lintReport !== undefined) {
-    lines.push(`- lint: ${summary.lintReport}`);
-  }
-
-  return lines.join("\n");
-}
-
-/** The cycle's commit outcome. */
-export type CommitResult =
-  | {
-      readonly status: "committed";
-      readonly hash: string;
-      readonly message: string;
-    }
-  | { readonly status: "nothing-to-commit" };
 
 /** Commit paths in the data repo; outputs/ only when it holds
  *  something git can act on. Since the manifest snapshot moved there
  *  (issue #112) the directory always exists — but it is ignored, and
  *  `git commit -- outputs` fails on a pathspec nothing known to git
  *  matches. */
-async function commitPathspecs(
+export async function commitPathspecs(
   dataRoot: string,
   env: NodeJS.ProcessEnv,
 ): Promise<readonly string[]> {
@@ -339,7 +197,7 @@ async function commitPathspecs(
 }
 
 /** Stage wiki/, raw/, and outputs/ in the data repo and commit them. */
-async function commitDataRepo(
+export async function commitDataRepo(
   dataRoot: string,
   env: NodeJS.ProcessEnv,
   message: string,
@@ -392,6 +250,9 @@ export interface WikiSyncResult {
   readonly commit: CommitResult;
   /** Undefined when the config has no `publish` section (issue #15). */
   readonly publish?: PublishResult | undefined;
+  /** The digest section as written into the day file — heading plus
+   *  body; undefined on a no-op cycle (nothing written, issue #459). */
+  readonly digest?: string | undefined;
 }
 
 export interface WikiSyncOptions {
@@ -437,60 +298,6 @@ export interface WikiSyncOptions {
    *  failure must retain the lease (the commit is local-only;
    *  releasing would strand it). Undefined outside shared mode. */
   readonly onContentCommit?: (() => Promise<void> | void) | undefined;
-}
-
-/** Count a sync report's copied and removed notes across every
- *  source row — vault or repo. */
-function syncChangeCounts(sync: SyncReport): {
-  copied: number;
-  removed: number;
-} {
-  return {
-    copied: sync.sources.reduce(
-      (total, source) => total + source.copied.length,
-      0,
-    ),
-    removed: sync.sources.reduce(
-      (total, source) => total + source.removed.length,
-      0,
-    ),
-  };
-}
-
-/** The commit summary of one cycle: ingest diff counts when the agent
- *  ran, the sync report's counts otherwise. The page counts come from
- *  the caller — the status snapshot the cycle already holds (B-10:
- *  the summary builder hides no git child-process run). */
-function commitSummaryOf(
-  sync: SyncReport,
-  ingest: IngestResult,
-  lint: LintResult | undefined,
-  pages: WikiPages,
-): CommitSummary {
-  if (ingest.status === "ran") {
-    const added = sourceCount(ingest.diff, "added");
-    const changed = sourceCount(ingest.diff, "changed");
-    const removed = sourceCount(ingest.diff, "removed");
-    const renamed = sourceCount(ingest.diff, "renamed");
-
-    return {
-      sourcesCount: added + changed + removed + renamed,
-      sourcesLine: `${added} added, ${changed} changed, ${removed} removed, ${renamed} renamed`,
-      pagesCreated: pages.created.length,
-      pagesUpdated: pages.updated.length,
-      lintReport: lint?.reportWritten ? lint.reportPath : undefined,
-    };
-  }
-
-  const { copied, removed } = syncChangeCounts(sync);
-
-  return {
-    sourcesCount: copied + removed,
-    sourcesLine: `${copied} copied, ${removed} removed by sync (no ingest)`,
-    pagesCreated: pages.created.length,
-    pagesUpdated: pages.updated.length,
-    lintReport: undefined,
-  };
 }
 
 /** The config's single source kind: mixed kinds refuse (issue #145,
@@ -771,10 +578,14 @@ async function runCycleStages(
   await boundary?.("ingest", "before");
 
   // The cycle report is promised in the ingest prompt and written at
-  // the cycle's end (issue #385): one path, computed once, so a
-  // cycle spanning midnight cannot cite a file the write never
-  // creates.
-  const cyclePath = cycleReportPath(run.now);
+  // the cycle's end (issue #385): the cycle-start instant is computed
+  // once — the report path's UTC day and the section heading's
+  // timestamp both derive from it, so a cycle spanning midnight
+  // cannot cite a file the write never creates, and a lint run's
+  // back-reference lands on the section the digest will carry
+  // (issue #459).
+  const cycleStart = run.now();
+  const cyclePath = cycleReportPath(cycleStart);
 
   // Everything from the ingest call onward runs inside the citation
   // promise (issue #385): the agent's log entry names the cycle
@@ -821,6 +632,16 @@ async function runCycleStages(
     await boundary?.("ingest", "after");
     await boundary?.("lint", "before");
 
+    // The cycle section title the lint stage's back-reference names:
+    // planned from the day file's current sections and the cycle
+    // start, the same plan the digest append recomputes at finalize
+    // (nothing appends in between — race-free under the held lease,
+    // issue #459).
+    const cycleSection = planCycleAppend(
+      await readTextIfExists(join(dataRoot, cyclePath)),
+      cycleStart,
+    );
+
     const lint = await runCycleLint(
       options,
       ingest,
@@ -828,6 +649,7 @@ async function runCycleStages(
       preLint,
       settings,
       excludedTargets,
+      { path: cyclePath, sectionTitle: cycleSection.sectionTitle },
     );
 
     await boundary?.("lint", "after");
@@ -845,24 +667,31 @@ async function runCycleStages(
       stages,
     );
 
-    return await runCommitStage(options, run, config, stages, cyclePath, {
-      sync,
-      ingest,
-      lint,
-      crosslinks,
-      citations,
-      verification,
-      preLint,
-    });
+    return await runCommitStage(
+      options,
+      run,
+      config,
+      stages,
+      cycleStart,
+      cyclePath,
+      {
+        sync,
+        ingest,
+        lint,
+        crosslinks,
+        citations,
+        verification,
+        preLint,
+      },
+    );
   } catch (error) {
     if (ingest !== undefined || ingestEditsKept(error)) {
-      await writeFailureDigest(dataRoot, cyclePath, error);
+      await writeFailureDigest(dataRoot, cyclePath, cycleStart, error);
     }
 
     throw error;
   }
 }
-
 /** The verified stages the commit stage assembles the result from. */
 interface VerifiedStages {
   readonly sync: SyncReport;
@@ -881,6 +710,7 @@ async function runCommitStage(
   run: RunContext,
   config: SyncConfig,
   stages: readonly string[],
+  cycleStart: Date,
   cyclePath: string,
   verified: VerifiedStages,
 ): Promise<WikiSyncResult> {
@@ -918,15 +748,19 @@ async function runCommitStage(
     verification,
     commit,
     publish,
+    digest: undefined,
   };
 
   if (nothingToDoLine(result) === undefined) {
-    await commitCycleDigest(
+    const digest = await commitCycleDigest(
       dataRoot,
       env,
       cyclePath,
-      formatFinalDigest(result),
+      cycleStart,
+      result,
     );
+
+    return { ...result, digest };
   }
 
   return result;
@@ -950,6 +784,188 @@ async function writeDeferredSnapshot(
     run,
     ingest.pendingSnapshot.manifest,
   );
+}
+
+/** The data-repo-relative cycle digest path for a run's UTC day —
+ *  the append-only day file (issue #459): same-day reruns append
+ *  bounded sections, nothing is overwritten. */
+export function cycleReportPath(start: Date): string {
+  return `outputs/cycle-${dayDate(start)}.md`;
+}
+
+/** The ingest-prompt line promising the cycle report (issue #385):
+ *  the agent writes its log entry during stage 2, before the digest
+ *  exists, and cites this exact path — as a plain path (issue #410). */
+function cycleReportPromise(path: string): string {
+  return `This cycle's full report will be committed at \`${path}\`; cite it in your log entry as a plain path (no [[brackets]]).`;
+}
+
+/** The digest-finalize pair assert (issue #459, Design 8): when the
+ *  cycle's digest carries a lint-run reference (lint ran and wrote
+ *  its report), the cited lint report must exist, a non-fenced line
+ *  of it must carry the back-reference naming this cycle's section
+ *  — path and section title both — and a non-fenced line must carry
+ *  the cited lint run section heading; a fenced line is quoted
+ *  content, never the pair. A mismatch fails the cycle loudly.
+ *  Cycles whose digest carries no lint-run reference (lint skipped,
+ *  empty window, report missing) are exempt. */
+async function assertLintPair(
+  dataRoot: string,
+  cyclePath: string,
+  cycleTitle: string,
+  lint: LintResult | undefined,
+): Promise<void> {
+  if (
+    lint === undefined ||
+    lint.skipped !== undefined ||
+    !lint.reportWritten ||
+    lint.sectionTitle === undefined
+  ) {
+    return;
+  }
+
+  const report = await readTextIfExists(toAbsolute(dataRoot, lint.reportPath));
+
+  if (report === undefined) {
+    throw new Error(
+      `cycle digest lint pair broken: the cited lint report ${lint.reportPath} does not exist`,
+    );
+  }
+
+  const unfenced = scannedLines(report)
+    .filter((scanned) => !scanned.fenced)
+    .map((scanned) => scanned.line);
+  const expected = cycleBackReferenceLine(cyclePath, cycleTitle);
+
+  if (!unfenced.includes(expected)) {
+    throw new Error(
+      `cycle digest lint pair broken: ${lint.reportPath} (section "${lint.sectionTitle}") does not back-reference this cycle — expected the line: ${expected}`,
+    );
+  }
+
+  if (!unfenced.includes(`## ${lint.sectionTitle}`)) {
+    throw new Error(
+      `cycle digest lint pair broken: ${lint.reportPath} does not carry the cited section "${lint.sectionTitle}"`,
+    );
+  }
+}
+
+/** Append the finished cycle's bounded section to the day file and
+ *  commit it in its own commit (issue #385). The digest cites the
+ *  content commit's hash, so it must be written after that commit —
+ *  amending would rewrite the hash away from the one the digest
+ *  cites; the digest commit keeps both true. Same-day reruns append;
+ *  a legacy-shape (overwrite-era) day file is retitled and bound as
+ *  pre-append on this first append (issue #459). Returns the section
+ *  text — heading plus body — as written. */
+async function commitCycleDigest(
+  dataRoot: string,
+  env: NodeJS.ProcessEnv,
+  cyclePath: string,
+  cycleStart: Date,
+  result: WikiSyncResult,
+): Promise<string> {
+  const file = join(dataRoot, cyclePath);
+  const existing = await readTextIfExists(file);
+  const plan = planCycleAppend(existing, cycleStart);
+
+  await assertLintPair(dataRoot, cyclePath, plan.sectionTitle, result.lint);
+
+  const body = formatFinalDigest(result);
+
+  await mkdir(join(dataRoot, dirname(cyclePath)), { recursive: true });
+  await writeFile(file, plan.prefix + body);
+
+  await commitDataRepo(dataRoot, env, `wiki-sync: cycle digest ${cyclePath}`);
+
+  return `## ${plan.sectionTitle}\n\n${body}`;
+}
+
+/** The failure digest (issue #385): once the ingest prompt promised
+ *  the cycle report, a later stage failure still writes the day's
+ *  file — recording the failure — so the log entry's citation
+ *  resolves. The failure section appends under the same bounded
+ *  rules as a success (issue #459), reusing the cycle-start instant
+ *  so a lint run's back-reference lands on it; a later same-day
+ *  cycle appends after it and never overwrites it. Uncommitted, it
+ *  rides the next real cycle's commit, like the ingest edits a
+ *  failed cycle already leaves. Best-effort: the cycle's real
+ *  failure must surface. */
+async function writeFailureDigest(
+  dataRoot: string,
+  path: string,
+  cycleStart: Date,
+  error: unknown,
+): Promise<void> {
+  try {
+    const file = join(dataRoot, path);
+    const existing = await readTextIfExists(file);
+    const plan = planCycleAppend(existing, cycleStart);
+
+    await mkdir(join(dataRoot, dirname(path)), { recursive: true });
+    await writeFile(
+      file,
+      `${plan.prefix}- **Result:** failed — ${errorMessage(error)}\n`,
+    );
+  } catch {
+    // An unwritable digest is secondary; nothing committed cites it —
+    // a failed cycle's log entry stays uncommitted with the ingest
+    // edits.
+  }
+}
+
+/** Count a sync report's copied and removed notes across every
+ *  source row — vault or repo (the digest's sync summary shares it). */
+export function syncChangeCounts(sync: SyncReport): {
+  copied: number;
+  removed: number;
+} {
+  return {
+    copied: sync.sources.reduce(
+      (total, source) => total + source.copied.length,
+      0,
+    ),
+    removed: sync.sources.reduce(
+      (total, source) => total + source.removed.length,
+      0,
+    ),
+  };
+}
+
+/** The commit summary of one cycle: ingest diff counts when the agent
+ *  ran, the sync report's counts otherwise. The page counts come from
+ *  the caller — the status snapshot the cycle already holds (B-10:
+ *  the summary builder hides no git child-process run). */
+function commitSummaryOf(
+  sync: SyncReport,
+  ingest: IngestResult,
+  lint: LintResult | undefined,
+  pages: WikiPages,
+): CommitSummary {
+  if (ingest.status === "ran") {
+    const added = sourceCount(ingest.diff, "added");
+    const changed = sourceCount(ingest.diff, "changed");
+    const removed = sourceCount(ingest.diff, "removed");
+    const renamed = sourceCount(ingest.diff, "renamed");
+
+    return {
+      sourcesCount: added + changed + removed + renamed,
+      sourcesLine: `${added} added, ${changed} changed, ${removed} removed, ${renamed} renamed`,
+      pagesCreated: pages.created.length,
+      pagesUpdated: pages.updated.length,
+      lintReport: lint?.reportWritten ? lint.reportPath : undefined,
+    };
+  }
+
+  const { copied, removed } = syncChangeCounts(sync);
+
+  return {
+    sourcesCount: copied + removed,
+    sourcesLine: `${copied} copied, ${removed} removed by sync (no ingest)`,
+    pagesCreated: pages.created.length,
+    pagesUpdated: pages.updated.length,
+    lintReport: undefined,
+  };
 }
 
 /** One line per source: what sync copied and removed; a repo run
@@ -992,61 +1008,6 @@ function citationsLine(citations: CitationWallStageResult): string {
   return `the one-way wall holds over ${pages}${sandbox}`;
 }
 
-/** The data-repo-relative cycle digest path for a run's date — the
- *  lint report's date-named mechanism (issue #385): a same-day rerun
- *  overwrites, git history disambiguates. */
-export function cycleReportPath(now: () => Date): string {
-  return `outputs/cycle-${now().toISOString().slice(0, 10)}.md`;
-}
-
-/** The ingest-prompt line promising the cycle report (issue #385):
- *  the agent writes its log entry during stage 2, before the digest
- *  exists, and cites this exact path — as a plain path (issue #410). */
-function cycleReportPromise(path: string): string {
-  return `This cycle's full report will be committed at \`${path}\`; cite it in your log entry as a plain path (no [[brackets]]).`;
-}
-
-/** Write the finished digest beside the lint reports and commit it in
- *  its own commit (issue #385). The digest cites the content commit's
- *  hash, so it must be written after that commit — amending would
- *  rewrite the hash away from the one the digest cites; the digest
- *  commit keeps both true. */
-async function commitCycleDigest(
-  dataRoot: string,
-  env: NodeJS.ProcessEnv,
-  path: string,
-  digest: string,
-): Promise<void> {
-  await mkdir(join(dataRoot, dirname(path)), { recursive: true });
-  await writeFile(join(dataRoot, path), digest);
-
-  await commitDataRepo(dataRoot, env, `wiki-sync: cycle digest ${path}`);
-}
-
-/** The failure digest (issue #385): once the ingest prompt promised
- *  the cycle report, a later stage failure still writes the day's
- *  file — recording the failure — so the log entry's citation
- *  resolves. Uncommitted, it rides the next real cycle's commit,
- *  like the ingest edits a failed cycle already leaves. Best-effort:
- *  the cycle's real failure must surface. */
-async function writeFailureDigest(
-  dataRoot: string,
-  path: string,
-  error: unknown,
-): Promise<void> {
-  try {
-    await mkdir(join(dataRoot, dirname(path)), { recursive: true });
-    await writeFile(
-      join(dataRoot, path),
-      `# wiki-sync cycle digest\n\n- **Result:** failed — ${errorMessage(error)}\n`,
-    );
-  } catch {
-    // An unwritable digest is secondary; nothing committed cites it —
-    // a failed cycle's log entry stays uncommitted with the ingest
-    // edits.
-  }
-}
-
 /** The one-line digest of a no-op cycle — nothing to commit after
  *  a skipped ingest, and publish (when configured) copied and removed
  *  nothing; undefined whenever the cycle did real work. Exported for
@@ -1071,32 +1032,41 @@ export function nothingToDoLine(result: WikiSyncResult): string | undefined {
 }
 
 /** The digest's lint lines: skipped (no ingest), window-empty, or
- *  the completed audit with its scope and report. */
+ *  the completed audit with its inline window definition, the report
+ *  path, and the exact lint run section it names (issue #459). */
 function lintLines(lint: LintResult | undefined): string[] {
   if (lint === undefined) {
-    return ["- **Lint:** skipped — no ingest ran"];
+    return ["- **Lint:** skipped — no ingest ran (this cycle)"];
   }
 
   if (lint.skipped === "empty-window") {
     return [
-      "- **Lint:** window empty — nothing left to audit since the last audit",
+      "- **Lint:** window empty — nothing left to audit since the last audit (this cycle)",
     ];
   }
 
-  const scope =
+  const window =
     lint.windowPages === undefined
-      ? "full audit"
-      : `window audit (${pluralized(lint.windowPages.length, "page")})`;
+      ? "full audit (every page)"
+      : `window audit (${pluralized(lint.windowPages.length, "page")}: changed this cycle plus reverse neighbors)`;
+  const reference =
+    lint.reportWritten && lint.sectionTitle !== undefined
+      ? ` — report \`${lint.reportPath}\` — section "${lint.sectionTitle}"`
+      : ` — report not written (expected \`${lint.reportPath}\`)`;
 
-  return [
-    `- **Lint:** ${scope}, ${lint.reportWritten ? `report \`${lint.reportPath}\`` : `report not written (expected \`${lint.reportPath}\`)`} — summary below`,
-  ];
+  return [`- **Lint:** ${window}${reference} — summary below`];
 }
 
 /**
- * The final printed digest: counts first, details after — the sync
+ * The digest section body: counts first, details after — the sync
  * summary, the lint summary, the commit hash, then the full ingest
- * digest.
+ * digest. Written into the day file under the section heading the
+ * append planner composes (issue #459); the day H1 belongs to the
+ * file, never to a section, and the embedded summaries' former
+ * top-level headings sit two levels deeper so nothing escapes its
+ * section, and an embed an open fence swallows is sealed where it
+ * sits. Every number is labeled: cycle deltas "(this cycle)",
+ * whole-wiki audits "(whole wiki at cycle end)" — never a day total.
  */
 export function formatFinalDigest(result: WikiSyncResult): string {
   const { citations, commit, crosslinks, ingest, lint, sync, verification } =
@@ -1108,53 +1078,79 @@ export function formatFinalDigest(result: WikiSyncResult): string {
   }
 
   const lines: string[] = [
-    "# wiki-sync cycle digest",
-    "",
-    `- **Sync:** ${syncSummaryLines(sync).join("; ")}`,
+    `- **Sync:** ${syncSummaryLines(sync).join("; ")} (this cycle)`,
   ];
 
   if (ingest.status === "ran") {
-    lines.push(`- **Ingest:** ${ingest.mode} — digest below`);
+    lines.push(`- **Ingest:** ${ingest.mode} — digest below (this cycle)`);
   } else {
-    lines.push(`- **Ingest:** skipped — ${ingest.reason}`);
+    lines.push(`- **Ingest:** skipped — ${ingest.reason} (this cycle)`);
   }
 
   lines.push(...lintLines(lint));
 
   if (crosslinks !== undefined) {
-    lines.push(`- **Crosslinks:** ok — ${crosslinksLine(crosslinks)}`);
+    lines.push(
+      `- **Crosslinks:** ok — ${crosslinksLine(crosslinks)} (whole wiki at cycle end)`,
+    );
   }
 
-  lines.push(`- **Citations:** ok — ${citationsLine(citations)}`);
+  lines.push(
+    `- **Citations:** ok — ${citationsLine(citations)} (whole wiki at cycle end)`,
+  );
 
   lines.push(
-    `- **Fidelity:** ok — ${summarizeFidelity(verification.fidelity)}`,
+    `- **Fidelity:** ok — ${verification.fidelityLine} (whole wiki at cycle end)`,
   );
   lines.push(
-    `- **Provenance:** ok — ${summarizeProvenance(verification.provenance)}`,
+    `- **Provenance:** ok — ${verification.provenanceLine} (whole wiki at cycle end)`,
   );
 
   if (commit.status === "committed") {
-    lines.push(`- **Commit:** \`${commit.hash.slice(0, 8)}\``);
+    lines.push(`- **Commit:** \`${commit.hash.slice(0, 8)}\` (this cycle)`);
   } else {
-    lines.push("- **Commit:** nothing to commit");
+    lines.push("- **Commit:** nothing to commit (this cycle)");
   }
 
   if (result.publish !== undefined) {
     lines.push(
-      `- **Publish:** ok — ${pluralized(result.publish.copied, "file")} copied, ${pluralized(result.publish.removed, "file")} removed`,
+      `- **Publish:** ok — ${pluralized(result.publish.copied, "file")} copied, ${pluralized(result.publish.removed, "file")} removed (this cycle)`,
     );
   }
 
   if (lint !== undefined && lint.skipped === undefined) {
-    lines.push("", "## Lint summary", "", lint.summary.trimEnd());
+    const summary = demoteHeadings(lint.summary.trimEnd(), 2);
+
+    lines.push("", "#### Lint summary", "", `${summary}${fenceSeal(summary)}`);
   }
 
   if (ingest.status === "ran") {
-    lines.push("", "## Ingest digest", "", ingest.digest.trimEnd());
+    const digest = demoteHeadings(ingest.digest.trimEnd(), 2);
+
+    lines.push("", "#### Ingest digest", "", `${digest}${fenceSeal(digest)}`);
   }
 
   return `${lines.join("\n")}\n`;
+}
+
+/** Demote every ATX heading by `levels` levels (H1→H3, H2→H4, …,
+ *  clamped at H6): the embed-time transform keeping a composed
+ *  digest's headings strictly inside its Cycle section (issue #459,
+ *  Design 3). Code-fenced lines pass through untouched; a heading's
+ *  leading indentation is dropped (CommonMark renders it
+ *  identically). */
+export function demoteHeadings(text: string, levels: number): string {
+  return scannedLines(text)
+    .map(({ line, hashes, indent }) => {
+      if (hashes === 0) {
+        return line;
+      }
+
+      const demoted = "#".repeat(Math.min(hashes + levels, 6));
+
+      return `${demoted} ${line.slice(indent + hashes + 1)}`;
+    })
+    .join("\n");
 }
 
 /** Print one CLI usage error red on stderr and set the exit code. */
@@ -1263,7 +1259,7 @@ export async function main(
     );
 
     sink.end();
-    console.log(formatFinalDigest(result));
+    console.log(result.digest ?? nothingToDoLine(result));
   } catch (error) {
     sink.end();
     console.error(colors().red(`wiki-sync: ${errorMessage(error)}`));

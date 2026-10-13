@@ -24,6 +24,7 @@ import { main as checkCitations } from "../../scripts/check-citations.ts";
 import { main as checkCrosslinks } from "../../scripts/check-crosslinks.ts";
 import { main as checkFidelity } from "../../scripts/check-fidelity.ts";
 import { main as checkLinks } from "../../scripts/check-links.ts";
+import { main as checkOutputs } from "../../scripts/check-outputs.ts";
 import { main as checkProvenance } from "../../scripts/check-provenance.ts";
 import { main as invertLog } from "../../scripts/invert-log.ts";
 import { main as linkSources } from "../../scripts/link-sources.ts";
@@ -297,6 +298,14 @@ export function verbTable(): readonly VerbSpec[] {
       wiki: false,
       lines: ["one-way cross-wiki link discipline"],
       main: checkCrosslinks,
+    },
+    {
+      name: "check-outputs",
+      klass: "operator",
+      tier: "libexec",
+      wiki: false,
+      lines: ["outputs/ day-file shape and pair references"],
+      main: checkOutputs,
     },
     {
       name: "check-citations",

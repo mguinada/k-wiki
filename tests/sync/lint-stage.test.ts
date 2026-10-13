@@ -1,10 +1,18 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, describe, expect, it } from "vitest";
 import { runContext } from "../../src/cli/run-context.ts";
+import { readTextIfExists } from "../../src/cli/shared.ts";
 import type { AgentRunner } from "../../src/ingest/agent-run.ts";
 import {
   affordabilityExclusion,
@@ -50,8 +58,8 @@ interface StageHarness {
   set agent(next: AgentRunner);
 }
 
-/** The lint-stub default: record the prompt, write the report the
- *  prompt names. */
+/** The lint-stub default: record the prompt, append the report body
+ *  below the stage-written heading. */
 const lintStub: AgentRunner = async (_command, args, options) => {
   const prompt = args[args.indexOf("--print") + 1] ?? "";
   const reportPath = /outputs\/lint-\d{4}-\d{2}-\d{2}(-full)?\.md/.exec(
@@ -59,8 +67,18 @@ const lintStub: AgentRunner = async (_command, args, options) => {
   )?.[0];
 
   if (reportPath !== undefined) {
+    const referenceLine =
+      /^Start the section body with this exact line: (.+)$/m.exec(prompt)?.[1];
+
+    if (referenceLine === undefined) {
+      throw new Error("lint stub: the prompt carries no append contract line");
+    }
+
     await mkdir(join(options.cwd, "outputs"), { recursive: true });
-    await writeFile(join(options.cwd, reportPath), "# Lint report\n");
+    await appendFile(
+      join(options.cwd, reportPath),
+      `${referenceLine}\n\nAll checks passed.\n`,
+    );
   }
 
   return { stdout: "lint done", stderr: "" };
@@ -400,6 +418,175 @@ describe("runLintStage snapshot semantics", () => {
   });
 });
 
+describe("runLintStage report day file", () => {
+  it("keeps the stage-written day title and section heading above the body", async () => {
+    const h = await makeHarness(BASE_PAGES);
+
+    await runLintStage(optionsFor(h));
+
+    const report = await readFile(
+      join(h.dataRoot, "outputs", "lint-2026-09-12-full.md"),
+      "utf8",
+    );
+
+    expect(report).toMatch(
+      /^# Full lint — 2026-09-12\n\n## Lint run 1 — .+ \(full audit\)\n\n/,
+    );
+  });
+
+  it("opens the body with the prompt's standalone contract line", async () => {
+    const h = await makeHarness(BASE_PAGES);
+
+    await runLintStage(optionsFor(h));
+
+    const report = await readFile(
+      join(h.dataRoot, "outputs", "lint-2026-09-12-full.md"),
+      "utf8",
+    );
+
+    expect(report).toContain("Standalone — no citing cycle.");
+  });
+
+  it("treats a report the agent deleted as not written", async () => {
+    const h = await makeHarness(BASE_PAGES);
+
+    h.agent = async (_command, args, options) => {
+      const prompt = args[args.indexOf("--print") + 1] ?? "";
+      const reportPath = /outputs\/lint-\d{4}-\d{2}-\d{2}(-full)?\.md/.exec(
+        prompt,
+      )?.[0];
+
+      if (reportPath !== undefined) {
+        await rm(join(options.cwd, reportPath), { force: true });
+      }
+
+      return { stdout: "deleted it", stderr: "" };
+    };
+
+    const result = await runLintStage(optionsFor(h));
+
+    expect(result.reportWritten).toBe(false);
+  });
+
+  it("restores an absent report to absence when the agent fails", async () => {
+    const h = await makeHarness(BASE_PAGES);
+
+    h.agent = async () => {
+      throw new Error("timeout");
+    };
+
+    await runLintStage(optionsFor(h)).catch(() => {});
+
+    expect(
+      await readTextIfExists(
+        join(h.dataRoot, "outputs", "lint-2026-09-12-full.md"),
+      ),
+    ).toBeUndefined();
+  });
+
+  it("restores the report's prior content when the agent fails", async () => {
+    const h = await makeHarness(BASE_PAGES);
+
+    await audited(h);
+
+    const reportPath = join(h.dataRoot, "outputs", "lint-2026-09-12-full.md");
+    const before = await readFile(reportPath, "utf8");
+
+    h.agent = async () => {
+      throw new Error("timeout");
+    };
+
+    await runLintStage({ ...optionsFor(h), full: true }).catch(() => {});
+
+    expect(await readFile(reportPath, "utf8")).toBe(before);
+  });
+
+  it("restores an untouched report to absence after a successful run", async () => {
+    const h = await makeHarness(BASE_PAGES);
+
+    h.agent = async () => ({ stdout: "audited nothing", stderr: "" });
+
+    await runLintStage(optionsFor(h));
+
+    expect(
+      await readTextIfExists(
+        join(h.dataRoot, "outputs", "lint-2026-09-12-full.md"),
+      ),
+    ).toBeUndefined();
+  });
+
+  it("restores an untouched report's prior content after a successful run", async () => {
+    const h = await makeHarness(BASE_PAGES);
+
+    await audited(h);
+
+    const reportPath = join(h.dataRoot, "outputs", "lint-2026-09-12-full.md");
+    const before = await readFile(reportPath, "utf8");
+
+    h.agent = async () => ({ stdout: "audited nothing", stderr: "" });
+
+    await runLintStage({ ...optionsFor(h), full: true });
+
+    expect(await readFile(reportPath, "utf8")).toBe(before);
+  });
+
+  it("restores a deleted report's prior content after a successful run", async () => {
+    const h = await makeHarness(BASE_PAGES);
+
+    await audited(h);
+
+    const reportPath = join(h.dataRoot, "outputs", "lint-2026-09-12-full.md");
+    const before = await readFile(reportPath, "utf8");
+
+    h.agent = async (_command, args, options) => {
+      const prompt = args[args.indexOf("--print") + 1] ?? "";
+      const reportPath = /outputs\/lint-\d{4}-\d{2}-\d{2}(-full)?\.md/.exec(
+        prompt,
+      )?.[0];
+
+      if (reportPath !== undefined) {
+        await rm(join(options.cwd, reportPath), { force: true });
+      }
+
+      return { stdout: "deleted it", stderr: "" };
+    };
+
+    await runLintStage({ ...optionsFor(h), full: true });
+
+    expect(await readFile(reportPath, "utf8")).toBe(before);
+  });
+
+  it("derives the report path and the day title from one clock read", async () => {
+    const h = await makeHarness(BASE_PAGES);
+    let tick = 0;
+
+    const straddlingNow = () => {
+      const instant = new Date(
+        Date.UTC(2026, 8, 12, 23, 59, 59) + tick * 2_000,
+      );
+
+      tick += 1;
+
+      return instant;
+    };
+
+    const result = await runLintStage({
+      ...optionsFor(h),
+      run: runContext({
+        rawDir: join(h.dataRoot, "raw"),
+        env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_COMMITTER_NAME: "t" },
+        now: straddlingNow,
+      }),
+    });
+    const pathDay = /lint-(\d{4}-\d{2}-\d{2})-full\.md$/.exec(
+      result.reportPath,
+    )?.[1];
+    const report = await readFile(join(h.dataRoot, result.reportPath), "utf8");
+
+    expect(report.split("\n")[0]).toBe(`# Full lint — ${pathDay}`);
+  });
+});
+
 describe("runLintStage empty window", () => {
   it("skips the agent when nothing changed since the snapshot", async () => {
     const h = await makeHarness(BASE_PAGES);
@@ -518,16 +705,8 @@ describe("runLintStage windowed worklists", () => {
 describe("runLintStage pre-run capture", () => {
   it("captures its own pre-run state when the caller passes none", async () => {
     const h = await makeHarness(BASE_PAGES);
-    const saboteur: AgentRunner = async (_command, args, options) => {
-      const prompt = args[args.indexOf("--print") + 1] ?? "";
-      const reportPath = /outputs\/lint-\d{4}-\d{2}-\d{2}(-full)?\.md/.exec(
-        prompt,
-      )?.[0];
-
-      if (reportPath !== undefined) {
-        await mkdir(join(options.cwd, "outputs"), { recursive: true });
-        await writeFile(join(options.cwd, reportPath), "# Lint report\n");
-      }
+    const saboteur: AgentRunner = async (command, args, options) => {
+      await lintStub(command, args, options);
 
       await writeFile(
         join(options.cwd, "wiki", "broken.md"),

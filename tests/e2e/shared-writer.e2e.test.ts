@@ -232,10 +232,12 @@ if (mode === "link-domain" || mode === "link-broken") {
 if (prompt.startsWith("Audit the wiki")) {
   const reportPath = prompt.match(/outputs\\/lint-\\d{4}-\\d{2}-\\d{2}(-full)?\\.md/)?.[0];
   if (reportPath === undefined) process.exit(6);
+  const referenceLine = /^Start the section body with this exact line: (.+)$/m.exec(prompt)?.[1];
+  if (referenceLine === undefined) process.exit(7);
   await mkdir(join(process.cwd(), "outputs"), { recursive: true });
-  await writeFile(
+  await appendFile(
     join(process.cwd(), reportPath),
-    "# Lint report\\n\\nAll checks passed.\\n",
+    referenceLine + "\\n\\nAll checks passed.\\n",
   );
   await writeFile(
     join(process.cwd(), "outputs", "received-lint-prompt.txt"),

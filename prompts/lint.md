@@ -41,6 +41,11 @@ Report ambiguous problems instead of guessing.
 
 Save the report to `outputs/lint-<YYYY-MM-DD>-full.md`.
 
+The report file is append-only: it holds one bounded section per run,
+and the section heading for this run is already written at the end of
+the file. Write your report below that heading; change nothing above
+it. Keep every heading in your report at depth 3 (###) or deeper.
+
 Prepend significant findings to `log.md`: insert each entry as the
 new topmost entry — below the `# Wiki Log` header and any standing
 comment — leaving the older entries untouched.

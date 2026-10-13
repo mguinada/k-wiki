@@ -44,11 +44,24 @@ e2e run or diagnosing a failing one.
   cycle's lint is windowed to the changed page, a clean no-change
   cycle keeps the skip, and an ingest whose pages all come back
   byte-identical skips the agent with the empty-window digest line;
-  the cycle digest (issue #385): a real-work cycle commits the dated
-  digest beside the lint reports in its own commit
+  the cycle digest (issue #385): a real-work cycle appends a bounded
+  `## Cycle N — <timestamp>` section to the day file
   (`outputs/cycle-<date>.md`, the digest commit naming the path)
   while a no-op cycle writes and commits nothing, and the ingest
-  prompt carries the cycle-report promise the log entry cites.
+  prompt carries the cycle-report promise the log entry cites;
+  append-only day files (issue #459): a same-day second cycle
+  appends its bounded section after the first (prior sections
+  untouched), a failure digest appends a `- **Result:** failed`
+  section a later successful cycle preserves, the lint day file
+  mirrors the pair references, and the check-outputs checker passes
+  over the accumulated outputs/ after each append.
+- **check-outputs** — the day-file checker (issue #459) over temp
+  outputs/ dirs: shape mode (bounded sections, heading grammar,
+  position numbering, `---` separators, containment, supersession
+  prose on writer surfaces, legacy-file exemption) and citations
+  mode (cycle↔lint pair references resolve, standalone markers
+  exempt, [[outputs/…]] wikilinks rejected), driven inside the
+  wiki-sync append runs and standalone.
 - **wiki-lint** — the standalone lint door against a stub agent in
   temp data repos: completed run (report written, digest on stdout,
   exit 0), uncommitted-edits (the agent's wiki edits and the report

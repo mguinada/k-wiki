@@ -77,10 +77,11 @@ Switches and arguments:
 What it writes:
   - wiki pages, by the agent, in the data repo (never raw/);
   - the lint report in the DATA repo's outputs/: the windowed audit
-    writes outputs/lint-<YYYY-MM-DD>.md, a full audit writes
-    outputs/lint-<YYYY-MM-DD>-full.md — the separate path keeps a
-    same-day windowed audit from overwriting the full sweep's
-    report;
+    appends a bounded Lint run N — <timestamp> (<window>) section
+    to outputs/lint-<YYYY-MM-DD>.md, a full audit appends to
+    outputs/lint-<YYYY-MM-DD>-full.md — separate day-file families,
+    append-only, nothing overwritten; a standalone run's section
+    opens with the marker Standalone — no citing cycle.;
   - the lint-window snapshot outputs/lint-window.json (excluded via
     the data repo's .git/info/exclude, per-instance state) after a
     completed audit.

@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import {
+  appendFile,
   chmod,
   cp,
   mkdir,
@@ -19,20 +20,18 @@ import { type RunContextInput, runContext } from "../../src/cli/run-context.ts";
 import { runGit } from "../../src/data/git.ts";
 import type { AgentRunner } from "../../src/ingest/agent-run.ts";
 import { loadSyncConfig } from "../../src/sync/config.ts";
+import type { CrosslinksResult } from "../../src/sync/crosslinks-stage.ts";
+import type { CommitResult } from "../../src/sync/cycle-commit.ts";
 import {
   LINT_HEARTBEAT_PREFIX,
   runLintStage,
 } from "../../src/sync/lint-stage.ts";
 import { serializeManifest } from "../../src/sync/manifest.ts";
 import {
-  type CommitResult,
-  type CrosslinksResult,
   cycleReportPath,
-  formatCommitMessage,
+  demoteHeadings,
   formatFinalDigest,
   main,
-  runCrosslinksStage,
-  runVerificationStage,
   runWikiSync,
   stageLine,
   stageNames,
@@ -134,10 +133,21 @@ const lintStub: AgentRunner = async (_command, args, options) => {
   )?.[0];
 
   if (reportPath !== undefined) {
+    // The stage pre-writes the day title and this run's section
+    // heading (issue #459); the stub appends its section body below
+    // the heading, opening with the exact contract line the prompt
+    // carries — the back-reference, or the standalone marker.
+    const referenceLine =
+      /^Start the section body with this exact line: (.+)$/m.exec(prompt)?.[1];
+
+    if (referenceLine === undefined) {
+      throw new Error("lint stub: the prompt carries no append contract line");
+    }
+
     await mkdir(join(options.cwd, "outputs"), { recursive: true });
-    await writeFile(
+    await appendFile(
       join(options.cwd, reportPath),
-      "# Lint report\n\nAll checks passed.\n",
+      `${referenceLine}\n\nAll checks passed.\n`,
     );
   }
 
@@ -455,7 +465,7 @@ describe("runWikiSync", () => {
 
     await expect(
       readFile(join(h.dataRoot, "outputs", "lint-2026-08-20-full.md"), "utf8"),
-    ).resolves.toContain("Lint report");
+    ).resolves.toContain("# Full lint — 2026-08-20");
   });
 
   it("commits a cycle whose data-repo outputs holds only the ignored snapshot", async () => {
@@ -708,6 +718,97 @@ describe("runWikiSync", () => {
     expect(
       h.invocations.filter((p) => p.startsWith("FULL PROMPT")),
     ).toHaveLength(2);
+  });
+
+  it("fails the cycle loud when the lint report's back-reference mismatches", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    // The stub complies with the append contract but names the wrong
+    // cycle section — the pair assert must fail the digest finalize.
+    h.lintAgent = async (_command, args, options) => {
+      await lintStub(_command, args, options);
+      const prompt = args[args.indexOf("--print") + 1] ?? "";
+      const reportPath = /outputs\/lint-\d{4}-\d{2}-\d{2}(-full)?\.md/.exec(
+        prompt,
+      )?.[0];
+
+      if (reportPath !== undefined) {
+        await writeFile(
+          join(options.cwd, reportPath),
+          'Cycle audited: `outputs/cycle-2026-08-20.md` — section "Cycle 9 — elsewhere"\n',
+        );
+      }
+
+      return { stdout: "lint done", stderr: "" };
+    };
+
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow(
+      /cycle digest lint pair broken.*expected the line: Cycle audited: `outputs\/cycle-2026-08-20\.md` — section "Cycle 1 — /s,
+    );
+  });
+
+  it("fails the cycle loud when the cited lint section is missing", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    // The stub keeps the exact contract line but rewrites the report
+    // without the writer's day title and section heading.
+    h.lintAgent = async (_command, args, options) => {
+      await lintStub(_command, args, options);
+      const prompt = args[args.indexOf("--print") + 1] ?? "";
+      const reportPath = /outputs\/lint-\d{4}-\d{2}-\d{2}(-full)?\.md/.exec(
+        prompt,
+      )?.[0];
+      const referenceLine =
+        /^Start the section body with this exact line: (.+)$/m.exec(
+          prompt,
+        )?.[1];
+
+      if (reportPath !== undefined && referenceLine !== undefined) {
+        await writeFile(join(options.cwd, reportPath), `${referenceLine}\n`);
+      }
+
+      return { stdout: "lint done", stderr: "" };
+    };
+
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow(
+      /cycle digest lint pair broken.*does not carry the cited section/s,
+    );
+  });
+
+  it("fails the cycle loud when the cited lint section is only quoted", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    // The stub keeps the day title and the exact contract line but
+    // demotes the writer's heading to a fenced quotation.
+    h.lintAgent = async (_command, args, options) => {
+      await lintStub(_command, args, options);
+      const prompt = args[args.indexOf("--print") + 1] ?? "";
+      const reportPath = /outputs\/lint-\d{4}-\d{2}-\d{2}(-full)?\.md/.exec(
+        prompt,
+      )?.[0];
+      const referenceLine =
+        /^Start the section body with this exact line: (.+)$/m.exec(
+          prompt,
+        )?.[1];
+
+      if (reportPath !== undefined && referenceLine !== undefined) {
+        const prior = await readFile(join(options.cwd, reportPath), "utf8");
+        const heading = /^## Lint run .+$/m.exec(prior)?.[0];
+
+        if (heading !== undefined) {
+          await writeFile(
+            join(options.cwd, reportPath),
+            `${prior.split("\n")[0] ?? ""}\n\n${referenceLine}\n\n\`\`\`\n${heading}\n\`\`\`\n`,
+          );
+        }
+      }
+
+      return { stdout: "lint done", stderr: "" };
+    };
+
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow(
+      /cycle digest lint pair broken.*does not carry the cited section/s,
+    );
   });
 
   it("commits the retry cycle after a failed run", async () => {
@@ -1068,7 +1169,7 @@ describe("runWikiSync repo-sourced instances", () => {
 
     expect(formatFinalDigest(result)).toMatch(
       new RegExp(
-        `^- \\*\\*Sync:\\*\\* 2 sources copied, 0 sources removed at commit ${sha8}$`,
+        `^- \\*\\*Sync:\\*\\* 2 sources copied, 0 sources removed at commit ${sha8} \\(this cycle\\)$`,
         "m",
       ),
     );
@@ -1099,7 +1200,7 @@ describe("runWikiSync repo-sourced instances", () => {
     const result = await runWikiSync(optionsFor(h));
 
     expect(formatFinalDigest(result)).toMatch(
-      /^- \*\*Sync:\*\* 1 source copied, 0 sources removed$/m,
+      /^- \*\*Sync:\*\* 1 source copied, 0 sources removed \(this cycle\)$/m,
     );
   });
 
@@ -1412,6 +1513,45 @@ describe("runWikiSync publish stage (issue #15)", () => {
   });
 });
 
+describe("demoteHeadings", () => {
+  it("demotes an embedded digest's H1 to H3 and H2 to H4", () => {
+    expect(
+      demoteHeadings(
+        "# Wiki ingest digest — 2026-10-12T13:46:24.421Z\n\n## Changed sources\n\n- one note\n",
+        2,
+      ),
+    ).toBe(
+      "### Wiki ingest digest — 2026-10-12T13:46:24.421Z\n\n#### Changed sources\n\n- one note\n",
+    );
+  });
+
+  it("leaves plain body lines untouched", () => {
+    expect(demoteHeadings("- **Agent:** `pi`\n\nbody text\n", 2)).toBe(
+      "- **Agent:** `pi`\n\nbody text\n",
+    );
+  });
+
+  it("clamps the deepest headings at H6", () => {
+    expect(demoteHeadings("##### deep\n", 2)).toBe("###### deep\n");
+  });
+
+  it("leaves lines inside a backtick fence untouched", () => {
+    const fenced = "```bash\n# rebuild the index\n```\n";
+
+    expect(demoteHeadings(fenced, 2)).toBe(fenced);
+  });
+
+  it("leaves lines inside a tilde fence untouched", () => {
+    const fenced = "~~~\n## example\n~~~\n";
+
+    expect(demoteHeadings(fenced, 2)).toBe(fenced);
+  });
+
+  it("demotes an indented heading and drops its indentation", () => {
+    expect(demoteHeadings(" ## Findings\n", 2)).toBe("#### Findings\n");
+  });
+});
+
 describe("formatFinalDigest", () => {
   it("states nothing to do when the cycle was a no-op", () => {
     const digest = formatFinalDigest({
@@ -1429,6 +1569,8 @@ describe("formatFinalDigest", () => {
           missingOrigins: 0,
           pages: 1,
         },
+        fidelityLine: "0 tokens trace to origins, 0 titles match across 1 page",
+        provenanceLine: "0 source links resolve, 0 origins exist across 1 page",
       },
       commit: { status: "nothing-to-commit" },
     });
@@ -1460,11 +1602,11 @@ describe("formatFinalDigest", () => {
     }
 
     expect(formatFinalDigest(result)).toContain(
-      "- **Ingest:** full — digest below",
+      "- **Ingest:** full — digest below (this cycle)",
     );
   });
 
-  it("digests the lint report path", async () => {
+  it("digests the lint report path and section reference", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
     const result = await runWikiSync(optionsFor(h));
 
@@ -1473,7 +1615,7 @@ describe("formatFinalDigest", () => {
     }
 
     expect(formatFinalDigest(result)).toContain(
-      "- **Lint:** full audit, report `outputs/lint-2026-08-20-full.md`",
+      '- **Lint:** full audit (every page) — report `outputs/lint-2026-08-20-full.md` — section "Lint run 1 — ',
     );
   });
 
@@ -1486,11 +1628,11 @@ describe("formatFinalDigest", () => {
     }
 
     expect(formatFinalDigest(result)).toContain(
-      `- **Commit:** \`${result.commit.hash.slice(0, 8)}\``,
+      `- **Commit:** \`${result.commit.hash.slice(0, 8)}\` (this cycle)`,
     );
   });
 
-  it("digests the lint summary section", async () => {
+  it("digests the lint summary section demoted under the section", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
     const result = await runWikiSync(optionsFor(h));
 
@@ -1498,10 +1640,10 @@ describe("formatFinalDigest", () => {
       throw new Error("expected a committed cycle");
     }
 
-    expect(formatFinalDigest(result)).toContain("## Lint summary");
+    expect(formatFinalDigest(result)).toContain("#### Lint summary");
   });
 
-  it("digests the ingest digest section", async () => {
+  it("digests the ingest digest section demoted under the section", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
     const result = await runWikiSync(optionsFor(h));
 
@@ -1509,7 +1651,7 @@ describe("formatFinalDigest", () => {
       throw new Error("expected a committed cycle");
     }
 
-    expect(formatFinalDigest(result)).toContain("## Ingest digest");
+    expect(formatFinalDigest(result)).toContain("#### Ingest digest");
   });
 
   it("names pruned namespaces in the sync summary", () => {
@@ -1528,39 +1670,13 @@ describe("formatFinalDigest", () => {
           missingOrigins: 0,
           pages: 1,
         },
+        fidelityLine: "0 tokens trace to origins, 0 titles match across 1 page",
+        provenanceLine: "0 source links resolve, 0 origins exist across 1 page",
       },
       commit: { status: "committed", hash: "a1b2c3d4", message: "m" },
     });
 
     expect(digest).toContain("1 namespace pruned");
-  });
-});
-
-describe("formatCommitMessage", () => {
-  it("pluralizes sources and pages", () => {
-    const message = formatCommitMessage({
-      sourcesCount: 2,
-      sourcesLine: "1 added, 1 changed, 0 removed",
-      pagesCreated: 3,
-      pagesUpdated: 0,
-      lintReport: undefined,
-    });
-
-    expect(message.split("\n")[0]).toBe(
-      "wiki-sync: 2 sources processed, 3 pages touched",
-    );
-  });
-
-  it("omits the lint line when no report was written", () => {
-    const message = formatCommitMessage({
-      sourcesCount: 1,
-      sourcesLine: "1 added, 0 changed, 0 removed",
-      pagesCreated: 0,
-      pagesUpdated: 1,
-      lintReport: undefined,
-    });
-
-    expect(message).not.toContain("lint:");
   });
 });
 
@@ -1645,65 +1761,6 @@ describe("runWikiSync crosslinks stage", () => {
     expect(progress).toContainEqual("wiki-sync: stage 4/7 — crosslinks");
   });
 
-  it("skips the stage outright when no domains are configured", async () => {
-    const h = await makeHarness({ "AI/RAG.md": "rag body" });
-
-    await expect(
-      runCrosslinksStage({
-        run: runContext({ rawDir: join(h.dataRoot, "raw") }),
-      }),
-    ).resolves.toBeUndefined();
-  });
-
-  it("announces the domain wiki count on the progress line", async () => {
-    const h = await makeHarness({ "AI/RAG.md": "rag body" });
-    const domainWiki = await makeDomainWiki(h);
-    const progress: string[] = [];
-
-    await runCrosslinksStage({
-      run: runContext({
-        rawDir: join(h.dataRoot, "raw"),
-        onProgress: (message) => progress.push(message),
-      }),
-      domains: [domainWiki],
-    });
-
-    expect(progress).toContainEqual(
-      "wiki-sync: crosslinks — auditing against 1 domain wiki",
-    );
-  });
-
-  it("runs without a progress sink", async () => {
-    const h = await makeHarness({ "AI/RAG.md": "rag body" });
-    const domainWiki = await makeDomainWiki(h);
-
-    await expect(
-      runCrosslinksStage({
-        run: runContext({ rawDir: join(h.dataRoot, "raw") }),
-        domains: [domainWiki],
-      }),
-    ).resolves.toBeDefined();
-  });
-
-  it("audits the wiki dir only, not the data repo around it", async () => {
-    const h = await makeHarness({ "AI/RAG.md": "rag body" });
-    const domainWiki = await makeDomainWiki(h);
-
-    // A stray broken cross-wiki link OUTSIDE wiki/ must stay invisible
-    // to the audit: only the data repo's wiki/ is audited.
-    await writeFile(
-      join(h.dataRoot, "stray-note.md"),
-      "broken: [[engineering/missing]]\n",
-    );
-
-    await expect(
-      runCrosslinksStage({
-        run: runContext({ rawDir: join(h.dataRoot, "raw") }),
-        domains: [domainWiki],
-      }),
-    ).resolves.toBeDefined();
-  });
-
   it("fails the cycle naming a broken cross-wiki link", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
     const domainWiki = await makeDomainWiki(h);
@@ -1781,23 +1838,6 @@ describe("runWikiSync crosslinks stage", () => {
     const result = await runWikiSync(optionsFor(h));
 
     expect(formatFinalDigest(result)).not.toContain("Crosslinks");
-  });
-
-  it("expands a leading ~ in a configured domain dir against home", async () => {
-    const h = await makeHarness({ "AI/RAG.md": "rag body" });
-    const domainWiki = await makeDomainWiki(h);
-
-    // Inject the domain wiki's grandparent so `~/domain/wiki` names
-    // the same dir the harness built. Injected, not env-mutated:
-    // `os.homedir()` reads the process's C environ, which worker
-    // threads (Stryker's vitest pool) do not share with `process.env`.
-    const result = await runCrosslinksStage({
-      run: runContext({ rawDir: join(h.dataRoot, "raw") }),
-      domains: ["~/domain/wiki"],
-      home: dirname(dirname(domainWiki)),
-    });
-
-    expect(result?.domains).toEqual([domainWiki]);
   });
 
   it("skips the ingest on a no-change cycle even with domains configured", async () => {
@@ -2104,137 +2144,6 @@ describe("runWikiSync citation wall stage (issue #339)", () => {
     const second = await runWikiSync(optionsFor(h));
 
     expect(second.citations).toMatchObject({ sandboxPages: 1 });
-  });
-});
-
-describe("runVerificationStage", () => {
-  /** A minimal data-repo shape for the stage: wiki/ beside raw/,
-   *  one title-clean concept page with a resolvable source link. */
-  async function makeVerificationRoot(): Promise<string> {
-    const root = await mkdtemp(join(tmpdir(), "k-wiki-verify-"));
-
-    tempDirs.push(root);
-
-    await mkdir(join(root, "wiki", "concepts"), { recursive: true });
-    await mkdir(join(root, "wiki", "sources"), { recursive: true });
-    await mkdir(join(root, "raw"), { recursive: true });
-    await writeFile(join(root, "wiki", "index.md"), "# Index\n");
-    await writeFile(
-      join(root, "wiki", "sources", "src.md"),
-      "---\ntitle: Src\ntype: source\ncreated: 2026-08-20\nupdated: 2026-08-20\ntags:\n  - source\n---\nHub.\n",
-    );
-    await writeFile(
-      join(root, "wiki", "concepts", "clean.md"),
-      wikiPage("Clean body", "Clean"),
-    );
-
-    return root;
-  }
-
-  it("reports no fidelity problems for a faithful wiki", async () => {
-    const root = await makeVerificationRoot();
-
-    const result = await runVerificationStage({
-      run: runContext({ rawDir: join(root, "raw") }),
-    });
-
-    expect(result.fidelity.problems).toEqual([]);
-  });
-
-  it("reports no provenance problems for a coherent wiki", async () => {
-    const root = await makeVerificationRoot();
-
-    const result = await runVerificationStage({
-      run: runContext({ rawDir: join(root, "raw") }),
-    });
-
-    expect(result.provenance.problems).toEqual([]);
-  });
-
-  it("rejects listing one line per fidelity problem", async () => {
-    const root = await makeVerificationRoot();
-
-    await writeFile(
-      join(root, "wiki", "concepts", "drifted.md"),
-      wikiPage("Drifted body", "Elsewhere"),
-    );
-    await mkdir(join(root, "wiki", "sources"), { recursive: true });
-    await mkdir(join(root, "raw", "notes", "Engineering", "AI"), {
-      recursive: true,
-    });
-    await writeFile(
-      join(root, "raw", "notes", "Engineering", "AI", "RAG.md"),
-      "rag body without the command\n",
-    );
-    await writeFile(
-      join(root, "wiki", "sources", "misquote.md"),
-      frontmatterPage(
-        "Misquote",
-        "source",
-        ["origin: notes/Engineering/AI/RAG.md"],
-        "Run `npm run build`.",
-      ),
-    );
-
-    await expect(
-      runVerificationStage({
-        run: runContext({ rawDir: join(root, "raw") }),
-      }),
-    ).rejects.toThrow(
-      "fidelity check failed:\n" +
-        'wiki/concepts/drifted.md -> title "Elsewhere" does not kebab to drifted\n' +
-        "wiki/sources/misquote.md -> `npm run build` not in origin notes/Engineering/AI/RAG.md",
-    );
-  });
-
-  it("rejects listing one line per provenance problem", async () => {
-    const root = await makeVerificationRoot();
-
-    await mkdir(join(root, "wiki", "sources"), { recursive: true });
-    await writeFile(
-      join(root, "wiki", "sources", "dead-origin.md"),
-      frontmatterPage(
-        "Dead Origin",
-        "source",
-        ["origin: notes/Engineering/gone.md"],
-        "body without artifacts",
-      ),
-    );
-    await writeFile(
-      join(root, "wiki", "sources", "dead-link.md"),
-      frontmatterPage(
-        "Dead Link",
-        "concept",
-        ["sources:", '  - "[[gone-page]]"'],
-        "body",
-      ),
-    );
-
-    await expect(
-      runVerificationStage({
-        run: runContext({ rawDir: join(root, "raw") }),
-      }),
-    ).rejects.toThrow(
-      "provenance check failed:\n" +
-        "wiki/sources/dead-link.md -> [[gone-page]] (missing source page)\n" +
-        "wiki/sources/dead-origin.md -> origin notes/Engineering/gone.md (missing under raw/)",
-    );
-  });
-
-  it("announces the check on the progress line", async () => {
-    const root = await makeVerificationRoot();
-    const progress: string[] = [];
-
-    await runVerificationStage({
-      run: runContext({
-        rawDir: join(root, "raw"),
-        onProgress: (message) => progress.push(message),
-      }),
-    });
-
-    expect(progress).toContain(
-      "wiki-sync: verification — checking citation fidelity and provenance",
-    );
   });
 });
 
@@ -2579,16 +2488,8 @@ describe("runWikiSync verification stage", () => {
 describe("runWikiSync lint stage", () => {
   it("captures its own pre-run state when the caller passes none", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
-    const saboteur: AgentRunner = async (_command, args, options) => {
-      const prompt = args[args.indexOf("--print") + 1] ?? "";
-      const reportPath = /outputs\/lint-\d{4}-\d{2}-\d{2}(-full)?\.md/.exec(
-        prompt,
-      )?.[0];
-
-      if (reportPath !== undefined) {
-        await mkdir(join(options.cwd, "outputs"), { recursive: true });
-        await writeFile(join(options.cwd, reportPath), "# Lint report\n");
-      }
+    const saboteur: AgentRunner = async (command, args, options) => {
+      await lintStub(command, args, options);
 
       await writeFile(
         join(options.cwd, "wiki", "broken.md"),
@@ -2699,7 +2600,7 @@ describe("runWikiSync lint stage", () => {
 });
 
 const CLI_STUB =
-  '#!/usr/bin/env node\nimport { existsSync } from "node:fs";\nimport { mkdir, writeFile } from "node:fs/promises";\nimport { join } from "node:path";\n// Guard: a mutated wrapper may redirect this stub into the real data\n// repo; refuse to write anywhere but this harness\'s data root.\nif (!existsSync(join(process.cwd(), ".cli-test-repo"))) process.exit(5);\nconst index = process.argv.indexOf("--print");\nconst prompt = index === -1 ? "" : process.argv[index + 1] ?? "";\nawait mkdir(join(process.cwd(), "wiki", "concepts"), { recursive: true });\nawait writeFile(join(process.cwd(), "wiki", "concepts", "stub.md"), [\n  "---",\n  \'title: "Stub"\',\n  "type: concept",\n  "created: 2026-08-20",\n  "updated: 2026-08-20",\n  "tags:",\n  "  - llm",\n  "sources:",\n  \'  - "[[src]]"\',\n  "---",\n  "",\n  "stub body",\n  "",\n].join("\\n"));\nif (prompt.startsWith("Audit the wiki")) {\n  const reportPath = prompt.match(/outputs\\/lint-\\d{4}-\\d{2}-\\d{2}\\.md/)?.[0];\n  if (reportPath) {\n    await mkdir(join(process.cwd(), "outputs"), { recursive: true });\n    await writeFile(join(process.cwd(), reportPath), "# Lint\\n");\n  }\n  console.log("lint: clean");\n} else {\n  console.log("ingest report");\n}\n';
+  '#!/usr/bin/env node\nimport { existsSync } from "node:fs";\nimport { mkdir, writeFile } from "node:fs/promises";\nimport { join } from "node:path";\n// Guard: a mutated wrapper may redirect this stub into the real data\n// repo; refuse to write anywhere but this harness\'s data root.\nif (!existsSync(join(process.cwd(), ".cli-test-repo"))) process.exit(5);\nconst index = process.argv.indexOf("--print");\nconst prompt = index === -1 ? "" : process.argv[index + 1] ?? "";\nawait mkdir(join(process.cwd(), "wiki", "concepts"), { recursive: true });\nawait writeFile(join(process.cwd(), "wiki", "concepts", "stub.md"), [\n  "---",\n  \'title: "Stub"\',\n  "type: concept",\n  "created: 2026-08-20",\n  "updated: 2026-08-20",\n  "tags:",\n  "  - llm",\n  "sources:",\n  \'  - "[[src]]"\',\n  "---",\n  "",\n  "stub body",\n  "",\n].join("\\n"));\nif (prompt.startsWith("Audit the wiki")) {\n  const reportPath = prompt.match(/outputs\\/lint-\\d{4}-\\d{2}-\\d{2}(-full)?\\.md/)?.[0];\n  if (reportPath) {\n    const referenceLine =\n      /^Start the section body with this exact line: (.+)$/m.exec(prompt)?.[1] ?? "";\n    await mkdir(join(process.cwd(), "outputs"), { recursive: true });\n    const { appendFile } = await import("node:fs/promises");\n    await appendFile(join(process.cwd(), reportPath), referenceLine + "\\nLint body\\n");\n  }\n  console.log("lint: clean");\n} else {\n  console.log("ingest report");\n}\n';
 
 describe("wiki-sync CLI", () => {
   async function makeCliHarness() {
@@ -2941,11 +2842,11 @@ describe("wiki-sync CLI", () => {
     expect(process.exitCode).toBe(1);
   });
 
-  it("prints the cycle digest header through main", async () => {
+  it("prints the cycle digest section through main", async () => {
     const h = await makeCliHarness();
     const { out } = await runCli(cycleArgs(h));
 
-    expect(out).toContain("# wiki-sync cycle digest");
+    expect(out).toContain("## Cycle 1 — ");
   });
 
   it("prints the lint summary through main", async () => {
@@ -3034,7 +2935,7 @@ describe("wiki-sync CLI", () => {
     const h = await makeCliHarness();
     const { out } = await runCli([...cycleArgs(h), "--timeout", "30"]);
 
-    expect(out).toContain("# wiki-sync cycle digest");
+    expect(out).toContain("## Cycle 1 — ");
   });
 
   it("completes the cycle under a tight timeout budget", async () => {
@@ -3176,7 +3077,7 @@ describe("wiki-sync CLI", () => {
       join(h.dataRoot, "raw"),
     ]);
 
-    expect(out).toContain("# wiki-sync cycle digest");
+    expect(out).toContain("## Cycle 1 — ");
   });
 
   it("defaults the digest directory to the repo outputs when --outputs is omitted", async () => {
@@ -3789,34 +3690,6 @@ describe("runWikiSync commit contents", () => {
   });
 });
 
-describe("formatCommitMessage shape", () => {
-  it("uses the singular for exactly one source and one page", () => {
-    const message = formatCommitMessage({
-      sourcesCount: 1,
-      sourcesLine: "1 added, 0 changed, 0 removed",
-      pagesCreated: 1,
-      pagesUpdated: 0,
-      lintReport: "outputs/lint-2026-08-20.md",
-    });
-
-    expect(message.split("\n")[0]).toBe(
-      "wiki-sync: 1 source processed, 1 page touched",
-    );
-  });
-
-  it("separates the summary line from the detail bullets with a blank line", () => {
-    const message = formatCommitMessage({
-      sourcesCount: 1,
-      sourcesLine: "1 added, 0 changed, 0 removed",
-      pagesCreated: 0,
-      pagesUpdated: 1,
-      lintReport: undefined,
-    });
-
-    expect(message.split("\n")[1]).toBe("");
-  });
-});
-
 describe("formatFinalDigest sections", () => {
   function ranResult(overrides: {
     lintSummary?: string;
@@ -3842,6 +3715,7 @@ describe("formatFinalDigest sections", () => {
         mode: "full" as const,
         skipped: undefined,
         reportPath: "outputs/lint-2026-08-20.md",
+        sectionTitle: "Lint run 1 — 2026-08-20T18:00:00+00:00 (full audit)",
         reportWritten: true,
         summary: overrides.lintSummary ?? "lint summary body",
         entries: [],
@@ -3858,6 +3732,10 @@ describe("formatFinalDigest sections", () => {
           missingOrigins: 0,
           pages: 4,
         },
+        fidelityLine:
+          "3 tokens trace to origins, 2 titles match across 4 pages",
+        provenanceLine:
+          "5 source links resolve, 1 origin exists across 4 pages",
       },
       commit: overrides.commit ?? {
         status: "committed" as const,
@@ -3944,6 +3822,24 @@ describe("formatFinalDigest sections", () => {
     expect(digest).toContain("## Ingest digest\n\ningest digest body");
   });
 
+  it("seals a lint summary an unclosed fence leaves open before the ingest digest", () => {
+    const digest = formatFinalDigest(
+      ranResult({ lintSummary: "```bash\ncode without a closer" }),
+    );
+
+    expect(digest).toContain(
+      "code without a closer\n```\n\n#### Ingest digest",
+    );
+  });
+
+  it("seals an ingest digest an unclosed fence leaves open at the body's end", () => {
+    const base = ranResult({});
+
+    base.ingest.digest = "```text\ndigest without a closer";
+
+    expect(formatFinalDigest(base)).toMatch(/digest without a closer\n```\n$/);
+  });
+
   it("keeps the leading whitespace of the ingest digest body", () => {
     const base = ranResult({});
 
@@ -4007,6 +3903,14 @@ describe("formatFinalDigest sections", () => {
     expect(digest).not.toContain("padded summary  ");
   });
 
+  it("demotes a heading-bearing lint summary like the ingest digest", () => {
+    const digest = formatFinalDigest(
+      ranResult({ lintSummary: "# Audit verdict\n" }),
+    );
+
+    expect(digest).toContain("\n### Audit verdict\n");
+  });
+
   it("separates the lint summary from the ingest digest", () => {
     const digest = formatFinalDigest(
       ranResult({ lintSummary: "  padded summary  \n" }),
@@ -4031,7 +3935,7 @@ describe("formatFinalDigest sections", () => {
     });
 
     expect(digest).toContain(
-      "- **Lint:** full audit, report not written (expected `outputs/lint-2026-08-20.md`)",
+      "- **Lint:** full audit (every page) — report not written (expected `outputs/lint-2026-08-20.md`)",
     );
   });
 
@@ -4044,19 +3948,15 @@ describe("formatFinalDigest sections", () => {
     const digest = formatFinalDigest({
       ...base,
       verification: {
-        fidelity: { problems: [], quotes: 1, titles: 1, skipped: 0, pages: 1 },
-        provenance: {
-          problems: [],
-          sources: 1,
-          origins: 1,
-          missingOrigins: 0,
-          pages: 1,
-        },
+        ...base.verification,
+        fidelityLine:
+          "1 token traces to origins, 1 title matches across 1 page",
+        provenanceLine: "1 source link resolves, 1 origin exists across 1 page",
       },
     });
 
     expect(digest).toContain(
-      "- **Fidelity:** ok — 1 token traces to origins, 1 title matches across 1 page\n",
+      "- **Fidelity:** ok — 1 token traces to origins, 1 title matches across 1 page (whole wiki at cycle end)\n",
     );
   });
 
@@ -4065,19 +3965,15 @@ describe("formatFinalDigest sections", () => {
     const digest = formatFinalDigest({
       ...base,
       verification: {
-        fidelity: { problems: [], quotes: 1, titles: 1, skipped: 0, pages: 1 },
-        provenance: {
-          problems: [],
-          sources: 1,
-          origins: 1,
-          missingOrigins: 0,
-          pages: 1,
-        },
+        ...base.verification,
+        fidelityLine:
+          "1 token traces to origins, 1 title matches across 1 page",
+        provenanceLine: "1 source link resolves, 1 origin exists across 1 page",
       },
     });
 
     expect(digest).toContain(
-      "- **Provenance:** ok — 1 source link resolves, 1 origin exists across 1 page\n",
+      "- **Provenance:** ok — 1 source link resolves, 1 origin exists across 1 page (whole wiki at cycle end)\n",
     );
   });
 
@@ -4085,7 +3981,7 @@ describe("formatFinalDigest sections", () => {
     const digest = formatFinalDigest(ranResult({}));
 
     expect(digest).toContain(
-      "- **Fidelity:** ok — 3 tokens trace to origins, 2 titles match across 4 pages\n",
+      "- **Fidelity:** ok — 3 tokens trace to origins, 2 titles match across 4 pages (whole wiki at cycle end)\n",
     );
   });
 
@@ -4093,7 +3989,7 @@ describe("formatFinalDigest sections", () => {
     const digest = formatFinalDigest(ranResult({}));
 
     expect(digest).toContain(
-      "- **Provenance:** ok — 5 source links resolve, 1 origin exists across 4 pages\n",
+      "- **Provenance:** ok — 5 source links resolve, 1 origin exists across 4 pages (whole wiki at cycle end)\n",
     );
   });
 });
@@ -4168,7 +4064,7 @@ describe("runWikiSync cycle digest (issue #385)", () => {
   }
 
   it("composes the data-repo-relative cycle report path from the run clock", () => {
-    expect(cycleReportPath(NOW)).toBe("outputs/cycle-2026-08-20.md");
+    expect(cycleReportPath(NOW())).toBe("outputs/cycle-2026-08-20.md");
   });
 
   it("writes the cycle digest into the data repo outputs", async () => {
@@ -4241,7 +4137,7 @@ describe("runWikiSync cycle digest (issue #385)", () => {
     expect(digest).toContain(contentHash.slice(0, 8));
   });
 
-  it("overwrites the same-day cycle digest when a rerun does new work", async () => {
+  it("appends the rerun's section after the same-day digest", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 
     await runWikiSync(optionsFor(h));
@@ -4253,7 +4149,7 @@ describe("runWikiSync cycle digest (issue #385)", () => {
 
     const secondDigest = await readFile(join(h.dataRoot, DIGEST_PATH), "utf8");
 
-    expect(secondDigest).not.toBe(firstDigest);
+    expect(secondDigest).toContain(firstDigest.trimEnd());
   });
 
   it("leaves HEAD untouched when a no-op cycle follows real work", async () => {

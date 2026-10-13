@@ -10,6 +10,7 @@ import {
 } from "../../src/fixtures/generate.ts";
 import {
   readAgentRecordings,
+  repoRoot,
   runCli,
   STUB_RECORD_PRELUDE,
   SYNC_CYCLE_SCRIPT,
@@ -230,10 +231,12 @@ if (mode === "link-domain" || mode === "link-broken") {
 if (prompt.startsWith("Audit the wiki")) {
   const reportPath = prompt.match(/outputs\\/lint-\\d{4}-\\d{2}-\\d{2}(-full)?\\.md/)?.[0];
   if (reportPath === undefined) process.exit(6);
+  const referenceLine = /^Start the section body with this exact line: (.+)$/m.exec(prompt)?.[1];
+  if (referenceLine === undefined) process.exit(7);
   await mkdir(join(process.cwd(), "outputs"), { recursive: true });
-  await writeFile(
+  await appendFile(
     join(process.cwd(), reportPath),
-    "# Lint report\\n\\nAll checks passed.\\n",
+    referenceLine + "\\n\\nAll checks passed.\\n",
   );
   await writeFile(
     join(process.cwd(), "outputs", "received-lint-prompt.txt"),
@@ -469,7 +472,7 @@ describe("wiki-sync e2e", () => {
     const repo = await makeRepo();
     const result = await runCycle(repo);
     const lintPath =
-      /- \*\*Lint:\*\* full audit, report `(outputs\/lint-\d{4}-\d{2}-\d{2}(-full)?\.md)`/.exec(
+      /- \*\*Lint:\*\* full audit \(every page\) — report `(outputs\/lint-\d{4}-\d{2}-\d{2}(-full)?\.md)`/.exec(
         result.out,
       )?.[1];
 
@@ -478,9 +481,9 @@ describe("wiki-sync e2e", () => {
     }
 
     expect(result.code).toBe(0);
-    expect(result.out).toContain("# wiki-sync cycle digest");
+    expect(result.out).toContain("## Cycle 1 — ");
     expect(result.out).toContain(
-      `**Lint:** full audit, report \`${lintPath}\``,
+      `**Lint:** full audit (every page) — report \`${lintPath}\``,
     );
     // The cycle's lint stage invocation line, byte-exact (issue #434
     // golden): the lint-window audit through the pi adapter.
@@ -512,7 +515,7 @@ describe("wiki-sync e2e", () => {
 
     await expect(
       readFile(join(repo.dataRoot, lintPath), "utf8"),
-    ).resolves.toContain("Lint report");
+    ).resolves.toContain("# Full lint — ");
     await expect(
       readFile(join(repo.dataRoot, "wiki", "concepts", "stub.md"), "utf8"),
     ).resolves.toContain("stub body");
@@ -587,8 +590,9 @@ describe("wiki-sync e2e", () => {
       "utf8",
     );
 
-    expect(digest).toContain("# wiki-sync cycle digest");
-    expect(digest).toContain("## Ingest digest");
+    expect(digest).toContain(`# wiki-sync cycle digest — ${date}`);
+    expect(digest).toContain("## Cycle 1 — ");
+    expect(digest).toContain("#### Ingest digest");
 
     const { stdout: subjects } = await run(
       "git",
@@ -609,6 +613,106 @@ describe("wiki-sync e2e", () => {
     );
 
     expect(names.trim()).toBe(`outputs/cycle-${date}.md`);
+  });
+
+  /** The check-outputs exit code over the data repo's outputs/ —
+   *  the accumulated day files must hold their shape and pairs. */
+  async function checkerExit(outputsDir: string): Promise<number> {
+    const checker = join(repoRoot, "bin", "libexec", "check-outputs");
+
+    try {
+      await run(checker, [outputsDir]);
+
+      return 0;
+    } catch (error) {
+      return (error as { code?: number }).code ?? 1;
+    }
+  }
+
+  it("appends a same-day second cycle as a bounded section (issue #459)", async () => {
+    const repo = await makeRepo();
+    const date = new Date().toISOString().slice(0, 10);
+    const dayFile = join(repo.dataRoot, "outputs", `cycle-${date}.md`);
+
+    const first = await runCycle(repo);
+
+    expect(first.code).toBe(0);
+
+    const firstContent = await readFile(dayFile, "utf8");
+
+    expect(firstContent).toContain(`# wiki-sync cycle digest — ${date}`);
+    expect(firstContent).toContain("## Cycle 1 — ");
+
+    // A second source note drives a real same-day second cycle.
+    await writeFile(
+      join(repo.vaultRoot, "Second Cycle Note.md"),
+      "---\nwiki: true\n---\n\nSecond cycle body.\n",
+    );
+
+    const second = await runCycle(repo, { STUB_INGEST_MARK: "v2" });
+
+    expect(second.code).toBe(0);
+
+    const content = await readFile(dayFile, "utf8");
+
+    expect(content).toContain("## Cycle 2 — ");
+    expect(content.startsWith(firstContent.trimEnd())).toBe(true);
+
+    const lintFile = await readFile(
+      join(repo.dataRoot, "outputs", `lint-${date}.md`),
+      "utf8",
+    );
+
+    expect(lintFile).toContain(`# Windowed lint — ${date}`);
+    expect(lintFile).toContain("## Lint run 1 — ");
+    expect(lintFile).toContain('section "Cycle 2 — ');
+    expect(await checkerExit(join(repo.dataRoot, "outputs"))).toBe(0);
+  });
+
+  it("appends a failure digest a later successful cycle preserves (issue #459)", async () => {
+    const repo = await makeRepo();
+    const date = new Date().toISOString().slice(0, 10);
+    const dayFile = join(repo.dataRoot, "outputs", `cycle-${date}.md`);
+
+    await runCycle(repo);
+
+    // Real work plus a drifted lint page: verification fails, the
+    // lint edits revert, the ingest edits stay, the failure digest
+    // appends.
+    await writeFile(
+      join(repo.vaultRoot, "Failing Cycle Note.md"),
+      "---\nwiki: true\n---\n\nFailing cycle body.\n",
+    );
+
+    const failed = await runCycle(repo, {
+      STUB_MODE: "break-fidelity",
+      STUB_INGEST_MARK: "v2",
+    });
+
+    expect(failed.code).toBe(1);
+
+    const afterFailure = await readFile(dayFile, "utf8");
+
+    expect(afterFailure).toContain("## Cycle 2 — ");
+    expect(afterFailure).toContain("- **Result:** failed — ");
+
+    // The recovery cycle appends after the failure section, which
+    // stays in the file untouched.
+    await writeFile(
+      join(repo.vaultRoot, "Recovery Note.md"),
+      "---\nwiki: true\n---\n\nRecovery body.\n",
+    );
+
+    const third = await runCycle(repo);
+
+    expect(third.code).toBe(0);
+
+    const content = await readFile(dayFile, "utf8");
+
+    expect(content).toContain("## Cycle 3 — ");
+    expect(content).toContain("- **Result:** failed — ");
+    expect(content.startsWith(afterFailure.trimEnd())).toBe(true);
+    expect(await checkerExit(join(repo.dataRoot, "outputs"))).toBe(0);
   });
 
   it("carries the cycle report promise in the ingest prompt", async () => {
@@ -768,8 +872,10 @@ describe("wiki-sync e2e", () => {
     const result = await runCycle(repo);
 
     expect(result.code).toBe(0);
-    expect(result.out).toContain("# wiki-sync cycle digest");
-    expect(result.out).toContain("2 sources copied, 0 sources removed");
+    expect(result.out).toContain("## Cycle 1 — ");
+    expect(result.out).toContain(
+      "2 sources copied, 0 sources removed at commit ",
+    );
     expect(result.err).toContain("wiki-sync: stage 1/6 — sync");
 
     await expect(
@@ -844,7 +950,7 @@ describe("wiki-sync e2e", () => {
 
     expect(first.code).toBe(0);
     expect(first.out).toMatch(
-      /^- \*\*Publish:\*\* ok — \d+ files copied, 0 files removed$/m,
+      /^- \*\*Publish:\*\* ok — \d+ files copied, 0 files removed \(this cycle\)$/m,
     );
     await expect(readFile(join(mirror, "index.md"), "utf8")).resolves.toContain(
       "Index v2",
@@ -872,7 +978,7 @@ describe("wiki-sync e2e", () => {
 
     expect(third.code).toBe(0);
     expect(third.out).toMatch(
-      /^- \*\*Publish:\*\* ok — 1 file copied, 1 file removed$/m,
+      /^- \*\*Publish:\*\* ok — 1 file copied, 1 file removed \(this cycle\)$/m,
     );
     await expect(
       readFile(join(mirror, "concepts", "stub.md"), "utf8"),
@@ -1040,7 +1146,7 @@ describe("wiki-sync e2e — windowed lint (issue #359)", () => {
     expect(secondPrompt).toContain("- wiki/concepts/stub.md");
     expect(secondPrompt).toContain("Deterministic worklists");
     expect(second.out).toContain(
-      "**Lint:** window audit (1 page), report `outputs/lint-",
+      "**Lint:** window audit (1 page: changed this cycle plus reverse neighbors) — report `outputs/lint-",
     );
   });
 
