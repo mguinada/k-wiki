@@ -720,6 +720,33 @@ describe("runWikiSync", () => {
     ).toHaveLength(2);
   });
 
+  it("fails the cycle loud when the lint report's back-reference mismatches", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    // The stub complies with the append contract but names the wrong
+    // cycle section — the pair assert must fail the digest finalize.
+    h.lintAgent = async (_command, args, options) => {
+      await lintStub(_command, args, options);
+      const prompt = args[args.indexOf("--print") + 1] ?? "";
+      const reportPath = /outputs\/lint-\d{4}-\d{2}-\d{2}(-full)?\.md/.exec(
+        prompt,
+      )?.[0];
+
+      if (reportPath !== undefined) {
+        await writeFile(
+          join(options.cwd, reportPath),
+          'Cycle audited: `outputs/cycle-2026-08-20.md` — section "Cycle 9 — elsewhere"\n',
+        );
+      }
+
+      return { stdout: "lint done", stderr: "" };
+    };
+
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow(
+      /cycle digest lint pair broken.*expected the line: Cycle audited: `outputs\/cycle-2026-08-20\.md` — section "Cycle 1 — /s,
+    );
+  });
+
   it("commits the retry cycle after a failed run", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 
