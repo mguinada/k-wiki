@@ -13,7 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   generateFixtureVault,
   vaultName,
@@ -44,12 +44,13 @@ void syncVaultMain;
 
 const tempDirs: string[] = [];
 
-const stagingRoot = join(
-  dirname(fileURLToPath(import.meta.url)),
-  ".cli-import-staging",
-);
+let stagingRoot: string;
 
-tempDirs.push(stagingRoot);
+beforeAll(async () => {
+  stagingRoot = await mkdtemp(join(tmpdir(), "cli-import-staging-"));
+
+  tempDirs.push(stagingRoot);
+});
 
 afterAll(async () => {
   await Promise.all(
@@ -143,8 +144,8 @@ async function makeTmpRepo(): Promise<string> {
 }
 
 /**
- * A staged copy of src/, bin/, and dev/ inside the test tree,
- * importable in-process. Returns the staged repo root (holds
+ * A staged copy of src/, bin/, and dev/ in a per-process temp staging
+ * root, importable in-process. Returns the staged repo root (holds
  * sync.json, src/, bin/, and dev/).
  */
 async function stageRepo(): Promise<string> {
@@ -155,6 +156,13 @@ async function stageRepo(): Promise<string> {
   await cp(join(testsDir, "../../src"), join(dir, "src"), { recursive: true });
   await cp(join(testsDir, "../../bin"), join(dir, "bin"), { recursive: true });
   await cp(join(testsDir, "../../dev"), join(dir, "dev"), { recursive: true });
+
+  // The CLI imports runtime dependencies (picocolors); link the repo's
+  // node_modules so the staged copy can resolve them.
+  await symlink(
+    join(testsDir, "../../node_modules"),
+    join(dir, "node_modules"),
+  );
 
   const vaultRoot = await generateFixtureVault(join(dir, "vault"));
 
