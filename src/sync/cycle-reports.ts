@@ -476,8 +476,10 @@ function openFenceAtEnd(text: string): OpenFence | undefined {
 }
 
 /** The line that seals a fence the content leaves open — empty when
- *  every fence is closed. */
-function fenceSeal(text: string): string {
+ *  every fence is closed: the one seal every embed site composes
+ *  with (the append planner's existing content and legacy body, the
+ *  digest's embedded summaries). */
+export function fenceSeal(text: string): string {
   const open = openFenceAtEnd(text);
 
   return open === undefined ? "" : `\n${open.char.repeat(open.length)}`;

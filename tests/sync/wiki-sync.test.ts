@@ -3822,6 +3822,24 @@ describe("formatFinalDigest sections", () => {
     expect(digest).toContain("## Ingest digest\n\ningest digest body");
   });
 
+  it("seals a lint summary an unclosed fence leaves open before the ingest digest", () => {
+    const digest = formatFinalDigest(
+      ranResult({ lintSummary: "```bash\ncode without a closer" }),
+    );
+
+    expect(digest).toContain(
+      "code without a closer\n```\n\n#### Ingest digest",
+    );
+  });
+
+  it("seals an ingest digest an unclosed fence leaves open at the body's end", () => {
+    const base = ranResult({});
+
+    base.ingest.digest = "```text\ndigest without a closer";
+
+    expect(formatFinalDigest(base)).toMatch(/digest without a closer\n```\n$/);
+  });
+
   it("keeps the leading whitespace of the ingest digest body", () => {
     const base = ranResult({});
 

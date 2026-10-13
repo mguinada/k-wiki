@@ -529,6 +529,65 @@ describe("runLintStage report day file", () => {
 
     expect(await readFile(reportPath, "utf8")).toBe(before);
   });
+
+  it("restores a deleted report's prior content after a successful run", async () => {
+    const h = await makeHarness(BASE_PAGES);
+
+    await audited(h);
+
+    const reportPath = join(h.dataRoot, "outputs", "lint-2026-09-12-full.md");
+    const before = await readFile(reportPath, "utf8");
+
+    h.agent = async (_command, args, options) => {
+      const prompt = args[args.indexOf("--print") + 1] ?? "";
+      const reportPath = /outputs\/lint-\d{4}-\d{2}-\d{2}(-full)?\.md/.exec(
+        prompt,
+      )?.[0];
+
+      if (reportPath !== undefined) {
+        await rm(join(options.cwd, reportPath), { force: true });
+      }
+
+      return { stdout: "deleted it", stderr: "" };
+    };
+
+    await runLintStage({ ...optionsFor(h), full: true });
+
+    expect(await readFile(reportPath, "utf8")).toBe(before);
+  });
+
+  it("derives the report path and the day title from one clock read", async () => {
+    const h = await makeHarness(BASE_PAGES);
+    let tick = 0;
+
+    const straddlingNow = () => {
+      const instant = new Date(
+        Date.UTC(2026, 8, 12, 23, 59, 59) + tick * 2_000,
+      );
+
+      tick += 1;
+
+      return instant;
+    };
+
+    const result = await runLintStage({
+      ...optionsFor(h),
+      run: runContext({
+        rawDir: join(h.dataRoot, "raw"),
+        env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_COMMITTER_NAME: "t" },
+        now: straddlingNow,
+      }),
+    });
+    const pathDay = /lint-(\d{4}-\d{2}-\d{2})-full\.md$/.exec(
+      result.reportPath,
+    )?.[1];
+    const report = await readFile(
+      join(h.dataRoot, result.reportPath),
+      "utf8",
+    );
+
+    expect(report.split("\n")[0]).toBe(`# Full lint — ${pathDay}`);
+  });
 });
 
 describe("runLintStage empty window", () => {

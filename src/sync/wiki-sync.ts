@@ -129,6 +129,7 @@ import {
 import {
   cycleBackReferenceLine,
   dayDate,
+  fenceSeal,
   planCycleAppend,
   scannedLines,
 } from "./cycle-reports.ts";
@@ -1064,7 +1065,8 @@ function lintLines(lint: LintResult | undefined): string[] {
  * append planner composes (issue #459); the day H1 belongs to the
  * file, never to a section, and the embedded summaries' former
  * top-level headings sit two levels deeper so nothing escapes its
- * section. Every number is labeled: cycle deltas "(this cycle)",
+ * section, and an embed an open fence swallows is sealed where it
+ * sits. Every number is labeled: cycle deltas "(this cycle)",
  * whole-wiki audits "(whole wiki at cycle end)" — never a day total.
  */
 export function formatFinalDigest(result: WikiSyncResult): string {
@@ -1118,20 +1120,24 @@ export function formatFinalDigest(result: WikiSyncResult): string {
   }
 
   if (lint !== undefined && lint.skipped === undefined) {
+    const summary = demoteHeadings(lint.summary.trimEnd(), 2);
+
     lines.push(
       "",
       "#### Lint summary",
       "",
-      demoteHeadings(lint.summary.trimEnd(), 2),
+      `${summary}${fenceSeal(summary)}`,
     );
   }
 
   if (ingest.status === "ran") {
+    const digest = demoteHeadings(ingest.digest.trimEnd(), 2);
+
     lines.push(
       "",
       "#### Ingest digest",
       "",
-      demoteHeadings(ingest.digest.trimEnd(), 2),
+      `${digest}${fenceSeal(digest)}`,
     );
   }
 

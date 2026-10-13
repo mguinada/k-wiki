@@ -20,7 +20,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { formatDuration } from "../cli/progress.ts";
 import type { RunContext } from "../cli/run-context.ts";
-import { readTextIfExists } from "../cli/shared.ts";
+import { pluralized, readTextIfExists } from "../cli/shared.ts";
 import type { StatusEntry } from "../data/git.ts";
 import {
   type AgentRunner,
@@ -107,10 +107,10 @@ export interface LintResult {
  *  full audit writes its own `-full` report so a same-day windowed
  *  audit never overwrites the sweep's record. */
 export function lintReportPath(
-  now: () => Date,
+  instant: Date,
   mode: "window" | "full",
 ): string {
-  const date = now().toISOString().slice(0, 10);
+  const date = instant.toISOString().slice(0, 10);
 
   return mode === "full"
     ? `outputs/lint-${date}-full.md`
@@ -379,18 +379,18 @@ async function lintSectionContract(
   options: LintOptions,
   resolved: Awaited<ReturnType<typeof resolveWindow>>,
   reportPath: string,
-  now: () => Date,
+  instant: Date,
 ): Promise<LintSectionContract> {
   const windowText =
     resolved.mode === "window"
-      ? `window audit, ${pluralizePages(resolved.window.pages.length)}`
+      ? `window audit, ${pluralized(resolved.window.pages.length, "page")}`
       : "full audit";
   const existing = await readTextIfExists(
     join(options.run.dataRoot, reportPath),
   );
 
   return {
-    plan: planLintAppend(existing, now(), resolved.mode, windowText),
+    plan: planLintAppend(existing, instant, resolved.mode, windowText),
     referenceLine:
       options.cycle === undefined
         ? STANDALONE_MARKER
@@ -479,7 +479,8 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
     (await loadAgentSettings(options.settingsPath, { onProgress }));
 
   const resolved = await resolveWindow(run, options.full === true);
-  const reportPath = lintReportPath(now, resolved.mode);
+  const instant = now();
+  const reportPath = lintReportPath(instant, resolved.mode);
 
   if (resolved.mode === "window" && resolved.window.pages.length === 0) {
     return await skipEmptyWindow(run, options, reportPath);
@@ -489,7 +490,7 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
     options,
     resolved,
     reportPath,
-    now,
+    instant,
   );
   const windowPages =
     resolved.mode === "window" ? resolved.window.pages : undefined;
@@ -548,7 +549,7 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
 
   const reportContent = await readTextIfExists(join(dataRoot, reportPath));
 
-  if (reportContent === contract.plan.prefix) {
+  if (reportContent === undefined || reportContent === contract.plan.prefix) {
     await restoreReportFile(dataRoot, reportPath, preReport);
   }
 
@@ -571,11 +572,6 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
     post.entries,
     windowPages,
   );
-}
-
-/** The window size for the heading's window definition. */
-function pluralizePages(count: number): string {
-  return `${count} ${count === 1 ? "page" : "pages"}`;
 }
 
 /** The per-failure callback the ingest stage reports through (issue
