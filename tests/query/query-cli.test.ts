@@ -780,9 +780,10 @@ console.log("An answer.");
 
     const cliOutputs = join(repoRoot, "outputs");
     const defaultArtifact = join(cliOutputs, "last-query.md");
-    const previous = await readFile(defaultArtifact).catch(() => null);
 
     await withDefaultOutputsLock(async () => {
+      const previous = await readFile(defaultArtifact).catch(() => null);
+
       await mkdir(cliOutputs, { recursive: true });
       await writeFile(
         defaultArtifact,

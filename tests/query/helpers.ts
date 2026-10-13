@@ -36,7 +36,7 @@ export async function withDefaultOutputsLock<T>(
   fn: () => Promise<T>,
 ): Promise<T> {
   const lockDir = join(repoRoot, "outputs", ".default-outputs.lock");
-  const deadline = Date.now() + 120_000;
+  let deadline = Date.now() + 120_000;
 
   await mkdir(dirname(lockDir), { recursive: true });
 
@@ -48,6 +48,8 @@ export async function withDefaultOutputsLock<T>(
   ) {
     if (Date.now() > deadline) {
       await rm(lockDir, { recursive: true, force: true });
+
+      deadline = Date.now() + 120_000;
 
       continue;
     }
