@@ -12,7 +12,7 @@
     "lint": "biome check .",
     "format": "biome format --write .",
     "test": "vitest run",
-    "test:coverage": "vitest run --coverage --maxWorkers=2",
+    "test:coverage": "vitest run --coverage --maxWorkers=2 --coverage.reportsDirectory=coverage/$$",
     "check:test-structure": "node dev/check-one-expect-per-test.ts",
     "audit": "npm audit --omit=dev --audit-level=high && npm audit --audit-level=critical",
     "e2e": "vitest run --config vitest.e2e.config.ts",

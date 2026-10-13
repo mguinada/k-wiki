@@ -37,8 +37,11 @@ export default defineConfig({
     // identical head passed all 5,595 tests locally. Two workers keep
     // headroom for the spawned git/agent children under load; the
     // two-concurrent-coverage-runs rehearsal on that machine passed
-    // both runs. Applied as --maxWorkers on the test:coverage script,
-    // so plain npm test keeps the global 4.
+    // both runs. Applied on the test:coverage script, so plain npm
+    // test keeps the global 4. The script also gives each run its own
+    // coverage reportsDirectory ($$ = pid): two concurrent coverage
+    // runs sharing coverage/ deleted each other's .tmp mid-report
+    // (ENOENT after a fully green run, same rehearsal).
     // (test:coverage passes --maxWorkers=2 for this reason.)
     // afterAll cleanup rm's many git-heavy temp dirs; under load the
     // 10 s default kills the hook (guardrails flake, issue #145 run).
