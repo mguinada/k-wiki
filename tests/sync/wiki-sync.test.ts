@@ -775,6 +775,42 @@ describe("runWikiSync", () => {
     );
   });
 
+  it("fails the cycle loud when the cited lint section is only quoted", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+
+    // The stub keeps the day title and the exact contract line but
+    // demotes the writer's heading to a fenced quotation.
+    h.lintAgent = async (_command, args, options) => {
+      await lintStub(_command, args, options);
+      const prompt = args[args.indexOf("--print") + 1] ?? "";
+      const reportPath = /outputs\/lint-\d{4}-\d{2}-\d{2}(-full)?\.md/.exec(
+        prompt,
+      )?.[0];
+      const referenceLine =
+        /^Start the section body with this exact line: (.+)$/m.exec(
+          prompt,
+        )?.[1];
+
+      if (reportPath !== undefined && referenceLine !== undefined) {
+        const prior = await readFile(join(options.cwd, reportPath), "utf8");
+        const heading = /^## Lint run .+$/m.exec(prior)?.[0];
+
+        if (heading !== undefined) {
+          await writeFile(
+            join(options.cwd, reportPath),
+            `${prior.split("\n")[0] ?? ""}\n\n${referenceLine}\n\n\`\`\`\n${heading}\n\`\`\`\n`,
+          );
+        }
+      }
+
+      return { stdout: "lint done", stderr: "" };
+    };
+
+    await expect(runWikiSync(optionsFor(h))).rejects.toThrow(
+      /cycle digest lint pair broken.*does not carry the cited section/s,
+    );
+  });
+
   it("commits the retry cycle after a failed run", async () => {
     const h = await makeHarness({ "AI/RAG.md": "rag body" });
 

@@ -439,13 +439,11 @@ async function lintStageResult(
   resolved: Awaited<ReturnType<typeof resolveWindow>>,
   contract: LintSectionContract,
   reportPath: string,
-  dataRoot: string,
+  reportContent: string | undefined,
   stdout: string,
   entries: readonly StatusEntry[],
   windowPages: readonly string[] | undefined,
 ): Promise<LintResult> {
-  const reportContent = await readTextIfExists(join(dataRoot, reportPath));
-
   return {
     mode: resolved.mode,
     skipped: undefined,
@@ -548,6 +546,12 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
     throw agentError;
   }
 
+  const reportContent = await readTextIfExists(join(dataRoot, reportPath));
+
+  if (reportContent === contract.plan.prefix) {
+    await restoreReportFile(dataRoot, reportPath, preReport);
+  }
+
   // The snapshot advances only after a completed audit: a failed or
   // timed-out run leaves it untouched, so the next run retries the
   // same pages (a timeout's guardrail-passed edits re-enter the
@@ -562,7 +566,7 @@ export async function runLintStage(options: LintOptions): Promise<LintResult> {
     resolved,
     contract,
     reportPath,
-    dataRoot,
+    reportContent,
     stdout,
     post.entries,
     windowPages,

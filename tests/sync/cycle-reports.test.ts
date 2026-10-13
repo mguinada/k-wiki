@@ -240,6 +240,28 @@ describe("planLintAppend", () => {
       `Lint run 2 — ${stamp} (window audit, 34 pages)`,
     );
   });
+
+  it("seals a fence the existing content leaves open", () => {
+    const stamp = `2026-10-12T18:00:59${offsetSuffix(LOCAL_LATER)}`;
+    const existing = [
+      lintDayTitle("window", LOCAL_LATER),
+      "",
+      `## Lint run 1 — ${stamp} (window audit, 34 pages)`,
+      "",
+      "```bash",
+      "# unterminated",
+    ].join("\n");
+    const plan = planLintAppend(
+      existing,
+      LOCAL_LATER,
+      "window",
+      "window audit, 2 pages",
+    );
+
+    expect(plan.prefix).toBe(
+      `${existing}\n\`\`\`\n\n---\n\n## Lint run 2 — ${stamp} (window audit, 2 pages)\n\n`,
+    );
+  });
 });
 
 describe("parseDayFile", () => {
@@ -305,6 +327,32 @@ describe("parseDayFile", () => {
     }
 
     expect(parsed.file.sections).toHaveLength(1);
+  });
+
+  it("parses the sections of a file whose open fence got sealed", () => {
+    const sealed = [
+      "# Windowed lint — 2026-10-12",
+      "",
+      "## Lint run 1 — 2026-10-12T14:54:52+01:00 (window audit, 34 pages)",
+      "",
+      "```bash",
+      "# unterminated",
+      "```",
+      "",
+      "---",
+      "",
+      "## Lint run 2 — 2026-10-12T18:00:58+01:00 (window audit, 2 pages)",
+      "",
+      "body",
+      "",
+    ].join("\n");
+    const parsed = parseDayFile(sealed, "lint", "# Windowed lint — 2026-10-12");
+
+    if (parsed.kind !== "append") {
+      throw new Error("expected an append-shape parse");
+    }
+
+    expect(parsed.file.sections).toHaveLength(2);
   });
 
   it("keeps the mid-content rule inside the first section's body", () => {
@@ -498,5 +546,11 @@ describe("scannedLines", () => {
       { hashes: 2, indent: 1 },
       { hashes: 0, indent: 0 },
     ]);
+  });
+
+  it("treats a backtick marker with a backtick info string as prose", () => {
+    expect(
+      scannedLines("``` `\n## Findings\n").map((scanned) => scanned.hashes),
+    ).toEqual([0, 2, 0]);
   });
 });

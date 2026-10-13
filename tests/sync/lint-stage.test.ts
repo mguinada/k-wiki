@@ -500,6 +500,35 @@ describe("runLintStage report day file", () => {
 
     expect(await readFile(reportPath, "utf8")).toBe(before);
   });
+
+  it("restores an untouched report to absence after a successful run", async () => {
+    const h = await makeHarness(BASE_PAGES);
+
+    h.agent = async () => ({ stdout: "audited nothing", stderr: "" });
+
+    await runLintStage(optionsFor(h));
+
+    expect(
+      await readTextIfExists(
+        join(h.dataRoot, "outputs", "lint-2026-09-12-full.md"),
+      ),
+    ).toBeUndefined();
+  });
+
+  it("restores an untouched report's prior content after a successful run", async () => {
+    const h = await makeHarness(BASE_PAGES);
+
+    await audited(h);
+
+    const reportPath = join(h.dataRoot, "outputs", "lint-2026-09-12-full.md");
+    const before = await readFile(reportPath, "utf8");
+
+    h.agent = async () => ({ stdout: "audited nothing", stderr: "" });
+
+    await runLintStage({ ...optionsFor(h), full: true });
+
+    expect(await readFile(reportPath, "utf8")).toBe(before);
+  });
 });
 
 describe("runLintStage empty window", () => {

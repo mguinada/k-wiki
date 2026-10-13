@@ -146,9 +146,10 @@ const FAMILY_LABEL: Record<DayFamily, string> = {
 };
 
 /** Fresh file → day title + section 1; append shape → previous
- *  content + separator + the next numbered section; legacy shape →
- *  retitle plus the synthesized `1 (pre-append)` bound and the new
- *  section numbered 2 (the bound occupies position 1). */
+ *  content (a fence it leaves open sealed) + separator + the next
+ *  numbered section; legacy shape → retitle plus the synthesized
+ *  `1 (pre-append)` bound and the new section numbered 2 (the bound
+ *  occupies position 1). */
 function planDayAppend(input: PlanInput): DaySectionPlan {
   const { existing, expectedTitle, family, sectionTitleFor } = input;
 
@@ -167,15 +168,16 @@ function planDayAppend(input: PlanInput): DaySectionPlan {
 
     return {
       sectionTitle: title,
-      prefix: `${existing.trimEnd()}\n\n---\n\n## ${title}\n\n`,
+      prefix: `${existing.trimEnd()}${fenceSeal(existing)}\n\n---\n\n## ${title}\n\n`,
     };
   }
 
   const title = sectionTitleFor(2);
+  const body = legacyBody(existing);
 
   return {
     sectionTitle: title,
-    prefix: `${expectedTitle}\n\n## ${FAMILY_LABEL[family]} 1 (pre-append)\n\n${legacyBody(existing)}\n\n---\n\n## ${title}\n\n`,
+    prefix: `${expectedTitle}\n\n## ${FAMILY_LABEL[family]} 1 (pre-append)\n\n${body}${fenceSeal(body)}\n\n---\n\n## ${title}\n\n`,
   };
 }
 
@@ -359,18 +361,20 @@ export function cycleLintReference(
 
 /** One scanned body line: the text verbatim, its ATX heading depth
  *  (0 for a non-heading or fenced line), that heading's leading
- *  spaces (0 for a non-heading), and whether the line lives inside
- *  a code fence (openers, closers, and fenced lines all do). */
+ *  spaces (0 for a non-heading), whether the line lives inside a
+ *  code fence (openers, closers, and fenced lines all do), and the
+ *  fence still open after it. */
 export interface ScannedLine {
   readonly line: string;
   readonly hashes: number;
   readonly indent: number;
   readonly fenced: boolean;
+  readonly openFence: OpenFence | undefined;
 }
 
-/** A line's open code fence: the marker character and the minimum
- *  length that closes it. */
-interface OpenFence {
+/** An open code fence: the marker character and the minimum length
+ *  that closes it. */
+export interface OpenFence {
   readonly char: string;
   readonly length: number;
 }
@@ -414,13 +418,14 @@ function headingOf(
 }
 
 /** Scan a text's lines with code-fence state tracked: a fence opens
- *  on its marker line and closes only on a marker of the same
- *  character at least as long; lines inside a fence — the markers
- *  included — carry heading depth 0. The one line scan every
- *  structural reader of the report day files consumes (the digest
- *  embed's demotion, the checker's containment scan, the section
- *  parser, the pair-reference extractors), so fenced report content
- *  is never read as section structure. */
+ *  on its marker line — a backtick marker whose info string carries
+ *  a backtick is prose, not a fence — and closes only on a marker
+ *  of the same character at least as long; lines inside a fence —
+ *  the markers included — carry heading depth 0. The one line scan
+ *  every structural reader of the report day files consumes (the
+ *  digest embed's demotion, the checker's containment scan, the
+ *  section parser, the pair-reference extractors), so fenced report
+ *  content is never read as section structure. */
 export function scannedLines(text: string): readonly ScannedLine[] {
   let fence: OpenFence | undefined;
 
@@ -430,15 +435,26 @@ export function scannedLines(text: string): readonly ScannedLine[] {
         fence = undefined;
       }
 
-      return { line, hashes: 0, indent: 0, fenced: true };
+      return { line, hashes: 0, indent: 0, fenced: true, openFence: fence };
     }
 
-    const marker = FENCE_OPENER.exec(line)?.[1];
+    const match = FENCE_OPENER.exec(line);
+    const marker = match?.[1];
 
-    if (marker !== undefined) {
-      fence = { char: marker.charAt(0), length: marker.length };
+    if (match !== null && marker !== undefined) {
+      const info = line.slice(match[0].length);
 
-      return { line, hashes: 0, indent: 0, fenced: true };
+      if (marker.charAt(0) !== "`" || !info.includes("`")) {
+        fence = { char: marker.charAt(0), length: marker.length };
+
+        return {
+          line,
+          hashes: 0,
+          indent: 0,
+          fenced: true,
+          openFence: fence,
+        };
+      }
     }
 
     const heading = headingOf(line) ?? { hashes: 0, indent: 0 };
@@ -448,6 +464,21 @@ export function scannedLines(text: string): readonly ScannedLine[] {
       hashes: heading.hashes,
       indent: heading.indent,
       fenced: false,
+      openFence: undefined,
     };
   });
+}
+
+/** The fence still open at the text's end: undefined when every
+ *  fence the text opens is closed. */
+function openFenceAtEnd(text: string): OpenFence | undefined {
+  return scannedLines(text).at(-1)?.openFence;
+}
+
+/** The line that seals a fence the content leaves open — empty when
+ *  every fence is closed. */
+function fenceSeal(text: string): string {
+  const open = openFenceAtEnd(text);
+
+  return open === undefined ? "" : `\n${open.char.repeat(open.length)}`;
 }

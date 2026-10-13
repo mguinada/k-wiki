@@ -802,12 +802,13 @@ function cycleReportPromise(path: string): string {
 
 /** The digest-finalize pair assert (issue #459, Design 8): when the
  *  cycle's digest carries a lint-run reference (lint ran and wrote
- *  its report), the cited lint report must exist, its back-reference
- *  must name this cycle's section — path and section title both —
- *  and the cited lint run section must still exist in the report. A
- *  mismatch fails the cycle loudly. Cycles whose digest carries no
- *  lint-run reference (lint skipped, empty window, report missing)
- *  are exempt. */
+ *  its report), the cited lint report must exist, a non-fenced line
+ *  of it must carry the back-reference naming this cycle's section
+ *  — path and section title both — and a non-fenced line must carry
+ *  the cited lint run section heading; a fenced line is quoted
+ *  content, never the pair. A mismatch fails the cycle loudly.
+ *  Cycles whose digest carries no lint-run reference (lint skipped,
+ *  empty window, report missing) are exempt. */
 async function assertLintPair(
   dataRoot: string,
   cyclePath: string,
@@ -831,15 +832,18 @@ async function assertLintPair(
     );
   }
 
+  const unfenced = scannedLines(report)
+    .filter((scanned) => !scanned.fenced)
+    .map((scanned) => scanned.line);
   const expected = cycleBackReferenceLine(cyclePath, cycleTitle);
 
-  if (!report.includes(expected)) {
+  if (!unfenced.includes(expected)) {
     throw new Error(
       `cycle digest lint pair broken: ${lint.reportPath} (section "${lint.sectionTitle}") does not back-reference this cycle — expected the line: ${expected}`,
     );
   }
 
-  if (!report.includes(`## ${lint.sectionTitle}`)) {
+  if (!unfenced.includes(`## ${lint.sectionTitle}`)) {
     throw new Error(
       `cycle digest lint pair broken: ${lint.reportPath} does not carry the cited section "${lint.sectionTitle}"`,
     );
