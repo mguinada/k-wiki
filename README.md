@@ -637,6 +637,7 @@ purpose; curation never hides plumbing:
 | `bin/k-wiki check-raw [<raw-dir>] [--fail-on-stale]` | health CLI | Check the coherence of a `raw/` projection (default: the repo's `raw/`): every `raw/notes/<vault>/` file matches its `manifest.json` sha-256, with no orphans and no missing entries; a repo-sourced projection (sync-repo) is also freshness-checked — a recorded source commit behind the source repo's HEAD warns, and `--fail-on-stale` makes it exit 1; read-only, no vault access; exit 0 = coherent (including healthy-empty), exit 1 = one line per problem |
 | `bin/k-wiki check-links [<wiki-dir>]` | wikilink checker | Check that every `[[wikilink]]` under `wiki/` (default) resolves to an existing page by file name, and every body-text heading anchor (`[[page#Chapter]]`) to a heading in the target page byte-identical to the anchor (frontmatter `sources` citations stay `check-provenance`'s domain; block references and multi-level anchors' parent segments are skipped), skipping external slashed `[[<vault>/<page>]]` cross-wiki targets; an `[[outputs/…]]` citation instead resolves against the data repo's `outputs/` directory and must name an existing file there — a missing file or a traversal escaping the directory is broken; the sandbox namespace is scanned too — links *from* sandbox pages are validated exactly like main-page links, and links *into* the sandbox resolve silently (direction violations are `check-citations`' business); exit 0 = all links resolve, exit 1 = one `file:line -> [[link]]` line per broken link |
 | `bin/k-wiki check-crosslinks <wiki-dir> <domain-wiki-dir> [<domain-wiki-dir>…]` | cross-wiki link checker | Check the one-way link discipline between a wiki and its domain wikis: every slashed `[[<vault>/<page>]]` link names a vault of a passed domain wiki (validated against its `raw/manifest.json`, case-insensitive) and resolves to an existing page there — an `[[outputs/…]]` citation is not cross-wiki and instead must name an existing file under the citing wiki dir's sibling `outputs/` directory, wherever it appears (a missing file or a traversal escaping the directory is a problem) — the domain wikis carry no cross-wiki links, and the sandbox namespace carries none either (a slashed link from sandbox notes is a cross-instance leak); exit 0 = discipline holds, exit 1 = one `file:line -> [[link]]` line per problem |
+| `bin/k-wiki check-outputs [-h \| --help] [--mode <mode>] <outputs-dir>` | day-file checker | Check the wiki-sync report day files in a data repo's `outputs/` directory — the cycle digests (`cycle-<YYYY-MM-DD>.md`), the windowed lint day files (`lint-<YYYY-MM-DD>.md`), and the weekly full-sweep files (`lint-<YYYY-MM-DD>-full.md`); files outside these families are never read, and a legacy-shape (overwrite-era) day file is exempt until its first append gives it the day-file shape: `--mode shape` validates the append-only format (exactly one day H1, bounded sections numbered by position — `Cycle N` / `Lint run N — <local ISO timestamp> (<window>)`, `---` separators, every heading inside a section strictly deeper than the section heading, no supersession prose on writer-owned surfaces), `--mode citations` validates the pair references (each cycle section's lint reference resolves to an existing lint day file and section; each lint run section carries either the `Standalone — no citing cycle.` marker or a cycle back-reference resolving to an existing cycle file and section; references are plain data-repo-relative paths — an `[[outputs/…]]` wikilink is a problem, never a link), `--mode all` runs both (default); writes nothing; exit 0 = the checked formats hold, exit 1 = one `file: problem` line per finding |
 | `bin/k-wiki check-citations [<wiki-dir>]` | one-way citation wall checker | Check the one-way wall between the wiki and its `wiki/sandbox/` namespace (default: the repo's `wiki/`): main pages never link or embed sandbox pages (embeds count as links), sandbox pages never link sandbox peers, `sources` entries never touch a sandbox page in either direction, sandbox pages never use slashed cross-wiki links (an `[[outputs/…]]` citation is not one — it must name an existing file under the data repo's `outputs/` directory; the wall itself trips on a missing or escaping target), and the `via: agent` stamp lives only inside the sandbox; other link resolution stays `check-links`' business; exit 0 = wall holds, exit 1 = one `wiki/<path>[:<line>] -> <evidence>` line per violation |
 | `bin/k-wiki check-provenance [<wiki-dir> [<raw-dir>]]` | dead-provenance checker | Check that every `sources` entry under `wiki/` resolves — a wikilink to an existing `type: source` page, an anchored `[[hub#Chapter]]` entry that lands on a hub heading byte-identical to its anchor, a raw path to an existing `raw/` file that **no hub covers** (a hub-covered path must cite the wikilink; default: the repo's `wiki/` and its sibling `raw/`); exit 0 = coherent, exit 1 = one `wiki/<page> -> …` line per problem (an anchor miss reports `wiki/<page>:<line>`); when `type: source` pages lack `origin`, a yellow warning below the ok summary (exit stays 0; printed only when no dead provenance was found) names the exact `backfill-origin` commands to run, dry run first — the deterministic backstop that catches any purge miss |
 | `bin/k-wiki check-fidelity [<wiki-dir> [<raw-dir>]]` | citation-fidelity checker | Check that every machine-checkable token a `type: source` page quotes in its body — tilde paths, dotted config keys (file extensions and hostnames excluded), long and short CLI flags, `npm run` commands — appears in the page's `origin` file under `raw/` (a prefix of a longer name does not count), and every page's `title` matches its file name under the shared page-slug rule — kebab-case capped at the 80-character file-name budget, or the uncapped kebab, with query filing's collision counter (`-2` … `-999`) accepted between rule and stem, the counter itself un-verified (`index`, `overview`, `log` exempt; default: the repo's `wiki/` and its sibling `raw/`); exit 0 = faithful, exit 1 = one `wiki/<page> -> …` line per problem — catches fabricated tokens deterministically; relational misquotes (right tokens, wrong containment) are not machine-checked; source pages without `origin` skip quote checking and get the same yellow `backfill-origin` warning as check-provenance |
@@ -1207,13 +1208,16 @@ It chains the proven pieces and adds no capability of its own:
    (`prompts/lint-window.md`; a missing snapshot makes it the full
    audit, `prompts/lint.md`) — through the same agent settings, in a
    fresh agent session in the data repo root. The report lands in the
-   **data repo's** `outputs/lint-<date>.md` (the standing convention:
-   quality history travels with the content; a full audit writes
-   `outputs/lint-<date>-full.md` instead, so a same-day windowed
-   audit never overwrites the sweep's record), and the same three
-   guardrails check the run with the same auto-revert. The orchestrator
-   pins the date and passes the concrete report path in the prompt, so
-   its report check and the prompt cannot disagree.
+   **data repo's** `outputs/lint-<date>.md` as one bounded
+   `Lint run N — <timestamp> (<window>)` section of the append-only
+   day file — same-day runs append, nothing is ever overwritten (the
+   standing convention: quality history travels with the content; a
+   full audit appends to `outputs/lint-<date>-full.md`, its own day
+   file, so a same-day windowed audit never touches the sweep's
+   record), and the same three guardrails check the run with the same
+   auto-revert. The orchestrator pins the date and passes the concrete
+   report path in the prompt, so its report check and the prompt
+   cannot disagree.
 4. **crosslinks** — second brains only: an instance whose
    settings carry `secondBrain.domains: [<wiki dirs>]` gets the
    `check-crosslinks` audit run over its wiki against every listed
@@ -1281,18 +1285,22 @@ result, the fidelity and provenance results, the commit hash, the
 publish summary (configured mirror), then the full ingest digest —
 plus `git log -1` in the data repo tell the whole story of the run
 without opening any other file. On a cycle that did real work, the
-same digest is committed beside the lint reports: written to
+same digest is appended beside the lint reports: written as one
+bounded `Cycle N — <timestamp>` section of the append-only day file
 `outputs/cycle-<YYYY-MM-DD>.md` in the data repo and landed in its
 own follow-up commit (`wiki-sync: cycle digest <path>`) — the digest
 cites the content commit's hash, so it is written after that commit
-rather than amended into it; a same-day rerun overwrites the file,
-git history disambiguates (the mechanism the lint reports already
-rely on). No-op cycles — the every-30-minutes steady state — write
-no artifact and create no commit. The ingest prompt promises the
-path (the agent cites it in its log entry as ``Cycle report:
-`outputs/cycle-…` ``), and a cycle that fails after ingest still
-writes the day's file recording the failure, so the citation never
-dangles.
+rather than amended into it; a same-day rerun appends its section
+after the first and touches nothing above it (append-only is the
+shared day-file shape of the cycle and lint reports, and the lint
+section names the exact cycle section that cites it, checked by
+`bin/k-wiki check-outputs`). No-op cycles — the every-30-minutes
+steady state — write no artifact and create no commit. The ingest
+prompt promises the path (the agent cites it in its log entry as
+``Cycle report: `outputs/cycle-…` ``), and a cycle that fails after
+ingest still appends a `- **Result:** failed` section to the day's
+file recording the failure — a later successful cycle appends after
+it, never over it — so the citation never dangles.
 
 Every cycle holds the shared run lock — the same
 `<dataRoot>/.scheduled-run.lock` the scheduled wrapper takes — from
