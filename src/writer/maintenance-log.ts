@@ -6,9 +6,10 @@
  * current) OID short, the tree-read exit status, the step's duration,
  * and the shared fetch-head file's `{exists, size}` state — so an
  * external git process emptying that file ambiently becomes
- * attributable from surviving logs without this module ever reading,
+ * attributable from surviving logs without this module reading,
  * writing, or merging through it: not its contents, tokens,
- * credentials, or any child stderr.
+ * credentials, or any child stderr. The module's one git-dir stat of
+ * the file is the guard's documented diagnostic-only exception.
  */
 
 import { stat } from "node:fs/promises";
@@ -38,12 +39,14 @@ export interface MaintenanceObservation {
  *  ever reach the line. */
 export type DimRender = (text: string) => string;
 
-/** The shared fetch-head file's state, `{exists, size}` only. The
- *  filename is assembled here so the repo-wide no-fetch-head guard
- *  (issue #464) stays free of the literal: this module only reports
- *  the file's size and existence in the maintenance line, never its
- *  path contents, tokens, or credentials. */
-const SHARED_FETCH_LEAF = ["FETCH", "HEAD"].join("_");
+/** The shared fetch-head file's state, `{exists, size}` only. This
+ *  stat is the no-fetch-head guard's (issue #464) one documented
+ *  diagnostic-only exception: the file is referenced here as a
+ *  filesystem path for its `{exists, size}` state alone — FETCH_HEAD
+ *  or its resolved path is never passed to git as a ref or refspec,
+ *  its contents are never read or returned, and no operational
+ *  behavior (ref selection, tree resolution, merge, retention,
+ *  fencing) branches on it. */
 
 /** The `{exists, size}` state of the shared fetch-head file, best
  *  effort: an unreadable git dir or missing file yields the absent
@@ -53,7 +56,7 @@ export async function fetchHeadState(
 ): Promise<{ exists: boolean; size: number }> {
   try {
     const gitDir = await gitOut(git, ["rev-parse", "--absolute-git-dir"]);
-    const info = await stat(join(gitDir, SHARED_FETCH_LEAF));
+    const info = await stat(join(gitDir, "FETCH_HEAD"));
 
     return { exists: true, size: info.size };
   } catch {
@@ -74,7 +77,7 @@ export function maintenanceLine(options: {
     `shared-writer: lease maintenance ${obs.verb} — ref ${obs.ref}, ` +
       `own ${obs.oid.slice(0, 8)}, tree read ${obs.treeRead}, ` +
       `dur ${Math.round(obs.durationMs)}ms, ` +
-      `${SHARED_FETCH_LEAF} {exists: ${fetchHead.exists}, size: ${fetchHead.size}}`,
+      `FETCH_HEAD {exists: ${fetchHead.exists}, size: ${fetchHead.size}}`,
   );
 }
 

@@ -166,20 +166,7 @@ describe("fetchHeadState in a real git repo", () => {
     expect(state.size).toBeGreaterThan(0);
   });
 
-  it("reports a zero-sized present file without throwing", async () => {
-    const git = await seededRepo();
-    const gitDir = (
-      await git(["rev-parse", "--absolute-git-dir"])
-    ).stdout.trim();
-
-    await writeFile(join(gitDir, "FETCH_HEAD"), "");
-
-    const path = join(gitDir, "FETCH_HEAD");
-
-    expect((await stat(path)).size).toBe(0);
-  });
-
-  it("reports a zero-size for the emptied file", async () => {
+  it("reports a zero size for the emptied file", async () => {
     const git = await seededRepo();
     const gitDir = (
       await git(["rev-parse", "--absolute-git-dir"])
@@ -207,5 +194,49 @@ describe("fetchHeadState in a real git repo", () => {
     };
 
     expect(await fetchHeadState(failing)).toEqual({ exists: false, size: 0 });
+  });
+
+  it("reaches git only for the git-dir probe", async () => {
+    const git = await seededRepo();
+    const recorded: string[][] = [];
+    const recording: Parameters<typeof fetchHeadState>[0] = async (args) => {
+      recorded.push(Array.from(args));
+
+      return await git(args);
+    };
+
+    await fetchHeadState(recording);
+
+    expect(JSON.stringify(recorded)).toBe(
+      JSON.stringify([["rev-parse", "--absolute-git-dir"]]),
+    );
+  });
+
+  it("keeps the fetch-head literal out of git argv", async () => {
+    const git = await seededRepo();
+    const recorded: string[][] = [];
+    const recording: Parameters<typeof fetchHeadState>[0] = async (args) => {
+      recorded.push(Array.from(args));
+
+      return await git(args);
+    };
+
+    await fetchHeadState(recording);
+
+    expect(JSON.stringify(recorded).includes("FETCH_HEAD")).toBe(false);
+  });
+
+  it("renders the state and never the resolved path", async () => {
+    const git = await seededRepo();
+    const gitDir = (
+      await git(["rev-parse", "--absolute-git-dir"])
+    ).stdout.trim();
+    const line = maintenanceLine({
+      obs: OBS,
+      fetchHead: await fetchHeadState(git),
+      dim: NO_COLOR_DIM,
+    });
+
+    expect(line.includes(gitDir)).toBe(false);
   });
 });
