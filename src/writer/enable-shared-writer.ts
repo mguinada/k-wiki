@@ -8,17 +8,17 @@
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { cliFail, errorMessage } from "../cli/colors.ts";
+import { cliFail, errorMessage, terminalColors } from "../cli/colors.ts";
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { repoRoot } from "../cli/shared.ts";
 import { parseArgs } from "../cli/shell.ts";
-import { refuseDirtyWorkingTree } from "./cycle-steps.ts";
+import { cleanCurrentRefusal } from "./cycle-steps.ts";
 import {
   classifyPosition,
   currentBranch,
+  fetchCanonicalBranch,
   fetchRefspec,
   type GitRunner,
-  gitOk,
   gitRunnerFor,
   lsRemoteOid,
   mergeFfOnly,
@@ -30,18 +30,18 @@ import {
   finalizeWithLeaseRelease,
   releaseOwnLease,
 } from "./lease-ops.ts";
+import { reportMaintenance } from "./maintenance-log.ts";
 import {
-  LEASE_REF_NAMESPACE,
+  canonicalRefFor,
+  DEFAULT_LEASE_REF,
   MARKER_PATH,
+  markerDocument,
   markerIsEnabled,
   markerIsEnabledAtRef,
   markerPath,
 } from "./marker.ts";
 import { probeRemoteCapabilities, reportProbe } from "./probe.ts";
 import { resolveDataRootFromArgs } from "./resolve.ts";
-
-/** The v1 lease ref every enable writes into the marker. */
-const DEFAULT_LEASE_REF = `${LEASE_REF_NAMESPACE}shared-writer-v1`;
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI
  *  rule). */
@@ -92,43 +92,6 @@ function fail(message: string): void {
   cliFail("enable-shared-writer", message);
 }
 
-/** The marker document this command writes (schema v1). */
-function markerDocument(branch: string): string {
-  return `${JSON.stringify(
-    {
-      version: 1,
-      remote: "origin",
-      branch,
-      leaseRef: DEFAULT_LEASE_REF,
-      sourceRemovalPolicy: "confirm",
-    },
-    null,
-    2,
-  )}\n`;
-}
-
-/** Step 1's clean/current verification: refusal text or undefined. */
-async function cleanCurrentRefusal(
-  git: GitRunner,
-  dataRoot: string,
-): Promise<string | undefined> {
-  const dirty = await refuseDirtyWorkingTree(git);
-
-  if (dirty !== undefined) {
-    return dirty;
-  }
-
-  if (!(await gitOk(git, ["remote", "get-url", "origin"]))) {
-    return "the data repo has no origin remote — shared-writer mode serializes through one";
-  }
-
-  if (dataRoot.trim() === "") {
-    return "internal: empty data root";
-  }
-
-  return undefined;
-}
-
 /** One enable attempt: the lease, if acquired, is released on failure. */
 export async function enable(dataRoot: string): Promise<string> {
   const env = process.env;
@@ -146,7 +109,16 @@ export async function enable(dataRoot: string): Promise<string> {
   if (branch === undefined) {
     throw new Error("the data repo is on a detached HEAD — check out a branch");
   }
-  await fetchRefspec(git, "origin", `refs/heads/${branch}`);
+
+  const canonicalRef = canonicalRefFor(DEFAULT_LEASE_REF);
+
+  await fetchCanonicalBranch(
+    git,
+    "origin",
+    `refs/heads/${branch}`,
+    canonicalRef,
+  );
+
   const remoteOid = await lsRemoteOid(git, "origin", `refs/heads/${branch}`);
 
   if (remoteOid === undefined) {
@@ -158,7 +130,7 @@ export async function enable(dataRoot: string): Promise<string> {
   const position = await classifyPosition(git, remoteOid);
 
   if (position === "behind") {
-    await mergeFfOnly(git, "FETCH_HEAD");
+    await mergeFfOnly(git, canonicalRef);
   } else if (position !== "up-to-date") {
     throw new Error(
       "the data repo is ahead of or diverged from origin — resolve manually before enabling",
@@ -167,7 +139,7 @@ export async function enable(dataRoot: string): Promise<string> {
   if (await markerIsEnabled(dataRoot)) {
     return `shared-writer mode already enabled (marker at ${MARKER_PATH})`;
   }
-  const treeOid = await fetchedTreeOid(git);
+  const treeOid = await fetchedTreeOid(git, canonicalRef);
   const probe = await probeRemoteCapabilities({
     git,
     remote: "origin",
@@ -186,6 +158,42 @@ export async function enable(dataRoot: string): Promise<string> {
   }
 
   return await commitMarkerUnderLease(dataRoot, git, branch, treeOid);
+}
+
+/** The bootstrap releases run in the CLI door, so the render
+ *  boundary's env is process.env; dim here is one color kind. */
+function enableDim(text: string): string {
+  return terminalColors(process.env).dim(text);
+}
+
+/** Best-effort release of the exact bootstrap lease, with the release
+ *  reported at the render boundary (issue #464). Exported for its
+ *  mirrored retention test suite. */
+export async function releaseIfOwn(git: GitRunner, oid: string): Promise<void> {
+  const startedAt = performance.now();
+
+  try {
+    await releaseOwnLease({
+      git,
+      remote: "origin",
+      leaseRef: DEFAULT_LEASE_REF,
+      ownOid: oid,
+    });
+
+    await reportMaintenance(git, {
+      onProgress: console.error,
+      obs: {
+        verb: "release",
+        ref: DEFAULT_LEASE_REF,
+        oid,
+        treeRead: "ok",
+        durationMs: performance.now() - startedAt,
+      },
+      dim: enableDim,
+    });
+  } catch {
+    // The lease expires in four hours; take over by exact OID then.
+  }
 }
 
 /** Bootstrap lease, marker commit, and atomic finalize. */
@@ -287,20 +295,6 @@ async function resetOwnCommit(
   }
 
   await git(["reset", "--hard", `${markerHead}~1`]);
-}
-
-/** Best-effort release of the exact bootstrap lease. */
-async function releaseIfOwn(git: GitRunner, oid: string): Promise<void> {
-  try {
-    await releaseOwnLease({
-      git,
-      remote: "origin",
-      leaseRef: DEFAULT_LEASE_REF,
-      ownOid: oid,
-    });
-  } catch {
-    // The lease expires in four hours; take over by exact OID then.
-  }
 }
 
 /** The CLI entry point: parse, resolve the data repo, enable. */

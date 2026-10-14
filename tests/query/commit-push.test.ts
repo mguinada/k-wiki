@@ -382,7 +382,7 @@ describe("pushFiledCommit", () => {
       git,
       remote: "origin",
       leaseRef: "refs/k-wiki/leases/data",
-      treeOid: await fetchedTreeOid(git),
+      treeOid: await fetchedTreeOid(git, "HEAD"),
       base: (await remoteMain(dataRoot)) ?? "",
       now: () => new Date(),
       holder: "other-mac:1",

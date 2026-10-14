@@ -172,7 +172,15 @@ e2e run or diagnosing a failing one.
   coordinator — and the shared cycle completes, while a
   credential-less tick skips with the named reason before the
   lease (no lease materializes, the remote ref stands still, a
-  skipped stamp).
+  skipped stamp); and lease maintenance holds under a hostile
+  ambient fetch (issue #464): a PATH git shim replaying the
+  incident's actor — a zero-matching fetch after every canonical
+  branch fetch that tramples `.git/FETCH_HEAD` to zero bytes
+  mid-tenure — still completes the full cycle with its commit pair
+  and digest, releases the lease, and covers the renewals over the
+  named canonical ref, with the sanitized maintenance line naming
+  `{exists, size}` on stderr and no read ever anchoring on the
+  shared file.
 - **wiki-query** — the query wrapper against a stub agent in temp
   data repos: `--help` answers with usage and exit 0 (the removed
   `--no-filing` switch stays refused); stage 1 answers answer-only —

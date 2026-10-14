@@ -20,6 +20,18 @@ export const MARKER_PATH = ".k-wiki/shared-writer.json";
 /** The lease ref namespace every v1 lease ref must live under. */
 export const LEASE_REF_NAMESPACE = "refs/k-wiki/leases/";
 
+/** The named local ref a cycle fetches the canonical branch into
+ *  (issue #464): scoped by the lease ref's leaf, so two instances
+ *  never collide, and derived from the marker the operator owns.
+ *  Tree reads anchor here — never on git's shared fetch-head file,
+ *  which any git process touching the repo may rewrite or empty
+ *  mid-tenure. */
+export function canonicalRefFor(leaseRef: string): string {
+  const leaf = leaseRef.slice(leaseRef.lastIndexOf("/") + 1);
+
+  return `refs/k-wiki/canonical/${leaf}`;
+}
+
 /** The one source-removal policy v1 defines (issue #390): a proposed
  *  source removal or rename needs a human confirmation receipt. */
 export const REMOVAL_POLICY = "confirm";
@@ -204,4 +216,22 @@ export async function markerIsEnabledAtRef(
   })();
 
   return isEnabled(marker);
+}
+
+/** The v1 lease ref every enable writes into the marker. */
+export const DEFAULT_LEASE_REF = `${LEASE_REF_NAMESPACE}shared-writer-v1`;
+
+/** The marker document the enable command writes (schema v1). */
+export function markerDocument(branch: string): string {
+  return `${JSON.stringify(
+    {
+      version: 1,
+      remote: "origin",
+      branch,
+      leaseRef: DEFAULT_LEASE_REF,
+      sourceRemovalPolicy: "confirm",
+    },
+    null,
+    2,
+  )}\n`;
 }

@@ -116,6 +116,20 @@ export async function fetchRefspec(
   await gitRun(git, ["fetch", remote, refspec]);
 }
 
+/** Fetch the canonical branch into the named local ref (issue #464),
+ *  forced so a rewound remote ref still updates. Every fetch the
+ *  writer relies on for reads lands here, never in git's shared
+ *  fetch-head file: a named-ref read is atomic per git semantics,
+ *  even while another git process rewrites or empties that file. */
+export async function fetchCanonicalBranch(
+  git: GitRunner,
+  remote: string,
+  branchRef: string,
+  canonicalRef: string,
+): Promise<void> {
+  await gitRun(git, ["fetch", remote, `+${branchRef}:${canonicalRef}`]);
+}
+
 /** The local OID of a ref-ish, or undefined when it does not exist.
  *  `--verify --quiet` resolves exactly one object or exits non-zero
  *  with no output — one invocation answers both. */

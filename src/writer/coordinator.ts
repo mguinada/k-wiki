@@ -16,37 +16,20 @@
 import { errorMessage } from "../cli/colors.ts";
 import type { RunContext } from "../cli/run-context.ts";
 import { acquireCycleLock } from "../sync/wiki-sync.ts";
-import { refuseDirtyWorkingTree, releaseIfClean } from "./cycle-steps.ts";
-import {
-  classifyPosition,
-  currentBranch,
-  fetchRefspec,
-  type GitRunner,
-  gitRunnerFor,
-  lsRemoteOid,
-} from "./git-remote.ts";
-import {
-  describeLease,
-  leaseExpired,
-  leaseHolder,
-  type ObservedLease,
-  observeLease,
-} from "./lease.ts";
-import {
-  acquireLease,
-  fetchedTreeOid,
-  retainFailedCycleLease,
-  takeOverExpiredLease,
-} from "./lease-ops.ts";
+import type { GitRunner } from "./git-remote.ts";
+import { gitRunnerFor } from "./git-remote.ts";
+import { describeLease, leaseHolder, type ObservedLease } from "./lease.ts";
 import { leasedCycle } from "./leased-cycle.ts";
 import { readSharedWriterMarker, type SharedWriterMarker } from "./marker.ts";
 import type {
+  KnownTree,
   Phase,
   SharedCycleOptions,
   SharedCycleOutcome,
 } from "./options.ts";
-import { noteRefusedTick } from "./recovery.ts";
 import { recordDirtyFailureSurface } from "./recovery-record.ts";
+import { releaseIfClean, retainAfterFailure } from "./retention.ts";
+import { acquireOrTakeOver, preconditionRefusal } from "./tenure.ts";
 
 /** The whole state machine. Unexpected internal failures throw after
  *  the failure-rule lease decision; precondition failures come back
@@ -90,7 +73,8 @@ async function readMarkerOrFail(run: RunContext): Promise<SharedWriterMarker> {
 
 /** The leased tenure: everything between the local lock and its
  *  release. The phase controller and the live session drive the
- *  failure rules in the catch. */
+ *  failure rules in the catch; the last-known canonical tree rides
+ *  alongside the session for the retention fallback (issue #464). */
 async function runTenure(
   options: SharedCycleOptions,
   marker: SharedWriterMarker,
@@ -100,6 +84,13 @@ async function runTenure(
   const { run } = options;
   const branchRef = `refs/heads/${marker.branch}`;
   const ctl: { phase: Phase } = { phase: "prepare" };
+  const treeOid: { value: string | undefined } = { value: undefined };
+  const tree: KnownTree = {
+    get: () => treeOid.value,
+    set: (next) => {
+      treeOid.value = next;
+    },
+  };
   let session: ObservedLease | undefined;
 
   try {
@@ -115,7 +106,14 @@ async function runTenure(
       return { status: "refused", reason: refused };
     }
 
-    session = await acquireOrTakeOver(options, marker, git, holder, branchRef);
+    session = await acquireOrTakeOver(
+      options,
+      marker,
+      git,
+      holder,
+      branchRef,
+      tree,
+    );
 
     run.onProgress(
       `shared-writer: lease ${session.oid.slice(0, 8)} acquired — ${describeLease(session)}`,
@@ -131,6 +129,7 @@ async function runTenure(
       (next) => {
         session = next;
       },
+      tree,
       () => {
         ctl.phase = "cycle";
       },
@@ -141,7 +140,7 @@ async function runTenure(
   } catch (error) {
     if (session !== undefined) {
       if (!isFinalizePhase(ctl)) {
-        await releaseIfClean(options, marker, git, session);
+        await releaseIfClean(options, marker, git, session, tree);
 
         // The dirty fix surface, recorded while it is fresh (issue
         // #400): the recovery doors — human verb and auto-recovery —
@@ -156,24 +155,18 @@ async function runTenure(
           );
         }
       } else {
-        try {
-          const retained = await retainFailedCycleLease({
-            git,
-            remote: marker.remote,
-            leaseRef: marker.leaseRef,
-            current: session,
-            treeOid: await fetchedTreeOid(git),
-            now: run.now,
-          });
-
-          run.onProgress(
-            `shared-writer: cycle failed during finalization — retained lease expires ${retained.body.expires}`,
-          );
-        } catch (retentionError) {
-          run.onProgress(
-            `shared-writer: failed to shorten retained lease — ${errorMessage(retentionError)}`,
-          );
-        }
+        // Retention is best effort (issue #464): the tree read falls
+        // back to the last-known canonical tree, so it can never fail
+        // for read reasons; the original stage error stays the thrown
+        // error.
+        await retainAfterFailure({
+          run,
+          marker,
+          git,
+          current: session,
+          tree,
+          label: "cycle failed during finalization",
+        });
       }
     }
 
@@ -185,143 +178,4 @@ async function runTenure(
  *  callback-driven phase mutations away. */
 function isFinalizePhase(ctl: { readonly phase: Phase }): boolean {
   return ctl.phase === "finalize";
-}
-
-/** Steps 2–4 of the state machine, in order: fetch, refuse a wrong
- *  checkout, refuse a dirty tree, refuse ahead/diverged history —
- *  all before any source scan, agent invocation, or `raw/` mutation.
- *  Undefined means every precondition holds. */
-async function preconditionRefusal(
-  options: SharedCycleOptions,
-  marker: SharedWriterMarker,
-  git: GitRunner,
-  branchRef: string,
-  holder: string,
-): Promise<string | undefined> {
-  const { run } = options;
-
-  await fetchRefspec(git, marker.remote, `refs/heads/${marker.branch}`);
-
-  const checkedOut = await currentBranch(git);
-
-  if (checkedOut !== marker.branch) {
-    return `shared-writer mode runs on ${marker.branch} — this checkout is on ${checkedOut ?? "a detached HEAD"}`;
-  }
-
-  // The issue #400 auto-recovery door: count this tick against the
-  // recorded surface and, past the threshold with the lease lapsed,
-  // discard it — the dirty refusal below then passes and the cycle
-  // proceeds as usual. With nothing recorded this is one file read.
-  const recovered = await noteRefusedTick({
-    git,
-    marker,
-    now: run.now,
-    holder,
-    log: run.onProgress,
-  });
-
-  if (recovered) {
-    run.onProgress(
-      "shared-writer: auto-recovery discarded the recorded fix surface — proceeding",
-    );
-  }
-
-  const dirty = await refuseDirtyWorkingTree(git);
-
-  if (dirty !== undefined) {
-    return dirty;
-  }
-
-  const remoteOid = await lsRemoteOid(git, marker.remote, branchRef);
-
-  if (remoteOid === undefined) {
-    return `remote ${marker.remote} has no ${branchRef} — nothing canonical to fast-forward to`;
-  }
-
-  const position = await classifyPosition(git, remoteOid);
-
-  if (position === "ahead") {
-    return "local history is ahead of the remote — a shared writer never pushes unshared commits; resolve manually";
-  }
-
-  if (position === "diverged") {
-    return "local history has diverged from the remote — a shared writer never merges or rebases derived wiki content; resolve manually";
-  }
-
-  run.onProgress("shared-writer: preconditions hold (clean, current branch)");
-
-  return undefined;
-}
-
-/** Step 5: acquire the absent lease, or take over an expired one by
- *  exact OID. A live lease refuses with holder and expiry; an
- *  unparseable one throws before anything mutates (fail closed). */
-async function acquireOrTakeOver(
-  options: SharedCycleOptions,
-  marker: SharedWriterMarker,
-  git: GitRunner,
-  holder: string,
-  branchRef: string,
-): Promise<ObservedLease> {
-  const { run } = options;
-  const observed = await observeLease(git, marker.remote, marker.leaseRef);
-
-  if (observed !== undefined && !leaseExpired(observed.body, run.now)) {
-    throw new Error(
-      `shared-writer lease is live — ${describeLease(observed)}; a writer never touches raw/ or wiki/ under another writer's lease`,
-    );
-  }
-
-  const treeOid = await fetchedTreeOid(git);
-  const base = await requireBaseOid(git, marker, branchRef);
-  const outcome =
-    observed === undefined
-      ? await acquireLease({
-          git,
-          remote: marker.remote,
-          leaseRef: marker.leaseRef,
-          treeOid,
-          base,
-          now: run.now,
-          holder,
-        })
-      : await takeOverExpiredLease({
-          git,
-          remote: marker.remote,
-          leaseRef: marker.leaseRef,
-          observed,
-          treeOid,
-          base,
-          now: run.now,
-          holder,
-        });
-
-  if (outcome.status === "refused") {
-    throw new Error(`shared-writer lease unavailable — ${outcome.reason}`);
-  }
-
-  if (observed !== undefined) {
-    run.onProgress(
-      `shared-writer: took over the expired lease of ${observed.body.holder}`,
-    );
-  }
-
-  return outcome.lease;
-}
-
-/** The remote branch OID, observed live — the lease's base. */
-async function requireBaseOid(
-  git: GitRunner,
-  marker: SharedWriterMarker,
-  branchRef: string,
-): Promise<string> {
-  const oid = await lsRemoteOid(git, marker.remote, branchRef);
-
-  if (oid === undefined) {
-    throw new Error(
-      `remote ${marker.remote} lost ${branchRef} while the cycle started — fail closed`,
-    );
-  }
-
-  return oid;
 }

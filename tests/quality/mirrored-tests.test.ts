@@ -30,6 +30,14 @@ const ALLOWLIST: Readonly<Record<string, string>> = {
   "src/writer/options.ts":
     "types-only module; its consumers' suites (coordinator, leased-cycle) exercise every field",
 
+  // State-machine steps with no standalone input surface (issue
+  // #464): the precondition refusal, the acquire-or-take-over, and
+  // the renewer the leased tenure drives; every behavior is covered
+  // end-to-end by the coordinator and leased-cycle suites and the
+  // shared-writer e2e scenario, over real git.
+  "src/writer/tenure.ts":
+    "tenure state-machine steps exercised behaviorally through the coordinator and leased-cycle suites; no standalone surface",
+
   // One exported env-name constant (issue #399): a value assertion
   // would only restate the constant's definition; the cross-process
   // contract is pinned behaviorally by the repo-script child-env

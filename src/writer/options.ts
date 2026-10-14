@@ -48,3 +48,12 @@ export type SharedCycleOutcome =
  *  how clean the tree (the commit is local-only; releasing would
  *  strand it). */
 export type Phase = "prepare" | "cycle" | "finalize";
+
+/** The tenure's last-known canonical tree (issue #464): refreshed at
+ *  acquire and at every renewal, and the retention fallback when the
+ *  canonical-ref tree read itself fails — retention can never fail
+ *  from a tree read. */
+export interface KnownTree {
+  readonly get: () => string | undefined;
+  readonly set: (treeOid: string) => void;
+}
