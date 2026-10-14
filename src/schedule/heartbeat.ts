@@ -174,7 +174,8 @@ export function parseHeartbeat(
     ...(typeof parsed.reason === "string" && { reason: parsed.reason }),
     ...((parsed.preflight === "unavailable" ||
       parsed.preflight === "off" ||
-      parsed.preflight === "no-provider") && {
+      parsed.preflight === "no-provider" ||
+      parsed.preflight === "unsupported-schema") && {
       preflight: parsed.preflight,
     }),
     pid: parsed.pid,

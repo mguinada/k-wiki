@@ -207,7 +207,9 @@ function preflightNote(stamp: CycleHeartbeat): string {
       ? "disabled by settings"
       : stamp.preflight === "no-provider"
         ? "no ingest provider configured"
-        : "quota-axi not configured";
+        : stamp.preflight === "unsupported-schema"
+          ? "quota-axi JSON schema not supported by this build"
+          : "quota-axi not configured";
 
   return `; pre-flight: off — ${why}`;
 }

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { agentRunFlags, parseArgs } from "../../src/cli/shell.ts";
+import {
+  agentRunFlags,
+  parseArgs,
+  parseSyncRunArgs,
+} from "../../src/cli/shell.ts";
 
 /**
  * The shared CLI shell (issue #254): one argv parser every CLI
@@ -425,13 +429,23 @@ describe("agentRunFlags", () => {
     expect(flags.timeoutMs).toBe(5000);
   });
 
-  it("leaves every field undefined for an empty flag set", () => {
+  it("leaves the optional flags unset for an empty flag set", () => {
     const flags = agentRunFlags(new Map());
 
     expect(flags).toEqual({
       settings: undefined,
       outputs: undefined,
       timeoutMs: undefined,
+      removalReceipt: undefined,
+      error: undefined,
+    });
+  });
+
+  it("reads the --no-quota-check boolean into the flags set", () => {
+    const parsed = parseSyncRunArgs(["--no-quota-check"]);
+
+    expect({ flags: [...parsed.flags], error: parsed.error }).toEqual({
+      flags: ["--no-quota-check"],
       error: undefined,
     });
   });

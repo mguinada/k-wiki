@@ -12,12 +12,19 @@ agent: pi
 command: pi        # agent CLI, run non-interactively in the data repo
 # Ordered ingest targets: a failed target is retried only before it
 # produces a kept output surface. The first target is the primary.
-targets: [zai/GLM-5.2, openrouter/moonshotai/kimi-k2.6]
+targets: [zai/GLM-5.2, openai-codex/gpt-5.6-terra]
 reasoning: high    # pi thinking level, passed as --thinking
 
-# Optional unattended scheduler optimization: auto probes quota-axi when it
-# is installed, off disables the probe, or an absolute CLI path may be used.
+# Optional quota gate for scheduled and manual sync:
+# auto resolves this machine's quota-axi; off disables all quota checks.
+# Or set an absolute path to a compatible quota-axi executable (no arguments,
+# shell syntax, or credentials); k-wiki supplies its fixed JSON/no-refresh arguments.
+# A failing explicit path warns and proceeds; it never silently selects another binary.
 quotaPreflight: auto
+
+# Extra quota runway reserved above the 30-minute cycle estimate for shared-account use. Default: 5m.
+# Only whole-minute values are supported; invalid or unsupported units warn and use 5m.
+# quotaPreflightBuffer: 5m
 
 # Second-brain instances only (issue #96): comma-separated domain
 # wiki dirs — the wiki-sync cycle runs the check-crosslinks audit

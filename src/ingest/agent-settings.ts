@@ -81,6 +81,11 @@ export interface AgentSettings {
   readonly targets?: readonly AgentTarget[];
   /** Quota pre-flight mode for unattended scheduled runs. */
   readonly quotaPreflight?: "auto" | "off" | string;
+  /** The shared-account buffer above the cycle estimate (issue
+   *  #463): whole minutes (`5m`). Parsed and validated at the gate —
+   *  a malformed value warns there and uses the 5m default, never
+   *  aborting; the parser keeps the value as written. */
+  readonly quotaPreflightBuffer?: string;
   /** False opts out of the pi isolation flags (issue #118);
    *  unset means isolated — the safe default. The opt-out is
    *  pi-only: the codex lane's managed-home isolation is
@@ -113,6 +118,7 @@ const OPTIONAL_KEYS = [
   "model",
   "isolate",
   "quotaPreflight",
+  "quotaPreflightBuffer",
 ] as const;
 const DOMAIN_KEY = "secondBrain.domains";
 const TARGETS_KEY = "targets";
@@ -526,6 +532,7 @@ function finalizeSettings(
 
   const isolate = values.get("isolate");
   const quotaPreflight = values.get("quotaPreflight");
+  const quotaPreflightBuffer = values.get("quotaPreflightBuffer");
   const agent = values.get("agent");
 
   return {
@@ -535,6 +542,7 @@ function finalizeSettings(
     ...(primary.provider !== undefined && { provider: primary.provider }),
     ...(configuredTargets !== undefined && { targets }),
     ...(quotaPreflight !== undefined && { quotaPreflight }),
+    ...(quotaPreflightBuffer !== undefined && { quotaPreflightBuffer }),
     ...(isolate !== undefined && { isolate: isolate === "true" }),
     ...(agent !== undefined && { agent }),
     ...optionalListSettings(lists),

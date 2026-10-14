@@ -123,9 +123,8 @@ export interface ScheduledRunOptions {
   readonly lintFullSettings?: string | undefined;
   /** Log sink; default: silent (the CLI main wires the log file). */
   readonly log?: (line: string) => void;
-  /** ALERT notifier (macOS notification); default: silent (the CLI
-   *  main wires the notifier — a failed cycle then reaches the
-   *  operator's screen, not just the log). */
+  /** ALERT notifier; default: silent (the CLI main wires the
+   *  notifier — a failed cycle then reaches the operator's screen). */
   readonly notify?: (message: string) => void | Promise<void>;
   /** The PID recorded in the lockfile; defaults to process.pid. */
   readonly pid?: number;
@@ -243,8 +242,11 @@ export async function runScheduledCycle(
   const gates = await runPreStageGates(options, log, inputs.sharedMode);
 
   if (gates.skipReason !== undefined) {
-    await releaseLock(options.lockPath, pid);
+    // The skip stamp lands before the release (issue #463 §4): the
+    // skipper still holds the lock while it stamps, so a newer tick
+    // starts only after the older skip is recorded.
     await stampHeartbeat("skipped", gates.skipReason);
+    await releaseLock(options.lockPath, pid);
     return { status: "skipped", reason: gates.skipReason };
   }
 
@@ -320,14 +322,11 @@ function cycleStartNote(lock: "busy" | "took-over" | "acquired"): string {
 }
 
 /** The cycle's agent command, resolved to an absolute path
- *  before any stage runs (issue #399): the launchd PATH cannot start
- *  a bare agent name the standard dirs lack, so the launcher
- *  resolves the settings' command once — scheduled PATH, then the
- *  login shell — and hands the absolute path to every child through
- *  the environment. Settings that cannot load skip the resolution:
- *  the stage fails with the settings error, as before. Consumed by
- *  the cycle-inputs fold, which lives beside the credential gate it
- *  scopes (src/schedule/credential-preflight.ts). */
+ *  before any stage runs (issue #399): the launcher resolves the
+ *  settings' command once — scheduled PATH, then the login shell —
+ *  and hands the absolute path to every child. Settings that cannot
+ *  load skip the resolution: the stage fails with the settings
+ *  error, as before. */
 export async function resolveCycleAgentCommand(
   options: ScheduledRunOptions,
   log: (line: string) => void,
@@ -435,13 +434,10 @@ async function runQuotaCheck(
 }
 
 /** The absolute `quota-axi` path the launcher resolved for the gate
- *  (issue #406), mirroring the #399 agent resolution: launchd's PATH
- *  never sees user-local binaries, so the launcher locates the probe
- *  once — scheduled PATH, then the login shell — and hands the
- *  absolute path to the pre-flight. An explicit `quotaPreflight`
- *  settings value bypasses resolution entirely, and an unresolvable
- *  probe falls through to the bare name, whose failure is the
- *  existing fail-open dim line. */
+ *  (issue #406), mirroring the #399 agent resolution — scheduled
+ *  PATH, then the login shell. An explicit `quotaPreflight`
+ *  setting bypasses resolution entirely, and an unresolvable probe
+ *  falls through to the bare name's fail-open dim line. */
 async function resolveQuotaProbeCommand(
   options: ScheduledRunOptions,
   settings: AgentSettings,
@@ -471,11 +467,8 @@ async function resolveQuotaProbeCommand(
 /** One cycle's stages: shared mode runs the coordinator (no pull, no
  *  push — it finalizes remotely); local mode runs the pull → sweep →
  *  sync sequence and its push-with-retry. `agentCommand` is the
- *  launcher-resolved absolute agent path (issue #399) handed to
- *  every spawned child through the environment. `sharedMode` is the
- *  cycle's resolved mode — one marker read before the pre-stage
- *  gates, where the same resolution scopes the credential gate's
- *  env-var clause. */
+ *  launcher-resolved absolute agent path (issue #399); `sharedMode`
+ *  scopes the credential gate's env-var clause. */
 async function runStage(
   options: ScheduledRunOptions,
   runGitStep: NonNullable<ScheduledRunOptions["runGitStep"]>,
@@ -532,6 +525,14 @@ async function runPipelineStages(
 
   log("scheduled-run: wiki-sync starting");
 
+  // The scheduler owns quota policy (issue #463 §5): the outer gate
+  // already proceeded; the child runs once, silently re-probing
+  // nothing.
+  const forwardArgs = options.args ?? [];
+  const syncArgs = forwardArgs.includes("--no-quota-check")
+    ? forwardArgs
+    : [...forwardArgs, "--no-quota-check"];
+
   const runSync =
     options.runSync ??
     (async (syncArgs: readonly string[]) => {
@@ -544,7 +545,7 @@ async function runPipelineStages(
       );
     });
 
-  await runSync(options.args ?? []);
+  await runSync(syncArgs);
   log("scheduled-run: wiki-sync finished — pushing");
 }
 
@@ -724,7 +725,7 @@ function reportOutcome(outcome: CycleOutcome): void {
 export function parseScheduledRunArgs(args: readonly string[]): ParsedCli {
   return parseArgs(args, {
     value: ["--settings", "--outputs", "--timeout"],
-    boolean: ["--lint-full"],
+    boolean: ["--lint-full", "--no-quota-check"],
     positionals: {
       max: 2,
       error: (_arg, count) =>
@@ -795,6 +796,5 @@ export async function main(
   await runLog.flush();
   reportOutcome(outcome);
 }
-
 /* v8 ignore next: covered only under direct `node src/schedule/scheduled-run.ts` runs */
 refuseDirectExecution(import.meta.url, "scheduled-run");

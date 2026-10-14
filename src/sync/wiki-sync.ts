@@ -69,19 +69,13 @@ import {
 import { refuseDirectExecution } from "../cli/is-main.ts";
 import { AGENT_HEARTBEAT_PREFIX, stderrSink } from "../cli/progress.ts";
 import { type RunContext, runContext } from "../cli/run-context.ts";
-import {
-  pathExists,
-  pluralized,
-  readTextIfExists,
-  repoRoot,
-} from "../cli/shared.ts";
+import { pluralized, readTextIfExists, repoRoot } from "../cli/shared.ts";
 import {
   type AgentRunFlags,
   agentRunFlags,
   parseSyncRunArgs,
 } from "../cli/shell.ts";
 
-import { parseStatus, runGit } from "../data/git.ts";
 import type { AgentRunner } from "../ingest/agent-run.ts";
 import {
   type AgentSettings,
@@ -108,6 +102,7 @@ import {
   type CitationWallStageResult,
   runCitationWallStage,
 } from "../sandbox/citations.ts";
+import { directQuotaGate, terminalConfirm } from "../schedule/quota-gate.ts";
 
 import { readSharedWriterMarker } from "../writer/marker.ts";
 import {
@@ -124,6 +119,7 @@ import {
 import {
   type CommitResult,
   type CommitSummary,
+  commitDataRepo,
   formatCommitMessage,
 } from "./cycle-commit.ts";
 import {
@@ -162,77 +158,6 @@ import {
 } from "./verification-stage.ts";
 import { HELP } from "./wiki-sync-help.ts";
 
-/** Commit paths in the data repo; outputs/ only when it holds
- *  something git can act on. Since the manifest snapshot moved there
- *  (issue #112) the directory always exists — but it is ignored, and
- *  `git commit -- outputs` fails on a pathspec nothing known to git
- *  matches. */
-export async function commitPathspecs(
-  dataRoot: string,
-  env: NodeJS.ProcessEnv,
-): Promise<readonly string[]> {
-  const pathspecs = ["wiki", "raw"];
-
-  if (await pathExists(join(dataRoot, "outputs"))) {
-    const { stdout } = await runGit(
-      dataRoot,
-      [
-        "-c",
-        "core.quotePath=false",
-        "status",
-        "--porcelain",
-        "-uall",
-        "--",
-        "outputs",
-      ],
-      env,
-    );
-
-    if (parseStatus(stdout).length > 0) {
-      pathspecs.push("outputs");
-    }
-  }
-
-  return pathspecs;
-}
-
-/** Stage wiki/, raw/, and outputs/ in the data repo and commit them. */
-export async function commitDataRepo(
-  dataRoot: string,
-  env: NodeJS.ProcessEnv,
-  message: string,
-): Promise<CommitResult> {
-  const pathspecs = await commitPathspecs(dataRoot, env);
-  const { stdout } = await runGit(
-    dataRoot,
-    [
-      "-c",
-      "core.quotePath=false",
-      "status",
-      "--porcelain",
-      "-uall",
-      "--",
-      ...pathspecs,
-    ],
-    env,
-  );
-
-  if (parseStatus(stdout).length === 0) {
-    return { status: "nothing-to-commit" };
-  }
-
-  await runGit(dataRoot, ["add", "-A", "--", ...pathspecs], env);
-  await runGit(
-    dataRoot,
-    ["commit", "--quiet", "-m", message, "--", ...pathspecs],
-    env,
-  );
-
-  const { stdout: hash } = await runGit(dataRoot, ["rev-parse", "HEAD"], env);
-
-  return { status: "committed", hash: hash.trim(), message };
-}
-
 /** Everything one wiki-sync cycle reports. */
 export interface WikiSyncResult {
   /** The stage-1 report — source-neutral: one row per source the
@@ -268,6 +193,10 @@ export interface WikiSyncOptions {
   readonly run: RunContext;
   /** Path to the agent settings file (settings.yml). */
   readonly settingsPath: string;
+  /** The parsed agent settings when the caller already holds them —
+   *  the CLI loads once for the quota gate and threads them (issue
+   *  #463); loaded from `settingsPath` otherwise. */
+  readonly settings?: AgentSettings | undefined;
   /** Digest destination (the code repo's outputs/); the manifest
    *  snapshot lives in the data repo's outputs/ (issue #112). */
   readonly outputsDir: string;
@@ -1158,18 +1087,74 @@ function fail(message: string): void {
   cliFail("wiki-sync", message);
 }
 
+/** The cycle's options plus the settings the gate already loaded —
+ *  the threaded options the marker pass consumes (issue #463). */
+type ThreadedCycleOptions = Omit<WikiSyncOptions, "config"> & {
+  readonly config: SyncConfig;
+  readonly settings: AgentSettings;
+};
+
+/** The shared-writer pass: one coordinator cycle after the direct
+ *  quota gate; a refused precondition throws (issue #390). */
+async function runSharedPass(
+  threaded: ThreadedCycleOptions,
+  runFlags: AgentRunFlags,
+): Promise<WikiSyncResult> {
+  const { runSharedCycle } = await import("../writer/coordinator.ts");
+  const outcome = await runSharedCycle({
+    ...threaded,
+    removalReceiptPath: runFlags.removalReceipt,
+  });
+
+  if (outcome.status === "refused") {
+    throw new Error(outcome.reason);
+  }
+
+  return outcome.result;
+}
+
+/** The standalone pass: the local runWikiSync cycle (issue #390). */
+async function runLocalPass(
+  threaded: ThreadedCycleOptions,
+  runFlags: AgentRunFlags,
+): Promise<WikiSyncResult> {
+  if (runFlags.removalReceipt !== undefined) {
+    throw new Error(
+      "--removal-receipt requires shared-writer mode — this data repo carries no shared-writer marker",
+    );
+  }
+
+  return await runWikiSync(threaded);
+}
+
+/** The originating settings: loaded once so the quota gate and the
+ *  cycle share them (issue #463); a bad settings file fails here,
+ *  as it always did inside the cycle. */
+async function cycleSettings(
+  settingsPath: string,
+  onProgress: (message: string) => void,
+): Promise<AgentSettings> {
+  return await loadAgentSettings(settingsPath, { onProgress });
+}
+
 /** Run the whole cycle for the parsed arguments and return its
  *  result for the digest. A marker-enabled data repo dispatches to
  *  the shared-writer coordinator (issue #390): manual wiki-sync and
  *  scheduled-run exercise the same state machine. A malformed marker
  *  refuses the run; a refused precondition prints one line and exits
- *  1. */
+ *  1.
+ *
+ *  Returns undefined when the direct quota gate was declined — no
+ *  lock, lease, stage, write, or publish has begun; the CLI prints
+ *  the skipped-by-operator result and exits 0 (issue #463 §5). */
 async function runCycle(
   positional: readonly string[],
   runFlags: AgentRunFlags,
   onProgress: (message: string) => void,
   animated: boolean,
-): Promise<WikiSyncResult> {
+  interactive: boolean,
+  noQuotaCheck: boolean,
+): Promise<WikiSyncResult | undefined> {
   const configPath = positional[0] ?? join(repoRoot, "sync.json");
   const config = await loadSyncConfig(configPath, homedir());
   const rawDir = positional[1] ?? resolveRawDir(config.dataRoot, repoRoot);
@@ -1177,16 +1162,30 @@ async function runCycle(
   // The run context, built once at this CLI boundary from the raw
   // dir it resolved and the sink it derived (issue #257).
   const run = runContext({ rawDir, onProgress });
-  const options = {
+  const settingsPath = runFlags.settings ?? join(repoRoot, "settings.yml");
+  const options: WikiSyncOptions = {
     configPath,
     config,
     run,
-    settingsPath: runFlags.settings ?? join(repoRoot, "settings.yml"),
+    settingsPath,
     outputsDir: runFlags.outputs ?? join(repoRoot, "outputs"),
     promptsDir: join(repoRoot, "prompts"),
     timeoutMs: runFlags.timeoutMs,
     heartbeatMs: animated ? 100 : undefined,
   };
+
+  const settings = await cycleSettings(settingsPath, onProgress);
+  const gate = await directQuotaGate({
+    noQuotaCheck,
+    settings,
+    onProgress,
+    interactive,
+    confirm: terminalConfirm,
+  });
+
+  if (gate === "declined") {
+    return undefined;
+  }
 
   const marker = await readSharedWriterMarker(run.dataRoot);
 
@@ -1196,30 +1195,16 @@ async function runCycle(
     );
   }
 
+  const threaded: ThreadedCycleOptions = { ...options, config, settings };
+
   if (marker.kind === "enabled") {
-    const { runSharedCycle } = await import("../writer/coordinator.ts");
-    const outcome = await runSharedCycle({
-      ...options,
-      removalReceiptPath: runFlags.removalReceipt,
-    });
-
-    if (outcome.status === "refused") {
-      throw new Error(outcome.reason);
-    }
-
-    return outcome.result;
+    return await runSharedPass(threaded, runFlags);
   }
 
-  if (runFlags.removalReceipt !== undefined) {
-    throw new Error(
-      "--removal-receipt requires shared-writer mode — this data repo carries no shared-writer marker",
-    );
-  }
-
-  return await runWikiSync(options);
+  return await runLocalPass(threaded, runFlags);
 }
 
-/** wiki-sync entry point: `wiki-sync [-h | --help] [--settings <path>] [--timeout <secs>] [<config>] [<raw-dir>]`. */
+/** wiki-sync entry point: `wiki-sync [-h | --help] [--settings <path>] [--timeout <secs>] [--no-quota-check] [<config>] [<raw-dir>]`. */
 export async function main(
   args: readonly string[] = process.argv.slice(2),
 ): Promise<void> {
@@ -1251,14 +1236,27 @@ export async function main(
   ]);
 
   try {
+    const interactive =
+      process.stdin.isTTY === true && process.stdout.isTTY === true;
     const result = await runCycle(
       parsed.positional,
       runFlags,
       sink.render,
       animated,
+      interactive,
+      parsed.flags.has("--no-quota-check"),
     );
 
     sink.end();
+
+    if (result === undefined) {
+      console.log(
+        "wiki-sync: skipped by operator — low quota declined; nothing was started",
+      );
+
+      return;
+    }
+
     console.log(result.digest ?? nothingToDoLine(result));
   } catch (error) {
     sink.end();

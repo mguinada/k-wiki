@@ -6,7 +6,7 @@
  */
 
 /** Help text: every switch, argument, and default (AGENTS.md CLI rule). */
-export const HELP = `Usage: wiki-sync [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<config>] [<raw-dir>]
+export const HELP = `Usage: wiki-sync [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--no-quota-check] [<config>] [<raw-dir>]
 
 Run the whole cycle in one command:
 sync (sync-vault for vault sources, sync-repo for repo sources) →
@@ -56,6 +56,29 @@ runnable for debugging; this command only chains them.
                      shared-writer-receipt.json in the data repo),
                      confirming the planned removals/renames. Refused
                      outside shared-writer mode.
+  --no-quota-check   One-shot quota override: skip the
+                     optional quota probe for this run only. Direct
+                     terminal use still prints one yellow warning
+                     that quota checking was explicitly bypassed;
+                     non-terminal use is the only non-interactive
+                     override and has no warning. Without this flag,
+                     direct manual sync runs the quota pre-flight
+                     before any stage: on fresh authoritative low
+                     quota (first target's effective-availability
+                     runway below the 30-minute cycle estimate plus
+                     the quotaPreflightBuffer reserve) it prints a
+                     yellow warning naming the provider, scope,
+                     runway, and reset time and prompts "Proceed
+                     despite low quota? [y/N]" — only an explicit y
+                     or Y proceeds; anything else, EOF, or a
+                     non-terminal input declines and nothing starts.
+                     Even without this flag, non-authoritative quota
+                     evidence stays fail-open: the run proceeds
+                     unchanged and never prompts. Settings
+                     quotaPreflight: off
+                     disables the whole gate on both scheduled and
+                     manual paths; --no-quota-check is redundant and
+                     silent then.
   -h, --help         Print this help and exit; no side effects.
   <config>           Path to sync.json (vault sources) or a
                      repo-sourced config such as sync-meta.json

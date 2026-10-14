@@ -64,18 +64,28 @@ Behavior, failure mode by failure mode:
   - Quota pre-flight: before any stage (and before the shared-writer
     coordinator acquires its lease), when agent settings name a
     provider, an optional quota-axi probe (settings key
-    quotaPreflight: auto | off | <path-to-cli>, default auto) may
-    skip the tick — one dim log line naming provider, scope, runway,
-    and reset time; exit 0, no ALERT — when the provider is
-    exhausted now or its runway is shorter than a conservative cycle
-    estimate (30 minutes). Any other probe outcome (quota-axi
-    absent, unreadable, or unauthenticated) logs one dim line and
-    runs the cycle unchanged: the probe is machine-local tooling,
-    never a dependency. Settings without a provider give the probe
+    quotaPreflight: auto | off | <absolute-path>, default auto; the
+    quotaPreflightBuffer reserve adds whole minutes above the
+    estimate, default 5m) may skip the tick — one dim log line
+    naming provider, scope, runway, and reset time; exit 0, no
+    ALERT — when the first attempted target's quota evidence is
+    fresh and authoritative (quota-axi JSON schema v5) and its
+    runway is exhausted now or shorter than the cycle estimate (30
+    minutes) plus the buffer (35 minutes by default). Any other
+    probe outcome (quota-axi absent, unreadable, unauthenticated,
+    network-stale, or speaking an unsupported JSON schema) logs one
+    sanitized line — never a payload or stderr — and runs the cycle
+    unchanged: the probe is machine-local tooling, never a
+    dependency. The gate always evaluates the first target the
+    existing router will attempt; a healthy fallback is never a
+    reason to run. Settings without a provider give the probe
     nothing to check — the tick runs, and the stamp notes
     "no ingest provider configured". A quota-skipped tick writes a
     benign skipped stamp (see Heartbeat) so the watchdog can tell
-    persistent exhaustion from a dead scheduler.
+    persistent exhaustion from a dead scheduler. After the gate
+    proceeds, the wrapper invokes exactly one wiki-sync child with
+    the --no-quota-check override (silent, no re-probe); caller-
+    supplied arguments can never suppress this outer gate.
   - Credential pre-flight: before any stage (and before the
     shared-writer coordinator acquires its lease), when agent
     settings name at least one provider, every configured target

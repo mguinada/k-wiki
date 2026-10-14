@@ -8,6 +8,81 @@
  * orchestrator stays orchestration-only.
  */
 
+import { join } from "node:path";
+import { pathExists } from "../cli/shared.ts";
+import { parseStatus, runGit } from "../data/git.ts";
+
+/** Commit paths in the data repo; outputs/ only when it holds
+ *  something git can act on. Since the manifest snapshot moved there
+ *  (issue #112) the directory always exists — but it is ignored, and
+ *  `git commit -- outputs` fails on a pathspec nothing known to git
+ *  matches. */
+export async function commitPathspecs(
+  dataRoot: string,
+  env: NodeJS.ProcessEnv,
+): Promise<readonly string[]> {
+  const pathspecs = ["wiki", "raw"];
+
+  if (await pathExists(join(dataRoot, "outputs"))) {
+    const { stdout } = await runGit(
+      dataRoot,
+      [
+        "-c",
+        "core.quotePath=false",
+        "status",
+        "--porcelain",
+        "-uall",
+        "--",
+        "outputs",
+      ],
+      env,
+    );
+
+    if (parseStatus(stdout).length > 0) {
+      pathspecs.push("outputs");
+    }
+  }
+
+  return pathspecs;
+}
+
+/** Stage wiki/, raw/, and outputs/ in the data repo and commit them. */
+export async function commitDataRepo(
+  dataRoot: string,
+  env: NodeJS.ProcessEnv,
+  message: string,
+): Promise<CommitResult> {
+  const pathspecs = await commitPathspecs(dataRoot, env);
+  const { stdout } = await runGit(
+    dataRoot,
+    [
+      "-c",
+      "core.quotePath=false",
+      "status",
+      "--porcelain",
+      "-uall",
+      "--",
+      ...pathspecs,
+    ],
+    env,
+  );
+
+  if (parseStatus(stdout).length === 0) {
+    return { status: "nothing-to-commit" };
+  }
+
+  await runGit(dataRoot, ["add", "-A", "--", ...pathspecs], env);
+  await runGit(
+    dataRoot,
+    ["commit", "--quiet", "-m", message, "--", ...pathspecs],
+    env,
+  );
+
+  const { stdout: hash } = await runGit(dataRoot, ["rev-parse", "HEAD"], env);
+
+  return { status: "committed", hash: hash.trim(), message };
+}
+
 /** One cycle commit: what the message summarizes. */
 export interface CommitSummary {
   readonly sourcesCount: number;

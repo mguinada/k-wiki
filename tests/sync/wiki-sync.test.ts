@@ -19,6 +19,10 @@ import { createAgentProgressSink } from "../../src/cli/progress.ts";
 import { type RunContextInput, runContext } from "../../src/cli/run-context.ts";
 import { runGit } from "../../src/data/git.ts";
 import type { AgentRunner } from "../../src/ingest/agent-run.ts";
+import {
+  type DirectQuotaGateInput,
+  directQuotaGate,
+} from "../../src/schedule/quota-gate.ts";
 import { loadSyncConfig } from "../../src/sync/config.ts";
 import type { CrosslinksResult } from "../../src/sync/crosslinks-stage.ts";
 import type { CommitResult } from "../../src/sync/cycle-commit.ts";
@@ -2688,7 +2692,7 @@ describe("wiki-sync CLI", () => {
 
   it("prints the usage line for --help", async () => {
     expect((await runCli(["--help"])).out).toContain(
-      "wiki-sync [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<config>] [<raw-dir>]",
+      "wiki-sync [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--no-quota-check] [<config>] [<raw-dir>]",
     );
   });
 
@@ -3045,14 +3049,18 @@ describe("wiki-sync CLI", () => {
 
   it("names the inaccessible vault root in the error before failing", async () => {
     const h = await makeHarness({});
-    const { err } = await runCli([h.configPath, join(h.dataRoot, "raw")]);
+    const { err } = await runCli([
+      "--no-quota-check",
+      h.configPath,
+      join(h.dataRoot, "raw"),
+    ]);
 
     expect(err).toContain('vault root for "Engineering" is not accessible');
   });
 
   it("exits 1 at an inaccessible vault after reading the repo's default settings", async () => {
     const h = await makeHarness({});
-    await runCli([h.configPath, join(h.dataRoot, "raw")]);
+    await runCli(["--no-quota-check", h.configPath, join(h.dataRoot, "raw")]);
 
     expect(process.exitCode).toBe(1);
   });
