@@ -192,9 +192,10 @@ function authoritativeAvailability(
 }
 
 /** The deciding scope record's reset time: the limiting window's
- *  actual `resetsAt` (issue #463 §1a), `unknown` when the window or
- *  its timestamp is absent or unusable — projected exhaustion times
- *  are never skip labels. */
+ *  actual `resetsAt` through the bounded renderer (issue #463 §1a —
+ *  payload text never reaches a log, stamp, or alert verbatim),
+ *  `unknown` when the window or its timestamp is absent or unusable
+ *  — projected exhaustion times are never skip labels. */
 function runwayResetLabel(windows: unknown, runway: V5Runway): string {
   const windowId = runway.limitingWindowId;
 
@@ -207,7 +208,7 @@ function runwayResetLabel(windows: unknown, runway: V5Runway): string {
   ) as V5Window | undefined;
   const resetsAt = match?.resetsAt;
 
-  return typeof resetsAt === "string" ? resetsAt : "unknown";
+  return typeof resetsAt === "string" ? safeRender(resetsAt) : "unknown";
 }
 
 /** The runway decision (issue #463 §3): exhausted-now or a finite

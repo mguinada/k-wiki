@@ -283,7 +283,7 @@ async function configureDomains(repo: Repo, domainWiki: string) {
   await writeFile(join(repo.dataRoot, ".second-brain"), "");
   await writeFile(
     repo.settingsPath,
-    `command: ${join(repo.dataRoot, "stub-agent.mjs")}\nmodel: E2E-MODEL\nreasoning: low\nsecondBrain.domains: [${domainWiki}]\n`,
+    `command: ${join(repo.dataRoot, "stub-agent.mjs")}\nmodel: E2E-MODEL\nreasoning: low\nquotaPreflight: off\nsecondBrain.domains: [${domainWiki}]\n`,
   );
 }
 
@@ -322,7 +322,7 @@ async function makeRepo(): Promise<Repo> {
   });
   await writeFile(
     settingsPath,
-    `command: ${join(dataRoot, "stub-agent.mjs")}\nmodel: E2E-MODEL\nreasoning: low\n`,
+    `command: ${join(dataRoot, "stub-agent.mjs")}\nmodel: E2E-MODEL\nreasoning: low\nquotaPreflight: off\n`,
   );
 
   return {
@@ -407,7 +407,7 @@ async function makeRepoSourcedRepo(): Promise<
   });
   await writeFile(
     settingsPath,
-    `command: ${join(dataRoot, "stub-agent.mjs")}\nmodel: E2E-MODEL\nreasoning: low\n`,
+    `command: ${join(dataRoot, "stub-agent.mjs")}\nmodel: E2E-MODEL\nreasoning: low\nquotaPreflight: off\n`,
   );
 
   return {

@@ -50,7 +50,8 @@ const NOW = () => new Date("2026-08-20T18:00:00.000Z");
 const itRequiresPermissionChecks =
   process.getuid !== undefined && process.getuid() === 0 ? it.skip : it;
 
-const SETTINGS_YML = "command: pi\nmodel: GLM-5.2\nreasoning: high\n";
+const SETTINGS_YML =
+  "command: pi\nmodel: GLM-5.2\nreasoning: high\nquotaPreflight: off\n";
 
 /** A wiki page body with valid §9 frontmatter (guardrail 2 must
  *  pass) whose title kebab-cases to the file name the caller writes
@@ -2611,7 +2612,7 @@ describe("wiki-sync CLI", () => {
     await writeFile(stub, CLI_STUB, { mode: 0o755 });
     await writeFile(
       h.settingsPath,
-      `command: ${stub}\nmodel: M\nreasoning: low\n`,
+      `command: ${stub}\nmodel: M\nreasoning: low\nquotaPreflight: off\n`,
     );
 
     return h;

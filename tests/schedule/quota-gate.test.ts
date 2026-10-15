@@ -10,9 +10,8 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { parseSettings } from "../../src/ingest/agent-settings.ts";
 import {
-  directQuotaGate,
   type DirectQuotaGateInput,
-  terminalConfirm,
+  directQuotaGate,
 } from "../../src/schedule/quota-gate.ts";
 
 /** The first-target low-quota payload (issue #463 §5): a faithful
@@ -86,7 +85,7 @@ describe("directQuotaGate (issue #463 manual confirmation)", () => {
       commandRunner: async () => LOW_QUOTA_PAYLOAD,
     });
 
-    expect(messages[0]).toContain("reset 2026-10-15T00:58:42.000Z");
+    expect(messages[0]).toContain('reset "2026-10-15T00:58:42.000Z"');
   });
 
   it("prompts with the negative-default question under a terminal", async () => {

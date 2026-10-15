@@ -75,7 +75,7 @@ describe("quotaPreflight v5 decisions", () => {
     expect(result).toEqual({
       status: "skip",
       reason:
-        "quota — ingest provider zai scope all_models (model GLM-5.2) exhausted_now, reset 2026-10-15T00:58:42.000Z",
+        'quota — ingest provider zai scope all_models (model GLM-5.2) exhausted_now, reset "2026-10-15T00:58:42.000Z"',
     });
   });
 
@@ -180,7 +180,7 @@ describe("quotaPreflight reset labels", () => {
 
     expect({
       skip: result.status,
-      named: lines[0]?.includes("reset 2026-10-15T00:58:42.000Z"),
+      named: lines[0]?.includes('reset "2026-10-15T00:58:42.000Z"'),
       projected: lines.some((line) =>
         line.includes("2026-10-14T19:30:00.000Z"),
       ),

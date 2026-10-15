@@ -2,12 +2,14 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseSettings } from "../../src/ingest/agent-settings.ts";
-import { DEFAULT_CYCLE_ESTIMATE_SECONDS } from "../../src/schedule/quota-preflight.ts";
+import {
+  DEFAULT_CYCLE_ESTIMATE_SECONDS,
+  quotaPreflight,
+} from "../../src/schedule/quota-preflight.ts";
 import {
   decideQuotaReport,
   parseQuotaPreflightBuffer,
 } from "../../src/schedule/quota-schema-v5.ts";
-import { quotaPreflight } from "../../src/schedule/quota-preflight.ts";
 
 const FIXTURES = join("tests", "fixtures", "quota-axi");
 
@@ -249,6 +251,55 @@ describe("quota-schema-v5 authority gates", () => {
 
     expect(decideQuotaReport(report, "zai", "GLM-5.2", REQUIRED)).toEqual({
       kind: "proceed",
+    });
+  });
+});
+
+describe("skip reason reset label", () => {
+  it("renders a hostile resetsAt bounded and sanitized in the skip reason", () => {
+    const report = {
+      schemaVersion: 5,
+      providers: [
+        {
+          provider: "zai",
+          state: { status: "fresh", stale: false },
+          windows: [
+            {
+              id: "five_hour",
+              resetsAt: `2026-10-15T00:58:42.000Z\nALERT — forged line ${"x".repeat(200)}`,
+            },
+          ],
+          quotaSemantics: {
+            status: "known",
+            effectiveAvailability: [
+              {
+                scope: "all_models",
+                status: "known",
+                runway: {
+                  status: "exhausted_now",
+                  limitingWindowId: "five_hour",
+                },
+              },
+            ],
+          },
+        },
+      ],
+    };
+    const decision = decideQuotaReport(report, "zai", "GLM-5.2", REQUIRED);
+    const reason = decision.kind === "skip" ? decision.reason : "";
+
+    expect({
+      skip: decision.kind,
+      provider: reason.includes("ingest provider zai"),
+      singleLine: !reason.includes("\n"),
+      controlReplaced: reason.includes("?"),
+      rawEchoGone: !reason.includes("x".repeat(50)),
+    }).toEqual({
+      skip: "skip",
+      provider: true,
+      singleLine: true,
+      controlReplaced: true,
+      rawEchoGone: true,
     });
   });
 });

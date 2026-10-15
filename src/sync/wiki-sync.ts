@@ -193,10 +193,6 @@ export interface WikiSyncOptions {
   readonly run: RunContext;
   /** Path to the agent settings file (settings.yml). */
   readonly settingsPath: string;
-  /** The parsed agent settings when the caller already holds them —
-   *  the CLI loads once for the quota gate and threads them (issue
-   *  #463); loaded from `settingsPath` otherwise. */
-  readonly settings?: AgentSettings | undefined;
   /** Digest destination (the code repo's outputs/); the manifest
    *  snapshot lives in the data repo's outputs/ (issue #112). */
   readonly outputsDir: string;
@@ -1087,11 +1083,11 @@ function fail(message: string): void {
   cliFail("wiki-sync", message);
 }
 
-/** The cycle's options plus the settings the gate already loaded —
- *  the threaded options the marker pass consumes (issue #463). */
+/** The cycle's options with the parsed config required — the CLI
+ *  threads what raw-dir resolution already loaded (R-1, one
+ *  sync.json parse per run); the marker pass consumes it. */
 type ThreadedCycleOptions = Omit<WikiSyncOptions, "config"> & {
   readonly config: SyncConfig;
-  readonly settings: AgentSettings;
 };
 
 /** The shared-writer pass: one coordinator cycle after the direct
@@ -1127,9 +1123,9 @@ async function runLocalPass(
   return await runWikiSync(threaded);
 }
 
-/** The originating settings: loaded once so the quota gate and the
- *  cycle share them (issue #463); a bad settings file fails here,
- *  as it always did inside the cycle. */
+/** The quota gate's settings, loaded from the settings path; a bad
+ *  settings file fails here, before any lock, lease, stage, or
+ *  publish — the cycle's own stage load re-reads the same path. */
 async function cycleSettings(
   settingsPath: string,
   onProgress: (message: string) => void,
@@ -1195,7 +1191,7 @@ async function runCycle(
     );
   }
 
-  const threaded: ThreadedCycleOptions = { ...options, config, settings };
+  const threaded: ThreadedCycleOptions = { ...options, config };
 
   if (marker.kind === "enabled") {
     return await runSharedPass(threaded, runFlags);
