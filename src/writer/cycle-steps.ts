@@ -11,22 +11,13 @@
 
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { errorMessage } from "../cli/colors.ts";
 import type { RunContext } from "../cli/run-context.ts";
 import { readTextIfExists } from "../cli/shared.ts";
 import { parseStatus, tryGit } from "../data/git.ts";
 import { SNAPSHOT_FILENAME } from "../ingest/snapshot.ts";
 import { parseManifest, writeManifest } from "../sync/manifest.ts";
 import type { VaultRemovalPlan } from "../sync/projection.ts";
-import type { GitRunner } from "./git-remote.ts";
-import type { ObservedLease } from "./lease.ts";
-import {
-  fetchedTreeOid,
-  releaseOwnLease,
-  retainFailedCycleLease,
-} from "./lease-ops.ts";
-import type { SharedWriterMarker } from "./marker.ts";
-import type { SharedCycleOptions } from "./options.ts";
+import { type GitRunner, gitOk } from "./git-remote.ts";
 import {
   buildReceipt,
   describeReceipt,
@@ -35,6 +26,28 @@ import {
   type RemovalReceipt,
   writeReceipt,
 } from "./receipts.ts";
+
+/** Step 1's clean/current verification: refusal text or undefined. */
+export async function cleanCurrentRefusal(
+  git: GitRunner,
+  dataRoot: string,
+): Promise<string | undefined> {
+  const dirty = await refuseDirtyWorkingTree(git);
+
+  if (dirty !== undefined) {
+    return dirty;
+  }
+
+  if (!(await gitOk(git, ["remote", "get-url", "origin"]))) {
+    return "the data repo has no origin remote — shared-writer mode serializes through one";
+  }
+
+  if (dataRoot.trim() === "") {
+    return "internal: empty data root";
+  }
+
+  return undefined;
+}
 
 /** Untracked per-machine artifacts the refusal ignores: the shared
  *  run lock lives at the data repo root, outside every commit
@@ -144,6 +157,24 @@ export async function baselineSnapshot(options: {
   );
 }
 
+/** Whether git porcelain reports the working tree clean (tracked and
+ *  untracked alike; the run lock is untracked-but-allowed, this
+ *  check tolerates it for the post-failure release decision). */
+export async function workingTreeClean(
+  dataRoot: string,
+  env: NodeJS.ProcessEnv,
+): Promise<boolean> {
+  const stdout = await tryGit(dataRoot, ["status", "--porcelain"], env);
+
+  if (stdout === undefined) {
+    return false;
+  }
+
+  return parseStatus(stdout).every((entry) =>
+    ALLOWED_UNTRACKED.has(entry.path),
+  );
+}
+
 /** The gate's outcome: pass (matching receipt or nothing to remove)
  *  or refuse — the exact reason, with the receipt already written
  *  and the confirmation command named. */
@@ -205,73 +236,4 @@ export async function gateRemovals(options: {
   );
 
   return { status: "pass" };
-}
-
-/** Whether git porcelain reports the working tree clean (tracked and
- *  untracked alike; the run lock is untracked-but-allowed, this
- *  check tolerates it for the post-failure release decision). */
-export async function workingTreeClean(
-  dataRoot: string,
-  env: NodeJS.ProcessEnv,
-): Promise<boolean> {
-  const stdout = await tryGit(dataRoot, ["status", "--porcelain"], env);
-
-  if (stdout === undefined) {
-    return false;
-  }
-
-  return parseStatus(stdout).every((entry) =>
-    ALLOWED_UNTRACKED.has(entry.path),
-  );
-}
-
-/** The failure-rule decision (issue #390's table): a clean tree
- *  releases only the exact owned lease; a dirty fix surface retains
- *  it. A release failure is never allowed to mask the original
- *  error. */
-export async function releaseIfClean(
-  options: SharedCycleOptions,
-  marker: SharedWriterMarker,
-  git: GitRunner,
-  current: ObservedLease,
-): Promise<void> {
-  const { run } = options;
-
-  if (!(await workingTreeClean(run.dataRoot, run.env))) {
-    try {
-      const retained = await retainFailedCycleLease({
-        git,
-        remote: marker.remote,
-        leaseRef: marker.leaseRef,
-        current,
-        treeOid: await fetchedTreeOid(git),
-        now: run.now,
-      });
-
-      run.onProgress(
-        `shared-writer: failure left a dirty fix surface — retained lease expires ${retained.body.expires}`,
-      );
-    } catch (retentionError) {
-      run.onProgress(
-        `shared-writer: failed to shorten retained lease — ${errorMessage(retentionError)}`,
-      );
-    }
-
-    return;
-  }
-
-  try {
-    run.onProgress(
-      await releaseOwnLease({
-        git,
-        remote: marker.remote,
-        leaseRef: marker.leaseRef,
-        ownOid: current.oid,
-      }),
-    );
-  } catch (releaseError) {
-    run.onProgress(
-      `shared-writer: lease release failed — retained: ${errorMessage(releaseError)}`,
-    );
-  }
 }

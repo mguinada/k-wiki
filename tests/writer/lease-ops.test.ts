@@ -18,14 +18,15 @@ import {
 } from "./git-world.ts";
 
 const LEASE_REF = "refs/k-wiki/leases/shared-writer-v1";
+const CANONICAL_REF = "refs/k-wiki/canonical/shared-writer-v1";
 const BRANCH_REF = "refs/heads/main";
 const NOW = () => new Date("2026-01-01T00:00:00Z");
 const HOLDER = "test-host:1";
 
 async function fetchMain(repo: TempRepo): Promise<string> {
-  await repo.git(["fetch", "origin", "refs/heads/main"]);
+  await repo.git(["fetch", "origin", `+refs/heads/main:${CANONICAL_REF}`]);
 
-  return await fetchedTreeOid(repo.git);
+  return await fetchedTreeOid(repo.git, CANONICAL_REF);
 }
 
 describe("acquireLease", () => {
@@ -849,13 +850,17 @@ describe("releaseOwnLease", () => {
 });
 
 describe("fetchedTreeOid", () => {
-  it("reads the fetched branch head's tree", async () => {
+  it("reads the fetched canonical ref's tree", async () => {
     const world = await makeWriterWorld();
 
     try {
       await commitFile(world.a, "x.txt", "x\n");
-      await world.a.git(["fetch", "origin", "refs/heads/main"]);
-      const tree = await fetchedTreeOid(world.a.git);
+      await world.a.git([
+        "fetch",
+        "origin",
+        `+refs/heads/main:${CANONICAL_REF}`,
+      ]);
+      const tree = await fetchedTreeOid(world.a.git, CANONICAL_REF);
 
       expect(tree).toMatch(/^[0-9a-f]{40}$/);
     } finally {

@@ -9,34 +9,33 @@
  * each stay readable; the coordinator owns order and failure rules.
  */
 
+import { terminalColors } from "../cli/colors.ts";
 import {
   nothingToDoLine,
   planRemovals,
   runWikiSync,
 } from "../sync/wiki-sync.ts";
-import {
-  baselineSnapshot,
-  gateRemovals,
-  releaseIfClean,
-} from "./cycle-steps.ts";
+import { baselineSnapshot, gateRemovals } from "./cycle-steps.ts";
 import type { GitRunner } from "./git-remote.ts";
 import {
   classifyPosition,
-  fetchRefspec,
+  fetchCanonicalBranch,
   lsRemoteOid,
   mergeFfOnly,
   revParseOid,
 } from "./git-remote.ts";
 import type { ObservedLease } from "./lease.ts";
-import {
-  fetchedTreeOid,
-  finalizeWithLeaseRelease,
-  releaseOwnLease,
-  renewLease,
-} from "./lease-ops.ts";
-import type { SharedWriterMarker } from "./marker.ts";
-import type { SharedCycleOptions, SharedCycleOutcome } from "./options.ts";
+import { finalizeWithLeaseRelease, releaseOwnLease } from "./lease-ops.ts";
+import { reportMaintenance } from "./maintenance-log.ts";
+import { canonicalRefFor, type SharedWriterMarker } from "./marker.ts";
+import type {
+  KnownTree,
+  SharedCycleOptions,
+  SharedCycleOutcome,
+} from "./options.ts";
 import { readReceipt } from "./receipts.ts";
+import { releaseIfClean } from "./retention.ts";
+import { makeRenewer } from "./tenure.ts";
 
 /** The cycle while leased. Returns normally on completion or a
  *  refused gate; throws on failures (the tenure's catch applies the
@@ -52,6 +51,7 @@ export async function leasedCycle(
   branchRef: string,
   session: ObservedLease,
   setSession: (next: ObservedLease) => void,
+  tree: KnownTree,
   phaseToCycle: () => void,
   phaseToFinalize: () => void,
 ): Promise<SharedCycleOutcome> {
@@ -77,7 +77,7 @@ export async function leasedCycle(
 
   if (gate.status === "refuse") {
     // A clean pre-write refusal: release only the exact owned lease.
-    await releaseIfClean(options, marker, git, current);
+    await releaseIfClean(options, marker, git, current, tree);
 
     return { status: "refused", reason: gate.reason.join("\n") };
   }
@@ -88,6 +88,7 @@ export async function leasedCycle(
     git,
     holder,
     advanced,
+    tree,
     () => current,
     (next) => {
       current = next;
@@ -133,6 +134,8 @@ export async function leasedCycle(
   // Step 10: a no-op cycle conditionally releases the exact owned
   // lease after fresh verification.
   if (nothingToDoLine(result) !== undefined) {
+    const startedAt = performance.now();
+
     run.onProgress(
       await releaseOwnLease({
         git,
@@ -141,7 +144,17 @@ export async function leasedCycle(
         ownOid: current.oid,
       }),
     );
-
+    await reportMaintenance(git, {
+      onProgress: run.onProgress,
+      dim: (message) => terminalColors(run.env).dim(message),
+      obs: {
+        verb: "release",
+        ref: marker.leaseRef,
+        oid: current.oid,
+        treeRead: "ok",
+        durationMs: performance.now() - startedAt,
+      },
+    });
     return { status: "completed", result };
   }
 
@@ -159,14 +172,18 @@ export async function leasedCycle(
 
 /** Step 6's fetch-and-fast-forward: behind fast-forwards, up-to-date
  *  stands; ahead or diverged (a non-fast-forward remote move under
- *  the lease — a foreign write) fails closed. */
+ *  the lease — a foreign write) fails closed. The fetch lands in the
+ *  canonical named ref and the merge reads from it — never the
+ *  shared fetch-head file (issue #464). */
 async function fetchAndFastForward(
   marker: SharedWriterMarker,
   git: GitRunner,
   branchRef: string,
   run: SharedCycleOptions["run"],
 ): Promise<{ readonly headOid: string; readonly fastForwarded: boolean }> {
-  await fetchRefspec(git, marker.remote, `refs/heads/${marker.branch}`);
+  const canonicalRef = canonicalRefFor(marker.leaseRef);
+
+  await fetchCanonicalBranch(git, marker.remote, branchRef, canonicalRef);
 
   const remoteOid = await lsRemoteOid(git, marker.remote, branchRef);
 
@@ -185,7 +202,7 @@ async function fetchAndFastForward(
   }
 
   if (position === "behind") {
-    await mergeFfOnly(git, "FETCH_HEAD");
+    await mergeFfOnly(git, canonicalRef);
     run.onProgress(
       `shared-writer: fast-forwarded to the canonical tree ${remoteOid.slice(0, 8)}`,
     );
@@ -244,41 +261,6 @@ function isEmptyPlan(plan: {
   readonly renames: readonly unknown[];
 }): boolean {
   return plan.removals.length === 0 && plan.renames.length === 0;
-}
-
-/** A renewal step: same token, new expiry, renewals+1, exact-OID
- *  fence — a lost race aborts before the next stage or the final
- *  push (issue #390's failure table). `getSession` reads the
- *  tenure's live session; `setSession` publishes each renewal. */
-function makeRenewer(
-  options: SharedCycleOptions,
-  marker: SharedWriterMarker,
-  git: GitRunner,
-  holder: string,
-  advanced: { readonly headOid: string },
-  getSession: () => ObservedLease,
-  setSession: (next: ObservedLease) => void,
-): (when: string) => Promise<void> {
-  const { run } = options;
-
-  return async (when: string) => {
-    const treeOid = await fetchedTreeOid(git);
-    const next = await renewLease({
-      git,
-      remote: marker.remote,
-      leaseRef: marker.leaseRef,
-      current: getSession(),
-      treeOid,
-      base: advanced.headOid,
-      now: run.now,
-      holder,
-    });
-
-    setSession(next);
-    run.onProgress(
-      `shared-writer: lease renewed ${when} (${next.body.renewals})`,
-    );
-  };
 }
 
 /** The local head OID — the finalize push's source. */

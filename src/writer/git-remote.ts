@@ -107,13 +107,29 @@ export async function lsRemoteOid(
 
 /** Fetch an explicit refspec (`+src:dst` or `src`) from a remote.
  *  Custom refs are only observable through an explicit refspec —
- *  the one fetch form the protocol relies on. */
+ *  the default fetch's refspecs need not retrieve them. Canonical
+ *  branch fetches — the ones tree reads anchor on — land in the
+ *  named canonical ref instead (fetchCanonicalBranch, issue #464). */
 export async function fetchRefspec(
   git: GitRunner,
   remote: string,
   refspec: string,
 ): Promise<void> {
   await gitRun(git, ["fetch", remote, refspec]);
+}
+
+/** Fetch the canonical branch into the named local ref (issue #464),
+ *  forced so a rewound remote ref still updates. Every fetch the
+ *  writer relies on for reads lands here, never in git's shared
+ *  fetch-head file: a named-ref read is atomic per git semantics,
+ *  even while another git process rewrites or empties that file. */
+export async function fetchCanonicalBranch(
+  git: GitRunner,
+  remote: string,
+  branchRef: string,
+  canonicalRef: string,
+): Promise<void> {
+  await gitRun(git, ["fetch", remote, `+${branchRef}:${canonicalRef}`]);
 }
 
 /** The local OID of a ref-ish, or undefined when it does not exist.

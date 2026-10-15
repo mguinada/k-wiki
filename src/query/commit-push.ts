@@ -14,7 +14,7 @@ import { runGit } from "../data/git.ts";
 import { refuseDirtyWorkingTree } from "../writer/cycle-steps.ts";
 import {
   currentBranch,
-  fetchRefspec,
+  fetchCanonicalBranch,
   type GitRunner,
   gitRunnerFor,
   isAncestor,
@@ -35,6 +35,7 @@ import {
   takeOverExpiredLease,
 } from "../writer/lease-ops.ts";
 import {
+  canonicalRefFor,
   readSharedWriterMarker,
   type SharedWriterMarker,
 } from "../writer/marker.ts";
@@ -153,13 +154,14 @@ async function acquirePushLease(options: {
   }
 
   const observed = await observeLease(git, marker.remote, marker.leaseRef);
+  const canonicalRef = canonicalRefFor(marker.leaseRef);
   const outcome =
     observed === undefined
       ? await acquireLease({
           git,
           remote: marker.remote,
           leaseRef: marker.leaseRef,
-          treeOid: await fetchedTreeOid(git),
+          treeOid: await fetchedTreeOid(git, canonicalRef),
           base: options.base,
           now: () => new Date(),
           holder: leaseHolder(),
@@ -169,7 +171,7 @@ async function acquirePushLease(options: {
           remote: marker.remote,
           leaseRef: marker.leaseRef,
           observed,
-          treeOid: await fetchedTreeOid(git),
+          treeOid: await fetchedTreeOid(git, canonicalRef),
           base: options.base,
           now: () => new Date(),
           holder: leaseHolder(),
@@ -239,7 +241,15 @@ async function preparePush(options: {
     };
   }
 
-  await fetchRefspec(git, marker.remote, branchRef);
+  // The fetch lands in the canonical named ref (issue #464): the
+  // tree read the lease acquire anchors on never touches the shared
+  // fetch-head file.
+  await fetchCanonicalBranch(
+    git,
+    marker.remote,
+    branchRef,
+    canonicalRefFor(marker.leaseRef),
+  );
 
   const remoteOid = await lsRemoteOid(git, marker.remote, branchRef);
 

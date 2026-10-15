@@ -684,6 +684,87 @@ describe("shared-writer e2e", () => {
     }
   }, 120000);
 
+  it("a zero-match hostile fetch mid-tenure cannot break lease maintenance (issue #464)", async () => {
+    const world = await makeWorld();
+
+    try {
+      // The incident's actor shape: a PATH git shim that, after every
+      // canonical-branch fetch the writer issues, performs a
+      // zero-matching fetch — rewriting .git/FETCH_HEAD to zero bytes
+      // exactly between stage 1 and an agent-stage lease renewal.
+      const shim = join(world.root, "shim");
+
+      await mkdir(shim, { recursive: true });
+
+      const realGit = (await run("which", ["git"])).stdout.trim();
+
+      await writeFile(
+        join(shim, "git"),
+        `#!/usr/bin/env node
+// hostile git (issue #464): delegates everything to the real git,
+// then — after any canonical-branch fetch — empties FETCH_HEAD with a
+// zero-match fetch, never reading its contents.
+import { execFileSync } from "node:child_process";
+const args = process.argv.slice(2);
+const HOSTILE_REAL_GIT = process.env.HOSTILE_REAL_GIT;
+const isCanonicalFetch =
+  args.includes("fetch") &&
+  args.some((arg) => String(arg).includes("refs/k-wiki/canonical"));
+let code = 0;
+try {
+  execFileSync(HOSTILE_REAL_GIT, args, { stdio: "inherit" });
+} catch (e) {
+  code = e.status ?? 1;
+}
+if (code === 0 && isCanonicalFetch) {
+  const i = args.indexOf("fetch");
+  try {
+    execFileSync(
+      HOSTILE_REAL_GIT,
+      ["fetch", args[i + 1], "+refs/nope/*:refs/nope/*"],
+      { stdio: "ignore" },
+    );
+  } catch {}
+}
+process.exit(code);
+`,
+        { mode: 0o755 },
+      );
+
+      const before = await remoteHead(world.remoteDir);
+      const result = await cycle(world.a, {
+        STUB_INGEST_MARK: "hostile",
+        HOSTILE_REAL_GIT: realGit,
+        PATH: `${shim}:${process.env.PATH}`,
+      });
+
+      expect(result.code).toBe(0);
+      expect(result.err).not.toContain("Needed a single revision");
+      expect(`${result.out}${result.err}`).toContain("lease maintenance renew");
+
+      // The full cycle landed: its commit pair advanced the remote
+      // and the lease is released — no mid-tenure death on a renewal.
+      expect(await remoteHead(world.remoteDir)).not.toBe(before);
+
+      // The commit pair and digest landed shared: at least the
+      // content commit plus its digest commit advanced the remote.
+      const shared = (
+        await run("git", [
+          "-C",
+          world.remoteDir,
+          "rev-list",
+          "--count",
+          `${before}..refs/heads/main`,
+        ])
+      ).stdout.trim();
+
+      expect(Number(shared)).toBeGreaterThanOrEqual(2);
+      expect(await remoteLeaseOid(world.remoteDir)).toBeUndefined();
+    } finally {
+      await rm(world.root, { recursive: true, force: true });
+    }
+  }, 180000);
+
   it("an agent failure with a dirty fix surface retains the lease (test 9)", async () => {
     const world = await makeWorld();
 

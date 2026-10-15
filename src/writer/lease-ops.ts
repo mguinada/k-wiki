@@ -38,8 +38,8 @@ export async function acquireLease(options: {
   readonly git: GitRunner;
   readonly remote: string;
   readonly leaseRef: string;
-  /** The remote branch's tree OID (`<remote-branch>^{tree}`), from
-   *  the fetch the caller already did. */
+  /** The remote branch's tree OID, from the canonical named ref the
+   *  fetch the caller already did landed (issue #464). */
   readonly treeOid: string;
   /** The remote branch OID the writer is based on. */
   readonly base: string;
@@ -282,11 +282,14 @@ export async function releaseOwnLease(options: {
   return `released ${leaseRef}`;
 }
 
-/** The remote branch's tree OID, from the explicit fetch the caller
- *  already performed (`FETCH_HEAD` names the fetched branch head). */
+/** The named ref's tree OID (issue #464): reads anchor on the ref the
+ *  caller fetched into — the canonical branch's fetch in the runtime
+ *  loop, `refs/k-wiki/lease-observed` in the observation paths. There
+ *  is no default, so a caller that forgets to re-anchor fails at
+ *  compile time. */
 export async function fetchedTreeOid(
   git: GitRunner,
-  refish = "FETCH_HEAD",
+  refish: string,
 ): Promise<string> {
   return await gitOut(git, ["rev-parse", "--verify", `${refish}^{tree}`]);
 }
