@@ -749,13 +749,14 @@ describe("hostile fetch mid-tenure (issue #464)", () => {
 
     const cw = await enabledDataRepo(world, (dir) => tempDirs.push(dir));
 
-    sabotagingRunner(cw.dataRoot, "empty");
+    const { git } = sabotagingRunner(cw.dataRoot, "empty");
     const real = gitRunnerFor({ dir: cw.dataRoot, env: process.env });
     let leaseTree: string | undefined;
     let headTree: string | undefined;
 
     await runSharedCycle({
       ...options(cw),
+      git,
       runSweep: async () => {
         await real([
           "fetch",

@@ -10,6 +10,7 @@ import {
   refuseDirtyWorkingTree,
   snapshotPathFor,
   surfaceEntries,
+  workingTreeClean,
 } from "../../src/writer/cycle-steps.ts";
 import { gitRunnerFor } from "../../src/writer/git-remote.ts";
 import { readReceipt } from "../../src/writer/receipts.ts";
@@ -135,6 +136,16 @@ describe("surfaceEntries", () => {
     expect(entries).toEqual([
       { code: "R ", path: "new.txt", origin: "old.txt", untracked: false },
     ]);
+  });
+});
+
+describe("workingTreeClean", () => {
+  it("tolerates the run lock for the post-failure release decision", async () => {
+    const dir = await tempGitRepo();
+
+    await writeFile(join(dir, ".scheduled-run.lock"), "{}\n");
+
+    expect(await workingTreeClean(dir, process.env)).toBe(true);
   });
 });
 
