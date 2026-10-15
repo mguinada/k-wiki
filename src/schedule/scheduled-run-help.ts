@@ -5,7 +5,7 @@
  */
 
 export /** Help text: every switch and default (AGENTS.md CLI rule). */
-const HELP = `Usage: scheduled-run [-h | --help] [--lint-full] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<config>] [<raw-dir>]
+const HELP = `Usage: scheduled-run [-h | --help] [--lint-full] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--no-quota-check] [<config>] [<raw-dir>]
 
 Run one unattended pipeline cycle — the command the
 launchd job executes every interval. The wrapper is portable Node:
@@ -36,6 +36,14 @@ wiki-sync stays commit-only; the push happens here and only here.
                      --lint-full, one explicit value sets both the
                      cycle's and the sweep's budget; the defaults
                      stay 1800 (the cycle) and 7200 (the sweep).
+  --no-quota-check   Forwarded to wiki-sync, which then skips its
+                     own quota probe for this run only. The
+                     wrapper's quota pre-flight always runs first
+                     and can never be suppressed: after it
+                     proceeds, the wrapper invokes the wiki-sync
+                     child with this override anyway (silent, no
+                     re-probe), so passing it by hand changes
+                     nothing for a scheduled firing.
   -h, --help         Print this help and exit; no side effects.
   <config>           Forwarded to wiki-sync. Default: the repo's
                      sync.json.

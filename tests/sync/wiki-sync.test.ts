@@ -19,10 +19,6 @@ import { createAgentProgressSink } from "../../src/cli/progress.ts";
 import { type RunContextInput, runContext } from "../../src/cli/run-context.ts";
 import { runGit } from "../../src/data/git.ts";
 import type { AgentRunner } from "../../src/ingest/agent-run.ts";
-import {
-  type DirectQuotaGateInput,
-  directQuotaGate,
-} from "../../src/schedule/quota-gate.ts";
 import { loadSyncConfig } from "../../src/sync/config.ts";
 import type { CrosslinksResult } from "../../src/sync/crosslinks-stage.ts";
 import type { CommitResult } from "../../src/sync/cycle-commit.ts";
@@ -2991,6 +2987,45 @@ describe("wiki-sync CLI", () => {
     await runCli(cycleArgs(h));
 
     expect(process.exitCode).toBe(1);
+  });
+
+  it("prints the operator line and exits 0 when the quota gate declines", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const quotaStub = join(h.dataRoot, "quota-stub.sh");
+
+    await writeFile(
+      quotaStub,
+      `#!/bin/sh\ncat "${join(repoRoot, "tests", "fixtures", "quota-axi", "v5-provider-exhausted.json")}"\n`,
+      { mode: 0o755 },
+    );
+    await writeFile(
+      h.settingsPath,
+      `command: pi\nreasoning: low\ntargets: zai/GLM-5.2\nquotaPreflight: ${quotaStub}\n`,
+    );
+
+    const { out, err } = await runCli([
+      "--settings",
+      h.settingsPath,
+      "--outputs",
+      h.outputsDir,
+      h.configPath,
+      join(h.dataRoot, "raw"),
+    ]);
+    const log = await run("git", ["-C", h.dataRoot, "log", "--oneline"]);
+
+    expect({
+      out,
+      err,
+      exitCode: process.exitCode,
+      commits: log.stdout.trim().split("\n"),
+    }).toEqual({
+      out: "wiki-sync: skipped by operator — low quota declined; nothing was started",
+      err: expect.stringContaining(
+        "WARNING — low quota — quota — ingest provider zai scope all_models",
+      ),
+      exitCode: undefined,
+      commits: [expect.stringContaining("init")],
+    });
   });
 
   it("kills the agent with a timeout error when --timeout expires", async () => {

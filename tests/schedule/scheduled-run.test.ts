@@ -1994,7 +1994,7 @@ describe("scheduled-run main: help", () => {
     const { out, exitCode } = await runMain(["--help"]);
 
     expect(`${exitCode}|${out.split("\n")[0]}`).toBe(
-      "0|Usage: scheduled-run [-h | --help] [--lint-full] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<config>] [<raw-dir>]",
+      "0|Usage: scheduled-run [-h | --help] [--lint-full] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--no-quota-check] [<config>] [<raw-dir>]",
     );
   });
 
@@ -2008,6 +2008,12 @@ describe("scheduled-run main: help", () => {
     const { out } = await runMain(["--help"]);
 
     expect(out).toContain("older than four hours is taken over");
+  });
+
+  it("documents the --no-quota-check switch in the help text", async () => {
+    const { out } = await runMain(["--help"]);
+
+    expect(out).toContain("Forwarded to wiki-sync, which then skips its");
   });
 
   it("documents the push rejection sequence in the help text", async () => {
@@ -2969,8 +2975,9 @@ async function writeSequenceStub(
   );
 }
 
-/** Absolute fixture root for the stub scripts (the quo stub's cwd
- *  is the data dir, never the repo root). */
+/** Repo-root-relative fixture root for the stub scripts: the probe
+ *  child inherits the test runner's repo-root cwd (the production
+ *  execFile runner sets no cwd), so the relative path resolves. */
 const FIXTURE_ROOT = join(".", "tests", "fixtures", "quota-axi");
 
 describe("runScheduledCycle fixture-backed quota gate (issue #463)", () => {

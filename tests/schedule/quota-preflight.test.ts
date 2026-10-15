@@ -9,10 +9,6 @@ import {
   quotaPreflightUnavailable,
   stripSnapshotEnvironment,
 } from "../../src/schedule/quota-preflight.ts";
-import {
-  decideQuotaReport,
-  parseQuotaPreflightBuffer,
-} from "../../src/schedule/quota-schema-v5.ts";
 
 const FIXTURES = join("tests", "fixtures", "quota-axi");
 
@@ -155,7 +151,12 @@ describe("quotaPreflight runway boundaries", () => {
   });
 
   it("never lets percentages or pace decide a skip", async () => {
-    const result = await probeRunway({ status: "through_reset" });
+    const result = await probeRunway({
+      status: "through_reset",
+      usableRunwaySeconds: REQUIRED,
+      pace: { status: "ahead", reservePercentPoints: -99.9, burnMultiple: 42 },
+      effectivePercentRemaining: 0,
+    });
 
     expect(result).toEqual({ status: "proceed" });
   });
@@ -446,9 +447,18 @@ describe("quotaPreflight buffer warnings", () => {
   });
 
   it("bounds the rejected input rendering", async () => {
-    const warning = `scheduled-run: ${"quotaPreflightBuffer"}`;
+    const lines: string[] = [];
+    const rejected = `35m ${"\u0007".repeat(90)}`;
 
-    expect(warning.length).toBeLessThan(400);
+    await quotaPreflight({
+      settings: settings(`quotaPreflightBuffer: ${rejected}\n`),
+      log: (line) => lines.push(line),
+      commandRunner: async () => zaiV5Report(sufficientRunway()),
+    });
+
+    expect(lines[0]).toBe(
+      `scheduled-run: WARNING — quotaPreflightBuffer ${JSON.stringify(`35m ${"?".repeat(73)}...`)}: only non-negative whole-minute values are supported; using the 5m fallback`,
+    );
   });
 
   it("warns on an unsupported unit (hours) and uses 5m", async () => {
