@@ -165,7 +165,11 @@ describe("retainAfterFailure", () => {
     });
 
     expect(
-      lines.find((line) => line.includes("lease maintenance retain")),
+      lines.find(
+        (line) =>
+          line.includes("lease maintenance retain") &&
+          line.includes("tree read degraded"),
+      ),
     ).toBeDefined();
   });
 
