@@ -97,7 +97,7 @@ function isDiagnosticOccurrence(line: string): boolean {
 /** The file:line offenders of one scanned file's lines: every
  *  occurrence of the literal, except the sanctioned diagnostic shape
  *  in an allowlisted file. */
-export function offenderSites(
+function offenderSites(
   file: string,
   lines: readonly string[],
 ): readonly string[] {
@@ -138,7 +138,7 @@ describe("offenderSites detector (issue #464 addendum)", () => {
     [" *  diagnostic-only exception: stat {exists, size} of FETCH_HEAD only."],
     ["// The one no-fetch-head exception reads FETCH_HEAD's {exists, size}."],
     [
-      "`FETCH_HEAD {exists: ${fetchHead.exists}, size: ${fetchHead.size}}`,",
+      `\`FETCH_HEAD {exists: \${fetchHead.exists}, size: \${fetchHead.size}}\`,`,
     ],
   ];
 
