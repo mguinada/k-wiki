@@ -107,7 +107,9 @@ export async function lsRemoteOid(
 
 /** Fetch an explicit refspec (`+src:dst` or `src`) from a remote.
  *  Custom refs are only observable through an explicit refspec —
- *  the one fetch form the protocol relies on. */
+ *  the default fetch's refspecs need not retrieve them. Canonical
+ *  branch fetches — the ones tree reads anchor on — land in the
+ *  named canonical ref instead (fetchCanonicalBranch, issue #464). */
 export async function fetchRefspec(
   git: GitRunner,
   remote: string,
