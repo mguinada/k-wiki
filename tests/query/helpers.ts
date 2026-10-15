@@ -6,7 +6,8 @@
  */
 
 import { execFile } from "node:child_process";
-import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,6 +27,55 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 /** The CLI's default saved-answer path (outputs/ is per-machine). */
 export const defaultLastQuery = join(repoRoot, "outputs", "last-query.md");
+
+/** Serialize the tests that touch the checkout's default outputs/
+ *  directory across processes: two concurrent coverage runs share
+ *  this repo, and an unsynchronized writer made the other run's
+ *  reader see a saved answer it must not (issue #430 rehearsal).
+ *  A mkdir lock — atomic, stale-broken after the timeout. */
+export async function withDefaultOutputsLock<T>(
+  fn: () => Promise<T>,
+): Promise<T> {
+  const lockDir = join(repoRoot, "outputs", ".default-outputs.lock");
+  const ownerToken = join(lockDir, "owner");
+  let deadline = Date.now() + 120_000;
+
+  await mkdir(dirname(lockDir), { recursive: true });
+
+  while (
+    !(await mkdir(lockDir).then(
+      () => true,
+      () => false,
+    ))
+  ) {
+    if (Date.now() > deadline) {
+      await rm(lockDir, { recursive: true, force: true });
+
+      deadline = Date.now() + 120_000;
+
+      continue;
+    }
+
+    await new Promise((resolveSleep) => setTimeout(resolveSleep, 100));
+  }
+
+  const id = randomUUID();
+
+  await writeFile(ownerToken, id);
+
+  try {
+    return await fn();
+  } finally {
+    const owned = await readFile(ownerToken, "utf8").then(
+      (read) => read === id,
+      () => false,
+    );
+
+    if (owned) {
+      await rm(lockDir, { recursive: true, force: true });
+    }
+  }
+}
 
 /** Remove every temp dir the harness created; each test file hooks
  *  this into its own afterAll. */

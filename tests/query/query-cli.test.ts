@@ -12,6 +12,7 @@ import {
   makeHarness,
   repoRoot,
   run,
+  withDefaultOutputsLock,
 } from "./helpers.ts";
 
 const localTempDirs: string[] = [];
@@ -779,31 +780,34 @@ console.log("An answer.");
 
     const cliOutputs = join(repoRoot, "outputs");
     const defaultArtifact = join(cliOutputs, "last-query.md");
-    const previous = await readFile(defaultArtifact).catch(() => null);
 
-    await mkdir(cliOutputs, { recursive: true });
-    await writeFile(
-      defaultArtifact,
-      await readFile(join(h.outputsDir, "last-query.md")),
-    );
+    await withDefaultOutputsLock(async () => {
+      const previous = await readFile(defaultArtifact).catch(() => null);
 
-    try {
-      const { out } = await runCli([
-        "--file-last",
-        "--raw-dir",
-        join(h.dataRoot, "raw"),
-      ]);
-
-      expect(out).toContain(
-        "Filed: wiki/queries/when-should-i-prefer-rag-over-fine-tuning.md",
+      await mkdir(cliOutputs, { recursive: true });
+      await writeFile(
+        defaultArtifact,
+        await readFile(join(h.outputsDir, "last-query.md")),
       );
-    } finally {
-      if (previous === null) {
-        await rm(defaultArtifact, { force: true });
-      } else {
-        await writeFile(defaultArtifact, previous);
+
+      try {
+        const { out } = await runCli([
+          "--file-last",
+          "--raw-dir",
+          join(h.dataRoot, "raw"),
+        ]);
+
+        expect(out).toContain(
+          "Filed: wiki/queries/when-should-i-prefer-rag-over-fine-tuning.md",
+        );
+      } finally {
+        if (previous === null) {
+          await rm(defaultArtifact, { force: true });
+        } else {
+          await writeFile(defaultArtifact, previous);
+        }
       }
-    }
+    });
   });
 
   it("bolds the Filed line", async () => {
@@ -966,11 +970,9 @@ console.log("An answer.");
 
       localTempDirs.push(dir);
 
-      const { err } = await runCli([
-        "--file-last",
-        "--raw-dir",
-        join(dir, "raw"),
-      ]);
+      const { err } = await withDefaultOutputsLock(() =>
+        runCli(["--file-last", "--raw-dir", join(dir, "raw")]),
+      );
 
       expect(err).toContain(`no saved answer at ${defaultLastQuery}`);
     },

@@ -1,10 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { main } from "../../src/cli/init-data-repo.ts";
 import { runGit } from "../../src/data/git.ts";
 import { seedDataRepo } from "../../src/data/init-data-repo.ts";
@@ -312,16 +320,17 @@ describe("data:init CLI help", () => {
 
 describe("data:init bin launcher", () => {
   /**
-   * A staged copy of src/ and bin/ inside the test tree, importable
-   * in-process with a controlled argv — the same trick as
-   * tests/sync/cli-spawn.test.ts: under Stryker the sandbox holds the
-   * mutated sources next to the tests, and a dynamic import executes
-   * them here, where the active-mutant globals live.
+   * A staged copy of src/ and bin/ in a per-process temp staging
+   * root, importable in-process with a controlled argv — the same
+   * trick as tests/sync/cli-spawn.test.ts: under Stryker the sandbox
+   * holds the mutated sources next to the tests, and a dynamic import
+   * executes them here, where the active-mutant globals live.
    */
-  const stagingRoot = join(
-    dirname(fileURLToPath(import.meta.url)),
-    ".data-init-import-staging",
-  );
+  let stagingRoot: string;
+
+  beforeAll(async () => {
+    stagingRoot = await mkdtemp(join(tmpdir(), "data-init-import-staging-"));
+  });
 
   afterAll(async () => {
     await rm(stagingRoot, { recursive: true, force: true });
@@ -342,6 +351,12 @@ describe("data:init bin launcher", () => {
     await cp(join(testsDir, "../../bin"), join(dir, "bin"), {
       recursive: true,
     });
+
+    await symlink(
+      join(testsDir, "../../node_modules"),
+      join(dir, "node_modules"),
+    );
+
     await writeFile(
       join(dir, "sync.json"),
       JSON.stringify({ vaults: [], dataRoot: join(dir, "data") }),
