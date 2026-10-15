@@ -1302,6 +1302,19 @@ ingest still appends a `- **Result:** failed` section to the day's
 file recording the failure — a later successful cycle appends after
 it, never over it — so the citation never dangles.
 
+Before its first stage, a direct `wiki-sync` run consults the
+version-aware quota gate (settings key `quotaPreflight`; the
+scheduling section's quota pre-flight stage owns the full
+contract): fresh authoritative evidence that the first target's
+quota runway cannot fund a cycle prints a yellow warning and —
+under a terminal — a negative-default `Proceed despite low quota?`
+prompt, and a decline starts nothing and exits 0, while a
+non-authoritative probe outcome (absent, stale, unsupported schema)
+proceeds without prompting; `--no-quota-check` is the one-shot
+bypass (it warns once under a terminal), and `quotaPreflight: off`
+in settings disables the gate on both the scheduled and the manual
+path.
+
 Every cycle holds the shared run lock — the same
 `<dataRoot>/.scheduled-run.lock` the scheduled wrapper takes — from
 before its first stage until after its last, released on success,
