@@ -53,7 +53,7 @@ describe("runScheduledCycle (issue #240 kill batch)", () => {
       ["remote", "get-url", "origin"],
       ["status", "--porcelain", "--untracked-files=no"],
       ["pull", "--rebase"],
-      ["wiki-sync"],
+      ["wiki-sync", "--no-quota-check"],
       ["push"],
     ]);
 
@@ -118,7 +118,7 @@ describe("runScheduledCycle --lint-full (issue #359)", () => {
         "s.yml",
         join(dir, "raw"),
       ],
-      ["wiki-sync"],
+      ["wiki-sync", "--no-quota-check"],
       ["push"],
     ]);
 
@@ -679,7 +679,7 @@ describe("runScheduledCycle", () => {
       ["remote", "get-url", "origin"],
       ["status", "--porcelain", "--untracked-files=no"],
       ["pull", "--rebase"],
-      ["wiki-sync", "--settings", "/x/settings.yml"],
+      ["wiki-sync", "--settings", "/x/settings.yml", "--no-quota-check"],
       ["push"],
     ]);
 
@@ -1095,7 +1095,7 @@ describe("runScheduledCycle", () => {
       ["remote", "get-url", "origin"],
       ["status", "--porcelain", "--untracked-files=no"],
       ["pull", "--rebase"],
-      ["wiki-sync"],
+      ["wiki-sync", "--no-quota-check"],
       ["push"],
       ["pull", "--rebase"],
       ["push"],
@@ -1201,7 +1201,7 @@ describe("runScheduledCycle", () => {
     expect(git.calls).toEqual([
       ["remote", "get-url", "origin"],
       ["status", "--porcelain", "--untracked-files=no"],
-      ["wiki-sync"],
+      ["wiki-sync", "--no-quota-check"],
       ["push"],
     ]);
 
@@ -1301,7 +1301,7 @@ describe("runScheduledCycle conflicted rebase recovery", () => {
       ["rebase", "--abort"],
       ["status", "--porcelain", "--untracked-files=no"],
       ["pull", "--rebase"],
-      ["wiki-sync"],
+      ["wiki-sync", "--no-quota-check"],
       ["push"],
     ]);
 
@@ -1333,7 +1333,7 @@ describe("runScheduledCycle conflicted rebase recovery", () => {
       ["remote", "get-url", "origin"],
       ["status", "--porcelain", "--untracked-files=no"],
       ["pull", "--rebase"],
-      ["wiki-sync"],
+      ["wiki-sync", "--no-quota-check"],
       ["push"],
       ["rebase", "--abort"],
       ["pull", "--rebase"],
@@ -1994,7 +1994,7 @@ describe("scheduled-run main: help", () => {
     const { out, exitCode } = await runMain(["--help"]);
 
     expect(`${exitCode}|${out.split("\n")[0]}`).toBe(
-      "0|Usage: scheduled-run [-h | --help] [--lint-full] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<config>] [<raw-dir>]",
+      "0|Usage: scheduled-run [-h | --help] [--lint-full] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--no-quota-check] [<config>] [<raw-dir>]",
     );
   });
 
@@ -2008,6 +2008,12 @@ describe("scheduled-run main: help", () => {
     const { out } = await runMain(["--help"]);
 
     expect(out).toContain("older than four hours is taken over");
+  });
+
+  it("documents the --no-quota-check switch in the help text", async () => {
+    const { out } = await runMain(["--help"]);
+
+    expect(out).toContain("Forwarded to wiki-sync, which then skips its");
   });
 
   it("documents the push rejection sequence in the help text", async () => {
@@ -2923,7 +2929,12 @@ describe("runScheduledCycle agent resolution (issue #399)", () => {
         ["remote", "get-url", "origin"],
         ["status", "--porcelain", "--untracked-files=no"],
         ["pull", "--rebase"],
-        ["wiki-sync", "--settings", join(dir, "absent-settings.yml")],
+        [
+          "wiki-sync",
+          "--settings",
+          join(dir, "absent-settings.yml"),
+          "--no-quota-check",
+        ],
         ["push"],
       ],
       skippedLine: true,
@@ -2949,13 +2960,187 @@ describe("buildScheduledEnv agent path (issue #399)", () => {
   });
 });
 
+/** A quota-axi stub serving the sanitized v5 fixtures in sequence:
+ *  the first probe reads the exhausted capture, every later probe
+ *  the sufficient one (issue #463 §1c — the fixture is the proof
+ *  source, the real quotaPreflight decides). */
+async function writeSequenceStub(
+  scriptPath: string,
+  fixturesRoot: string,
+): Promise<void> {
+  await writeFile(
+    scriptPath,
+    `#!/bin/sh\ncount_file="$(dirname "$0")/.probe-calls"\ncalls=$(cat "$count_file" 2>/dev/null || echo 0)\necho $((calls + 1)) > "$count_file"\nif [ "$calls" = 0 ]; then\n  cat ${fixturesRoot}/v5-provider-exhausted.json\nelse\n  cat ${fixturesRoot}/v5-provider-sufficient.json\nfi\n`,
+    { mode: 0o755 },
+  );
+}
+
+/** Repo-root-relative fixture root for the stub scripts: the probe
+ *  child inherits the test runner's repo-root cwd (the production
+ *  execFile runner sets no cwd), so the relative path resolves. */
+const FIXTURE_ROOT = join(".", "tests", "fixtures", "quota-axi");
+
+describe("runScheduledCycle fixture-backed quota gate (issue #463)", () => {
+  async function writeTargetSettings(
+    dir: string,
+    agentPath: string,
+    quotaStub: string,
+  ): Promise<string> {
+    const settingsPath = join(dir, "settings.yml");
+
+    await writeFile(
+      settingsPath,
+      `command: ${agentPath}\nreasoning: low\ntargets: [zai/GLM-5.2, openai-codex/gpt-5.6-terra]\nquotaPreflight: ${quotaStub}\n`,
+    );
+
+    return settingsPath;
+  }
+
+  /** A fixture-backed harness: the quota stub serves the exhausted
+   *  capture on the first probe, the sufficient capture after. */
+  async function fixtureHarness(): Promise<{
+    readonly dir: string;
+    readonly git: ReturnType<typeof fakeGit>["git"];
+    readonly runGitStep: ReturnType<typeof fakeGit>["runGitStep"];
+    readonly settingsPath: string;
+    readonly common: {
+      readonly dataRoot: string;
+      readonly repoRoot: string;
+      readonly lockPath: string;
+    };
+  }> {
+    const dir = await tempDir();
+    const { git, runGitStep } = fakeGit();
+    const agentPath = join(dir, "stub-agent");
+    const quotaStub = join(dir, "quota-bin", "quota-axi");
+
+    await writeFile(agentPath, "#!/bin/sh\n", { mode: 0o755 });
+    await mkdir(join(dir, "quota-bin"), { recursive: true });
+    await writeSequenceStub(quotaStub, FIXTURE_ROOT);
+
+    const settingsPath = await writeTargetSettings(dir, agentPath, quotaStub);
+
+    return {
+      dir,
+      git,
+      runGitStep,
+      settingsPath,
+      common: {
+        dataRoot: dir,
+        repoRoot: dir,
+        lockPath: join(dir, ".scheduled-run.lock"),
+      },
+    };
+  }
+
+  const fixtureTick = (harness: Awaited<ReturnType<typeof fixtureHarness>>) =>
+    runScheduledCycle({
+      ...harness.common,
+      runGitStep: harness.runGitStep,
+      runSync: syncRecorder(harness.git),
+      runCredentialPreflight: async () => ({ status: "proceed" as const }),
+      args: ["--settings", harness.settingsPath],
+      log: () => {},
+    });
+
+  it("skips a low-quota fixture tick before any sync invocation", async () => {
+    const harness = await fixtureHarness();
+    const outcome = await fixtureTick(harness);
+    const calls = harness.git.calls;
+
+    expect({ outcome, calls }).toEqual({
+      outcome: {
+        status: "skipped",
+        reason: expect.stringContaining("quota"),
+      },
+      calls: [],
+    });
+
+    await rm(harness.dir, { recursive: true, force: true });
+  });
+
+  it("begins exactly one normal cycle on the sufficient fixture tick", async () => {
+    const harness = await fixtureHarness();
+    await fixtureTick(harness);
+    const outcome = await fixtureTick(harness);
+    const calls = harness.git.calls;
+
+    expect({ outcome, calls }).toEqual({
+      outcome: { status: "ok" },
+      calls: [
+        ["remote", "get-url", "origin"],
+        ["status", "--porcelain", "--untracked-files=no"],
+        ["pull", "--rebase"],
+        ["wiki-sync", "--settings", harness.settingsPath, "--no-quota-check"],
+        ["push"],
+      ],
+    });
+
+    await rm(harness.dir, { recursive: true, force: true });
+  });
+
+  it("probes once per tick across the bypass and the recovery", async () => {
+    const harness = await fixtureHarness();
+    await fixtureTick(harness);
+    await fixtureTick(harness);
+
+    const calls = await readFile(
+      join(harness.dir, "quota-bin", ".probe-calls"),
+      "utf8",
+    );
+
+    expect(calls.trim()).toBe("2");
+
+    await rm(harness.dir, { recursive: true, force: true });
+  });
+
+  it("never lets a caller-supplied --no-quota-check suppress the outer gate", async () => {
+    const harness = await fixtureHarness();
+    const outcome = await runScheduledCycle({
+      ...harness.common,
+      runGitStep: harness.runGitStep,
+      runSync: syncRecorder(harness.git),
+      runCredentialPreflight: async () => ({ status: "proceed" as const }),
+      args: ["--settings", harness.settingsPath, "--no-quota-check"],
+      log: () => {},
+    });
+    const calls = harness.git.calls;
+
+    expect({ outcome, calls }).toEqual({
+      outcome: {
+        status: "skipped",
+        reason: expect.stringContaining("quota"),
+      },
+      calls: [],
+    });
+
+    await rm(harness.dir, { recursive: true, force: true });
+  });
+});
+
 describe("runScheduledCycle quota-axi resolution (issue #406)", () => {
-  async function writeStub(path: string, runway: string): Promise<void> {
+  async function writeStub(path: string, runway: unknown): Promise<void> {
     await writeFile(
       path,
       `#!/bin/sh\ncat <<'JSON'\n${JSON.stringify({
-        quota: [{ provider: "zai", scope: "all_models", runway }],
-        exhaustion: [],
+        schemaVersion: 5,
+        providers: [
+          {
+            provider: "zai",
+            state: { status: "fresh", stale: false },
+            windows: [],
+            quotaSemantics: {
+              status: "known",
+              effectiveAvailability: [
+                {
+                  scope: "all_models",
+                  status: "known",
+                  runway,
+                },
+              ],
+            },
+          },
+        ],
       })}\nJSON\n`,
       { mode: 0o755 },
     );
@@ -2985,7 +3170,7 @@ describe("runScheduledCycle quota-axi resolution (issue #406)", () => {
 
     await writeFile(agentPath, "#!/bin/sh\n", { mode: 0o755 });
     await mkdir(join(dir, "quota-bin"), { recursive: true });
-    await writeStub(quotaStub, "through_reset");
+    await writeStub(quotaStub, { status: "through_reset" });
 
     const settingsPath = await writeSettings(dir, agentPath, "");
     const outcome = await runScheduledCycle({
@@ -3055,7 +3240,7 @@ describe("runScheduledCycle quota-axi resolution (issue #406)", () => {
     const quotaStub = join(dir, "explicit-quota-axi");
 
     await writeFile(agentPath, "#!/bin/sh\n", { mode: 0o755 });
-    await writeStub(quotaStub, "exhausted_now");
+    await writeStub(quotaStub, { status: "exhausted_now" });
 
     const settingsPath = await writeSettings(
       dir,

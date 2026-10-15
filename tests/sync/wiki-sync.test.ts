@@ -50,7 +50,8 @@ const NOW = () => new Date("2026-08-20T18:00:00.000Z");
 const itRequiresPermissionChecks =
   process.getuid !== undefined && process.getuid() === 0 ? it.skip : it;
 
-const SETTINGS_YML = "command: pi\nmodel: GLM-5.2\nreasoning: high\n";
+const SETTINGS_YML =
+  "command: pi\nmodel: GLM-5.2\nreasoning: high\nquotaPreflight: off\n";
 
 /** A wiki page body with valid §9 frontmatter (guardrail 2 must
  *  pass) whose title kebab-cases to the file name the caller writes
@@ -2611,7 +2612,7 @@ describe("wiki-sync CLI", () => {
     await writeFile(stub, CLI_STUB, { mode: 0o755 });
     await writeFile(
       h.settingsPath,
-      `command: ${stub}\nmodel: M\nreasoning: low\n`,
+      `command: ${stub}\nmodel: M\nreasoning: low\nquotaPreflight: off\n`,
     );
 
     return h;
@@ -2688,7 +2689,7 @@ describe("wiki-sync CLI", () => {
 
   it("prints the usage line for --help", async () => {
     expect((await runCli(["--help"])).out).toContain(
-      "wiki-sync [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [<config>] [<raw-dir>]",
+      "wiki-sync [-h | --help] [--settings <path>] [--outputs <dir>] [--timeout <secs>] [--no-quota-check] [<config>] [<raw-dir>]",
     );
   });
 
@@ -2989,6 +2990,45 @@ describe("wiki-sync CLI", () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it("prints the operator line and exits 0 when the quota gate declines", async () => {
+    const h = await makeHarness({ "AI/RAG.md": "rag body" });
+    const quotaStub = join(h.dataRoot, "quota-stub.sh");
+
+    await writeFile(
+      quotaStub,
+      `#!/bin/sh\ncat "${join(repoRoot, "tests", "fixtures", "quota-axi", "v5-provider-exhausted.json")}"\n`,
+      { mode: 0o755 },
+    );
+    await writeFile(
+      h.settingsPath,
+      `command: pi\nreasoning: low\ntargets: zai/GLM-5.2\nquotaPreflight: ${quotaStub}\n`,
+    );
+
+    const { out, err } = await runCli([
+      "--settings",
+      h.settingsPath,
+      "--outputs",
+      h.outputsDir,
+      h.configPath,
+      join(h.dataRoot, "raw"),
+    ]);
+    const log = await run("git", ["-C", h.dataRoot, "log", "--oneline"]);
+
+    expect({
+      out,
+      err,
+      exitCode: process.exitCode,
+      commits: log.stdout.trim().split("\n"),
+    }).toEqual({
+      out: "wiki-sync: skipped by operator — low quota declined; nothing was started",
+      err: expect.stringContaining(
+        "WARNING — low quota — quota — ingest provider zai scope all_models",
+      ),
+      exitCode: undefined,
+      commits: [expect.stringContaining("init")],
+    });
+  });
+
   it("kills the agent with a timeout error when --timeout expires", async () => {
     const h = await makeCliHarness();
 
@@ -3045,14 +3085,18 @@ describe("wiki-sync CLI", () => {
 
   it("names the inaccessible vault root in the error before failing", async () => {
     const h = await makeHarness({});
-    const { err } = await runCli([h.configPath, join(h.dataRoot, "raw")]);
+    const { err } = await runCli([
+      "--no-quota-check",
+      h.configPath,
+      join(h.dataRoot, "raw"),
+    ]);
 
     expect(err).toContain('vault root for "Engineering" is not accessible');
   });
 
   it("exits 1 at an inaccessible vault after reading the repo's default settings", async () => {
     const h = await makeHarness({});
-    await runCli([h.configPath, join(h.dataRoot, "raw")]);
+    await runCli(["--no-quota-check", h.configPath, join(h.dataRoot, "raw")]);
 
     expect(process.exitCode).toBe(1);
   });

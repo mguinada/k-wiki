@@ -505,19 +505,7 @@ describe("scheduled-run quota pre-flight e2e (issue #396)", () => {
 
     await writeFile(
       stubQuotaAxi,
-      `#!/bin/sh\ncat <<'JSON'\n${JSON.stringify({
-        quota: [
-          { provider: "zai", scope: "all_models", runway: "exhausted_now" },
-        ],
-        exhaustion: [
-          {
-            provider: "zai",
-            scope: "all_models",
-            usableRunwaySeconds: 0,
-            projectedExhaustedAt: "2036-01-01T00:00:00.000Z",
-          },
-        ],
-      })}\nJSON\n`,
+      `#!/bin/sh\ncat ${join(process.cwd(), "tests", "fixtures", "quota-axi", "v5-provider-exhausted.json")}\n`,
       { mode: 0o755 },
     );
 
@@ -525,9 +513,8 @@ describe("scheduled-run quota pre-flight e2e (issue #396)", () => {
     const log = await readFile(join(repo.tmp, "scheduled-run.log"), "utf8");
 
     expect(result.code).toBe(0);
-    expect(log).toContain(
-      "quota pre-flight skipped — ingest provider zai scope all_models",
-    );
+    expect(log).toContain("quota pre-flight skipped — quota —");
+    expect(log).toContain("ingest provider zai scope all_models");
     expect(log).not.toContain("wiki-sync starting");
     expect(await upstreamHead(repo)).toBe("init");
     // Gate-before-lease is pinned in tests/schedule/scheduled-run.test.ts
@@ -732,19 +719,7 @@ describe("scheduled-run quota-axi resolution e2e (issue #406)", () => {
     await mkdir(quotaBin, { recursive: true });
     await writeFile(
       quotaAxi,
-      `#!/bin/sh\ncat <<'JSON'\n${JSON.stringify({
-        quota: [
-          { provider: "zai", scope: "all_models", runway: "exhausted_now" },
-        ],
-        exhaustion: [
-          {
-            provider: "zai",
-            scope: "all_models",
-            usableRunwaySeconds: 0,
-            projectedExhaustedAt: "2036-01-01T00:00:00.000Z",
-          },
-        ],
-      })}\nJSON\n`,
+      `#!/bin/sh\ncat ${join(process.cwd(), "tests", "fixtures", "quota-axi", "v5-provider-exhausted.json")}\n`,
       { mode: 0o755 },
     );
     await mkdir(home, { recursive: true });
@@ -761,9 +736,8 @@ describe("scheduled-run quota-axi resolution e2e (issue #406)", () => {
 
     expect(result.code).toBe(0);
     expect(log).toContain(`scheduled-run: quota-axi resolved to ${quotaAxi}`);
-    expect(log).toContain(
-      "quota pre-flight skipped — ingest provider zai scope all_models",
-    );
+    expect(log).toContain("quota pre-flight skipped — quota —");
+    expect(log).toContain("ingest provider zai scope all_models");
     expect(log).not.toContain("wiki-sync starting");
     expect(await upstreamHead(repo)).toBe("init");
 

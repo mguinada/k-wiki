@@ -1,0 +1,119 @@
+{
+  "generatedAt": "2026-10-14T19:12:00.000Z",
+  "schemaVersion": 5,
+  "help": "quota-axi --help",
+  "providers": [
+    {
+      "provider": "zai",
+      "windows": [
+        {
+          "id": "mcp_month",
+          "label": "MCP month",
+          "kind": "monthly",
+          "resetsAt": "2026-11-08T19:51:37.999Z",
+          "pace": {
+            "status": "unknown",
+            "reason": "missing_cycle"
+          }
+        },
+        {
+          "id": "five_hour",
+          "label": "session",
+          "kind": "session",
+          "resetsAt": "2026-10-15T00:58:42.000Z",
+          "pace": {
+            "status": "ahead",
+            "reservePercentPoints": -19.9794,
+            "burnMultiple": 1.2497
+          }
+        }
+      ],
+      "state": {
+        "status": "fresh",
+        "stale": false
+      },
+      "quotaSemantics": {
+        "status": "known",
+        "effectiveAvailability": [
+          {
+            "scope": "all_models",
+            "status": "known",
+            "effectivePercentRemaining": 50,
+            "boundedBy": [
+              "five_hour"
+            ],
+            "limitingWindowIds": [
+              "five_hour"
+            ],
+            "pace": {
+              "status": "ahead",
+              "aheadWindowIds": [
+                "five_hour"
+              ],
+              "worstReservePercentPoints": -19.9794,
+              "worstReserveWindowId": "five_hour"
+            },
+            "runway": {
+              "status": "projected_exhaustion",
+              "usableRunwaySeconds": 60000,
+              "projectedExhaustedAt": "2026-10-15T01:33:00.000Z",
+              "limitingWindowId": "five_hour",
+              "projectionConfidence": "established"
+            },
+            "selection": {
+              "status": "known",
+              "spendPriority": -1.2497
+            }
+          },
+          {
+            "scope": "tools",
+            "status": "known",
+            "effectivePercentRemaining": 90,
+            "boundedBy": [
+              "mcp_month"
+            ],
+            "limitingWindowIds": [
+              "mcp_month"
+            ],
+            "pace": {
+              "status": "unknown",
+              "unknownWindowIds": [
+                "mcp_month"
+              ]
+            },
+            "runway": {
+              "status": "unknown",
+              "unmeasurableWindowIds": [
+                "mcp_month"
+              ]
+            },
+            "selection": {
+              "status": "unknown",
+              "unmeasurableWindowIds": [
+                "mcp_month"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "provider": "grok",
+      "accountKeys": [
+        "default"
+      ],
+      "notSetUp": true,
+      "state": {
+        "status": "auth_required",
+        "stale": false,
+        "error": "redacted-provider-error",
+        "authStatus": "unusable"
+      },
+      "windows": [],
+      "quotaSemantics": {
+        "status": "unknown",
+        "effectiveAvailability": []
+      }
+    }
+  ]
+}

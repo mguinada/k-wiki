@@ -281,7 +281,10 @@ export interface AgentRunFlags {
   readonly timeoutMs: number | undefined;
   /** The `--removal-receipt <path>` value (issue #390): the
    *  confirming rerun's source-removal receipt. Parsed by the same
-   *  shell so wiki-sync and scheduled-run share one spec. */
+   *  shell so wiki-sync and scheduled-run share one spec. Boolean
+   *  flags — including wiki-sync's `--no-quota-check` override
+   *  (issue #463) — land in the parse result's `flags` set, beside
+   *  their CLI's own boolean reads. */
   readonly removalReceipt: string | undefined;
   /** The first flag-set usage error, undefined when valid. */
   readonly error: string | undefined;
@@ -324,6 +327,7 @@ export function agentRunFlags(
 export function parseSyncRunArgs(args: readonly string[]): ParsedCli {
   return parseArgs(args, {
     value: ["--settings", "--outputs", "--timeout", "--removal-receipt"],
+    boolean: ["--no-quota-check"],
     positionals: {
       max: 2,
       error: (_arg, count) =>

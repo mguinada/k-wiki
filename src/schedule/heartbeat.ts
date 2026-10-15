@@ -3,8 +3,10 @@
  * file in the data repo — `outputs/last-cycle.json` — written on
  * every cycle completion (ok, failed, or a benign quota- or
  * credential-skipped tick).
- * A skipped tick releases its local lock before writing the stamp. The
- * stamp carries this cycle's timestamp, outcome, and holder PID plus the timestamp of
+ * A gate-skipped tick stamps while still holding its local lock,
+ * then releases it; a busy-lock skip (another run holds the lock)
+ * writes nothing. The stamp carries this cycle's timestamp, outcome,
+ * and holder PID plus the timestamp of
  * the last ok cycle, carried forward, so "when did the pipeline
  * last succeed" survives failed cycles. The independent watchdog
  * (bin/libexec/sync-watchdog) and the dashboard's last-cycle row
@@ -40,8 +42,9 @@ export interface CycleHeartbeat {
   readonly reason?: string;
   /** How the cycle's quota pre-flight acted when it did not gate:
    *  `off` (disabled in settings), `unavailable` (probe absent or
-   *  unreadable), or `no-provider` (settings name no provider);
-   *  absent when the gate was active. */
+   *  unreadable), `no-provider` (settings name no provider), or
+   *  `unsupported-schema` (quota-axi spoke a schema this version
+   *  does not decide on); absent when the gate was active. */
   readonly preflight?: PreflightState;
   /** The PID that ran the cycle. */
   readonly pid: number;
@@ -174,7 +177,8 @@ export function parseHeartbeat(
     ...(typeof parsed.reason === "string" && { reason: parsed.reason }),
     ...((parsed.preflight === "unavailable" ||
       parsed.preflight === "off" ||
-      parsed.preflight === "no-provider") && {
+      parsed.preflight === "no-provider" ||
+      parsed.preflight === "unsupported-schema") && {
       preflight: parsed.preflight,
     }),
     pid: parsed.pid,

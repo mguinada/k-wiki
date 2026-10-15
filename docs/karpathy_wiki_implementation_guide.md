@@ -1156,8 +1156,32 @@ ALERT; issue #406: launchd's minimal PATH cannot find a user-local
 absolute path at run start the way it resolves the agent command —
 the scheduled PATH first, then the login shell — and hands that
 path to the probe, while an explicit `quotaPreflight` path
-bypasses the resolution entirely; an absent, unreadable, or
-unauthenticated probe proceeds unchanged, fail-open), credential
+bypasses the resolution entirely; an absent, unreadable,
+unauthenticated, network-stale, or unsupported-schema probe
+proceeds unchanged, fail-open; issue #463: the gate is version-aware
+and judges the first attempted ingest target only — it reads
+quota-axi's JSON schema (`schemaVersion`, v5 supported; any other
+version is one sanitized warn-and-proceed line), strips the
+inherited snapshot controls (`QUOTA_AXI_MAX_AGE`,
+`QUOTA_AXI_SNAPSHOT`) from the probe child's environment, and skips
+the tick only on fresh, authenticated, authoritative evidence that
+the target's effective-availability runway (the exact
+`model:<model>` scope when present, `all_models` otherwise, never
+aggregated) is exhausted now or below the 30-minute cycle estimate
+plus the `quotaPreflightBuffer` reserve (whole minutes, default 5m;
+an invalid value warns and uses 5m); every gate line is sanitized
+and bounded — payload text never reaches a log, stamp, or alert
+verbatim; after the gate proceeds the wrapper hands its wiki-sync
+child `--no-quota-check` (one-shot override, no re-probe; a
+caller-supplied argument cannot suppress the outer gate), and a
+gate-skipped tick stamps its skipped heartbeat under the still-held
+lock, releasing the lock only after the stamp; the same decision
+core gates a direct manual `wiki-sync` before any lock, lease,
+stage, or publish — low quota under a terminal warns and
+confirm-prompts with a negative default, a decline starts nothing
+and exits 0, and `--no-quota-check` is the explicit warned bypass
+(`quotaPreflight: off` disables the whole gate on both paths)),
+credential
 pre-flight (issue #409: before any stage — the shared-writer lease
 included — when agent settings name a provider, every configured
 target must be plausibly authenticatable in the cycle's own
