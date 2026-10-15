@@ -721,7 +721,7 @@ if (code === 0 && isCanonicalFetch) {
   try {
     execFileSync(
       HOSTILE_REAL_GIT,
-      [args[i + 1], "+refs/nope/*:refs/nope/*"],
+      ["fetch", args[i + 1], "+refs/nope/*:refs/nope/*"],
       { stdio: "ignore" },
     );
   } catch {}

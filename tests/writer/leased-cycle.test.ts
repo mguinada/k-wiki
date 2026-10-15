@@ -898,6 +898,10 @@ describe("hostile fetch mid-tenure (issue #464)", () => {
         await observeLeaseOid(gitOf(cw), "origin", LEASE_REF),
       ).toBeDefined();
     });
+
+    afterAll(async () => {
+      await world?.cleanup();
+    });
   });
 });
 
