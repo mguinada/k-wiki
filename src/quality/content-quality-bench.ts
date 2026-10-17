@@ -4,10 +4,10 @@
  * real-model cycle; this module only reads the produced wiki and therefore
  * remains model-free and testable.
  *
- * The pending-convention lane is the ratified pre-#432 containment:
- * source-slug and canonical-answerability findings count without failing
- * the verdict until the #432 conventions ship flips the lane to blocking
- * in its own diff.
+ * The #432 page-shape conventions shipped in the diff that flipped the
+ * containment: source-slug and canonical-answerability findings are
+ * blocking. Before that ship they rode a non-gating pending-convention
+ * lane (the ratified pre-#432 containment).
  */
 
 import { readFile } from "node:fs/promises";
@@ -33,7 +33,7 @@ export interface ContentQualityBands {
 }
 
 export interface BenchFinding {
-  readonly lane: "blocking" | "pending-convention" | "advisory";
+  readonly lane: "blocking" | "advisory";
   readonly name: string;
   readonly detail: string;
 }
@@ -41,7 +41,6 @@ export interface BenchFinding {
 export interface ContentQualityReport {
   readonly verdict: BenchVerdict;
   readonly blocking: readonly BenchFinding[];
-  readonly pendingConvention: readonly BenchFinding[];
   readonly advisory: readonly BenchFinding[];
   readonly metrics: Readonly<Record<string, number>>;
 }
@@ -213,14 +212,14 @@ function pageFindings(
   return findings;
 }
 
-function pendingSourceSlugFindings(
+function sourceSlugFindings(
   pages: readonly PageData[],
   bands: ContentQualityBands,
 ): BenchFinding[] {
   return pages
     .filter((page) => sourceSlugViolation(page, bands.sourceSlugSuffix))
     .map((page) => ({
-      lane: "pending-convention" as const,
+      lane: "blocking" as const,
       name: "source-slug",
       detail: `${page.path}: source pages end in -source.md`,
     }));
@@ -281,7 +280,7 @@ export async function evaluateContentQuality(input: {
   readonly wikiDir: string;
   readonly bands: ContentQualityBands;
   readonly correctnessFailures: readonly string[];
-  readonly pendingConventionFailures: readonly string[];
+  readonly answerabilityFailures: readonly string[];
 }): Promise<ContentQualityReport> {
   const pages = await readPages(input.wikiDir);
 
@@ -294,17 +293,14 @@ export async function evaluateContentQuality(input: {
       }),
     ),
     ...pages.flatMap((page) => pageFindings(page, input.bands)),
-  ];
-
-  const pendingConvention = [
-    ...input.pendingConventionFailures.map(
+    ...input.answerabilityFailures.map(
       (detail): BenchFinding => ({
-        lane: "pending-convention",
+        lane: "blocking",
         name: "answerability",
         detail,
       }),
     ),
-    ...pendingSourceSlugFindings(pages, input.bands),
+    ...sourceSlugFindings(pages, input.bands),
   ];
 
   const sourcePages = pages.filter(
@@ -321,7 +317,7 @@ export async function evaluateContentQuality(input: {
   const verdict: BenchVerdict =
     blocking.length > 0 ? "fail" : advisory.length > 0 ? "warn" : "pass";
 
-  return { verdict, blocking, pendingConvention, advisory, metrics };
+  return { verdict, blocking, advisory, metrics };
 }
 
 export function renderBenchReport(report: ContentQualityReport): string {
@@ -329,7 +325,7 @@ export function renderBenchReport(report: ContentQualityReport): string {
     items.length === 0
       ? "- none"
       : items.map((item) => `- ${item.name}: ${item.detail}`).join("\n");
-  return `# Content-quality bench\n\nVerdict: ${report.verdict}\n\n## Blocking now\n${rows(report.blocking)}\n\n## Pending convention\n${rows(report.pendingConvention)}\n\n## Advisory\n${rows(report.advisory)}\n\n## Metrics\n${Object.entries(
+  return `# Content-quality bench\n\nVerdict: ${report.verdict}\n\n## Blocking now\n${rows(report.blocking)}\n\n## Advisory\n${rows(report.advisory)}\n\n## Metrics\n${Object.entries(
     report.metrics,
   )
     .map(([name, value]) => `- ${name}: ${value}`)

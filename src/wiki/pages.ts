@@ -175,6 +175,99 @@ interface MutablePageFields {
   inTags: boolean;
 }
 
+/** The items of a flow-style list value (`[a, b]`): JSON-parsed when
+ *  every item is quoted, else one unquoted item per comma-separated
+ *  segment. Empty and absent yield []. */
+function flowListItems(value: string): string[] {
+  const inner = value.trim();
+
+  if (!inner.startsWith("[") || !inner.endsWith("]")) {
+    return [];
+  }
+
+  const body = inner.slice(1, -1).trim();
+
+  if (body === "") {
+    return [];
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(`[${body}]`);
+
+    return Array.isArray(parsed) ? parsed.map((item) => String(item)) : [];
+  } catch {
+    return body
+      .split(",")
+      .map((item) => unquote(item.trim()))
+      .filter((item) => item !== "");
+  }
+}
+
+/** Apply one flow-style list value to `fields`; whether the value was
+ *  a flow list — which completes the field on its own line, so no
+ *  block `- item` lines may follow. */
+function applyFlowList(
+  name: string,
+  value: string,
+  fields: MutablePageFields,
+): boolean {
+  if (name !== "sources" && name !== "tags") {
+    return false;
+  }
+
+  if (!/^\[.*\]$/.test(value.trim())) {
+    return false;
+  }
+
+  const items = flowListItems(value);
+
+  if (name === "sources") {
+    fields.sources.push(...items);
+  } else {
+    fields.tags.push(...items);
+  }
+
+  return true;
+}
+
+/** Switch the list-mode flags after a key line: a flow list value
+ *  completes its field inline, so neither list mode turns on. */
+function applyListMode(
+  name: string,
+  flow: boolean,
+  fields: MutablePageFields,
+): void {
+  fields.inSources = name === "sources" && !flow;
+  fields.inTags = name === "tags" && !flow;
+}
+
+/** The scalar fields one `key: value` line assigns, by key name. */
+const SCALAR_APPLIERS: Readonly<
+  Record<string, (fields: MutablePageFields, value: string) => void>
+> = {
+  title: (fields, value) => {
+    fields.title = scalar(value);
+  },
+  created: (fields, value) => {
+    fields.created = scalar(value);
+  },
+  type: (fields, value) => {
+    fields.type = scalar(value);
+  },
+  updated: (fields, value) => {
+    fields.updated = scalar(value);
+  },
+  status: (fields, value) => {
+    fields.status = scalar(value);
+  },
+  confidence: (fields, value) => {
+    fields.confidence = scalar(value);
+  },
+  origin: (fields, value) => {
+    fields.origin = scalar(value);
+  },
+};
+
 /** Apply a `key: value` line to `fields`, returning whether the line
  *  is a key line at all; unknown keys still switch list mode off. */
 function applyKeyLine(line: string, fields: MutablePageFields): boolean {
@@ -184,36 +277,12 @@ function applyKeyLine(line: string, fields: MutablePageFields): boolean {
     return false;
   }
 
-  fields.inSources = key[1] === "sources";
-  fields.inTags = key[1] === "tags";
+  const name = key[1];
+  const value = key[2] ?? "";
+  const flow = applyFlowList(name, value, fields);
 
-  if (key[1] === "title") {
-    fields.title = scalar(key[2]);
-  }
-
-  if (key[1] === "created") {
-    fields.created = scalar(key[2]);
-  }
-
-  if (key[1] === "type") {
-    fields.type = scalar(key[2]);
-  }
-
-  if (key[1] === "updated") {
-    fields.updated = scalar(key[2]);
-  }
-
-  if (key[1] === "status") {
-    fields.status = scalar(key[2]);
-  }
-
-  if (key[1] === "confidence") {
-    fields.confidence = scalar(key[2]);
-  }
-
-  if (key[1] === "origin") {
-    fields.origin = scalar(key[2]);
-  }
+  applyListMode(name, flow, fields);
+  SCALAR_APPLIERS[name]?.(fields, value);
 
   return true;
 }

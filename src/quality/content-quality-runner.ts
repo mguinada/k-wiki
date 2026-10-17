@@ -2,7 +2,7 @@
  * The disposable, real-model content-quality bench cycle: it writes the
  * pinned synthetic fixture into a temp data repo, runs one full
  * wiki-sync under the configured agent, evaluates the correctness
- * floor, the pending-convention lane, and the committed bands, and
+ * floor, the blocking answerability smoke, and the committed bands, and
  * writes the durable pass/warn/fail report. main() is the dev
  * launcher's entry point; the model-free measurement and verdict
  * logic it drives lives in content-quality-bench.ts.
@@ -255,16 +255,13 @@ export async function main(
         ...(await worklistFailures(join(dataRoot, "wiki"))),
       ];
 
-      const pendingConventionFailures = await answerabilityFailures(
-        dataRoot,
-        questions,
-      );
+      const answerability = await answerabilityFailures(dataRoot, questions);
 
       const report = await evaluateContentQuality({
         wikiDir: join(dataRoot, "wiki"),
         bands,
         correctnessFailures: correctness,
-        pendingConventionFailures,
+        answerabilityFailures: answerability,
       });
 
       await mkdir(outputDir, { recursive: true });
